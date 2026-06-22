@@ -1,0 +1,14 @@
+{
+  "name": "velocity-rules-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Security-rules unit tests for Velocity (run against the Firebase emulator).",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project velocity-rules-test \"node --test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.2.0"
+  }
+}

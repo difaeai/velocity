@@ -1,0 +1,147 @@
+rules_version = '2';
+
+// ============================================================================
+//  Velocity — Firestore Security Rules
+// ----------------------------------------------------------------------------
+//  Security model (see docs/SECURITY.md):
+//   * Default DENY. Nothing is accessible unless a rule below explicitly allows.
+//   * Authentication is REQUIRED for every read and write.
+//   * Roles are carried in custom claims (request.auth.token.role), which are
+//     ONLY settable by the backend (Cloud Functions via the Admin SDK).
+//   * Money, verification status, ratings, trip state and counters are
+//     SERVER-AUTHORITATIVE: clients can never write them directly. Those paths
+//     are written exclusively by Cloud Functions, which bypass these rules.
+//   * Where clients may write at all, writes are restricted to an explicit
+//     whitelist of fields so privileged fields cannot be smuggled in.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----- Helpers ---------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && uid() == userId;
+    }
+
+    function role() {
+      return isSignedIn() ? request.auth.token.role : '';
+    }
+
+    function isAdmin() {
+      return role() == 'admin';
+    }
+
+    function isDriver() {
+      return role() == 'driver';
+    }
+
+    // True when the incoming write only touches the supplied field names.
+    function onlyChanges(allowed) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    // ----- users/{uid} -----------------------------------------------------
+    // Profile docs. Created by the onUserCreate backend trigger. The owner may
+    // edit only safe profile fields; role / verification / wallet live elsewhere
+    // or are server-only.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Direct client creation is disabled; the backend creates the profile.
+      allow create: if false;
+      allow update: if isOwner(userId)
+                    && onlyChanges(['displayName', 'photoURL', 'gender', 'fcmToken', 'updatedAt'])
+                    && request.resource.data.gender in ['male', 'female', 'unspecified'];
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ----- drivers/{uid} ---------------------------------------------------
+    // Driver operational doc. Verification, rating, earnings and commission are
+    // server-only. The driver may update ONLY presence/location fields so GPS
+    // pings don't require a function call on every update.
+    match /drivers/{driverId} {
+      allow read: if isOwner(driverId) || isAdmin();
+      allow create: if false;
+      allow update: if isOwner(driverId)
+                    && isDriver()
+                    && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt']);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ----- trips/{tripId} --------------------------------------------------
+    // Fully server-authoritative. Trips are created and mutated only by Cloud
+    // Functions. Clients READ if they are a participant; they ACT via callables.
+    match /trips/{tripId} {
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.passengerId == uid())
+                  || (isSignedIn() && resource.data.driverId == uid());
+      allow write: if false;
+
+      // Bids placed by drivers (created server-side via placeBid). The passenger
+      // who owns the parent trip and the bidding driver may read.
+      match /bids/{bidId} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.passengerId == uid())
+                    || (isSignedIn() && resource.data.driverId == uid());
+        allow write: if false;
+      }
+    }
+
+    // ----- wallets/{uid} ---------------------------------------------------
+    // Balances and ledger are server-only writes. Owner and admin may read.
+    match /wallets/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+
+      match /transactions/{txId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // ----- safetyEvents/{id} ----------------------------------------------
+    // SOS / route-deviation records. Created server-side. The reporter and any
+    // admin may read; nobody writes directly.
+    match /safetyEvents/{eventId} {
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.reportedBy == uid());
+      allow write: if false;
+    }
+
+    // ----- system/{doc} ----------------------------------------------------
+    // Platform counters (revenue, commissions, payouts). Admin-readable for the
+    // dashboard; never client-writable.
+    match /system/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- auditLogs/{id} --------------------------------------------------
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- config/{doc} ----------------------------------------------------
+    // Public app configuration (ride types, base fares, service areas). Any
+    // authenticated user may read; only admins may change it.
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ----- Catch-all DENY --------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,51 +1,96 @@
-# ShareRide Pakistan 🚗🏍️
+# Velocity 🚗🏍️
 
-An AI-powered ride-hailing and smart ride-sharing (pooling) platform for Pakistan, designed to reduce transportation costs through gender-based route pooling and custom bidding while retaining traditional private rides.
+AI-assisted ride-hailing and smart ride-pooling platform for Pakistan
+(formerly the *ShareRide Pakistan* prototype).
 
-## 🌟 Key Features
+This repository is being rebuilt from a browser prototype into a **production
+system**:
 
-- **Passenger Mobile App Experience**: Complete flow from ride selection (Bikes, Rickshaws, Mini, AC Cars, Comfort, XL), real-time seat selection & fare splitting, gender-based ride pooling toggles, bidding system, safety features (SOS, route deviation warnings), and interactive wallet.
-- **Driver Mobile App Experience**: Real-time incoming bidding requests, route details, and income ledger.
-- **Super Admin Dashboard**: Full fleet overview, driver registrations/approvals, active trip tracking, transaction logs, promo management, and real-time safety alerts.
-- **Operations Dashboard**: Hub-based smart pooling management, real-time fleet map, system KPIs, and live AI matchmaking console.
-- **Real-Time Firebase Synchronization**: Sync stats, bids, navigation states, logs, and alerts across different browser tabs/devices in real-time.
+- **One mobile app** (React Native / Expo) containing **both** the passenger and
+  the driver experience, shippable to the **App Store** and **Google Play**.
+- **One admin panel** (web) for operations, driver approvals, finance and safety.
+- **A secure backend** on **Firebase Cloud Functions (Node + TypeScript)** that
+  is the single source of truth for money, roles and trip state.
 
-## 🛠️ Technology Stack
-
-- **Frontend**: HTML5, Vanilla JavaScript, Vanilla CSS, Tailwind CSS (via CDN)
-- **Database**: Cloud Firestore (Real-time sync)
-- **Icons**: FontAwesome & Lucide Icons
-- **Mapping**: Dynamic vector-based canvas map simulation
-
----
-
-## 🔥 Firebase Setup Instructions
-
-The application contains a built-in real-time synchronization layer powered by **Firebase Firestore**. It features a graceful fallback so that if no Firebase config is present, the app will run in **local/offline mode** (everything runs in-memory).
-
-To enable real-time multi-device sync:
-1. Go to the [Firebase Console](https://console.firebase.google.com/) and click **Add Project**.
-2. Create a web application in the project to obtain your configuration object:
-   ```javascript
-   const firebaseConfig = {
-       apiKey: "...",
-       authDomain: "...",
-       projectId: "...",
-       storageBucket: "...",
-       messagingSenderId: "...",
-       appId: "..."
-   };
-   ```
-3. Open **`app.js`** and locate the `firebaseConfig` object at the top. Paste your configuration credentials inside it.
-4. Go to the Firestore Database section in Firebase, click **Create Database**, and select **Start in test mode** (or set database security rules to allow read/write access).
-5. Open **`index.html`** in multiple different browser windows, or on different devices, and see the states (bidding, active map, SOS, verification statuses) sync instantly in real-time!
+> **Status — Stage 1 (Secure Foundation) complete.** The backend, the security
+> rules and the data model are in place and verified. The mobile app and admin
+> panel are scaffolded next — see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 
-## 💻 How to Run Locally
+## Repository layout
 
-Start a local server in the project directory:
-```bash
-npx -y http-server d:\Velocity -p 8080
 ```
-Then visit **[http://127.0.0.1:8080](http://127.0.0.1:8080)**.
+velocity/
+├── firebase.json            # Firebase project config (rules, functions, emulators)
+├── .firebaserc              # Project alias → velocity-fe379
+├── firestore.rules          # 🔒 Firestore security rules (default-deny, role-based)
+├── storage.rules            # 🔒 Cloud Storage security rules
+├── firestore.indexes.json   # Composite indexes
+├── backend/
+│   └── functions/           # Cloud Functions (TypeScript) — the secure backend
+│       └── src/
+│           ├── domain/      # Shared types + server-authoritative fare logic
+│           ├── lib/         # Admin SDK init + auth/role guards
+│           ├── users/       # Provisioning + role management
+│           ├── drivers/     # Onboarding + admin verification
+│           ├── trips/       # Trip state machine + money settlement
+│           └── safety/      # SOS / route-deviation events
+├── apps/
+│   ├── mobile/              # Expo app (passenger + driver)  ← next stage
+│   └── admin/              # Admin web panel                 ← next stage
+├── tests/                   # Security-rules unit tests (Firebase emulator)
+├── docs/                    # ARCHITECTURE · SECURITY · ROADMAP
+└── legacy-demo/             # The original HTML/JS prototype, kept as a UX reference
+```
+
+---
+
+## Why the original demo was replaced
+
+`legacy-demo/` is the previous single-file browser prototype. It is a great
+**UX reference**, but it was a *simulation*, not a product:
+
+- It ran entirely in the browser with **no authentication**.
+- It talked to Firestore in **“test mode”**, meaning the entire database was
+  **readable and writable by anyone on the internet**.
+- **Money, driver approvals and trip state were decided on the client**, so they
+  could be forged trivially.
+
+[`docs/SECURITY.md`](docs/SECURITY.md) lists every loophole and how this stage
+closes it.
+
+---
+
+## Getting started (backend)
+
+Prerequisites: Node 22, a Firebase project (already `velocity-fe379`), and for
+deployment the **Blaze** plan (Cloud Functions requires it).
+
+```bash
+# Install backend deps
+cd backend/functions && npm install
+
+# Type-check / build / lint
+npm run build
+npm run lint
+
+# Run everything locally against the emulator suite
+npm run serve          # functions + firestore + auth + storage emulators
+```
+
+### Run the security-rules tests
+
+```bash
+cd tests && npm install && npm test    # boots the Firestore emulator, runs the suite
+```
+
+### Deploy (when ready)
+
+```bash
+firebase deploy --only firestore:rules,storage:rules    # ship the locked-down rules
+firebase deploy --only functions                        # ship the backend
+```
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full plan through app-store
+submission.
