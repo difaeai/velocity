@@ -47,3 +47,21 @@ jobs:
         run: npm install -g firebase-tools
       - name: Run security-rules test suite (emulator)
         run: firebase emulators:exec --only firestore --project demo-velocity "node --test tests/firestore.rules.test.mjs"
+
+  mobile:
+    name: Mobile · typecheck + bundle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Bundle (iOS + Android)
+        run: npx expo export -p ios -p android
