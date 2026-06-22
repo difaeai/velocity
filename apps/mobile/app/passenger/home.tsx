@@ -1,4 +1,4 @@
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -39,9 +39,7 @@ export default function PassengerHome() {
           <PrimaryButton
             variant="secondary"
             label="Become a driver"
-            onPress={() =>
-              Alert.alert('Coming next', 'Driver onboarding (document upload) lands in the next stage.')
-            }
+            onPress={() => router.push('/passenger/become-driver')}
           />
         </Card>
 

@@ -1,14 +1,56 @@
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { useAuth } from '../../src/auth/AuthContext';
+import { db } from '../../src/firebase';
+import { api } from '../../src/api/client';
+import {
+  useDriverActiveTrip,
+  useDriverProfile,
+  useOpenRequests,
+  useWalletBalance,
+} from '../../src/hooks/driver';
 import { colors } from '../../src/config';
 import { Badge, Card, PrimaryButton } from '../../src/ui/components';
+import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
+import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
+
+const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
+  matched: { label: 'Head to pickup', to: 'arriving' },
+  arriving: { label: 'Arrived at pickup', to: 'arrived' },
+  arrived: { label: 'Start trip', to: 'in_progress' },
+  in_progress: { label: 'Complete trip' },
+};
 
 export default function DriverHome() {
   const { user, signOut } = useAuth();
-  const [online, setOnline] = useState(false);
+  const uid = user?.uid;
+  const profile = useDriverProfile(uid);
+  const activeTrip = useDriverActiveTrip(uid);
+  const online = profile?.online ?? false;
+  const requests = useOpenRequests(online && !activeTrip);
+  const balance = useWalletBalance(uid);
+  const [busy, setBusy] = useState(false);
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Action failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleOnline() {
+    if (!uid) return;
+    run(() =>
+      setDoc(doc(db, 'drivers', uid), { online: !online, lastSeenAt: serverTimestamp() }, { merge: true }),
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -21,28 +63,99 @@ export default function DriverHome() {
           <Badge label={online ? 'Online' : 'Offline'} color={online ? colors.primary : colors.muted} />
         </View>
 
-        <Card>
-          <Text style={styles.cardTitle}>{online ? "You're online" : 'Go online to receive bids'}</Text>
-          <Text style={styles.cardBody}>
-            When online, you'll receive nearby ride requests and can bid on them.
-            Presence streams to the backend; matching arrives in the next stage.
-          </Text>
-          <PrimaryButton
-            label={online ? 'Go offline' : 'Go online'}
-            variant={online ? 'danger' : 'primary'}
-            onPress={() => setOnline((v) => !v)}
-          />
-        </Card>
+        <PrimaryButton
+          label={online ? 'Go offline' : 'Go online'}
+          variant={online ? 'danger' : 'primary'}
+          disabled={busy}
+          onPress={toggleOnline}
+        />
+
+        {/* Active trip takes priority */}
+        {activeTrip ? (
+          <Card>
+            <Text style={styles.cardTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
+            <MapPlaceholder
+              pickup={activeTrip.pickup?.address}
+              dropoff={activeTrip.dropoff?.address}
+              tracking={activeTrip.status === 'in_progress' || activeTrip.status === 'arriving'}
+            />
+            <Text style={styles.fare}>Fare: {activeTrip.fare} PKR</Text>
+            {(() => {
+              const next = NEXT_ACTION[activeTrip.status];
+              if (!next) return null;
+              return (
+                <PrimaryButton
+                  label={next.label}
+                  disabled={busy}
+                  onPress={() =>
+                    run(() =>
+                      next.to
+                        ? api.updateTripStatus({ tripId: activeTrip.id, to: next.to })
+                        : api.completeTrip({ tripId: activeTrip.id }),
+                    )
+                  }
+                />
+              );
+            })()}
+            <PrimaryButton
+              variant="danger"
+              label="🆘 SOS"
+              disabled={busy}
+              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))}
+            />
+          </Card>
+        ) : online ? (
+          <>
+            <Text style={styles.section}>Incoming requests</Text>
+            {requests.length === 0 ? (
+              <Card>
+                <Text style={styles.muted}>No open requests nearby. Stay online…</Text>
+              </Card>
+            ) : (
+              requests.map((r) => (
+                <Card key={r.id}>
+                  <View style={styles.reqRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cardTitle}>
+                        {RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)
+                      </Text>
+                      <Text style={styles.muted}>
+                        {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
+                      </Text>
+                    </View>
+                    <Text style={styles.fare}>{r.offeredFare} PKR</Text>
+                  </View>
+                  <View style={styles.bidRow}>
+                    <View style={{ flex: 1 }}>
+                      <PrimaryButton
+                        label={`Accept ${r.offeredFare}`}
+                        disabled={busy}
+                        onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare }))}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <PrimaryButton
+                        variant="secondary"
+                        label={`+50 → ${r.offeredFare + 50}`}
+                        disabled={busy}
+                        onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare + 50 }))}
+                      />
+                    </View>
+                  </View>
+                </Card>
+              ))
+            )}
+          </>
+        ) : (
+          <Card>
+            <Text style={styles.muted}>You&apos;re offline. Go online to receive ride requests.</Text>
+          </Card>
+        )}
 
         <Card>
-          <Text style={styles.cardTitle}>Today's earnings</Text>
-          <Text style={styles.earnings}>0 PKR</Text>
-          <Text style={styles.cardBody}>Your ledger updates as you complete trips.</Text>
-          <PrimaryButton
-            variant="secondary"
-            label="View ledger"
-            onPress={() => Alert.alert('Coming next', 'The earnings ledger lands in the next stage.')}
-          />
+          <Text style={styles.cardTitle}>Earnings</Text>
+          <Text style={styles.earnings}>{balance} PKR</Text>
+          <Text style={styles.muted}>{profile?.tripsCount ?? 0} trips · {profile?.rating ?? 5}★</Text>
         </Card>
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
@@ -53,11 +166,15 @@ export default function DriverHome() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  container: { padding: 20, gap: 16 },
+  container: { padding: 18, gap: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   hello: { fontSize: 15, color: colors.muted },
   email: { fontSize: 20, fontWeight: '900', color: colors.text },
-  cardTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  cardBody: { fontSize: 14, color: colors.muted, lineHeight: 20 },
-  earnings: { fontSize: 28, fontWeight: '900', color: colors.primary },
+  section: { fontSize: 14, fontWeight: '800', color: colors.text },
+  cardTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
+  muted: { fontSize: 13, color: colors.muted },
+  fare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
+  reqRow: { flexDirection: 'row', alignItems: 'center' },
+  bidRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  earnings: { fontSize: 28, fontWeight: '900', color: colors.primary, marginVertical: 4 },
 });

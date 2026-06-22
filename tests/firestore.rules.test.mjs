@@ -47,6 +47,7 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     passengerId: 'passenger1', driverId: 'driver1', status: 'requested',
   });
   await setDoc(doc(db, 'wallets/passenger1'), { uid: 'passenger1', balance: 0 });
+  await setDoc(doc(db, 'openRequests/trip1'), { tripId: 'trip1', rideType: 'ac', offeredFare: 500 });
 });
 
 test('unauthenticated users are denied everything (default deny)', async () => {
@@ -106,4 +107,10 @@ test('config is readable by any signed-in user, writable only by admins', async 
   await assertSucceeds(getDoc(doc(passenger, 'config/fares')));
   await assertFails(setDoc(doc(passenger, 'config/fares'), { bike: 1 }));
   await assertSucceeds(setDoc(doc(admin, 'config/fares'), { bike: 160 }));
+});
+
+test('open requests are readable by drivers only, never client-writable', async () => {
+  await assertSucceeds(getDoc(doc(driver, 'openRequests/trip1')));
+  await assertFails(getDoc(doc(passenger, 'openRequests/trip1')));
+  await assertFails(setDoc(doc(driver, 'openRequests/x'), { tripId: 'x' }));
 });
