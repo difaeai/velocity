@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output (compiled TS lives in each package's own /lib, ignored there).
+# Do NOT put a bare `lib/` here: it also matches source dirs like src/lib/.
+dist/
+build/
+*.tsbuildinfo
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# Secrets / credentials — NEVER commit these
+*serviceAccount*.json
+service-account*.json
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+
+# Expo / React Native
+.expo/
+.expo-shared/
+apps/mobile/ios/
+apps/mobile/android/
+*.keystore
+*.jks
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+coverage/

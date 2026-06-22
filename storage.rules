@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// ============================================================================
+//  Velocity — Cloud Storage Security Rules
+// ----------------------------------------------------------------------------
+//  Default DENY. Auth required everywhere. Driver verification documents (CNIC,
+//  licence, vehicle papers) are write-by-owner but READABLE ONLY by the backend
+//  / admins — never by other users. Image uploads are size- and type-capped.
+// ============================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == 'admin';
+    }
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    function underSize(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024;
+    }
+
+    // Public-ish profile avatars: world-readable, owner-writable, capped at 5MB.
+    match /users/{userId}/avatar/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) && isImage() && underSize(5);
+    }
+
+    // Sensitive KYC / vehicle documents: owner can upload, but only the owner
+    // and admins can read them back. Never world-readable.
+    match /drivers/{driverId}/documents/{fileName} {
+      allow read: if isOwner(driverId) || isAdmin();
+      allow write: if isOwner(driverId) && underSize(15);
+    }
+
+    // Everything else is denied.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
