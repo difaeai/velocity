@@ -35,6 +35,344 @@ document.addEventListener('DOMContentLoaded', () => {
     let driverOnlineInterval = null;
 
     // ═══════════════════════════════════════
+    //  FIREBASE CONFIG & INIT
+    // ═══════════════════════════════════════
+    // Insert your Firebase configuration here. Fallbacks to mock mode if left empty.
+    const firebaseConfig = {
+        apiKey: "",
+        authDomain: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+    };
+
+    let db = null;
+    let useFirebase = false;
+    const sessionId = Math.random().toString(36).substring(2);
+
+    if (firebaseConfig.projectId && typeof firebase !== 'undefined') {
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            useFirebase = true;
+            console.log("Firebase initialized successfully. Real-time mode enabled.");
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+        }
+    } else {
+        console.log("No Firebase config found. Running in local simulation mode.");
+    }
+
+    // ═══════════════════════════════════════
+    //  FIREBASE SYNC WRITERS
+    // ═══════════════════════════════════════
+    function syncSystemMetrics() {
+        if (!useFirebase) return;
+        db.collection("system").doc("counters").set({
+            totalRevenue,
+            totalCommissions,
+            totalDriverPayout,
+            totalTrips,
+            activePools,
+            sosCount,
+            devCount
+        }, { merge: true }).catch(e => console.error("Firebase system sync error:", e));
+    }
+
+    function syncDriverState() {
+        if (!useFirebase) return;
+        db.collection("drivers").doc("ahmed").set({
+            verified: driverVerified,
+            online: driverOnline,
+            onlineSeconds: driverOnlineSeconds,
+            earnings: totalDriverEarnings,
+            tripsCount: totalTrips
+        }, { merge: true }).catch(e => console.error("Firebase driver sync error:", e));
+    }
+
+    let lastActiveTripForInvoice = null;
+
+    function syncTripState() {
+        if (!useFirebase) return;
+        if (activeTrip) {
+            lastActiveTripForInvoice = { ...activeTrip };
+            db.collection("trips").doc("active").set({
+                ...activeTrip,
+                sender: sessionId,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(e => console.error("Firebase trip sync error:", e));
+        } else {
+            db.collection("trips").doc("active").delete().catch(e => console.error("Firebase trip delete error:", e));
+        }
+    }
+
+    // ═══════════════════════════════════════
+    //  FIREBASE LISTENERS
+    // ═══════════════════════════════════════
+    function setupFirebaseListeners() {
+        if (!useFirebase) return;
+
+        // 1. System Counters Listener
+        db.collection("system").doc("counters").onSnapshot(doc => {
+            if (!doc.exists) return;
+            const data = doc.data();
+            totalRevenue = data.totalRevenue ?? totalRevenue;
+            totalCommissions = data.totalCommissions ?? totalCommissions;
+            totalDriverPayout = data.totalDriverPayout ?? totalDriverPayout;
+            totalTrips = data.totalTrips ?? totalTrips;
+            activePools = data.activePools ?? activePools;
+            sosCount = data.sosCount ?? sosCount;
+            devCount = data.devCount ?? devCount;
+
+            updateAdminStats();
+            updateOpsStats();
+        });
+
+        // 2. Driver Ahmed Status Listener
+        db.collection("drivers").doc("ahmed").onSnapshot(doc => {
+            if (!doc.exists) return;
+            const data = doc.data();
+
+            // Verification Sync
+            if (data.verified !== undefined && data.verified !== driverVerified) {
+                driverVerified = data.verified;
+                if (driverVerified) {
+                    adminRowAhmed.cells[4].innerHTML = '<span class="badge-success">Approved</span>';
+                    adminRowAhmed.cells[5].innerHTML = '<button class="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg font-bold text-[10px]">Suspend</button>';
+                    adminBtnApproveAhmed.disabled = true;
+                    adminPendingBadge.textContent = "0 PENDING";
+                    adminPendingBadge.className = "px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-xs";
+                    if (adminApprovedDrivers) adminApprovedDrivers.textContent = "1";
+                    showDriverScreen('d-screen-home');
+                } else {
+                    adminRowAhmed.cells[4].innerHTML = '<span class="badge-warn">Pending Approval</span>';
+                    adminRowAhmed.cells[5].innerHTML = '<button id="admin-btn-approve-ahmed" class="px-3 py-1.5 bg-[#004c31] hover:bg-[#003924] text-white rounded-lg font-bold text-[10px] shadow-sm transition-all">Verify & Approve</button>';
+                    adminBtnApproveAhmed.disabled = false;
+                    adminPendingBadge.textContent = "1 PENDING";
+                    adminPendingBadge.className = "px-3 py-1 bg-amber-100 text-amber-800 rounded-full font-bold text-xs animate-pulse";
+                    if (adminApprovedDrivers) adminApprovedDrivers.textContent = "0";
+                    showDriverScreen('d-screen-register');
+                }
+            }
+
+            // Online Toggle Sync
+            if (data.online !== undefined && data.online !== driverOnline) {
+                driverOnline = data.online;
+                const dBtnOnlineToggle = document.getElementById('d-btn-online-toggle');
+                const dStatusLabel = document.getElementById('d-status-label');
+                const dMapOfflineOverlay = document.getElementById('d-map-offline-overlay');
+                const dMapOnlineOverlay = document.getElementById('d-map-online-overlay');
+                
+                if (driverOnline) {
+                    dBtnOnlineToggle.classList.add('active');
+                    dStatusLabel.textContent = "ONLINE";
+                    dStatusLabel.className = "text-[10px] font-black text-emerald-600";
+                    dMapOfflineOverlay.classList.add('hidden');
+                    dMapOnlineOverlay.classList.remove('hidden');
+                    
+                    if (!driverOnlineInterval) {
+                        driverOnlineInterval = setInterval(() => {
+                            driverOnlineSeconds++;
+                            const h = Math.floor(driverOnlineSeconds / 3600);
+                            const m = Math.floor((driverOnlineSeconds % 3600) / 60);
+                            const el = document.getElementById('d-online-time');
+                            if (el) el.textContent = `${h}h ${m}m`;
+                            const opsEl = document.getElementById('ops-drivers-online');
+                            if (opsEl) opsEl.textContent = "1";
+                            const mapEl = document.getElementById('ops-active-drivers-map');
+                            if (mapEl) mapEl.textContent = "1";
+                        }, 1000);
+                    }
+                } else {
+                    dBtnOnlineToggle.classList.remove('active');
+                    dStatusLabel.textContent = "OFFLINE";
+                    dStatusLabel.className = "text-[10px] font-black text-gray-400";
+                    dMapOfflineOverlay.classList.remove('hidden');
+                    dMapOnlineOverlay.classList.add('hidden');
+                    
+                    if (driverOnlineInterval) {
+                        clearInterval(driverOnlineInterval);
+                        driverOnlineInterval = null;
+                    }
+                    const opsEl = document.getElementById('ops-drivers-online');
+                    if (opsEl) opsEl.textContent = "0";
+                    const mapEl = document.getElementById('ops-active-drivers-map');
+                    if (mapEl) mapEl.textContent = "0";
+                }
+            }
+
+            if (data.onlineSeconds !== undefined) {
+                driverOnlineSeconds = data.onlineSeconds;
+            }
+            if (data.earnings !== undefined) {
+                totalDriverEarnings = data.earnings;
+                const dEarnings = document.getElementById('d-earnings-val');
+                if (dEarnings) dEarnings.textContent = `${totalDriverEarnings} PKR`;
+                const ledgerTotal = document.getElementById('d-ledger-total');
+                if (ledgerTotal) ledgerTotal.textContent = `${totalDriverEarnings} PKR`;
+            }
+            if (data.tripsCount !== undefined) {
+                totalTrips = data.tripsCount;
+                const dRides = document.getElementById('d-rides-count');
+                if (dRides) dRides.textContent = totalTrips;
+                const ledgerTrips = document.getElementById('d-ledger-trips');
+                if (ledgerTrips) ledgerTrips.textContent = `${totalTrips}`;
+            }
+        });
+
+        // 3. Active Trip State Listener
+        db.collection("trips").doc("active").onSnapshot(doc => {
+            if (!doc.exists) {
+                if (activeTrip !== null) {
+                    const lastStage = activeTrip.stage;
+                    activeTrip = null;
+
+                    if (lastStage === 'en_route') {
+                        const info = lastActiveTripForInvoice || { selectedFare: 550, rideType: 'ac' };
+                        const grossFare = info.selectedFare;
+                        const pShare = Math.round(grossFare / currentSeats);
+                        
+                        const invoiceType = document.getElementById('p-invoice-type');
+                        if (invoiceType) invoiceType.textContent = info.rideType.toUpperCase();
+                        document.getElementById('p-invoice-seats').textContent = `${currentSeats} / 4`;
+                        document.getElementById('p-invoice-share').textContent = `${pShare} PKR`;
+                        showPassengerScreen('p-screen-invoice');
+                    } else {
+                        showPassengerScreen('p-screen-home');
+                    }
+                    
+                    showDriverScreen('d-screen-home');
+                }
+                return;
+            }
+
+            const data = doc.data();
+            
+            if (data.sender === sessionId) {
+                activeTrip = data;
+                return;
+            }
+
+            activeTrip = data;
+
+            if (activeTrip.stage === 'bidding') {
+                pOfferedFareLabel.textContent = `${activeTrip.offeredFare} PKR`;
+                showPassengerScreen('p-screen-bid-loading');
+
+                if (driverOnline && (!activeTrip.driverBid || activeTrip.driverBid.status === 'pending')) {
+                    dOfferedFare.textContent = `${activeTrip.offeredFare} PKR`;
+                    if (dPayoutLabel) dPayoutLabel.textContent = `${Math.round(activeTrip.offeredFare * 0.9)} PKR`;
+                    dRequestType.textContent = activeTrip.rideType.toUpperCase();
+                    dBtnCounter50.textContent = `+50 → ${activeTrip.offeredFare + 50} PKR`;
+                    dBtnCounter100.textContent = `+100 → ${activeTrip.offeredFare + 100} PKR`;
+                    showDriverScreen('d-screen-bid-request');
+                }
+
+                if (activeTrip.driverBid && activeTrip.driverBid.status === 'pending') {
+                    const existingBids = Array.from(pBidsQueueContainer.querySelectorAll('h4')).map(h4 => h4.textContent);
+                    if (!existingBids.includes(activeTrip.driverBid.name)) {
+                        addDriverBidCard(actualDriver, activeTrip.driverBid.fare);
+                    }
+                }
+            }
+
+            if (activeTrip.stage === 'hub_walking') {
+                const driver = activeTrip.driver;
+                pActiveDriverImg.src = driver.img;
+                pActiveDriverName.textContent = driver.name;
+                pActiveDriverVehicle.textContent = `${driver.vehicle} · ${driver.rating}★`;
+                pActiveDriverPlate.textContent = driver.plate;
+                showPassengerScreen('p-screen-nav');
+
+                if (driver.name === actualDriver.name) {
+                    dNavTitle.textContent = "Heading to Pickup Hub";
+                    dNavFareLabel.textContent = `${activeTrip.selectedFare} PKR`;
+                    dBtnFlowAction.textContent = "Arrived at Hub";
+                    dBtnFlowAction.className = "w-full h-12 bg-secondary hover:bg-[#004493] text-white rounded-2xl font-black text-sm flex items-center justify-center transition-all shadow-lg";
+                    showDriverScreen('d-screen-nav');
+                }
+            }
+
+            if (activeTrip.stage === 'hub_arrived') {
+                if (activeTrip.driver && activeTrip.driver.name === actualDriver.name) {
+                    dBtnFlowAction.textContent = "Start Journey";
+                    dBtnFlowAction.className = "w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm flex items-center justify-center transition-all shadow-lg";
+                    dNavTitle.textContent = "Boarding Passengers";
+                }
+            }
+
+            if (activeTrip.stage === 'en_route') {
+                showPassengerScreen('p-screen-tracking');
+                if (activeTrip.driver && activeTrip.driver.name === actualDriver.name) {
+                    dNavTitle.textContent = "I-8 → G-10 Markaz";
+                    dBtnFlowAction.textContent = "Complete Ride";
+                    dBtnFlowAction.className = "w-full h-12 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black text-sm flex items-center justify-center transition-all shadow-lg";
+                    showDriverScreen('d-screen-nav');
+                }
+            }
+
+            const pRouteDeviationBanner = document.getElementById('p-route-deviation-banner');
+            const globalSosModal = document.getElementById('global-sos-modal');
+
+            if (activeTrip.isDeviating && !isDeviating) {
+                isDeviating = true;
+                pRouteDeviationBanner.classList.remove('hidden');
+                ctrlBtnDeviation.innerHTML = `<span class="material-symbols-outlined text-[14px]">check_circle</span> Clear Deviation Alert`;
+                ctrlBtnDeviation.className = "w-full py-2.5 bg-amber-700 text-white rounded-xl font-black text-[10px] flex items-center justify-center gap-1.5 transition-all shadow-sm";
+                
+                const safetyDesk = document.getElementById('admin-safety-desk');
+                if (safetyDesk) {
+                    const alert = document.createElement('div');
+                    alert.id = "admin-deviation-row";
+                    alert.className = "p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex justify-between items-center slide-up";
+                    alert.innerHTML = `<div><h4 class="font-black">ROUTE DEVIATION</h4><p class="text-[9px]">Vehicle LEC-4820 deviated in Sector I-8</p></div><span class="badge-warn">MONITORING</span>`;
+                    safetyDesk.insertBefore(alert, safetyDesk.firstChild);
+                }
+            } else if (!activeTrip.isDeviating && isDeviating) {
+                isDeviating = false;
+                pRouteDeviationBanner.classList.add('hidden');
+                ctrlBtnDeviation.innerHTML = `<span class="material-symbols-outlined text-[14px]">warning</span> Simulate Route Deviation`;
+                ctrlBtnDeviation.className = "w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] shadow-sm";
+                const row = document.getElementById('admin-deviation-row');
+                if (row) row.remove();
+            }
+
+            if (activeTrip.isSOS && globalSosModal.classList.contains('hidden')) {
+                globalSosModal.classList.remove('hidden');
+                const safetyDesk = document.getElementById('admin-safety-desk');
+                if (safetyDesk) {
+                    const alert = document.createElement('div');
+                    alert.id = "admin-sos-alert-row";
+                    alert.className = "p-3 bg-red-100 border border-red-300 text-red-900 rounded-xl text-xs flex justify-between items-center slide-up";
+                    alert.innerHTML = `<div><h4 class="font-black">SOS ALERT</h4><p class="text-[9px]">Driver: Ahmed Khan · Toyota Corolla (LEC-4820)</p></div><span class="badge-error">DISPATCHING</span>`;
+                    safetyDesk.insertBefore(alert, safetyDesk.firstChild);
+                }
+            } else if (!activeTrip.isSOS && !globalSosModal.classList.contains('hidden')) {
+                globalSosModal.classList.add('hidden');
+                const row = document.getElementById('admin-sos-alert-row');
+                if (row) row.remove();
+            }
+        });
+
+        // 4. Logs Sync Listener
+        const oneMinAgo = new Date(Date.now() - 60000);
+        db.collection("logs")
+            .where("timestamp", ">=", oneMinAgo)
+            .orderBy("timestamp", "asc")
+            .onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        if (data.sender !== sessionId && data.message) {
+                            appendLogToTerminalUI(data.message, data.type);
+                        }
+                    }
+                });
+            }, err => console.error("Logs sync error:", err));
+    }
+
+    // ═══════════════════════════════════════
     //  DRIVER PROFILES
     // ═══════════════════════════════════════
     const fakeDrivers = [
@@ -120,6 +458,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════
     function logTerminal(message, type = 'info') {
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        appendLogToTerminalUI(message, type, time);
+        
+        if (useFirebase) {
+            db.collection("logs").add({
+                message,
+                type,
+                sender: sessionId,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(err => console.error("Error logging to Firebase:", err));
+        }
+    }
+
+    function appendLogToTerminalUI(message, type, time) {
+        if (!time) {
+            time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        }
         const entry = document.createElement('div');
         entry.className = "terminal-log-entry";
         const colors = {
@@ -243,6 +597,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (adminApprovedDrivers) adminApprovedDrivers.textContent = "1";
         logTerminal("Super Admin approved driver Ahmed Khan. Account unlocked.", "success");
         showDriverScreen('d-screen-home');
+        
+        syncDriverState();
+        syncSystemMetrics();
     });
 
     // ═══════════════════════════════════════
@@ -276,6 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (opsEl) opsEl.textContent = "1";
                 const mapEl = document.getElementById('ops-active-drivers-map');
                 if (mapEl) mapEl.textContent = "1";
+                syncDriverState(); // Keep elapsed time synced
             }, 1000);
             logTerminal("Driver Ahmed Khan is now ONLINE. Waiting for passenger bids.");
         } else {
@@ -289,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (opsEl) opsEl.textContent = "0";
             logTerminal("Driver Ahmed Khan is now OFFLINE.");
         }
+        syncDriverState();
     });
 
     // ═══════════════════════════════════════
@@ -376,7 +735,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedFare: offer,
             passengerGender: userGender,
             seatsOccupied: currentSeats,
-            stage: 'bidding'
+            stage: 'bidding',
+            driverBid: null
         };
 
         pOfferedFareLabel.textContent = `${offer} PKR`;
@@ -394,6 +754,8 @@ document.addEventListener('DOMContentLoaded', () => {
             logTerminal("Real driver Ahmed Khan notified of incoming bid.");
         }
 
+        syncTripState();
+
         // Simulate external bids
         bidTimeout1 = setTimeout(() => {
             addDriverBidCard(fakeDrivers[0], Math.round(offer * 1.1));
@@ -407,6 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(bidTimeout1);
         clearTimeout(bidTimeout2);
         activeTrip = null;
+        syncTripState();
         showPassengerScreen('p-screen-bid-entry');
         if (driverOnline) showDriverScreen('d-screen-home');
         logTerminal("Passenger cancelled ride matching request.");
@@ -448,28 +811,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════
     document.getElementById('d-btn-accept').addEventListener('click', () => {
         if (!activeTrip) return;
+        activeTrip.driverBid = { name: "Ahmed Khan", fare: activeTrip.offeredFare, status: "pending" };
         addDriverBidCard(actualDriver, activeTrip.offeredFare);
         showDriverScreen('d-screen-home');
         logTerminal(`Ahmed Khan accepted passenger offer: ${activeTrip.offeredFare} PKR.`);
+        syncTripState();
     });
 
     document.getElementById('d-btn-counter-50').addEventListener('click', () => {
         if (!activeTrip) return;
         const fare = activeTrip.offeredFare + 50;
+        activeTrip.driverBid = { name: "Ahmed Khan", fare: fare, status: "pending" };
         addDriverBidCard(actualDriver, fare);
         showDriverScreen('d-screen-home');
         logTerminal(`Ahmed Khan countered at +50 PKR: ${fare} PKR.`);
+        syncTripState();
     });
 
     document.getElementById('d-btn-counter-100').addEventListener('click', () => {
         if (!activeTrip) return;
         const fare = activeTrip.offeredFare + 100;
+        activeTrip.driverBid = { name: "Ahmed Khan", fare: fare, status: "pending" };
         addDriverBidCard(actualDriver, fare);
         showDriverScreen('d-screen-home');
         logTerminal(`Ahmed Khan countered at +100 PKR: ${fare} PKR.`);
+        syncTripState();
     });
 
     document.getElementById('d-btn-decline').addEventListener('click', () => {
+        if (activeTrip) {
+            activeTrip.driverBid = { status: "declined" };
+            syncTripState();
+        }
         showDriverScreen('d-screen-home');
         logTerminal("Ahmed Khan declined the bid request.");
     });
@@ -491,6 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeTrip.selectedFare = fare;
         activeTrip.driver = driver;
         activeTrip.stage = 'hub_walking';
+        activeTrip.driverBid = { status: "accepted" };
 
         pActiveDriverImg.src = driver.img;
         pActiveDriverName.textContent = driver.name;
@@ -513,6 +887,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateAdminStats();
         updateOpsStats();
         logTerminal(`Ride confirmed! ${driver.name} hired at ${fare} PKR. Walking to hub...`, "success");
+
+        syncTripState();
+        syncSystemMetrics();
     }
 
     // ═══════════════════════════════════════
@@ -526,6 +903,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dBtnFlowAction.className = "w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm flex items-center justify-center transition-all shadow-lg";
             dNavTitle.textContent = "Boarding Passengers";
             logTerminal("Driver arrived at I-8/3 Markaz pickup hub. Boarding passengers.");
+            
+            if (activeTrip) {
+                activeTrip.stage = 'hub_arrived';
+                syncTripState();
+            }
         }
         else if (txt === "Start Journey") {
             dBtnFlowAction.textContent = "Complete Ride";
@@ -534,6 +916,8 @@ document.addEventListener('DOMContentLoaded', () => {
             activeTrip.stage = 'en_route';
             showPassengerScreen('p-screen-tracking');
             logTerminal("All passengers boarded. Journey started! Route locked by AI.", "success");
+            
+            syncTripState();
         }
         else if (txt === "Complete Ride") {
             completeRide();
@@ -584,7 +968,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateDriverHomeRecent(activeTrip, driverPay);
 
         logTerminal(`Ride complete! Gross: ${grossFare} PKR · Passenger Share: ${pShare} PKR · Platform: ${commission} PKR · Driver Payout: ${driverPay} PKR`, "success");
+        
+        syncSystemMetrics();
+        syncDriverState();
+        
         activeTrip = null;
+        syncTripState();
     }
 
     // Force complete trip button
@@ -866,10 +1255,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const safetyDesk = document.getElementById('admin-safety-desk');
         if (safetyDesk) {
             const alert = document.createElement('div');
+            alert.id = "admin-sos-alert-row";
             alert.className = "p-3 bg-red-100 border border-red-300 text-red-900 rounded-xl text-xs flex justify-between items-center slide-up";
             alert.innerHTML = `<div><h4 class="font-black">SOS ALERT</h4><p class="text-[9px]">Driver: Ahmed Khan · Toyota Corolla (LEC-4820)</p></div><span class="badge-error">DISPATCHING</span>`;
             safetyDesk.insertBefore(alert, safetyDesk.firstChild);
         }
+
+        if (activeTrip) {
+            activeTrip.isSOS = true;
+            syncTripState();
+        }
+        syncSystemMetrics();
     }
 
     ctrlBtnSos.addEventListener('click', triggerSos);
@@ -877,6 +1273,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-cancel-global-sos').addEventListener('click', () => {
         globalSosModal.classList.add('hidden');
         logTerminal("SOS alert cancelled by user.");
+        
+        if (activeTrip) {
+            activeTrip.isSOS = false;
+            syncTripState();
+        }
     });
 
     ctrlBtnDeviation.addEventListener('click', () => {
@@ -905,6 +1306,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.getElementById('admin-deviation-row');
             if (row) row.remove();
         }
+
+        if (activeTrip) {
+            activeTrip.isDeviating = isDeviating;
+            syncTripState();
+        }
+        syncSystemMetrics();
     });
 
     // ═══════════════════════════════════════
@@ -930,6 +1337,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════
     showPassengerScreen('p-screen-home');
     showDriverScreen('d-screen-register');
+
+    setupFirebaseListeners();
+
+    if (useFirebase) {
+        syncSystemMetrics();
+        syncDriverState();
+        syncTripState();
+    }
 
     logTerminal("ShareRide Pakistan AI Engine v2.4 initialized. Islamabad Zone active.");
     logTerminal("Step 1: Switch to Admin tab → Driver Approvals → Approve Ahmed Khan");
