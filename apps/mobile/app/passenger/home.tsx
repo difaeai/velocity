@@ -1,5 +1,6 @@
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
@@ -7,6 +8,7 @@ import { Badge, Card, PrimaryButton } from '../../src/ui/components';
 
 export default function PassengerHome() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -25,10 +27,7 @@ export default function PassengerHome() {
             Choose a bike, rickshaw, mini, AC car, comfort or XL — set your fare
             and let nearby drivers bid.
           </Text>
-          <PrimaryButton
-            label="Where to?"
-            onPress={() => Alert.alert('Coming next', 'The booking & bidding flow lands in the next stage.')}
-          />
+          <PrimaryButton label="Where to?" onPress={() => router.push('/passenger/booking')} />
         </Card>
 
         <Card>
