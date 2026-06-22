@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend · build + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/functions/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  rules-tests:
+    name: Firestore security rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      - name: Run security-rules test suite (emulator)
+        run: firebase emulators:exec --only firestore --project demo-velocity "node --test tests/firestore.rules.test.mjs"
