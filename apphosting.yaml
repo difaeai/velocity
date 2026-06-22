@@ -1,0 +1,19 @@
+# Firebase App Hosting configuration.
+#
+# App Hosting builds the WEB app at the backend's "root directory". This repo is
+# a monorepo, and the web app is the admin panel at apps/admin. You MUST set the
+# backend's Root directory to `apps/admin` (see docs/DEPLOY.md) — otherwise
+# detection fails with "package.json not found" at the repo root.
+#
+# This file is read from the repository root regardless of the backend root.
+
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  maxInstances: 2
+  minInstances: 0
+  concurrency: 80
+
+# The Firebase Web config (apiKey, appId, …) is injected automatically by App
+# Hosting as FIREBASE_WEBAPP_CONFIG. The admin app also has safe NEXT_PUBLIC_*
+# fallbacks, so no secrets are required here.

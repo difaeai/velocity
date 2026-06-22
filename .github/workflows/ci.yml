@@ -65,3 +65,22 @@ jobs:
       - run: npm run typecheck
       - name: Bundle (iOS + Android)
         run: npx expo export -p ios -p android
+
+  admin:
+    name: Admin · build (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
+      - run: npm ci
+      - name: Build (type-checks + production build)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'

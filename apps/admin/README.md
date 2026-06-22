@@ -1,18 +1,41 @@
-# Velocity — Admin Panel (Web)
+# Velocity — Admin Panel (Next.js)
 
-> **Placeholder — scaffolded in Stage 5** (see [`../../docs/ROADMAP.md`](../../docs/ROADMAP.md)).
+The operations console for Velocity, gated to the `admin` role. Deployed via
+**Firebase App Hosting** (see [`../../docs/DEPLOY.md`](../../docs/DEPLOY.md)).
 
-A single web admin panel, gated to the `admin` role, for operations staff:
+## Stack
+- Next.js 16 (App Router) · React 19 · TypeScript
+- Firebase JS SDK (Auth, Firestore, Functions)
 
-- Driver approvals (calls `approveDriver` / `rejectDriver`)
-- Live operations map and KPIs (reads `system/counters`, `trips`)
-- Finance: revenue, commission, payouts, ledger
-- Safety desk: live `safetyEvents`, resolve via `resolveSafetyEvent`
+## Features
+- Email sign-in, **admin-claim gated** (non-admins are rejected)
+- **Overview** — live platform counters (revenue, commissions, payouts, trips)
+- **Driver approvals** — verify/reject pending drivers (calls the backend callables)
+- **Safety desk** — open SOS / route-deviation events, resolve them
 
-## Planned stack
-- React + Vite + TypeScript
-- Firebase Auth (admin-claim gated; non-admins are rejected)
-- Firestore real-time subscriptions for live dashboards
+## Run
 
-The visual language can evolve from the existing dashboards in `legacy-demo/`,
-which already prototype these screens.
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # production build (also type-checks)
+```
+
+Config defaults to the `velocity-fe379` project; override with `NEXT_PUBLIC_FIREBASE_*`.
+Reads/writes are enforced by Firestore rules — the signed-in user needs the
+`admin` custom claim.
+
+## Structure
+```
+app/
+├── layout.tsx              # root layout + providers
+├── page.tsx                # routes to /login or /dashboard
+├── login/page.tsx          # email sign-in + admin check
+└── dashboard/
+    ├── layout.tsx          # admin guard + nav
+    ├── page.tsx            # overview (counters)
+    ├── drivers/page.tsx    # driver approvals
+    └── safety/page.tsx     # safety desk
+lib/        firebase init, auth context, typed admin API
+components/  Providers + shared UI
+```
