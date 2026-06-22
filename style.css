@@ -1,0 +1,322 @@
+/* ============================
+   SHARERIDE PAKISTAN – GLOBAL STYLES
+   ============================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: #f4f5f7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- SCROLLBAR ---- */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---- PHONE CHASSIS ---- */
+.phone-chassis {
+  width: 375px;
+  height: 720px;
+  background: #1a1a2e;
+  border-radius: 44px;
+  padding: 12px;
+  box-shadow:
+    0 0 0 2px #2d2d4e,
+    0 40px 80px rgba(0,0,0,0.45),
+    inset 0 0 0 1px rgba(255,255,255,0.06);
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-notch {
+  width: 120px;
+  height: 28px;
+  background: #1a1a2e;
+  border-radius: 0 0 20px 20px;
+  margin: 0 auto 0;
+  position: relative;
+  z-index: 50;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.phone-notch::before {
+  content: '';
+  width: 80px; height: 8px;
+  background: #111;
+  border-radius: 20px;
+  display: block;
+}
+
+.phone-screen {
+  flex: 1;
+  border-radius: 34px;
+  overflow: hidden;
+  background: #fcf9f8;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- SCREENS ---- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.screen.hidden { display: none !important; }
+
+/* ---- MATERIAL FILL ICON ---- */
+.fill-icon { font-variation-settings: 'FILL' 1; }
+
+/* ---- MAP MESH BACKGROUND ---- */
+.map-mesh {
+  background-color: #e8f0e4;
+  background-image:
+    linear-gradient(rgba(0,76,49,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,76,49,0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ---- MAP GRADIENT OVERLAY ---- */
+.map-gradient-overlay {
+  background: linear-gradient(to bottom,
+    rgba(252,249,248,0) 40%,
+    rgba(252,249,248,0.7) 70%,
+    rgba(252,249,248,0.98) 100%
+  );
+}
+
+/* ---- PULSE ANIMATION ---- */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(0,76,49,0.4); }
+  70% { box-shadow: 0 0 0 12px rgba(0,76,49,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,76,49,0); }
+}
+.pulse { animation: pulse-ring 2s infinite; }
+
+/* ---- ROUTE DASH ANIMATION ---- */
+@keyframes dashMove {
+  from { stroke-dashoffset: 300; }
+  to { stroke-dashoffset: 0; }
+}
+.route-dash {
+  stroke-dasharray: 14 8;
+  animation: dashMove 2.5s linear infinite;
+}
+
+/* ---- GLASS CARD ---- */
+.glass-card {
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ---- DRAG HANDLE ---- */
+.drag-handle {
+  width: 40px; height: 4px;
+  background: #ddd;
+  border-radius: 99px;
+  margin: 0 auto 8px;
+}
+
+/* ---- TERMINAL WINDOW ---- */
+.terminal-window {
+  background: #0f1117;
+  border-color: #1e2130;
+  color: #4ade80;
+}
+.terminal-log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+
+/* ---- ADMIN CARD ---- */
+.admin-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* ---- CHART BARS ---- */
+.bar-chart-bar {
+  flex: 1;
+  background: linear-gradient(to top, #004c31, #00a86b);
+  border-radius: 6px 6px 0 0;
+  min-width: 0;
+  transition: height 0.5s ease;
+}
+
+/* ---- SIDEBAR NAV ACTIVE ---- */
+.admin-nav-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.15s;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+}
+.admin-nav-btn:hover { background: #f3f4f6; color: #111; }
+.admin-nav-btn.active { background: #f0fdf4; color: #004c31; font-weight: 700; }
+
+/* ---- STATUS BADGE ---- */
+.badge-success { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.badge-warn { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.badge-error { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+.badge-info { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+
+/* ---- FLOATING ACTION BUBBLE ---- */
+@keyframes float-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.float-bob { animation: float-bob 3s ease-in-out infinite; }
+
+/* ---- SWIPE CARD ENTRY ---- */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-up { animation: slideUp 0.35s ease forwards; }
+
+/* ---- SHIMMER LOADER ---- */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+/* ---- RANGE SLIDER ACCENT ---- */
+input[type="range"] { accent-color: #004c31; }
+
+/* ---- MATERIAL ICON SIZE HELPERS ---- */
+.icon-sm { font-size: 16px !important; }
+.icon-md { font-size: 20px !important; }
+.icon-lg { font-size: 28px !important; }
+
+/* ---- PASSENGER CHASSIS GLOW ---- */
+.passenger-chassis { box-shadow: 0 0 0 2px #2d2d4e, 0 40px 80px rgba(0,76,49,0.3), inset 0 0 0 1px rgba(255,255,255,0.06); }
+
+/* ---- DRIVER CHASSIS GLOW ---- */
+.driver-chassis { box-shadow: 0 0 0 2px #2d2d4e, 0 40px 80px rgba(0,88,187,0.3), inset 0 0 0 1px rgba(255,255,255,0.06); }
+
+/* ---- SWITCH TOGGLE ---- */
+.toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 44px; height: 24px;
+  border-radius: 99px;
+  background: #d1d5db;
+  padding: 2px;
+  cursor: pointer;
+  transition: background 0.25s;
+  border: none;
+  position: relative;
+}
+.toggle-track.active { background: #004c31; }
+.toggle-knob {
+  width: 20px; height: 20px;
+  border-radius: 99px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.25s;
+  display: block;
+}
+.toggle-track.active .toggle-knob { transform: translateX(20px); }
+
+/* ---- MINI MAP PULSE ---- */
+@keyframes car-ping {
+  0% { transform: scale(1); opacity: 1; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
+}
+.car-ping { animation: car-ping 1.5s ease-out infinite; }
+
+/* ---- RIDE TYPE CARD HOVER ---- */
+.ride-type-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-1px); }
+.ride-type-card { transition: all 0.2s ease; }
+
+/* ---- WALLET CARD GRADIENT ---- */
+.wallet-card {
+  background: linear-gradient(135deg, #004c31 0%, #0058bb 100%);
+  border-radius: 20px;
+  color: #fff;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.wallet-card::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+}
+.wallet-card::after {
+  content: '';
+  position: absolute;
+  bottom: -30px; left: -20px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+}
+
+/* ---- NOTIFICATION BADGE DOT ---- */
+.notif-dot {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 1.5px solid #fff;
+}
+
+/* ---- PROFILE AVATAR RING ---- */
+.avatar-ring {
+  border: 3px solid #004c31;
+  padding: 2px;
+  border-radius: 50%;
+}
+
+/* ---- TABLE ROW HOVER ---- */
+tbody tr:hover { background: #f9fafb; }
+tbody tr { transition: background 0.15s; }
+
+/* ---- STAR RATING ---- */
+.star-filled { color: #f59e0b; }
+.star-empty { color: #d1d5db; }
+
+/* ---- PROMO CARD ---- */
+.promo-card {
+  background: linear-gradient(135deg, #004c31, #006644);
+  border-radius: 16px;
+  padding: 16px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---- GENDER FILTER TAG ---- */
+.gender-tag-male { background: #dbeafe; color: #1d4ed8; }
+.gender-tag-female { background: #fae8ff; color: #7e22ce; }

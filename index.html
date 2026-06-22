@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShareRide Pakistan – AI-Powered Ride-Hailing & Smart Pooling Platform</title>
+    <meta name="description" content="ShareRide Pakistan – complete simulation of an AI-powered ride-hailing, smart gender-based pooling, and multi-mode transport platform for Pakistan.">
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#004c31",
+                        "primary-container": "#006644",
+                        "on-primary": "#ffffff",
+                        "on-primary-container": "#8ee1b6",
+                        secondary: "#0058bb",
+                        "secondary-container": "#1471e6",
+                        "on-secondary": "#ffffff",
+                        tertiary: "#70008b",
+                        background: "#fcf9f8",
+                        "on-background": "#1c1b1b",
+                        surface: "#fcf9f8",
+                        "surface-container": "#f0edec",
+                        "surface-container-high": "#ebe7e7",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f5f2f2",
+                        "surface-dim": "#dcd9d9",
+                        outline: "#6f7a72",
+                        "outline-variant": "#bec9c0",
+                        error: "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#3f4943"
+                    },
+                    spacing: {
+                        xs: "4px", unit: "4px",
+                        "container-margin": "16px",
+                        sm: "8px", xl: "32px",
+                        md: "16px", lg: "24px",
+                        "touch-target": "48px"
+                    },
+                    fontFamily: { body: ["Inter","sans-serif"] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col antialiased">
+
+<!-- ═══════════════════════════════════════════════════
+     TOP DASHBOARD HEADER
+════════════════════════════════════════════════════ -->
+<header class="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center z-50 shadow-sm flex-shrink-0">
+    <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-[#004c31] rounded-xl flex items-center justify-center text-white shadow-md">
+            <span class="material-symbols-outlined fill-icon text-[22px]">local_taxi</span>
+        </div>
+        <div>
+            <h1 class="text-base font-black text-[#004c31] leading-tight">ShareRide Pakistan</h1>
+            <p class="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">AI Ride-Hailing & Smart Pooling</p>
+        </div>
+    </div>
+
+    <!-- Tab Nav -->
+    <div class="bg-gray-100 p-1 rounded-xl flex border border-gray-200 gap-1">
+        <button id="tab-playground" class="px-4 py-2 text-xs font-bold rounded-lg bg-white text-[#004c31] shadow-sm flex items-center gap-1.5 transition-all">
+            <span class="material-symbols-outlined text-[16px]">smartphone</span> App Simulator
+        </button>
+        <button id="tab-admin" class="px-4 py-2 text-xs font-semibold rounded-lg text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition-all">
+            <span class="material-symbols-outlined text-[16px]">monitoring</span> Super Admin
+        </button>
+        <button id="tab-ops" class="px-4 py-2 text-xs font-semibold rounded-lg text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition-all">
+            <span class="material-symbols-outlined text-[16px]">hub</span> Operations
+        </button>
+    </div>
+
+    <div class="flex items-center gap-4">
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+            <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            AI Engine Live
+        </span>
+        <div class="text-xs text-gray-500">
+            PKT <span id="current-time" class="font-bold text-gray-800">19:00</span>
+        </div>
+        <div class="w-8 h-8 bg-[#004c31] rounded-full flex items-center justify-center text-white text-xs font-bold">SA</div>
+    </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════
+     VIEW 1 – APP SIMULATOR PLAYGROUND
+════════════════════════════════════════════════════ -->
+<div id="view-playground" class="flex-1 flex overflow-hidden">
+
+    <!-- ═══ LEFT: PASSENGER APP PHONE ═══ -->
+    <div class="w-[430px] flex items-start justify-center border-r border-gray-200 bg-gradient-to-b from-gray-50 to-gray-100 p-6 overflow-y-auto flex-shrink-0 gap-2 flex-col">
+        <div class="text-center w-full mb-1">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-[#004c31]/10 text-[#004c31] rounded-full text-[10px] font-bold uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[12px]">person</span> Passenger App
+            </span>
+        </div>
+        <div class="phone-chassis passenger-chassis mx-auto">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+
+                <!-- ======== SCREEN P1: HOME ======== -->
+                <div id="p-screen-home" class="screen flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface/90 backdrop-blur-md border-b border-outline-variant/20 flex justify-between items-center px-4 h-14">
+                        <div class="flex items-center gap-2">
+                            <button id="p-btn-open-drawer" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container">
+                                <span class="material-symbols-outlined text-primary icon-sm">menu</span>
+                            </button>
+                            <span class="font-black text-primary text-sm">ShareRide</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button class="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container">
+                                <span class="material-symbols-outlined text-gray-500 icon-sm">notifications</span>
+                                <span class="notif-dot"></span>
+                            </button>
+                            <div class="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/20">
+                                <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuD4p_TAdpjgbOZFnGl4Z9AkVMVfhF5CtlaMqJo8Tbd-3S5mK5xIcXatL52p4B1FHMCJh5hUCWa6u_y3Ry_oSikNpLYx-V9a4E3c8sTAiILfp8VqPzp7lsJXF4rJZ5UKP8Fn0_QXXrD4xYHMHEfJ9rX6g5lA_B8SkWQFJD8YFzl" alt="avatar" class="w-full h-full object-cover">
+                            </div>
+                        </div>
+                    </header>
+
+                    <!-- Map area -->
+                    <div class="flex-1 relative overflow-hidden bg-surface-dim">
+                        <img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB57cICK8HDxRznsACIhy2Q-hE_eIn-TsihGkQYWQ80NEE-GTNU22udeGMnWWyO5YzoLB9Sg4O1Yaf6uiE1nHXHVG1oR-wIp6rpusN4IOJQMRMkwNrI_KxJuKIRy1IJSjy7geMY5X7l70pWlcTvsH8rxhUMEOyWN8o0NGgLPVianB3Auwole_mfPCgqqbp-MDWOtIkmqghGwRV6uihuUKQ_8dKD0SWjLfgm_nLctqhj1hksl3F3XZInmI7b_ApPNjUpBmbs_Og30V4" alt="Map">
+                        <div class="absolute inset-0 pointer-events-none map-gradient-overlay"></div>
+                        <!-- Location dot -->
+                        <div class="absolute top-[42%] left-[48%] -translate-x-1/2 -translate-y-1/2">
+                            <div class="w-4 h-4 bg-secondary rounded-full border-4 border-white shadow-xl pulse"></div>
+                        </div>
+                        <!-- Greeting pill -->
+                        <div class="absolute top-3 left-3 right-3">
+                            <div class="glass-card rounded-2xl px-4 py-2.5 flex items-center justify-between border border-white/60 shadow-sm">
+                                <div>
+                                    <p class="text-[9px] text-gray-500 font-semibold">Good Evening, Zara 👋</p>
+                                    <p class="text-xs font-bold text-gray-800">Where to today?</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[9px] text-emerald-600 font-bold">Islamabad, PKT</p>
+                                    <p class="text-[9px] text-gray-400">Weather: 28°C ☀️</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Home Bottom Sheet -->
+                    <div class="bg-surface-container-lowest rounded-t-[28px] shadow-[0_-8px_24px_rgba(0,0,0,0.1)] border-t border-outline-variant/20 px-4 pt-3 pb-16 space-y-3">
+                        <div class="drag-handle"></div>
+                        <!-- Search box -->
+                        <div class="relative">
+                            <span class="material-symbols-outlined absolute left-3.5 top-3 text-primary icon-sm">search</span>
+                            <input id="p-home-search" class="w-full h-11 pl-11 pr-4 bg-surface-container border border-outline-variant/30 rounded-2xl font-body text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none shadow-sm" placeholder="Search destination…" type="text">
+                        </div>
+                        <!-- Quick addresses -->
+                        <div class="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+                            <button class="p-quick-address flex items-center gap-1 bg-surface-container-low px-3 py-1.5 rounded-full border border-outline-variant/30 text-[10px] font-semibold flex-shrink-0 hover:bg-gray-100">
+                                <span class="material-symbols-outlined text-secondary icon-sm">home</span> Bahria Ph-7
+                            </button>
+                            <button class="p-quick-address flex items-center gap-1 bg-surface-container-low px-3 py-1.5 rounded-full border border-outline-variant/30 text-[10px] font-semibold flex-shrink-0 hover:bg-gray-100">
+                                <span class="material-symbols-outlined text-secondary icon-sm">work</span> Blue Area
+                            </button>
+                            <button class="p-quick-address flex items-center gap-1 bg-surface-container-low px-3 py-1.5 rounded-full border border-outline-variant/30 text-[10px] font-semibold flex-shrink-0 hover:bg-gray-100">
+                                <span class="material-symbols-outlined text-tertiary icon-sm">school</span> NUST
+                            </button>
+                            <button class="p-quick-address flex items-center gap-1 bg-surface-container-low px-3 py-1.5 rounded-full border border-outline-variant/30 text-[10px] font-semibold flex-shrink-0 hover:bg-gray-100">
+                                <span class="material-symbols-outlined text-gray-500 icon-sm">local_mall</span> Centaurus
+                            </button>
+                        </div>
+                        <!-- Book card -->
+                        <div class="bg-gradient-to-r from-[#004c31] to-[#0058bb] p-4 rounded-2xl flex items-center justify-between cursor-pointer hover:shadow-lg transition-all active:scale-[0.99]" id="p-btn-book-shared">
+                            <div class="flex-1">
+                                <span class="bg-white/20 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">💡 UP TO 75% OFF WITH POOL</span>
+                                <h3 class="font-black text-sm text-white mt-1">Book a Ride</h3>
+                                <p class="text-[10px] text-white/80">Bikes, Autos, Cars & Pooling</p>
+                            </div>
+                            <span class="material-symbols-outlined text-white text-[40px] fill-icon opacity-80">directions_car</span>
+                        </div>
+                        <!-- Promo strip -->
+                        <div class="flex gap-2">
+                            <div class="flex-1 bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-amber-600 icon-sm fill-icon">local_offer</span>
+                                <div>
+                                    <p class="text-[9px] font-bold text-amber-800">PROMO30</p>
+                                    <p class="text-[8px] text-amber-600">30% off first pool</p>
+                                </div>
+                            </div>
+                            <div class="flex-1 bg-purple-50 border border-purple-200 rounded-xl p-2.5 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-purple-600 icon-sm fill-icon">female</span>
+                                <div>
+                                    <p class="text-[9px] font-bold text-purple-800">Ladies First</p>
+                                    <p class="text-[8px] text-purple-600">Safe female pools</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN P2: RIDE OPTIONS & FARE BIDDING ======== -->
+                <div id="p-screen-bid-entry" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center px-4 h-14">
+                        <button class="p-back-btn w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container mr-2">
+                            <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                        </button>
+                        <h1 class="font-black text-primary text-sm">Choose Ride & Set Fare</h1>
+                    </header>
+
+                    <!-- Route mini map -->
+                    <div class="relative h-20 w-full flex-shrink-0 overflow-hidden bg-gray-200">
+                        <img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQg2qN8DnEZyzbfQLD3hgsq9-7-FRyCrKe9aQyouQmr7UvMu8qY2myii0-shd01kdjXtI6KQGrh_3By83G6BgO7hJmrvZG9ja10ELVztYiZbsgVF6FN9zw1pFTD05aE1-tmpQY4JcQeuiQOU-tmf2sZCIg7_sx9_D0MTb22gNkbryrwLyZto5acl3NFEXENLmFxI79AuNHq72DrPCFAQXN1jCKcDMuaLcVTD_hSRBkx1MdQSw5LGb7skNQ2wVFisDF9WJQ3BSbSkg" alt="map">
+                        <div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+                        <div class="absolute bottom-2 left-4 right-4 flex justify-between items-center text-[10px] font-bold text-gray-700 bg-white/95 px-3 py-1.5 rounded-lg shadow border border-gray-100">
+                            <span class="truncate flex items-center gap-1"><span class="material-symbols-outlined text-secondary icon-sm">trip_origin</span> Bahria Phase 7</span>
+                            <span class="material-symbols-outlined text-gray-400 icon-sm">arrow_forward</span>
+                            <span class="truncate flex items-center gap-1"><span class="material-symbols-outlined text-error icon-sm">location_on</span> G-10 Markaz</span>
+                            <span class="text-primary font-black shrink-0 ml-1">12.4 km</span>
+                        </div>
+                    </div>
+
+                    <!-- Ride type list -->
+                    <div class="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 scrollbar-hide">
+                        <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Select Vehicle Type</p>
+
+                        <!-- Bike -->
+                        <div data-type="bike" data-fare="150" class="ride-type-card bg-white p-3 rounded-2xl border-2 border-primary bg-emerald-50/50 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-gray-700 fill-icon">two_wheeler</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Moto (Bike)</h4>
+                                    <p class="text-[9px] text-gray-500">Fast in traffic • 1 seat</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">150 PKR</span>
+                                <span class="text-[9px] text-gray-400">~12 min</span>
+                            </div>
+                        </div>
+                        <!-- Auto Rickshaw -->
+                        <div data-type="auto" data-fare="250" class="ride-type-card bg-white p-3 rounded-2xl border border-gray-200 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-gray-700 fill-icon">electric_rickshaw</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Auto (Rickshaw)</h4>
+                                    <p class="text-[9px] text-gray-500">Budget commuter • 3 seats</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">250 PKR</span>
+                                <span class="text-[9px] text-gray-400">~18 min</span>
+                            </div>
+                        </div>
+                        <!-- Mini -->
+                        <div data-type="mini" data-fare="400" class="ride-type-card bg-white p-3 rounded-2xl border border-gray-200 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-gray-700 fill-icon">directions_car</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Ride Mini</h4>
+                                    <p class="text-[9px] text-gray-500">Affordable hatchback • 4 seats</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">400 PKR</span>
+                                <span class="text-[9px] text-gray-400">~20 min</span>
+                            </div>
+                        </div>
+                        <!-- AC -->
+                        <div data-type="ac" data-fare="550" class="ride-type-card bg-white p-3 rounded-2xl border border-gray-200 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-blue-600 fill-icon">ac_unit</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Ride AC</h4>
+                                    <p class="text-[9px] text-gray-500">Air conditioned • 4 seats</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">550 PKR</span>
+                                <span class="text-[9px] text-gray-400">~22 min</span>
+                            </div>
+                        </div>
+                        <!-- Comfort -->
+                        <div data-type="comfort" data-fare="750" class="ride-type-card bg-white p-3 rounded-2xl border border-gray-200 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-amber-600 fill-icon">star</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Comfort (Sedan)</h4>
+                                    <p class="text-[9px] text-gray-500">Premium sedan • 4 seats</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">750 PKR</span>
+                                <span class="text-[9px] text-gray-400">~20 min</span>
+                            </div>
+                        </div>
+                        <!-- XL -->
+                        <div data-type="xl" data-fare="1100" class="ride-type-card bg-white p-3 rounded-2xl border border-gray-200 flex items-center justify-between cursor-pointer">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center"><span class="material-symbols-outlined text-gray-700 fill-icon">airport_shuttle</span></div>
+                                <div>
+                                    <h4 class="font-black text-xs text-gray-800">Ride XL (Van/SUV)</h4>
+                                    <p class="text-[9px] text-gray-500">Large groups • 7 seats</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-black text-sm text-primary block">1,100 PKR</span>
+                                <span class="text-[9px] text-gray-400">~25 min</span>
+                            </div>
+                        </div>
+
+                        <!-- Pool toggle + Bid -->
+                        <div class="bg-surface-container-low border border-outline-variant/30 p-4 rounded-2xl space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-[10px] font-black text-gray-700">Enable Smart Pool</p>
+                                    <p class="text-[9px] text-gray-400">Save up to 75% by sharing</p>
+                                </div>
+                                <button id="p-pool-toggle" class="toggle-track active"><span class="toggle-knob"></span></button>
+                            </div>
+                            <div class="border-t border-gray-200 pt-3">
+                                <p class="text-[9px] font-bold text-gray-500 uppercase text-center mb-2">Your Fare Offer (PKR)</p>
+                                <div class="flex items-center justify-between gap-3">
+                                    <button id="p-bid-minus" class="w-10 h-10 bg-white border border-gray-300 rounded-xl font-bold text-base flex items-center justify-center active:scale-90">-</button>
+                                    <input id="p-bid-input" type="number" class="flex-1 text-center border-none bg-transparent font-black text-2xl text-[#004c31] focus:ring-0 p-0" value="150" step="50">
+                                    <button id="p-bid-plus" class="w-10 h-10 bg-white border border-gray-300 rounded-xl font-bold text-base flex items-center justify-center active:scale-90">+</button>
+                                </div>
+                                <p class="text-[9px] text-center text-gray-400 mt-1">Recommended: <span id="p-rec-fare-label" class="text-primary font-bold">150 PKR</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <footer class="p-4 border-t border-outline-variant/20 bg-surface flex-shrink-0">
+                        <button id="p-btn-find-driver" class="w-full h-12 bg-[#004c31] hover:bg-[#006644] text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">
+                            <span class="material-symbols-outlined icon-sm">search</span> Find Driver
+                        </button>
+                    </footer>
+                </div>
+
+                <!-- ======== SCREEN P3: BIDDING / MATCHING ======== -->
+                <div id="p-screen-bid-loading" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center justify-between px-4 h-14">
+                        <div class="flex items-center gap-2">
+                            <button class="p-back-btn w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container">
+                                <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                            </button>
+                            <span class="font-black text-primary text-sm">Matching Drivers…</span>
+                        </div>
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                    </header>
+                    <div class="flex-1 relative overflow-hidden flex flex-col">
+                        <img class="absolute inset-0 w-full h-full object-cover blur-sm opacity-30" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQg2qN8DnEZyzbfQLD3hgsq9-7-FRyCrKe9aQyouQmr7UvMu8qY2myii0-shd01kdjXtI6KQGrh_3By83G6BgO7hJmrvZG9ja10ELVztYiZbsgVF6FN9zw1pFTD05aE1-tmpQY4JcQeuiQOU-tmf2sZCIg7_sx9_D0MTb22gNkbryrwLyZto5acl3NFEXENLmFxI79AuNHq72DrPCFAQXN1jCKcDMuaLcVTD_hSRBkx1MdQSw5LGb7skNQ2wVFisDF9WJQ3BSbSkg" alt="map">
+                        <div class="z-10 flex-1 overflow-y-auto px-4 py-4 space-y-3 scrollbar-hide">
+                            <div class="text-center py-3">
+                                <div class="flex justify-center mb-2">
+                                    <div class="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                                <h3 class="font-bold text-xs text-gray-700 animate-pulse">AI Matching Engine active…</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">Your Offer: <span id="p-offered-fare-label" class="font-bold text-[#004c31]">150 PKR</span></p>
+                            </div>
+                            <div class="space-y-3" id="p-bids-queue-container"></div>
+                        </div>
+                    </div>
+                    <footer class="p-4 border-t border-outline-variant/20 bg-surface flex-shrink-0">
+                        <button id="p-btn-cancel-request" class="w-full h-11 border-2 border-gray-300 hover:bg-gray-50 text-gray-600 rounded-2xl font-bold text-xs transition-all">Cancel Request</button>
+                    </footer>
+                </div>
+
+                <!-- ======== SCREEN P4: WALK TO HUB ======== -->
+                <div id="p-screen-nav" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex justify-between items-center px-4 h-14">
+                        <span class="font-black text-primary text-sm">Walk to Pickup Hub</span>
+                        <button class="btn-sos-trigger flex items-center gap-1 bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-bold">
+                            <span class="material-symbols-outlined text-[12px]">sos</span> SOS
+                        </button>
+                    </header>
+                    <div class="flex-grow relative overflow-hidden bg-surface-container-low map-mesh">
+                        <svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                            <path class="route-dash opacity-30" d="M130,520 Q220,460 200,350 T310,240" fill="none" stroke="#004c31" stroke-linecap="round" stroke-width="6"></path>
+                            <path d="M130,520 Q220,460 200,350 T310,240" fill="none" stroke="#004c31" stroke-linecap="round" stroke-width="3" opacity="0.5"></path>
+                        </svg>
+                        <!-- User dot -->
+                        <div class="absolute left-[130px] top-[520px] -translate-x-1/2 -translate-y-1/2">
+                            <div class="w-5 h-5 bg-secondary rounded-full border-4 border-white shadow-xl pulse"></div>
+                        </div>
+                        <!-- Hub marker -->
+                        <div class="absolute left-[310px] top-[240px] -translate-x-1/2 -translate-y-1/2">
+                            <div class="flex flex-col items-center">
+                                <div class="bg-primary text-white px-2.5 py-0.5 rounded-full text-[9px] font-black shadow-xl flex items-center gap-1 mb-1.5">
+                                    <span class="material-symbols-outlined text-[10px]">pin_drop</span> Hub 42
+                                </div>
+                                <div class="w-8 h-8 bg-primary rounded-full border-4 border-white shadow-2xl flex items-center justify-center">
+                                    <span class="material-symbols-outlined text-white text-[16px]">directions_walk</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Timer card -->
+                        <div class="absolute top-4 left-4 right-4">
+                            <div class="glass-card p-3 rounded-2xl border border-white/60 shadow-lg flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-9 h-9 bg-primary-container rounded-xl flex items-center justify-center text-primary">
+                                        <span class="material-symbols-outlined icon-sm">timer</span>
+                                    </div>
+                                    <div>
+                                        <p class="text-[9px] font-bold text-gray-500 uppercase">Walking time</p>
+                                        <h2 class="font-black text-sm text-primary">Be at hub in <span id="p-walk-timer" class="font-mono">04:30</span></h2>
+                                    </div>
+                                </div>
+                                <span class="badge-success">ON TIME</span>
+                            </div>
+                        </div>
+                        <!-- Hub card -->
+                        <div class="absolute bottom-4 left-4 right-4">
+                            <div class="glass-card rounded-2xl overflow-hidden border border-white/60 shadow-lg flex h-24">
+                                <div class="w-1/3 relative bg-gray-300">
+                                    <img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCF6rmqkCrDOUDOiixIuBi6RF7WZPhoD9SHGTBP-xnBZOG8jRhYUj2uET7ok9aYnwfBT-ukqXprwM3SeLSkx5bAXUG5P8fNCExfLPvRQUoPSOL4IgsVN3gsuLifjrbkQvq43_C8Q92I46W2FLuLrA3c4J14kzpanx7At20JVhB-qU2SBADGxIX6fU9Njdt4Gru-YZZ7LH0xhqnmmG1iEnBx4WAznbaUUZaY5nRQjPeQdgXjQTScCfNQnmVdO-1CV-KW_9Cqagc1yKg" alt="hub">
+                                </div>
+                                <div class="w-2/3 p-3 flex flex-col justify-center">
+                                    <div class="flex items-center gap-1 text-[#004c31] mb-0.5">
+                                        <span class="material-symbols-outlined text-[12px] fill-icon">verified</span>
+                                        <span class="text-[9px] font-black uppercase">Smart Pickup Hub</span>
+                                    </div>
+                                    <h3 class="font-bold text-xs mb-0.5">I-8/3 Markaz Green Tower</h3>
+                                    <p class="text-[9px] text-gray-500 leading-tight">Well-lit, CCTV, security guard present</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <footer class="bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.08)] pb-4 border-t border-outline-variant/20 p-4">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary/20 shrink-0">
+                                <img id="p-active-driver-img" class="w-full h-full object-cover" src="" alt="drv">
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h4 id="p-active-driver-name" class="font-black text-xs truncate">Driver</h4>
+                                <p id="p-active-driver-vehicle" class="text-[9px] text-gray-500 truncate">Vehicle</p>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span id="p-active-driver-plate" class="font-black text-primary text-xs uppercase">PLATE</span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button class="h-9 bg-surface-container-high border border-gray-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1">
+                                <span class="material-symbols-outlined text-[13px]">call</span> Call Driver
+                            </button>
+                            <button class="h-9 bg-surface-container-high border border-gray-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1">
+                                <span class="material-symbols-outlined text-[13px]">chat</span> Chat
+                            </button>
+                        </div>
+                    </footer>
+                </div>
+
+                <!-- ======== SCREEN P5: LIVE JOURNEY TRACKING ======== -->
+                <div id="p-screen-tracking" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex justify-between items-center px-4 h-14">
+                        <span class="font-black text-primary text-sm">Live Journey</span>
+                        <button class="btn-sos-trigger flex items-center gap-1 bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-bold animate-pulse">
+                            <span class="material-symbols-outlined text-[12px]">sos</span> SOS
+                        </button>
+                    </header>
+                    <div class="flex-grow relative overflow-hidden bg-surface-container">
+                        <img class="absolute inset-0 w-full h-full object-cover opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIB6tiV25EEF30I3WpKPZzQjYqresT4vFORG0lcrzR33KwOmBWAsxB3AZ4YZQWy2JuYjJ_S6Y18GGCJy40rQ0pBjNuM11PsQBYJW5CSbzGQCN4laVB5LhvOJokLDOihLAZwWWWhFPiqqpgsWbejKLukLeJx4tiMeNlyyNwZB4QX8W-0lxzRHD_Xpk7lReo54Vud55Q8ISUB4ESsZjrdRXMqOkjlD0d4E7ORSb4e9__gQtKSUGql7yLoDrNWjVELePLY27QLnj_VFY" alt="map">
+                        <div id="p-map-car-marker" class="absolute top-[45%] left-[48%] -translate-x-1/2 -translate-y-1/2 transition-all duration-500">
+                            <div class="relative">
+                                <div class="absolute inset-0 bg-primary/20 rounded-full car-ping"></div>
+                                <div class="w-8 h-8 bg-primary rounded-full border-4 border-white shadow-xl flex items-center justify-center text-white">
+                                    <span class="material-symbols-outlined text-[16px] fill-icon">navigation</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="p-route-deviation-banner" class="hidden absolute top-4 left-4 right-4 z-30">
+                            <div class="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-xl shadow-lg flex items-center gap-2 animate-pulse text-xs">
+                                <span class="material-symbols-outlined text-amber-600 icon-sm">warning</span>
+                                <div><h4 class="font-bold text-[11px]">Route Deviation Detected</h4><p class="text-[9px]">Platform telemetry monitoring route corridor.</p></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container-lowest border-t border-outline-variant/20 px-4 pt-3 pb-4 space-y-3 flex-shrink-0">
+                        <div class="drag-handle"></div>
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h3 class="font-black text-sm">Arriving in <span id="p-arrival-mins">8</span> mins</h3>
+                                <p class="text-[10px] text-gray-500">Heading to G-10 Markaz Drop Hub</p>
+                            </div>
+                            <span class="badge-success">En Route</span>
+                        </div>
+                        <!-- Seat occupancy -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[9px] font-bold text-gray-500 uppercase">Live Seat Occupancy</span>
+                                <span id="p-seat-gender-tag" class="flex items-center gap-0.5 px-2 py-0.5 bg-blue-50 text-[#0058bb] rounded-full text-[9px] font-bold">
+                                    <span class="material-symbols-outlined text-[10px]">male</span> Male Pool
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-1.5 bg-surface-container-low p-2.5 rounded-2xl border border-outline-variant/20">
+                                <div class="flex flex-col items-center gap-0.5 opacity-60">
+                                    <span class="material-symbols-outlined text-outline text-[22px] fill-icon">airline_seat_recline_normal</span>
+                                    <span class="text-[7px] font-bold text-outline">Driver</span>
+                                </div>
+                                <div class="flex flex-col items-center gap-0.5">
+                                    <span id="p-seat-front-icon" class="material-symbols-outlined text-primary text-[22px] fill-icon">person</span>
+                                    <span id="p-seat-front-label" class="text-[7px] font-bold text-gray-500">Passenger</span>
+                                </div>
+                                <div class="flex flex-col items-center gap-0.5 text-primary">
+                                    <span class="material-symbols-outlined text-[22px] fill-icon">person</span>
+                                    <span class="text-[7px] font-bold">You</span>
+                                </div>
+                                <div id="p-seat-backright-container" class="flex flex-col items-center gap-0.5">
+                                    <span id="p-seat-backright-icon" class="material-symbols-outlined text-primary text-[22px] fill-icon">person</span>
+                                    <span id="p-seat-backright-label" class="text-[7px] font-bold text-gray-500">Passenger</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button class="h-9 bg-primary/10 text-primary rounded-xl text-[10px] font-bold flex items-center justify-center gap-1">
+                                <span class="material-symbols-outlined text-[13px]">share_location</span> Share Location
+                            </button>
+                            <button class="h-9 bg-surface-container border border-gray-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1">
+                                <span class="material-symbols-outlined text-[13px]">chat</span> Chat Driver
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN P6: RIDE INVOICE ======== -->
+                <div id="p-screen-invoice" class="screen hidden flex flex-col h-full bg-background text-on-surface p-5 justify-center">
+                    <div class="bg-white rounded-3xl p-5 border border-gray-100 shadow-2xl space-y-5">
+                        <div class="text-center">
+                            <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <span class="material-symbols-outlined text-emerald-700 fill-icon" style="font-size:36px">task_alt</span>
+                            </div>
+                            <h3 class="font-black text-base text-primary">Ride Completed! 🎉</h3>
+                            <p class="text-[10px] text-gray-400 mt-0.5">Thank you for riding with ShareRide Pakistan</p>
+                        </div>
+                        <div class="border-t border-b border-gray-100 py-4 space-y-2.5 text-xs">
+                            <div class="flex justify-between"><span class="text-gray-500">Route</span><span class="font-bold">Bahria Ph-7 → G-10</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Distance</span><span class="font-bold">12.4 km</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Ride Type</span><span id="p-invoice-type" class="font-bold">Bike</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Pool Seats Shared</span><span id="p-invoice-seats" class="font-bold">3 / 4</span></div>
+                            <div class="flex justify-between pt-1.5 border-t border-dashed border-gray-200 mt-1">
+                                <span class="font-black text-gray-700">Your Share</span>
+                                <span id="p-invoice-share" class="font-black text-xl text-emerald-700">400 PKR</span>
+                            </div>
+                            <div class="flex justify-between text-[10px]">
+                                <span class="text-gray-400">Payment</span>
+                                <span class="font-semibold text-gray-600">Digital Wallet ✅</span>
+                            </div>
+                        </div>
+                        <!-- Rating -->
+                        <div class="text-center space-y-2">
+                            <p class="text-[10px] font-bold text-gray-500 uppercase">Rate your driver</p>
+                            <div class="flex justify-center gap-2" id="p-star-rating">
+                                <span class="star-item material-symbols-outlined text-[28px] star-filled fill-icon cursor-pointer" data-val="1">star</span>
+                                <span class="star-item material-symbols-outlined text-[28px] star-filled fill-icon cursor-pointer" data-val="2">star</span>
+                                <span class="star-item material-symbols-outlined text-[28px] star-filled fill-icon cursor-pointer" data-val="3">star</span>
+                                <span class="star-item material-symbols-outlined text-[28px] star-filled fill-icon cursor-pointer" data-val="4">star</span>
+                                <span class="star-item material-symbols-outlined text-[28px] star-filled fill-icon cursor-pointer" data-val="5">star</span>
+                            </div>
+                        </div>
+                        <button id="p-btn-complete-confirm" class="w-full py-3 bg-primary text-white rounded-2xl font-black text-sm transition-all hover:bg-[#006644] shadow-lg">Back to Home</button>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN P7: WALLET ======== -->
+                <div id="p-screen-wallet" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center px-4 h-14">
+                        <button class="p-nav-home-btn w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container mr-2">
+                            <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                        </button>
+                        <h1 class="font-black text-primary text-sm">ShareRide Wallet</h1>
+                    </header>
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                        <div class="wallet-card">
+                            <p class="text-[9px] text-white/70 font-bold uppercase tracking-wider mb-1">Available Balance</p>
+                            <h2 class="text-3xl font-black text-white">PKR 2,450</h2>
+                            <p class="text-[10px] text-white/60 mt-1">Zara Ahmed • SR-4829-ISB</p>
+                            <div class="flex gap-3 mt-5">
+                                <button class="flex-1 bg-white/15 hover:bg-white/25 text-white rounded-xl py-2 text-[10px] font-bold flex items-center justify-center gap-1 transition-all">
+                                    <span class="material-symbols-outlined text-[14px]">add</span> Add Funds
+                                </button>
+                                <button class="flex-1 bg-white/15 hover:bg-white/25 text-white rounded-xl py-2 text-[10px] font-bold flex items-center justify-center gap-1 transition-all">
+                                    <span class="material-symbols-outlined text-[14px]">send</span> Transfer
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Payment methods -->
+                        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-gray-100">
+                                <p class="text-[10px] font-black text-gray-700 uppercase">Payment Methods</p>
+                            </div>
+                            <div class="p-3 space-y-2">
+                                <div class="flex items-center justify-between p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-primary icon-sm fill-icon">account_balance_wallet</span>
+                                        <div><p class="text-xs font-bold text-primary">ShareRide Wallet</p><p class="text-[9px] text-gray-400">PKR 2,450</p></div>
+                                    </div>
+                                    <span class="badge-success">Default</span>
+                                </div>
+                                <div class="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-200">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-orange-600 icon-sm fill-icon">payments</span>
+                                        <div><p class="text-xs font-bold text-gray-700">JazzCash</p><p class="text-[9px] text-gray-400">0300-XXXXXXX</p></div>
+                                    </div>
+                                    <span class="badge-info">Linked</span>
+                                </div>
+                                <div class="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-200">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-blue-600 icon-sm fill-icon">credit_card</span>
+                                        <div><p class="text-xs font-bold text-gray-700">EasyPaisa</p><p class="text-[9px] text-gray-400">0321-XXXXXXX</p></div>
+                                    </div>
+                                    <span class="badge-info">Linked</span>
+                                </div>
+                                <button class="w-full h-9 border-2 border-dashed border-gray-300 rounded-xl text-[10px] font-bold text-gray-400 hover:border-primary hover:text-primary transition-all">+ Add Payment Method</button>
+                            </div>
+                        </div>
+                        <!-- Recent transactions -->
+                        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-gray-100">
+                                <p class="text-[10px] font-black text-gray-700 uppercase">Recent Transactions</p>
+                            </div>
+                            <div class="divide-y divide-gray-50">
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-red-500 text-[14px]">two_wheeler</span></div>
+                                        <div><p class="text-xs font-bold">Moto Ride</p><p class="text-[9px] text-gray-400">Jun 22 • 7:15 PM</p></div>
+                                    </div>
+                                    <span class="text-xs font-black text-red-600">-150 PKR</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-emerald-500 text-[14px]">add</span></div>
+                                        <div><p class="text-xs font-bold">Wallet Top-Up</p><p class="text-[9px] text-gray-400">Jun 22 • 3:00 PM</p></div>
+                                    </div>
+                                    <span class="text-xs font-black text-emerald-600">+1,000 PKR</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-blue-500 text-[14px]">groups</span></div>
+                                        <div><p class="text-xs font-bold">Pool Ride – AC Car</p><p class="text-[9px] text-gray-400">Jun 21 • 8:30 AM</p></div>
+                                    </div>
+                                    <span class="text-xs font-black text-red-600">-183 PKR</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-purple-500 text-[14px]">local_offer</span></div>
+                                        <div><p class="text-xs font-bold">Promo Cashback</p><p class="text-[9px] text-gray-400">Jun 20 • 9:00 AM</p></div>
+                                    </div>
+                                    <span class="text-xs font-black text-emerald-600">+50 PKR</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN P8: RIDE HISTORY ======== -->
+                <div id="p-screen-history" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center px-4 h-14">
+                        <button class="p-nav-home-btn w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container mr-2">
+                            <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                        </button>
+                        <h1 class="font-black text-primary text-sm">Ride History</h1>
+                    </header>
+                    <div class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
+                        <!-- Filter chips -->
+                        <div class="flex gap-2 overflow-x-auto scrollbar-hide">
+                            <button class="shrink-0 px-3 py-1.5 bg-primary text-white rounded-full text-[10px] font-bold">All</button>
+                            <button class="shrink-0 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-full text-[10px] font-semibold">Pool</button>
+                            <button class="shrink-0 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-full text-[10px] font-semibold">Private</button>
+                            <button class="shrink-0 px-3 py-1.5 bg-white border border-gray-200 text-gray-600 rounded-full text-[10px] font-semibold">Bike</button>
+                        </div>
+                        <!-- History cards -->
+                        <div id="p-history-container" class="space-y-3">
+                            <div class="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 shadow-sm">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-[9px] text-gray-400">Jun 22, 2026 • 7:15 PM</p>
+                                        <h4 class="font-black text-xs text-gray-800 mt-0.5">Bahria Ph-7 → G-10</h4>
+                                    </div>
+                                    <span class="badge-success">Completed</span>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-500">
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">two_wheeler</span> Moto (Bike)</span>
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">person</span> Private</span>
+                                    <span class="font-black text-gray-800">150 PKR</span>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 shadow-sm">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-[9px] text-gray-400">Jun 21, 2026 • 8:30 AM</p>
+                                        <h4 class="font-black text-xs text-gray-800 mt-0.5">Gulberg → Blue Area</h4>
+                                    </div>
+                                    <span class="badge-success">Completed</span>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-500">
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">ac_unit</span> Ride AC</span>
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">groups</span> Pool (3)</span>
+                                    <span class="font-black text-gray-800">183 PKR</span>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 shadow-sm">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-[9px] text-gray-400">Jun 20, 2026 • 9:10 AM</p>
+                                        <h4 class="font-black text-xs text-gray-800 mt-0.5">F-10 → NUST H-12</h4>
+                                    </div>
+                                    <span class="badge-success">Completed</span>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-500">
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">directions_car</span> Ride Mini</span>
+                                    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">groups</span> Pool (4)</span>
+                                    <span class="font-black text-gray-800">95 PKR</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN P9: PROFILE ======== -->
+                <div id="p-screen-profile" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center px-4 h-14">
+                        <button class="p-nav-home-btn w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container mr-2">
+                            <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                        </button>
+                        <h1 class="font-black text-primary text-sm">My Profile</h1>
+                    </header>
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                        <!-- Avatar block -->
+                        <div class="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col items-center text-center shadow-sm">
+                            <div class="avatar-ring mb-3">
+                                <div class="w-16 h-16 rounded-full overflow-hidden">
+                                    <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuD4p_TAdpjgbOZFnGl4Z9AkVMVfhF5CtlaMqJo8Tbd-3S5mK5xIcXatL52p4B1FHMCJh5hUCWa6u_y3Ry_oSikNpLYx-V9a4E3c8sTAiILfp8VqPzp7lsJXF4rJZ5UKP8Fn0_QXXrD4xYHMHEfJ9rX6g5lA_B8SkWQFJD8YFzl" alt="avatar" class="w-full h-full object-cover">
+                                </div>
+                            </div>
+                            <h2 class="font-black text-sm text-gray-800">Zara Ahmed</h2>
+                            <p class="text-[10px] text-gray-400">+92 300-1234567</p>
+                            <div class="flex items-center gap-1 mt-1 text-amber-500">
+                                <span class="material-symbols-outlined text-[14px] fill-icon">star</span>
+                                <span class="font-bold text-xs text-gray-700">4.9</span>
+                                <span class="text-[9px] text-gray-400">(48 rides)</span>
+                            </div>
+                            <span class="badge-success mt-2">Verified Passenger</span>
+                        </div>
+                        <!-- Settings list -->
+                        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                            <div class="divide-y divide-gray-50">
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-3"><span class="material-symbols-outlined text-primary icon-sm">person</span><span class="text-xs font-semibold">Personal Info</span></div>
+                                    <span class="material-symbols-outlined text-gray-400 icon-sm">chevron_right</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-3"><span class="material-symbols-outlined text-blue-500 icon-sm">shield</span><span class="text-xs font-semibold">Safety & Privacy</span></div>
+                                    <span class="material-symbols-outlined text-gray-400 icon-sm">chevron_right</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-3"><span class="material-symbols-outlined text-purple-500 icon-sm">notifications</span><span class="text-xs font-semibold">Notifications</span></div>
+                                    <span class="material-symbols-outlined text-gray-400 icon-sm">chevron_right</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-3"><span class="material-symbols-outlined text-amber-500 icon-sm">language</span><span class="text-xs font-semibold">Language (Urdu/English)</span></div>
+                                    <span class="material-symbols-outlined text-gray-400 icon-sm">chevron_right</span>
+                                </div>
+                                <div class="flex items-center justify-between px-4 py-3">
+                                    <div class="flex items-center gap-3"><span class="material-symbols-outlined text-red-500 icon-sm">logout</span><span class="text-xs font-semibold text-red-600">Sign Out</span></div>
+                                    <span class="material-symbols-outlined text-gray-400 icon-sm">chevron_right</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Referral -->
+                        <div class="promo-card">
+                            <p class="text-[9px] text-white/70 font-bold uppercase mb-1">Referral Code</p>
+                            <h3 class="font-black text-lg text-white">ZARA2026</h3>
+                            <p class="text-[10px] text-white/70 mt-1">Earn PKR 100 for each friend who signs up</p>
+                            <button class="mt-3 bg-white/20 text-white px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">share</span> Share Code
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SOS MODAL ======== -->
+                <div id="global-sos-modal" class="hidden absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-6">
+                    <div class="bg-white rounded-3xl p-6 text-center space-y-4 max-w-xs shadow-2xl">
+                        <div class="w-16 h-16 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto animate-pulse">
+                            <span class="material-symbols-outlined fill-icon" style="font-size:32px">sos</span>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-base text-red-600">Emergency SOS Active</h3>
+                            <p class="text-[11px] text-gray-500 mt-2">Vehicle GPS coordinates, plate & driver details shared with Islamabad Police Emergency Response.</p>
+                        </div>
+                        <button id="btn-cancel-global-sos" class="w-full py-2.5 border-2 border-gray-300 rounded-2xl text-xs font-bold text-gray-500 hover:bg-gray-50">Cancel SOS Alert</button>
+                    </div>
+                </div>
+
+                <!-- ======== BOTTOM NAV ======== -->
+                <nav id="phone-nav" class="absolute bottom-0 w-full z-40 bg-surface-container-lowest border-t border-outline-variant/20 flex justify-around items-center h-14">
+                    <button id="pnav-home" class="pnav-btn flex flex-col items-center justify-center bg-primary/10 text-primary rounded-full px-3 py-0.5 gap-0.5">
+                        <span class="material-symbols-outlined text-[18px]">home</span>
+                        <span class="text-[7px] font-black">Home</span>
+                    </button>
+                    <button id="pnav-history" class="pnav-btn flex flex-col items-center justify-center text-on-surface-variant p-2 gap-0.5">
+                        <span class="material-symbols-outlined text-[18px]">history</span>
+                        <span class="text-[7px] font-semibold">Activity</span>
+                    </button>
+                    <button id="pnav-wallet" class="pnav-btn flex flex-col items-center justify-center text-on-surface-variant p-2 gap-0.5">
+                        <span class="material-symbols-outlined text-[18px]">account_balance_wallet</span>
+                        <span class="text-[7px] font-semibold">Wallet</span>
+                    </button>
+                    <button id="pnav-profile" class="pnav-btn flex flex-col items-center justify-center text-on-surface-variant p-2 gap-0.5">
+                        <span class="material-symbols-outlined text-[18px]">person</span>
+                        <span class="text-[7px] font-semibold">Profile</span>
+                    </button>
+                </nav>
+
+            </div><!-- end phone-screen -->
+        </div><!-- end phone-chassis -->
+    </div><!-- end passenger column -->
+
+    <!-- ═══ CENTER: SIMULATION CONSOLE ═══ -->
+    <main class="flex-1 bg-gray-50 p-5 flex flex-col gap-4 overflow-y-auto min-w-[300px]">
+        <!-- Header banner -->
+        <div class="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <h2 class="font-black text-sm text-[#004c31] flex items-center gap-2">
+                <span class="material-symbols-outlined icon-md">hub</span>
+                ShareRide Pakistan — Interactive Simulator
+            </h2>
+            <p class="text-[10px] text-gray-400 mt-0.5">Step 1: Approve driver in Admin tab → Step 2: Toggle driver ONLINE → Step 3: Book a ride on passenger app.</p>
+        </div>
+
+        <!-- Terminal -->
+        <div class="flex-1 terminal-window rounded-2xl border p-4 flex flex-col min-h-[200px]">
+            <div class="flex justify-between items-center text-gray-400 font-mono text-[10px] border-b border-gray-800 pb-2 mb-3">
+                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> AI MATCHING ENGINE LOG</span>
+                <button id="btn-clear-terminal" class="hover:text-white transition-colors">Clear</button>
+            </div>
+            <div id="terminal-log" class="flex-grow overflow-y-auto font-mono text-[11px] text-emerald-400 space-y-1 scrollbar-hide">
+                <div class="terminal-log-entry text-gray-600">[SYSTEM] ShareRide AI Engine v2.4 — Ready. Waiting for passenger request…</div>
+            </div>
+        </div>
+
+        <!-- Control panels -->
+        <div class="grid grid-cols-2 gap-3">
+            <!-- Passenger profile sim -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                <h3 class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Passenger Simulator</h3>
+                <div>
+                    <label class="block text-[9px] font-bold text-gray-500 uppercase mb-1.5">Gender Profile</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="p-ctrl-male" class="py-2 bg-blue-50 border-2 border-blue-600 text-blue-700 rounded-xl font-black text-[10px] flex items-center justify-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">male</span> Male
+                        </button>
+                        <button id="p-ctrl-female" class="py-2 border-2 border-gray-200 text-gray-500 rounded-xl font-semibold text-[10px] flex items-center justify-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">female</span> Female
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[9px] font-bold text-gray-500 uppercase mb-1">
+                        <span>Pool Seats Occupied</span>
+                        <span id="seats-ctrl-val" class="text-primary">3 / 4</span>
+                    </div>
+                    <input id="seats-ctrl-slider" type="range" min="1" max="4" value="3" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="bg-gray-50 rounded-xl p-2.5 text-center border border-gray-100">
+                    <p class="text-[9px] text-gray-400 mb-0.5">Your fare share estimate</p>
+                    <p id="fare-share" class="font-black text-lg text-primary">400 PKR</p>
+                </div>
+            </div>
+            <!-- Safety triggers -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                <h3 class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Safety Telemetry</h3>
+                <button id="ctrl-btn-sos" class="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] shadow-sm">
+                    <span class="material-symbols-outlined text-[14px]">sos</span> Trigger Emergency SOS
+                </button>
+                <button id="ctrl-btn-deviation" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] shadow-sm">
+                    <span class="material-symbols-outlined text-[14px]">warning</span> Simulate Route Deviation
+                </button>
+                <button id="ctrl-btn-complete-trip" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] shadow-sm">
+                    <span class="material-symbols-outlined text-[14px]">flag</span> Force Complete Trip
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- ═══ RIGHT: DRIVER APP PHONE ═══ -->
+    <div class="w-[430px] flex items-start justify-center border-l border-gray-200 bg-gradient-to-b from-gray-50 to-gray-100 p-6 overflow-y-auto flex-shrink-0 flex-col gap-2">
+        <div class="text-center w-full mb-1">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-[#0058bb]/10 text-[#0058bb] rounded-full text-[10px] font-bold uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[12px]">drive_eta</span> Driver App
+            </span>
+        </div>
+        <div class="phone-chassis driver-chassis mx-auto">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+
+                <!-- ======== SCREEN D1: DRIVER ONBOARDING / PENDING ======== -->
+                <div id="d-screen-register" class="screen flex flex-col h-full bg-background text-on-surface p-6 justify-center">
+                    <div class="bg-white rounded-3xl p-5 border border-gray-100 shadow-2xl space-y-5 text-center">
+                        <div class="w-14 h-14 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mx-auto">
+                            <span class="material-symbols-outlined fill-icon icon-lg">lock_person</span>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-sm text-secondary">Awaiting Admin Approval</h3>
+                            <p class="text-[10px] text-gray-400 mt-1">Your documents are being verified</p>
+                        </div>
+                        <div class="space-y-2 text-left">
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl flex justify-between items-center text-xs">
+                                <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[14px] text-blue-500">badge</span>CNIC Verification</span>
+                                <span class="badge-warn">Pending</span>
+                            </div>
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl flex justify-between items-center text-xs">
+                                <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[14px] text-blue-500">credit_card</span>Driving License</span>
+                                <span class="badge-warn">Pending</span>
+                            </div>
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl flex justify-between items-center text-xs">
+                                <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[14px] text-blue-500">directions_car</span>Vehicle Registration</span>
+                                <span class="badge-warn">Pending</span>
+                            </div>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-[10px] text-amber-800 text-left flex items-start gap-2">
+                            <span class="material-symbols-outlined text-amber-500 text-[14px] shrink-0">info</span>
+                            <span>Switch to <b>Super Admin</b> tab above → <b>Driver Approvals</b> → Click <b>Approve</b> next to Ahmed Khan</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN D2: DRIVER HOME ======== -->
+                <div id="d-screen-home" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface/90 backdrop-blur-md border-b border-outline-variant/20 flex justify-between items-center px-4 h-14">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-secondary icon-sm fill-icon">verified_user</span>
+                            <span class="font-black text-secondary text-sm">Ahmed Khan</span>
+                        </div>
+                        <div class="flex items-center gap-2.5">
+                            <span id="d-status-label" class="text-[10px] font-black text-gray-400">OFFLINE</span>
+                            <button id="d-btn-online-toggle" class="toggle-track"><span class="toggle-knob"></span></button>
+                        </div>
+                    </header>
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide pb-16">
+                        <!-- Earnings card -->
+                        <div class="bg-gradient-to-r from-[#0058bb] to-[#004c31] text-white p-4 rounded-2xl shadow-lg flex justify-between items-center">
+                            <div>
+                                <span class="text-[9px] text-white/70 font-bold uppercase tracking-wider block">Today's Earnings</span>
+                                <h2 class="text-2xl font-black mt-1" id="d-earnings-val">0 PKR</h2>
+                                <span class="text-[9px] text-white/60 block mt-0.5">Commission: 10% · Rides: <span id="d-rides-count">0</span></span>
+                            </div>
+                            <span class="material-symbols-outlined fill-icon opacity-25" style="font-size:48px">payments</span>
+                        </div>
+                        <!-- Quick stats -->
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm">
+                                <p class="text-[8px] text-gray-400 font-bold uppercase">Acceptance</p>
+                                <p class="font-black text-sm text-primary mt-0.5">92%</p>
+                            </div>
+                            <div class="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm">
+                                <p class="text-[8px] text-gray-400 font-bold uppercase">Rating</p>
+                                <p class="font-black text-sm text-amber-500 mt-0.5">4.9 ★</p>
+                            </div>
+                            <div class="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm">
+                                <p class="text-[8px] text-gray-400 font-bold uppercase">Online</p>
+                                <p class="font-black text-sm text-secondary mt-0.5" id="d-online-time">0h 0m</p>
+                            </div>
+                        </div>
+                        <!-- Map -->
+                        <div id="d-map-placeholder" class="h-52 rounded-2xl bg-gray-200 overflow-hidden relative border border-gray-300">
+                            <img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB57cICK8HDxRznsACIhy2Q-hE_eIn-TsihGkQYWQ80NEE-GTNU22udeGMnWWyO5YzoLB9Sg4O1Yaf6uiE1nHXHVG1oR-wIp6rpusN4IOJQMRMkwNrI_KxJuKIRy1IJSjy7geMY5X7l70pWlcTvsH8rxhUMEOyWN8o0NGgLPVianB3Auwole_mfPCgqqbp-MDWOtIkmqghGwRV6uihuUKQ_8dKD0SWjLfgm_nLctqhj1hksl3F3XZInmI7b_ApPNjUpBmbs_Og30V4" alt="map">
+                            <div class="absolute inset-0 bg-black/50 flex items-center justify-center text-center p-6 text-white" id="d-map-offline-overlay">
+                                <div class="space-y-1.5">
+                                    <span class="material-symbols-outlined fill-icon" style="font-size:36px">no_accounts</span>
+                                    <h4 class="font-black text-sm">You are Offline</h4>
+                                    <p class="text-[10px] text-white/70">Toggle the switch above to go online and receive ride bids.</p>
+                                </div>
+                            </div>
+                            <div class="hidden absolute inset-0 flex items-center justify-center" id="d-map-online-overlay">
+                                <div class="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-xl border border-gray-200 flex items-center gap-2 float-bob">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span class="text-xs font-black text-gray-700">Searching for bids…</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Recent earnings breakdown -->
+                        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                            <div class="px-4 py-3 border-b border-gray-100 flex justify-between">
+                                <p class="text-[10px] font-black text-gray-700 uppercase">Recent Trips</p>
+                                <button id="d-btn-see-ledger" class="text-[10px] text-secondary font-bold">See All →</button>
+                            </div>
+                            <div id="d-recent-trips-home" class="p-3 text-center text-[10px] text-gray-400">
+                                <span class="material-symbols-outlined text-[24px] block mb-1 text-gray-300">receipt_long</span>
+                                No trips yet today
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Driver bottom nav -->
+                    <nav class="absolute bottom-0 w-full z-40 bg-surface-container-lowest border-t border-outline-variant/20 flex justify-around items-center h-14">
+                        <button class="flex flex-col items-center justify-center bg-secondary/10 text-secondary rounded-full px-4 py-0.5 gap-0.5">
+                            <span class="material-symbols-outlined text-[18px]">dashboard</span>
+                            <span class="text-[7px] font-black">Dashboard</span>
+                        </button>
+                        <button id="d-btn-ledger" class="flex flex-col items-center justify-center text-on-surface-variant p-2 gap-0.5">
+                            <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                            <span class="text-[7px] font-semibold">Ledger</span>
+                        </button>
+                        <button class="flex flex-col items-center justify-center text-on-surface-variant p-2 gap-0.5">
+                            <span class="material-symbols-outlined text-[18px]">person</span>
+                            <span class="text-[7px] font-semibold">Profile</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- ======== SCREEN D3: INCOMING BID REQUEST ======== -->
+                <div id="d-screen-bid-request" class="screen hidden flex flex-col h-full bg-background text-on-surface p-4 justify-end">
+                    <div class="bg-white rounded-3xl p-5 border border-gray-100 shadow-2xl space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="badge-info">MATCHING REQUEST</span>
+                                <h3 class="font-black text-base text-gray-800 mt-1.5">Bahria Ph-7 → G-10</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">12.4 km • Hub: I-8/3 Markaz</p>
+                            </div>
+                            <span id="d-request-type" class="bg-gray-100 px-2.5 py-1 rounded-xl text-[10px] font-black text-gray-700">Bike</span>
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex justify-between items-center">
+                            <div>
+                                <span class="text-[8px] text-gray-400 font-bold uppercase block">Offered Fare</span>
+                                <span id="d-offered-fare" class="font-black text-2xl text-emerald-800">150 PKR</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[8px] text-gray-400 font-bold uppercase block">Your Payout (90%)</span>
+                                <span id="d-payout-label" class="font-black text-lg text-primary">135 PKR</span>
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <p class="text-[9px] font-black text-gray-400 uppercase text-center">Counter-Offer</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="d-btn-counter-50" class="py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-[10px] text-secondary hover:bg-blue-50 active:scale-95 transition-all"></button>
+                                <button id="d-btn-counter-100" class="py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-[10px] text-secondary hover:bg-blue-50 active:scale-95 transition-all"></button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="d-btn-decline" class="py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-xl font-bold text-[10px] hover:bg-red-100 active:scale-95 transition-all">✕ Decline</button>
+                                <button id="d-btn-accept" class="py-2.5 bg-primary text-white rounded-xl font-black text-[10px] hover:bg-[#006644] active:scale-95 transition-all shadow-md">✓ Accept</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN D4: ACTIVE NAVIGATION ======== -->
+                <div id="d-screen-nav" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex justify-between items-center px-4 h-14">
+                        <span id="d-nav-title" class="font-black text-secondary text-sm">Heading to Pickup Hub</span>
+                        <span class="badge-success">Active</span>
+                    </header>
+                    <div class="flex-grow relative overflow-hidden bg-surface-container-low map-mesh">
+                        <svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                            <path id="d-nav-map-route" class="route-dash opacity-30" d="M120,520 Q220,460 200,350 T310,240" fill="none" stroke="#0058bb" stroke-linecap="round" stroke-width="6"></path>
+                            <path d="M120,520 Q220,460 200,350 T310,240" fill="none" stroke="#0058bb" stroke-linecap="round" stroke-width="3" opacity="0.5"></path>
+                        </svg>
+                        <div id="d-map-car-marker" class="absolute top-[46%] left-[46%] -translate-x-1/2 -translate-y-1/2 transition-all duration-500">
+                            <div class="relative">
+                                <div class="absolute inset-0 bg-secondary/20 rounded-full car-ping"></div>
+                                <div class="w-8 h-8 bg-secondary rounded-full border-4 border-white shadow-xl flex items-center justify-center text-white">
+                                    <span class="material-symbols-outlined text-[16px] fill-icon">local_taxi</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container-lowest border-t border-outline-variant/20 px-4 pt-3 pb-4 space-y-3 flex-shrink-0">
+                        <div class="drag-handle"></div>
+                        <div class="flex justify-between items-center text-xs">
+                            <div>
+                                <h4 class="font-bold text-gray-400 text-[9px] uppercase">Pickup Point</h4>
+                                <h3 class="font-black text-sm text-gray-800">Bahria Phase 7 Terminal</h3>
+                            </div>
+                            <div class="text-right">
+                                <span class="block text-[9px] text-gray-400 uppercase font-semibold">ETA</span>
+                                <span class="font-black text-secondary text-sm">3 mins</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-xs border-t border-gray-100 pt-3">
+                            <span class="text-gray-500">Agreed Fare:</span>
+                            <span id="d-nav-fare-label" class="font-black text-emerald-800">150 PKR</span>
+                        </div>
+                        <button id="d-btn-flow-action" class="w-full h-12 bg-secondary hover:bg-[#004493] text-white rounded-2xl font-black text-sm flex items-center justify-center transition-all shadow-lg">
+                            Arrived at Hub
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ======== SCREEN D5: EARNINGS LEDGER ======== -->
+                <div id="d-screen-ledger" class="screen hidden flex flex-col h-full bg-background text-on-surface">
+                    <header class="w-full sticky top-0 z-40 bg-surface border-b border-outline-variant/20 flex items-center px-4 h-14">
+                        <button id="d-btn-back-ledger" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container mr-2">
+                            <span class="material-symbols-outlined text-primary icon-sm">arrow_back</span>
+                        </button>
+                        <h1 class="font-black text-primary text-sm">Earnings Ledger</h1>
+                    </header>
+                    <!-- Summary card -->
+                    <div class="p-4">
+                        <div class="bg-gradient-to-r from-[#0058bb] to-[#004c31] text-white p-4 rounded-2xl shadow-lg">
+                            <div class="grid grid-cols-3 text-center gap-2">
+                                <div>
+                                    <p class="text-[8px] text-white/60 font-bold uppercase">Total Earned</p>
+                                    <p id="d-ledger-total" class="font-black text-sm mt-0.5">0 PKR</p>
+                                </div>
+                                <div class="border-x border-white/20">
+                                    <p class="text-[8px] text-white/60 font-bold uppercase">Platform Fee</p>
+                                    <p id="d-ledger-fee" class="font-black text-sm mt-0.5">0 PKR</p>
+                                </div>
+                                <div>
+                                    <p class="text-[8px] text-white/60 font-bold uppercase">Trips</p>
+                                    <p id="d-ledger-trips" class="font-black text-sm mt-0.5">0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-grow overflow-y-auto px-4 pb-4 space-y-3 scrollbar-hide" id="d-ledger-container">
+                        <div class="text-center py-6 text-gray-300 text-xs">
+                            <span class="material-symbols-outlined fill-icon" style="font-size:40px">receipt_long</span>
+                            <p class="mt-1 font-semibold">No completed trips yet</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- end phone-screen -->
+        </div><!-- end phone-chassis -->
+    </div><!-- end driver column -->
+
+</div><!-- end view-playground -->
+
+<!-- ═══════════════════════════════════════════════════
+     VIEW 2 – SUPER ADMIN DASHBOARD
+════════════════════════════════════════════════════ -->
+<div id="view-admin" class="hidden flex-grow flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
+        <div class="p-5 border-b border-gray-100">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 bg-[#004c31] rounded-lg flex items-center justify-center text-white">
+                    <span class="material-symbols-outlined fill-icon icon-sm">admin_panel_settings</span>
+                </div>
+                <div>
+                    <p class="font-black text-xs text-gray-800">Super Admin</p>
+                    <p class="text-[9px] text-gray-400">ShareRide HQ</p>
+                </div>
+            </div>
+        </div>
+        <nav class="p-3 flex-1 space-y-1">
+            <p class="text-[9px] font-black text-gray-400 uppercase px-3 mb-2 mt-1">Overview</p>
+            <button class="admin-nav-btn active" data-panel="admin-panel-overview">
+                <span class="material-symbols-outlined icon-sm">analytics</span> Dashboard
+            </button>
+            <button class="admin-nav-btn" data-panel="admin-panel-drivers">
+                <span class="material-symbols-outlined icon-sm">verified_user</span> Driver Approvals
+            </button>
+            <button class="admin-nav-btn" data-panel="admin-panel-riders">
+                <span class="material-symbols-outlined icon-sm">group</span> Riders & Users
+            </button>
+            <button class="admin-nav-btn" data-panel="admin-panel-trips">
+                <span class="material-symbols-outlined icon-sm">route</span> Live Trips
+            </button>
+            <p class="text-[9px] font-black text-gray-400 uppercase px-3 mb-2 mt-4">Finance</p>
+            <button class="admin-nav-btn" data-panel="admin-panel-finance">
+                <span class="material-symbols-outlined icon-sm">payments</span> Financial Ledger
+            </button>
+            <button class="admin-nav-btn" data-panel="admin-panel-promotions">
+                <span class="material-symbols-outlined icon-sm">local_offer</span> Promotions
+            </button>
+            <p class="text-[9px] font-black text-gray-400 uppercase px-3 mb-2 mt-4">Safety</p>
+            <button class="admin-nav-btn" data-panel="admin-panel-safety">
+                <span class="material-symbols-outlined icon-sm">shield_heart</span> Safety Monitor
+            </button>
+            <button class="admin-nav-btn" data-panel="admin-panel-analytics">
+                <span class="material-symbols-outlined icon-sm">bar_chart</span> Analytics
+            </button>
+        </nav>
+        <div class="p-4 border-t border-gray-100">
+            <p class="text-[9px] text-gray-400 text-center">v2.4.0 Enterprise</p>
+        </div>
+    </aside>
+
+    <!-- Admin Main Content -->
+    <main class="flex-grow bg-gray-50 overflow-y-auto">
+
+        <!-- ── PANEL: OVERVIEW ── -->
+        <div id="admin-panel-overview" class="admin-panel p-8 space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2">
+                    <span class="material-symbols-outlined">analytics</span> Operations Command Center
+                </h2>
+                <div class="flex items-center gap-2">
+                    <span class="badge-success">All Systems Operational</span>
+                    <span class="text-xs text-gray-400">Last sync: <span id="admin-last-sync">Just now</span></span>
+                </div>
+            </div>
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-4 gap-4">
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Daily Active Users</span>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-2xl font-black text-gray-800">4,920</h3>
+                        <span class="text-emerald-600 font-bold text-[10px] flex items-center gap-0.5"><span class="material-symbols-outlined text-[12px]">trending_up</span>+12%</span>
+                    </div>
+                    <div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-emerald-500 rounded-full" style="width:72%"></div></div>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Active Pools Now</span>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-2xl font-black text-gray-800" id="admin-active-pools">0</h3>
+                        <span class="text-gray-400 font-bold text-[10px]">Islamabad</span>
+                    </div>
+                    <div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-blue-500 rounded-full" id="admin-pools-bar" style="width:0%"></div></div>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Gross Booking Revenue</span>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-2xl font-black text-gray-800" id="admin-revenue">0 PKR</h3>
+                        <span class="text-emerald-600 font-bold text-[10px] flex items-center gap-0.5"><span class="material-symbols-outlined text-[12px]">trending_up</span>+4%</span>
+                    </div>
+                    <div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-primary rounded-full" id="admin-rev-bar" style="width:0%"></div></div>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Platform Commission</span>
+                    <div class="flex justify-between items-end">
+                        <h3 class="text-2xl font-black text-emerald-700" id="admin-commissions">0 PKR</h3>
+                        <span class="text-blue-600 font-bold text-[10px]">10% fee</span>
+                    </div>
+                    <div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-emerald-500 rounded-full" id="admin-comm-bar" style="width:0%"></div></div>
+                </div>
+            </div>
+            <!-- 2nd row KPIs -->
+            <div class="grid grid-cols-4 gap-4">
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Approved Drivers</span>
+                    <h3 class="text-2xl font-black text-gray-800" id="admin-approved-drivers">0</h3>
+                    <p class="text-[10px] text-gray-400">Online: <span class="text-emerald-600 font-bold">0</span></p>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Pool Fill Rate</span>
+                    <h3 class="text-2xl font-black text-gray-800">78%</h3>
+                    <div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-amber-500 rounded-full" style="width:78%"></div></div>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">Avg. Fare Share Saved</span>
+                    <h3 class="text-2xl font-black text-gray-800">63%</h3>
+                    <p class="text-[10px] text-emerald-600 font-semibold">vs private ride</p>
+                </div>
+                <div class="admin-card p-5 space-y-2">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase block">SOS Alerts (24h)</span>
+                    <h3 class="text-2xl font-black text-gray-800" id="admin-sos-count">0</h3>
+                    <p class="text-[10px] text-gray-400">Deviation alerts: <span id="admin-dev-count" class="font-bold">0</span></p>
+                </div>
+            </div>
+            <!-- 3rd row: Charts + Driver doc -->
+            <div class="grid grid-cols-2 gap-6">
+                <!-- Revenue chart -->
+                <div class="admin-card p-6 space-y-4">
+                    <h3 class="font-black text-sm text-gray-800 flex items-center gap-2"><span class="material-symbols-outlined icon-sm">bar_chart</span>Weekly Revenue (PKR '000)</h3>
+                    <div class="flex items-end gap-2 h-28">
+                        <div class="bar-chart-bar" style="height:45%"><p class="text-[7px] text-gray-500 text-center mt-1">M</p></div>
+                        <div class="bar-chart-bar" style="height:60%"><p class="text-[7px] text-gray-500 text-center mt-1">T</p></div>
+                        <div class="bar-chart-bar" style="height:38%"><p class="text-[7px] text-gray-500 text-center mt-1">W</p></div>
+                        <div class="bar-chart-bar" style="height:80%"><p class="text-[7px] text-gray-500 text-center mt-1">T</p></div>
+                        <div class="bar-chart-bar" style="height:92%"><p class="text-[7px] text-gray-500 text-center mt-1">F</p></div>
+                        <div class="bar-chart-bar" style="height:70%"><p class="text-[7px] text-gray-500 text-center mt-1">S</p></div>
+                        <div class="bar-chart-bar" style="height:55%"><p class="text-[7px] text-gray-500 text-center mt-1">S</p></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs border-t border-gray-100 pt-3">
+                        <div><p class="text-gray-400 text-[9px]">Peak Hour</p><p class="font-black text-gray-800">8–9 AM</p></div>
+                        <div><p class="text-gray-400 text-[9px]">Top Route</p><p class="font-black text-gray-800">Bahria→G-10</p></div>
+                        <div><p class="text-gray-400 text-[9px]">Avg Trip</p><p class="font-black text-gray-800">12.4 km</p></div>
+                    </div>
+                </div>
+                <!-- Ride type mix -->
+                <div class="admin-card p-6 space-y-4">
+                    <h3 class="font-black text-sm text-gray-800 flex items-center gap-2"><span class="material-symbols-outlined icon-sm">donut_large</span>Ride Type Distribution</h3>
+                    <div class="space-y-2">
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-gray-600 w-20">Bike</span>
+                            <div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-emerald-500 rounded-full" style="width:38%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-800 w-8">38%</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-gray-600 w-20">Auto</span>
+                            <div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-yellow-500 rounded-full" style="width:15%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-800 w-8">15%</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-gray-600 w-20">Mini</span>
+                            <div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-blue-400 rounded-full" style="width:22%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-800 w-8">22%</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-gray-600 w-20">AC Car</span>
+                            <div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-blue-600 rounded-full" style="width:18%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-800 w-8">18%</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-gray-600 w-20">Comfort</span>
+                            <div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-purple-500 rounded-full" style="width:7%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-800 w-8">7%</span>
+                        </div>
+                    </div>
+                    <div class="border-t border-gray-100 pt-3 grid grid-cols-2 gap-3 text-xs text-center">
+                        <div class="bg-blue-50 rounded-xl p-2.5 border border-blue-100">
+                            <p class="text-[9px] text-blue-400 font-bold">Male Pool</p>
+                            <p class="font-black text-blue-800">62%</p>
+                        </div>
+                        <div class="bg-purple-50 rounded-xl p-2.5 border border-purple-100">
+                            <p class="text-[9px] text-purple-400 font-bold">Female Pool</p>
+                            <p class="font-black text-purple-800">38%</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PANEL: DRIVER APPROVALS ── -->
+        <div id="admin-panel-drivers" class="admin-panel hidden p-8 space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2">
+                    <span class="material-symbols-outlined">verified_user</span> Driver Approvals & Management
+                </h2>
+                <span class="px-3 py-1 bg-amber-100 text-amber-800 rounded-full font-bold text-xs" id="admin-pending-badge">1 PENDING</span>
+            </div>
+            <div class="admin-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 class="font-black text-sm text-gray-800">Driver Applications</h3>
+                    <button class="text-[11px] bg-primary text-white px-3 py-1.5 rounded-lg font-bold">+ Add Driver</button>
+                </div>
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="text-gray-400 font-bold uppercase text-[9px] border-b border-gray-100 bg-gray-50">
+                            <th class="px-6 py-3">Driver</th>
+                            <th class="px-4 py-3">Vehicle</th>
+                            <th class="px-4 py-3">Type</th>
+                            <th class="px-4 py-3">CNIC</th>
+                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-driver-table-body">
+                        <tr class="border-b border-gray-50" id="admin-row-ahmed">
+                            <td class="px-6 py-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center font-black text-blue-700 text-xs">AK</div>
+                                    <div>
+                                        <p class="font-black text-gray-800">Ahmed Khan</p>
+                                        <p class="text-[9px] text-gray-400">+92-321-4567890</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4 text-gray-600">Toyota Corolla (AC)</td>
+                            <td class="px-4 py-4"><span class="badge-info">AC Car</span></td>
+                            <td class="px-4 py-4 text-amber-600 font-bold">42101-XXXXXXX-X</td>
+                            <td class="px-4 py-4"><span class="badge-warn">Verify Queue</span></td>
+                            <td class="px-4 py-4 text-right space-x-2">
+                                <button id="admin-btn-approve-ahmed" class="px-3 py-1.5 bg-primary hover:bg-[#006644] text-white rounded-lg font-bold text-[10px] transition-all">Approve</button>
+                                <button class="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg font-bold text-[10px] hover:bg-red-100 transition-all">Reject</button>
+                            </td>
+                        </tr>
+                        <tr class="border-b border-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center font-black text-emerald-700 text-xs">SM</div>
+                                    <div><p class="font-black text-gray-800">Saad Malik</p><p class="text-[9px] text-gray-400">+92-300-9876543</p></div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4 text-gray-600">Honda CB125F</td>
+                            <td class="px-4 py-4"><span class="badge-success">Bike</span></td>
+                            <td class="px-4 py-4 text-gray-600">35202-XXXXXXX-X</td>
+                            <td class="px-4 py-4"><span class="badge-success">Approved</span></td>
+                            <td class="px-4 py-4 text-right"><button class="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg font-bold text-[10px]">Suspend</button></td>
+                        </tr>
+                        <tr class="border-b border-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center font-black text-purple-700 text-xs">FQ</div>
+                                    <div><p class="font-black text-gray-800">Fahad Qureshi</p><p class="text-[9px] text-gray-400">+92-333-1234567</p></div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4 text-gray-600">Suzuki Alto</td>
+                            <td class="px-4 py-4"><span class="badge-info">Mini</span></td>
+                            <td class="px-4 py-4 text-gray-600">37405-XXXXXXX-X</td>
+                            <td class="px-4 py-4"><span class="badge-success">Approved</span></td>
+                            <td class="px-4 py-4 text-right"><button class="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg font-bold text-[10px]">Suspend</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── PANEL: RIDERS & USERS ── -->
+        <div id="admin-panel-riders" class="admin-panel hidden p-8 space-y-6">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">group</span> Riders & Users</h2>
+            <div class="grid grid-cols-3 gap-4">
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Total Registered</p><h3 class="text-2xl font-black mt-1">24,831</h3></div>
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Verified Users</p><h3 class="text-2xl font-black mt-1">21,409</h3></div>
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Female Users</p><h3 class="text-2xl font-black text-purple-700 mt-1">38%</h3></div>
+            </div>
+            <div class="admin-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100"><h3 class="font-black text-sm">Recent Users</h3></div>
+                <table class="w-full text-xs">
+                    <thead><tr class="text-gray-400 font-bold uppercase text-[9px] border-b border-gray-100 bg-gray-50">
+                        <th class="px-6 py-3 text-left">User</th><th class="px-4 py-3 text-left">Gender</th><th class="px-4 py-3 text-left">Rides</th><th class="px-4 py-3 text-left">Wallet</th><th class="px-4 py-3 text-left">Status</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-bold text-gray-800">Zara Ahmed</td><td class="px-4 py-3"><span class="badge-info">Female</span></td><td class="px-4 py-3">48</td><td class="px-4 py-3">PKR 2,450</td><td class="px-4 py-3"><span class="badge-success">Active</span></td></tr>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-bold text-gray-800">Ali Hassan</td><td class="px-4 py-3"><span class="badge-info">Male</span></td><td class="px-4 py-3">112</td><td class="px-4 py-3">PKR 800</td><td class="px-4 py-3"><span class="badge-success">Active</span></td></tr>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-bold text-gray-800">Sara Khan</td><td class="px-4 py-3"><span class="badge-info">Female</span></td><td class="px-4 py-3">29</td><td class="px-4 py-3">PKR 120</td><td class="px-4 py-3"><span class="badge-warn">Flagged</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── PANEL: LIVE TRIPS ── -->
+        <div id="admin-panel-trips" class="admin-panel hidden p-8 space-y-6">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">route</span> Live Active Trips</h2>
+            <div class="grid grid-cols-3 gap-4">
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Active Trips</p><h3 class="text-2xl font-black mt-1" id="admin-live-trips">0</h3></div>
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Avg Pool Size</p><h3 class="text-2xl font-black mt-1">2.8</h3></div>
+                <div class="admin-card p-5"><p class="text-[10px] text-gray-400 font-bold uppercase">Matching Queue</p><h3 class="text-2xl font-black mt-1">14</h3></div>
+            </div>
+            <div class="admin-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100"><h3 class="font-black text-sm">Trip Feed</h3></div>
+                <div id="admin-trips-feed" class="divide-y divide-gray-50">
+                    <div class="px-6 py-4 text-xs text-gray-400 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[16px]">info</span> Complete a ride to see live trip data here.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PANEL: FINANCIAL LEDGER ── -->
+        <div id="admin-panel-finance" class="admin-panel hidden p-8 space-y-6">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">payments</span> Financial Ledger</h2>
+            <div class="grid grid-cols-3 gap-4">
+                <div class="admin-card p-5 border-l-4 border-emerald-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Gross Revenue</p>
+                    <h3 class="text-2xl font-black text-gray-800 mt-1" id="admin-finance-rev">0 PKR</h3>
+                    <p class="text-[10px] text-gray-400 mt-1">From all completed rides</p>
+                </div>
+                <div class="admin-card p-5 border-l-4 border-blue-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Platform Commission</p>
+                    <h3 class="text-2xl font-black text-emerald-700 mt-1" id="admin-finance-comm">0 PKR</h3>
+                    <p class="text-[10px] text-gray-400 mt-1">10% of all fares</p>
+                </div>
+                <div class="admin-card p-5 border-l-4 border-purple-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Driver Payouts</p>
+                    <h3 class="text-2xl font-black text-gray-800 mt-1" id="admin-finance-payout">0 PKR</h3>
+                    <p class="text-[10px] text-gray-400 mt-1">90% driver share</p>
+                </div>
+            </div>
+            <div class="admin-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100"><h3 class="font-black text-sm">Transaction Log</h3></div>
+                <div id="admin-finance-log" class="divide-y divide-gray-50">
+                    <div class="px-6 py-4 text-xs text-gray-400">No transactions recorded yet.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PANEL: PROMOTIONS ── -->
+        <div id="admin-panel-promotions" class="admin-panel hidden p-8 space-y-6">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">local_offer</span> Promotions & Promo Codes</h2>
+            <div class="admin-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 class="font-black text-sm">Active Promotions</h3>
+                    <button class="text-[11px] bg-primary text-white px-3 py-1.5 rounded-lg font-bold">+ New Promo</button>
+                </div>
+                <table class="w-full text-xs">
+                    <thead><tr class="text-gray-400 font-bold uppercase text-[9px] border-b border-gray-100 bg-gray-50">
+                        <th class="px-6 py-3 text-left">Code</th><th class="px-4 py-3 text-left">Discount</th><th class="px-4 py-3 text-left">Target</th><th class="px-4 py-3 text-left">Usage</th><th class="px-4 py-3 text-left">Expiry</th><th class="px-4 py-3 text-left">Status</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-black text-primary">PROMO30</td><td class="px-4 py-3">30% OFF</td><td class="px-4 py-3">First Pool Ride</td><td class="px-4 py-3">124 / 500</td><td class="px-4 py-3">Jul 31, 2026</td><td class="px-4 py-3"><span class="badge-success">Active</span></td></tr>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-black text-purple-700">LADIESFIRST</td><td class="px-4 py-3">20% OFF</td><td class="px-4 py-3">Female Commuters</td><td class="px-4 py-3">89 / 1000</td><td class="px-4 py-3">Dec 31, 2026</td><td class="px-4 py-3"><span class="badge-success">Active</span></td></tr>
+                        <tr class="border-b border-gray-50"><td class="px-6 py-3 font-black text-gray-500">EID2026</td><td class="px-4 py-3">50% OFF</td><td class="px-4 py-3">All Rides</td><td class="px-4 py-3">450 / 450</td><td class="px-4 py-3">Eid Special</td><td class="px-4 py-3"><span class="badge-error">Expired</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── PANEL: SAFETY MONITOR ── -->
+        <div id="admin-panel-safety" class="admin-panel hidden p-8 space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">shield_heart</span> Live Safety Telemetry Monitor</h2>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+                <div class="admin-card p-5 border-l-4 border-red-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">SOS Alerts Today</p>
+                    <h3 class="text-2xl font-black text-red-700 mt-1" id="admin-panel-sos">0</h3>
+                </div>
+                <div class="admin-card p-5 border-l-4 border-amber-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Route Deviations</p>
+                    <h3 class="text-2xl font-black text-amber-700 mt-1" id="admin-panel-dev">0</h3>
+                </div>
+                <div class="admin-card p-5 border-l-4 border-emerald-500">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">All Clear Vehicles</p>
+                    <h3 class="text-2xl font-black text-emerald-700 mt-1">0</h3>
+                </div>
+            </div>
+            <div class="admin-card p-6">
+                <h3 class="font-black text-sm mb-4 flex items-center gap-2"><span class="material-symbols-outlined icon-sm text-red-500">crisis_alert</span> Incident Feed</h3>
+                <div id="admin-safety-desk" class="space-y-3">
+                    <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-500 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-emerald-500 icon-sm">check_circle</span>
+                        All vehicle trajectories compliant with route corridors. No alerts.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PANEL: ANALYTICS ── -->
+        <div id="admin-panel-analytics" class="admin-panel hidden p-8 space-y-6">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2"><span class="material-symbols-outlined">bar_chart</span> Platform Analytics</h2>
+            <div class="grid grid-cols-2 gap-6">
+                <div class="admin-card p-6">
+                    <h3 class="font-black text-sm mb-4">Daily Trip Volume (Last 7 Days)</h3>
+                    <div class="flex items-end gap-2 h-32">
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:65%"></div><p class="text-[8px] text-gray-400 mt-1">Mon</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:80%"></div><p class="text-[8px] text-gray-400 mt-1">Tue</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:55%"></div><p class="text-[8px] text-gray-400 mt-1">Wed</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:90%"></div><p class="text-[8px] text-gray-400 mt-1">Thu</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:100%"></div><p class="text-[8px] text-gray-400 mt-1">Fri</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:75%"></div><p class="text-[8px] text-gray-400 mt-1">Sat</p></div>
+                        <div class="flex flex-col items-center flex-1"><div class="bar-chart-bar w-full" style="height:60%"></div><p class="text-[8px] text-gray-400 mt-1">Sun</p></div>
+                    </div>
+                </div>
+                <div class="admin-card p-6">
+                    <h3 class="font-black text-sm mb-4">Top Pickup Zones</h3>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-3 text-xs"><span class="w-24 text-gray-600 font-semibold">Bahria Town</span><div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-primary rounded-full" style="width:82%"></div></div><span class="font-black w-8">82%</span></div>
+                        <div class="flex items-center gap-3 text-xs"><span class="w-24 text-gray-600 font-semibold">F-10/F-11</span><div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-secondary rounded-full" style="width:64%"></div></div><span class="font-black w-8">64%</span></div>
+                        <div class="flex items-center gap-3 text-xs"><span class="w-24 text-gray-600 font-semibold">G-9/G-10</span><div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-amber-500 rounded-full" style="width:52%"></div></div><span class="font-black w-8">52%</span></div>
+                        <div class="flex items-center gap-3 text-xs"><span class="w-24 text-gray-600 font-semibold">I-8/I-9</span><div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-purple-500 rounded-full" style="width:41%"></div></div><span class="font-black w-8">41%</span></div>
+                        <div class="flex items-center gap-3 text-xs"><span class="w-24 text-gray-600 font-semibold">DHA Phase 2</span><div class="flex-1 h-3 bg-gray-100 rounded-full"><div class="h-full bg-emerald-400 rounded-full" style="width:35%"></div></div><span class="font-black w-8">35%</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div><!-- end view-admin -->
+
+<!-- ═══════════════════════════════════════════════════
+     VIEW 3 – OPERATIONS DASHBOARD
+════════════════════════════════════════════════════ -->
+<div id="view-ops" class="hidden flex-grow flex overflow-hidden">
+    <main class="flex-grow bg-gray-50 p-8 space-y-6 overflow-y-auto">
+        <div class="flex justify-between items-center">
+            <h2 class="text-xl font-black text-[#004c31] flex items-center gap-2">
+                <span class="material-symbols-outlined">hub</span> Real-Time Operations Dashboard
+            </h2>
+            <div class="flex items-center gap-3">
+                <span class="badge-success">AI Matching Active</span>
+                <span class="text-xs text-gray-400">Islamabad Zone · <span id="ops-time">--:--</span></span>
+            </div>
+        </div>
+        <!-- Live map placeholder -->
+        <div class="admin-card overflow-hidden relative" style="height:300px">
+            <img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIB6tiV25EEF30I3WpKPZzQjYqresT4vFORG0lcrzR33KwOmBWAsxB3AZ4YZQWy2JuYjJ_S6Y18GGCJy40rQ0pBjNuM11PsQBYJW5CSbzGQCN4laVB5LhvOJokLDOihLAZwWWWhFPiqqpgsWbejKLukLeJx4tiMeNlyyNwZB4QX8W-0lxzRHD_Xpk7lReo54Vud55Q8ISUB4ESsZjrdRXMqOkjlD0d4E7ORSb4e9__gQtKSUGql7yLoDrNWjVELePLY27QLnj_VFY" alt="operations map">
+            <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                <div class="glass-card px-6 py-3 rounded-2xl shadow-xl border border-white/40 text-center">
+                    <p class="text-sm font-black text-gray-800">Live Fleet Tracking Map</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Islamabad Metropolitan Zone · <span id="ops-active-drivers-map">0</span> Drivers Online</p>
+                </div>
+            </div>
+            <!-- Simulated vehicle dots -->
+            <div class="absolute top-[35%] left-[30%] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow animate-bounce" title="Driver Online"></div>
+            <div class="absolute top-[55%] left-[60%] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow animate-bounce" style="animation-delay:0.5s"></div>
+            <div class="absolute top-[25%] left-[70%] w-4 h-4 bg-amber-500 rounded-full border-2 border-white shadow animate-bounce" style="animation-delay:0.25s" title="En Route"></div>
+        </div>
+        <!-- Ops KPIs -->
+        <div class="grid grid-cols-5 gap-4">
+            <div class="admin-card p-4 text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">Drivers Online</p><h3 class="text-xl font-black text-emerald-700 mt-1" id="ops-drivers-online">0</h3></div>
+            <div class="admin-card p-4 text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">Active Rides</p><h3 class="text-xl font-black mt-1" id="ops-active-rides">0</h3></div>
+            <div class="admin-card p-4 text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">In Queue</p><h3 class="text-xl font-black mt-1">14</h3></div>
+            <div class="admin-card p-4 text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">Avg Wait Time</p><h3 class="text-xl font-black mt-1">3.2 min</h3></div>
+            <div class="admin-card p-4 text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">Match Rate</p><h3 class="text-xl font-black text-primary mt-1">89%</h3></div>
+        </div>
+        <!-- Ops two-column -->
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Hub status -->
+            <div class="admin-card p-6">
+                <h3 class="font-black text-sm mb-4 flex items-center gap-2"><span class="material-symbols-outlined icon-sm">location_on</span> Smart Hub Status</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center text-xs p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                        <div><p class="font-bold">I-8/3 Green Tower</p><p class="text-[9px] text-gray-400">3 passengers waiting</p></div>
+                        <span class="badge-success">Active</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                        <div><p class="font-bold">F-10 Markaz Roundabout</p><p class="text-[9px] text-gray-400">1 passenger waiting</p></div>
+                        <span class="badge-success">Active</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs p-3 bg-amber-50 rounded-xl border border-amber-200">
+                        <div><p class="font-bold">G-9 Karachi Co.</p><p class="text-[9px] text-gray-400">CCTV maintenance</p></div>
+                        <span class="badge-warn">Partial</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs p-3 bg-gray-50 rounded-xl border border-gray-200">
+                        <div><p class="font-bold">Bahria Gate 2</p><p class="text-[9px] text-gray-400">0 passengers</p></div>
+                        <span class="badge-info">Idle</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Trip feed live -->
+            <div class="admin-card p-6">
+                <h3 class="font-black text-sm mb-4 flex items-center gap-2"><span class="material-symbols-outlined icon-sm">sensors</span> Live AI Matching Engine</h3>
+                <div id="ops-match-feed" class="space-y-3 text-xs">
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-blue-800">
+                        <span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+                        <span>AI route clustering for peak hours active. 94% efficiency.</span>
+                    </div>
+                    <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800">
+                        <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                        <span>Gender-based pool segregation: 100% compliant</span>
+                    </div>
+                    <div class="p-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center gap-2 text-gray-600">
+                        <span class="material-symbols-outlined text-[14px]">schedule</span>
+                        <span>Estimated surge pricing deactivated. Normal demand.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div><!-- end view-ops -->
+
+<script src="app.js"></script>
+</body>
+</html>
