@@ -39,12 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════
     // Insert your Firebase configuration here. Fallbacks to mock mode if left empty.
     const firebaseConfig = {
-        apiKey: "",
-        authDomain: "",
-        projectId: "",
-        storageBucket: "",
-        messagingSenderId: "",
-        appId: ""
+        apiKey: "AIzaSyCymN-ML5eHNVrI7fGbLD9QSAzeWyJZyII",
+        authDomain: "velocity-fe379.firebaseapp.com",
+        projectId: "velocity-fe379",
+        storageBucket: "velocity-fe379.firebasestorage.app",
+        messagingSenderId: "63950615894",
+        appId: "1:63950615894:web:4ad45c3f95a46dd17052f7",
+        measurementId: "G-14YR4WGBXE"
     };
 
     let db = null;
@@ -55,6 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
+            if (firebaseConfig.measurementId && firebase.analytics) {
+                firebase.analytics();
+            }
             useFirebase = true;
             console.log("Firebase initialized successfully. Real-time mode enabled.");
         } catch (e) {
