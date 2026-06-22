@@ -11,13 +11,15 @@ the plan; each stage is independently shippable and verifiable.
   events. Compiles, lints, and rules are covered by passing emulator tests.
 - Architecture + security documentation.
 
-### ⏭️ Stage 2 — Mobile app foundation (Expo)
-- `apps/mobile`: Expo + TypeScript + Expo Router.
-- Firebase Auth (phone/OTP) sign-in/up.
-- Role-aware shell: passenger vs driver experience from the user's claim.
-- Typed client SDK wrapping the callable functions (no direct privileged writes).
-- Shared domain types extracted into `packages/shared` and consumed by app +
-  backend.
+### ✅ Stage 2 — Mobile app foundation (Expo) — _in progress_
+- ✅ `apps/mobile`: Expo SDK 56 + TypeScript + Expo Router. Builds (typecheck +
+  iOS/Android bundle), covered by CI.
+- ✅ Firebase Auth wired with AsyncStorage persistence; email sign-in working.
+- ✅ Role-aware shell: one binary renders the passenger or driver experience
+  from the user's claim, with guarded route groups.
+- ✅ Typed client SDK wrapping the callable functions (no direct privileged writes).
+- ⏳ Remaining: phone/OTP auth (needs reCAPTCHA / dev build), and extracting the
+  shared domain types into `packages/shared` consumed by app + backend.
 
 ### ⏭️ Stage 3 — Passenger experience
 - Maps + places (Google Maps SDK / `react-native-maps`), live driver tracking.
