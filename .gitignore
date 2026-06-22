@@ -3,8 +3,8 @@ node_modules/
 .pnp/
 .pnp.js
 
-# Build output
-lib/
+# Build output (compiled TS lives in each package's own /lib, ignored there).
+# Do NOT put a bare `lib/` here: it also matches source dirs like src/lib/.
 dist/
 build/
 *.tsbuildinfo
