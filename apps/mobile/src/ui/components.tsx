@@ -1,6 +1,8 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -10,6 +12,18 @@ import {
 import { colors } from '../config';
 
 type Variant = 'primary' | 'secondary' | 'danger';
+
+/** Friendly placeholder so secondary buttons never feel dead while a feature lands. */
+export function comingSoon(feature = 'This feature') {
+  Alert.alert(feature, "It's coming soon — we're still building this part.");
+}
+
+/** Opens the device mail composer to contact support. */
+export function contactSupport() {
+  Linking.openURL('mailto:support@velocity.app').catch(() =>
+    Alert.alert('Support', 'Email us at support@velocity.app'),
+  );
+}
 
 export function PrimaryButton({
   label,

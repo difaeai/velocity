@@ -28,6 +28,7 @@ export default function TripScreen() {
   const [busy, setBusy] = useState(false);
   const [timeLeft, setTimeLeft] = useState(54);
   const [adjustedFare, setAdjustedFare] = useState(0);
+  const [autoAccept, setAutoAccept] = useState(false);
 
   // Initialize adjustedFare when trip loads
   useEffect(() => {
@@ -146,7 +147,7 @@ export default function TripScreen() {
           <Pressable
             style={[styles.raiseFareBtn, adjustedFare <= trip.offeredFare && styles.raiseFareBtnDisabled]}
             disabled={adjustedFare <= trip.offeredFare || busy}
-            onPress={() => run(() => api.placeBid({ tripId: trip.id, fare: adjustedFare }))} // mockup updates it
+            onPress={() => run(() => api.raiseTripFare({ tripId: trip.id, fare: adjustedFare }))}
           >
             <Text style={[styles.raiseFareBtnText, adjustedFare <= trip.offeredFare && { color: '#8a8c8c' }]}>
               Raise fare
@@ -156,9 +157,12 @@ export default function TripScreen() {
           {/* Auto-accept offer toggle */}
           <View style={styles.toggleRowBidding}>
             <Text style={styles.toggleLabelBidding}>Auto-accept an offer of PKR {adjustedFare} up to 5 min away</Text>
-            <View style={styles.toggleSwitchBidding}>
-              <View style={styles.toggleKnobBidding} />
-            </View>
+            <Pressable
+              onPress={() => setAutoAccept((v) => !v)}
+              style={[styles.toggleSwitchBidding, autoAccept && { backgroundColor: colors.primary }]}
+            >
+              <View style={[styles.toggleKnobBidding, autoAccept && styles.toggleKnobOn]} />
+            </Pressable>
           </View>
 
           {/* Cash Payment Badge */}
@@ -525,6 +529,10 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     backgroundColor: '#8a8c8c',
+  },
+  toggleKnobOn: {
+    backgroundColor: '#000',
+    alignSelf: 'flex-end',
   },
   cashBadgeRow: {
     flexDirection: 'row',

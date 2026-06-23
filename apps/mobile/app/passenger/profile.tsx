@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,11 +12,22 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { Card } from '../../src/ui/components';
+import { Card, comingSoon, contactSupport } from '../../src/ui/components';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+
+  const openSettings = () => router.push('/passenger/settings');
+  const openActivity = () => router.push('/passenger/activity');
+  const openWallet = () => router.push('/passenger/wallet');
+  const safetyInfo = () =>
+    Alert.alert(
+      'Safety',
+      'Your safety matters. During a ride you can trigger an Emergency SOS from the trip screen, and our team monitors safety events in real time.',
+    );
+  const aboutInfo = () =>
+    Alert.alert('Velocity', 'Velocity — ride-hailing & smart pooling.\n\nMade for Pakistan. 🇵🇰');
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -24,40 +36,40 @@ export default function ProfileScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backText}>←</Text>
         </Pressable>
-        <View style={styles.profileSummary}>
+        <Pressable style={styles.profileSummary} onPress={openSettings}>
           <View style={styles.nameRow}>
-            <Text style={styles.userName}>Hassan</Text>
+            <Text style={styles.userName}>{user?.displayName ?? 'Your account'}</Text>
             <Text style={styles.arrowIcon}>➔</Text>
           </View>
-          <Text style={styles.userPhone}>+92 344 1563032</Text>
-        </View>
+          <Text style={styles.userPhone}>{user?.email ?? user?.phoneNumber ?? 'Tap to manage account'}</Text>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
         {/* Quick Actions Row */}
         <View style={styles.quickActionsRow}>
-          <Pressable style={styles.quickActionItem}>
+          <Pressable style={styles.quickActionItem} onPress={openActivity}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>🕒</Text>
             </View>
             <Text style={styles.actionLabel}>Orders</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem}>
+          <Pressable style={styles.quickActionItem} onPress={contactSupport}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>🎧</Text>
             </View>
             <Text style={styles.actionLabel}>Support</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem}>
+          <Pressable style={styles.quickActionItem} onPress={() => comingSoon('Saved addresses')}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>📍</Text>
             </View>
             <Text style={styles.actionLabel}>Addresses</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem}>
+          <Pressable style={styles.quickActionItem} onPress={openSettings}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>⚙️</Text>
             </View>
@@ -69,12 +81,19 @@ export default function ProfileScreen() {
         <Card style={styles.completeProfileCard}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.completeTitle}>COMPLETE PROFILE</Text>
-            <Text style={styles.whyText}>Why? 🛈</Text>
+            <Text
+              style={styles.whyText}
+              onPress={() =>
+                Alert.alert('Why complete your profile?', 'A complete profile helps drivers recognise you and speeds up matching.')
+              }
+            >
+              Why? 🛈
+            </Text>
           </View>
-          
+
           <View style={styles.progressRow}>
             <Text style={styles.progressText}>0 of 2</Text>
-            <Pressable>
+            <Pressable onPress={openSettings}>
               <Text style={styles.completeLink}>Complete</Text>
             </Pressable>
           </View>
@@ -101,7 +120,7 @@ export default function ProfileScreen() {
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={() => comingSoon('Discounts')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>
               <View>
@@ -114,12 +133,12 @@ export default function ProfileScreen() {
 
           <View style={styles.divider} />
 
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={openWallet}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>💳</Text>
               <View>
-                <Text style={styles.itemTitle}>Payment methods</Text>
-                <Text style={styles.itemSubtitle}>Cash</Text>
+                <Text style={styles.itemTitle}>Wallet &amp; payments</Text>
+                <Text style={styles.itemSubtitle}>Top up · Cash</Text>
               </View>
             </View>
             <View style={styles.cashBadgeContainer}>
@@ -147,7 +166,7 @@ export default function ProfileScreen() {
 
         {/* Additional List Card */}
         <View style={styles.listCard}>
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={() => comingSoon('Improve maps')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🗺️</Text>
               <View>
@@ -160,7 +179,7 @@ export default function ProfileScreen() {
 
           <View style={styles.divider} />
 
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={safetyInfo}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🛡️</Text>
               <View>
@@ -172,7 +191,7 @@ export default function ProfileScreen() {
 
           <View style={styles.divider} />
 
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={openActivity}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🔄</Text>
               <View>
@@ -186,7 +205,7 @@ export default function ProfileScreen() {
 
         {/* Information List Card */}
         <View style={styles.listCard}>
-          <Pressable style={styles.listItem}>
+          <Pressable style={styles.listItem} onPress={aboutInfo}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>ℹ️</Text>
               <View>
