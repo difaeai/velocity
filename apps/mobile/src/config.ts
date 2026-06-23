@@ -21,13 +21,14 @@ export const FUNCTIONS_REGION = 'asia-south1';
 
 /** Brand palette (kept in sync with the original design). */
 export const colors = {
-  primary: '#004c31',
-  primaryDark: '#003924',
-  secondary: '#0058bb',
-  surface: '#ffffff',
-  background: '#f5f7f6',
-  text: '#1c1b1b',
-  muted: '#6f7a72',
-  border: '#e2e8e4',
-  danger: '#ba1a1a',
+  primary: '#ccff00',      // Lime green for active controls / branding
+  primaryDark: '#99c200',  // Darker lime green
+  secondary: '#3b82f6',    // Blue accents
+  surface: '#212222',      // Dark grey card/surface background
+  background: '#151616',   // Deep black/grey background
+  text: '#ffffff',         // White text
+  muted: '#8a8c8c',        // Light grey muted text
+  border: '#2d2f2f',       // Dark border color
+  danger: '#ef4444',       // Danger red
 };
+
