@@ -2,26 +2,14 @@
 
 ## Admin panel — Firebase App Hosting (web)
 
-The admin panel (`apps/admin`, Next.js) is deployed with **Firebase App Hosting**.
-Because this is a monorepo, App Hosting must be told where the web app lives.
+The admin panel is a **Next.js app at the repository root**, so Firebase App
+Hosting detects and builds it automatically — **no backend configuration or root
+directory change needed**. Every push to the connected branch builds and deploys.
 
-### One-time setup (required)
-
-App Hosting builds whatever is at the backend's **root directory**. The repo root
-has no web app, so detection fails (`package.json not found`). Point the backend
-at `apps/admin`:
-
-- **Firebase Console** → **App Hosting** → your backend → **Settings** →
-  **Deployment** → set **Root directory** to `apps/admin` → Save.
-- or **CLI**, when creating the backend:
-  ```bash
-  firebase apphosting:backends:create --project velocity-fe379
-  # when prompted for the root directory, enter: apps/admin
-  ```
-
-After that, every push to the connected branch builds and deploys the admin app.
-`apphosting.yaml` (repo root) holds the runtime config; the Firebase Web config is
-injected automatically as `FIREBASE_WEBAPP_CONFIG`.
+- `apphosting.yaml` (repo root) holds the runtime config.
+- The Firebase Web config is injected automatically as `FIREBASE_WEBAPP_CONFIG`.
+- The other workspaces (`apps/mobile`, `backend/functions`, `tests`) are separate
+  packages that App Hosting ignores.
 
 > The admin panel is gated to the `admin` role. Bootstrap the first admin once
 > (see `docs/SECURITY.md`), then manage the rest from the panel.

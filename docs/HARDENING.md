@@ -59,4 +59,5 @@ Requirements:
 - iOS permission strings are set in `app.json` (`ios.infoPlist`).
 
 ## Admin panel deploy
-See [`DEPLOY.md`](DEPLOY.md) — set the App Hosting **Root directory** to `apps/admin`.
+See [`DEPLOY.md`](DEPLOY.md). The admin app is at the repo root, so App Hosting
+builds it automatically — no root-directory change needed.

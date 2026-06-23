@@ -9,6 +9,12 @@ dist/
 build/
 *.tsbuildinfo
 
+# Next.js (admin app at repo root)
+/.next/
+/out/
+next-env.d.ts
+.vercel
+
 # Firebase
 .firebase/
 firebase-debug.log

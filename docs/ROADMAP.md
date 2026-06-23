@@ -31,7 +31,7 @@ the plan; each stage is independently shippable and verifiable.
 - ⏳ Remaining: continuous location streaming / turn-by-turn navigation.
 
 ### ✅ Stage 5 — Admin panel
-- ✅ `apps/admin` (Next.js, admin-claim gated): driver approvals, counters
+- ✅ Next.js admin at the repo root (admin-claim gated): driver approvals, counters
   overview, payouts, safety desk. Deployed via Firebase App Hosting.
 
 ### ✅ Stage 6 — Payments & money-out
