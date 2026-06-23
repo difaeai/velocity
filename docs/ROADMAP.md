@@ -21,32 +21,29 @@ the plan; each stage is independently shippable and verifiable.
 - ⏳ Remaining: phone/OTP auth (needs reCAPTCHA / dev build), and extracting the
   shared domain types into `packages/shared` consumed by app + backend.
 
-### ⏭️ Stage 3 — Passenger experience
-- Maps + places (Google Maps SDK / `react-native-maps`), live driver tracking.
-- Booking → bidding → match → track → invoice, wired to the backend.
-- Wallet view, ride history, ratings.
-- Push notifications (FCM) for bids/status.
+### ✅ Stage 3 — Passenger experience
+- ✅ Booking → bidding → match → track → invoice, wired to the backend.
+- ⏳ Remaining: live map tiles (needs Maps key), ride history, ratings, FCM push.
 
-### ⏭️ Stage 4 — Driver experience
-- Onboarding with document upload to the private Storage paths.
-- Go-online presence + location streaming, incoming-bid handling, navigation,
-  earnings ledger.
+### ✅ Stage 4 — Driver experience
+- ✅ Onboarding with document upload to private Storage; go-online presence,
+  incoming-request feed + bidding, trip progression, earnings ledger.
+- ⏳ Remaining: continuous location streaming / turn-by-turn navigation.
 
-### ⏭️ Stage 5 — Admin panel
-- `apps/admin`: React web app (admin-claim gated).
-- Driver approvals, live operations map, finance, safety desk — reading the same
-  Firestore, evolving the look-and-feel from `legacy-demo/`.
+### ✅ Stage 5 — Admin panel
+- ✅ `apps/admin` (Next.js, admin-claim gated): driver approvals, counters
+  overview, payouts, safety desk. Deployed via Firebase App Hosting.
 
-### ⏭️ Stage 6 — Payments & money-out
-- Pakistan payment rails (e.g. JazzCash/Easypaisa/card via a PCI-compliant
-  gateway) behind Cloud Functions; gateway keys in Functions secrets.
-- Driver payouts, refunds, reconciliation against `system/counters`.
+### ✅ Stage 6 — Payments & money-out
+- ✅ Wallet top-ups (intent + verified webhook) and driver payouts behind Cloud
+  Functions; provider abstraction (mock + JazzCash/Easypaisa stubs).
+- ⏳ Remaining **(you)**: implement a live gateway adapter + secrets; refunds.
 
-### ⏭️ Stage 7 — Hardening & launch
-- Firebase App Check (Play Integrity / App Attest) on app + backend.
-- Rate limiting, abuse controls, monitoring/alerting.
-- Legal: privacy policy, terms, data-retention.
-- EAS Build + store assets; **Play Store** and **App Store** submission.
+### ✅ Stage 7 — Hardening & launch — _in progress_
+- ✅ Per-user rate limiting on abuse-prone callables; EAS build config; iOS
+  permission strings; hardening + store-submission docs (`docs/HARDENING.md`).
+- ⏳ Remaining **(you)**: enable App Check + Firestore TTL + phone auth in the
+  console; privacy policy/terms; Apple/Google accounts + store submission.
 
 ## Build & ship reference (mobile, when we reach it)
 

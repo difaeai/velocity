@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, requireAdmin, invalid } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
 import { getProvider, isMockProvider } from './providers';
 
 const MIN_TOPUP = 100;
@@ -21,6 +22,7 @@ const topupSchema = z.object({
 /** Passenger/driver starts a wallet top-up; returns a gateway redirect. */
 export const createTopupIntent = onCall(async (req) => {
   const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'createTopupIntent', 10, 3600);
   const parsed = topupSchema.safeParse(req.data);
   if (!parsed.success) invalid(`Amount must be ${MIN_TOPUP}–${MAX_TOPUP} PKR.`);
   const { amount, phone } = parsed.data;

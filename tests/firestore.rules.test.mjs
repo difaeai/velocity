@@ -124,3 +124,8 @@ test('payouts & payment intents are owner/admin-read, server-write only', async 
   await assertSucceeds(getDoc(doc(passenger, 'paymentIntents/intent1')));
   await assertFails(getDoc(doc(driver, 'paymentIntents/intent1')));
 });
+
+test('rate-limit counters are not client-accessible', async () => {
+  await assertFails(getDoc(doc(passenger, 'rateLimits/x')));
+  await assertFails(setDoc(doc(driver, 'rateLimits/y'), { count: 0 }));
+});

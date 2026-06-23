@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireAdmin, invalid } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
 
 const sosSchema = z.object({
   tripId: z.string().min(1).max(128),
@@ -23,6 +24,7 @@ const sosSchema = z.object({
 /** A trip participant raises an SOS or route-deviation alert. */
 export const raiseSafetyEvent = onCall(async (req) => {
   const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'raiseSafetyEvent', 10, 60);
   const parsed = sosSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId, kind, location, note } = parsed.data;
