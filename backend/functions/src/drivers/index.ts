@@ -23,6 +23,11 @@ const onboardingSchema = z.object({
   licenseDocPath: z.string().min(1).max(512),
   cnicDocPath: z.string().min(1).max(512),
   vehicleDocPath: z.string().min(1).max(512),
+  cnicBackDocPath: z.string().max(512).optional(),
+  photoDocPath: z.string().max(512).optional(),
+  selfieDocPath: z.string().max(512).optional(),
+  email: z.string().email().max(200).optional(),
+  dob: z.string().max(40).optional(),
 });
 
 /**

@@ -23,6 +23,12 @@ export interface DriverOnboardingInput {
   licenseDocPath: string;
   cnicDocPath: string;
   vehicleDocPath: string;
+  // Optional richer fields (stored once the backend is redeployed):
+  cnicBackDocPath?: string;
+  photoDocPath?: string;
+  selfieDocPath?: string;
+  email?: string;
+  dob?: string;
 }
 
 export interface CreateTripInput {
