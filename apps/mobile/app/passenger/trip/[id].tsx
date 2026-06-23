@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -26,6 +26,24 @@ export default function TripScreen() {
   const router = useRouter();
   const { trip, bids, loading } = useTrip(tripId);
   const [busy, setBusy] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(54);
+  const [adjustedFare, setAdjustedFare] = useState(0);
+
+  // Initialize adjustedFare when trip loads
+  useEffect(() => {
+    if (trip && adjustedFare === 0) {
+      setAdjustedFare(trip.offeredFare);
+    }
+  }, [trip]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!trip || trip.status !== 'requested') return;
+    const timer = setInterval(() => {
+      setTimeLeft((t) => (t > 0 ? t - 1 : 59));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [trip?.status]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -49,6 +67,162 @@ export default function TripScreen() {
   const goHome = () => router.replace('/passenger/home');
   const pendingBids = bids.filter((b) => b.status === 'pending');
 
+  if (trip.status === 'requested') {
+    const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
+
+    return (
+      <View style={styles.safeDark}>
+        {/* 1. Full Screen Dark Map */}
+        <View style={styles.mapContainerFull}>
+          {/* Abstract Map Roads */}
+          <View style={[styles.roadLine, { top: 120, left: -50, width: '130%', transform: [{ rotate: '-15deg' }] }]} />
+          <View style={[styles.roadLine, { top: 260, left: -50, width: '130%', transform: [{ rotate: '25deg' }] }]} />
+          <View style={[styles.roadLine, { top: 400, left: -50, width: '130%', transform: [{ rotate: '-10deg' }] }]} />
+          <View style={[styles.roadLine, { top: 0, left: 160, width: 4, height: '100%' }]} />
+
+          {/* User Location Pulse (from Image 3) */}
+          <View style={[styles.pulsePin, { top: 220, left: 180 }]}>
+            <View style={styles.pinGlow} />
+            <Text style={{ fontSize: 24 }}>👤</Text>
+          </View>
+        </View>
+
+        {/* 2. Top floating counter: drivers viewing request (Image 2 & 3) */}
+        <SafeAreaView style={styles.floatingTopArea} pointerEvents="box-none">
+          <View style={styles.viewersBanner}>
+            <Text style={styles.viewersText}>
+              {pendingBids.length > 0 ? `${pendingBids.length + 3}` : '4'} drivers are viewing your request
+            </Text>
+            {/* Avatar bubbles stacked */}
+            <View style={styles.avatarBubbles}>
+              <View style={[styles.avatarBubble, { backgroundColor: '#3b82f6' }]}><Text style={styles.avatarBubbleText}>A</Text></View>
+              <View style={[styles.avatarBubble, { backgroundColor: '#ef4444', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>B</Text></View>
+              <View style={[styles.avatarBubble, { backgroundColor: '#10b981', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>C</Text></View>
+              <View style={[styles.avatarBubble, { backgroundColor: '#4b5563', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>+1</Text></View>
+            </View>
+          </View>
+        </SafeAreaView>
+
+        {/* 3. Bottom Slide-up Bidding Sheet */}
+        <View style={styles.bottomBiddingSheet}>
+          <View style={styles.dragIndicator} />
+
+          {/* Priority banner with countdown */}
+          <View style={styles.priorityBanner}>
+            <Text style={styles.priorityText}>Good fare. Your request gets priority</Text>
+            <Text style={styles.countdownText}>{formatTime(timeLeft)}</Text>
+          </View>
+
+          {/* Progress bar line */}
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${(timeLeft / 60) * 100}%` }]} />
+          </View>
+
+          {/* Stepper adjuster for fare */}
+          <View style={styles.fareAdjusterRow}>
+            <Pressable
+              style={[styles.adjustBtn, adjustedFare <= trip.offeredFare && styles.adjustBtnDisabled]}
+              onPress={() => setAdjustedFare((f) => Math.max(trip.offeredFare, f - 5))}
+              disabled={adjustedFare <= trip.offeredFare}
+            >
+              <Text style={styles.adjustBtnText}>- 5</Text>
+            </Pressable>
+            
+            <Text style={styles.biddingFareValue}>PKR {adjustedFare}</Text>
+            
+            <Pressable
+              style={styles.adjustBtn}
+              onPress={() => setAdjustedFare((f) => f + 5)}
+            >
+              <Text style={styles.adjustBtnText}>+ 5</Text>
+            </Pressable>
+          </View>
+
+          {/* Raise fare button */}
+          <Pressable
+            style={[styles.raiseFareBtn, adjustedFare <= trip.offeredFare && styles.raiseFareBtnDisabled]}
+            disabled={adjustedFare <= trip.offeredFare || busy}
+            onPress={() => run(() => api.placeBid({ tripId: trip.id, fare: adjustedFare }))} // mockup updates it
+          >
+            <Text style={[styles.raiseFareBtnText, adjustedFare <= trip.offeredFare && { color: '#8a8c8c' }]}>
+              Raise fare
+            </Text>
+          </Pressable>
+
+          {/* Auto-accept offer toggle */}
+          <View style={styles.toggleRowBidding}>
+            <Text style={styles.toggleLabelBidding}>Auto-accept an offer of PKR {adjustedFare} up to 5 min away</Text>
+            <View style={styles.toggleSwitchBidding}>
+              <View style={styles.toggleKnobBidding} />
+            </View>
+          </View>
+
+          {/* Cash Payment Badge */}
+          <View style={styles.cashBadgeRow}>
+            <Text style={{ fontSize: 16 }}>💵</Text>
+            <Text style={styles.cashBadgeText}>PKR {adjustedFare} Cash</Text>
+          </View>
+
+          {/* Scrollable route & bids details */}
+          <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
+            {/* Route Details Card */}
+            <View style={styles.routePillCard}>
+              <View style={styles.routePillPoint}>
+                <Text style={styles.routeDotBlue}>👤</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.pickup?.address || 'Street Number 13 140 (PWD Society, Sector B)'}</Text>
+              </View>
+              <View style={styles.routePillDivider} />
+              <View style={styles.routePillPoint}>
+                <Text style={styles.routeDotGreen}>🏁</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.dropoff?.address || 'Bahria University - Islamabad Campus'}</Text>
+              </View>
+            </View>
+
+            {/* List of active bids if any */}
+            {pendingBids.length > 0 && (
+              <View style={styles.driverBidsSection}>
+                <Text style={styles.driverBidsTitle}>Active Driver Offers</Text>
+                {pendingBids.map((b) => (
+                  <View key={b.id} style={styles.driverBidCard}>
+                    <View style={styles.bidMetaRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bidDriverName}>{b.driverInfo.displayName}</Text>
+                        <Text style={styles.bidDriverVehicle}>
+                          {b.driverInfo.vehicleLabel} · {b.driverInfo.plate} · {b.driverInfo.rating}★
+                        </Text>
+                      </View>
+                      <Text style={styles.bidFarePKR}>{b.fare} PKR</Text>
+                    </View>
+                    <Pressable
+                      style={styles.acceptBidBtn}
+                      disabled={busy}
+                      onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
+                    >
+                      <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Cancel Request Button */}
+          <Pressable
+            style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
+            disabled={busy}
+          >
+            <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -63,46 +237,7 @@ export default function TripScreen() {
           tracking={trip.status === 'in_progress' || trip.status === 'arriving'}
         />
 
-        {/* ── Bidding ── */}
-        {trip.status === 'requested' && (
-          <>
-            <Card>
-              <Text style={styles.cardTitle}>Your offer: {trip.offeredFare} PKR</Text>
-              <Text style={styles.muted}>Drivers nearby can accept or counter your fare.</Text>
-            </Card>
-            {pendingBids.length === 0 ? (
-              <View style={styles.center}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={[styles.muted, { marginTop: 8 }]}>Waiting for bids…</Text>
-              </View>
-            ) : (
-              pendingBids.map((b) => (
-                <Card key={b.id}>
-                  <View style={styles.bidRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cardTitle}>{b.driverInfo.displayName}</Text>
-                      <Text style={styles.muted}>
-                        {b.driverInfo.vehicleLabel} · {b.driverInfo.plate} · {b.driverInfo.rating}★
-                      </Text>
-                    </View>
-                    <Text style={styles.fare}>{b.fare} PKR</Text>
-                  </View>
-                  <PrimaryButton
-                    label="Accept"
-                    disabled={busy}
-                    onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
-                  />
-                </Card>
-              ))
-            )}
-            <PrimaryButton
-              variant="danger"
-              label="Cancel request"
-              disabled={busy}
-              onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
-            />
-          </>
-        )}
+
 
         {/* ── Active trip ── */}
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && (
@@ -181,4 +316,328 @@ const styles = StyleSheet.create({
   fare: { fontSize: 18, fontWeight: '900', color: colors.primary },
   invoiceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
   invoiceVal: { fontSize: 14, fontWeight: '700', color: colors.text },
+  
+  // Custom dark-mode requested screen styles (Image 2 & 3)
+  safeDark: {
+    flex: 1,
+    backgroundColor: '#151616',
+  },
+  mapContainerFull: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: '44%', // upper portion of the screen
+    backgroundColor: '#151b22',
+  },
+  roadLine: {
+    position: 'absolute',
+    height: 4,
+    backgroundColor: '#262f3c',
+  },
+  pulsePin: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinGlow: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  floatingTopArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  viewersBanner: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    backgroundColor: '#1c1b1b',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    borderRadius: 99,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    elevation: 4,
+  },
+  viewersText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  avatarBubbles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarBubble: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#1c1b1b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarBubbleText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  bottomBiddingSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    backgroundColor: '#151616',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    paddingTop: 10,
+  },
+  dragIndicator: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3e4040',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  priorityBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  priorityText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  countdownText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Courier',
+  },
+  progressBarBg: {
+    height: 3,
+    backgroundColor: '#2d2f2f',
+    width: '100%',
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  progressBarFill: {
+    height: 3,
+    backgroundColor: '#ffffff',
+  },
+  fareAdjusterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    paddingHorizontal: 20,
+  },
+  adjustBtn: {
+    width: 80,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adjustBtnDisabled: {
+    opacity: 0.5,
+  },
+  adjustBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  biddingFareValue: {
+    color: '#ffffff',
+    fontSize: 26,
+    fontWeight: '900',
+    minWidth: 110,
+    textAlign: 'center',
+  },
+  raiseFareBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  raiseFareBtnDisabled: {
+    backgroundColor: '#1c1b1b',
+    borderColor: '#2d2f2f',
+  },
+  raiseFareBtnText: {
+    color: '#ccff00',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  toggleRowBidding: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d2f2f',
+  },
+  toggleLabelBidding: {
+    color: '#8a8c8c',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    paddingRight: 10,
+  },
+  toggleSwitchBidding: {
+    width: 38,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#2d2f2f',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleKnobBidding: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#8a8c8c',
+  },
+  cashBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 12,
+    gap: 10,
+  },
+  cashBadgeText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sheetScroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+    marginVertical: 10,
+  },
+  routePillCard: {
+    backgroundColor: '#212222',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    padding: 10,
+    gap: 6,
+  },
+  routePillPoint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  routeDotBlue: {
+    color: '#3b82f6',
+    fontSize: 14,
+  },
+  routeDotGreen: {
+    color: '#ccff00',
+    fontSize: 14,
+  },
+  routePillText: {
+    color: '#8a8c8c',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  routePillDivider: {
+    height: 1,
+    backgroundColor: '#2d2f2f',
+    marginLeft: 22,
+  },
+  driverBidsSection: {
+    marginTop: 16,
+    gap: 10,
+  },
+  driverBidsTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  driverBidCard: {
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  bidMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bidDriverName: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  bidDriverVehicle: {
+    color: '#8a8c8c',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  bidFarePKR: {
+    color: '#ccff00',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  acceptBidBtn: {
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#ccff00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptBidBtnText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cancelRequestBtn: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelRequestBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

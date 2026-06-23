@@ -216,117 +216,149 @@ export default function Booking() {
 
   // STAGE 2: CATEGORY & FARE SELECTION
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Select Ride & Fare</Text>
-        <Pressable style={styles.closeBtn} onPress={() => setStage('route')}>
-          <Text style={styles.closeTxt}>←</Text>
-        </Pressable>
+    <View style={styles.safe}>
+      {/* 1. Full-Screen Dark Map Representation */}
+      <View style={styles.mapContainer}>
+        {/* Abstract Map Roads */}
+        <View style={[styles.road, { top: 140, left: -50, width: '120%', transform: [{ rotate: '-15deg' }] }]} />
+        <View style={[styles.road, { top: 280, left: -50, width: '120%', transform: [{ rotate: '25deg' }] }]} />
+        <View style={[styles.road, { top: 480, left: -50, width: '120%', transform: [{ rotate: '-5deg' }] }]} />
+        
+        {/* Route Connection Graphic */}
+        <View style={styles.routeLineGraphic} />
+
+        {/* Mock Map Pins for Pickup and Dropoff */}
+        <View style={[styles.mapPinPoint, { top: 150, left: 130 }]}>
+          <Text style={styles.pinPointEmoji}>👤</Text>
+        </View>
+        <View style={[styles.mapPinPoint, { top: 290, left: 240 }]}>
+          <Text style={styles.pinPointEmoji}>🏁</Text>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        {/* Route Details Card */}
-        <Card style={styles.routeCardDetails}>
-          <View style={styles.routePoint}>
-            <Text style={styles.pointDotBlue}>•</Text>
-            <Text style={styles.pointText} numberOfLines={1}>From: {pickup}</Text>
-          </View>
-          <View style={styles.routeLine} />
-          <View style={styles.routePoint}>
-            <Text style={styles.pointDotGreen}>•</Text>
-            <Text style={styles.pointText} numberOfLines={1}>To: {dropoff}</Text>
-          </View>
-        </Card>
+      {/* 2. Top Floating Routing Details Card (from Image 4) */}
+      <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
+        <View style={styles.floatingHeaderBar}>
+          <Pressable style={styles.floatingBackBtn} onPress={() => setStage('route')}>
+            <Text style={styles.floatingBackTxt}>←</Text>
+          </Pressable>
 
-        {/* Ride Grid */}
-        <Text style={styles.sectionTitle}>Ride type</Text>
-        <View style={styles.rideGrid}>
-          {RIDE_TYPES.map((rt) => {
-            const active = rt === rideType;
-            return (
-              <Pressable
-                key={rt}
-                onPress={() => selectRide(rt)}
-                style={[styles.rideCard, active && styles.rideCardActive]}
-              >
-                <Text style={[styles.rideLabel, active && { color: '#ccff00' }]}>
-                  {RIDE_TYPE_LABELS[rt]}
-                </Text>
-                <Text style={styles.rideFare}>~{BASE_FARES[rt]} PKR</Text>
-              </Pressable>
-            );
-          })}
+          <View style={styles.floatingRouteCard}>
+            <View style={styles.floatingRoutePoint}>
+              <Text style={styles.floatingIconBlue}>👤</Text>
+              <Text style={styles.floatingRouteText} numberOfLines={1}>Street Number 13 140 (PWD Society, Sector B)</Text>
+              <View style={styles.entranceBadge}><Text style={styles.entranceText}>Entrance</Text></View>
+            </View>
+            <View style={styles.floatingRouteDivider} />
+            <View style={styles.floatingRoutePoint}>
+              <Text style={styles.floatingIconGreen}>🏁</Text>
+              <Text style={styles.floatingRouteText} numberOfLines={1}>Bahria University - Islamabad Campus (Shangrilla Road, E-8/1 E 8/1 E-8, Islamabad) ~33 min</Text>
+              <Text style={styles.plusIcon}>+</Text>
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* 3. Bottom Slide-up Sheet */}
+      <View style={styles.bottomRideSheet}>
+        <View style={styles.dragIndicator} />
+        
+        {/* Selected/Active Category Details */}
+        <View style={styles.activeCategoryBox}>
+          <View style={styles.activeCategoryMeta}>
+            <View style={styles.categoryTitleRow}>
+              <Text style={styles.categoryEmojiBig}>🚗</Text>
+              <View style={{ flex: 1 }}>
+                <View style={styles.categoryNameRow}>
+                  <Text style={styles.categoryNameBig}>{RIDE_TYPE_LABELS[rideType]}</Text>
+                  <Text style={styles.infoIconCircle}>ⓘ</Text>
+                  <Text style={styles.editPencil}>✏️</Text>
+                </View>
+                <Text style={styles.categorySubtitleBig}>👤 4 · 2 min</Text>
+                <Text style={styles.categoryDescriptionBig}>Lower fares, no AC</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Stepper adjustment for the fare */}
+          <View style={styles.activeFareStepper}>
+            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+              <Text style={styles.stepperText}>−</Text>
+            </Pressable>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={styles.stepperFareValue}>PKR {fare}</Text>
+              <Text style={styles.stepperLabel}>Recommended fare</Text>
+            </View>
+            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+              <Text style={styles.stepperText}>+</Text>
+            </Pressable>
+          </View>
         </View>
 
-        {/* Offer / Stepper */}
-        <Card style={styles.detailCard}>
-          <Text style={styles.cardLabel}>Your offer</Text>
-          <View style={styles.stepperRow}>
-            <Pressable style={styles.stepBtn} onPress={() => bumpFare(-50)}>
-              <Text style={styles.stepTxt}>−</Text>
-            </Pressable>
-            <Text style={styles.fareValue}>{fare} PKR</Text>
-            <Pressable style={styles.stepBtn} onPress={() => bumpFare(50)}>
-              <Text style={styles.stepTxt}>+</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.hint}>
-            Allowed {bounds.min}–{bounds.max} PKR · share ~{Math.round(fare / seats)} PKR
-          </Text>
-        </Card>
-
-        {/* Seats & Preferences */}
-        <Card style={styles.detailCard}>
-          <Text style={styles.cardLabel}>Seats</Text>
-          <View style={styles.pillRow}>
-            {Array.from({ length: MAX_SEATS }, (_, i) => i + 1).map((n) => (
-              <Pressable
-                key={n}
-                onPress={() => setSeats(n)}
-                style={[styles.pill, seats === n && styles.pillActive]}
-              >
-                <Text style={[styles.pillTxt, seats === n && { color: '#000' }]}>{n}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={[styles.cardLabel, { marginTop: 16 }]}>Gender Filter</Text>
-          <View style={styles.pillRow}>
-            {(['male', 'female', 'unspecified'] as Gender[]).map((g) => (
-              <Pressable
-                key={g}
-                onPress={() => setGender(g)}
-                style={[styles.pill, gender === g && styles.pillActive]}
-              >
-                <Text style={[styles.pillTxt, gender === g && { color: '#000' }]}>
-                  {g === 'unspecified' ? 'Any' : g.charAt(0).toUpperCase() + g.slice(1)}
+        {/* Scrollable list of alternative categories */}
+        <ScrollView style={styles.alternativeList} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
+          {RIDE_TYPES.filter(rt => rt !== rideType).map((rt) => (
+            <Pressable key={rt} style={styles.categoryRow} onPress={() => selectRide(rt)}>
+              <View style={styles.categoryRowLeft}>
+                <Text style={styles.categoryEmojiSmall}>
+                  {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
                 </Text>
-              </Pressable>
-            ))}
+                <View>
+                  <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
+                  <Text style={styles.categorySubSmall}>
+                    {rt === 'bike' ? '👤 1 · 2 min · No traffic, lower prices' : '👤 4 · 3 min · Cars with AC'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
+            </Pressable>
+          ))}
+
+          {/* Notice Banner */}
+          <View style={styles.taxNoticeBanner}>
+            <Text style={styles.taxNoticeIcon}>ⓘ</Text>
+            <Text style={styles.taxNoticeText}>
+              Fare doesn't include state entry tax, tolls, or parking fees
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* Toggle & Payment Details */}
+        <View style={styles.sheetActionsFooter}>
+          <View style={styles.toggleRowFooter}>
+            <View style={styles.toggleTextCol}>
+              <Text style={styles.autoAcceptLabel}>Auto-accept offer of PKR {fare}</Text>
+            </View>
+            <View style={styles.toggleSwitchSmall}>
+              <View style={styles.toggleSwitchKnobSmall} />
+            </View>
           </View>
 
-          <Pressable style={styles.toggleRow} onPress={() => setPool((p) => !p)}>
-            <Text style={styles.toggleLabel}>Smart pool (share & split fare)</Text>
-            <View style={[styles.toggle, pool && styles.toggleOn]}>
-              <View style={[styles.knob, pool && { alignSelf: 'flex-end' }]} />
+          <View style={styles.bottomButtonsRow}>
+            {/* Cash Badge Button */}
+            <View style={styles.cashBadgeFooter}>
+              <Text style={styles.cashBadgeEmoji}>💵</Text>
             </View>
-          </Pressable>
-        </Card>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable
-          style={({ pressed }) => [styles.findBtn, pressed && { opacity: 0.8 }]}
-          onPress={findDriver}
-          disabled={loading}
-        >
-          <Text style={styles.findBtnText}>{loading ? 'Booking...' : 'Find a driver'}</Text>
-        </Pressable>
+            {/* Find a Driver Button */}
+            <Pressable
+              style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
+              onPress={findDriver}
+              disabled={loading}
+            >
+              <Text style={styles.findDriverButtonText}>
+                {loading ? 'Booking...' : 'Find a driver'}
+              </Text>
+            </Pressable>
 
-        <Pressable style={styles.backBtn} onPress={() => setStage('route')}>
-          <Text style={styles.backBtnText}>Change route</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
+            {/* Filter Button */}
+            <View style={styles.filterButtonFooter}>
+              <Text style={styles.filterButtonIcon}>🎛️</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -519,195 +551,359 @@ const styles = StyleSheet.create({
     backgroundColor: '#3d3d3d',
   },
 
-  // STAGE 2 STYLING
-  routeCardDetails: {
+  // STAGE 2 STYLING (Image 1 & 4 Map + Sheet Layout)
+  mapContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: '48%', // Show map on the upper half
+    backgroundColor: '#151b22',
+  },
+  road: {
+    position: 'absolute',
+    height: 4,
+    backgroundColor: '#262f3c',
+  },
+  routeLineGraphic: {
+    position: 'absolute',
+    top: 220,
+    left: 140,
+    width: 110,
+    height: 3,
+    backgroundColor: '#ffffff',
+    transform: [{ rotate: '45deg' }],
+  },
+  mapPinPoint: {
+    position: 'absolute',
+    backgroundColor: '#1c1b1b',
+    padding: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  pinPointEmoji: {
+    fontSize: 16,
+  },
+  floatingHeaderArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  floatingHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  floatingBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#212222',
     borderWidth: 1,
     borderColor: '#2d2f2f',
-    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingBackTxt: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  floatingRouteCard: {
+    flex: 1,
+    backgroundColor: '#1c1b1b',
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    gap: 6,
+  },
+  floatingRoutePoint: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  routePoint: {
+  floatingIconBlue: {
+    color: '#3b82f6',
+    fontSize: 14,
+  },
+  floatingIconGreen: {
+    color: '#ccff00',
+    fontSize: 14,
+  },
+  floatingRouteText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  entranceBadge: {
+    backgroundColor: '#2d2f2f',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  entranceText: {
+    color: '#8a8c8c',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  plusIcon: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  floatingRouteDivider: {
+    height: 1,
+    backgroundColor: '#2d2f2f',
+    marginLeft: 22,
+  },
+  bottomRideSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '54%', // Overlay bottom part of screen
+    backgroundColor: '#151616',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    paddingTop: 10,
+  },
+  activeCategoryBox: {
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d2f2f',
+    gap: 12,
+  },
+  activeCategoryMeta: {
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    borderRadius: 16,
+    padding: 12,
+  },
+  categoryTitleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  categoryEmojiBig: {
+    fontSize: 34,
+  },
+  categoryNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  categoryNameBig: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  infoIconCircle: {
+    color: '#8a8c8c',
+    fontSize: 12,
+  },
+  editPencil: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  categorySubtitleBig: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  categoryDescriptionBig: {
+    fontSize: 11,
+    color: '#8a8c8c',
+    marginTop: 1,
+  },
+  activeFareStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e1f1f',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    padding: 10,
+  },
+  stepperCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2d2f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperText: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  stepperFareValue: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  stepperLabel: {
+    color: '#8a8c8c',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  alternativeList: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2d2f2f',
+  },
+  categoryRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  categoryEmojiSmall: {
+    fontSize: 24,
+  },
+  categoryNameSmall: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  categorySubSmall: {
+    color: '#8a8c8c',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  categoryFareSmall: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  taxNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1f1f',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginVertical: 14,
+    gap: 10,
+  },
+  taxNoticeIcon: {
+    color: '#8a8c8c',
+    fontSize: 14,
+  },
+  taxNoticeText: {
+    color: '#8a8c8c',
+    fontSize: 11,
+    fontWeight: '600',
+    flex: 1,
+  },
+  sheetActionsFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#2d2f2f',
+    backgroundColor: '#151616',
+    gap: 14,
+  },
+  toggleRowFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleTextCol: {
+    flex: 1,
+  },
+  autoAcceptLabel: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  toggleSwitchSmall: {
+    width: 38,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#2d2f2f',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchKnobSmall: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#8a8c8c',
+  },
+  bottomButtonsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  pointDotBlue: {
-    color: '#3b82f6',
-    fontSize: 22,
-    lineHeight: 22,
-  },
-  pointDotGreen: {
-    color: '#ccff00',
-    fontSize: 22,
-    lineHeight: 22,
-  },
-  pointText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  routeLine: {
-    width: 2,
-    height: 12,
-    backgroundColor: '#2d2f2f',
-    marginLeft: 4,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginTop: 6,
-  },
-  rideGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  rideCard: {
-    width: '31%',
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
-    backgroundColor: '#212222',
-  },
-  rideCardActive: {
-    borderColor: '#ccff00',
-    borderWidth: 2,
-  },
-  rideLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  rideFare: {
-    fontSize: 11,
-    color: '#8a8c8c',
-    marginTop: 2,
-  },
-  detailCard: {
-    backgroundColor: '#212222',
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
-    padding: 14,
-  },
-  cardLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  stepBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#2d2f2f',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepTxt: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#ccff00',
-  },
-  fareValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
-  hint: {
-    fontSize: 12,
-    color: '#8a8c8c',
-    marginTop: 8,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-    flexWrap: 'wrap',
-  },
-  pill: {
-    minWidth: 46,
-    paddingHorizontal: 14,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#212222',
-  },
-  pillActive: {
-    backgroundColor: '#ccff00',
-    borderColor: '#ccff00',
-  },
-  pillTxt: {
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-  },
-  toggleLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  toggle: {
+  cashBadgeFooter: {
     width: 48,
-    height: 28,
-    borderRadius: 999,
-    backgroundColor: '#2d2f2f',
-    padding: 3,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  toggleOn: {
-    backgroundColor: '#ccff00',
+  cashBadgeEmoji: {
+    fontSize: 20,
   },
-  knob: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#ffffff',
-  },
-  error: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  findBtn: {
-    height: 52,
+  findDriverButton: {
+    flex: 1,
+    height: 48,
     borderRadius: 14,
     backgroundColor: '#ccff00',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
   },
-  findBtnText: {
+  findDriverButtonText: {
     color: '#000000',
     fontSize: 16,
     fontWeight: '900',
   },
-  backBtn: {
+  filterButtonFooter: {
+    width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 12,
+    backgroundColor: '#212222',
     borderWidth: 1,
     borderColor: '#2d2f2f',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
   },
-  backBtnText: {
+  filterButtonIcon: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 18,
+  },
+  dragIndicator: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3e4040',
+    alignSelf: 'center',
+    marginBottom: 10,
   },
 });

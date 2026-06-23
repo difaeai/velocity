@@ -66,6 +66,16 @@ export default function PassengerHome() {
           <Pressable style={styles.hamburgerButton} onPress={() => setDrawerOpen(true)}>
             <Text style={styles.hamburgerText}>☰</Text>
           </Pressable>
+          
+          {/* Floating Pickup Pill on Map (from Image 5) */}
+          <View style={styles.pickupPillFloating}>
+            <View style={styles.pickupMeta}>
+              <Text style={styles.pickupPillTitle}>Pickup point</Text>
+              <Text style={styles.pickupPillValue}>Street Number 13 140</Text>
+            </View>
+            <Text style={styles.pickupArrow}>➔</Text>
+          </View>
+
           <View style={styles.notificationButton}>
             <Text style={styles.notificationText}>🔔</Text>
             <View style={styles.badgeDot} />
@@ -73,42 +83,73 @@ export default function PassengerHome() {
         </View>
       </SafeAreaView>
 
-      {/* 3. Bottom Booking Sheet */}
+      {/* 3. Bottom Booking Sheet (Image 5 grid layout) */}
       <View style={styles.bottomSheet}>
         <View style={styles.dragIndicator} />
-        <Text style={styles.sheetTitle}>Where are you going?</Text>
         
+        {/* Services Grid */}
+        <View style={styles.servicesGrid}>
+          {/* Active Lime Green Card: City Rides */}
+          <Pressable style={styles.activeServiceCard} onPress={() => router.push('/passenger/booking')}>
+            <View style={styles.activeServiceHeader}>
+              <Text style={styles.activeServiceTitle}>City rides</Text>
+              <View style={styles.activeWLogo}>
+                <Text style={styles.activeWLogoText}>W</Text>
+              </View>
+            </View>
+            <View style={styles.activeServiceGraphic}>
+              <Text style={styles.activeServiceEmoji}>🏍️ 🚗</Text>
+            </View>
+          </Pressable>
+
+          {/* Right Column Grid Stack */}
+          <View style={styles.rightServicesStack}>
+            {/* City to City Card */}
+            <Pressable style={styles.inactiveServiceCard} onPress={() => router.push('/passenger/booking')}>
+              <Text style={styles.serviceTitle}>City to City</Text>
+              <Text style={styles.serviceEmoji}>🚗💼</Text>
+            </Pressable>
+
+            {/* Couriers and Freight row */}
+            <View style={styles.servicesRow}>
+              <Pressable style={[styles.inactiveServiceCard, { flex: 1 }]} onPress={() => router.push('/passenger/booking')}>
+                <Text style={styles.serviceTitle}>Couriers</Text>
+                <Text style={styles.serviceEmoji}>📦</Text>
+              </Pressable>
+              <Pressable style={[styles.inactiveServiceCard, { flex: 1 }]} onPress={() => router.push('/passenger/booking')}>
+                <Text style={styles.serviceTitle}>Freight</Text>
+                <Text style={styles.serviceEmoji}>🚚</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Search trigger bar */}
         <Pressable
           style={styles.searchTrigger}
           onPress={() => router.push('/passenger/booking')}
         >
           <View style={styles.searchRow}>
             <Text style={styles.searchIcon}>🔍</Text>
-            <Text style={styles.searchPlaceholder}>Enter destination...</Text>
-          </View>
-          <View style={styles.mapShortcut}>
-            <Text style={styles.shortcutIcon}>🗺️</Text>
+            <Text style={styles.searchPlaceholder}>Where to & for how much?</Text>
           </View>
         </Pressable>
 
-        <View style={styles.quickAddresses}>
-          <Pressable style={styles.quickItem} onPress={() => router.push('/passenger/booking')}>
-            <View style={styles.quickIconCircle}>
-              <Text style={styles.quickEmoji}>🏢</Text>
-            </View>
-            <View>
-              <Text style={styles.quickName}>Bahria University</Text>
-              <Text style={styles.quickDesc}>E-8/1, Islamabad</Text>
+        {/* Search history list */}
+        <View style={styles.historyList}>
+          <Pressable style={styles.historyItem} onPress={() => router.push('/passenger/booking')}>
+            <Text style={styles.historyIcon}>🕒</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.historyName}>PWD Housing Society</Text>
+              <Text style={styles.historyAddress}>PWD Society, Islamabad</Text>
             </View>
           </Pressable>
           
-          <Pressable style={styles.quickItem} onPress={() => router.push('/passenger/booking')}>
-            <View style={styles.quickIconCircle}>
-              <Text style={styles.quickEmoji}>🏠</Text>
-            </View>
-            <View>
-              <Text style={styles.quickName}>Saved Home</Text>
-              <Text style={styles.quickDesc}>Street 13, Sector F-11</Text>
+          <Pressable style={styles.historyItem} onPress={() => router.push('/passenger/booking')}>
+            <Text style={styles.historyIcon}>📍</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.historyName}>Institute of Space Technology</Text>
+              <Text style={styles.historyAddress}>Islamabad Highway, Islamabad</Text>
             </View>
           </Pressable>
         </View>
@@ -404,6 +445,114 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 16,
   },
+  pickupPillFloating: {
+    position: 'absolute',
+    left: 80,
+    right: 80,
+    top: 4,
+    backgroundColor: '#1e1f1f',
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    justifyContent: 'space-between',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  pickupMeta: {
+    flex: 1,
+  },
+  pickupPillTitle: {
+    fontSize: 9,
+    color: '#8a8c8c',
+    fontWeight: '700',
+  },
+  pickupPillValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  pickupArrow: {
+    fontSize: 10,
+    color: '#8a8c8c',
+    marginLeft: 6,
+  },
+  servicesGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  activeServiceCard: {
+    flex: 1.1,
+    height: 110,
+    borderRadius: 18,
+    backgroundColor: '#ccff00', // Lime green
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  activeServiceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activeServiceTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  activeWLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeWLogoText: {
+    color: '#ccff00',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  activeServiceGraphic: {
+    alignSelf: 'flex-end',
+  },
+  activeServiceEmoji: {
+    fontSize: 34,
+    marginTop: -10,
+  },
+  rightServicesStack: {
+    flex: 1,
+    gap: 10,
+  },
+  inactiveServiceCard: {
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    borderRadius: 14,
+    padding: 10,
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  serviceTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  serviceEmoji: {
+    fontSize: 15,
+  },
+  servicesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   searchTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -411,7 +560,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#212222',
     borderRadius: 14,
     paddingHorizontal: 16,
-    height: 52,
+    height: 50,
     borderWidth: 1,
     borderColor: '#2d2f2f',
   },
@@ -425,50 +574,32 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: {
     color: '#8a8c8c',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
-  mapShortcut: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#2d2f2f',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shortcutIcon: {
-    fontSize: 14,
-  },
-  quickAddresses: {
-    marginTop: 18,
-    gap: 16,
-  },
-  quickItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  historyList: {
+    marginTop: 14,
     gap: 12,
   },
-  quickIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#212222',
+  historyItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
+    paddingVertical: 4,
+    gap: 12,
   },
-  quickEmoji: {
+  historyIcon: {
     fontSize: 16,
+    color: '#8a8c8c',
   },
-  quickName: {
-    fontSize: 15,
+  historyName: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#ffffff',
   },
-  quickDesc: {
-    fontSize: 12,
+  historyAddress: {
+    fontSize: 11,
     color: '#8a8c8c',
+    marginTop: 1,
   },
   drawerOverlay: {
     flex: 1,
