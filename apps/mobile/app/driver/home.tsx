@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { useAuth } from '../../src/auth/AuthContext';
@@ -27,6 +28,7 @@ const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' |
 export default function DriverHome() {
   const { user, signOut } = useAuth();
   const uid = user?.uid;
+  const router = useRouter();
   const profile = useDriverProfile(uid);
   const activeTrip = useDriverActiveTrip(uid);
   const online = profile?.online ?? false;
@@ -156,6 +158,13 @@ export default function DriverHome() {
           <Text style={styles.cardTitle}>Earnings</Text>
           <Text style={styles.earnings}>{balance} PKR</Text>
           <Text style={styles.muted}>{profile?.tripsCount ?? 0} trips · {profile?.rating ?? 5}★</Text>
+          <View style={{ marginTop: 10 }}>
+            <PrimaryButton
+              variant="secondary"
+              label="💳 Wallet & payouts"
+              onPress={() => router.push('/driver/wallet')}
+            />
+          </View>
         </Card>
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />

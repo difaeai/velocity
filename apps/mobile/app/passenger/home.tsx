@@ -21,6 +21,12 @@ export default function PassengerHome() {
           <Badge label="Passenger" />
         </View>
 
+        <PrimaryButton
+          variant="secondary"
+          label="💳 Wallet"
+          onPress={() => router.push('/passenger/wallet')}
+        />
+
         <Card>
           <Text style={styles.cardTitle}>Book a ride</Text>
           <Text style={styles.cardBody}>

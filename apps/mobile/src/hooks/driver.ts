@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import type { RideType, Trip } from '../domain/types';
@@ -70,4 +70,23 @@ export function useWalletBalance(uid?: string): number {
     return onSnapshot(doc(db, 'wallets', uid), (s) => setBalance((s.data()?.balance as number) ?? 0));
   }, [uid]);
   return balance;
+}
+
+export interface WalletTxn {
+  id: string;
+  type: string;
+  amount: number;
+}
+
+export function useWalletTransactions(uid?: string): WalletTxn[] {
+  const [rows, setRows] = useState<WalletTxn[]>([]);
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'wallets', uid, 'transactions'), orderBy('createdAt', 'desc')),
+      (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WalletTxn)),
+      () => setRows([]),
+    );
+  }, [uid]);
+  return rows;
 }

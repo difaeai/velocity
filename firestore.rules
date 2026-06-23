@@ -139,6 +139,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ----- paymentIntents/{id} & payouts/{id} -----------------------------
+    // Wallet top-up intents and driver payout requests. Written only by the
+    // backend; the owner and admins may read.
+    match /paymentIntents/{intentId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+    match /payouts/{payoutId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == uid());
+      allow write: if false;
+    }
+
     // ----- openRequests/{tripId} ------------------------------------------
     // Public-safe feed of open ride requests, written only by the backend.
     // Approved drivers (driver role) read it to discover work; the full trip

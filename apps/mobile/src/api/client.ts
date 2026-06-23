@@ -54,4 +54,13 @@ export const api = {
     { tripId: string; kind?: 'sos' | 'route_deviation'; note?: string },
     { ok: boolean; eventId: string }
   >('raiseSafetyEvent'),
+  createTopupIntent: callable<
+    { amount: number; phone?: string },
+    { ok: boolean; intentId: string; redirectUrl: string | null; mock: boolean }
+  >('createTopupIntent'),
+  mockConfirmTopup: callable<{ intentId: string }, { ok: boolean }>('mockConfirmTopup'),
+  requestPayout: callable<
+    { amount: number; method?: 'jazzcash' | 'easypaisa' | 'bank'; account?: string },
+    { ok: boolean; payoutId: string }
+  >('requestPayout'),
 };

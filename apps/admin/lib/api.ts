@@ -18,4 +18,5 @@ export const adminApi = {
   resolveSafetyEvent: callable<{ eventId: string; resolution?: string }, { ok: boolean }>(
     'resolveSafetyEvent',
   ),
+  markPayoutPaid: callable<{ payoutId: string }, { ok: boolean }>('markPayoutPaid'),
 };
