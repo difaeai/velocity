@@ -3,9 +3,7 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { Field, IdCardArt, StepHeader, UploadCard, pickPhoto } from '../../../src/ui/onboarding';
-import { PrimaryButton } from '../../../src/ui/components';
-import { colors } from '../../../src/config';
+import { Field, IdCardArt, OnbButton, StepHeader, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -37,13 +35,13 @@ export default function Cnic() {
           placeholder="12345-1234567-1"
           keyboardType="numbers-and-punctuation"
         />
-        <PrimaryButton label="Done" onPress={() => router.back()} disabled={!valid} />
+        <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
 });

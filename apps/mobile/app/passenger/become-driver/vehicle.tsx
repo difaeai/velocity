@@ -1,85 +1,57 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { Field, IdCardArt, StepHeader, UploadCard, pickPhoto } from '../../../src/ui/onboarding';
-import { PrimaryButton } from '../../../src/ui/components';
-import { colors } from '../../../src/config';
-import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
-
-const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
+import { HubRow, OnbButton, StepHeader, SupportNote, oc } from '../../../src/ui/onboarding';
 
 export default function Vehicle() {
   const router = useRouter();
-  const { data, set } = useOnboarding();
-  const valid =
-    !!data.vehicleType && data.vehicleMake.trim().length > 0 && data.plate.trim().length > 2 && !!data.vehicleDoc;
+  const { data } = useOnboarding();
+
+  const detailsDone = !!data.vehicleType && data.vehicleMake.trim().length > 0 && data.color.trim().length > 0;
+  const pictureDone = !!data.vehiclePhoto;
+  const plateDone = data.plate.trim().length > 2;
+  const certificateDone = !!data.vehicleDoc;
+  const required = detailsDone && plateDone && certificateDone;
+
+  const summary = detailsDone ? `${data.vehicleMake}, ${data.color}` : undefined;
+  const go = (route: string) => () => router.push(route);
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Vehicle info" />
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.typeCard}>
-          <Text style={styles.typeLabel}>Vehicle type</Text>
-          <View style={styles.pillRow}>
-            {RIDE_TYPES.map((rt) => (
-              <Pressable
-                key={rt}
-                onPress={() => set({ vehicleType: rt })}
-                style={[styles.pill, data.vehicleType === rt && styles.pillActive]}
-              >
-                <Text style={[styles.pillText, data.vehicleType === rt && { color: '#fff' }]}>
-                  {RIDE_TYPE_LABELS[rt]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.card}>
+          <HubRow
+            first
+            label={summary ?? 'Vehicle details'}
+            done={detailsDone}
+            onPress={go('/passenger/become-driver/vehicle-details')}
+          />
+          <HubRow label="Picture" done={pictureDone} onPress={go('/passenger/become-driver/vehicle-photo')} />
+          <HubRow
+            label="Registration plate"
+            value={plateDone ? data.plate : undefined}
+            done={plateDone}
+            onPress={go('/passenger/become-driver/vehicle-plate')}
+          />
+          <HubRow
+            label="Certificate of vehicle registration"
+            done={certificateDone}
+            onPress={go('/passenger/become-driver/vehicle-certificate')}
+          />
         </View>
 
-        <Field
-          label="Make & model"
-          value={data.vehicleMake}
-          onChangeText={(t) => set({ vehicleMake: t })}
-          placeholder="e.g. Toyota Corolla"
-        />
-        <Field label="Colour" value={data.color} onChangeText={(t) => set({ color: t })} placeholder="e.g. White" />
-        <Field
-          label="Number plate"
-          value={data.plate}
-          onChangeText={(t) => set({ plate: t })}
-          placeholder="LEC-4820"
-          autoCapitalize="characters"
-        />
-
-        <UploadCard
-          title="Vehicle registration / papers"
-          uri={data.vehicleDoc}
-          onPick={() => pickPhoto((uri) => set({ vehicleDoc: uri }))}
-          art={<IdCardArt label="VEHICLE" />}
-        />
-
-        <PrimaryButton label="Done" onPress={() => router.back()} disabled={!valid} />
+        <OnbButton label="Done" onPress={() => router.back()} disabled={!required} />
+        <SupportNote />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { padding: 18, gap: 12 },
-  typeCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 2 },
-  typeLabel: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 12, textAlign: 'center' },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
-  pill: {
-    paddingHorizontal: 16,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontWeight: '800', color: colors.text },
+  safe: { flex: 1, backgroundColor: oc.screen },
+  container: { padding: 18, gap: 14 },
+  card: { backgroundColor: oc.card, borderRadius: 18, overflow: 'hidden' },
 });

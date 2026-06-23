@@ -27,6 +27,7 @@ export interface DriverOnboardingInput {
   cnicBackDocPath?: string;
   photoDocPath?: string;
   selfieDocPath?: string;
+  vehiclePhotoDocPath?: string;
   email?: string;
   dob?: string;
 }

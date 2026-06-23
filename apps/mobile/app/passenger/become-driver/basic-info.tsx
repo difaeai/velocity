@@ -3,9 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { Bullet, Field, PhotoCircle, StepHeader, pickPhoto } from '../../../src/ui/onboarding';
-import { PrimaryButton } from '../../../src/ui/components';
-import { colors } from '../../../src/config';
+import { Bullet, Field, OnbButton, PhotoCircle, StepHeader, oc, pickPhoto } from '../../../src/ui/onboarding';
 
 export default function BasicInfo() {
   const router = useRouter();
@@ -43,15 +41,15 @@ export default function BasicInfo() {
           placeholder="you@example.com"
         />
 
-        <PrimaryButton label="Next" onPress={() => router.back()} />
+        <OnbButton label="Next" onPress={() => router.back()} disabled={!data.photo || !data.firstName.trim() || !data.lastName.trim()} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 12 },
-  photoCard: { backgroundColor: colors.surface, borderRadius: 18, padding: 20, alignItems: 'center', gap: 12, marginBottom: 4 },
+  photoCard: { backgroundColor: oc.card, borderRadius: 18, padding: 20, alignItems: 'center', gap: 12, marginBottom: 4 },
   bullets: { gap: 6, alignSelf: 'stretch', paddingHorizontal: 8 },
 });
