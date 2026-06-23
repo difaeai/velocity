@@ -5,9 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useDriverProfile } from '../../../src/hooks/driver';
 import { useOnboarding, type SectionKey } from '../../../src/onboarding/context';
-import { colors } from '../../../src/config';
-import { StepHeader } from '../../../src/ui/onboarding';
-import { PrimaryButton } from '../../../src/ui/components';
+import { OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
 
 const SECTIONS: { key: SectionKey; label: string; route: string }[] = [
   { key: 'basic', label: 'Basic info', route: '/passenger/become-driver/basic-info' },
@@ -58,9 +56,9 @@ export default function Checklist() {
               <Pressable
                 key={s.key}
                 onPress={() => router.push(s.route)}
-                style={[styles.row, i < SECTIONS.length - 1 && styles.rowBorder]}
+                style={[styles.row, i > 0 && styles.rowBorder]}
               >
-                <Text style={[styles.rowLabel, !done && status === 'rejected' && { color: colors.danger }]}>
+                <Text style={[styles.rowLabel, !done && status === 'rejected' && { color: '#c0392b' }]}>
                   {s.label}
                 </Text>
                 <View style={styles.rowRight}>
@@ -82,7 +80,7 @@ export default function Checklist() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <PrimaryButton
+        <OnbButton
           label={status === 'pending' ? 'Submitted — under review' : 'Submit application'}
           onPress={onSubmit}
           loading={submitting}
@@ -95,13 +93,13 @@ export default function Checklist() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-  declined: { backgroundColor: colors.danger, borderRadius: 12, padding: 14 },
-  declinedText: { color: '#fff', fontWeight: '700', fontSize: 14, lineHeight: 20 },
-  pending: { backgroundColor: '#fff7e6', borderColor: '#f5d384', borderWidth: 1, borderRadius: 12, padding: 14 },
-  pendingText: { color: '#92600a', fontWeight: '700', fontSize: 14 },
-  card: { backgroundColor: colors.surface, borderRadius: 18, overflow: 'hidden' },
+  declined: { backgroundColor: '#fdecea', borderColor: '#f5b7b1', borderWidth: 1, borderRadius: 12, padding: 14 },
+  declinedText: { color: '#c0392b', fontWeight: '700', fontSize: 14, lineHeight: 20 },
+  pending: { backgroundColor: oc.note, borderColor: '#f5d384', borderWidth: 1, borderRadius: 12, padding: 14 },
+  pendingText: { color: oc.noteText, fontWeight: '700', fontSize: 14 },
+  card: { backgroundColor: oc.card, borderRadius: 18, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -109,14 +107,14 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 18,
   },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  rowLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  rowBorder: { borderTopWidth: 1, borderTopColor: oc.line },
+  rowLabel: { fontSize: 16, fontWeight: '600', color: oc.text },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  check: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  checkMark: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  check: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: oc.green, alignItems: 'center', justifyContent: 'center' },
+  checkMark: { color: oc.green, fontSize: 13, fontWeight: '900' },
   warn: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#e0a106', alignItems: 'center', justifyContent: 'center' },
   warnMark: { color: '#e0a106', fontSize: 13, fontWeight: '900' },
-  chevron: { color: colors.muted, fontSize: 24, fontWeight: '700' },
-  error: { color: colors.danger, fontWeight: '600', fontSize: 14 },
-  terms: { color: colors.muted, fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  chevron: { color: oc.green, fontSize: 24, fontWeight: '500' },
+  error: { color: '#c0392b', fontWeight: '600', fontSize: 14 },
+  terms: { color: oc.sub, fontSize: 12, textAlign: 'center', lineHeight: 18 },
 });

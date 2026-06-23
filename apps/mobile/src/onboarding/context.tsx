@@ -23,6 +23,7 @@ export interface OnboardingData {
   color: string;
   plate: string;
   vehicleDoc: string | null;
+  vehiclePhoto: string | null;
 }
 
 const EMPTY: OnboardingData = {
@@ -41,6 +42,7 @@ const EMPTY: OnboardingData = {
   color: '',
   plate: '',
   vehicleDoc: null,
+  vehiclePhoto: null,
 };
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
@@ -71,6 +73,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     vehicle:
       !!data.vehicleType &&
       data.vehicleMake.trim().length > 0 &&
+      data.color.trim().length > 0 &&
       data.plate.trim().length > 2 &&
       !!data.vehicleDoc,
   };
@@ -91,6 +94,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
           uploadDriverDoc(uid, 'photo', data.photo!),
           uploadDriverDoc(uid, 'selfie', data.selfie!),
         ]);
+      const vehiclePhotoDocPath = data.vehiclePhoto
+        ? await uploadDriverDoc(uid, 'vehicle-photo', data.vehiclePhoto)
+        : undefined;
       await api.submitDriverOnboarding({
         fullName: `${data.firstName} ${data.lastName}`.trim(),
         cnic: data.cnicNumber,
@@ -103,6 +109,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         cnicBackDocPath,
         photoDocPath,
         selfieDocPath,
+        vehiclePhotoDocPath,
         email: data.email || undefined,
         dob: data.dob || undefined,
       });

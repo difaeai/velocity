@@ -3,9 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { IdCardArt, StepHeader, UploadCard, pickPhoto } from '../../../src/ui/onboarding';
-import { PrimaryButton } from '../../../src/ui/components';
-import { colors } from '../../../src/config';
+import { IdCardArt, OnbButton, StepHeader, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
 
 export default function License() {
   const router = useRouter();
@@ -26,15 +24,15 @@ export default function License() {
             Upload a clear photo of your original licence. Only original documents are accepted.
           </Text>
         </View>
-        <PrimaryButton label="Done" onPress={() => router.back()} disabled={!data.licensePhoto} />
+        <OnbButton label="Done" onPress={() => router.back()} disabled={!data.licensePhoto} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-  note: { backgroundColor: '#fffbe8', borderColor: '#f1e2a6', borderWidth: 1, borderRadius: 12, padding: 14 },
-  noteText: { color: '#7a6410', fontSize: 13, lineHeight: 19 },
+  note: { backgroundColor: oc.note, borderRadius: 12, padding: 14 },
+  noteText: { color: oc.noteText, fontSize: 13, lineHeight: 19 },
 });
