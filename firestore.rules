@@ -139,6 +139,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ----- openRequests/{tripId} ------------------------------------------
+    // Public-safe feed of open ride requests, written only by the backend.
+    // Approved drivers (driver role) read it to discover work; the full trip
+    // document stays private to its participants.
+    match /openRequests/{tripId} {
+      allow read: if isDriver();
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

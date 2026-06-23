@@ -96,6 +96,18 @@ export const createTrip = onCall(async (req) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
     tx.set(userRef, { activeTripId: tripRef.id }, { merge: true });
+    // Public-safe feed that approved online drivers can read to discover work.
+    tx.set(db.doc(`openRequests/${tripRef.id}`), {
+      tripId: tripRef.id,
+      rideType: data.rideType,
+      offeredFare: data.offeredFare,
+      seats: data.seats,
+      passengerGender: data.passengerGender,
+      pool: data.pool ?? false,
+      pickup: data.pickup,
+      dropoff: data.dropoff,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   });
 
   logger.info('Trip created', { tripId: tripRef.id, passenger: ctx.uid });
@@ -201,6 +213,7 @@ export const acceptBid = onCall(async (req) => {
       { merge: true },
     );
     tx.set(bidRef, { status: 'accepted' }, { merge: true });
+    tx.delete(db.doc(`openRequests/${tripId}`)); // no longer open
     return { fare, driverId: driverInfo.driverId };
   });
 
@@ -278,6 +291,7 @@ export const cancelTrip = onCall(async (req) => {
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
+    tx.delete(db.doc(`openRequests/${tripId}`));
   });
 
   logger.info('Trip cancelled', { tripId, by: ctx.uid });
