@@ -48,6 +48,8 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   });
   await setDoc(doc(db, 'wallets/passenger1'), { uid: 'passenger1', balance: 0 });
   await setDoc(doc(db, 'openRequests/trip1'), { tripId: 'trip1', rideType: 'ac', offeredFare: 500 });
+  await setDoc(doc(db, 'payouts/payout1'), { driverId: 'driver1', amount: 500, status: 'pending' });
+  await setDoc(doc(db, 'paymentIntents/intent1'), { uid: 'passenger1', amount: 1000, status: 'pending' });
 });
 
 test('unauthenticated users are denied everything (default deny)', async () => {
@@ -113,4 +115,12 @@ test('open requests are readable by drivers only, never client-writable', async 
   await assertSucceeds(getDoc(doc(driver, 'openRequests/trip1')));
   await assertFails(getDoc(doc(passenger, 'openRequests/trip1')));
   await assertFails(setDoc(doc(driver, 'openRequests/x'), { tripId: 'x' }));
+});
+
+test('payouts & payment intents are owner/admin-read, server-write only', async () => {
+  await assertSucceeds(getDoc(doc(driver, 'payouts/payout1')));
+  await assertFails(getDoc(doc(passenger, 'payouts/payout1')));
+  await assertFails(setDoc(doc(driver, 'payouts/x'), { driverId: 'driver1' }));
+  await assertSucceeds(getDoc(doc(passenger, 'paymentIntents/intent1')));
+  await assertFails(getDoc(doc(driver, 'paymentIntents/intent1')));
 });

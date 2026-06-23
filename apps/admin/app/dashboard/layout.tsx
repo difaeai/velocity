@@ -11,6 +11,7 @@ import { Button } from '@/components/ui';
 const NAV = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/dashboard/drivers', label: 'Driver approvals' },
+  { href: '/dashboard/payouts', label: 'Payouts' },
   { href: '/dashboard/safety', label: 'Safety desk' },
 ];
 
