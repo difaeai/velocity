@@ -11,19 +11,37 @@ directory change needed**. Every push to the connected branch builds and deploys
 - The other workspaces (`apps/mobile`, `backend/functions`, `tests`) are separate
   packages that App Hosting ignores.
 
-> The admin panel is gated to the `admin` role. Bootstrap the first admin once
-> (see `docs/SECURITY.md`), then manage the rest from the panel.
+> The admin panel is gated to the `admin` role — bootstrap the first admin once
+> (below), then manage the rest from the panel.
+
+## First admin (bootstrap)
+
+There is no built-in admin account (by design). Create a user in **Firebase
+Console → Authentication**, then grant it the `admin` claim once. Easiest in
+**Google Cloud Shell** (already authenticated, no local setup):
+
+```bash
+cd ~ && git clone https://github.com/difaeai/velocity.git
+npm install firebase-admin
+node velocity/scripts/grant-admin.mjs you@example.com
+```
+
+Then **sign out and back in** to the admin panel. All other admins are managed
+from inside the panel afterwards.
 
 ## Backend — Cloud Functions
 
+Requires the **Blaze** (pay-as-you-go) plan. Run from the repo root:
+
 ```bash
-firebase deploy --only functions          # requires the Blaze plan
+cd backend/functions && npm install && cd ..
+firebase deploy --only functions --project velocity-fe379
 ```
 
 ## Security rules & indexes
 
 ```bash
-firebase deploy --only firestore:rules,storage:rules,firestore:indexes
+firebase deploy --only firestore:rules,storage,firestore:indexes --project velocity-fe379
 ```
 
 ## Mobile app — Expo / EAS
