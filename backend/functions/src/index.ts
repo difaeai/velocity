@@ -18,6 +18,7 @@ export { submitDriverOnboarding, approveDriver, rejectDriver } from './drivers';
 export {
   createTrip,
   placeBid,
+  raiseTripFare,
   acceptBid,
   updateTripStatus,
   cancelTrip,

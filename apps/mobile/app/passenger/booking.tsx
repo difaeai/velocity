@@ -13,7 +13,7 @@ import { FirebaseError } from 'firebase/app';
 
 import { api } from '../../src/api/client';
 import { colors } from '../../src/config';
-import { Card } from '../../src/ui/components';
+import { comingSoon } from '../../src/ui/components';
 import {
   BASE_FARES,
   MAX_SEATS,
@@ -61,6 +61,7 @@ export default function Booking() {
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
+  const [autoAccept, setAutoAccept] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -325,20 +326,22 @@ export default function Booking() {
 
         {/* Toggle & Payment Details */}
         <View style={styles.sheetActionsFooter}>
-          <View style={styles.toggleRowFooter}>
+          <Pressable style={styles.toggleRowFooter} onPress={() => setAutoAccept((v) => !v)}>
             <View style={styles.toggleTextCol}>
               <Text style={styles.autoAcceptLabel}>Auto-accept offer of PKR {fare}</Text>
             </View>
-            <View style={styles.toggleSwitchSmall}>
-              <View style={styles.toggleSwitchKnobSmall} />
+            <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
+              <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
             </View>
-          </View>
+          </Pressable>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <View style={styles.bottomButtonsRow}>
             {/* Cash Badge Button */}
-            <View style={styles.cashBadgeFooter}>
+            <Pressable style={styles.cashBadgeFooter} onPress={() => comingSoon('Payment methods')}>
               <Text style={styles.cashBadgeEmoji}>💵</Text>
-            </View>
+            </Pressable>
 
             {/* Find a Driver Button */}
             <Pressable
@@ -352,9 +355,9 @@ export default function Booking() {
             </Pressable>
 
             {/* Filter Button */}
-            <View style={styles.filterButtonFooter}>
+            <Pressable style={styles.filterButtonFooter} onPress={() => comingSoon('Filters')}>
               <Text style={styles.filterButtonIcon}>🎛️</Text>
-            </View>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -852,6 +855,16 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     backgroundColor: '#8a8c8c',
+  },
+  toggleKnobOn: {
+    backgroundColor: '#000',
+    alignSelf: 'flex-end',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   bottomButtonsRow: {
     flexDirection: 'row',

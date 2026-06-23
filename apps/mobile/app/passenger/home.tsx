@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Modal,
   Pressable,
@@ -13,14 +14,34 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { Badge } from '../../src/ui/components';
+import { comingSoon, contactSupport } from '../../src/ui/components';
 
 const { width } = Dimensions.get('window');
 
 export default function PassengerHome() {
-  const { user, signOut } = useAuth();
+  const { role, signOut } = useAuth();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const navTo = (path: string) => {
+    setDrawerOpen(false);
+    router.push(path);
+  };
+  const soon = (feature: string) => {
+    setDrawerOpen(false);
+    comingSoon(feature);
+  };
+  const openSafety = () => {
+    setDrawerOpen(false);
+    Alert.alert(
+      'Safety',
+      'During a ride you can trigger an Emergency SOS from the trip screen. Our team monitors safety events in real time.',
+    );
+  };
+  const goDriverMode = () => {
+    setDrawerOpen(false);
+    router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver');
+  };
 
   return (
     <View style={styles.container}>
@@ -76,10 +97,10 @@ export default function PassengerHome() {
             <Text style={styles.pickupArrow}>➔</Text>
           </View>
 
-          <View style={styles.notificationButton}>
+          <Pressable style={styles.notificationButton} onPress={() => comingSoon('Notifications')}>
             <Text style={styles.notificationText}>🔔</Text>
             <View style={styles.badgeDot} />
-          </View>
+          </Pressable>
         </View>
       </SafeAreaView>
 
@@ -198,63 +219,68 @@ export default function PassengerHome() {
                     <Text style={[styles.menuItemText, styles.menuItemTextActive]}>City</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => { setDrawerOpen(false); router.push('/passenger/profile'); }}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/activity')}>
                     <Text style={styles.menuItemIcon}>🕒</Text>
                     <Text style={styles.menuItemText}>Request history</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
+                    <Text style={styles.menuItemIcon}>💳</Text>
+                    <Text style={styles.menuItemText}>Wallet &amp; payments</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => soon('Couriers')}>
                     <Text style={styles.menuItemIcon}>📦</Text>
                     <Text style={styles.menuItemText}>Couriers</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => soon('Business delivery')}>
                     <Text style={styles.menuItemIcon}>💼</Text>
                     <Text style={styles.menuItemText}>Business delivery</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => soon('City to City')}>
                     <Text style={styles.menuItemIcon}>🌐</Text>
                     <Text style={styles.menuItemText}>City to City</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => soon('Saved places')}>
                     <Text style={styles.menuItemIcon}>🔖</Text>
                     <Text style={styles.menuItemText}>Saved places</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => soon('Freight')}>
                     <Text style={styles.menuItemIcon}>🚚</Text>
                     <Text style={styles.menuItemText}>Freight</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={() => soon('Notifications')}>
                     <Text style={styles.menuItemIcon}>🔔</Text>
                     <Text style={styles.menuItemText}>Notifications</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
+                  <Pressable style={styles.menuItem} onPress={openSafety}>
                     <Text style={styles.menuItemIcon}>🛡️</Text>
                     <Text style={styles.menuItemText}>Safety</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/settings')}>
+                    <Text style={styles.menuItemIcon}>⚙️</Text>
+                    <Text style={styles.menuItemText}>Settings</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => soon('Help center')}>
+                    <Text style={styles.menuItemIcon}>ℹ️</Text>
+                    <Text style={styles.menuItemText}>Help</Text>
                   </Pressable>
 
                   <Pressable
                     style={styles.menuItem}
                     onPress={() => {
                       setDrawerOpen(false);
-                      router.push('/passenger/profile');
+                      contactSupport();
                     }}
                   >
-                    <Text style={styles.menuItemIcon}>⚙️</Text>
-                    <Text style={styles.menuItemText}>Settings</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
-                    <Text style={styles.menuItemIcon}>ℹ️</Text>
-                    <Text style={styles.menuItemText}>Help</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => setDrawerOpen(false)}>
                     <Text style={styles.menuItemIcon}>💬</Text>
                     <Text style={styles.menuItemText}>Support</Text>
                   </Pressable>
@@ -268,14 +294,8 @@ export default function PassengerHome() {
 
               {/* Bottom Driver Mode Trigger */}
               <View style={styles.drawerFooter}>
-                <Pressable
-                  style={styles.driverModeButton}
-                  onPress={() => {
-                    setDrawerOpen(false);
-                    router.push('/driver/home');
-                  }}
-                >
-                  <Text style={styles.driverModeText}>Driver mode</Text>
+                <Pressable style={styles.driverModeButton} onPress={goDriverMode}>
+                  <Text style={styles.driverModeText}>{role === 'driver' ? 'Driver mode' : 'Become a driver'}</Text>
                 </Pressable>
 
                 {/* Social Links */}

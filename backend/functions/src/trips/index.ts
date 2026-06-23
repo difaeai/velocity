@@ -171,6 +171,48 @@ export const placeBid = onCall(async (req) => {
   return { ok: true, bidId: bidRef.id };
 });
 
+const raiseFareSchema = z.object({
+  tripId: z.string().min(1).max(128),
+  fare: z.number().int().positive(),
+});
+
+/**
+ * Passenger raises the fare they are offering on a still-open request, to
+ * attract drivers. Fare may only go up and must stay within the allowed band.
+ * Updates both the private trip and the public openRequests feed.
+ */
+export const raiseTripFare = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'raiseTripFare', 20, 60);
+  const parsed = raiseFareSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid tripId and fare.');
+  const { tripId, fare } = parsed.data;
+
+  const tripRef = db.doc(`trips/${tripId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(tripRef);
+    if (!snap.exists) invalid('Trip not found.');
+    if (snap.get('passengerId') !== ctx.uid) {
+      throw new HttpsError('permission-denied', 'Not your trip.');
+    }
+    if (snap.get('status') !== 'requested') {
+      throw new HttpsError('failed-precondition', 'This trip is no longer open.');
+    }
+    const current = snap.get('offeredFare') as number;
+    if (fare <= current) {
+      throw new HttpsError('failed-precondition', 'New fare must be higher than the current offer.');
+    }
+    if (!isValidOfferedFare(snap.get('rideType'), fare)) {
+      invalid('Fare is outside the allowed range.');
+    }
+    tx.set(tripRef, { offeredFare: fare, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    tx.set(db.doc(`openRequests/${tripId}`), { offeredFare: fare }, { merge: true });
+  });
+
+  logger.info('Trip fare raised', { tripId, by: ctx.uid, fare });
+  return { ok: true, offeredFare: fare };
+});
+
 const acceptBidSchema = z.object({
   tripId: z.string().min(1).max(128),
   bidId: z.string().min(1).max(128),

@@ -48,6 +48,9 @@ export const api = {
   ),
   createTrip: callable<CreateTripInput, { ok: boolean; tripId: string }>('createTrip'),
   placeBid: callable<{ tripId: string; fare: number }, { ok: boolean; bidId: string }>('placeBid'),
+  raiseTripFare: callable<{ tripId: string; fare: number }, { ok: boolean; offeredFare: number }>(
+    'raiseTripFare',
+  ),
   acceptBid: callable<{ tripId: string; bidId: string }, { ok: boolean; fare: number; driverId: string }>(
     'acceptBid',
   ),
