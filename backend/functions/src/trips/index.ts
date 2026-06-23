@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { DriverPublicInfo, TripStatus } from '../domain/types';
 import {
@@ -55,6 +56,7 @@ const createTripSchema = z.object({
 /** Passenger creates a ride request. Rejects a second concurrent active trip. */
 export const createTrip = onCall(async (req) => {
   const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'createTrip', 5, 60);
   const parsed = createTripSchema.safeParse(req.data);
   if (!parsed.success) {
     invalid(parsed.error.issues[0]?.message ?? 'Invalid trip request.');
@@ -122,6 +124,7 @@ const placeBidSchema = z.object({
 /** An approved, online driver bids on an open request. */
 export const placeBid = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
+  await rateLimit(ctx.uid, 'placeBid', 30, 60);
   const parsed = placeBidSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId and fare.');
   const { tripId, fare } = parsed.data;

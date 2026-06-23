@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.velocity.app"
+      "bundleIdentifier": "com.velocity.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos to upload driver verification documents.",
+        "NSCameraUsageDescription": "Velocity needs camera access to capture verification documents.",
+        "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides and enable live trip tracking."
+      }
     },
     "android": {
       "package": "com.velocity.app",
@@ -27,7 +32,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Velocity needs access to your photos to upload driver verification documents."
+        }
+      ]
     ]
   }
 }
