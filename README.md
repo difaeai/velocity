@@ -36,11 +36,12 @@ velocity/
 │           ├── drivers/     # Onboarding + admin verification
 │           ├── trips/       # Trip state machine + money settlement
 │           └── safety/      # SOS / route-deviation events
+├── apphosting.yaml         # Firebase App Hosting runtime config
+├── app/ components/ lib/    # Next.js admin panel (at repo root → App Hosting builds it)
 ├── apps/
-│   ├── mobile/              # Expo app (passenger + driver)  ← next stage
-│   └── admin/              # Admin web panel                 ← next stage
+│   └── mobile/              # Expo app (passenger + driver)
 ├── tests/                   # Security-rules unit tests (Firebase emulator)
-├── docs/                    # ARCHITECTURE · SECURITY · ROADMAP
+├── docs/                    # ARCHITECTURE · SECURITY · DEPLOY · PAYMENTS · HARDENING · ROADMAP
 └── legacy-demo/             # The original HTML/JS prototype, kept as a UX reference
 ```
 
