@@ -33,7 +33,10 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
+        >
           <Text style={styles.backText}>←</Text>
         </Pressable>
         <Pressable style={styles.profileSummary} onPress={openSettings}>

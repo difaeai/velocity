@@ -106,7 +106,11 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           ))
         )}
 
-        <PrimaryButton variant="secondary" label="Back" onPress={() => router.back()} />
+        <PrimaryButton
+          variant="secondary"
+          label="Back"
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+        />
       </ScrollView>
     </SafeAreaView>
   );
