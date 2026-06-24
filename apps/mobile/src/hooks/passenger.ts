@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -38,4 +38,30 @@ export function usePassengerTrips(uid?: string): { trips: Trip[]; loading: boole
   }, [uid]);
 
   return { trips, loading };
+}
+
+export interface RecentDestination {
+  address: string;
+}
+
+/**
+ * Unique destinations from the passenger's own past trips, newest first.
+ *
+ * This is real data: it is empty for a brand-new user, so the UI shows an
+ * empty state instead of inventing "suggested" places.
+ */
+export function useRecentDestinations(uid?: string): RecentDestination[] {
+  const { trips } = usePassengerTrips(uid);
+  return useMemo(() => {
+    const seen = new Set<string>();
+    const out: RecentDestination[] = [];
+    for (const t of trips) {
+      const address = t.dropoff?.address?.trim();
+      if (address && !seen.has(address.toLowerCase())) {
+        seen.add(address.toLowerCase());
+        out.push({ address });
+      }
+    }
+    return out;
+  }, [trips]);
 }

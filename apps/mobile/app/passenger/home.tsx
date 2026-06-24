@@ -13,15 +13,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCurrentLocation } from '../../src/hooks/location';
+import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { comingSoon, contactSupport } from '../../src/ui/components';
 
 const { width } = Dimensions.get('window');
 
 export default function PassengerHome() {
-  const { role, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
   const router = useRouter();
+  const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
+  const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const pickupLabel = currentAddress ?? (coords ? 'Current location' : 'Set pickup location');
 
   const navTo = (path: string) => {
     setDrawerOpen(false);
@@ -54,17 +60,10 @@ export default function PassengerHome() {
         <View style={[styles.road, { top: 0, left: 100, width: 6, height: '100%' }]} />
         <View style={[styles.road, { top: 0, left: 280, width: 8, height: '100%', transform: [{ rotate: '10deg' }] }]} />
 
-        {/* Mock Map Pins */}
+        {/* Your location marker */}
         <View style={[styles.mapPin, { top: 150, left: 80 }]}>
           <Text style={styles.pinIcon}>📍</Text>
           <View style={styles.pulseRing} />
-        </View>
-
-        <View style={[styles.cabPin, { top: 260, left: 240 }]}>
-          <Text style={styles.cabEmoji}>🚗</Text>
-        </View>
-        <View style={[styles.cabPin, { top: 450, left: 70 }]}>
-          <Text style={styles.cabEmoji}>🏍️</Text>
         </View>
 
         {/* Right side floating controls from Mockup */}
@@ -89,13 +88,16 @@ export default function PassengerHome() {
           </Pressable>
           
           {/* Floating Pickup Pill on Map (from Image 5) */}
-          <View style={styles.pickupPillFloating}>
+          <Pressable
+            style={styles.pickupPillFloating}
+            onPress={() => (coords ? router.push('/passenger/booking') : requestLocation())}
+          >
             <View style={styles.pickupMeta}>
               <Text style={styles.pickupPillTitle}>Pickup point</Text>
-              <Text style={styles.pickupPillValue}>Street Number 13 140</Text>
+              <Text style={styles.pickupPillValue} numberOfLines={1}>{pickupLabel}</Text>
             </View>
             <Text style={styles.pickupArrow}>➔</Text>
-          </View>
+          </Pressable>
 
           <Pressable style={styles.notificationButton} onPress={() => comingSoon('Notifications')}>
             <Text style={styles.notificationText}>🔔</Text>
@@ -156,24 +158,24 @@ export default function PassengerHome() {
           </View>
         </Pressable>
 
-        {/* Search history list */}
-        <View style={styles.historyList}>
-          <Pressable style={styles.historyItem} onPress={() => router.push('/passenger/booking')}>
-            <Text style={styles.historyIcon}>🕒</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.historyName}>PWD Housing Society</Text>
-              <Text style={styles.historyAddress}>PWD Society, Islamabad</Text>
-            </View>
-          </Pressable>
-          
-          <Pressable style={styles.historyItem} onPress={() => router.push('/passenger/booking')}>
-            <Text style={styles.historyIcon}>📍</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.historyName}>Institute of Space Technology</Text>
-              <Text style={styles.historyAddress}>Islamabad Highway, Islamabad</Text>
-            </View>
-          </Pressable>
-        </View>
+        {/* Recent destinations from the rider's own trips (real data) */}
+        {recents.length > 0 ? (
+          <View style={styles.historyList}>
+            {recents.slice(0, 4).map((r) => (
+              <Pressable
+                key={r.address}
+                style={styles.historyItem}
+                onPress={() => router.push('/passenger/booking')}
+              >
+                <Text style={styles.historyIcon}>🕒</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
+                  <Text style={styles.historyAddress}>Recent destination</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       {/* 4. Custom Slide-out Side Drawer Menu Overlay */}
@@ -203,11 +205,12 @@ export default function PassengerHome() {
                     <Text style={styles.avatarSmile}>☺</Text>
                   </View>
                   <View style={styles.profileInfo}>
-                    <Text style={styles.profileName}>Hassan</Text>
-                    <View style={styles.ratingRow}>
-                      <Text style={styles.stars}>★★★★★</Text>
-                      <Text style={styles.ratingValue}>5.0 (11)</Text>
-                    </View>
+                    <Text style={styles.profileName} numberOfLines={1}>
+                      {user?.displayName ?? user?.email ?? 'Your account'}
+                    </Text>
+                    {user?.email ? (
+                      <Text style={styles.profileEmail} numberOfLines={1}>{user.email}</Text>
+                    ) : null}
                   </View>
                   <Text style={styles.profileArrow}>➔</Text>
                 </Pressable>
@@ -671,6 +674,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#ffffff',
     marginBottom: 2,
+  },
+  profileEmail: {
+    fontSize: 12,
+    color: '#8a8c8c',
   },
   ratingRow: {
     flexDirection: 'row',
