@@ -20,6 +20,8 @@ const STATUS_LABEL: Record<TripStatus, string> = {
   cancelled: 'Trip cancelled',
 };
 
+const BUBBLE_COLORS = ['#3b82f6', '#ef4444', '#10b981'];
+
 export default function TripScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -92,19 +94,39 @@ export default function TripScreen() {
           </View>
         </View>
 
-        {/* 2. Top floating counter: drivers viewing request (Image 2 & 3) */}
+        {/* 2. Top floating counter: real driver offers on this request */}
         <SafeAreaView style={styles.floatingTopArea} pointerEvents="box-none">
           <View style={styles.viewersBanner}>
             <Text style={styles.viewersText}>
-              {pendingBids.length > 0 ? `${pendingBids.length + 3}` : '4'} drivers are viewing your request
+              {pendingBids.length > 0
+                ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} sent an offer`
+                : 'Searching for nearby drivers…'}
             </Text>
-            {/* Avatar bubbles stacked */}
-            <View style={styles.avatarBubbles}>
-              <View style={[styles.avatarBubble, { backgroundColor: '#3b82f6' }]}><Text style={styles.avatarBubbleText}>A</Text></View>
-              <View style={[styles.avatarBubble, { backgroundColor: '#ef4444', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>B</Text></View>
-              <View style={[styles.avatarBubble, { backgroundColor: '#10b981', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>C</Text></View>
-              <View style={[styles.avatarBubble, { backgroundColor: '#4b5563', marginLeft: -8 }]}><Text style={styles.avatarBubbleText}>+1</Text></View>
-            </View>
+            {pendingBids.length > 0 ? (
+              <View style={styles.avatarBubbles}>
+                {pendingBids.slice(0, 3).map((b, i) => (
+                  <View
+                    key={b.id}
+                    style={[
+                      styles.avatarBubble,
+                      {
+                        backgroundColor: BUBBLE_COLORS[i % BUBBLE_COLORS.length],
+                        marginLeft: i === 0 ? 0 : -8,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.avatarBubbleText}>
+                      {(b.driverInfo.displayName?.[0] ?? 'D').toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
+                {pendingBids.length > 3 ? (
+                  <View style={[styles.avatarBubble, { backgroundColor: '#4b5563', marginLeft: -8 }]}>
+                    <Text style={styles.avatarBubbleText}>+{pendingBids.length - 3}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         </SafeAreaView>
 
@@ -177,12 +199,12 @@ export default function TripScreen() {
             <View style={styles.routePillCard}>
               <View style={styles.routePillPoint}>
                 <Text style={styles.routeDotBlue}>👤</Text>
-                <Text style={styles.routePillText} numberOfLines={1}>{trip.pickup?.address || 'Street Number 13 140 (PWD Society, Sector B)'}</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.pickup?.address || 'Pickup'}</Text>
               </View>
               <View style={styles.routePillDivider} />
               <View style={styles.routePillPoint}>
                 <Text style={styles.routeDotGreen}>🏁</Text>
-                <Text style={styles.routePillText} numberOfLines={1}>{trip.dropoff?.address || 'Bahria University - Islamabad Campus'}</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.dropoff?.address || 'Drop-off'}</Text>
               </View>
             </View>
 

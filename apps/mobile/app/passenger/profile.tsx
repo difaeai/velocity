@@ -189,18 +189,6 @@ export default function ProfileScreen() {
             <Text style={styles.chevron}>➔</Text>
           </Pressable>
 
-          <View style={styles.divider} />
-
-          <Pressable style={styles.listItem} onPress={openActivity}>
-            <View style={styles.itemLeftRow}>
-              <Text style={styles.itemIcon}>🔄</Text>
-              <View>
-                <Text style={styles.itemTitle}>Great! Few canceled rides</Text>
-                <Text style={styles.itemSubtitle}>This affects ride search speed</Text>
-              </View>
-            </View>
-            <Text style={styles.chevron}>➔</Text>
-          </Pressable>
         </View>
 
         {/* Information List Card */}

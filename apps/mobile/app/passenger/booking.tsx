@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -14,9 +14,11 @@ import { FirebaseError } from 'firebase/app';
 import { api } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
+import { useAuth } from '../../src/auth/AuthContext';
+import { useCurrentLocation } from '../../src/hooks/location';
+import { useRecentDestinations } from '../../src/hooks/passenger';
 import {
   BASE_FARES,
-  MAX_SEATS,
   RIDE_TYPE_LABELS,
   fareBounds,
   type Gender,
@@ -24,37 +26,24 @@ import {
 } from '../../src/domain/types';
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
-// Default to Islamabad coordinates
-const DEFAULT_PICKUP = { lat: 33.6844, lng: 73.0479 };
-const DEFAULT_DROPOFF = { lat: 33.7104, lng: 73.0551 };
-
-const SUGGESTED_LOCATIONS = [
-  {
-    id: '1',
-    name: 'Bahria University - Islamabad Campus',
-    address: 'Shangrilla Road, E-8/1 E-8/1 E-8, Islamabad',
-    distance: '17.2km',
-  },
-  {
-    id: '2',
-    name: 'Bahria University (BSEAS) Islamabad H-11/4 Campus',
-    address: 'H-11/4 H 11/4 H-11, Islamabad',
-    distance: '12.1km',
-  },
-  {
-    id: '3',
-    name: 'Bahria University College',
-    address: 'Sector E-8, Islamabad',
-    distance: '16.5km',
-  },
-];
 
 export default function Booking() {
   const router = useRouter();
+  const { user } = useAuth();
+  const { coords, address: currentAddress, status: locStatus, request: requestLocation } =
+    useCurrentLocation();
+  const recents = useRecentDestinations(user?.uid);
+
   const [stage, setStage] = useState<'route' | 'details'>('route');
-  const [pickup, setPickup] = useState('Street Number 13 140');
-  const [dropoff, setDropoff] = useState('Bahria uni');
-  
+  const [pickup, setPickup] = useState('');
+  const [dropoff, setDropoff] = useState('');
+
+  // Prefill the pickup with the rider's real (reverse-geocoded) address once we
+  // have it, unless they've already typed something.
+  useEffect(() => {
+    if (currentAddress) setPickup((prev) => (prev.trim() ? prev : currentAddress));
+  }, [currentAddress]);
+
   // Details state
   const [rideType, setRideType] = useState<RideType>('ac');
   const [fare, setFare] = useState<number>(BASE_FARES.ac);
@@ -83,16 +72,30 @@ export default function Booking() {
 
   async function findDriver() {
     setError(null);
+    if (!dropoff.trim()) {
+      setError('Enter your destination first.');
+      setStage('route');
+      return;
+    }
+    if (!coords) {
+      setError('We need your location to set the pickup. Please enable location access.');
+      requestLocation();
+      return;
+    }
     setLoading(true);
     try {
+      const pickupAddress = pickup.trim() || currentAddress || 'Current location';
+      // The backend stores coordinates but matches by the public request feed,
+      // not distance, and there is no geocoder yet — so the destination carries
+      // the rider's coordinates and the typed address as the meaningful field.
       const res = await api.createTrip({
         rideType,
         offeredFare: fare,
         seats,
         passengerGender: gender,
         pool,
-        pickup: { ...DEFAULT_PICKUP, address: pickup || 'Pickup' },
-        dropoff: { ...DEFAULT_DROPOFF, address: dropoff || 'Drop-off' },
+        pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
+        dropoff: { lat: coords.lat, lng: coords.lng, address: dropoff.trim() },
       });
       router.replace(`/passenger/trip/${res.tripId}`);
     } catch (e) {
@@ -102,6 +105,11 @@ export default function Booking() {
       setLoading(false);
     }
   }
+
+  const query = dropoff.trim().toLowerCase();
+  const filteredRecents = query
+    ? recents.filter((r) => r.address.toLowerCase().includes(query))
+    : recents;
 
   // STAGE 1: ROUTE SELECTOR SCREEN (Image 1 Mockup)
   if (stage === 'route') {
@@ -158,59 +166,46 @@ export default function Booking() {
           </View>
         </View>
 
-        {/* Tab Filters */}
+        {/* Section header */}
         <View style={styles.tabsContainer}>
-          <View style={[styles.tab, styles.tabActive]}>
-            <Text style={[styles.tabText, styles.tabTextActive]}>Search Results</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.tabText}>Suggested</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.tabText}>Saved</Text>
-          </View>
+          <Text style={styles.sectionHeader}>
+            {query ? 'Recent matches' : 'Recent destinations'}
+          </Text>
         </View>
 
-        {/* Search Results List */}
+        {/* Results: the rider's own recent destinations (real data) */}
         <ScrollView style={styles.resultsScroll} keyboardShouldPersistTaps="handled">
-          {SUGGESTED_LOCATIONS.filter(loc => 
-            loc.name.toLowerCase().includes(dropoff.toLowerCase()) || 
-            loc.address.toLowerCase().includes(dropoff.toLowerCase())
-          ).map((loc) => (
-            <Pressable
-              key={loc.id}
-              style={styles.resultItem}
-              onPress={() => selectLocation(loc.name)}
-            >
-              <View style={styles.resultIconCircle}>
-                <Text style={styles.resultIcon}>📍</Text>
-              </View>
-              <View style={styles.resultMeta}>
-                <Text style={styles.resultName}>{loc.name}</Text>
-                <Text style={styles.resultAddress}>{loc.address}</Text>
-              </View>
-              <View style={styles.resultRight}>
-                <Text style={styles.resultDistance}>{loc.distance}</Text>
-                <Text style={styles.bookmarkIcon}>🔖</Text>
-              </View>
-            </Pressable>
-          ))}
+          {filteredRecents.length > 0 ? (
+            filteredRecents.map((loc) => (
+              <Pressable
+                key={loc.address}
+                style={styles.resultItem}
+                onPress={() => selectLocation(loc.address)}
+              >
+                <View style={styles.resultIconCircle}>
+                  <Text style={styles.resultIcon}>🕒</Text>
+                </View>
+                <View style={styles.resultMeta}>
+                  <Text style={styles.resultName} numberOfLines={1}>{loc.address}</Text>
+                  <Text style={styles.resultAddress}>Recent destination</Text>
+                </View>
+              </Pressable>
+            ))
+          ) : (
+            <View style={styles.emptyResults}>
+              <Text style={styles.emptyResultsText}>
+                {dropoff.trim()
+                  ? 'No saved match — continue with what you typed.'
+                  : 'Type where you want to go. Destinations from your past rides will appear here.'}
+              </Text>
+              {dropoff.trim().length > 0 ? (
+                <Pressable style={styles.useTypedBtn} onPress={() => selectLocation(dropoff.trim())}>
+                  <Text style={styles.useTypedBtnText}>Continue to “{dropoff.trim()}”</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          )}
         </ScrollView>
-
-        {/* Keyboard suggestion bar mockup */}
-        <View style={styles.keyboardSuggestionsBar}>
-          <Pressable style={styles.suggestionItem} onPress={() => selectLocation('Bahria University - Islamabad Campus')}>
-            <Text style={styles.suggestionText}>"uni"</Text>
-          </Pressable>
-          <View style={styles.suggestionDivider} />
-          <Pressable style={styles.suggestionItem} onPress={() => selectLocation('Bahria University - Islamabad Campus')}>
-            <Text style={styles.suggestionText}>university</Text>
-          </Pressable>
-          <View style={styles.suggestionDivider} />
-          <Pressable style={styles.suggestionItem} onPress={() => selectLocation('Bahria University College')}>
-            <Text style={styles.suggestionText}>uniform</Text>
-          </Pressable>
-        </View>
       </SafeAreaView>
     );
   }
@@ -247,14 +242,16 @@ export default function Booking() {
           <View style={styles.floatingRouteCard}>
             <View style={styles.floatingRoutePoint}>
               <Text style={styles.floatingIconBlue}>👤</Text>
-              <Text style={styles.floatingRouteText} numberOfLines={1}>Street Number 13 140 (PWD Society, Sector B)</Text>
-              <View style={styles.entranceBadge}><Text style={styles.entranceText}>Entrance</Text></View>
+              <Text style={styles.floatingRouteText} numberOfLines={1}>
+                {pickup.trim() || currentAddress || 'Current location'}
+              </Text>
             </View>
             <View style={styles.floatingRouteDivider} />
             <View style={styles.floatingRoutePoint}>
               <Text style={styles.floatingIconGreen}>🏁</Text>
-              <Text style={styles.floatingRouteText} numberOfLines={1}>Bahria University - Islamabad Campus (Shangrilla Road, E-8/1 E 8/1 E-8, Islamabad) ~33 min</Text>
-              <Text style={styles.plusIcon}>+</Text>
+              <Text style={styles.floatingRouteText} numberOfLines={1}>
+                {dropoff.trim() || 'Destination'}
+              </Text>
             </View>
           </View>
         </View>
@@ -275,8 +272,10 @@ export default function Booking() {
                   <Text style={styles.infoIconCircle}>ⓘ</Text>
                   <Text style={styles.editPencil}>✏️</Text>
                 </View>
-                <Text style={styles.categorySubtitleBig}>👤 4 · 2 min</Text>
-                <Text style={styles.categoryDescriptionBig}>Lower fares, no AC</Text>
+                <Text style={styles.categorySubtitleBig}>👤 {seats} seat{seats > 1 ? 's' : ''}</Text>
+                <Text style={styles.categoryDescriptionBig}>
+                  Fare range PKR {bounds.min}–{bounds.max}
+                </Text>
               </View>
             </View>
           </View>
@@ -307,7 +306,7 @@ export default function Booking() {
                 <View>
                   <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
                   <Text style={styles.categorySubSmall}>
-                    {rt === 'bike' ? '👤 1 · 2 min · No traffic, lower prices' : '👤 4 · 3 min · Cars with AC'}
+                    PKR {fareBounds(rt).min}–{fareBounds(rt).max}
                   </Text>
                 </View>
               </View>
@@ -334,6 +333,12 @@ export default function Booking() {
               <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
             </View>
           </Pressable>
+
+          {!coords && locStatus !== 'loading' ? (
+            <Pressable onPress={requestLocation}>
+              <Text style={styles.locHint}>📍 Tap to enable location for your pickup point</Text>
+            </Pressable>
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -463,6 +468,43 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
+  sectionHeader: {
+    color: '#8a8c8c',
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  emptyResults: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    gap: 14,
+  },
+  emptyResultsText: {
+    color: '#8a8c8c',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  useTypedBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#212222',
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  useTypedBtnText: {
+    color: '#ccff00',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  locHint: {
+    color: '#ccff00',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   tab: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -510,7 +552,7 @@ const styles = StyleSheet.create({
   resultName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#2563eb', // Bahria Uni blue highlight
+    color: '#2563eb', // Destination highlight
   },
   resultAddress: {
     fontSize: 12,
