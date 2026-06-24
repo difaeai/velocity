@@ -117,7 +117,10 @@ export default function Booking() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Enter your route</Text>
-          <Pressable style={styles.closeBtn} onPress={() => router.back()}>
+          <Pressable
+            style={styles.closeBtn}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
+          >
             <Text style={styles.closeTxt}>✕</Text>
           </Pressable>
         </View>
