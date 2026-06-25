@@ -21,7 +21,7 @@
       "package": "com.velocity.app",
       "config": {
         "googleMaps": {
-          "apiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_ANDROID_KEY"
+          "apiKey": "AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg"
         }
       },
       "adaptiveIcon": {
