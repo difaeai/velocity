@@ -19,6 +19,11 @@
     },
     "android": {
       "package": "com.velocity.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_ANDROID_KEY"
+        }
+      },
       "adaptiveIcon": {
         "backgroundColor": "#004c31",
         "foregroundImage": "./assets/android-icon-foreground.png",
