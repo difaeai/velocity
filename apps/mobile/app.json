@@ -49,7 +49,8 @@
         {
           "locationWhenInUsePermission": "Velocity uses your location to set your pickup point and match nearby rides."
         }
-      ]
+      ],
+      "./plugins/withFoojayResolverFix"
     ]
   }
 }
