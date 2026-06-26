@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -33,7 +34,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "export": "expo export -p ios -p android"
+    "export": "expo export -p ios -p android",
+    "postinstall": "patch-package"
   },
   "overrides": {
     "react-dom": "19.2.3"
