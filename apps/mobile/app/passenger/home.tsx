@@ -17,6 +17,7 @@ import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { comingSoon, contactSupport } from '../../src/ui/components';
+import { LiveMap } from '../../src/ui/LiveMap';
 
 const { width } = Dimensions.get('window');
 
@@ -51,33 +52,9 @@ export default function PassengerHome() {
 
   return (
     <View style={styles.container}>
-      {/* 1. Full-Screen Dark Map Representation */}
+      {/* 1. Full-screen live map (real Google map in the dev build) */}
       <View style={styles.mapContainer}>
-        {/* Abstract Map Roads */}
-        <View style={[styles.road, { top: 120, left: -50, width: width + 100, transform: [{ rotate: '-15deg' }] }]} />
-        <View style={[styles.road, { top: 320, left: -50, width: width + 100, transform: [{ rotate: '25deg' }] }]} />
-        <View style={[styles.road, { top: 500, left: -50, width: width + 100, transform: [{ rotate: '-5deg' }] }]} />
-        <View style={[styles.road, { top: 0, left: 100, width: 6, height: '100%' }]} />
-        <View style={[styles.road, { top: 0, left: 280, width: 8, height: '100%', transform: [{ rotate: '10deg' }] }]} />
-
-        {/* Your location marker */}
-        <View style={[styles.mapPin, { top: 150, left: 80 }]}>
-          <Text style={styles.pinIcon}>📍</Text>
-          <View style={styles.pulseRing} />
-        </View>
-
-        {/* Right side floating controls from Mockup */}
-        <View style={styles.rightControlsContainer}>
-          <View style={styles.circleControl}>
-            <Text style={styles.controlText}>−</Text>
-          </View>
-          <View style={styles.circleControl}>
-            <Text style={styles.cabIconSmall}>🚗</Text>
-          </View>
-          <View style={styles.circleControl}>
-            <Text style={styles.cabIconSmall}>🏍️</Text>
-          </View>
-        </View>
+        <LiveMap coords={coords} />
       </View>
 
       {/* 2. Top Navigation Overlay */}
