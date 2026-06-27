@@ -19,4 +19,25 @@ export const adminApi = {
     'resolveSafetyEvent',
   ),
   markPayoutPaid: callable<{ payoutId: string }, { ok: boolean }>('markPayoutPaid'),
+  adminCreateDriver: callable<
+    {
+      fullName: string;
+      email: string;
+      phone?: string;
+      vehicleType: string;
+      vehicleLabel: string;
+      plate: string;
+      cnic?: string;
+      franchiseId?: string;
+    },
+    { ok: boolean; uid: string; passwordResetLink: string | null }
+  >('adminCreateDriver'),
+  adminCreateFranchise: callable<
+    { name: string; ownerName: string; email: string; phone?: string; city?: string },
+    { ok: boolean; franchiseId: string }
+  >('adminCreateFranchise'),
+  adminAssignFranchise: callable<
+    { driverId: string; franchiseId: string | null },
+    { ok: boolean }
+  >('adminAssignFranchise'),
 };

@@ -355,9 +355,14 @@ export const completeTrip = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId } = parsed.data;
 
-  const tripRef = db.doc(`trips/${tripId}`);
+  const tripRef    = db.doc(`trips/${tripId}`);
+  const driverRef  = db.doc(`drivers/${ctx.uid}`);
+
   const settlement = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(tripRef);
+    const [snap, driverSnap] = await Promise.all([
+      tx.get(tripRef),
+      tx.get(driverRef),
+    ]);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
@@ -366,20 +371,25 @@ export const completeTrip = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'Trip is not in progress.');
     }
 
-    const grossFare = snap.get('fare') as number;
-    const seats = (snap.get('seats') as number) ?? 1;
-    const passengerId = snap.get('passengerId') as string;
-    const s = computeSettlement(grossFare, seats);
+    const grossFare    = snap.get('fare') as number;
+    const seats        = (snap.get('seats') as number) ?? 1;
+    const passengerId  = snap.get('passengerId') as string;
+    const franchiseId  = driverSnap.get('franchiseId') as string | null | undefined;
+    const s            = computeSettlement(grossFare, seats);
 
-    const walletRef = db.doc(`wallets/${ctx.uid}`);
-    const txRef = walletRef.collection('transactions').doc();
+    // 5% of gross fare goes to the franchise (from Velocity's 10% commission).
+    const franchiseCut = franchiseId ? Math.round(grossFare * 0.05) : 0;
+    const velocityNet  = s.commission - franchiseCut;
+
+    const walletRef  = db.doc(`wallets/${ctx.uid}`);
+    const txRef      = walletRef.collection('transactions').doc();
     const countersRef = db.doc('system/counters');
 
     tx.set(
       tripRef,
       {
         status: 'completed' as TripStatus,
-        settlement: s,
+        settlement: { ...s, franchiseCut, velocityNet },
         completedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -396,6 +406,7 @@ export const completeTrip = onCall(async (req) => {
       amount: s.driverPayout,
       grossFare: s.grossFare,
       commission: s.commission,
+      franchiseCut,
       createdAt: FieldValue.serverTimestamp(),
     });
     tx.set(
@@ -409,14 +420,32 @@ export const completeTrip = onCall(async (req) => {
       },
       { merge: true },
     );
+    // Accumulate cycle earnings for commission lock tracking.
     tx.set(
-      db.doc(`drivers/${ctx.uid}`),
-      { tripsCount: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() },
+      driverRef,
+      {
+        tripsCount: FieldValue.increment(1),
+        cycleGrossFare: FieldValue.increment(grossFare),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
 
-    return s;
+    // Credit franchise revenue.
+    if (franchiseId && franchiseCut > 0) {
+      tx.set(
+        db.doc(`franchises/${franchiseId}`),
+        {
+          cycleRevenue: FieldValue.increment(franchiseCut),
+          totalRevenue: FieldValue.increment(franchiseCut),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+
+    return { ...s, franchiseCut, velocityNet };
   });
 
   logger.info('Trip completed', { tripId, settlement });

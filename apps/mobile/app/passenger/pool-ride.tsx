@@ -741,21 +741,6 @@ export default function PoolRideScreen() {
         )}
         ListFooterComponent={
           <>
-            {/* Divider */}
-            <View style={styles.orRow}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>or</Text>
-              <View style={styles.orLine} />
-            </View>
-
-            {/* Post ride request */}
-            <Pressable
-              style={styles.secondaryBtn}
-              onPress={() => Alert.alert('Coming soon', 'Post a ride request will be available in the next update.')}
-            >
-              <Text style={styles.secondaryBtnText}>+ Post a ride request</Text>
-            </Pressable>
-
             {/* Collapsible fare table */}
             <Pressable style={styles.fareToggleBtn} onPress={() => setShowFareTable((v) => !v)}>
               <Text style={styles.fareToggleText}>

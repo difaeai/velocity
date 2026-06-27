@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, doc, getDocs, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { db } from '../../src/firebase';
@@ -35,6 +35,46 @@ export default function DriverHome() {
   const requests = useOpenRequests(online && !activeTrip);
   const balance = useWalletBalance(uid);
   const [busy, setBusy] = useState(false);
+
+  // Commission lock state
+  const [cycleGrossFare, setCycleGrossFare]   = useState(0);
+  const [commThreshold, setCommThreshold]     = useState(5000);
+  const [commRate, setCommRate]               = useState(0.10);
+  const [payingComm, setPayingComm]           = useState(false);
+
+  // Subscribe to driver doc for live cycleGrossFare
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(doc(db, 'drivers', uid), (snap) => {
+      setCycleGrossFare(snap.get('cycleGrossFare') ?? 0);
+    });
+    return unsub;
+  }, [uid]);
+
+  // Fetch commission settings once
+  useEffect(() => {
+    getDoc(doc(db, 'config', 'commissionSettings')).then((snap) => {
+      if (snap.exists()) {
+        setCommThreshold(snap.get('threshold') ?? 5000);
+        setCommRate(snap.get('rate') ?? 0.10);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const commissionLocked = cycleGrossFare >= commThreshold;
+  const commissionOwed   = Math.round(commThreshold * commRate);
+
+  async function handlePayCommission() {
+    setPayingComm(true);
+    try {
+      await api.payCommission({});
+      Alert.alert('Commission paid', 'Your account has been unlocked. You can now accept rides.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Payment failed.');
+    } finally {
+      setPayingComm(false);
+    }
+  }
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -71,6 +111,41 @@ export default function DriverHome() {
           disabled={busy}
           onPress={toggleOnline}
         />
+
+        {/* Commission lock banner */}
+        {commissionLocked && (
+          <View style={styles.lockBanner}>
+            <Text style={styles.lockIcon}>🔒</Text>
+            <Text style={styles.lockTitle}>Account Locked — Commission Due</Text>
+            <Text style={styles.lockBody}>
+              Your total fares reached {commThreshold.toLocaleString()} PKR.{'\n'}
+              Pay <Text style={styles.lockAmt}>{commissionOwed.toLocaleString()} PKR</Text> ({Math.round(commRate * 100)}%) to Velocity to unlock your account and accept rides again.
+            </Text>
+            <Text style={styles.lockSub}>You can still see incoming requests below.</Text>
+            <Pressable
+              style={[styles.lockPayBtn, payingComm && { opacity: 0.6 }]}
+              onPress={handlePayCommission}
+              disabled={payingComm}
+            >
+              <Text style={styles.lockPayBtnText}>
+                {payingComm ? 'Processing…' : `Pay ${commissionOwed.toLocaleString()} PKR commission`}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Cycle earnings progress */}
+        {!commissionLocked && cycleGrossFare > 0 && (
+          <View style={styles.cycleBar}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={styles.cycleLabel}>Cycle earnings</Text>
+              <Text style={styles.cycleLabel}>{cycleGrossFare.toLocaleString()} / {commThreshold.toLocaleString()} PKR</Text>
+            </View>
+            <View style={styles.cycleTrack}>
+              <View style={[styles.cycleFill, { width: `${Math.min((cycleGrossFare / commThreshold) * 100, 100)}%` }]} />
+            </View>
+          </View>
+        )}
 
         {/* Active trip takes priority */}
         {activeTrip ? (
@@ -130,16 +205,22 @@ export default function DriverHome() {
                   <View style={styles.bidRow}>
                     <View style={{ flex: 1 }}>
                       <PrimaryButton
-                        label={`Accept ${r.offeredFare}`}
-                        disabled={busy}
-                        onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare }))}
+                        label={commissionLocked ? '🔒 Locked' : `Accept ${r.offeredFare}`}
+                        disabled={busy || commissionLocked}
+                        onPress={() => {
+                          if (commissionLocked) {
+                            Alert.alert('Account Locked', `Pay your ${commissionOwed} PKR commission to accept rides.`);
+                            return;
+                          }
+                          run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare }));
+                        }}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
                       <PrimaryButton
                         variant="secondary"
-                        label={`+50 → ${r.offeredFare + 50}`}
-                        disabled={busy}
+                        label={commissionLocked ? '🔒' : `+50 → ${r.offeredFare + 50}`}
+                        disabled={busy || commissionLocked}
                         onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare + 50 }))}
                       />
                     </View>
@@ -238,4 +319,51 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   poolCTAText: { fontSize: 15, fontWeight: '900', color: '#000' },
+
+  // Commission lock banner
+  lockBanner: {
+    backgroundColor: '#2a0a0a',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+    padding: 16,
+    gap: 8,
+    alignItems: 'center' as const,
+  },
+  lockIcon: { fontSize: 28 },
+  lockTitle: { fontSize: 16, fontWeight: '900', color: colors.danger, textAlign: 'center' as const },
+  lockBody: { fontSize: 13, color: '#ffaaaa', textAlign: 'center' as const, lineHeight: 20 },
+  lockAmt: { fontWeight: '900', color: '#ff6666' },
+  lockSub: { fontSize: 11, color: colors.muted, textAlign: 'center' as const },
+  lockPayBtn: {
+    marginTop: 6,
+    backgroundColor: colors.danger,
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    alignSelf: 'stretch' as const,
+    alignItems: 'center' as const,
+  },
+  lockPayBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+
+  // Cycle earnings progress bar
+  cycleBar: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+  },
+  cycleLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  cycleTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+    overflow: 'hidden' as const,
+  },
+  cycleFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
 });

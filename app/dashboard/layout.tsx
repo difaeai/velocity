@@ -9,10 +9,13 @@ import { colors } from '@/lib/config';
 import { Button } from '@/components/ui';
 
 const NAV = [
-  { href: '/dashboard', label: 'Overview' },
-  { href: '/dashboard/drivers', label: 'Driver approvals' },
-  { href: '/dashboard/payouts', label: 'Payouts' },
-  { href: '/dashboard/safety', label: 'Safety desk' },
+  { href: '/dashboard',               label: 'Overview' },
+  { href: '/dashboard/drivers',       label: 'Driver approvals' },
+  { href: '/dashboard/create-driver', label: 'Create driver' },
+  { href: '/dashboard/franchises',    label: 'Franchises' },
+  { href: '/dashboard/payouts',       label: 'Payouts' },
+  { href: '/dashboard/safety',        label: 'Safety desk' },
+  { href: '/dashboard/commission',    label: 'Commission settings' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

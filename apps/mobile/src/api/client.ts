@@ -73,4 +73,5 @@ export const api = {
     { amount: number; method?: 'jazzcash' | 'easypaisa' | 'bank'; account?: string },
     { ok: boolean; payoutId: string }
   >('requestPayout'),
+  payCommission: callable<Record<string, never>, { ok: boolean }>('payCommission'),
 };

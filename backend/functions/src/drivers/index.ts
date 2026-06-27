@@ -11,7 +11,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAuth, requireAdmin, invalid } from '../lib/guards';
+import { requireAuth, requireAdmin, requireRole, invalid } from '../lib/guards';
 import { applyRole } from '../users';
 
 const onboardingSchema = z.object({
@@ -67,6 +67,119 @@ export const submitDriverOnboarding = onCall(async (req) => {
 
   logger.info('Driver onboarding submitted', { uid: ctx.uid });
   return { ok: true, verificationStatus: 'pending' };
+});
+
+const adminCreateDriverSchema = z.object({
+  fullName:     z.string().min(2).max(120),
+  email:        z.string().email().max(200),
+  phone:        z.string().max(20).optional(),
+  vehicleType:  z.enum(['mini', 'ac', 'comfort', 'xl', 'bike', 'auto']),
+  vehicleLabel: z.string().min(2).max(80),
+  plate:        z.string().min(3).max(16),
+  cnic:         z.string().max(20).optional(),
+  franchiseId:  z.string().max(128).optional(),
+});
+
+/**
+ * Admin-only: create a driver account directly from the admin panel.
+ * Creates a Firebase Auth user, sets the driver role, pre-approves the driver
+ * doc and returns a password-reset link for the admin to share with the driver.
+ */
+export const adminCreateDriver = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = adminCreateDriverSchema.safeParse(req.data);
+  if (!parsed.success) {
+    invalid(parsed.error.issues[0]?.message ?? 'Invalid driver details.');
+  }
+  const data = parsed.data;
+
+  let uid: string;
+  try {
+    const user = await auth.createUser({
+      email: data.email,
+      displayName: data.fullName,
+      emailVerified: false,
+      disabled: false,
+    });
+    uid = user.uid;
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Could not create user account.';
+    invalid(msg);
+  }
+
+  await auth.setCustomUserClaims(uid!, { role: 'driver' });
+
+  const now = FieldValue.serverTimestamp();
+  const batch = db.batch();
+
+  batch.set(db.doc(`users/${uid!}`), {
+    uid: uid!,
+    role: 'driver',
+    email: data.email,
+    phoneNumber: data.phone ?? null,
+    displayName: data.fullName,
+    photoURL: null,
+    gender: 'unspecified',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  batch.set(db.doc(`wallets/${uid!}`), {
+    uid: uid!,
+    balance: 0,
+    currency: 'PKR',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  batch.set(db.doc(`drivers/${uid!}`), {
+    driverId: uid!,
+    verificationStatus: 'approved',
+    adminCreated: true,
+    online: false,
+    rating: 5.0,
+    tripsCount: 0,
+    cycleGrossFare: 0,
+    fullName: data.fullName,
+    email: data.email,
+    phone: data.phone ?? null,
+    vehicleType: data.vehicleType,
+    vehicleLabel: data.vehicleLabel,
+    plate: data.plate,
+    cnic: data.cnic ?? null,
+    franchiseId: data.franchiseId ?? null,
+    approvedBy: admin.uid,
+    approvedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  if (data.franchiseId) {
+    batch.set(
+      db.doc(`franchises/${data.franchiseId}`),
+      { totalDrivers: FieldValue.increment(1), updatedAt: now },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+
+  let passwordResetLink: string | null = null;
+  try {
+    passwordResetLink = await auth.generatePasswordResetLink(data.email);
+  } catch {
+    // non-fatal — admin can send reset manually
+  }
+
+  await db.collection('auditLogs').add({
+    type: 'driver.admin_created',
+    actor: admin.uid,
+    targetUid: uid!,
+    createdAt: now,
+  });
+
+  logger.info('Admin created driver', { actor: admin.uid, driverId: uid! });
+  return { ok: true, uid: uid!, passwordResetLink };
 });
 
 const driverIdSchema = z.object({ driverId: z.string().min(1).max(128) });
@@ -142,5 +255,47 @@ export const rejectDriver = onCall(async (req) => {
   });
 
   logger.info('Driver review action', { actor: admin.uid, driverId, suspend });
+  return { ok: true };
+});
+
+/**
+ * Driver-callable: record commission payment and unlock their profile.
+ * In production this would verify a payment receipt; here it resets the cycle
+ * counter so the driver can accept rides again.
+ */
+export const payCommission = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+
+  const driverRef = db.doc(`drivers/${ctx.uid}`);
+  const settingsSnap = await db.doc('config/commissionSettings').get();
+  const threshold: number = settingsSnap.get('threshold') ?? 5000;
+  const rate: number = settingsSnap.get('rate') ?? 0.10;
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(driverRef);
+    if (!snap.exists) throw new Error('Driver record not found.');
+    const cycleGrossFare: number = snap.get('cycleGrossFare') ?? 0;
+    if (cycleGrossFare < threshold) throw new Error('Commission threshold not reached yet.');
+
+    const amountPaid = Math.round(threshold * rate);
+    tx.set(
+      driverRef,
+      {
+        cycleGrossFare: FieldValue.increment(-threshold),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    // Log the payment in a sub-collection for audit.
+    const paymentRef = driverRef.collection('commissionPayments').doc();
+    tx.set(paymentRef, {
+      amount: amountPaid,
+      threshold,
+      rate,
+      paidAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  logger.info('Commission paid', { driverId: ctx.uid });
   return { ok: true };
 });
