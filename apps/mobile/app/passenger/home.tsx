@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -12,6 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { doc, getDoc } from 'firebase/firestore';
+
+import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
@@ -27,6 +30,24 @@ export default function PassengerHome() {
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [poolFromPrice, setPoolFromPrice] = useState<number | null>(null);
+
+  // Fetch admin-configured Mini fare to show accurate "From X PKR/seat" on hero card
+  useEffect(() => {
+    getDoc(doc(db, 'config', 'rideFares'))
+      .then((snap) => {
+        const data = snap.data();
+        const mini = data?.mini;
+        if (mini?.baseFare && mini?.perKm) {
+          // Example: 5 km average city trip, 4 riders (best pool scenario)
+          const soloFare   = mini.baseFare + mini.perKm * 5;
+          const factor     = (48 + (4 - 1) * (4 + 6)) / 48;
+          const perSeat    = Math.ceil((soloFare * factor) / 4);
+          setPoolFromPrice(perSeat);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const pickupLabel = currentAddress ?? (coords ? 'Current location' : 'Set pickup location');
 
@@ -110,7 +131,7 @@ export default function PassengerHome() {
           </View>
           <View style={styles.poolHeroPriceCol}>
             <Text style={styles.poolHeroPriceFrom}>From</Text>
-            <Text style={styles.poolHeroPriceAmt}>350</Text>
+            <Text style={styles.poolHeroPriceAmt}>{poolFromPrice ?? '—'}</Text>
             <Text style={styles.poolHeroPriceSub}>PKR/seat</Text>
             <Text style={styles.poolHeroArrow}>→</Text>
           </View>

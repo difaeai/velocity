@@ -33,13 +33,22 @@ export function LiveMap({
   coords: Coords | null;
   style?: StyleProp<ViewStyle>;
 }) {
-  const mapRef = useRef<MapView>(null);
-  const centred = useRef(false);
+  const mapRef   = useRef<MapView>(null);
+  const centred  = useRef(false);
+  const lastLat  = useRef<number | null>(null);
+  const lastLng  = useRef<number | null>(null);
 
-  // Animate to the user's real location the first time GPS responds.
+  // Re-centre whenever GPS updates significantly (>30m delta) or on first fix.
   useEffect(() => {
-    if (coords && !centred.current && mapRef.current) {
-      centred.current = true;
+    if (!coords || !mapRef.current) return;
+    const moved =
+      lastLat.current === null ||
+      Math.abs(coords.lat - lastLat.current) > 0.0003 ||
+      Math.abs(coords.lng - lastLng.current!) > 0.0003;
+    if (!centred.current || moved) {
+      centred.current  = true;
+      lastLat.current  = coords.lat;
+      lastLng.current  = coords.lng;
       mapRef.current.animateToRegion(
         { latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 },
         600,

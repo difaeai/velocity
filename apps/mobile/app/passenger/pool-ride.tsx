@@ -109,11 +109,10 @@ interface RideCategory {
   desc: string;
 }
 const RIDE_CATEGORIES: RideCategory[] = [
-  { key: 'all',     icon: '🔀', label: 'All',     exampleFare: 700,  desc: 'Any vehicle' },
-  { key: 'bike',    icon: '🏍️', label: 'Bike',    exampleFare: 300,  desc: 'Motorcycle' },
-  { key: 'mini',    icon: '🚗', label: 'Mini',    exampleFare: 500,  desc: 'Hatchback / Sedan' },
-  { key: 'ac',      icon: '❄️', label: 'AC',      exampleFare: 700,  desc: 'Air conditioned' },
-  { key: 'comfort', icon: '✨', label: 'Comfort', exampleFare: 900,  desc: 'Premium sedan' },
+  { key: 'all',     icon: '🚗', label: 'All',     exampleFare: 500,  desc: 'All cars' },
+  { key: 'mini',    icon: '🚙', label: 'Mini',    exampleFare: 400,  desc: 'Hatchback · No AC' },
+  { key: 'ac',      icon: '❄️', label: 'AC',      exampleFare: 600,  desc: 'Air conditioned' },
+  { key: 'comfort', icon: '🚘', label: 'Comfort', exampleFare: 800,  desc: 'Premium sedan' },
 ];
 
 const GENDER_META: Record<PoolGenderPref, { label: string; color: string; icon: string }> = {
