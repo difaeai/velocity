@@ -1,0 +1,44 @@
+name: Deploy Cloud Functions
+
+# Triggers only when backend function code, rules, or firebase config changes on main.
+# This pairs with Firebase App Hosting (which auto-deploys the Next.js panel).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/functions/**'
+      - 'firestore.rules'
+      - 'firebase.json'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Firebase (asia-south1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/functions/package-lock.json
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
+      - name: Build functions (tsc)
+        working-directory: backend/functions
+        run: npm run build
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@latest
+
+      - name: Deploy Cloud Functions + Firestore rules
+        run: firebase deploy --only functions,firestore:rules --project velocity-fe379 --token "$FIREBASE_CI_TOKEN" --non-interactive
+        env:
+          FIREBASE_CI_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
