@@ -9,6 +9,8 @@ export interface DriverProfile {
   online?: boolean;
   rating?: number;
   tripsCount?: number;
+  reviewReason?: string;
+  rejectedSections?: string[];
 }
 
 export function useDriverProfile(uid?: string): DriverProfile | null {

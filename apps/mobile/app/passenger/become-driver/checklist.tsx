@@ -38,8 +38,12 @@ export default function Checklist() {
       <ScrollView contentContainerStyle={styles.container}>
         {status === 'rejected' ? (
           <View style={styles.declined}>
+            <Text style={styles.declinedTitle}>Application not approved</Text>
+            {profile?.reviewReason ? (
+              <Text style={styles.declinedReason}>"{profile.reviewReason}"</Text>
+            ) : null}
             <Text style={styles.declinedText}>
-              Your driver application was declined. Correct the items and submit again.
+              Please update the highlighted sections below and resubmit.
             </Text>
           </View>
         ) : null}
@@ -52,17 +56,31 @@ export default function Checklist() {
         <View style={styles.card}>
           {SECTIONS.map((s, i) => {
             const done = complete[s.key];
+            const rejected = status === 'rejected' && (
+              !profile?.rejectedSections?.length
+                ? !done          // if no specific sections, flag incomplete ones
+                : profile.rejectedSections.includes(s.key)
+            );
             return (
               <Pressable
                 key={s.key}
                 onPress={() => router.push(s.route)}
-                style={[styles.row, i > 0 && styles.rowBorder]}
+                style={[styles.row, i > 0 && styles.rowBorder, rejected && styles.rowRejected]}
               >
-                <Text style={[styles.rowLabel, !done && status === 'rejected' && { color: '#c0392b' }]}>
-                  {s.label}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowLabel, rejected && { color: '#c0392b' }]}>
+                    {s.label}
+                  </Text>
+                  {rejected && (
+                    <Text style={styles.rejectedTag}>Admin requested changes — tap to update</Text>
+                  )}
+                </View>
                 <View style={styles.rowRight}>
-                  {done ? (
+                  {rejected ? (
+                    <View style={styles.rejectedDot}>
+                      <Text style={styles.rejectedDotText}>✕</Text>
+                    </View>
+                  ) : done ? (
                     <View style={styles.check}>
                       <Text style={styles.checkMark}>✓</Text>
                     </View>
@@ -95,8 +113,14 @@ export default function Checklist() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-  declined: { backgroundColor: '#fdecea', borderColor: '#f5b7b1', borderWidth: 1, borderRadius: 12, padding: 14 },
-  declinedText: { color: '#c0392b', fontWeight: '700', fontSize: 14, lineHeight: 20 },
+  declined: { backgroundColor: '#fdecea', borderColor: '#f5b7b1', borderWidth: 1, borderRadius: 12, padding: 14, gap: 6 },
+  declinedTitle: { color: '#c0392b', fontWeight: '900', fontSize: 16 },
+  declinedReason: { color: '#7b241c', fontWeight: '600', fontSize: 14, fontStyle: 'italic', lineHeight: 20 },
+  declinedText: { color: '#c0392b', fontWeight: '600', fontSize: 13, lineHeight: 18 },
+  rowRejected: { backgroundColor: '#fff5f5' },
+  rejectedTag: { fontSize: 11, color: '#e74c3c', fontWeight: '600', marginTop: 2 },
+  rejectedDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#e74c3c', alignItems: 'center', justifyContent: 'center' },
+  rejectedDotText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   pending: { backgroundColor: oc.note, borderColor: '#f5d384', borderWidth: 1, borderRadius: 12, padding: 14 },
   pendingText: { color: oc.noteText, fontWeight: '700', fontSize: 14 },
   card: { backgroundColor: oc.card, borderRadius: 18, overflow: 'hidden' },

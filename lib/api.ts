@@ -9,9 +9,10 @@ function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
 /** Admin-only backend actions (each guarded by requireAdmin server-side). */
 export const adminApi = {
   approveDriver: callable<{ driverId: string }, { ok: boolean }>('approveDriver'),
-  rejectDriver: callable<{ driverId: string; reason?: string; suspend?: boolean }, { ok: boolean }>(
-    'rejectDriver',
-  ),
+  rejectDriver: callable<
+    { driverId: string; reason?: string; suspend?: boolean; rejectedSections?: string[] },
+    { ok: boolean }
+  >('rejectDriver'),
   setUserRole: callable<{ targetUid: string; role: 'passenger' | 'driver' | 'admin' }, { ok: boolean }>(
     'setUserRole',
   ),

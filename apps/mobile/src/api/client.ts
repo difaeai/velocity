@@ -21,13 +21,19 @@ export interface DriverOnboardingInput {
   vehicleLabel: string;
   plate: string;
   licenseDocPath: string;
+  licenseDocUrl?: string;
   cnicDocPath: string;
-  vehicleDocPath: string;
-  // Optional richer fields (stored once the backend is redeployed):
+  cnicDocUrl?: string;
   cnicBackDocPath?: string;
+  cnicBackDocUrl?: string;
+  vehicleDocPath: string;
+  vehicleDocUrl?: string;
   photoDocPath?: string;
+  photoDocUrl?: string;
   selfieDocPath?: string;
+  selfieDocUrl?: string;
   vehiclePhotoDocPath?: string;
+  vehiclePhotoDocUrl?: string;
   email?: string;
   dob?: string;
 }

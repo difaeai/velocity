@@ -15,20 +15,27 @@ import { requireAuth, requireAdmin, requireRole, invalid } from '../lib/guards';
 import { applyRole } from '../users';
 
 const onboardingSchema = z.object({
-  fullName: z.string().min(2).max(120),
-  cnic: z.string().regex(/^\d{5}-\d{7}-\d$/, 'CNIC must be formatted NNNNN-NNNNNNN-N'),
-  vehicleType: z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']),
-  vehicleLabel: z.string().min(2).max(80),
-  plate: z.string().min(3).max(16),
-  licenseDocPath: z.string().min(1).max(512),
-  cnicDocPath: z.string().min(1).max(512),
-  vehicleDocPath: z.string().min(1).max(512),
-  cnicBackDocPath: z.string().max(512).optional(),
-  photoDocPath: z.string().max(512).optional(),
-  selfieDocPath: z.string().max(512).optional(),
+  fullName:            z.string().min(2).max(120),
+  cnic:                z.string().regex(/^\d{5}-\d{7}-\d$/, 'CNIC must be formatted NNNNN-NNNNNNN-N'),
+  vehicleType:         z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']),
+  vehicleLabel:        z.string().min(2).max(80),
+  plate:               z.string().min(3).max(16),
+  licenseDocPath:      z.string().min(1).max(512),
+  licenseDocUrl:       z.string().url().max(2000).optional(),
+  cnicDocPath:         z.string().min(1).max(512),
+  cnicDocUrl:          z.string().url().max(2000).optional(),
+  cnicBackDocPath:     z.string().max(512).optional(),
+  cnicBackDocUrl:      z.string().url().max(2000).optional(),
+  vehicleDocPath:      z.string().min(1).max(512),
+  vehicleDocUrl:       z.string().url().max(2000).optional(),
+  photoDocPath:        z.string().max(512).optional(),
+  photoDocUrl:         z.string().url().max(2000).optional(),
+  selfieDocPath:       z.string().max(512).optional(),
+  selfieDocUrl:        z.string().url().max(2000).optional(),
   vehiclePhotoDocPath: z.string().max(512).optional(),
-  email: z.string().email().max(200).optional(),
-  dob: z.string().max(40).optional(),
+  vehiclePhotoDocUrl:  z.string().url().max(2000).optional(),
+  email:               z.string().email().max(200).optional(),
+  dob:                 z.string().max(40).optional(),
 });
 
 /**
@@ -59,6 +66,9 @@ export const submitDriverOnboarding = onCall(async (req) => {
       rating: current?.rating ?? 5.0,
       tripsCount: current?.tripsCount ?? 0,
       ...data,
+      // Clear any previous rejection data on resubmission
+      reviewReason: null,
+      rejectedSections: [],
       submittedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     },
@@ -217,9 +227,11 @@ export const approveDriver = onCall(async (req) => {
   return { ok: true, verificationStatus: 'approved' };
 });
 
+const SECTION_KEYS = ['basic', 'license', 'cnic', 'selfie', 'vehicle'] as const;
 const rejectSchema = driverIdSchema.extend({
-  reason: z.string().max(500).optional(),
-  suspend: z.boolean().optional(),
+  reason:           z.string().max(500).optional(),
+  suspend:          z.boolean().optional(),
+  rejectedSections: z.array(z.enum(SECTION_KEYS)).optional(),
 });
 
 /** Admin-only: reject or suspend a driver, revoking the driver role. */
@@ -227,7 +239,7 @@ export const rejectDriver = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = rejectSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid driverId.');
-  const { driverId, reason, suspend } = parsed.data;
+  const { driverId, reason, suspend, rejectedSections } = parsed.data;
 
   const ref = db.doc(`drivers/${driverId}`);
   if (!(await ref.get()).exists) invalid('Unknown driver.');
@@ -239,9 +251,10 @@ export const rejectDriver = onCall(async (req) => {
     {
       verificationStatus: suspend ? 'suspended' : 'rejected',
       online: false,
-      reviewReason: reason ?? null,
-      reviewedBy: admin.uid,
-      updatedAt: FieldValue.serverTimestamp(),
+      reviewReason:     reason ?? null,
+      rejectedSections: rejectedSections ?? [],
+      reviewedBy:       admin.uid,
+      updatedAt:        FieldValue.serverTimestamp(),
     },
     { merge: true },
   );

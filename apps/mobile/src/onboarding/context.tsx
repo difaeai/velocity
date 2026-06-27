@@ -85,33 +85,46 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     setError(null);
     try {
       const uid = user.uid;
-      const [licenseDocPath, cnicDocPath, cnicBackDocPath, vehicleDocPath, photoDocPath, selfieDocPath] =
+      const [licenseResult, cnicResult, cnicBackResult, vehicleDocResult, photoResult, selfieResult] =
         await Promise.all([
-          uploadDriverDoc(uid, 'license', data.licensePhoto!),
+          uploadDriverDoc(uid, 'license',    data.licensePhoto!),
           uploadDriverDoc(uid, 'cnic-front', data.cnicFront!),
-          uploadDriverDoc(uid, 'cnic-back', data.cnicBack!),
-          uploadDriverDoc(uid, 'vehicle', data.vehicleDoc!),
-          uploadDriverDoc(uid, 'photo', data.photo!),
-          uploadDriverDoc(uid, 'selfie', data.selfie!),
+          uploadDriverDoc(uid, 'cnic-back',  data.cnicBack!),
+          uploadDriverDoc(uid, 'vehicle',    data.vehicleDoc!),
+          uploadDriverDoc(uid, 'photo',      data.photo!),
+          uploadDriverDoc(uid, 'selfie',     data.selfie!),
         ]);
-      const vehiclePhotoDocPath = data.vehiclePhoto
-        ? await uploadDriverDoc(uid, 'vehicle-photo', data.vehiclePhoto)
-        : undefined;
+
+      let vehiclePhotoDocPath: string | undefined;
+      let vehiclePhotoDocUrl: string | undefined;
+      if (data.vehiclePhoto) {
+        const r = await uploadDriverDoc(uid, 'vehicle-photo', data.vehiclePhoto);
+        vehiclePhotoDocPath = r.path;
+        vehiclePhotoDocUrl  = r.url;
+      }
+
       await api.submitDriverOnboarding({
-        fullName: `${data.firstName} ${data.lastName}`.trim(),
-        cnic: data.cnicNumber,
-        vehicleType: data.vehicleType!,
-        vehicleLabel: `${data.color} ${data.vehicleMake}`.trim(),
-        plate: data.plate.trim().toUpperCase(),
-        licenseDocPath,
-        cnicDocPath,
-        vehicleDocPath,
-        cnicBackDocPath,
-        photoDocPath,
-        selfieDocPath,
+        fullName:           `${data.firstName} ${data.lastName}`.trim(),
+        cnic:               data.cnicNumber,
+        vehicleType:        data.vehicleType!,
+        vehicleLabel:       `${data.color} ${data.vehicleMake}`.trim(),
+        plate:              data.plate.trim().toUpperCase(),
+        licenseDocPath:     licenseResult.path,
+        licenseDocUrl:      licenseResult.url,
+        cnicDocPath:        cnicResult.path,
+        cnicDocUrl:         cnicResult.url,
+        cnicBackDocPath:    cnicBackResult.path,
+        cnicBackDocUrl:     cnicBackResult.url,
+        vehicleDocPath:     vehicleDocResult.path,
+        vehicleDocUrl:      vehicleDocResult.url,
+        photoDocPath:       photoResult.path,
+        photoDocUrl:        photoResult.url,
+        selfieDocPath:      selfieResult.path,
+        selfieDocUrl:       selfieResult.url,
         vehiclePhotoDocPath,
-        email: data.email || undefined,
-        dob: data.dob || undefined,
+        vehiclePhotoDocUrl,
+        email:              data.email  || undefined,
+        dob:                data.dob    || undefined,
       });
       await refreshRole();
       return true;
