@@ -101,78 +101,86 @@ export const adminCreateDriver = onCall(async (req) => {
   if (!parsed.success) {
     invalid(parsed.error.issues[0]?.message ?? 'Invalid driver details.');
   }
-  const data = parsed.data;
+  const data = parsed.data!;
 
+  // Create Firebase Auth account
   let uid: string;
   try {
-    const user = await auth.createUser({
+    const userRecord = await auth.createUser({
       email: data.email,
       displayName: data.fullName,
       emailVerified: false,
       disabled: false,
     });
-    uid = user.uid;
+    uid = userRecord.uid;
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Could not create user account.';
-    invalid(msg);
+    invalid(e instanceof Error ? e.message : 'Could not create user account.');
   }
 
-  await auth.setCustomUserClaims(uid!, { role: 'driver' });
+  // Set role claims and provision Firestore records
+  try {
+    await auth.setCustomUserClaims(uid!, { role: 'driver' });
 
-  const now = FieldValue.serverTimestamp();
-  const batch = db.batch();
+    const now = FieldValue.serverTimestamp();
+    const batch = db.batch();
 
-  batch.set(db.doc(`users/${uid!}`), {
-    uid: uid!,
-    role: 'driver',
-    email: data.email,
-    phoneNumber: data.phone ?? null,
-    displayName: data.fullName,
-    photoURL: null,
-    gender: 'unspecified',
-    createdAt: now,
-    updatedAt: now,
-  });
+    batch.set(db.doc(`users/${uid!}`), {
+      uid: uid!,
+      role: 'driver',
+      email: data.email,
+      phoneNumber: data.phone ?? null,
+      displayName: data.fullName,
+      photoURL: null,
+      gender: 'unspecified',
+      createdAt: now,
+      updatedAt: now,
+    });
 
-  batch.set(db.doc(`wallets/${uid!}`), {
-    uid: uid!,
-    balance: 0,
-    currency: 'PKR',
-    createdAt: now,
-    updatedAt: now,
-  });
+    batch.set(db.doc(`wallets/${uid!}`), {
+      uid: uid!,
+      balance: 0,
+      currency: 'PKR',
+      createdAt: now,
+      updatedAt: now,
+    });
 
-  batch.set(db.doc(`drivers/${uid!}`), {
-    driverId: uid!,
-    verificationStatus: 'approved',
-    adminCreated: true,
-    online: false,
-    rating: 5.0,
-    tripsCount: 0,
-    cycleGrossFare: 0,
-    fullName: data.fullName,
-    email: data.email,
-    phone: data.phone ?? null,
-    vehicleType: data.vehicleType,
-    vehicleLabel: data.vehicleLabel,
-    plate: data.plate,
-    cnic: data.cnic ?? null,
-    franchiseId: data.franchiseId ?? null,
-    approvedBy: admin.uid,
-    approvedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
+    batch.set(db.doc(`drivers/${uid!}`), {
+      driverId: uid!,
+      verificationStatus: 'approved',
+      adminCreated: true,
+      online: false,
+      rating: 5.0,
+      ratingCount: 0,
+      tripsCount: 0,
+      cycleGrossFare: 0,
+      fullName: data.fullName,
+      email: data.email,
+      phone: data.phone ?? null,
+      vehicleType: data.vehicleType,
+      vehicleLabel: data.vehicleLabel,
+      plate: data.plate,
+      cnic: data.cnic ?? null,
+      franchiseId: data.franchiseId ?? null,
+      approvedBy: admin.uid,
+      approvedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-  if (data.franchiseId) {
-    batch.set(
-      db.doc(`franchises/${data.franchiseId}`),
-      { totalDrivers: FieldValue.increment(1), updatedAt: now },
-      { merge: true },
-    );
+    if (data.franchiseId) {
+      batch.set(
+        db.doc(`franchises/${data.franchiseId}`),
+        { totalDrivers: FieldValue.increment(1), updatedAt: now },
+        { merge: true },
+      );
+    }
+
+    await batch.commit();
+  } catch (e: unknown) {
+    // Clean up the Auth account if Firestore write fails
+    await auth.deleteUser(uid!).catch(() => undefined);
+    invalid(e instanceof Error ? e.message : 'Failed to provision driver records.');
   }
-
-  await batch.commit();
 
   let passwordResetLink: string | null = null;
   try {
@@ -185,7 +193,7 @@ export const adminCreateDriver = onCall(async (req) => {
     type: 'driver.admin_created',
     actor: admin.uid,
     targetUid: uid!,
-    createdAt: now,
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   logger.info('Admin created driver', { actor: admin.uid, driverId: uid! });
@@ -310,5 +318,92 @@ export const payCommission = onCall(async (req) => {
   });
 
   logger.info('Commission paid', { driverId: ctx.uid });
+  return { ok: true };
+});
+
+// ── Admin CRUD for existing drivers ───────────────────────────────────────────
+
+const updateDriverSchema = z.object({
+  driverId:     z.string().min(1).max(128),
+  fullName:     z.string().min(2).max(120).optional(),
+  phone:        z.string().max(20).optional(),
+  vehicleType:  z.enum(['mini', 'ac', 'comfort', 'xl', 'bike', 'auto']).optional(),
+  vehicleLabel: z.string().min(2).max(80).optional(),
+  plate:        z.string().min(3).max(16).optional(),
+  cnic:         z.string().max(20).optional(),
+  franchiseId:  z.string().max(128).nullable().optional(),
+});
+
+/** Admin-only: update an existing driver's profile fields. */
+export const updateDriver = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = updateDriverSchema.safeParse(req.data);
+  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid data.');
+  const { driverId, ...updates } = parsed.data!;
+
+  const ref = db.doc(`drivers/${driverId}`);
+  if (!(await ref.get()).exists) invalid('Driver not found.');
+
+  const fields: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+  if (updates.fullName)        fields.fullName     = updates.fullName;
+  if (updates.phone !== undefined) fields.phone    = updates.phone ?? null;
+  if (updates.vehicleType)     fields.vehicleType  = updates.vehicleType;
+  if (updates.vehicleLabel)    fields.vehicleLabel = updates.vehicleLabel;
+  if (updates.plate)           fields.plate        = updates.plate.toUpperCase();
+  if (updates.cnic !== undefined)  fields.cnic     = updates.cnic ?? null;
+  if ('franchiseId' in updates)    fields.franchiseId = updates.franchiseId ?? null;
+
+  await ref.set(fields, { merge: true });
+
+  if (updates.fullName) {
+    await auth.updateUser(driverId, { displayName: updates.fullName }).catch(() => undefined);
+    await db.doc(`users/${driverId}`).set({ displayName: updates.fullName }, { merge: true });
+  }
+  if (updates.phone !== undefined) {
+    await db.doc(`users/${driverId}`).set({ phoneNumber: updates.phone ?? null }, { merge: true });
+  }
+
+  await db.collection('auditLogs').add({
+    type: 'driver.updated',
+    actor: admin.uid,
+    targetUid: driverId,
+    changes: Object.keys(fields).filter((k) => k !== 'updatedAt'),
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('Driver updated', { actor: admin.uid, driverId });
+  return { ok: true };
+});
+
+/** Admin-only: hard-disable a driver account (soft-delete, keeps audit trail). */
+export const deleteDriver = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = driverIdSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid driverId.');
+  const { driverId } = parsed.data;
+
+  if (!(await db.doc(`drivers/${driverId}`).get()).exists) invalid('Driver not found.');
+
+  // Revoke role and disable Auth account so they can't log in
+  await applyRole(driverId, 'passenger');
+  await auth.updateUser(driverId, { disabled: true }).catch(() => undefined);
+  await auth.revokeRefreshTokens(driverId).catch(() => undefined);
+
+  await db.doc(`drivers/${driverId}`).set({
+    verificationStatus: 'deleted',
+    online: false,
+    deletedBy:  admin.uid,
+    deletedAt:  FieldValue.serverTimestamp(),
+    updatedAt:  FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  await db.collection('auditLogs').add({
+    type: 'driver.deleted',
+    actor: admin.uid,
+    targetUid: driverId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('Driver deleted', { actor: admin.uid, driverId });
   return { ok: true };
 });

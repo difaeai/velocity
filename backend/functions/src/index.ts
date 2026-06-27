@@ -12,7 +12,7 @@ setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 export { onUserCreate, onUserDelete, setUserRole } from './users';
 
 // Driver onboarding & verification
-export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, payCommission } from './drivers';
+export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission } from './drivers';
 
 // Franchise management
 export { adminCreateFranchise, adminAssignFranchise } from './franchises';

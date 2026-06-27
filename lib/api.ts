@@ -33,6 +33,20 @@ export const adminApi = {
     },
     { ok: boolean; uid: string; passwordResetLink: string | null }
   >('adminCreateDriver'),
+  updateDriver: callable<
+    {
+      driverId: string;
+      fullName?: string;
+      phone?: string;
+      vehicleType?: string;
+      vehicleLabel?: string;
+      plate?: string;
+      cnic?: string;
+      franchiseId?: string | null;
+    },
+    { ok: boolean }
+  >('updateDriver'),
+  deleteDriver: callable<{ driverId: string }, { ok: boolean }>('deleteDriver'),
   adminCreateFranchise: callable<
     { name: string; ownerName: string; email: string; phone?: string; city?: string },
     { ok: boolean; franchiseId: string }
