@@ -93,4 +93,10 @@ export interface Trip {
   driverInfo?: DriverPublicInfo;
   settlement?: Settlement;
   activeSafetyEventId?: string;
+  // Contact info stored when bid is accepted
+  passengerPhone?: string | null;
+  driverPhone?: string | null;
+  // Rating flags (set once each side submits a rating)
+  passengerRated?: boolean;
+  driverRated?: boolean;
 }

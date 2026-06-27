@@ -25,6 +25,7 @@ export const colors = {
   primaryDark: '#99c200',  // Darker lime green
   secondary: '#3b82f6',    // Blue accents
   surface: '#212222',      // Dark grey card/surface background
+  card: '#212222',         // Alias for surface (used by new UI components)
   background: '#151616',   // Deep black/grey background
   text: '#ffffff',         // White text
   muted: '#8a8c8c',        // Light grey muted text

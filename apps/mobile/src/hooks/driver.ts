@@ -65,6 +65,39 @@ export function useDriverActiveTrip(uid?: string): Trip | null {
   return trip;
 }
 
+export interface DriverPoolRide {
+  id: string;
+  status: string;
+  pickup:       { address: string; lat: number; lng: number };
+  dropoff:      { address: string; lat: number; lng: number };
+  takenSeats:   number;
+  maxSeats:     number;
+  perSeatFare:  number;
+  rideCategory?: string;
+  pickupOrder?:        string[];
+  currentPickupIndex?: number;
+}
+
+const ACTIVE_POOL_STATUSES = new Set(['open', 'collecting', 'full', 'boarding', 'in_progress']);
+
+export function useDriverPoolRides(uid?: string): DriverPoolRide[] {
+  const [rides, setRides] = useState<DriverPoolRide[]>([]);
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'poolRides'), where('driverId', '==', uid)),
+      (snap) => {
+        const active = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as DriverPoolRide)
+          .filter((r) => ACTIVE_POOL_STATUSES.has(r.status));
+        setRides(active);
+      },
+      () => setRides([]),
+    );
+  }, [uid]);
+  return rides;
+}
+
 export function useWalletBalance(uid?: string): number {
   const [balance, setBalance] = useState(0);
   useEffect(() => {

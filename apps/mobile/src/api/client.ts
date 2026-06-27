@@ -80,4 +80,15 @@ export const api = {
     { ok: boolean; payoutId: string }
   >('requestPayout'),
   payCommission: callable<Record<string, never>, { ok: boolean }>('payCommission'),
+  submitRating: callable<
+    { tripId: string; stars: number; comment?: string; targetRole: 'driver' | 'passenger' },
+    { ok: boolean }
+  >('submitRating'),
+  startPoolBoarding: callable<
+    { rideId: string; driverLat: number; driverLng: number },
+    { ok: boolean; pickupOrder: string[] }
+  >('startPoolBoarding'),
+  poolArrivePassenger: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolArrivePassenger'),
+  poolPassengerBoarded: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolPassengerBoarded'),
+  completePoolRide: callable<{ rideId: string }, { ok: boolean }>('completePoolRide'),
 };

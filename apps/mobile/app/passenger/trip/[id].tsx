@@ -1,23 +1,26 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { Badge, Card, PrimaryButton } from '../../../src/ui/components';
 import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
+import { RatingModal } from '../../../src/ui/RatingModal';
+import { ChatModal } from '../../../src/ui/ChatModal';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 
 const STATUS_LABEL: Record<TripStatus, string> = {
-  requested: 'Finding you a driver…',
-  matched: 'Driver assigned',
-  arriving: 'Driver is on the way',
-  arrived: 'Driver has arrived',
+  requested:   'Finding you a driver…',
+  matched:     'Driver assigned',
+  arriving:    'Driver is on the way',
+  arrived:     'Driver has arrived at your pickup!',
   in_progress: 'On the way to your destination',
-  completed: 'Trip complete',
-  cancelled: 'Trip cancelled',
+  completed:   'Trip complete',
+  cancelled:   'Trip cancelled',
 };
 
 const BUBBLE_COLORS = ['#3b82f6', '#ef4444', '#10b981'];
@@ -25,19 +28,25 @@ const BUBBLE_COLORS = ['#3b82f6', '#ef4444', '#10b981'];
 export default function TripScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const router = useRouter();
+  const router  = useRouter();
+  const { user } = useAuth();
   const { trip, bids, loading } = useTrip(tripId);
-  const [busy, setBusy] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(54);
+  const [busy,         setBusy]        = useState(false);
+  const [timeLeft,     setTimeLeft]     = useState(54);
   const [adjustedFare, setAdjustedFare] = useState(0);
-  const [autoAccept, setAutoAccept] = useState(false);
+  const [autoAccept,   setAutoAccept]   = useState(false);
+  const [showRating,   setShowRating]   = useState(false);
+  const [chatOpen,     setChatOpen]     = useState(false);
 
   // Initialize adjustedFare when trip loads
   useEffect(() => {
-    if (trip && adjustedFare === 0) {
-      setAdjustedFare(trip.offeredFare);
-    }
+    if (trip && adjustedFare === 0) setAdjustedFare(trip.offeredFare);
   }, [trip]);
+
+  // Show rating prompt when trip completes (if not already rated)
+  useEffect(() => {
+    if (trip?.status === 'completed' && !trip.passengerRated) setShowRating(true);
+  }, [trip?.status, trip?.passengerRated]);
 
   // Countdown timer
   useEffect(() => {
@@ -57,6 +66,12 @@ export default function TripScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleRate(stars: number, comment: string) {
+    if (!tripId) return;
+    await api.submitRating({ tripId, stars, comment: comment || undefined, targetRole: 'driver' });
+    setShowRating(false);
   }
 
   if (loading || !trip) {
@@ -265,25 +280,49 @@ export default function TripScreen() {
 
 
 
-        {/* ── Active trip ── */}
+        {/* ── Active trip: driver info + contact ── */}
+        {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && trip.driverInfo && (
+          <Card>
+            <Text style={styles.cardTitle}>{trip.driverInfo.displayName}</Text>
+            <Text style={styles.muted}>
+              {trip.driverInfo.vehicleLabel} · {trip.driverInfo.plate} · {trip.driverInfo.rating}★
+            </Text>
+            <Text style={[styles.fare, { marginTop: 6 }]}>Fare: {trip.fare} PKR</Text>
+
+            {/* Driver arrived banner */}
+            {trip.status === 'arrived' && (
+              <View style={styles.arrivedBanner}>
+                <Text style={styles.arrivedText}>🚗 Your driver is at the pickup point!</Text>
+              </View>
+            )}
+
+            {/* Contact buttons */}
+            <View style={styles.contactRow}>
+              {trip.driverPhone ? (
+                <Pressable
+                  style={styles.contactBtn}
+                  onPress={() => Linking.openURL(`tel:${trip.driverPhone}`)}
+                >
+                  <Text style={styles.contactBtnText}>📞 Call driver</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]}
+                onPress={() => setChatOpen(true)}
+              >
+                <Text style={styles.contactBtnText}>💬 Message</Text>
+              </Pressable>
+            </View>
+          </Card>
+        )}
+
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && (
           <>
-            {trip.driverInfo && (
-              <Card>
-                <Text style={styles.cardTitle}>{trip.driverInfo.displayName}</Text>
-                <Text style={styles.muted}>
-                  {trip.driverInfo.vehicleLabel} · {trip.driverInfo.plate} · {trip.driverInfo.rating}★
-                </Text>
-                <Text style={[styles.fare, { marginTop: 6 }]}>Fare: {trip.fare} PKR</Text>
-              </Card>
-            )}
             <PrimaryButton
               variant="danger"
               label="🆘 Emergency SOS"
               disabled={busy}
-              onPress={() =>
-                run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))
-              }
+              onPress={() => run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))}
             />
             {trip.status !== 'in_progress' && (
               <PrimaryButton
@@ -296,12 +335,12 @@ export default function TripScreen() {
           </>
         )}
 
-        {/* ── Invoice ── */}
-        {trip.status === 'completed' && (
+        {/* ── Invoice (shown after rating is dismissed) ── */}
+        {trip.status === 'completed' && !showRating && (
           <Card>
-            <Text style={styles.cardTitle}>Invoice</Text>
-            <Row label="Ride" value={RIDE_TYPE_LABELS[trip.rideType]} />
-            <Row label="Seats" value={`${trip.settlement?.seats ?? trip.seats}`} />
+            <Text style={styles.cardTitle}>Trip complete — thank you!</Text>
+            <Row label="Ride"       value={RIDE_TYPE_LABELS[trip.rideType]} />
+            <Row label="Seats"      value={`${trip.settlement?.seats ?? trip.seats}`} />
             <Row label="Total fare" value={`${trip.settlement?.grossFare ?? trip.fare ?? 0} PKR`} />
             <Row label="Your share" value={`${trip.settlement?.passengerShare ?? 0} PKR`} bold />
             <View style={{ height: 10 }} />
@@ -317,6 +356,25 @@ export default function TripScreen() {
           </Card>
         )}
       </ScrollView>
+
+      {/* Rating overlay — appears when trip completes */}
+      <RatingModal
+        visible={showRating}
+        targetLabel="Rate your driver"
+        targetName={trip.driverInfo?.displayName ?? 'Driver'}
+        onSubmit={handleRate}
+        onSkip={() => setShowRating(false)}
+      />
+
+      {/* In-ride chat */}
+      <ChatModal
+        visible={chatOpen}
+        roomId={trip.id}
+        myUid={user?.uid ?? ''}
+        myName={user?.displayName ?? 'Passenger'}
+        otherName={trip.driverInfo?.displayName ?? 'Driver'}
+        onClose={() => setChatOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -331,17 +389,36 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  safe:      { flex: 1, backgroundColor: colors.background },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: { padding: 18, gap: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  status: { fontSize: 20, fontWeight: '900', color: colors.text, flex: 1 },
+  status:    { fontSize: 20, fontWeight: '900', color: colors.text, flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
-  muted: { fontSize: 13, color: colors.muted },
-  bidRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  fare: { fontSize: 18, fontWeight: '900', color: colors.primary },
+  muted:     { fontSize: 13, color: colors.muted },
+  fare:      { fontSize: 18, fontWeight: '900', color: colors.primary },
   invoiceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
   invoiceVal: { fontSize: 14, fontWeight: '700', color: colors.text },
+  arrivedBanner: {
+    backgroundColor: colors.primary + '18',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  arrivedText: { fontSize: 14, fontWeight: '800', color: colors.primary, textAlign: 'center' },
+  contactRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  contactBtn: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contactBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
   
   // Custom dark-mode requested screen styles (Image 2 & 3)
   safeDark: {

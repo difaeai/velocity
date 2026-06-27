@@ -244,6 +244,19 @@ export const acceptBid = onCall(async (req) => {
 
     const driverInfo = bidSnap.get('driverInfo') as DriverPublicInfo;
     const fare = bidSnap.get('fare') as number;
+    const passengerId = tripSnap.get('passengerId') as string;
+
+    // Read phone numbers so both sides can contact each other in-ride
+    const [passengerUserSnap, driverDocSnap] = await Promise.all([
+      tx.get(db.doc(`users/${passengerId}`)),
+      tx.get(db.doc(`drivers/${driverInfo.driverId}`)),
+    ]);
+    const passengerPhone =
+      (passengerUserSnap.get('phoneNumber') as string | null) ?? null;
+    const driverPhone =
+      (driverDocSnap.get('phone')        as string | null) ??
+      (driverDocSnap.get('phoneNumber')  as string | null) ??
+      null;
 
     tx.set(
       tripRef,
@@ -252,6 +265,8 @@ export const acceptBid = onCall(async (req) => {
         driverId: driverInfo.driverId,
         driverInfo,
         fare,
+        passengerPhone,
+        driverPhone,
         matchedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -9,6 +9,7 @@ import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import {
   useDriverActiveTrip,
+  useDriverPoolRides,
   useDriverProfile,
   useOpenRequests,
   useWalletBalance,
@@ -16,7 +17,9 @@ import {
 import { colors } from '../../src/config';
 import { Badge, Card, PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
-import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
+import { RatingModal } from '../../src/ui/RatingModal';
+import { ChatModal } from '../../src/ui/ChatModal';
+import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
   matched: { label: 'Head to pickup', to: 'arriving' },
@@ -29,18 +32,26 @@ export default function DriverHome() {
   const { user, signOut } = useAuth();
   const uid = user?.uid;
   const router = useRouter();
-  const profile = useDriverProfile(uid);
+  const profile    = useDriverProfile(uid);
   const activeTrip = useDriverActiveTrip(uid);
-  const online = profile?.online ?? false;
+  const poolRides  = useDriverPoolRides(uid);
+  const online  = profile?.online ?? false;
   const requests = useOpenRequests(online && !activeTrip);
-  const balance = useWalletBalance(uid);
+  const balance  = useWalletBalance(uid);
   const [busy, setBusy] = useState(false);
 
   // Commission lock state
-  const [cycleGrossFare, setCycleGrossFare]   = useState(0);
-  const [commThreshold, setCommThreshold]     = useState(5000);
-  const [commRate, setCommRate]               = useState(0.10);
-  const [payingComm, setPayingComm]           = useState(false);
+  const [cycleGrossFare, setCycleGrossFare] = useState(0);
+  const [commThreshold,  setCommThreshold]  = useState(5000);
+  const [commRate,       setCommRate]       = useState(0.10);
+  const [payingComm,     setPayingComm]     = useState(false);
+
+  // Rating state: shown after driver completes a trip
+  const [ratingTrip, setRatingTrip]   = useState<Trip | null>(null);
+  const prevTripRef                   = useRef<Trip | null>(null);
+
+  // Chat state
+  const [chatOpen, setChatOpen]       = useState(false);
 
   // Subscribe to driver doc for live cycleGrossFare
   useEffect(() => {
@@ -61,8 +72,25 @@ export default function DriverHome() {
     }).catch(() => {});
   }, []);
 
+  // When active trip disappears (driver completed it), capture it for rating
+  useEffect(() => {
+    if (prevTripRef.current && !activeTrip) {
+      // Trip just ended — offer driver a chance to rate the passenger
+      if (prevTripRef.current.status === 'in_progress' && !prevTripRef.current.driverRated) {
+        setRatingTrip(prevTripRef.current);
+      }
+    }
+    prevTripRef.current = activeTrip;
+  }, [activeTrip]);
+
   const commissionLocked = cycleGrossFare >= commThreshold;
   const commissionOwed   = Math.round(commThreshold * commRate);
+
+  async function handleRate(stars: number, comment: string) {
+    if (!ratingTrip) return;
+    await api.submitRating({ tripId: ratingTrip.id, stars, comment: comment || undefined, targetRole: 'passenger' });
+    setRatingTrip(null);
+  }
 
   async function handlePayCommission() {
     setPayingComm(true);
@@ -157,6 +185,26 @@ export default function DriverHome() {
               tracking={activeTrip.status === 'in_progress' || activeTrip.status === 'arriving'}
             />
             <Text style={styles.fare}>Fare: {activeTrip.fare} PKR</Text>
+
+            {/* Passenger contact */}
+            <View style={styles.contactRow}>
+              {activeTrip.passengerPhone ? (
+                <Pressable
+                  style={styles.contactBtn}
+                  onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}
+                >
+                  <Text style={styles.contactBtnText}>📞 Call passenger</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]}
+                onPress={() => setChatOpen(true)}
+              >
+                <Text style={styles.contactBtnText}>💬 Message</Text>
+              </Pressable>
+            </View>
+
+            {/* Next action button */}
             {(() => {
               const next = NEXT_ACTION[activeTrip.status];
               if (!next) return null;
@@ -259,6 +307,39 @@ export default function DriverHome() {
               <Text style={styles.offerBtnText}>+ Offer a ride</Text>
             </Pressable>
           </View>
+
+          {/* Active pool rides the driver created */}
+          {poolRides.length > 0 && (
+            <View style={{ gap: 10 }}>
+              {poolRides.map((pr) => (
+                <Pressable
+                  key={pr.id}
+                  style={styles.poolRideCard}
+                  onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.poolRideRoute} numberOfLines={1}>
+                      {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
+                    </Text>
+                    <Text style={styles.poolRideMeta}>
+                      {pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat
+                    </Text>
+                  </View>
+                  <View style={styles.poolRideStatusBadge}>
+                    <Text style={styles.poolRideStatusText}>
+                      {pr.status === 'open'        ? '🟡 Open'
+                        : pr.status === 'collecting' ? '🟢 Collecting'
+                        : pr.status === 'full'       ? '🔵 Full'
+                        : pr.status === 'boarding'   ? '🚗 Boarding'
+                        : pr.status === 'in_progress'? '🏁 En route'
+                        : pr.status}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
           <Text style={styles.poolDesc}>
             Post your route and earn more by sharing seats.{'\n'}
             Example: 1200 PKR solo ride → 400 PKR × 4 passengers = 1600 PKR
@@ -273,6 +354,27 @@ export default function DriverHome() {
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
       </ScrollView>
+
+      {/* Post-trip: rate the passenger */}
+      <RatingModal
+        visible={ratingTrip !== null}
+        targetLabel="Rate your passenger"
+        targetName="Passenger"
+        onSubmit={handleRate}
+        onSkip={() => setRatingTrip(null)}
+      />
+
+      {/* In-ride chat with passenger */}
+      {activeTrip && (
+        <ChatModal
+          visible={chatOpen}
+          roomId={activeTrip.id}
+          myUid={user?.uid ?? ''}
+          myName={user?.displayName ?? 'Driver'}
+          otherName="Passenger"
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -309,7 +411,37 @@ const styles = StyleSheet.create({
     borderColor: `${colors.primary}60`,
   },
   offerBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  poolDesc: { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  poolDesc: { fontSize: 12, color: colors.muted, lineHeight: 18, marginTop: 4 },
+  poolRideCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 10,
+  },
+  poolRideRoute: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 3 },
+  poolRideMeta:  { fontSize: 11, color: colors.muted },
+  poolRideStatusBadge: {
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+  contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  contactBtn: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contactBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
   poolCTA: {
     height: 48,
     backgroundColor: colors.primary,

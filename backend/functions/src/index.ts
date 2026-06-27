@@ -28,6 +28,17 @@ export {
   completeTrip,
 } from './trips';
 
+// Ratings (post-trip)
+export { submitRating } from './ratings';
+
+// Pool ride management
+export {
+  startPoolBoarding,
+  poolArrivePassenger,
+  poolPassengerBoarded,
+  completePoolRide,
+} from './poolRides';
+
 // Safety
 export { raiseSafetyEvent, resolveSafetyEvent } from './safety';
 

@@ -94,6 +94,60 @@ service cloud.firestore {
                     || (isSignedIn() && resource.data.driverId == uid());
         allow write: if false;
       }
+
+      // In-ride chat between the matched passenger and driver.
+      match /chat/{msgId} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.passengerId == uid())
+                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+        allow create: if isSignedIn()
+                      && (
+                        get(/databases/$(database)/documents/trips/$(tripId)).data.passengerId == uid()
+                        || get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid()
+                      )
+                      && request.resource.data.keys().hasAll(['senderId', 'senderName', 'text', 'sentAt'])
+                      && request.resource.data.senderId == uid()
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 500;
+        allow update, delete: if false;
+      }
+    }
+
+    // ----- poolRides/{rideId} ----------------------------------------------
+    match /poolRides/{rideId} {
+      allow read: if isSignedIn();
+      allow create: if isDriver() && request.resource.data.driverId == uid();
+      allow update: if (isDriver() && resource.data.driverId == uid())
+                    || (isSignedIn()
+                        && onlyChanges(['takenSeats', 'status', 'boardingStartedAt', 'updatedAt']));
+      allow delete: if false;
+
+      match /passengers/{passengerId} {
+        allow read: if isSignedIn() && (uid() == passengerId || isDriver() || isAdmin());
+        allow create: if isSignedIn() && uid() == passengerId;
+        allow update: if isDriver() || isAdmin();
+        allow delete: if false;
+      }
+
+      // Group chat for the pool ride (driver + all passengers)
+      match /chat/{msgId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn()
+                      && request.resource.data.keys().hasAll(['senderId', 'senderName', 'text', 'sentAt'])
+                      && request.resource.data.senderId == uid()
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 500;
+        allow update, delete: if false;
+      }
+    }
+
+    // ----- ratings/{ratingId} ----------------------------------------------
+    // Written exclusively by the submitRating Cloud Function.
+    match /ratings/{ratingId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.raterId == uid());
+      allow write: if false;
     }
 
     // ----- wallets/{uid} ---------------------------------------------------

@@ -31,6 +31,7 @@ import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
+import { ChatModal } from '../../src/ui/ChatModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -315,9 +316,12 @@ export default function PoolRideScreen() {
   const [allRides, setAllRides]       = useState<PoolRide[]>([]);
   const [loadingRides, setLoadingRides] = useState(true);
   const [selected, setSelected]       = useState<PoolRide | null>(null);
-  const [booking, setBooking]         = useState(false);
+  const [booking, setBooking]             = useState(false);
   const [showFareTable, setShowFareTable] = useState(false);
   const [destForBooking, setDestForBooking] = useState('');
+  // Confirmed booking state — subscribe to real-time status updates
+  const [bookingStatus, setBookingStatus] = useState<string>('confirmed');
+  const [chatOpen, setChatOpen]           = useState(false);
 
   // Load user gender from profile
   useEffect(() => {
@@ -329,6 +333,16 @@ export default function PoolRideScreen() {
       })
       .catch(() => {});
   }, [user]);
+
+  // Real-time booking status — shows driver_arrived / picked_up banners
+  useEffect(() => {
+    if (step !== 'confirmed' || !selected || !user) return;
+    const ref = doc(db, 'poolRides', selected.id, 'passengers', user.uid);
+    return onSnapshot(ref, (snap) => {
+      const status = snap.get('status') as string | undefined;
+      if (status) setBookingStatus(status);
+    });
+  }, [step, selected?.id, user?.uid]);
 
   // Real-time nearby rides subscription
   useEffect(() => {
@@ -400,6 +414,7 @@ export default function PoolRideScreen() {
       batch.set(passengerRef, {
         userId:         user.uid,
         userName:       user.displayName ?? 'Passenger',
+        userPhone:      user.phoneNumber ?? null,
         userGender,
         pickupAddress:  pickupAddress ?? 'Current location',
         pickupLat:      coords?.lat ?? selected.pickup.lat,
@@ -422,6 +437,7 @@ export default function PoolRideScreen() {
 
       await batch.commit();
       setDestination(dest);
+      setBookingStatus('confirmed');
       setStep('confirmed');
     } catch (e) {
       Alert.alert('Booking failed', e instanceof Error ? e.message : 'Please try again.');
@@ -433,6 +449,18 @@ export default function PoolRideScreen() {
   // ── Confirmed ────────────────────────────────────────────────────────────────
 
   if (step === 'confirmed' && selected) {
+    // Status banners shown to passenger based on real-time booking status
+    const StatusBanner =
+      bookingStatus === 'driver_arrived' ? (
+        <View style={styles.arrivedBanner}>
+          <Text style={styles.arrivedBannerText}>🚗 Your driver has arrived at your pickup!</Text>
+        </View>
+      ) : bookingStatus === 'picked_up' ? (
+        <View style={[styles.arrivedBanner, { backgroundColor: colors.primary + '20' }]}>
+          <Text style={styles.arrivedBannerText}>✅ You're on board — enjoy the ride!</Text>
+        </View>
+      ) : null;
+
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
@@ -441,11 +469,22 @@ export default function PoolRideScreen() {
           <View style={{ width: 40 }} />
         </View>
         <ScrollView contentContainerStyle={styles.scrollPad}>
+          {StatusBanner}
+
           <View style={styles.confirmedCircle}>
-            <Text style={styles.confirmedEmoji}>✅</Text>
+            <Text style={styles.confirmedEmoji}>
+              {bookingStatus === 'driver_arrived' ? '🚗'
+               : bookingStatus === 'picked_up' ? '🎉'
+               : '✅'}
+            </Text>
           </View>
           <Text style={styles.confirmedTitle}>Seat Reserved</Text>
           <Text style={styles.confirmedSub}>Your pool ride is booked</Text>
+
+          {/* Chat with driver button */}
+          <Pressable style={styles.chatDriverBtn} onPress={() => setChatOpen(true)}>
+            <Text style={styles.chatDriverBtnText}>💬 Message driver</Text>
+          </Pressable>
 
           <View style={styles.detailCard}>
             {[
@@ -480,6 +519,17 @@ export default function PoolRideScreen() {
             <Text style={styles.primaryBtnText}>Back to Home</Text>
           </Pressable>
         </ScrollView>
+
+        {/* Pool ride chat */}
+        <ChatModal
+          visible={chatOpen}
+          roomId={selected.id}
+          isPoolRide
+          myUid={user?.uid ?? ''}
+          myName={user?.displayName ?? 'Passenger'}
+          otherName={selected.driverName}
+          onClose={() => setChatOpen(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -1263,6 +1313,34 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 12, color: colors.muted, fontWeight: '600', flexShrink: 0 },
   detailVal: { fontSize: 12, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'right' },
 
+  arrivedBanner: {
+    backgroundColor: '#f59e0b18',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#f59e0b40',
+  },
+  arrivedBannerText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f59e0b',
+    textAlign: 'center' as const,
+  },
+  chatDriverBtn: {
+    backgroundColor: `${colors.primary}18`,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: `${colors.primary}40`,
+    marginBottom: 4,
+  },
+  chatDriverBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.primary,
+  },
   boardingInfoBox: {
     backgroundColor: '#1a1200',
     borderRadius: 12,
