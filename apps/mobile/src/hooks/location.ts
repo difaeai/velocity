@@ -87,7 +87,7 @@ export function useCurrentLocation(auto = true): CurrentLocation {
         // Start live GPS watch — updates the map as the user moves.
         watchSub.current?.remove();
         watchSub.current = await Location!.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+          { accuracy: Location!.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
           (pos) => {
             if (!mounted.current) return;
             setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
@@ -96,7 +96,7 @@ export function useCurrentLocation(auto = true): CurrentLocation {
         );
 
         // Accurate one-shot fix for reverse geocoding the pickup label.
-        const pos = await Location!.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const pos = await Location!.getCurrentPositionAsync({ accuracy: Location!.Accuracy.Balanced });
         if (!mounted.current) return;
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setCoords(next);

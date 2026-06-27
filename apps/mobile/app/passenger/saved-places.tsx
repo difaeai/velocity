@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   addMoreIcon: { fontSize: 20, color: colors.primary, fontWeight: '700' },
   addMoreText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet: {
     backgroundColor: '#1c1b1b',
     borderTopLeftRadius: 24,

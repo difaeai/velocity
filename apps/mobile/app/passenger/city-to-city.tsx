@@ -50,7 +50,7 @@ export default function CityToCityScreen() {
   function book() {
     if (fromCity === toCity) { Alert.alert('Invalid route', 'Origin and destination must be different.'); return; }
     if (selectedRoute === null) { Alert.alert('Select a departure', 'Please choose a departure time.'); return; }
-    const route = availableRoutes!.times[selectedRoute];
+    const route = availableRoutes!.times[selectedRoute as number]!;
     const total = Math.round(route.price * multiplier) * passengers;
 
     setLoading(true);

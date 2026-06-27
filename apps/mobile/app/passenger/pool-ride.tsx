@@ -619,7 +619,7 @@ export default function PoolRideScreen() {
 
   // ── Browse (default) ──────────────────────────────────────────────────────
 
-  const activeCat  = RIDE_CATEGORIES.find((c) => c.key === selectedCategory) ?? RIDE_CATEGORIES[0];
+  const activeCat  = (RIDE_CATEGORIES.find((c) => c.key === selectedCategory) ?? RIDE_CATEGORIES[0]) as RideCategory;
   const fareRows   = fareBreakdown(activeCat.exampleFare);
 
   return (

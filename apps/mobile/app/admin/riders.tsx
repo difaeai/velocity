@@ -355,7 +355,7 @@ export default function RidersAdmin() {
         {/* Bike riders group */}
         <View style={styles.tabGroup}>
           <Text style={styles.tabGroupLabel}>BIKE</Text>
-          <CategoryTab meta={CATEGORIES[0]} active={active === 'bike'} onPress={() => setActive('bike')} />
+          <CategoryTab meta={CATEGORIES[0]!} active={active === 'bike'} onPress={() => setActive('bike')} />
         </View>
 
         <View style={styles.tabSep} />

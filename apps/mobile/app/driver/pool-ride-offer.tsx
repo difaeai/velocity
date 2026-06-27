@@ -325,7 +325,7 @@ export default function PoolRideOfferScreen() {
             <View style={styles.timePicker}>
               <Pressable
                 style={styles.timeBtn}
-                onPress={() => setDeptMin((m) => MINUTE_OPTIONS[(MINUTE_OPTIONS.indexOf(m) + 1) % MINUTE_OPTIONS.length])}
+                onPress={() => setDeptMin((m) => MINUTE_OPTIONS[(MINUTE_OPTIONS.indexOf(m) + 1) % MINUTE_OPTIONS.length] ?? 0)}
               >
                 <Text style={styles.timeBtnText}>▲</Text>
               </Pressable>
@@ -334,7 +334,7 @@ export default function PoolRideOfferScreen() {
                 style={styles.timeBtn}
                 onPress={() => {
                   const idx = MINUTE_OPTIONS.indexOf(deptMin);
-                  setDeptMin(MINUTE_OPTIONS[(idx + MINUTE_OPTIONS.length - 1) % MINUTE_OPTIONS.length]);
+                  setDeptMin(MINUTE_OPTIONS[(idx + MINUTE_OPTIONS.length - 1) % MINUTE_OPTIONS.length] ?? 0);
                 }}
               >
                 <Text style={styles.timeBtnText}>▼</Text>
