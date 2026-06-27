@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { comingSoon, contactSupport } from '../../src/ui/components';
+import { comingSoon } from '../../src/ui/components';
 
 function Row({
   icon,
@@ -76,7 +76,7 @@ export default function Settings() {
 
         <Text style={styles.sectionLabel}>SUPPORT</Text>
         <View style={styles.card}>
-          <Row icon="🎧" label="Contact support" onPress={contactSupport} />
+          <Row icon="🎧" label="Contact support" onPress={() => router.push('/passenger/support-chat')} />
           <View style={styles.divider} />
           <Row icon="📄" label="Terms & Privacy" onPress={() => comingSoon('Terms & Privacy')} />
         </View>

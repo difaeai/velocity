@@ -10,6 +10,7 @@
  * destination can be geocoded to its own coordinates here.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { LocationSubscription } from 'expo-location';
 import { Platform } from 'react-native';
 
 // `expo-location` is native-only; never evaluate it on web.
@@ -36,11 +37,13 @@ export function useCurrentLocation(auto = true): CurrentLocation {
   const [address, setAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<LocationStatus>('idle');
   const mounted = useRef(true);
+  const watchSub = useRef<LocationSubscription | null>(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      watchSub.current?.remove();
     };
   }, []);
 
@@ -72,28 +75,40 @@ export function useCurrentLocation(auto = true): CurrentLocation {
       try {
         const { status: perm } = await Location!.requestForegroundPermissionsAsync();
         if (!mounted.current) return;
-        if (perm !== 'granted') {
-          setStatus('denied');
-          return;
+        if (perm !== 'granted') { setStatus('denied'); return; }
+
+        // Show the last known position immediately (instant — no GPS wait).
+        const last = await Location!.getLastKnownPositionAsync({});
+        if (last && mounted.current) {
+          setCoords({ lat: last.coords.latitude, lng: last.coords.longitude });
+          setStatus('granted');
         }
-        const pos = await Location!.getCurrentPositionAsync({});
+
+        // Start live GPS watch — updates the map as the user moves.
+        watchSub.current?.remove();
+        watchSub.current = await Location!.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+          (pos) => {
+            if (!mounted.current) return;
+            setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            setStatus('granted');
+          },
+        );
+
+        // Accurate one-shot fix for reverse geocoding the pickup label.
+        const pos = await Location!.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (!mounted.current) return;
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setCoords(next);
         setStatus('granted');
         try {
-          const places = await Location!.reverseGeocodeAsync({
-            latitude: next.lat,
-            longitude: next.lng,
-          });
+          const places = await Location!.reverseGeocodeAsync({ latitude: next.lat, longitude: next.lng });
           if (!mounted.current) return;
           const place = places[0];
-          const line = place
-            ? [place.name, place.street, place.city].filter(Boolean).join(', ')
-            : '';
+          const line = place ? [place.name, place.street, place.city].filter(Boolean).join(', ') : '';
           if (line) setAddress(line);
         } catch {
-          // reverse geocoding is best-effort; the coordinates are what matter.
+          // reverse geocoding is best-effort; coords are what matter
         }
       } catch {
         if (mounted.current) setStatus('unavailable');

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -48,17 +48,18 @@ export async function pickPhoto(onPicked: (uri: string) => void) {
   if (!res.canceled && res.assets[0]) onPicked(res.assets[0].uri);
 }
 
-/** Dark top bar with Back / title / Close, matching the onboarding design. */
+/** Dark top bar with ← arrow / title / Close, matching the onboarding design. */
 export function StepHeader({ title }: { title: string }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.header}>
-      <Pressable onPress={() => router.back()} hitSlop={12}>
-        <Text style={styles.headerSide}>Back</Text>
+    <View style={[styles.header, { paddingTop: insets.top }]}>
+      <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBtn}>
+        <Text style={styles.headerArrow}>←</Text>
       </Pressable>
       <Text style={styles.headerTitle}>{title}</Text>
-      <Pressable onPress={() => router.replace('/passenger/home')} hitSlop={12}>
-        <Text style={styles.headerSideMuted}>Close</Text>
+      <Pressable onPress={() => router.replace('/passenger/home')} hitSlop={12} style={styles.headerBtn}>
+        <Text style={styles.headerSideMuted}>✕</Text>
       </Pressable>
     </View>
   );
@@ -117,12 +118,12 @@ export function Bullet({ children }: { children: ReactNode }) {
 
 /** Pale-yellow "contact Support" note shown at the foot of capture screens. */
 export function SupportNote() {
-  const contact = () => Linking.openURL('mailto:support@velocity.app').catch(() => {});
+  const router = useRouter();
   return (
     <View style={styles.note}>
       <Text style={styles.noteBody}>
         If you have questions, please contact{' '}
-        <Text style={styles.noteLink} onPress={contact}>
+        <Text style={styles.noteLink} onPress={() => router.push('/passenger/support-chat')}>
           Support
         </Text>
         .
@@ -235,15 +236,17 @@ export function PhotoCircle({ uri, onPick }: { uri: string | null; onPick: () =>
 
 const styles = StyleSheet.create({
   header: {
-    height: 56,
+    minHeight: 56,
     backgroundColor: oc.header,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    paddingBottom: 12,
   },
-  headerSide: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  headerSideMuted: { color: '#9aa3a0', fontSize: 16, fontWeight: '600' },
+  headerBtn: { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
+  headerArrow: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  headerSideMuted: { color: '#9aa3a0', fontSize: 18, fontWeight: '600' },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
 
   onbBtn: { height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },

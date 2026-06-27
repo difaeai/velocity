@@ -27,6 +27,16 @@ import {
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
+// Pool fare helpers — same progressive formula as pool-ride.tsx
+// factor(n) = (48 + (n-1)(n+6)) / 48
+function poolPerSeat(soloFare: number, riders: number): number {
+  const factor = (48 + (riders - 1) * (riders + 6)) / 48;
+  return Math.ceil((soloFare * factor) / riders);
+}
+function poolDriverTotal(soloFare: number, riders: number): number {
+  return poolPerSeat(soloFare, riders) * riders;
+}
+
 export default function Booking() {
   const router = useRouter();
   const { user } = useAuth();
@@ -316,6 +326,72 @@ export default function Booking() {
               <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
             </Pressable>
           ))}
+
+          {/* ── Pool Ride Incentive Banner ── */}
+          {(() => {
+            const riders4   = poolPerSeat(fare, 4);
+            const riders3   = poolPerSeat(fare, 3);
+            const driverSolo = fare;
+            const driver4    = poolDriverTotal(fare, 4);
+            const savePct    = Math.round(((fare - riders4) / fare) * 100);
+            const earnExtra  = Math.round(((driver4 - driverSolo) / driverSolo) * 100);
+            return (
+              <Pressable
+                style={styles.poolBanner}
+                onPress={() => router.push('/passenger/pool-ride')}
+              >
+                {/* Top row: title + badge */}
+                <View style={styles.poolBannerTop}>
+                  <Text style={styles.poolBannerTitle}>🔀 Ride Sharing (Pool)</Text>
+                  <View style={styles.poolSaveBadge}>
+                    <Text style={styles.poolSaveBadgeText}>Save up to {savePct}%</Text>
+                  </View>
+                </View>
+
+                {/* Two columns: passenger | driver */}
+                <View style={styles.poolBannerCols}>
+                  {/* Left: passenger */}
+                  <View style={styles.poolBannerCol}>
+                    <Text style={styles.poolColIcon}>👤</Text>
+                    <Text style={styles.poolColHeading}>You pay</Text>
+                    <View style={styles.poolFareComparison}>
+                      <Text style={styles.poolFareBefore}>PKR {fare}</Text>
+                      <Text style={styles.poolFareArrow}> → </Text>
+                      <Text style={styles.poolFareAfter}>PKR {riders4}</Text>
+                    </View>
+                    <Text style={styles.poolColSub}>
+                      with 4 riders · <Text style={{ color: '#4ade80' }}>−{savePct}%</Text>
+                    </Text>
+                    <Text style={styles.poolColTip}>
+                      PKR {riders3} with 3 riders
+                    </Text>
+                  </View>
+
+                  <View style={styles.poolBannerDivider} />
+
+                  {/* Right: driver */}
+                  <View style={styles.poolBannerCol}>
+                    <Text style={styles.poolColIcon}>🚗</Text>
+                    <Text style={styles.poolColHeading}>Driver earns</Text>
+                    <View style={styles.poolFareComparison}>
+                      <Text style={styles.poolFareBefore}>PKR {driverSolo}</Text>
+                      <Text style={styles.poolFareArrow}> → </Text>
+                      <Text style={[styles.poolFareAfter, { color: '#fbbf24' }]}>PKR {driver4}</Text>
+                    </View>
+                    <Text style={styles.poolColSub}>
+                      with 4 riders · <Text style={{ color: '#fbbf24' }}>+{earnExtra}%</Text>
+                    </Text>
+                    <Text style={styles.poolColTip}>Same trip, more income</Text>
+                  </View>
+                </View>
+
+                {/* CTA */}
+                <View style={styles.poolBannerCTA}>
+                  <Text style={styles.poolBannerCTAText}>Try Pool Ride →</Text>
+                </View>
+              </Pressable>
+            );
+          })()}
 
           {/* Notice Banner */}
           <View style={styles.taxNoticeBanner}>
@@ -963,5 +1039,106 @@ const styles = StyleSheet.create({
     backgroundColor: '#3e4040',
     alignSelf: 'center',
     marginBottom: 10,
+  },
+
+  // ── Pool incentive banner ──────────────────────────────────────────────────
+  poolBanner: {
+    backgroundColor: '#0d1a06',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#ccff0030',
+    marginVertical: 10,
+    overflow: 'hidden',
+  },
+  poolBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a2e0f',
+  },
+  poolBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ccff00',
+  },
+  poolSaveBadge: {
+    backgroundColor: '#ccff0020',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccff0040',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  poolSaveBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#ccff00',
+  },
+  poolBannerCols: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 12,
+  },
+  poolBannerCol: {
+    flex: 1,
+    paddingHorizontal: 12,
+    gap: 3,
+  },
+  poolBannerDivider: {
+    width: 1,
+    backgroundColor: '#1a2e0f',
+  },
+  poolColIcon: { fontSize: 16, marginBottom: 2 },
+  poolColHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  poolFareComparison: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  poolFareBefore: {
+    fontSize: 12,
+    color: '#6b7280',
+    textDecorationLine: 'line-through',
+  },
+  poolFareArrow: {
+    fontSize: 11,
+    color: '#4b5563',
+  },
+  poolFareAfter: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#ccff00',
+  },
+  poolColSub: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginTop: 1,
+  },
+  poolColTip: {
+    fontSize: 10,
+    color: '#4b5563',
+    fontStyle: 'italic',
+  },
+  poolBannerCTA: {
+    backgroundColor: '#ccff0015',
+    borderTopWidth: 1,
+    borderTopColor: '#1a2e0f',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  poolBannerCTAText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#ccff00',
   },
 });

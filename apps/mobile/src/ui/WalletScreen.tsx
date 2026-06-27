@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -65,8 +65,18 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <View style={styles.header}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          hitSlop={12}
+        >
+          <Text style={styles.backText}>←</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>Wallet</Text>
+        <View style={{ width: 32 }} />
+      </View>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Wallet</Text>
 
         <Card style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Balance</Text>
@@ -106,11 +116,6 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           ))
         )}
 
-        <PrimaryButton
-          variant="secondary"
-          label="Back"
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -118,6 +123,18 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: { width: 32 },
+  backText: { fontSize: 24, color: colors.text },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
   container: { padding: 18, gap: 14 },
   title: { fontSize: 24, fontWeight: '900', color: colors.text },
   balanceCard: { backgroundColor: colors.primary },

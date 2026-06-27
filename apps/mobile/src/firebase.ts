@@ -7,7 +7,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, initializeAuth, type Auth, type Persistence } from 'firebase/auth';
 import * as firebaseAuth from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -37,6 +37,15 @@ try {
 }
 
 export { app, auth };
-export const db = getFirestore(app);
+
+// experimentalForceLongPolling: switches Firestore from gRPC-WebSockets to
+// HTTP long-polling. This is required on Android emulators (and some real
+// devices) where WebSocket connections to Google's servers are blocked by the
+// AVD network stack. Has no effect on production traffic patterns.
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  localCache: memoryLocalCache(),
+});
+
 export const functions = getFunctions(app, FUNCTIONS_REGION);
 export const storage = getStorage(app);

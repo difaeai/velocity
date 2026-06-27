@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { Card, comingSoon, contactSupport } from '../../src/ui/components';
+import { Card, comingSoon } from '../../src/ui/components';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -58,7 +58,7 @@ export default function ProfileScreen() {
             <Text style={styles.actionLabel}>Orders</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem} onPress={contactSupport}>
+          <Pressable style={styles.quickActionItem} onPress={() => router.push('/passenger/support-chat')}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>🎧</Text>
             </View>

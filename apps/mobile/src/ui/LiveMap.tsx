@@ -1,24 +1,17 @@
-/**
- * Real Google map for the home/trip screens.
- *
- * react-native-maps has no native module inside Expo Go, so we load it only in a
- * development/standalone build and fall back to a neutral placeholder in Expo Go.
- * The map centres on the rider's real location (no hardcoded coordinates).
- */
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { useEffect, useRef } from 'react';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
-import { colors } from '../config';
 import type { Coords } from '../hooks/location';
 
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Maps = isExpoGo ? null : require('react-native-maps');
-const MapView = Maps?.default ?? null;
-const Marker = Maps?.Marker ?? null;
-const PROVIDER_GOOGLE = Maps?.PROVIDER_GOOGLE;
+// Default map centre (Karachi) — shown instantly before GPS responds.
+const DEFAULT_REGION = {
+  latitude: 24.8607,
+  longitude: 67.0011,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+};
 
-// Compact Google "night" style so the map matches the app's dark theme.
 const DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#1d2c34' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#8a8c8c' }] },
@@ -40,33 +33,23 @@ export function LiveMap({
   coords: Coords | null;
   style?: StyleProp<ViewStyle>;
 }) {
-  // Expo Go can't render native maps — show a neutral placeholder there.
-  if (!MapView) {
-    return (
-      <View style={[styles.placeholder, style]}>
-        <Text style={styles.placeholderText}>🗺️ Live map appears in the app build</Text>
-      </View>
-    );
-  }
+  const mapRef = useRef<MapView>(null);
+  const centred = useRef(false);
 
-  // Wait for the real location before centring the camera (no hardcoded region).
-  if (!coords) {
-    return (
-      <View style={[styles.placeholder, style]}>
-        <Text style={styles.placeholderText}>Locating you…</Text>
-      </View>
-    );
-  }
-
-  const region = {
-    latitude: coords.lat,
-    longitude: coords.lng,
-    latitudeDelta: 0.012,
-    longitudeDelta: 0.012,
-  };
+  // Animate to the user's real location the first time GPS responds.
+  useEffect(() => {
+    if (coords && !centred.current && mapRef.current) {
+      centred.current = true;
+      mapRef.current.animateToRegion(
+        { latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 },
+        600,
+      );
+    }
+  }, [coords]);
 
   return (
     <MapView
+      ref={mapRef}
       style={[StyleSheet.absoluteFill, style]}
       provider={PROVIDER_GOOGLE}
       customMapStyle={DARK_MAP_STYLE}
@@ -74,27 +57,13 @@ export function LiveMap({
       showsMyLocationButton={false}
       showsCompass={false}
       toolbarEnabled={false}
-      initialRegion={region}
+      initialRegion={DEFAULT_REGION}
     >
-      {Marker ? <Marker coordinate={{ latitude: coords.lat, longitude: coords.lng }} /> : null}
+      {coords && (
+        <Marker coordinate={{ latitude: coords.lat, longitude: coords.lng }} />
+      )}
     </MapView>
   );
 }
 
-const styles = StyleSheet.create({
-  placeholder: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#151b22',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-});
+const styles = StyleSheet.create({});

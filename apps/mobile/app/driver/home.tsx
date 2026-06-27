@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { db } from '../../src/firebase';
@@ -167,6 +167,29 @@ export default function DriverHome() {
           </View>
         </Card>
 
+        {/* Pool Rides */}
+        <View style={styles.poolSection}>
+          <View style={styles.poolHeader}>
+            <Text style={styles.poolTitle}>Pool Rides</Text>
+            <Pressable
+              style={styles.offerBtn}
+              onPress={() => router.push('/driver/pool-ride-offer')}
+            >
+              <Text style={styles.offerBtnText}>+ Offer a ride</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.poolDesc}>
+            Post your route and earn more by sharing seats.{'\n'}
+            Example: 1200 PKR solo ride → 400 PKR × 4 passengers = 1600 PKR
+          </Text>
+          <Pressable
+            style={styles.poolCTA}
+            onPress={() => router.push('/driver/pool-ride-offer')}
+          >
+            <Text style={styles.poolCTAText}>🚗  Offer Pool Ride →</Text>
+          </Pressable>
+        </View>
+
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
       </ScrollView>
     </SafeAreaView>
@@ -186,4 +209,33 @@ const styles = StyleSheet.create({
   reqRow: { flexDirection: 'row', alignItems: 'center' },
   bidRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   earnings: { fontSize: 28, fontWeight: '900', color: colors.primary, marginVertical: 4 },
+  poolSection: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+  },
+  poolHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  poolTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  offerBtn: {
+    backgroundColor: `${colors.primary}20`,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: `${colors.primary}60`,
+  },
+  offerBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  poolDesc: { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  poolCTA: {
+    height: 48,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  poolCTAText: { fontSize: 15, fontWeight: '900', color: '#000' },
 });

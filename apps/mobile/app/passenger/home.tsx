@@ -16,7 +16,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
-import { comingSoon, contactSupport } from '../../src/ui/components';
+import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 
 const { width } = Dimensions.get('window');
@@ -76,7 +76,7 @@ export default function PassengerHome() {
             <Text style={styles.pickupArrow}>➔</Text>
           </Pressable>
 
-          <Pressable style={styles.notificationButton} onPress={() => comingSoon('Notifications')}>
+          <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
             <Text style={styles.notificationText}>🔔</Text>
             <View style={styles.badgeDot} />
           </Pressable>
@@ -87,42 +87,58 @@ export default function PassengerHome() {
       <View style={styles.bottomSheet}>
         <View style={styles.dragIndicator} />
         
-        {/* Services Grid */}
-        <View style={styles.servicesGrid}>
-          {/* Active Lime Green Card: City Rides */}
-          <Pressable style={styles.activeServiceCard} onPress={() => router.push('/passenger/booking')}>
-            <View style={styles.activeServiceHeader}>
-              <Text style={styles.activeServiceTitle}>City rides</Text>
-              <View style={styles.activeWLogo}>
-                <Text style={styles.activeWLogoText}>W</Text>
+        {/* ── HERO: Ride Sharing ── */}
+        <Pressable style={styles.poolHero} onPress={() => router.push('/passenger/pool-ride')}>
+          <View style={styles.poolHeroBody}>
+            <View style={styles.poolHeroTopRow}>
+              <Text style={styles.poolHeroTitle}>Ride Sharing</Text>
+              <View style={styles.poolPillBadge}>
+                <Text style={styles.poolPillBadgeText}>POOL</Text>
               </View>
             </View>
-            <View style={styles.activeServiceGraphic}>
-              <Text style={styles.activeServiceEmoji}>🏍️ 🚗</Text>
+            <Text style={styles.poolHeroSub}>Share · Save up to 65% · Travel smart</Text>
+            <View style={styles.poolGenderTag}>
+              <Text style={styles.poolGenderTagText}>🔒 Same gender by default</Text>
             </View>
-          </Pressable>
-
-          {/* Right Column Grid Stack */}
-          <View style={styles.rightServicesStack}>
-            {/* City to City Card */}
-            <Pressable style={styles.inactiveServiceCard} onPress={() => router.push('/passenger/booking')}>
-              <Text style={styles.serviceTitle}>City to City</Text>
-              <Text style={styles.serviceEmoji}>🚗💼</Text>
-            </Pressable>
-
-            {/* Couriers and Freight row */}
-            <View style={styles.servicesRow}>
-              <Pressable style={[styles.inactiveServiceCard, { flex: 1 }]} onPress={() => router.push('/passenger/booking')}>
-                <Text style={styles.serviceTitle}>Couriers</Text>
-                <Text style={styles.serviceEmoji}>📦</Text>
-              </Pressable>
-              <Pressable style={[styles.inactiveServiceCard, { flex: 1 }]} onPress={() => router.push('/passenger/booking')}>
-                <Text style={styles.serviceTitle}>Freight</Text>
-                <Text style={styles.serviceEmoji}>🚚</Text>
-              </Pressable>
+            <View style={styles.poolSeatsRow}>
+              <Text style={styles.poolSeatIcon}>💺</Text>
+              <Text style={styles.poolSeatIcon}>💺</Text>
+              <Text style={styles.poolSeatIcon}>💺</Text>
+              <Text style={styles.poolSeatIcon}>💺</Text>
+              <Text style={styles.poolSeatsLabel}>Up to 4 riders</Text>
             </View>
           </View>
-        </View>
+          <View style={styles.poolHeroPriceCol}>
+            <Text style={styles.poolHeroPriceFrom}>From</Text>
+            <Text style={styles.poolHeroPriceAmt}>350</Text>
+            <Text style={styles.poolHeroPriceSub}>PKR/seat</Text>
+            <Text style={styles.poolHeroArrow}>→</Text>
+          </View>
+        </Pressable>
+
+        {/* ── Secondary Services ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginBottom: 14 }}
+          contentContainerStyle={styles.chipsRow}
+        >
+          {[
+            { icon: '🚕', label: 'City Rides',   route: '/passenger/booking' },
+            { icon: '🚌', label: 'City to City',  route: '/passenger/city-to-city' },
+            { icon: '📦', label: 'Couriers',      route: '/passenger/couriers' },
+            { icon: '💼', label: 'Business',      route: '/passenger/business-delivery' },
+          ].map((s) => (
+            <Pressable
+              key={s.label}
+              style={styles.chip}
+              onPress={() => router.push(s.route as Parameters<typeof router.push>[0])}
+            >
+              <Text style={styles.chipEmoji}>{s.icon}</Text>
+              <Text style={styles.chipLabel}>{s.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
 
         {/* Search trigger bar */}
         <Pressable
@@ -163,10 +179,7 @@ export default function PassengerHome() {
         onRequestClose={() => setDrawerOpen(false)}
       >
         <View style={styles.drawerOverlay}>
-          {/* Backdrop (Tapping here closes the drawer) */}
-          <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
-          
-          {/* Drawer Content */}
+          {/* Drawer Content — rendered first so it sits on the LEFT */}
           <View style={styles.drawerContent}>
             <SafeAreaView style={styles.drawerSafeArea}>
               <ScrollView contentContainerStyle={styles.drawerScroll}>
@@ -209,32 +222,27 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Wallet &amp; payments</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('Couriers')}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/couriers')}>
                     <Text style={styles.menuItemIcon}>📦</Text>
                     <Text style={styles.menuItemText}>Couriers</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('Business delivery')}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business-delivery')}>
                     <Text style={styles.menuItemIcon}>💼</Text>
                     <Text style={styles.menuItemText}>Business delivery</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('City to City')}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/city-to-city')}>
                     <Text style={styles.menuItemIcon}>🌐</Text>
                     <Text style={styles.menuItemText}>City to City</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('Saved places')}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/saved-places')}>
                     <Text style={styles.menuItemIcon}>🔖</Text>
                     <Text style={styles.menuItemText}>Saved places</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('Freight')}>
-                    <Text style={styles.menuItemIcon}>🚚</Text>
-                    <Text style={styles.menuItemText}>Freight</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => soon('Notifications')}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/notifications')}>
                     <Text style={styles.menuItemIcon}>🔔</Text>
                     <Text style={styles.menuItemText}>Notifications</Text>
                   </Pressable>
@@ -249,18 +257,7 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Settings</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => soon('Help center')}>
-                    <Text style={styles.menuItemIcon}>ℹ️</Text>
-                    <Text style={styles.menuItemText}>Help</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.menuItem}
-                    onPress={() => {
-                      setDrawerOpen(false);
-                      contactSupport();
-                    }}
-                  >
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/support-chat')}>
                     <Text style={styles.menuItemIcon}>💬</Text>
                     <Text style={styles.menuItemText}>Support</Text>
                   </Pressable>
@@ -286,6 +283,8 @@ export default function PassengerHome() {
               </View>
             </SafeAreaView>
           </View>
+          {/* Backdrop on the RIGHT — tapping closes the drawer */}
+          <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
         </View>
       </Modal>
     </View>
@@ -483,76 +482,62 @@ const styles = StyleSheet.create({
     color: '#8a8c8c',
     marginLeft: 6,
   },
-  servicesGrid: {
+  /* ── Pool hero card ── */
+  poolHero: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  activeServiceCard: {
-    flex: 1.1,
-    height: 110,
-    borderRadius: 18,
-    backgroundColor: '#ccff00', // Lime green
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-  activeServiceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 120,
   },
-  activeServiceTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#000000',
+  poolHeroBody: { flex: 1, gap: 5 },
+  poolHeroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  poolHeroTitle: { fontSize: 20, fontWeight: '900', color: '#000' },
+  poolPillBadge: {
+    backgroundColor: '#000',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
-  activeWLogo: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#000000',
+  poolPillBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  poolHeroSub: { fontSize: 12, color: '#1c1c1c', fontWeight: '600' },
+  poolGenderTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00000015',
+    borderRadius: 99,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  poolGenderTagText: { fontSize: 11, color: '#000', fontWeight: '700' },
+  poolSeatsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  poolSeatIcon: { fontSize: 13 },
+  poolSeatsLabel: { fontSize: 11, color: '#333', fontWeight: '700', marginLeft: 3 },
+  poolHeroPriceCol: { alignItems: 'center', paddingLeft: 14, gap: 1 },
+  poolHeroPriceFrom: { fontSize: 10, color: '#444', fontWeight: '600' },
+  poolHeroPriceAmt: { fontSize: 28, fontWeight: '900', color: '#000', lineHeight: 30 },
+  poolHeroPriceSub: { fontSize: 10, color: '#444', fontWeight: '600' },
+  poolHeroArrow: { fontSize: 22, color: '#000', fontWeight: '900', marginTop: 4 },
+
+  /* ── Secondary service chips ── */
+  chipsRow: { gap: 10, paddingRight: 4 },
+  chip: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  activeWLogoText: {
-    color: '#ccff00',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  activeServiceGraphic: {
-    alignSelf: 'flex-end',
-  },
-  activeServiceEmoji: {
-    fontSize: 34,
-    marginTop: -10,
-  },
-  rightServicesStack: {
-    flex: 1,
-    gap: 10,
-  },
-  inactiveServiceCard: {
-    backgroundColor: '#212222',
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
+    backgroundColor: colors.surface,
     borderRadius: 14,
-    padding: 10,
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 6,
+    minWidth: 82,
   },
-  serviceTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  serviceEmoji: {
-    fontSize: 15,
-  },
-  servicesRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  chipEmoji: { fontSize: 22 },
+  chipLabel: { fontSize: 11, fontWeight: '800', color: colors.text },
   searchTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
