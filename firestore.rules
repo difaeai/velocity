@@ -302,6 +302,30 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- poolRideRequests/{requestId} --------------------------------------
+    // Server-authoritative (CF writes via Admin SDK).
+    // Participants (leader + joined passengers) may read their own request.
+    // The requesting passenger and driver are enforced at CF level — clients
+    // never write fare, slots, driver, or status directly.
+    match /poolRideRequests/{requestId} {
+      allow read: if isSignedIn() && (
+        uid() in resource.data.passengers
+        || resource.data.driverId == uid()
+        || isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // ----- commuteSchedules/{uid} -------------------------------------------
+    // One doc per user. Written only by upsertCommuteSchedule CF.
+    // The owner may read their own schedule to pre-fill the form.
+    // Drivers access aggregate demand via getCommuteDemand CF only —
+    // the exact home/destination coordinates are NEVER returned to drivers.
+    match /commuteSchedules/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

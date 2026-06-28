@@ -791,6 +791,44 @@ export default function PoolRideScreen() {
         )}
         ListFooterComponent={
           <>
+            {/* Quick links to new pool features */}
+            <View style={styles.quickLinksSection}>
+              <Text style={styles.quickLinksTitle}>MORE POOL OPTIONS</Text>
+              <Pressable
+                style={styles.quickLink}
+                onPress={() => router.push('/passenger/pool-request/create' as Parameters<typeof router.push>[0])}
+              >
+                <Text style={styles.quickLinkIcon}>✋</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickLinkLabel}>Request a Ride</Text>
+                  <Text style={styles.quickLinkDesc}>Propose your own fare · driver accepts or counters</Text>
+                </View>
+                <Text style={styles.quickLinkArrow}>›</Text>
+              </Pressable>
+              <Pressable
+                style={styles.quickLink}
+                onPress={() => router.push('/passenger/pool-request/nearby' as Parameters<typeof router.push>[0])}
+              >
+                <Text style={styles.quickLinkIcon}>🗺️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickLinkLabel}>Browse Nearby Rides</Text>
+                  <Text style={styles.quickLinkDesc}>See active sharing rides around you (anonymised)</Text>
+                </View>
+                <Text style={styles.quickLinkArrow}>›</Text>
+              </Pressable>
+              <Pressable
+                style={styles.quickLink}
+                onPress={() => router.push('/passenger/commute' as Parameters<typeof router.push>[0])}
+              >
+                <Text style={styles.quickLinkIcon}>📅</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickLinkLabel}>My Commute Schedule</Text>
+                  <Text style={styles.quickLinkDesc}>Register your daily commute · help drivers find you</Text>
+                </View>
+                <Text style={styles.quickLinkArrow}>›</Text>
+              </Pressable>
+            </View>
+
             {/* Collapsible fare table */}
             <Pressable style={styles.fareToggleBtn} onPress={() => setShowFareTable((v) => !v)}>
               <Text style={styles.fareToggleText}>
@@ -874,6 +912,24 @@ const styles = StyleSheet.create({
 
   listPad: { padding: 14, gap: 10 },
   scrollPad: { padding: 16, gap: 14 },
+
+  // Quick links to new pool features
+  quickLinksSection: { gap: 8, marginVertical: 8 },
+  quickLinksTitle:   { fontSize: 10, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, marginBottom: 4 },
+  quickLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  quickLinkIcon:  { fontSize: 20 },
+  quickLinkLabel: { fontSize: 14, fontWeight: '800', color: colors.text },
+  quickLinkDesc:  { fontSize: 11, color: colors.muted, marginTop: 2 },
+  quickLinkArrow: { fontSize: 20, color: colors.muted },
 
   // Location bar
   locationBar: {
