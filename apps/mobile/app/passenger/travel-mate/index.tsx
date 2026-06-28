@@ -164,7 +164,7 @@ function SwipeCard({
 }
 
 // ── Paywall card ──────────────────────────────────────────────────────────────
-function PaywallCard({ resetAt, tier }: { resetAt?: string; tier?: string }) {
+function PaywallCard({ resetAt, tier, onUpgrade }: { resetAt?: string; tier?: string; onUpgrade: () => void }) {
   const resetLabel = resetAt
     ? new Date(resetAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : undefined;
@@ -177,9 +177,9 @@ function PaywallCard({ resetAt, tier }: { resetAt?: string; tier?: string }) {
           ? `Daily likes reset at ${resetLabel ?? 'midnight'}.`
           : `Free plan includes 4 likes per month. Resets ${resetLabel ? `on ${resetLabel}` : 'next month'}.`}
       </Text>
-      <Text style={s.paywallUpgrade}>
-        Subscribe for unlimited daily likes — coming soon.
-      </Text>
+      <Pressable onPress={onUpgrade}>
+        <Text style={s.paywallUpgrade}>Get more likes →</Text>
+      </Pressable>
     </View>
   );
 }
@@ -325,7 +325,11 @@ export default function TravelMateDeck() {
       {/* Card deck */}
       <View style={s.deck}>
         {paywallData ? (
-          <PaywallCard resetAt={paywallData.resetAt} tier={paywallData.tier} />
+          <PaywallCard
+            resetAt={paywallData.resetAt}
+            tier={paywallData.tier}
+            onUpgrade={() => router.push('/passenger/travel-mate/subscription' as Parameters<typeof router.push>[0])}
+          />
         ) : outOfCards || cards.length === 0 ? (
           <View style={[s.card, s.emptyCard]}>
             <Text style={s.emptyEmoji}>✨</Text>

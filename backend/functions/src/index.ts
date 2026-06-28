@@ -55,3 +55,7 @@ export {
 export { getTravelMateFeed } from './travelMate/feed';
 export { upsertTravelMateProfile } from './travelMate/upsertProfile';
 export { travelMateSwipe } from './travelMate/swipe';
+export { requestTravelMateSubscription } from './travelMate/requestSubscription';
+export { approveTravelMateSubscription, rejectTravelMateSubscription } from './travelMate/approveSubscription';
+export { adminCreateTravelMatePlan, adminUpdateTravelMatePlan, adminDeleteTravelMatePlan } from './travelMate/plans';
+export { expireTravelMateSubscriptions } from './travelMate/expireSubscriptions';

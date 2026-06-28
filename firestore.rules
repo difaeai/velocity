@@ -214,6 +214,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- travelMatePlans/{planId} ----------------------------------------
+    // Any authenticated user can browse plans (needed for the subscription
+    // purchase screen). Writes go exclusively through the CF (Admin SDK).
+    match /travelMatePlans/{planId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- travelMateSubscriptions/{subId} ---------------------------------
+    // A user may read (and list) their own subscriptions.
+    // Admin reads all. All writes go through the CF.
+    match /travelMateSubscriptions/{subId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+
     // ----- travelMateProfiles/{uid} ----------------------------------------
     // Profiles are OPAQUE to all clients. The getTravelMateFeed CF serves
     // candidates via Admin SDK so we never expose another user's home address

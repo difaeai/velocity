@@ -63,4 +63,26 @@ export const adminApi = {
     { disputeId: string; resolution: string; refundAmount?: number },
     { ok: boolean }
   >('resolveDispute'),
+
+  // ── Travel Mate admin ─────────────────────────────────────────────────────
+  approveTravelMateSubscription: callable<
+    { subscriptionId: string },
+    { status: string; uid: string; endAt: string; dailyAllowance: number }
+  >('approveTravelMateSubscription'),
+  rejectTravelMateSubscription: callable<
+    { subscriptionId: string; reason?: string },
+    { status: string }
+  >('rejectTravelMateSubscription'),
+  adminCreateTravelMatePlan: callable<
+    { name: string; billingPeriod: 'weekly' | 'yearly'; pricePKR: number; dailyLikeAllowance: number; active?: boolean },
+    { ok: boolean; planId: string }
+  >('adminCreateTravelMatePlan'),
+  adminUpdateTravelMatePlan: callable<
+    { planId: string; name?: string; billingPeriod?: 'weekly' | 'yearly'; pricePKR?: number; dailyLikeAllowance?: number; active?: boolean },
+    { ok: boolean }
+  >('adminUpdateTravelMatePlan'),
+  adminDeleteTravelMatePlan: callable<
+    { planId: string },
+    { ok: boolean }
+  >('adminDeleteTravelMatePlan'),
 };

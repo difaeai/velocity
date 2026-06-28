@@ -101,6 +101,10 @@ export const api = {
   registerFcmToken: callable<{ token: string; platform?: 'ios' | 'android' | 'web' }, { ok: boolean }>('registerFcmToken'),
 
   // ── Travel Mate ──────────────────────────────────────────────────────────────
+  requestTravelMateSubscription: callable<
+    { planId: string; paymentMethod: 'wallet' | 'easypaisa' | 'jazzcash' | 'bank'; paymentProofURL?: string },
+    { subscriptionId: string; status: string }
+  >('requestTravelMateSubscription'),
   upsertTravelMateProfile: callable<UpsertTravelMateInput, { profile: Record<string, unknown> }>('upsertTravelMateProfile'),
   getTravelMateFeed: callable<
     { limit?: number; excludeUids?: string[] },
