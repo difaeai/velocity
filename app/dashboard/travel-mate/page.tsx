@@ -18,6 +18,7 @@ import {
   query,
   setDoc,
   Timestamp,
+  where,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
@@ -55,6 +56,16 @@ interface Sub {
   endAt?: Timestamp;
 }
 
+interface ModerationReport {
+  id: string;
+  reporterId: string;
+  reportedUid: string;
+  matchId: string | null;
+  reason: string;
+  status: 'open' | 'resolved';
+  createdAt?: { seconds: number };
+}
+
 interface TmSettings {
   freeMonthlySwipes: number;
   maxGroupSize: number;
@@ -62,7 +73,7 @@ interface TmSettings {
   enforceMutualGender: boolean;
 }
 
-type Tab = 'plans' | 'subscriptions' | 'settings';
+type Tab = 'plans' | 'subscriptions' | 'settings' | 'moderation';
 type SubFilter = 'pending' | 'active' | 'rejected' | 'expired';
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -80,6 +91,7 @@ export default function TravelMatePage() {
   const [subFilter, setSubFilter] = useState<SubFilter>('pending');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reports, setReports] = useState<ModerationReport[]>([]);
 
   // ── Plans real-time ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -104,6 +116,14 @@ export default function TravelMatePage() {
     });
   }, []);
 
+  // ── Reports real-time ─────────────────────────────────────────────────────
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'travelMateReports'), where('status', '==', 'open'), orderBy('createdAt', 'desc')),
+      snap => setReports(snap.docs.map(d => ({ id: d.id, ...d.data() }) as ModerationReport)),
+    );
+  }, []);
+
   async function call<T>(fn: () => Promise<T>, id: string): Promise<T | null> {
     setError(null);
     setBusy(id);
@@ -126,10 +146,13 @@ export default function TravelMatePage() {
       </h1>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        {(['subscriptions', 'plans', 'settings'] as Tab[]).map(t => (
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+        {(['subscriptions', 'plans', 'moderation', 'settings'] as Tab[]).map(t => (
           <Button key={t} variant={tab === t ? 'primary' : 'ghost'} onClick={() => setTab(t)}>
-            {t === 'subscriptions' ? '🧾 Subscriptions' : t === 'plans' ? '📋 Plans' : '⚙️ Settings'}
+            {t === 'subscriptions' ? '🧾 Subscriptions'
+              : t === 'plans' ? '📋 Plans'
+              : t === 'moderation' ? `🚩 Moderation${reports.length ? ` (${reports.length})` : ''}`
+              : '⚙️ Settings'}
           </Button>
         ))}
       </div>
@@ -151,6 +174,7 @@ export default function TravelMatePage() {
         />
       )}
       {tab === 'settings' && <SettingsTab settings={settings} />}
+      {tab === 'moderation' && <ModerationTab reports={reports} busy={busy} call={call} />}
     </div>
   );
 }
@@ -575,3 +599,97 @@ const pillActiveStyle: React.CSSProperties = {
   backgroundColor: `${colors.primary}18`,
   color: colors.primary,
 };
+
+// ── Moderation tab ────────────────────────────────────────────────────────────
+
+function ModerationTab({
+  reports,
+  busy,
+  call,
+}: {
+  reports: ModerationReport[];
+  busy: string | null;
+  call: <T>(fn: () => Promise<T>, id: string) => Promise<T | null>;
+}) {
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendTarget, setSuspendTarget] = useState<string | null>(null);
+
+  async function suspend(uid: string, reason: string) {
+    await call(() => adminApi.adminSuspendTravelMateProfile({ targetUid: uid, reason }), `suspend-${uid}`);
+    setSuspendTarget(null);
+    setSuspendReason('');
+  }
+
+  if (reports.length === 0) {
+    return (
+      <Card>
+        <p style={{ color: colors.muted, fontSize: 14, margin: 0, textAlign: 'center' }}>
+          No open reports — queue is clear ✅
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      {reports.map(r => (
+        <Card key={r.id}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: colors.danger, background: `${colors.danger}18`, padding: '3px 8px', borderRadius: 6 }}>🚩 Open</span>
+                {r.createdAt && (
+                  <span style={{ fontSize: 11, color: colors.muted }}>
+                    {new Date(r.createdAt.seconds * 1000).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 13, color: colors.muted }}>
+                  Reporter: <code style={{ color: colors.text, fontSize: 11 }}>{r.reporterId}</code>
+                </div>
+                <div style={{ fontSize: 13, color: colors.muted }}>
+                  Reported: <code style={{ color: colors.text, fontSize: 11 }}>{r.reportedUid}</code>
+                </div>
+                {r.matchId && (
+                  <div style={{ fontSize: 13, color: colors.muted }}>
+                    Match: <code style={{ color: colors.text, fontSize: 11 }}>{r.matchId}</code>
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: colors.text, marginTop: 4, padding: '8px 10px', borderRadius: 8, background: colors.bg }}>
+                  "{r.reason}"
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {suspendTarget === r.reportedUid ? (
+                <div style={{ display: 'grid', gap: 8, minWidth: 220 }}>
+                  <input
+                    value={suspendReason}
+                    onChange={e => setSuspendReason(e.target.value)}
+                    placeholder="Suspension reason (optional)"
+                    style={{ ...inputStyle, fontSize: 12, padding: '6px 10px' }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button variant="ghost" onClick={() => setSuspendTarget(null)}>Cancel</Button>
+                    <Button
+                      variant="danger"
+                      disabled={busy === `suspend-${r.reportedUid}`}
+                      onClick={() => suspend(r.reportedUid, suspendReason)}
+                    >
+                      {busy === `suspend-${r.reportedUid}` ? 'Suspending…' : 'Confirm suspend'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="danger" onClick={() => setSuspendTarget(r.reportedUid)}>
+                  Suspend profile
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}

@@ -85,4 +85,8 @@ export const adminApi = {
     { planId: string },
     { ok: boolean }
   >('adminDeleteTravelMatePlan'),
+  adminSuspendTravelMateProfile: callable<
+    { targetUid: string; reason?: string },
+    { ok: boolean }
+  >('adminSuspendTravelMateProfile'),
 };

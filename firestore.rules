@@ -264,6 +264,34 @@ service cloud.firestore {
                       && request.resource.data.text.size() <= 500;
         allow update, delete: if false;
       }
+
+      // CF (sendTravelMateMessage) writes here; clients may only read.
+      match /messages/{msgId} {
+        allow read: if isSignedIn()
+                    && uid() in get(/databases/$(database)/documents/travelMateMatches/$(matchId)).data.users;
+        allow write: if false;
+      }
+    }
+
+    // ----- travelMateGroups/{groupId} --------------------------------------
+    // Only group members may read their group or its settlement history.
+    // All writes go through the CF (Admin SDK).
+    match /travelMateGroups/{groupId} {
+      allow read: if isSignedIn() && uid() in resource.data.members;
+      allow write: if false;
+
+      match /settlements/{tripId} {
+        allow read: if isSignedIn()
+          && uid() in get(/databases/$(database)/documents/travelMateGroups/$(groupId)).data.members;
+        allow write: if false;
+      }
+    }
+
+    // ----- travelMateReports/{reportId} ------------------------------------
+    // The reporter may read their own reports. Admin reads all.
+    match /travelMateReports/{reportId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.reporterId == uid());
+      allow write: if false;
     }
 
     // ----- travelMateQuota/{uid} -------------------------------------------

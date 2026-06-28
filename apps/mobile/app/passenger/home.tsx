@@ -278,6 +278,10 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemIcon}>🤝</Text>
                     <Text style={styles.menuItemText}>Travel Mate</Text>
                   </Pressable>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>
+                    <Text style={styles.menuItemIcon}>💬</Text>
+                    <Text style={styles.menuItemText}>Matches & Groups</Text>
+                  </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={openSafety}>
                     <Text style={styles.menuItemIcon}>🛡️</Text>

@@ -378,9 +378,9 @@ export default function TravelMateDeck() {
               <PrimaryButton
                 label="Say hello 💬"
                 onPress={() => {
+                  const id = matchInfo?.matchId;
                   setMatchInfo(null);
-                  // Phase 2: navigate to match chat
-                  Alert.alert('Coming soon', 'In-app Travel Mate chat launches in Phase 2!');
+                  if (id) router.push(`/passenger/travel-mate/chat/${id}` as Parameters<typeof router.push>[0]);
                 }}
               />
               <Pressable onPress={() => setMatchInfo(null)} style={s.keepSwiping}>

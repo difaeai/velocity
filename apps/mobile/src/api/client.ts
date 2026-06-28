@@ -114,6 +114,34 @@ export const api = {
     { targetUid: string; direction: 'like' | 'pass' },
     { matched: boolean; matchId?: string; remaining?: number; tier?: 'free' | 'subscribed'; direction?: 'pass' }
   >('travelMateSwipe'),
+
+  // ── Travel Mate Phase 3 — social ─────────────────────────────────────────
+  sendTravelMateMessage: callable<
+    { matchId: string; text: string },
+    { messageId: string }
+  >('sendTravelMateMessage'),
+  unmatchTravelMate: callable<
+    { matchId: string },
+    { status: string }
+  >('unmatchTravelMate'),
+  reportTravelMateUser: callable<
+    { reportedUid: string; matchId?: string; reason: string },
+    { reportId: string; status: string }
+  >('reportTravelMateUser'),
+
+  // ── Travel Mate Phase 4 — groups ─────────────────────────────────────────
+  createTravelMateGroup: callable<
+    { name?: string; destinationName?: string; schedule?: { days: TravelMateDay[]; departTime: string } },
+    { groupId: string }
+  >('createTravelMateGroup'),
+  joinTravelMateGroup: callable<
+    { groupId: string },
+    { joined: boolean; alreadyMember?: boolean }
+  >('joinTravelMateGroup'),
+  settleTravelMateSplit: callable<
+    { groupId: string; tripId: string; riderUids: string[]; amountPKR?: number },
+    { settled: boolean; fare: number; share: number; riders: number; collected: number; bookerNetCost: number }
+  >('settleTravelMateSplit'),
 };
 
 // ── Travel Mate types ─────────────────────────────────────────────────────────

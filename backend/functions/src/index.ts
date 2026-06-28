@@ -59,3 +59,9 @@ export { requestTravelMateSubscription } from './travelMate/requestSubscription'
 export { approveTravelMateSubscription, rejectTravelMateSubscription } from './travelMate/approveSubscription';
 export { adminCreateTravelMatePlan, adminUpdateTravelMatePlan, adminDeleteTravelMatePlan } from './travelMate/plans';
 export { expireTravelMateSubscriptions } from './travelMate/expireSubscriptions';
+// Phase 3 — social
+export { sendTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from './travelMate/social';
+// Phase 3 — admin moderation
+export { adminSuspendTravelMateProfile } from './travelMate/moderation';
+// Phase 4 — groups + fare split
+export { createTravelMateGroup, joinTravelMateGroup, settleTravelMateSplit } from './travelMate/groups';
