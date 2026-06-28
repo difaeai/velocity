@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import type { RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
+  fullName?: string;
   verificationStatus?: string;
   online?: boolean;
   rating?: number;

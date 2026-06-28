@@ -49,6 +49,7 @@ export interface CreateTripInput {
 }
 
 export const api = {
+  claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',
   ),

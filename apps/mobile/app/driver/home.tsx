@@ -19,6 +19,7 @@ import { Badge, Card, PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
 import { RatingModal } from '../../src/ui/RatingModal';
 import { ChatModal } from '../../src/ui/ChatModal';
+import { DriverDrawer } from '../../src/ui/DriverDrawer';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -52,6 +53,9 @@ export default function DriverHome() {
 
   // Chat state
   const [chatOpen, setChatOpen]       = useState(false);
+
+  // Drawer state
+  const [drawerOpen, setDrawerOpen]   = useState(false);
 
   // Subscribe to driver doc for live cycleGrossFare
   useEffect(() => {
@@ -126,9 +130,12 @@ export default function DriverHome() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
-          <View>
+          <Pressable onPress={() => setDrawerOpen(true)} style={styles.menuBtn} hitSlop={12}>
+            <Text style={styles.menuIcon}>☰</Text>
+          </Pressable>
+          <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.hello}>Driver</Text>
-            <Text style={styles.email}>{user?.email ?? 'Driver'}</Text>
+            <Text style={styles.email}>{profile?.fullName || user?.email || 'Driver'}</Text>
           </View>
           <Badge label={online ? 'Online' : 'Offline'} color={online ? colors.primary : colors.muted} />
         </View>
@@ -231,7 +238,7 @@ export default function DriverHome() {
           </Card>
         ) : online ? (
           <>
-            <Text style={styles.section}>Incoming requests</Text>
+            <Text style={styles.section}>Incoming requests — all ride types</Text>
             {requests.length === 0 ? (
               <Card>
                 <Text style={styles.muted}>No open requests nearby. Stay online…</Text>
@@ -296,19 +303,22 @@ export default function DriverHome() {
           </View>
         </Card>
 
-        {/* Pool Rides */}
+        {/* Offer a Pool Route — optional extra income feature */}
         <View style={styles.poolSection}>
           <View style={styles.poolHeader}>
-            <Text style={styles.poolTitle}>Pool Rides</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolTitle}>Offer a Pool Route</Text>
+              <Text style={styles.poolSubtitle}>Earn more by sharing your own route</Text>
+            </View>
             <Pressable
               style={styles.offerBtn}
               onPress={() => router.push('/driver/pool-ride-offer')}
             >
-              <Text style={styles.offerBtnText}>+ Offer a ride</Text>
+              <Text style={styles.offerBtnText}>+ New route</Text>
             </Pressable>
           </View>
 
-          {/* Active pool rides the driver created */}
+          {/* Active pool routes the driver created */}
           {poolRides.length > 0 && (
             <View style={{ gap: 10 }}>
               {poolRides.map((pr) => (
@@ -327,7 +337,7 @@ export default function DriverHome() {
                   </View>
                   <View style={styles.poolRideStatusBadge}>
                     <Text style={styles.poolRideStatusText}>
-                      {pr.status === 'open'        ? '🟡 Open'
+                      {pr.status === 'open'         ? '🟡 Open'
                         : pr.status === 'collecting' ? '🟢 Collecting'
                         : pr.status === 'full'       ? '🔵 Full'
                         : pr.status === 'boarding'   ? '🚗 Boarding'
@@ -340,16 +350,12 @@ export default function DriverHome() {
             </View>
           )}
 
-          <Text style={styles.poolDesc}>
-            Post your route and earn more by sharing seats.{'\n'}
-            Example: 1200 PKR solo ride → 400 PKR × 4 passengers = 1600 PKR
-          </Text>
-          <Pressable
-            style={styles.poolCTA}
-            onPress={() => router.push('/driver/pool-ride-offer')}
-          >
-            <Text style={styles.poolCTAText}>🚗  Offer Pool Ride →</Text>
-          </Pressable>
+          {poolRides.length === 0 && (
+            <Text style={styles.poolDesc}>
+              Post your own route and fill empty seats along the way.{'\n'}
+              Example: 1200 PKR solo → 400 PKR × 4 passengers = 1600 PKR
+            </Text>
+          )}
         </View>
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
@@ -375,6 +381,18 @@ export default function DriverHome() {
           onClose={() => setChatOpen(false)}
         />
       )}
+
+      {/* Side drawer */}
+      <DriverDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        driverName={profile?.fullName ?? user?.displayName ?? ''}
+        driverEmail={user?.email ?? ''}
+        online={online}
+        tripsCount={profile?.tripsCount ?? 0}
+        rating={profile?.rating ?? 5}
+        onSignOut={signOut}
+      />
     </SafeAreaView>
   );
 }
@@ -383,8 +401,10 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: 18, gap: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  menuBtn:   { padding: 4 },
+  menuIcon:  { fontSize: 26, color: colors.text, fontWeight: '700' },
   hello: { fontSize: 15, color: colors.muted },
-  email: { fontSize: 20, fontWeight: '900', color: colors.text },
+  email: { fontSize: 18, fontWeight: '900', color: colors.text },
   section: { fontSize: 14, fontWeight: '800', color: colors.text },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   muted: { fontSize: 13, color: colors.muted },
@@ -400,8 +420,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
-  poolHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  poolTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  poolHeader:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolTitle:     { fontSize: 16, fontWeight: '800', color: colors.text },
+  poolSubtitle:  { fontSize: 12, color: colors.muted, marginTop: 2 },
   offerBtn: {
     backgroundColor: `${colors.primary}20`,
     borderRadius: 10,
@@ -442,16 +463,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   contactBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  poolCTA: {
-    height: 48,
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  poolCTAText: { fontSize: 15, fontWeight: '900', color: '#000' },
-
   // Commission lock banner
   lockBanner: {
     backgroundColor: '#2a0a0a',

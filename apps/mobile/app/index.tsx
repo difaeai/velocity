@@ -20,29 +20,16 @@ export default function Index() {
   if (initializing || showSplash) {
     return (
       <View style={styles.container}>
-        <View style={styles.logoRow}>
-          {/* Stylized lime green car-shaped 'V' logo */}
-          <View style={styles.logoGraphic}>
-            {/* Rear bumper/arch */}
-            <View style={styles.rearArch} />
-            {/* The bold V symbol in the middle */}
-            <View style={styles.vContainer}>
-              <View style={styles.vLeft} />
-              <View style={styles.vRight} />
-            </View>
-            {/* Front bumper/arch */}
-            <View style={styles.frontArch} />
-            {/* Left wheel cutout */}
-            <View style={styles.wheelCutoutLeft} />
-            {/* Right wheel cutout */}
-            <View style={styles.wheelCutoutRight} />
-          </View>
-
-          {/* Velocity brand text */}
-          <Text style={styles.brandText}>VELOCITY</Text>
+        {/* Logo badge */}
+        <View style={styles.logoBadge}>
+          <Text style={styles.logoV}>V</Text>
         </View>
 
-        {/* Small 4-pointed star at the bottom right */}
+        {/* Brand name */}
+        <Text style={styles.brandText}>VELOCITY</Text>
+        <Text style={styles.brandSub}>Ride smarter. Move faster.</Text>
+
+        {/* Small star accent */}
         <View style={styles.starContainer}>
           <Text style={styles.star}>✦</Text>
         </View>
@@ -60,106 +47,44 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2e3030', // Custom dark grey from mockup
-  },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#1a1c1c',
     gap: 16,
   },
-  logoGraphic: {
-    width: 90,
-    height: 40,
-    position: 'relative',
+  logoBadge: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    backgroundColor: '#ccff00',
+    alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
   },
-  rearArch: {
-    position: 'absolute',
-    left: 2,
-    top: 15,
-    width: 24,
-    height: 12,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 4,
-    borderWidth: 3,
-    borderColor: '#ccff00',
-    borderBottomWidth: 0,
-    borderRightWidth: 0,
-  },
-  vContainer: {
-    position: 'absolute',
-    left: 20,
-    top: 5,
-    width: 32,
-    height: 32,
-  },
-  vLeft: {
-    position: 'absolute',
-    left: 8,
-    top: 0,
-    bottom: 2,
-    width: 5,
-    backgroundColor: '#ccff00',
-    transform: [{ rotate: '20deg' }],
-    borderRadius: 2,
-  },
-  vRight: {
-    position: 'absolute',
-    right: 8,
-    top: 0,
-    bottom: 2,
-    width: 5,
-    backgroundColor: '#ccff00',
-    transform: [{ rotate: '-20deg' }],
-    borderRadius: 2,
-  },
-  frontArch: {
-    position: 'absolute',
-    right: 2,
-    top: 15,
-    width: 28,
-    height: 12,
-    borderTopRightRadius: 10,
-    borderTopLeftRadius: 4,
-    borderWidth: 3,
-    borderColor: '#ccff00',
-    borderBottomWidth: 0,
-    borderLeftWidth: 0,
-  },
-  wheelCutoutLeft: {
-    position: 'absolute',
-    bottom: -6,
-    left: 12,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#2e3030',
-  },
-  wheelCutoutRight: {
-    position: 'absolute',
-    bottom: -6,
-    right: 14,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#2e3030',
+  logoV: {
+    fontSize: 62,
+    fontWeight: '900',
+    color: '#1a1c1c',
+    lineHeight: 70,
   },
   brandText: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
     color: '#ffffff',
-    letterSpacing: 1.5,
+    letterSpacing: 4,
+  },
+  brandSub: {
+    fontSize: 14,
+    color: '#8a8c8c',
+    letterSpacing: 0.5,
   },
   starContainer: {
     position: 'absolute',
-    bottom: 40,
-    right: 40,
+    bottom: 44,
+    right: 44,
   },
   star: {
-    fontSize: 26,
-    color: '#8a8c8c',
-    opacity: 0.8,
+    fontSize: 22,
+    color: '#ccff00',
+    opacity: 0.6,
   },
 });
 

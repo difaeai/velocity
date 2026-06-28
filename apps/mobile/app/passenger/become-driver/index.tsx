@@ -25,6 +25,7 @@ export default function DriverIntro() {
   const router = useRouter();
   const goDriver = () => router.push('/passenger/become-driver/checklist');
   const goPassenger = () => router.replace('/passenger/home');
+  const goDriverSignIn = () => router.push('/driver-sign-in');
 
   const goCourier = () =>
     Alert.alert('Coming soon', 'Courier sign-up will be available shortly. You can register as a driver now.');
@@ -57,7 +58,7 @@ export default function DriverIntro() {
 
         <View style={styles.spacer} />
 
-        <Pressable style={styles.accountBtn} onPress={goDriver}>
+        <Pressable style={styles.accountBtn} onPress={goDriverSignIn}>
           <Text style={styles.accountText}>I already have an account</Text>
         </Pressable>
         <Pressable onPress={goPassenger} style={styles.passengerBtn}>

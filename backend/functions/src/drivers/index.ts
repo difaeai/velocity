@@ -91,9 +91,29 @@ const adminCreateDriverSchema = z.object({
 });
 
 /**
+ * Authenticated user: if an approved driver Firestore doc exists for the caller
+ * but their Firebase Auth token lacks the driver claim (e.g. the account existed
+ * before adminCreateDriver ran), this re-applies the claim so they can log in.
+ */
+export const claimDriverRole = onCall(async (req) => {
+  const ctx = requireAuth(req);
+
+  const snap = await db.doc(`drivers/${ctx.uid}`).get();
+  if (!snap.exists || snap.get('verificationStatus') !== 'approved') {
+    invalid('No approved driver account found for this user.');
+  }
+
+  await auth.setCustomUserClaims(ctx.uid, { role: 'driver' });
+  await auth.revokeRefreshTokens(ctx.uid); // force client to re-fetch claims
+
+  logger.info('claimDriverRole: claims applied', { uid: ctx.uid });
+  return { ok: true };
+});
+
+/**
  * Admin-only: create a driver account directly from the admin panel.
- * Creates a Firebase Auth user, sets the driver role, pre-approves the driver
- * doc and returns a password-reset link for the admin to share with the driver.
+ * Creates a Firebase Auth user (or reuses an existing one), sets the driver
+ * role, pre-approves the driver doc and returns a password-reset link.
  */
 export const adminCreateDriver = onCall(async (req) => {
   const admin = requireAdmin(req);
@@ -103,7 +123,7 @@ export const adminCreateDriver = onCall(async (req) => {
   }
   const data = parsed.data!;
 
-  // Create Firebase Auth account
+  // Create Firebase Auth account, or reuse an existing one for this email
   let uid: string;
   try {
     const userRecord = await auth.createUser({
@@ -113,8 +133,19 @@ export const adminCreateDriver = onCall(async (req) => {
       disabled: false,
     });
     uid = userRecord.uid;
-  } catch (e: unknown) {
-    invalid(e instanceof Error ? e.message : 'Could not create user account.');
+  } catch (createErr: unknown) {
+    // If the email already exists, reuse that account and update claims
+    const msg = createErr instanceof Error ? createErr.message : '';
+    if (msg.includes('already exists') || (createErr as { code?: string }).code === 'auth/email-already-exists') {
+      try {
+        const existing = await auth.getUserByEmail(data.email);
+        uid = existing.uid;
+      } catch {
+        invalid('Email already in use and could not retrieve the existing account.');
+      }
+    } else {
+      invalid(msg || 'Could not create user account.');
+    }
   }
 
   // Set role claims and provision Firestore records
