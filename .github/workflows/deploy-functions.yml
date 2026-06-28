@@ -1,8 +1,5 @@
 name: Deploy Cloud Functions
 
-# Triggers only when backend function code, rules, or firebase config changes on main.
-# This pairs with Firebase App Hosting (which auto-deploys the Next.js panel).
-
 on:
   push:
     branches: [main]
@@ -31,14 +28,15 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
-      - name: Build functions (tsc)
-        working-directory: backend/functions
-        run: npm run build
-
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
 
-      - name: Deploy Cloud Functions + Firestore rules
-        run: firebase deploy --only functions,firestore:rules --project velocity-fe379 --token "$FIREBASE_CI_TOKEN" --non-interactive
+      - name: Write service account key
+        run: echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > /tmp/sa.json
         env:
-          FIREBASE_CI_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Deploy Cloud Functions + Firestore rules
+        run: firebase deploy --only functions,firestore:rules --project velocity-fe379 --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa.json
