@@ -82,12 +82,12 @@ export const submitDriverOnboarding = onCall(async (req) => {
 const adminCreateDriverSchema = z.object({
   fullName:     z.string().min(2).max(120),
   email:        z.string().email().max(200),
-  phone:        z.string().max(20).optional(),
+  phone:        z.string().max(20).nullish(),
   vehicleType:  z.enum(['mini', 'ac', 'comfort', 'xl', 'bike', 'auto']),
   vehicleLabel: z.string().min(2).max(80),
   plate:        z.string().min(3).max(16),
-  cnic:         z.string().max(20).optional(),
-  franchiseId:  z.string().max(128).optional(),
+  cnic:         z.string().max(20).nullish(),
+  franchiseId:  z.string().max(128).nullish(),
 });
 
 /**

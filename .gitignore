@@ -45,3 +45,7 @@ apps/mobile/android/
 .vscode/
 *.log
 coverage/
+
+velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json
+*.json.key
+*-firebase-adminsdk-*.json
