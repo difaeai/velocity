@@ -150,11 +150,19 @@ export const settleTravelMateSplit = onCall({ region: REGION }, async (req: Call
     if (fare <= 0) throw new HttpsError('failed-precondition', 'Could not determine the fare to split.');
 
     const n = riders.length;
-    const share = Math.round(fare / n);
+    // Floor so each rider pays the smaller amount; booker absorbs the remainder.
+    const share = Math.floor(fare / n);
     const others = riders.filter((r) => r !== bookerUid);
 
+    // All reads must complete before any writes (Firestore transaction invariant).
+    const bookerWallet = db.doc(`wallets/${bookerUid}`);
     const walletRefs = new Map(others.map((u) => [u, db.doc(`wallets/${u}`)]));
-    const walletSnaps = await Promise.all(others.map((u) => tx.get(walletRefs.get(u)!)));
+    const allWalletSnaps = await Promise.all([
+      ...others.map((u) => tx.get(walletRefs.get(u)!)),
+      tx.get(bookerWallet),
+    ]);
+    const walletSnaps = allWalletSnaps.slice(0, others.length);
+    const bSnap = allWalletSnaps[others.length];
     const balances = new Map<string, number>();
     others.forEach((u, i) => balances.set(u, walletSnaps[i].exists ? (walletSnaps[i].data()!.balance ?? 0) : 0));
     const short = others.filter((u) => (balances.get(u) ?? 0) < share);
@@ -173,8 +181,6 @@ export const settleTravelMateSplit = onCall({ region: REGION }, async (req: Call
       });
       collected += share;
     }
-    const bookerWallet = db.doc(`wallets/${bookerUid}`);
-    const bSnap = await tx.get(bookerWallet);
     const bBal = bSnap.exists ? (bSnap.data()!.balance ?? 0) : 0;
     tx.update(bookerWallet, { balance: bBal + collected });
     tx.set(bookerWallet.collection('transactions').doc(), {

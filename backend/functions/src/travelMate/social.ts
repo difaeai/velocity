@@ -121,14 +121,16 @@ export const reportTravelMateUser = onCall({ region: REGION }, async (req: Calla
     status: 'open',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  // Reporting auto-closes the match so the reporter stops seeing the person.
+  // Reporting auto-closes the match — but only if the reporter is actually in it.
   if (matchId) {
-    const matchRef = db.doc(`travelMateMatches/${matchId}`);
-    batch.update(matchRef, {
-      status: 'unmatched',
-      unmatchedBy: uid,
-      unmatchedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    const matchSnap = await db.doc(`travelMateMatches/${matchId}`).get();
+    if (matchSnap.exists && (matchSnap.data()!.users as string[]).includes(uid)) {
+      batch.update(db.doc(`travelMateMatches/${matchId}`), {
+        status: 'unmatched',
+        unmatchedBy: uid,
+        unmatchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
   }
   await batch.commit();
   return { reportId: reportRef.id, status: 'open' };
