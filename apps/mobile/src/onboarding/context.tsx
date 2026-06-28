@@ -14,15 +14,18 @@ export interface OnboardingData {
   dob: string;
   email: string;
   licensePhoto: string | null;
+  licenseExpiry: string;
   cnicFront: string | null;
   cnicBack: string | null;
   cnicNumber: string;
+  cnicExpiry: string;
   selfie: string | null;
   vehicleType: RideType | null;
   vehicleMake: string;
   color: string;
   plate: string;
   vehicleDoc: string | null;
+  vehicleDocExpiry: string;
   vehiclePhoto: string | null;
 }
 
@@ -33,15 +36,18 @@ const EMPTY: OnboardingData = {
   dob: '',
   email: '',
   licensePhoto: null,
+  licenseExpiry: '',
   cnicFront: null,
   cnicBack: null,
   cnicNumber: '',
+  cnicExpiry: '',
   selfie: null,
   vehicleType: null,
   vehicleMake: '',
   color: '',
   plate: '',
   vehicleDoc: null,
+  vehicleDocExpiry: '',
   vehiclePhoto: null,
 };
 
@@ -123,8 +129,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         selfieDocUrl:       selfieResult.url,
         vehiclePhotoDocPath,
         vehiclePhotoDocUrl,
-        email:              data.email  || undefined,
-        dob:                data.dob    || undefined,
+        email:              data.email          || undefined,
+        dob:                data.dob            || undefined,
+        licenseExpiry:      data.licenseExpiry  || undefined,
+        cnicExpiry:         data.cnicExpiry     || undefined,
+        vehicleDocExpiry:   data.vehicleDocExpiry || undefined,
       });
       await refreshRole();
       return true;

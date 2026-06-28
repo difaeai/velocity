@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { useAuth } from '../../src/auth/AuthContext';
+import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import {
@@ -20,6 +21,7 @@ import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
 import { RatingModal } from '../../src/ui/RatingModal';
 import { ChatModal } from '../../src/ui/ChatModal';
 import { DriverDrawer } from '../../src/ui/DriverDrawer';
+import { DemandHeatmap } from '../../src/ui/DemandHeatmap';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -37,7 +39,8 @@ export default function DriverHome() {
   const activeTrip = useDriverActiveTrip(uid);
   const poolRides  = useDriverPoolRides(uid);
   const online  = profile?.online ?? false;
-  const requests = useOpenRequests(online && !activeTrip);
+  const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const requests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
   const balance  = useWalletBalance(uid);
   const [busy, setBusy] = useState(false);
 
@@ -56,6 +59,38 @@ export default function DriverHome() {
 
   // Drawer state
   const [drawerOpen, setDrawerOpen]   = useState(false);
+
+  // Register FCM push token
+  useEffect(() => {
+    if (user) registerForPushNotifications().catch(() => {});
+  }, [user?.uid]);
+
+  // Location tracking for geohash proximity filtering
+  useEffect(() => {
+    let watchId: ReturnType<typeof setInterval> | undefined;
+    if (online) {
+      const updateLocation = () => {
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              setDriverCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+              if (uid) {
+                setDoc(doc(db, 'drivers', uid), {
+                  lastLocation: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+                  lastSeenAt: serverTimestamp(),
+                }, { merge: true }).catch(() => {});
+              }
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+          );
+        }
+      };
+      updateLocation();
+      watchId = setInterval(updateLocation, 30000);
+    }
+    return () => { if (watchId) clearInterval(watchId); };
+  }, [online, uid]);
 
   // Subscribe to driver doc for live cycleGrossFare
   useEffect(() => {
@@ -190,6 +225,8 @@ export default function DriverHome() {
               pickup={activeTrip.pickup?.address}
               dropoff={activeTrip.dropoff?.address}
               tracking={activeTrip.status === 'in_progress' || activeTrip.status === 'arriving'}
+              pickupCoord={activeTrip.pickup}
+              dropoffCoord={activeTrip.dropoff}
             />
             <Text style={styles.fare}>Fare: {activeTrip.fare} PKR</Text>
 
@@ -238,6 +275,7 @@ export default function DriverHome() {
           </Card>
         ) : online ? (
           <>
+            <DemandHeatmap />
             <Text style={styles.section}>Incoming requests — all ride types</Text>
             {requests.length === 0 ? (
               <Card>
@@ -248,9 +286,19 @@ export default function DriverHome() {
                 <Card key={r.id}>
                   <View style={styles.reqRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.cardTitle}>
-                        {RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={styles.cardTitle}>
+                          {RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)
+                        </Text>
+                        {r.paymentMethod === 'cash' && (
+                          <View style={styles.badge}><Text style={styles.badgeText}>💵 Cash</Text></View>
+                        )}
+                        {r.preferFemaleDriver && (
+                          <View style={[styles.badge, { backgroundColor: '#ff69b420' }]}>
+                            <Text style={[styles.badgeText, { color: '#ff69b4' }]}>👩 Female pref</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.muted}>
                         {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
                       </Text>
@@ -452,6 +500,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+  badge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   contactBtn: {
     flex: 1,

@@ -124,6 +124,7 @@ export function DriverDrawer({
         {/* Navigation links */}
         <View style={styles.navSection}>
           <NavItem icon="🏠" label="Home"                   onPress={() => go('/driver/home')} />
+          <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
           <NavItem icon="💳" label="Wallet & Payouts"       onPress={() => go('/driver/wallet')} />
           <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
         </View>

@@ -13,6 +13,8 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
+import { encodeGeohash } from '../lib/geohash';
+import { sendToUser } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { DriverPublicInfo, TripStatus } from '../domain/types';
 import {
@@ -49,6 +51,9 @@ const createTripSchema = z.object({
   seats: z.number().int().min(1).max(MAX_SEATS),
   passengerGender: z.enum(['male', 'female', 'unspecified']),
   pool: z.boolean().optional(),
+  paymentMethod: z.enum(['cash', 'wallet']).default('cash'),
+  preferFemaleDriver: z.boolean().optional(),
+  promoCode: z.string().max(32).optional(),
   pickup: geoSchema,
   dropoff: geoSchema,
 });
@@ -81,6 +86,23 @@ export const createTrip = onCall(async (req) => {
       }
     }
 
+    // Validate promo code if provided
+    let promoDiscount = 0;
+    if (data.promoCode) {
+      const promoSnap = await tx.get(db.doc(`promoCodes/${data.promoCode.toUpperCase()}`));
+      if (promoSnap.exists && promoSnap.get('active') === true) {
+        const usageCount = (promoSnap.get('usageCount') as number) ?? 0;
+        const usageLimit = (promoSnap.get('usageLimit') as number) ?? Infinity;
+        if (usageCount < usageLimit) {
+          promoDiscount = (promoSnap.get('discountFlat') as number) ?? 0;
+          tx.set(db.doc(`promoCodes/${data.promoCode.toUpperCase()}`),
+            { usageCount: FieldValue.increment(1) }, { merge: true });
+        }
+      }
+    }
+
+    const finalFare = Math.max(50, data.offeredFare - promoDiscount);
+
     tx.set(tripRef, {
       id: tripRef.id,
       status: 'requested' as TripStatus,
@@ -88,10 +110,14 @@ export const createTrip = onCall(async (req) => {
       passengerGender: data.passengerGender,
       driverId: null,
       rideType: data.rideType,
-      offeredFare: data.offeredFare,
+      offeredFare: finalFare,
       fare: null,
       seats: data.seats,
       pool: data.pool ?? false,
+      paymentMethod: data.paymentMethod,
+      preferFemaleDriver: data.preferFemaleDriver ?? false,
+      promoCode: data.promoCode ?? null,
+      promoDiscount,
       pickup: data.pickup,
       dropoff: data.dropoff,
       createdAt: FieldValue.serverTimestamp(),
@@ -99,15 +125,19 @@ export const createTrip = onCall(async (req) => {
     });
     tx.set(userRef, { activeTripId: tripRef.id }, { merge: true });
     // Public-safe feed that approved online drivers can read to discover work.
+    const pickupGeohash = encodeGeohash(data.pickup.lat, data.pickup.lng, 6);
     tx.set(db.doc(`openRequests/${tripRef.id}`), {
       tripId: tripRef.id,
       rideType: data.rideType,
-      offeredFare: data.offeredFare,
+      offeredFare: finalFare,
       seats: data.seats,
       passengerGender: data.passengerGender,
       pool: data.pool ?? false,
+      paymentMethod: data.paymentMethod,
+      preferFemaleDriver: data.preferFemaleDriver ?? false,
       pickup: data.pickup,
       dropoff: data.dropoff,
+      pickupGeohash,
       createdAt: FieldValue.serverTimestamp(),
     });
   });
@@ -166,6 +196,12 @@ export const placeBid = onCall(async (req) => {
     driverInfo,
     createdAt: FieldValue.serverTimestamp(),
   });
+
+  // Notify passenger of the new bid
+  const passengerId = (await db.doc(`trips/${tripId}`).get()).get('passengerId') as string | undefined;
+  if (passengerId) {
+    await sendToUser(passengerId, '🚗 New driver offer', `A driver offered PKR ${fare} for your ride`, { tripId });
+  }
 
   logger.info('Bid placed', { tripId, driver: ctx.uid, fare });
   return { ok: true, bidId: bidRef.id };
@@ -277,6 +313,15 @@ export const acceptBid = onCall(async (req) => {
     return { fare, driverId: driverInfo.driverId };
   });
 
+  // Notify driver they were chosen
+  await sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId });
+  // Notify passenger match confirmed
+  const passengerSnap = await db.doc(`trips/${tripId}`).get();
+  const passengerId = passengerSnap.get('passengerId') as string | undefined;
+  if (passengerId) {
+    await sendToUser(passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId });
+  }
+
   logger.info('Bid accepted', { tripId, ...result });
   return { ok: true, ...result };
 });
@@ -310,6 +355,19 @@ export const updateTripStatus = onCall(async (req) => {
       { merge: true },
     );
   });
+
+  // Push to passenger based on new status
+  const snap2 = await db.doc(`trips/${tripId}`).get();
+  const passengerId2 = snap2.get('passengerId') as string | undefined;
+  if (passengerId2) {
+    const msgs: Record<string, [string, string]> = {
+      arriving:    ['🚗 Driver is on the way', 'Your driver is heading to your pickup point.'],
+      arrived:     ['📍 Driver has arrived!', 'Your driver is waiting at the pickup point.'],
+      in_progress: ['🛣️ Trip started!', 'You are on your way to the destination.'],
+    };
+    const [title, body] = msgs[to] ?? [];
+    if (title) await sendToUser(passengerId2, title, body, { tripId });
+  }
 
   logger.info('Trip status advanced', { tripId, to, driver: ctx.uid });
   return { ok: true, status: to };
@@ -354,6 +412,18 @@ export const cancelTrip = onCall(async (req) => {
     tx.delete(db.doc(`openRequests/${tripId}`));
   });
 
+  // Read trip outside transaction to get both parties for push
+  const cancelSnap = await db.doc(`trips/${tripId}`).get();
+  const cancelPassengerId = cancelSnap.get('passengerId') as string | undefined;
+  const cancelDriverId    = cancelSnap.get('driverId')   as string | undefined;
+  const cancelledByDriver = ctx.uid === cancelDriverId;
+
+  if (cancelPassengerId && cancelledByDriver) {
+    await sendToUser(cancelPassengerId, '❌ Driver cancelled', 'Your driver cancelled the trip. Please request another.', { tripId });
+  } else if (cancelDriverId && !cancelledByDriver) {
+    await sendToUser(cancelDriverId, '❌ Trip cancelled', 'The passenger cancelled the trip.', { tripId });
+  }
+
   logger.info('Trip cancelled', { tripId, by: ctx.uid });
   return { ok: true };
 });
@@ -386,44 +456,64 @@ export const completeTrip = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'Trip is not in progress.');
     }
 
-    const grossFare    = snap.get('fare') as number;
-    const seats        = (snap.get('seats') as number) ?? 1;
-    const passengerId  = snap.get('passengerId') as string;
-    const franchiseId  = driverSnap.get('franchiseId') as string | null | undefined;
-    const s            = computeSettlement(grossFare, seats);
+    const grossFare     = snap.get('fare') as number;
+    const seats         = (snap.get('seats') as number) ?? 1;
+    const passengerId   = snap.get('passengerId') as string;
+    const franchiseId   = driverSnap.get('franchiseId') as string | null | undefined;
+    const paymentMethod = (snap.get('paymentMethod') as string | undefined) ?? 'cash';
+    const s             = computeSettlement(grossFare, seats);
 
     // 5% of gross fare goes to the franchise (from Velocity's 10% commission).
     const franchiseCut = franchiseId ? Math.round(grossFare * 0.05) : 0;
     const velocityNet  = s.commission - franchiseCut;
 
-    const walletRef  = db.doc(`wallets/${ctx.uid}`);
-    const txRef      = walletRef.collection('transactions').doc();
+    const walletRef   = db.doc(`wallets/${ctx.uid}`);
+    const txRef       = walletRef.collection('transactions').doc();
     const countersRef = db.doc('system/counters');
 
     tx.set(
       tripRef,
       {
         status: 'completed' as TripStatus,
-        settlement: { ...s, franchiseCut, velocityNet },
+        settlement: { ...s, franchiseCut, velocityNet, paymentMethod },
         completedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
-    tx.set(
-      walletRef,
-      { balance: FieldValue.increment(s.driverPayout), updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
-    tx.set(txRef, {
-      type: 'trip_payout',
-      tripId,
-      amount: s.driverPayout,
-      grossFare: s.grossFare,
-      commission: s.commission,
-      franchiseCut,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+
+    // Wallet trips: credit driver payout to their digital wallet.
+    // Cash trips: driver already received cash from passenger — only track
+    // the gross fare for commission cycle purposes; no wallet credit.
+    if (paymentMethod === 'wallet') {
+      tx.set(
+        walletRef,
+        { balance: FieldValue.increment(s.driverPayout), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      tx.set(txRef, {
+        type: 'trip_payout',
+        tripId,
+        amount: s.driverPayout,
+        grossFare: s.grossFare,
+        commission: s.commission,
+        franchiseCut,
+        paymentMethod,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      // Cash: log the trip for audit but no balance movement
+      tx.set(txRef, {
+        type: 'trip_cash',
+        tripId,
+        amount: 0,
+        grossFare: s.grossFare,
+        commission: s.commission,
+        franchiseCut,
+        paymentMethod,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
     tx.set(
       countersRef,
       {
@@ -462,6 +552,15 @@ export const completeTrip = onCall(async (req) => {
 
     return { ...s, franchiseCut, velocityNet };
   });
+
+  // Notify both parties
+  const completedSnap = await db.doc(`trips/${tripId}`).get();
+  const completedPassengerId = completedSnap.get('passengerId') as string | undefined;
+  const completedFare = completedSnap.get('fare') as number | undefined;
+  if (completedPassengerId) {
+    await sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId });
+  }
+  await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
 
   logger.info('Trip completed', { tripId, settlement });
   return { ok: true, settlement };

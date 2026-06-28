@@ -55,4 +55,12 @@ export const adminApi = {
     { driverId: string; franchiseId: string | null },
     { ok: boolean }
   >('adminAssignFranchise'),
+  banPassenger: callable<
+    { passengerId: string; banned: boolean },
+    { ok: boolean }
+  >('banPassenger'),
+  resolveDispute: callable<
+    { disputeId: string; resolution: string; refundAmount?: number },
+    { ok: boolean }
+  >('resolveDispute'),
 };

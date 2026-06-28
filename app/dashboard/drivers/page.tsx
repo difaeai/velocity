@@ -38,6 +38,9 @@ interface DriverRow {
   selfieDocUrl?: string;
   vehicleDocUrl?: string;
   vehiclePhotoDocUrl?: string;
+  licenseExpiry?: string;
+  cnicExpiry?: string;
+  vehicleDocExpiry?: string;
 }
 
 interface CreateForm {
@@ -541,13 +544,22 @@ export default function DriversPage() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                           <DocImage label="Profile photo"  url={d.photoDocUrl} />
                           <DocImage label="Selfie with ID" url={d.selfieDocUrl} />
-                          <DocImage label="Driver licence" url={d.licenseDocUrl} />
-                          <DocImage label="CNIC (front)"   url={d.cnicDocUrl} />
+                          <DocImage label="Driver licence" url={d.licenseDocUrl} expiry={d.licenseExpiry} />
+                          <DocImage label="CNIC (front)"   url={d.cnicDocUrl}    expiry={d.cnicExpiry} />
                           <DocImage label="CNIC (back)"    url={d.cnicBackDocUrl} />
-                          <DocImage label="Vehicle reg."   url={d.vehicleDocUrl} />
+                          <DocImage label="Vehicle reg."   url={d.vehicleDocUrl} expiry={d.vehicleDocExpiry} />
                           {d.vehiclePhotoDocUrl && <DocImage label="Vehicle photo" url={d.vehiclePhotoDocUrl} />}
                         </div>
                       </Section>
+                    )}
+
+                    {/* Document expiry alerts (visible on all tabs) */}
+                    {(d.licenseExpiry || d.cnicExpiry || d.vehicleDocExpiry) && (
+                      <DocExpiryAlerts
+                        licenseExpiry={d.licenseExpiry}
+                        cnicExpiry={d.cnicExpiry}
+                        vehicleDocExpiry={d.vehicleDocExpiry}
+                      />
                     )}
 
                     {/* Action buttons */}
@@ -670,9 +682,21 @@ function InfoCell({ label, value }: { label: string; value?: string | number | n
   );
 }
 
-function DocImage({ label, url }: { label: string; url?: string }) {
+function expiryStatus(expiry?: string): 'expired' | 'soon' | 'ok' | null {
+  if (!expiry) return null;
+  const d = new Date(expiry);
+  const now = Date.now();
+  const diff = d.getTime() - now;
+  if (diff < 0) return 'expired';
+  if (diff < 30 * 24 * 60 * 60 * 1000) return 'soon';
+  return 'ok';
+}
+
+function DocImage({ label, url, expiry }: { label: string; url?: string; expiry?: string }) {
+  const status = expiryStatus(expiry);
+  const expiryColor = status === 'expired' ? colors.danger : status === 'soon' ? '#f59e0b' : colors.primary;
   return (
-    <div style={{ background: colors.bg, borderRadius: 10, overflow: 'hidden', border: `1px solid ${colors.border}` }}>
+    <div style={{ background: colors.bg, borderRadius: 10, overflow: 'hidden', border: `1px solid ${status && status !== 'ok' ? expiryColor : colors.border}` }}>
       {url ? (
         <a href={url} target="_blank" rel="noopener noreferrer">
           <img src={url} alt={label} style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }} />
@@ -680,7 +704,41 @@ function DocImage({ label, url }: { label: string; url?: string }) {
       ) : (
         <div style={{ height: 120, display: 'grid', placeItems: 'center', color: colors.muted, fontSize: 12 }}>Not uploaded</div>
       )}
-      <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: colors.muted }}>{label}</div>
+      <div style={{ padding: '6px 10px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: colors.muted }}>{label}</div>
+        {expiry && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: expiryColor, marginTop: 2 }}>
+            {status === 'expired' ? '⚠️ EXPIRED ' : status === 'soon' ? '⚡ Expiring ' : ''}
+            {new Date(expiry).toLocaleDateString('en-PK')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DocExpiryAlerts({
+  licenseExpiry, cnicExpiry, vehicleDocExpiry,
+}: { licenseExpiry?: string; cnicExpiry?: string; vehicleDocExpiry?: string }) {
+  const checks = [
+    { label: 'Driving licence', expiry: licenseExpiry },
+    { label: 'CNIC',            expiry: cnicExpiry },
+    { label: 'Vehicle reg.',    expiry: vehicleDocExpiry },
+  ].filter(c => {
+    const s = expiryStatus(c.expiry);
+    return s === 'expired' || s === 'soon';
+  });
+  if (checks.length === 0) return null;
+  return (
+    <div style={{ backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 10, padding: 12, marginTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>⚠️ Document expiry alerts</div>
+      {checks.map(c => (
+        <div key={c.label} style={{ fontSize: 12, color: colors.text, marginBottom: 2 }}>
+          • <strong>{c.label}</strong>{' '}
+          {expiryStatus(c.expiry) === 'expired' ? 'EXPIRED' : 'expires soon'}{' '}
+          — {c.expiry ? new Date(c.expiry).toLocaleDateString('en-PK') : ''}
+        </div>
+      ))}
     </div>
   );
 }

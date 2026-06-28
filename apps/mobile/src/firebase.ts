@@ -13,6 +13,7 @@ import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { firebaseConfig, FUNCTIONS_REGION } from './config';
+export { firebaseConfig };
 
 // `getReactNativePersistence` ships only in Firebase's React Native build, which
 // Metro selects at runtime. TypeScript's bundler resolution sees the web build's

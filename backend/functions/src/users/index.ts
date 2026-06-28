@@ -7,7 +7,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { requireAdmin, requireAuth, invalid } from '../lib/guards';
 import { Role } from '../domain/types';
 
 /**
@@ -83,6 +83,96 @@ export const setUserRole = onCall(async (req) => {
 
   logger.info('Role updated', { actor: admin.uid, targetUid, role });
   return { ok: true, targetUid, role };
+});
+
+const registerFcmTokenSchema = z.object({
+  token: z.string().min(10).max(512),
+  platform: z.enum(['ios', 'android', 'web']).optional(),
+});
+
+/** Mobile: register or refresh an FCM token for the signed-in user. */
+export const registerFcmToken = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = registerFcmTokenSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid FCM token.');
+  const { token, platform } = parsed.data;
+
+  await db.doc(`users/${ctx.uid}/fcmTokens/${token.slice(-20)}`).set({
+    token,
+    platform: platform ?? 'android',
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+});
+
+const banPassengerSchema = z.object({
+  passengerId: z.string().min(1).max(128),
+  banned: z.boolean(),
+});
+
+/** Admin-only: ban or unban a passenger. */
+export const banPassenger = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = banPassengerSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid passengerId and banned flag.');
+  const { passengerId, banned } = parsed.data;
+
+  await db.doc(`users/${passengerId}`).set(
+    { banned, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  await db.collection('auditLogs').add({
+    type: banned ? 'passenger.banned' : 'passenger.unbanned',
+    actor: admin.uid,
+    targetUid: passengerId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  logger.info('banPassenger', { actor: admin.uid, passengerId, banned });
+  return { ok: true };
+});
+
+const resolveDisputeSchema = z.object({
+  disputeId: z.string().min(1).max(128),
+  resolution: z.string().max(500),
+  refundAmount: z.number().min(0).optional(),
+});
+
+/** Admin-only: resolve a dispute, optionally credit passenger wallet. */
+export const resolveDispute = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = resolveDisputeSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Invalid dispute resolution input.');
+  const { disputeId, resolution, refundAmount } = parsed.data;
+
+  await db.runTransaction(async tx => {
+    const disputeRef = db.doc(`disputes/${disputeId}`);
+    const snap = await tx.get(disputeRef);
+    if (!snap.exists) invalid('Dispute not found.');
+    const passengerId = snap.get('passengerId') as string | undefined;
+
+    tx.set(disputeRef, {
+      status: 'resolved',
+      resolution,
+      resolvedBy: admin.uid,
+      resolvedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    if (refundAmount && refundAmount > 0 && passengerId) {
+      const walletRef = db.doc(`wallets/${passengerId}`);
+      tx.set(walletRef, { balance: FieldValue.increment(refundAmount), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      const txRef = db.collection(`wallets/${passengerId}/transactions`).doc();
+      tx.set(txRef, {
+        type: 'dispute_refund',
+        amount: refundAmount,
+        disputeId,
+        resolvedBy: admin.uid,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  logger.info('resolveDispute', { actor: admin.uid, disputeId, resolution, refundAmount });
+  return { ok: true };
 });
 
 /** Sets a user's custom claim + mirrors the role onto their profile doc. */

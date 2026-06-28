@@ -9,13 +9,16 @@ import { colors } from '@/lib/config';
 import { Button } from '@/components/ui';
 
 const NAV = [
-  { href: '/dashboard',                label: 'Overview' },
-  { href: '/dashboard/drivers',        label: 'Driver approvals' },
-  { href: '/dashboard/franchises',     label: 'Franchises' },
-  { href: '/dashboard/ride-settings',  label: 'Ride settings' },
-  { href: '/dashboard/payouts',        label: 'Payouts' },
-  { href: '/dashboard/safety',         label: 'Safety desk' },
-  { href: '/dashboard/commission',     label: 'Commission settings' },
+  { href: '/dashboard',                label: '📊 Overview' },
+  { href: '/dashboard/drivers',        label: '🚗 Driver approvals' },
+  { href: '/dashboard/passengers',     label: '👥 Passengers' },
+  { href: '/dashboard/disputes',       label: '⚖️ Disputes' },
+  { href: '/dashboard/franchises',     label: '🏢 Franchises' },
+  { href: '/dashboard/ride-settings',  label: '⚙️ Ride settings' },
+  { href: '/dashboard/payouts',        label: '💳 Payouts' },
+  { href: '/dashboard/live-ops',        label: '🗺️ Live ops map' },
+  { href: '/dashboard/safety',         label: '🆘 Safety desk' },
+  { href: '/dashboard/commission',     label: '📋 Commission' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

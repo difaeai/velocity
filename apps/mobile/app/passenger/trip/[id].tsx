@@ -276,6 +276,9 @@ export default function TripScreen() {
           pickup={trip.pickup?.address}
           dropoff={trip.dropoff?.address}
           tracking={trip.status === 'in_progress' || trip.status === 'arriving'}
+          pickupCoord={trip.pickup}
+          dropoffCoord={trip.dropoff}
+          driverId={trip.driverId ?? undefined}
         />
 
 
@@ -296,7 +299,7 @@ export default function TripScreen() {
               </View>
             )}
 
-            {/* Contact buttons */}
+            {/* Contact + share buttons */}
             <View style={styles.contactRow}>
               {trip.driverPhone ? (
                 <Pressable
@@ -313,6 +316,26 @@ export default function TripScreen() {
                 <Text style={styles.contactBtnText}>💬 Message</Text>
               </Pressable>
             </View>
+
+            {/* Share trip via WhatsApp */}
+            <Pressable
+              style={styles.whatsappBtn}
+              onPress={() => {
+                const plate   = trip.driverInfo?.plate ?? 'N/A';
+                const vehicle = trip.driverInfo?.vehicleLabel ?? 'Vehicle';
+                const driver  = trip.driverInfo?.displayName ?? 'Driver';
+                const pickup  = trip.pickup?.address ?? 'pickup';
+                const dropoff = trip.dropoff?.address ?? 'destination';
+                const msg = encodeURIComponent(
+                  `🚗 I'm on a Velocity ride!\n\nDriver: ${driver}\nVehicle: ${vehicle}\nPlate: ${plate}\n\nFrom: ${pickup}\nTo: ${dropoff}\n\nTrack my trip for safety.`
+                );
+                Linking.openURL(`whatsapp://send?text=${msg}`).catch(() =>
+                  Linking.openURL(`https://wa.me/?text=${msg}`)
+                );
+              }}
+            >
+              <Text style={styles.whatsappBtnText}>📤 Share trip via WhatsApp</Text>
+            </Pressable>
           </Card>
         )}
 
@@ -419,7 +442,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   contactBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  
+  whatsappBtn: {
+    marginTop: 10,
+    backgroundColor: '#25D36620',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#25D36640',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  whatsappBtnText: { fontSize: 13, fontWeight: '800', color: '#25D366' },
+
   // Custom dark-mode requested screen styles (Image 2 & 3)
   safeDark: {
     flex: 1,

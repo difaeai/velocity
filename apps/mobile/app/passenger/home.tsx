@@ -16,6 +16,7 @@ import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
+import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
@@ -31,6 +32,11 @@ export default function PassengerHome() {
   const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [poolFromPrice, setPoolFromPrice] = useState<number | null>(null);
+
+  // Register FCM push token on first load
+  useEffect(() => {
+    if (user) registerForPushNotifications().catch(() => {});
+  }, [user?.uid]);
 
   // Fetch admin-configured Mini fare to show accurate "From X PKR/seat" on hero card
   useEffect(() => {
@@ -266,6 +272,11 @@ export default function PassengerHome() {
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/notifications')}>
                     <Text style={styles.menuItemIcon}>🔔</Text>
                     <Text style={styles.menuItemText}>Notifications</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
+                    <Text style={styles.menuItemIcon}>🤝</Text>
+                    <Text style={styles.menuItemText}>Travel Mate</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={openSafety}>

@@ -61,6 +61,10 @@ export default function Booking() {
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
   const [autoAccept, setAutoAccept] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
+  const [preferFemale, setPreferFemale] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [showPromo, setShowPromo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,6 +108,9 @@ export default function Booking() {
         seats,
         passengerGender: gender,
         pool,
+        paymentMethod,
+        preferFemaleDriver: preferFemale,
+        promoCode: promoCode.trim() || undefined,
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
         dropoff: { lat: coords.lat, lng: coords.lng, address: dropoff.trim() },
       });
@@ -402,16 +409,65 @@ export default function Booking() {
           </View>
         </ScrollView>
 
-        {/* Toggle & Payment Details */}
+        {/* Footer controls */}
         <View style={styles.sheetActionsFooter}>
-          <Pressable style={styles.toggleRowFooter} onPress={() => setAutoAccept((v) => !v)}>
-            <View style={styles.toggleTextCol}>
-              <Text style={styles.autoAcceptLabel}>Auto-accept offer of PKR {fare}</Text>
+          {/* Payment method toggle */}
+          <View style={styles.paymentToggleRow}>
+            <Pressable
+              style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
+              onPress={() => setPaymentMethod('cash')}
+            >
+              <Text style={styles.paymentBtnIcon}>💵</Text>
+              <Text style={[styles.paymentBtnLabel, paymentMethod === 'cash' && styles.paymentBtnLabelActive]}>Cash</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.paymentBtn, paymentMethod === 'wallet' && styles.paymentBtnActive]}
+              onPress={() => setPaymentMethod('wallet')}
+            >
+              <Text style={styles.paymentBtnIcon}>💳</Text>
+              <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>Wallet</Text>
+            </Pressable>
+          </View>
+
+          {/* Option toggles row */}
+          <View style={styles.optionTogglesRow}>
+            {/* Female driver preference */}
+            <Pressable style={styles.optionToggle} onPress={() => setPreferFemale(v => !v)}>
+              <Text style={styles.optionToggleIcon}>👩</Text>
+              <Text style={[styles.optionToggleLabel, preferFemale && { color: colors.primary }]}>
+                Female driver
+              </Text>
+              <View style={[styles.toggleSwitchSmall, preferFemale && { backgroundColor: colors.primary }]}>
+                <View style={[styles.toggleSwitchKnobSmall, preferFemale && styles.toggleKnobOn]} />
+              </View>
+            </Pressable>
+            {/* Promo code */}
+            <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
+              <Text style={styles.optionToggleIcon}>🎟️</Text>
+              <Text style={[styles.optionToggleLabel, promoCode && { color: colors.primary }]}>
+                {promoCode || 'Promo code'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Promo code input */}
+          {showPromo && (
+            <View style={styles.promoInputRow}>
+              <TextInput
+                value={promoCode}
+                onChangeText={t => setPromoCode(t.toUpperCase())}
+                placeholder="Enter promo code"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="characters"
+                style={styles.promoInput}
+              />
+              {promoCode ? (
+                <Pressable onPress={() => setPromoCode('')} style={styles.promoClear}>
+                  <Text style={{ color: colors.muted }}>✕</Text>
+                </Pressable>
+              ) : null}
             </View>
-            <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
-              <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
-            </View>
-          </Pressable>
+          )}
 
           {!coords && locStatus !== 'loading' ? (
             <Pressable onPress={requestLocation}>
@@ -421,28 +477,15 @@ export default function Booking() {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <View style={styles.bottomButtonsRow}>
-            {/* Cash Badge Button */}
-            <Pressable style={styles.cashBadgeFooter} onPress={() => comingSoon('Payment methods')}>
-              <Text style={styles.cashBadgeEmoji}>💵</Text>
-            </Pressable>
-
-            {/* Find a Driver Button */}
-            <Pressable
-              style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
-              onPress={findDriver}
-              disabled={loading}
-            >
-              <Text style={styles.findDriverButtonText}>
-                {loading ? 'Booking...' : 'Find a driver'}
-              </Text>
-            </Pressable>
-
-            {/* Filter Button */}
-            <Pressable style={styles.filterButtonFooter} onPress={() => comingSoon('Filters')}>
-              <Text style={styles.filterButtonIcon}>🎛️</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
+            onPress={findDriver}
+            disabled={loading}
+          >
+            <Text style={styles.findDriverButtonText}>
+              {loading ? 'Booking...' : `Find a driver · PKR ${fare}${paymentMethod === 'cash' ? ' cash' : ' wallet'}`}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -944,25 +987,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheetActionsFooter: {
-    padding: 16,
+    padding: 14,
     borderTopWidth: 1,
     borderTopColor: '#2d2f2f',
     backgroundColor: '#151616',
-    gap: 14,
+    gap: 10,
   },
-  toggleRowFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+
+  // Payment toggle
+  paymentToggleRow:    { flexDirection: 'row', gap: 8 },
+  paymentBtn:          {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5,
+    borderColor: '#2d2f2f', backgroundColor: '#1e1f1f',
   },
-  toggleTextCol: {
-    flex: 1,
+  paymentBtnActive:    { borderColor: colors.primary, backgroundColor: `${colors.primary}15` },
+  paymentBtnIcon:      { fontSize: 16 },
+  paymentBtnLabel:     { fontSize: 13, fontWeight: '700', color: '#8a8c8c' },
+  paymentBtnLabelActive: { color: colors.primary },
+
+  // Option toggles
+  optionTogglesRow:    { flexDirection: 'row', gap: 8 },
+  optionToggle:        {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#1e1f1f', borderRadius: 10, borderWidth: 1,
+    borderColor: '#2d2f2f', paddingHorizontal: 10, paddingVertical: 8,
   },
-  autoAcceptLabel: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
+  optionToggleIcon:    { fontSize: 14 },
+  optionToggleLabel:   { flex: 1, fontSize: 12, fontWeight: '700', color: '#8a8c8c' },
+
+  // Promo input
+  promoInputRow:       {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#1e1f1f', borderRadius: 10, borderWidth: 1,
+    borderColor: colors.primary, paddingHorizontal: 12, height: 40,
   },
+  promoInput:          { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' },
+  promoClear:          { padding: 4 },
+
+  toggleTextCol: { flex: 1 },
+  autoAcceptLabel: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   toggleSwitchSmall: {
     width: 38,
     height: 22,

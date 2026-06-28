@@ -214,6 +214,50 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- travelMateProfiles/{uid} ----------------------------------------
+    // Profiles are OPAQUE to all clients. The getTravelMateFeed CF serves
+    // candidates via Admin SDK so we never expose another user's home address
+    // or commute details directly. All writes go through upsertTravelMateProfile.
+    match /travelMateProfiles/{userId} {
+      // The owner may read their own profile (to pre-fill the setup form).
+      allow read: if isOwner(userId);
+      allow write: if false; // CF (Admin SDK) only
+
+      // Swipe records — the owner can read their own swipe history.
+      match /swipes/{targetId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    // ----- travelMateMatches/{matchId} -------------------------------------
+    // A match doc's `users` array contains exactly two sorted UIDs.
+    // Only the two matched users may read the match or its chat.
+    match /travelMateMatches/{matchId} {
+      allow read: if isSignedIn() && uid() in resource.data.users;
+      allow write: if false;
+
+      match /chat/{msgId} {
+        allow read: if isSignedIn()
+                    && uid() in get(/databases/$(database)/documents/travelMateMatches/$(matchId)).data.users;
+        allow create: if isSignedIn()
+                      && uid() in get(/databases/$(database)/documents/travelMateMatches/$(matchId)).data.users
+                      && request.resource.data.senderId == uid()
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 500;
+        allow update, delete: if false;
+      }
+    }
+
+    // ----- travelMateQuota/{uid} -------------------------------------------
+    // Like-quota docs are written only by the travelMateSwipe CF.
+    // The owner may read their own quota to render the paywall UI.
+    match /travelMateQuota/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

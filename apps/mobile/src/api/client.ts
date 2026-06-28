@@ -36,6 +36,9 @@ export interface DriverOnboardingInput {
   vehiclePhotoDocUrl?: string;
   email?: string;
   dob?: string;
+  licenseExpiry?: string;
+  cnicExpiry?: string;
+  vehicleDocExpiry?: string;
 }
 
 export interface CreateTripInput {
@@ -44,6 +47,9 @@ export interface CreateTripInput {
   seats: number;
   passengerGender: Gender;
   pool?: boolean;
+  paymentMethod?: 'cash' | 'wallet';
+  preferFemaleDriver?: boolean;
+  promoCode?: string;
   pickup: GeoPoint;
   dropoff: GeoPoint;
 }
@@ -92,4 +98,56 @@ export const api = {
   poolArrivePassenger: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolArrivePassenger'),
   poolPassengerBoarded: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolPassengerBoarded'),
   completePoolRide: callable<{ rideId: string }, { ok: boolean }>('completePoolRide'),
+  registerFcmToken: callable<{ token: string; platform?: 'ios' | 'android' | 'web' }, { ok: boolean }>('registerFcmToken'),
+
+  // ── Travel Mate ──────────────────────────────────────────────────────────────
+  upsertTravelMateProfile: callable<UpsertTravelMateInput, { profile: Record<string, unknown> }>('upsertTravelMateProfile'),
+  getTravelMateFeed: callable<
+    { limit?: number; excludeUids?: string[] },
+    { candidates: TravelMateCard[]; count: number }
+  >('getTravelMateFeed'),
+  travelMateSwipe: callable<
+    { targetUid: string; direction: 'like' | 'pass' },
+    { matched: boolean; matchId?: string; remaining?: number; tier?: 'free' | 'subscribed'; direction?: 'pass' }
+  >('travelMateSwipe'),
 };
+
+// ── Travel Mate types ─────────────────────────────────────────────────────────
+
+export type TravelMateDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface TravelMateCard {
+  uid: string;
+  displayName: string;
+  photoURL: string | null;
+  destinationName: string;
+  departTime: string;
+  returnTime: string;
+  commonDays: TravelMateDay[];
+  distanceKm: number;
+  ratingAvg: number;
+  ratingCount: number;
+}
+
+export interface UpsertTravelMateInput {
+  displayName: string;
+  gender: 'male' | 'female';
+  genderPreference: 'male' | 'female' | 'any';
+  bio?: string;
+  home: { lat: number; lng: number; address?: string };
+  destination: {
+    type: 'office' | 'university' | 'other';
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  schedule: {
+    days: TravelMateDay[];
+    departTime: string; // HH:MM
+    returnTime: string; // HH:MM
+  };
+  active?: boolean;
+  photoURL?: string;
+  copyRidePhoto?: boolean;
+}

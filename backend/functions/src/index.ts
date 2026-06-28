@@ -9,7 +9,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 
 // Users & roles
-export { onUserCreate, onUserDelete, setUserRole } from './users';
+export { onUserCreate, onUserDelete, setUserRole, banPassenger, resolveDispute, registerFcmToken } from './users';
 
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
@@ -50,3 +50,8 @@ export {
   requestPayout,
   markPayoutPaid,
 } from './payments';
+
+// Travel Mate — commute-partner matching (identity-walled from ride data)
+export { getTravelMateFeed } from './travelMate/feed';
+export { upsertTravelMateProfile } from './travelMate/upsertProfile';
+export { travelMateSwipe } from './travelMate/swipe';
