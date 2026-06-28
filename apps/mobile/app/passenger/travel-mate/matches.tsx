@@ -99,14 +99,11 @@ export default function TravelMateMatches() {
     if (!joinId.trim()) return;
     setJoining(true);
     try {
-      const res = await api.joinTravelMateGroup({ groupId: joinId.trim() });
-      if (res.alreadyMember) {
-        Alert.alert('Already a member', 'You are already in this group.');
-      } else {
-        setJoinModalOpen(false);
-        setJoinId('');
-        router.push(`/passenger/travel-mate/group/${joinId.trim()}` as Parameters<typeof router.push>[0]);
-      }
+      await api.joinTravelMateGroup({ groupId: joinId.trim() });
+      const gid = joinId.trim();
+      setJoinModalOpen(false);
+      setJoinId('');
+      router.push(`/passenger/travel-mate/group/${gid}` as Parameters<typeof router.push>[0]);
     } catch (e: unknown) {
       if (e instanceof FirebaseError) {
         Alert.alert('Could not join', e.message);

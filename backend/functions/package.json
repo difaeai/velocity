@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "firebase deploy --only functions",
+    "test": "firebase emulators:exec --only auth,firestore --project demo-velocity \"vitest run --config vitest.config.ts\""
   },
   "dependencies": {
     "firebase-admin": "^13.0.2",
@@ -24,8 +25,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@vitest/runner": "^4.1.9",
     "eslint": "^9.18.0",
+    "firebase": "^12.15.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.21.0"
+    "typescript-eslint": "^8.21.0",
+    "vitest": "^4.1.9"
   }
 }
