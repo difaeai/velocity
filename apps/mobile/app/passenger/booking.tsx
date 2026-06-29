@@ -150,7 +150,7 @@ export default function Booking() {
     }
   }
 
-  const { predictions, loading: placesLoading, apiStatus } = usePlacesAutocomplete(dropoff, sessionTokenRef.current);
+  const { predictions, loading: placesLoading, apiStatus, apiMessage } = usePlacesAutocomplete(dropoff, sessionTokenRef.current);
   const query = dropoff.trim().toLowerCase();
   const filteredRecents = query
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
@@ -262,8 +262,12 @@ export default function Booking() {
             <View style={styles.emptyResults}>
               <Text style={[styles.emptyResultsText, { color: '#ef4444' }]}>
                 Places API: {apiStatus}
-                {apiStatus === 'REQUEST_DENIED' ? ' — Enable Places API in Google Cloud Console and check your API key restrictions.' : ''}
               </Text>
+              {apiMessage ? (
+                <Text style={[styles.emptyResultsText, { color: '#ef4444', fontSize: 11, marginTop: 2 }]}>
+                  {apiMessage}
+                </Text>
+              ) : null}
             </View>
           )}
 
