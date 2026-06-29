@@ -179,12 +179,16 @@ export default function SignIn() {
                       </View>
                       <TextInput
                         value={phone}
-                        onChangeText={setPhone}
+                        onChangeText={(t) => {
+                          // Strip all non-digits, remove leading zeros in real time
+                          const digits = t.replace(/\D/g, '').replace(/^0+/, '');
+                          setPhone(digits);
+                        }}
                         keyboardType="phone-pad"
                         placeholder="3001234567"
                         placeholderTextColor={colors.muted}
                         style={[styles.input, styles.phoneInput]}
-                        maxLength={11}
+                        maxLength={10}
                       />
                     </View>
                     <Text style={styles.hint}>Enter your number without the leading 0, e.g. 3001234567</Text>
