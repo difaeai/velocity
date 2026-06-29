@@ -50,10 +50,16 @@ export default function SignIn() {
 
   async function sendOtp() {
     setError(null);
-    const cleaned = phone.trim().replace(/\s/g, '');
-    const withPrefix = cleaned.startsWith('+') ? cleaned : `+92${cleaned.replace(/^0/, '')}`;
-    if (withPrefix.length < 10) {
-      setError('Enter a valid Pakistani mobile number.');
+    // Strip everything except digits
+    let digits = phone.trim().replace(/\D/g, '');
+    // Remove country code if user typed it (e.g. 923001234567 or 9203001234567)
+    if (digits.startsWith('92') && digits.length > 10) digits = digits.slice(2);
+    // Remove leading zero (e.g. 03001234567 → 3001234567)
+    if (digits.startsWith('0')) digits = digits.slice(1);
+    const withPrefix = `+92${digits}`;
+    // Pakistani mobile numbers: +92 3XX XXXXXXX = 13 chars total
+    if (digits.length !== 10 || !digits.startsWith('3')) {
+      setError('Enter a valid Pakistani mobile number (e.g. 3001234567).');
       return;
     }
     if (!recaptchaRef.current) {
