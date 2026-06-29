@@ -22,6 +22,7 @@ import {
 
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
@@ -54,6 +55,7 @@ function calcPerSeatFare(baseFare: number, maxSeats: number): number {
 export default function PoolRideOfferScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { coords } = useCurrentLocation();
 
   const [pickupAddr, setPickupAddr] = useState('');
   const [dropoffAddr, setDropoffAddr] = useState('');
@@ -113,13 +115,13 @@ export default function PoolRideOfferScreen() {
         genderPref,
         rideCategory,
         pickup: {
-          lat: 0,
-          lng: 0,
+          lat: coords?.lat ?? 0,
+          lng: coords?.lng ?? 0,
           address: pickupAddr.trim(),
         },
         dropoff: {
-          lat: 0,
-          lng: 0,
+          lat: coords?.lat ?? 0,
+          lng: coords?.lng ?? 0,
           address: dropoffAddr.trim(),
         },
         pickupRadius,

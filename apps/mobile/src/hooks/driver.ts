@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import type { RideType, Trip } from '../domain/types';
@@ -71,7 +71,9 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
   const [rows, setRows] = useState<OpenRequest[]>([]);
   useEffect(() => {
     if (!enabled) { setRows([]); return; }
-    return onSnapshot(collection(db, 'openRequests'), (snap) => {
+    // Cap at 100 docs — geohash client-filter narrows further to ~nearby
+    const q = query(collection(db, 'openRequests'), limit(100));
+    return onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as OpenRequest & { pickupGeohash?: string });
       if (driverLat !== undefined && driverLng !== undefined) {
         const nearby = new Set(nearbyGeohashes(driverLat, driverLng, 6));
@@ -84,17 +86,21 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
   return rows;
 }
 
-const ACTIVE = new Set<Trip['status']>(['matched', 'arriving', 'arrived', 'in_progress']);
+const ACTIVE_STATUSES = ['matched', 'arriving', 'arrived', 'in_progress'] as const;
 
 export function useDriverActiveTrip(uid?: string): Trip | null {
   const [trip, setTrip] = useState<Trip | null>(null);
   useEffect(() => {
     if (!uid) return;
-    return onSnapshot(query(collection(db, 'trips'), where('driverId', '==', uid)), (snap) => {
-      const active = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as Trip)
-        .find((t) => ACTIVE.has(t.status));
-      setTrip(active ?? null);
+    // Filter active trips server-side so Firestore doesn't stream all historical trips
+    const q = query(
+      collection(db, 'trips'),
+      where('driverId', '==', uid),
+      where('status', 'in', ACTIVE_STATUSES),
+      limit(1),
+    );
+    return onSnapshot(q, (snap) => {
+      setTrip(snap.empty ? null : ({ id: snap.docs[0]!.id, ...snap.docs[0]!.data() } as Trip));
     });
   }, [uid]);
   return trip;

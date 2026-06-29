@@ -5,16 +5,18 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { useOpenRequests } from '../../src/hooks/driver';
+import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { RIDE_TYPE_LABELS } from '../../src/domain/types';
 
 export default function AllRequestsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { coords } = useCurrentLocation();
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing]  = useState(false);
 
-  const allRequests = useOpenRequests(true, undefined, undefined);
+  const allRequests = useOpenRequests(true, coords?.lat, coords?.lng);
   const visible     = allRequests.filter((r) => !skippedIds.has(r.tripId));
 
   const skip = (tripId: string) =>

@@ -19,6 +19,10 @@ export const firebaseConfig = {
 /** Cloud Functions region — must match the backend (see backend/functions). */
 export const FUNCTIONS_REGION = 'asia-south1';
 
+/** Google Maps / Places API key (Android key from app.json — same project). */
+export const GOOGLE_MAPS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? 'AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg';
+
 /** Brand palette (kept in sync with the original design). */
 export const colors = {
   primary: '#ccff00',      // Lime green for active controls / branding

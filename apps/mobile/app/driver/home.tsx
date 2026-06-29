@@ -3,6 +3,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
@@ -62,10 +63,37 @@ export default function DriverHome() {
   // Drawer state
   const [drawerOpen, setDrawerOpen]   = useState(false);
 
-  // Skipped request IDs (client-side rejection without backend call)
+  // Skipped request IDs — persisted in AsyncStorage with 1-hour TTL
+  const SKIP_KEY = 'driver_skipped_requests';
+  const SKIP_TTL = 60 * 60 * 1000; // 1 hour
+
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
-  const skipRequest = (tripId: string) =>
-    setSkippedIds((prev) => new Set([...prev, tripId]));
+
+  useEffect(() => {
+    AsyncStorage.getItem(SKIP_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const entries: { id: string; at: number }[] = JSON.parse(raw);
+        const now = Date.now();
+        const valid = entries.filter((e) => now - e.at < SKIP_TTL);
+        setSkippedIds(new Set(valid.map((e) => e.id)));
+        if (valid.length !== entries.length)
+          AsyncStorage.setItem(SKIP_KEY, JSON.stringify(valid));
+      } catch { /* corrupted data — start fresh */ }
+    });
+  }, []);
+
+  const skipRequest = (tripId: string) => {
+    setSkippedIds((prev) => {
+      const next = new Set([...prev, tripId]);
+      AsyncStorage.getItem(SKIP_KEY).then((raw) => {
+        const existing: { id: string; at: number }[] = raw ? JSON.parse(raw) : [];
+        const updated = [...existing.filter((e) => e.id !== tripId), { id: tripId, at: Date.now() }];
+        AsyncStorage.setItem(SKIP_KEY, JSON.stringify(updated));
+      });
+      return next;
+    });
+  };
 
   // Live preview for commute demand section
   const [commuteDemandPreview, setCommuteDemandPreview] = useState<CommuteDemandSlot[]>([]);

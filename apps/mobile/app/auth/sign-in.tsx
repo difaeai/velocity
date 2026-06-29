@@ -56,9 +56,13 @@ export default function SignIn() {
       setError('Enter a valid Pakistani mobile number.');
       return;
     }
+    if (!recaptchaRef.current) {
+      setError('Captcha not ready. Please wait a moment and try again.');
+      return;
+    }
     setLoading(true);
     try {
-      const result = await signInWithPhoneNumber(auth, withPrefix, recaptchaRef.current!);
+      const result = await signInWithPhoneNumber(auth, withPrefix, recaptchaRef.current);
       setConfirmation(result);
       setPhoneStep('enter_otp');
     } catch (e) {

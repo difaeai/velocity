@@ -13,9 +13,12 @@ export function ArrivalCountdown({ arrivedAt, role }: Props) {
   const [secsLeft, setSecsLeft] = useState<number>(WINDOW_SECONDS);
 
   useEffect(() => {
+    // Wait until Firestore delivers the server timestamp before counting down.
+    // Without this guard, every tick would reset the timer to 5:00.
+    if (!arrivedAt) return;
+
     function tick() {
-      if (!arrivedAt) { setSecsLeft(WINDOW_SECONDS); return; }
-      const elapsed = Math.floor(Date.now() / 1000) - arrivedAt.seconds;
+      const elapsed = Math.floor(Date.now() / 1000) - arrivedAt!.seconds;
       setSecsLeft(Math.max(0, WINDOW_SECONDS - elapsed));
     }
     tick();
@@ -28,6 +31,15 @@ export function ArrivalCountdown({ arrivedAt, role }: Props) {
   const display = `${mins}:${String(secs).padStart(2, '0')}`;
   const expired = secsLeft === 0;
   const urgent  = secsLeft <= 60;
+  const syncing = !arrivedAt;
+
+  if (syncing) {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.label}>⏳ Starting timer…</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.wrap, expired && styles.wrapExpired, urgent && !expired && styles.wrapUrgent]}>
