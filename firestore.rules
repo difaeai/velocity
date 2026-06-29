@@ -64,7 +64,8 @@ service cloud.firestore {
                          'role', 'profileComplete', 'createdAt', 'lastActive'
                        ]);
       allow update: if isOwner(userId)
-                    && onlyChanges(['name', 'gender', 'dob', 'age', 'photoURL', 'fcmToken', 'lastActive', 'updatedAt']);
+                    && onlyChanges(['name', 'gender', 'dob', 'age', 'photoURL',
+                                    'profileComplete', 'fcmToken', 'lastActive', 'updatedAt']);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

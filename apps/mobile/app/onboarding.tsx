@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -11,10 +12,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useRouter } from 'expo-router';
 
-import { db } from '../src/firebase';
+import { db, storage } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';
 
@@ -42,14 +45,49 @@ export default function Onboarding() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [name, setName] = useState('');
-  const [gender, setGender] = useState<Gender | null>(null);
-  const [dob, setDob] = useState<Date | null>(null);
-  // Temp date inside the picker before user confirms
-  const [pickerTemp, setPickerTemp] = useState<Date>(DEFAULT_DOB);
-  const [showPicker, setShowPicker] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [name, setName]               = useState('');
+  const [gender, setGender]           = useState<Gender | null>(null);
+  const [dob, setDob]                 = useState<Date | null>(null);
+  const [pickerTemp, setPickerTemp]   = useState<Date>(DEFAULT_DOB);
+  const [showPicker, setShowPicker]   = useState(false);
+  const [photoUri, setPhotoUri]       = useState<string | null>(null);
+  const [saving, setSaving]           = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
+
+  async function pickPhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError('Camera roll access is needed to upload a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPhotoUri(result.assets[0].uri);
+      setError(null);
+    }
+  }
+
+  async function uploadPhoto(uid: string): Promise<string | null> {
+    if (!photoUri) return null;
+    setUploadProgress('Uploading photo…');
+    try {
+      const resp = await fetch(photoUri);
+      const blob = await resp.blob();
+      const storageRef = ref(storage, `avatars/${uid}.jpg`);
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
+      return await getDownloadURL(storageRef);
+    } catch {
+      return null;
+    } finally {
+      setUploadProgress(null);
+    }
+  }
 
   async function save() {
     if (!name.trim()) { setError('Please enter your name.'); return; }
@@ -62,18 +100,22 @@ export default function Onboarding() {
     setSaving(true);
     setError(null);
     try {
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        phone: user.phoneNumber ?? null,
-        name: name.trim(),
-        gender: gender.toLowerCase(),
-        dob: dob.toISOString(),
+      const photoURL = await uploadPhoto(user.uid);
+
+      // updateDoc only sends the fields we provide — no overwrite of uid/phone/role.
+      // onUserCreate trigger already created the doc so this is always an update.
+      const patch: Record<string, unknown> = {
+        name:            name.trim(),
+        gender:          gender.toLowerCase(),
+        dob:             dob.toISOString(),
         age,
-        role: 'passenger',
         profileComplete: true,
-        createdAt: serverTimestamp(),
-        lastActive: serverTimestamp(),
-      });
+        lastActive:      serverTimestamp(),
+        updatedAt:       serverTimestamp(),
+      };
+      if (photoURL) patch.photoURL = photoURL;
+
+      await updateDoc(doc(db, 'users', user.uid), patch);
       router.replace('/passenger/home');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -88,20 +130,36 @@ export default function Onboarding() {
     setShowPicker(true);
   }
 
-  function confirmPicker() {
-    setDob(pickerTemp);
-    setShowPicker(false);
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+
         {/* Header */}
         <View style={styles.logoRow}>
           <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
         </View>
         <Text style={styles.title}>One last step</Text>
         <Text style={styles.subtitle}>Tell us a little about yourself to get started.</Text>
+
+        {/* Profile photo (optional) */}
+        <View style={styles.photoSection}>
+          <Pressable onPress={pickPhoto} style={styles.photoBtn}>
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <Text style={styles.photoIcon}>📷</Text>
+                <Text style={styles.photoHint}>Add photo</Text>
+              </View>
+            )}
+          </Pressable>
+          <Text style={styles.photoOptional}>Optional · tap to choose</Text>
+          {photoUri && (
+            <Pressable onPress={() => setPhotoUri(null)}>
+              <Text style={styles.removePhoto}>Remove</Text>
+            </Pressable>
+          )}
+        </View>
 
         {/* Name */}
         <View style={styles.field}>
@@ -145,9 +203,7 @@ export default function Onboarding() {
                   ? dob.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
                   : 'Select your date of birth'}
               </Text>
-              {dob && (
-                <Text style={styles.dobAge}>{ageFromDob(dob)} years old</Text>
-              )}
+              {dob && <Text style={styles.dobAge}>{ageFromDob(dob)} years old</Text>}
             </View>
             <Text style={styles.dobChevron}>›</Text>
           </Pressable>
@@ -160,13 +216,18 @@ export default function Onboarding() {
           onPress={save}
           disabled={saving}
         >
-          {saving
-            ? <ActivityIndicator color="#000" />
-            : <Text style={styles.saveBtnText}>Get started →</Text>}
+          {saving ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <ActivityIndicator color="#000" size="small" />
+              <Text style={styles.saveBtnText}>{uploadProgress ?? 'Saving…'}</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveBtnText}>Get started →</Text>
+          )}
         </Pressable>
       </ScrollView>
 
-      {/* Date picker Modal — spinner wheel, works on both iOS and Android */}
+      {/* Spinner date picker in bottom sheet */}
       <Modal visible={showPicker} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -175,11 +236,10 @@ export default function Onboarding() {
                 <Text style={styles.modalCancel}>Cancel</Text>
               </Pressable>
               <Text style={styles.modalTitle}>Date of birth</Text>
-              <Pressable onPress={confirmPicker}>
+              <Pressable onPress={() => { setDob(pickerTemp); setShowPicker(false); }}>
                 <Text style={styles.modalDone}>Done</Text>
               </Pressable>
             </View>
-
             <DateTimePicker
               value={pickerTemp}
               mode="date"
@@ -198,17 +258,30 @@ export default function Onboarding() {
 }
 
 const styles = StyleSheet.create({
-  safe:       { flex: 1, backgroundColor: colors.background },
-  container:  { padding: 24, gap: 20, flexGrow: 1, justifyContent: 'center' },
-  logoRow:    { alignItems: 'center', marginBottom: 4 },
-  logo:       { width: 60, height: 60, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  logoText:   { fontSize: 36, fontWeight: '900', color: '#000' },
-  title:      { fontSize: 28, fontWeight: '900', color: colors.text, textAlign: 'center' },
-  subtitle:   { fontSize: 15, color: colors.muted, textAlign: 'center', marginBottom: 8 },
+  safe:      { flex: 1, backgroundColor: colors.background },
+  container: { padding: 24, gap: 20, flexGrow: 1, justifyContent: 'center' },
+  logoRow:   { alignItems: 'center', marginBottom: 4 },
+  logo:      { width: 60, height: 60, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  logoText:  { fontSize: 36, fontWeight: '900', color: '#000' },
+  title:     { fontSize: 28, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  subtitle:  { fontSize: 15, color: colors.muted, textAlign: 'center', marginBottom: 4 },
 
-  field:    { gap: 8 },
-  label:    { fontSize: 13, fontWeight: '700', color: colors.text },
-  input:    {
+  photoSection:     { alignItems: 'center', gap: 6 },
+  photoBtn:         { width: 96, height: 96, borderRadius: 48 },
+  photoPreview:     { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: colors.primary },
+  photoPlaceholder: {
+    width: 96, height: 96, borderRadius: 48,
+    borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed',
+    backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 2,
+  },
+  photoIcon:     { fontSize: 28 },
+  photoHint:     { fontSize: 11, color: colors.muted, fontWeight: '700' },
+  photoOptional: { fontSize: 11, color: colors.muted },
+  removePhoto:   { fontSize: 12, color: colors.danger, fontWeight: '700', padding: 4 },
+
+  field:  { gap: 8 },
+  label:  { fontSize: 13, fontWeight: '700', color: colors.text },
+  input:  {
     height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
     paddingHorizontal: 16, fontSize: 16, color: colors.text, backgroundColor: colors.surface,
   },

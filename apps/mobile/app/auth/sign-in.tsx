@@ -56,6 +56,8 @@ export default function SignIn() {
     if (digits.startsWith('92') && digits.length > 10) digits = digits.slice(2);
     // Remove leading zero (e.g. 03001234567 → 3001234567)
     if (digits.startsWith('0')) digits = digits.slice(1);
+    // Sync cleaned value back so the field shows the stripped number
+    setPhone(digits);
     const withPrefix = `+92${digits}`;
     // Pakistani mobile numbers: +92 3XX XXXXXXX = 13 chars total
     if (digits.length !== 10 || !digits.startsWith('3')) {
