@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -135,6 +136,20 @@ export default function Onboarding() {
     setShowPicker(true);
   }
 
+  function onDateChange(event: { type?: string }, selected?: Date) {
+    if (Platform.OS === 'android') {
+      // Android native dialog: 'set' = OK pressed, 'dismissed' = cancelled
+      setShowPicker(false);
+      if (event.type === 'set' && selected) {
+        setDob(selected);
+        setPickerTemp(selected);
+      }
+    } else {
+      // iOS spinner inside Modal — just update temp; Done button commits
+      if (selected) setPickerTemp(selected);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -232,32 +247,46 @@ export default function Onboarding() {
         </Pressable>
       </ScrollView>
 
-      {/* Spinner date picker in bottom sheet */}
-      <Modal visible={showPicker} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Pressable onPress={() => setShowPicker(false)}>
-                <Text style={styles.modalCancel}>Cancel</Text>
-              </Pressable>
-              <Text style={styles.modalTitle}>Date of birth</Text>
-              <Pressable onPress={() => { setDob(pickerTemp); setShowPicker(false); }}>
-                <Text style={styles.modalDone}>Done</Text>
-              </Pressable>
+      {/* Android: native dialog (no Modal wrapper needed) */}
+      {Platform.OS === 'android' && showPicker && (
+        <DateTimePicker
+          value={pickerTemp}
+          mode="date"
+          display="default"
+          maximumDate={MAX_DATE}
+          minimumDate={MIN_DATE}
+          onChange={onDateChange}
+        />
+      )}
+
+      {/* iOS: spinner in bottom-sheet Modal */}
+      {Platform.OS === 'ios' && (
+        <Modal visible={showPicker} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Pressable onPress={() => setShowPicker(false)}>
+                  <Text style={styles.modalCancel}>Cancel</Text>
+                </Pressable>
+                <Text style={styles.modalTitle}>Date of birth</Text>
+                <Pressable onPress={() => { setDob(pickerTemp); setShowPicker(false); }}>
+                  <Text style={styles.modalDone}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={pickerTemp}
+                mode="date"
+                display="spinner"
+                maximumDate={MAX_DATE}
+                minimumDate={MIN_DATE}
+                onChange={onDateChange}
+                style={styles.picker}
+                textColor="#ffffff"
+              />
             </View>
-            <DateTimePicker
-              value={pickerTemp}
-              mode="date"
-              display="spinner"
-              maximumDate={MAX_DATE}
-              minimumDate={MIN_DATE}
-              onChange={(_, selected) => { if (selected) setPickerTemp(selected); }}
-              style={styles.picker}
-              textColor="#ffffff"
-            />
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }

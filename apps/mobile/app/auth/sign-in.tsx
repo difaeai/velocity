@@ -34,7 +34,9 @@ export default function SignIn() {
   const [phone, setPhone]               = useState('');
   const [otp, setOtp]                   = useState('');
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
-  const [loading, setLoading]           = useState(false);
+  const [sending, setSending]           = useState(false);   // Send / Resend OTP
+  const [verifying, setVerifying]       = useState(false);   // Verify OTP
+  const [resendLabel, setResendLabel]   = useState('Resend OTP');
   const [error, setError]               = useState<string | null>(null);
 
   // Resend cooldown timer
@@ -71,17 +73,31 @@ export default function SignIn() {
       return;
     }
 
-    setLoading(true);
+    setSending(true);
+    if (isResend) setResendLabel('Sending…');
+    setError(null);
     try {
-      const result = await signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current);
+      // 15-second timeout — reCAPTCHA re-verification can hang on some devices
+      const result = await Promise.race([
+        signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 15000)
+        ),
+      ]);
       setConfirmation(result);
       setStep('enter_otp');
       const now = Date.now();
       setSentAt(now);
       setElapsed(0);
       setResendCooldown(60);
-      if (isResend) setOtp('');
+      if (isResend) { setOtp(''); setResendLabel('Resend OTP'); }
     } catch (e) {
+      const isTimeout = e instanceof Error && e.message === 'timeout';
+      if (isTimeout) {
+        setError('Request timed out. Tap Resend OTP to try again.');
+        if (isResend) setResendLabel('Resend OTP');
+        return;
+      }
       const code = e instanceof FirebaseError ? e.code : 'unknown';
       const msg  = e instanceof FirebaseError ? e.message : String(e);
       if (code === 'auth/invalid-phone-number')       setError('Invalid phone number format.');
@@ -91,8 +107,9 @@ export default function SignIn() {
       else if (code === 'auth/app-not-authorized')    setError('Phone Auth not enabled. Enable it in Firebase Console → Authentication → Sign-in method.');
       else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded.');
       else setError(`Failed [${code}]: ${msg}`);
+      if (isResend) setResendLabel('Resend OTP');
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   }
 
@@ -100,14 +117,13 @@ export default function SignIn() {
     setError(null);
     if (!confirmation) { setError('Please request OTP first.'); return; }
     if (otp.length !== 6) { setError('Enter the 6-digit code.'); return; }
-    setLoading(true);
+    setVerifying(true);
     try {
       await confirmation.confirm(otp);
-      // Auth state change → AuthProvider redirects automatically
     } catch {
       setError('Incorrect code — please try again.');
     } finally {
-      setLoading(false);
+      setVerifying(false);
     }
   }
 
@@ -172,7 +188,7 @@ export default function SignIn() {
               <PrimaryButton
                 label="Send OTP"
                 onPress={() => sendOtp(false)}
-                loading={loading}
+                loading={sending}
               />
             </>
           ) : (
@@ -217,7 +233,7 @@ export default function SignIn() {
               <PrimaryButton
                 label="Verify & sign in"
                 onPress={verifyOtp}
-                loading={loading}
+                loading={verifying}
               />
 
               <View style={styles.otpFooter}>
@@ -227,8 +243,8 @@ export default function SignIn() {
                 {resendCooldown > 0 ? (
                   <Text style={styles.cooldown}>Resend in {resendCooldown}s</Text>
                 ) : (
-                  <Pressable onPress={() => sendOtp(true)} disabled={loading} hitSlop={10}>
-                    <Text style={styles.link}>Resend OTP</Text>
+                  <Pressable onPress={() => sendOtp(true)} disabled={sending} hitSlop={10}>
+                    <Text style={[styles.link, sending && { opacity: 0.4 }]}>{resendLabel}</Text>
                   </Pressable>
                 )}
               </View>
