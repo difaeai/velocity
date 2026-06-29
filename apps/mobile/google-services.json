@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "63950615894",
+    "project_id": "velocity-fe379",
+    "storage_bucket": "velocity-fe379.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:63950615894:android:a3403a4608b356be7052f7",
+        "android_client_info": {
+          "package_name": "com.velocity.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "63950615894-p5d1ote0vbvgb4cdfqp5vpmekv6m35fs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuXkNDuthQkeo0-9_GI6_NaDu9WC32f8w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "63950615894-p5d1ote0vbvgb4cdfqp5vpmekv6m35fs.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
