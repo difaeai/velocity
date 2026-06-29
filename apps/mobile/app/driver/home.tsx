@@ -406,6 +406,44 @@ export default function DriverHome() {
           )}
         </View>
 
+        {/* Passenger pool ride requests — InDrive-style negotiation */}
+        <View style={styles.poolSection}>
+          <View style={styles.poolHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolTitle}>Passenger Ride Requests</Text>
+              <Text style={styles.poolSubtitle}>Passengers propose a fare — accept or counter</Text>
+            </View>
+            <Pressable
+              style={styles.offerBtn}
+              onPress={() => router.push('/driver/pool-requests' as Parameters<typeof router.push>[0])}
+            >
+              <Text style={styles.offerBtnText}>View →</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.poolDesc}>
+            See passengers looking for shared rides near you. Accept their fare or offer a higher one.
+          </Text>
+        </View>
+
+        {/* Commute demand — anonymised aggregate passenger demand */}
+        <View style={styles.poolSection}>
+          <View style={styles.poolHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolTitle}>Commute Demand</Text>
+              <Text style={styles.poolSubtitle}>Where passengers commute — anonymised</Text>
+            </View>
+            <Pressable
+              style={styles.offerBtn}
+              onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
+            >
+              <Text style={styles.offerBtnText}>View →</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.poolDesc}>
+            See what areas have commuter demand today — no personal info, only area names and times.
+          </Text>
+        </View>
+
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
       </ScrollView>
 

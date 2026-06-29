@@ -65,3 +65,17 @@ export { sendTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from '
 export { adminSuspendTravelMateProfile } from './travelMate/moderation';
 // Phase 4 — groups + fare split
 export { createTravelMateGroup, joinTravelMateGroup, settleTravelMateSplit } from './travelMate/groups';
+
+// Pool ride requests — InDrive-style passenger-initiated negotiation (Task 1 + Task 2)
+export {
+  createPoolRideRequest,
+  driverRespondToRequest,
+  leaderRespondToOffer,
+  joinPoolRideRequest,
+  cancelPoolRideRequest,
+  getNearbyPoolRequests,
+  getNearbyActiveRides,
+} from './poolRideRequests';
+
+// Commute schedules — daily route registration + anonymised driver demand (Task 3)
+export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';

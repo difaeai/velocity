@@ -142,7 +142,103 @@ export const api = {
     { groupId: string; tripId: string; riderUids: string[]; amountPKR?: number },
     { settled: boolean; fare: number; share: number; riders: number; collected: number; bookerNetCost: number }
   >('settleTravelMateSplit'),
+
+  // ── Pool ride requests — InDrive-style negotiation (Task 1) ───────────────
+  createPoolRideRequest: callable<
+    {
+      pickupLat: number; pickupLng: number; pickupAreaName: string;
+      destinationLat: number; destinationLng: number; destinationAreaName: string;
+      proposedFarePerSeat: number; totalSlots: number;
+      genderPref: 'male_only' | 'female_only' | 'any';
+    },
+    { ok: boolean; requestId: string }
+  >('createPoolRideRequest'),
+  driverRespondToRequest: callable<
+    { requestId: string; action: 'accept' | 'counter'; counterFarePerSeat?: number },
+    { ok: boolean; status: string }
+  >('driverRespondToRequest'),
+  leaderRespondToOffer: callable<
+    { requestId: string; action: 'accept' | 'reject' },
+    { ok: boolean; status: string }
+  >('leaderRespondToOffer'),
+  joinPoolRideRequest: callable<
+    { requestId: string },
+    { ok: boolean; farePerSeat: number }
+  >('joinPoolRideRequest'),
+  cancelPoolRideRequest: callable<
+    { requestId: string },
+    { ok: boolean }
+  >('cancelPoolRideRequest'),
+
+  // ── Nearby active rides — anonymised discovery (Task 2) ───────────────────
+  getNearbyPoolRequests: callable<
+    { lat: number; lng: number; radiusKm?: number },
+    { requests: NearbyPoolRequest[] }
+  >('getNearbyPoolRequests'),
+  getNearbyActiveRides: callable<
+    { lat: number; lng: number; radiusKm?: number },
+    { rides: NearbyActiveRide[] }
+  >('getNearbyActiveRides'),
+
+  // ── Commute schedule (Task 3) ─────────────────────────────────────────────
+  upsertCommuteSchedule: callable<CommuteScheduleInput, { ok: boolean }>('upsertCommuteSchedule'),
+  deleteCommuteSchedule: callable<Record<string, never>, { ok: boolean }>('deleteCommuteSchedule'),
+  getCommuteDemand: callable<
+    { lat: number; lng: number; radiusKm?: number },
+    { demand: CommuteDemandSlot[] }
+  >('getCommuteDemand'),
 };
+
+// ── Pool ride request / nearby ride types ────────────────────────────────────
+
+export type PoolGenderPref = 'male_only' | 'female_only' | 'any';
+export type CommuteDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface NearbyPoolRequest {
+  requestId: string;
+  pickupAreaName: string;
+  destinationAreaName: string;
+  proposedFarePerSeat: number;
+  totalSlots: number;
+  filledSlots: number;
+  slotsAvailable: number;
+  genderPref: PoolGenderPref;
+  distanceKm: number;
+}
+
+export interface NearbyActiveRide {
+  type: 'request' | 'ride';
+  id: string;
+  pickupAreaName: string;
+  destinationAreaName: string;
+  farePerSeat: number;
+  totalSlots: number;
+  slotsAvailable: number;
+  genderPref: PoolGenderPref;
+  rideCategory?: string;
+  distanceKm: number;
+}
+
+export interface CommuteScheduleInput {
+  homeAreaName: string;
+  homeLat: number;
+  homeLng: number;
+  destinationAreaName: string;
+  destinationLat: number;
+  destinationLng: number;
+  morningTime: string;
+  eveningTime?: string | null;
+  activeDays: CommuteDay[];
+  genderPref: PoolGenderPref;
+  active?: boolean;
+}
+
+export interface CommuteDemandSlot {
+  time: string;
+  destinationAreaName: string;
+  count: number;
+  genderBreakdown: { male: number; female: number; any: number };
+}
 
 // ── Travel Mate types ─────────────────────────────────────────────────────────
 
