@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -123,6 +124,7 @@ export default function Onboarding() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Save failed: ${msg}`);
+      Alert.alert('Save failed', msg);
     } finally {
       setSaving(false);
     }

@@ -53,21 +53,9 @@ service cloud.firestore {
     // edit only safe profile fields; role / verification / wallet live elsewhere
     // or are server-only.
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      // Onboarding: user may create their own profile if the trigger hasn't run yet,
-      // or update it (setDoc with merge) once it exists. Both paths are limited to
-      // safe fields — money, role and verification stay server-only.
-      allow create: if isOwner(userId)
-                    && request.resource.data.keys().hasOnly([
-                         'name', 'gender', 'dob', 'age', 'photoURL',
-                         'profileComplete', 'lastActive', 'updatedAt'
-                       ]);
-      allow update: if isOwner(userId)
-                    && onlyChanges(['name', 'gender', 'dob', 'age', 'photoURL',
-                                    'profileComplete', 'lastActive', 'updatedAt',
-                                    'fcmToken']);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read:             if isOwner(userId) || isAdmin();
+      allow create, update:   if isOwner(userId);
+      allow update, delete:   if isAdmin();
     }
 
     // ----- drivers/{uid} ---------------------------------------------------
