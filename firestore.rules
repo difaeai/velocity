@@ -54,18 +54,18 @@ service cloud.firestore {
     // or are server-only.
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      // Users create their own profile during onboarding (first sign-in).
-      // Restricted to safe fields only; role is forced to 'passenger'.
+      // Onboarding: user may create their own profile if the trigger hasn't run yet,
+      // or update it (setDoc with merge) once it exists. Both paths are limited to
+      // safe fields — money, role and verification stay server-only.
       allow create: if isOwner(userId)
-                    && request.resource.data.uid == userId
-                    && request.resource.data.role == 'passenger'
                     && request.resource.data.keys().hasOnly([
-                         'uid', 'phone', 'name', 'gender', 'dob', 'age',
-                         'role', 'profileComplete', 'createdAt', 'lastActive'
+                         'name', 'gender', 'dob', 'age', 'photoURL',
+                         'profileComplete', 'lastActive', 'updatedAt'
                        ]);
       allow update: if isOwner(userId)
                     && onlyChanges(['name', 'gender', 'dob', 'age', 'photoURL',
-                                    'profileComplete', 'fcmToken', 'lastActive', 'updatedAt']);
+                                    'profileComplete', 'lastActive', 'updatedAt',
+                                    'fcmToken']);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

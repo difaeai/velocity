@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useRouter } from 'expo-router';
 
@@ -95,15 +95,18 @@ export default function Onboarding() {
     if (!dob)          { setError('Please select your date of birth.'); return; }
     const age = ageFromDob(dob);
     if (age < 13)      { setError('You must be at least 13 years old.'); return; }
-    if (!user)         return;
+    if (!user) {
+      setError('Session expired — please go back and sign in again.');
+      return;
+    }
 
     setSaving(true);
     setError(null);
     try {
       const photoURL = await uploadPhoto(user.uid);
 
-      // updateDoc only sends the fields we provide — no overwrite of uid/phone/role.
-      // onUserCreate trigger already created the doc so this is always an update.
+      // setDoc with merge:true works whether onUserCreate trigger has already
+      // created the doc or not — avoids "NOT_FOUND" from updateDoc race condition.
       const patch: Record<string, unknown> = {
         name:            name.trim(),
         gender:          gender.toLowerCase(),
@@ -115,7 +118,7 @@ export default function Onboarding() {
       };
       if (photoURL) patch.photoURL = photoURL;
 
-      await updateDoc(doc(db, 'users', user.uid), patch);
+      await setDoc(doc(db, 'users', user.uid), patch, { merge: true });
       router.replace('/passenger/home');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
