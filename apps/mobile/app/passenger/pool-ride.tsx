@@ -384,12 +384,13 @@ export default function PoolRideScreen() {
     }
 
     // Gender filter
-    if (genderPref === 'same' && userGender !== 'unspecified') {
+    if (genderPref === 'same') {
       result = result.filter((r) => {
-        if (r.genderPref === 'any') return true;
-        if (userGender === 'male')   return r.genderPref === 'male_only';
-        if (userGender === 'female') return r.genderPref === 'female_only';
-        return true;
+        // If gender is unspecified, only show open-to-all rides (safest default)
+        if (userGender === 'unspecified') return r.genderPref === 'any';
+        if (userGender === 'male')   return r.genderPref === 'male_only' || r.genderPref === 'any';
+        if (userGender === 'female') return r.genderPref === 'female_only' || r.genderPref === 'any';
+        return r.genderPref === 'any';
       });
     }
 
