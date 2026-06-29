@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.velocity.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos to upload driver verification documents.",
         "NSCameraUsageDescription": "Velocity needs camera access to capture verification documents.",
