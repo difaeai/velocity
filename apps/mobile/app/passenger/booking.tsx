@@ -379,48 +379,44 @@ export default function Booking() {
           contentContainerStyle={{ paddingBottom: 12 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ─── 1. CAR TYPE SELECTOR — all 4 visible ─── */}
-          <View style={styles.carGrid}>
-            {RIDE_TYPES.map((rt) => {
-              const active = rideType === rt;
-              return (
-                <Pressable
-                  key={rt}
-                  style={[styles.carTile, active && styles.carTileActive]}
-                  onPress={() => selectRide(rt)}
-                >
-                  <Text style={styles.carTileEmoji}>
-                    {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
-                  </Text>
-                  <Text style={[styles.carTileName, active && { color: colors.primary }]}>
-                    {RIDE_TYPE_LABELS[rt]}
-                  </Text>
-                  <Text style={[styles.carTilePrice, active && { color: colors.primary }]}>
-                    PKR {BASE_FARES[rt]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          {/* ─── SOLO BOOKING BOX: car selector + fare adjuster in one card ─── */}
+          <View style={styles.soloBookingCard}>
+            <Text style={styles.soloBookingLabel}>Book a Solo Ride</Text>
 
-          {/* ─── 2. FARE ADJUSTER for selected car ─── */}
-          <View style={styles.selectedSoloCard}>
-            <View style={styles.selectedSoloTop}>
-              <Text style={styles.selectedSoloEmoji}>
-                {rideType === 'bike' ? '🏍️' : rideType === 'comfort' ? '🚙' : '🚗'}
-              </Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.selectedSoloName}>{RIDE_TYPE_LABELS[rideType]}</Text>
-                <Text style={styles.selectedSoloRange}>Range PKR {bounds.min}–{bounds.max}</Text>
-              </View>
+            {/* 2×2 car grid inside the card */}
+            <View style={styles.carGrid}>
+              {RIDE_TYPES.map((rt) => {
+                const active = rideType === rt;
+                return (
+                  <Pressable
+                    key={rt}
+                    style={[styles.carTile, active && styles.carTileActive]}
+                    onPress={() => selectRide(rt)}
+                  >
+                    <Text style={styles.carTileEmoji}>
+                      {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
+                    </Text>
+                    <Text style={[styles.carTileName, active && { color: colors.primary }]}>
+                      {RIDE_TYPE_LABELS[rt]}
+                    </Text>
+                    <Text style={[styles.carTilePrice, active && { color: colors.primary }]}>
+                      PKR {BASE_FARES[rt]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
+
+            {/* Fare adjuster for selected car — inside the same card */}
             <View style={styles.soloFareStepper}>
               <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
                 <Text style={styles.stepperText}>−</Text>
               </Pressable>
               <View style={{ alignItems: 'center', flex: 1 }}>
                 <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-                <Text style={styles.stepperLabel}>your offered fare</Text>
+                <Text style={styles.stepperLabel}>
+                  {RIDE_TYPE_LABELS[rideType]} · Range {bounds.min}–{bounds.max}
+                </Text>
               </View>
               <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
                 <Text style={styles.stepperText}>+</Text>
@@ -1077,63 +1073,57 @@ const styles = StyleSheet.create({
   // ── Category row active state ───────────────────────────────────────────────
   categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
 
-  // ── Car type 2×2 grid ────────────────────────────────────────────────────────
+  // ── Unified solo booking card (car selector + fare adjuster) ────────────────
+  soloBookingCard: {
+    backgroundColor: '#141515',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#2a2b2b',
+    padding: 14,
+    gap: 12,
+    marginBottom: 4,
+  },
+  soloBookingLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+
+  // ── Car type 2×2 grid (inside soloBookingCard) ───────────────────────────────
   carGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 10,
   },
   carTile: {
     width: '47.5%',
-    backgroundColor: '#212222',
+    backgroundColor: '#1c1d1d',
     borderRadius: 14,
     borderWidth: 1.5,
     borderColor: '#2d2f2f',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-    gap: 4,
+    gap: 3,
   },
   carTileActive: {
     borderColor: colors.primary,
     backgroundColor: '#0e1e08',
   },
-  carTileEmoji: { fontSize: 28 },
-  carTileName:  { fontSize: 14, fontWeight: '800', color: colors.text },
-  carTilePrice: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  carTileEmoji: { fontSize: 26 },
+  carTileName:  { fontSize: 13, fontWeight: '800', color: colors.text },
+  carTilePrice: { fontSize: 11, fontWeight: '700', color: colors.muted },
 
-  // ── Selected solo car card (green box, fare adjuster) ────────────────────────
-  selectedSoloCard: {
-    backgroundColor: '#0a1f05',
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    padding: 14,
-    gap: 12,
-    marginBottom: 4,
-  },
-  selectedSoloTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  selectedSoloEmoji: { fontSize: 28 },
-  selectedSoloName:  { fontSize: 17, fontWeight: '900', color: colors.primary },
-  selectedSoloRange: { fontSize: 11, color: colors.muted, fontWeight: '600', marginTop: 2 },
-  selectedSoloBadge: {
-    backgroundColor: colors.primary,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    alignSelf: 'flex-start',
-  },
-  selectedSoloBadgeTxt: { fontSize: 9, fontWeight: '900', color: '#000', letterSpacing: 0.8 },
-
-  // ── Solo fare stepper (inside selected card) ─────────────────────────────────
+  // ── Solo fare stepper (inside soloBookingCard) ───────────────────────────────
   soloFareStepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#131f0a',
+    backgroundColor: '#0a1f05',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e3010',
+    borderColor: colors.primary,
     padding: 12,
     gap: 8,
   },
