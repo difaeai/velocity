@@ -99,4 +99,5 @@ export interface Trip {
   // Rating flags (set once each side submits a rating)
   passengerRated?: boolean;
   driverRated?: boolean;
+  arrivedAt?: { seconds: number; nanoseconds: number } | null;
 }

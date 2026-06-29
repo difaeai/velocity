@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
+import type { CommuteDemandSlot } from '../../src/api/client';
 import {
   useDriverActiveTrip,
   useDriverPoolRides,
@@ -22,6 +23,7 @@ import { RatingModal } from '../../src/ui/RatingModal';
 import { ChatModal } from '../../src/ui/ChatModal';
 import { DriverDrawer } from '../../src/ui/DriverDrawer';
 import { DemandHeatmap } from '../../src/ui/DemandHeatmap';
+import { ArrivalCountdown } from '../../src/ui/ArrivalCountdown';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -60,6 +62,21 @@ export default function DriverHome() {
   // Drawer state
   const [drawerOpen, setDrawerOpen]   = useState(false);
 
+  // Skipped request IDs (client-side rejection without backend call)
+  const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  const skipRequest = (tripId: string) =>
+    setSkippedIds((prev) => new Set([...prev, tripId]));
+
+  // Live preview for commute demand section
+  const [commuteDemandPreview, setCommuteDemandPreview] = useState<CommuteDemandSlot[]>([]);
+
+  const loadPreviews = useCallback(async (lat: number, lng: number) => {
+    try {
+      const res = await api.getCommuteDemand({ lat, lng, radiusKm: 10 });
+      setCommuteDemandPreview((res as { demand: CommuteDemandSlot[] }).demand.slice(0, 3));
+    } catch { /* silent */ }
+  }, []);
+
   // Register FCM push token
   useEffect(() => {
     if (user) registerForPushNotifications().catch(() => {});
@@ -88,9 +105,16 @@ export default function DriverHome() {
       };
       updateLocation();
       watchId = setInterval(updateLocation, 30000);
+      // Load pool previews once we have location
+      if (driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
     }
     return () => { if (watchId) clearInterval(watchId); };
   }, [online, uid]);
+
+  // Reload pool previews whenever location updates
+  useEffect(() => {
+    if (online && driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
+  }, [online, driverCoords, loadPreviews]);
 
   // Subscribe to driver doc for live cycleGrossFare
   useEffect(() => {
@@ -217,10 +241,13 @@ export default function DriverHome() {
           </View>
         )}
 
-        {/* Active trip takes priority */}
-        {activeTrip ? (
+        {/* ── 1. Active trip (always first when present) ── */}
+        {activeTrip && (
           <Card>
             <Text style={styles.cardTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
+            {activeTrip.status === 'arrived' && (
+              <ArrivalCountdown arrivedAt={activeTrip.arrivedAt} role="driver" />
+            )}
             <MapPlaceholder
               pickup={activeTrip.pickup?.address}
               dropoff={activeTrip.dropoff?.address}
@@ -229,26 +256,16 @@ export default function DriverHome() {
               dropoffCoord={activeTrip.dropoff}
             />
             <Text style={styles.fare}>Fare: {activeTrip.fare} PKR</Text>
-
-            {/* Passenger contact */}
             <View style={styles.contactRow}>
               {activeTrip.passengerPhone ? (
-                <Pressable
-                  style={styles.contactBtn}
-                  onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}
-                >
+                <Pressable style={styles.contactBtn} onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}>
                   <Text style={styles.contactBtnText}>📞 Call passenger</Text>
                 </Pressable>
               ) : null}
-              <Pressable
-                style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]}
-                onPress={() => setChatOpen(true)}
-              >
+              <Pressable style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]} onPress={() => setChatOpen(true)}>
                 <Text style={styles.contactBtnText}>💬 Message</Text>
               </Pressable>
             </View>
-
-            {/* Next action button */}
             {(() => {
               const next = NEXT_ACTION[activeTrip.status];
               if (!next) return null;
@@ -256,149 +273,206 @@ export default function DriverHome() {
                 <PrimaryButton
                   label={next.label}
                   disabled={busy}
-                  onPress={() =>
-                    run(() =>
-                      next.to
-                        ? api.updateTripStatus({ tripId: activeTrip.id, to: next.to })
-                        : api.completeTrip({ tripId: activeTrip.id }),
-                    )
-                  }
+                  onPress={() => run(() => next.to
+                    ? api.updateTripStatus({ tripId: activeTrip.id, to: next.to })
+                    : api.completeTrip({ tripId: activeTrip.id })
+                  )}
                 />
               );
             })()}
-            <PrimaryButton
-              variant="danger"
-              label="🆘 SOS"
-              disabled={busy}
-              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))}
-            />
-          </Card>
-        ) : online ? (
-          <>
-            <DemandHeatmap />
-            <Text style={styles.section}>Incoming requests — all ride types</Text>
-            {requests.length === 0 ? (
-              <Card>
-                <Text style={styles.muted}>No open requests nearby. Stay online…</Text>
-              </Card>
-            ) : (
-              requests.map((r) => (
-                <Card key={r.id}>
-                  <View style={styles.reqRow}>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <Text style={styles.cardTitle}>
-                          {RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)
-                        </Text>
-                        {r.paymentMethod === 'cash' && (
-                          <View style={styles.badge}><Text style={styles.badgeText}>💵 Cash</Text></View>
-                        )}
-                        {r.preferFemaleDriver && (
-                          <View style={[styles.badge, { backgroundColor: '#ff69b420' }]}>
-                            <Text style={[styles.badgeText, { color: '#ff69b4' }]}>👩 Female pref</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.muted}>
-                        {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
-                      </Text>
-                    </View>
-                    <Text style={styles.fare}>{r.offeredFare} PKR</Text>
-                  </View>
-                  <View style={styles.bidRow}>
-                    <View style={{ flex: 1 }}>
-                      <PrimaryButton
-                        label={commissionLocked ? '🔒 Locked' : `Accept ${r.offeredFare}`}
-                        disabled={busy || commissionLocked}
-                        onPress={() => {
-                          if (commissionLocked) {
-                            Alert.alert('Account Locked', `Pay your ${commissionOwed} PKR commission to accept rides.`);
-                            return;
-                          }
-                          run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare }));
-                        }}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <PrimaryButton
-                        variant="secondary"
-                        label={commissionLocked ? '🔒' : `+50 → ${r.offeredFare + 50}`}
-                        disabled={busy || commissionLocked}
-                        onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare + 50 }))}
-                      />
-                    </View>
-                  </View>
-                </Card>
-              ))
-            )}
-          </>
-        ) : (
-          <Card>
-            <Text style={styles.muted}>You&apos;re offline. Go online to receive ride requests.</Text>
+            <PrimaryButton variant="danger" label="🆘 SOS" disabled={busy}
+              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))} />
           </Card>
         )}
 
-        <Card>
-          <Text style={styles.cardTitle}>Earnings</Text>
-          <Text style={styles.earnings}>{balance} PKR</Text>
-          <Text style={styles.muted}>{profile?.tripsCount ?? 0} trips · {profile?.rating ?? 5}★</Text>
-          <View style={{ marginTop: 10 }}>
-            <PrimaryButton
-              variant="secondary"
-              label="💳 Wallet & payouts"
-              onPress={() => router.push('/driver/wallet')}
-            />
+        {/* ── 2. Incoming Requests ── */}
+        <View style={styles.poolSection}>
+          <View style={styles.poolHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolTitle}>Incoming Requests</Text>
+              <Text style={styles.poolSubtitle}>
+                {online ? 'Passengers near you — open to view & negotiate fare' : 'Go online to receive requests'}
+              </Text>
+            </View>
+            {online && requests.filter((r) => !skippedIds.has(r.tripId)).length > 0 && (
+              <Pressable
+                style={styles.offerBtn}
+                onPress={() => router.push('/driver/all-requests' as Parameters<typeof router.push>[0])}
+              >
+                <Text style={styles.offerBtnText}>See all →</Text>
+              </Pressable>
+            )}
           </View>
-        </Card>
 
-        {/* Offer a Pool Route — optional extra income feature */}
+          {!online ? (
+            <View style={styles.emptyPreview}>
+              <Text style={styles.emptyPreviewIcon}>📵</Text>
+              <Text style={styles.emptyPreviewText}>You are offline. Go online to receive ride requests.</Text>
+            </View>
+          ) : requests.filter((r) => !skippedIds.has(r.tripId)).length === 0 ? (
+            <View style={styles.emptyPreview}>
+              <Text style={styles.emptyPreviewIcon}>🔍</Text>
+              <Text style={styles.emptyPreviewText}>No open requests nearby. Stay online…</Text>
+            </View>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {requests.filter((r) => !skippedIds.has(r.tripId)).slice(0, 2).map((r) => (
+                <View key={r.id} style={styles.previewCard}>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <Text style={styles.previewRoute} numberOfLines={1}>
+                        {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={styles.previewMeta}>{RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)</Text>
+                      {r.paymentMethod === 'cash' && <Text style={styles.previewMeta}>· 💵 Cash</Text>}
+                      {r.preferFemaleDriver && <Text style={[styles.previewMeta, { color: '#ff69b4' }]}>· 👩 Female pref</Text>}
+                    </View>
+                  </View>
+                  <View style={styles.requestedFareBadge}>
+                    <Text style={styles.requestedFareAmt}>{r.offeredFare}</Text>
+                    <Text style={styles.requestedFarePkr}>PKR</Text>
+                  </View>
+                  <View style={{ gap: 6 }}>
+                    <Pressable
+                      style={styles.openReqBtn}
+                      disabled={busy || commissionLocked}
+                      onPress={() => {
+                        if (commissionLocked) { Alert.alert('Account Locked', `Pay ${commissionOwed} PKR commission to accept rides.`); return; }
+                        router.push(`/driver/request-detail/${r.tripId}` as Parameters<typeof router.push>[0]);
+                      }}
+                    >
+                      <Text style={styles.openReqBtnTxt}>{commissionLocked ? '🔒' : 'Open'}</Text>
+                    </Pressable>
+                    <Pressable style={styles.skipReqBtn} onPress={() => skipRequest(r.tripId)}>
+                      <Text style={styles.skipReqBtnTxt}>Skip</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              {requests.filter((r) => !skippedIds.has(r.tripId)).length > 2 && (
+                <Pressable
+                  style={styles.seeAllBtn}
+                  onPress={() => router.push('/driver/all-requests' as Parameters<typeof router.push>[0])}
+                >
+                  <Text style={styles.seeAllBtnTxt}>
+                    See all {requests.filter((r) => !skippedIds.has(r.tripId)).length} requests →
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* ── 3. Demand Map ── */}
+        {online && <DemandHeatmap />}
+
+        {/* ── 4. Commute Map ── */}
+        <View style={styles.poolSection}>
+          <View style={styles.poolHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolTitle}>Commute Map</Text>
+              <Text style={styles.poolSubtitle}>Today's anonymised commuter demand near you</Text>
+            </View>
+            <Pressable
+              style={styles.offerBtn}
+              onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
+            >
+              <Text style={styles.offerBtnText}>View all →</Text>
+            </Pressable>
+          </View>
+
+          {commuteDemandPreview.length === 0 ? (
+            <View style={styles.emptyPreview}>
+              <Text style={styles.emptyPreviewIcon}>📊</Text>
+              <Text style={styles.emptyPreviewText}>No commute demand data in your area today</Text>
+            </View>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {commuteDemandPreview.map((slot) => {
+                const parts = slot.time.split(':');
+                const h = parseInt(parts[0] ?? '0', 10);
+                const m = parts[1] ?? '00';
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const h12 = h % 12 || 12;
+                return (
+                  <Pressable
+                    key={`${slot.time}::${slot.destinationAreaName}`}
+                    style={styles.previewCard}
+                    onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
+                  >
+                    <View style={styles.commuteTimeBox}>
+                      <Text style={styles.commuteTimeNum}>{h12}:{m}</Text>
+                      <Text style={styles.commuteTimeAmpm}>{ampm}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.previewRoute} numberOfLines={1}>→ {slot.destinationAreaName}</Text>
+                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                        {slot.genderBreakdown.male > 0 && (
+                          <View style={[styles.genderChip, { borderColor: '#4fc3f7' }]}>
+                            <Text style={[styles.genderChipTxt, { color: '#4fc3f7' }]}>♂ {slot.genderBreakdown.male}</Text>
+                          </View>
+                        )}
+                        {slot.genderBreakdown.female > 0 && (
+                          <View style={[styles.genderChip, { borderColor: '#ff69b4' }]}>
+                            <Text style={[styles.genderChipTxt, { color: '#ff69b4' }]}>♀ {slot.genderBreakdown.female}</Text>
+                          </View>
+                        )}
+                        {slot.genderBreakdown.any > 0 && (
+                          <View style={[styles.genderChip, { borderColor: colors.muted }]}>
+                            <Text style={[styles.genderChipTxt, { color: colors.muted }]}>👥 {slot.genderBreakdown.any}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.fareBadge}>
+                      <Text style={styles.fareBadgeAmt}>{slot.count}</Text>
+                      <Text style={styles.fareBadgePkr}>rider{slot.count !== 1 ? 's' : ''}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              <Text style={styles.previewFooter}>Anonymised — area names and rounded times only</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── 5. Offer a Pool Route ── */}
         <View style={styles.poolSection}>
           <View style={styles.poolHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.poolTitle}>Offer a Pool Route</Text>
               <Text style={styles.poolSubtitle}>Earn more by sharing your own route</Text>
             </View>
-            <Pressable
-              style={styles.offerBtn}
-              onPress={() => router.push('/driver/pool-ride-offer')}
-            >
+            <Pressable style={styles.offerBtn} onPress={() => router.push('/driver/pool-ride-offer')}>
               <Text style={styles.offerBtnText}>+ New route</Text>
             </Pressable>
           </View>
-
-          {/* Active pool routes the driver created */}
-          {poolRides.length > 0 && (
+          {poolRides.length > 0 ? (
             <View style={{ gap: 10 }}>
               {poolRides.map((pr) => (
-                <Pressable
-                  key={pr.id}
-                  style={styles.poolRideCard}
-                  onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}
-                >
+                <Pressable key={pr.id} style={styles.poolRideCard} onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.poolRideRoute} numberOfLines={1}>
                       {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
                     </Text>
-                    <Text style={styles.poolRideMeta}>
-                      {pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat
-                    </Text>
+                    <Text style={styles.poolRideMeta}>{pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat</Text>
                   </View>
                   <View style={styles.poolRideStatusBadge}>
                     <Text style={styles.poolRideStatusText}>
-                      {pr.status === 'open'         ? '🟡 Open'
+                      {pr.status === 'open' ? '🟡 Open'
                         : pr.status === 'collecting' ? '🟢 Collecting'
-                        : pr.status === 'full'       ? '🔵 Full'
-                        : pr.status === 'boarding'   ? '🚗 Boarding'
-                        : pr.status === 'in_progress'? '🏁 En route'
+                        : pr.status === 'full' ? '🔵 Full'
+                        : pr.status === 'boarding' ? '🚗 Boarding'
+                        : pr.status === 'in_progress' ? '🏁 En route'
                         : pr.status}
                     </Text>
                   </View>
                 </Pressable>
               ))}
             </View>
-          )}
-
-          {poolRides.length === 0 && (
+          ) : (
             <Text style={styles.poolDesc}>
               Post your own route and fill empty seats along the way.{'\n'}
               Example: 1200 PKR solo → 400 PKR × 4 passengers = 1600 PKR
@@ -406,43 +480,15 @@ export default function DriverHome() {
           )}
         </View>
 
-        {/* Passenger pool ride requests — InDrive-style negotiation */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Passenger Ride Requests</Text>
-              <Text style={styles.poolSubtitle}>Passengers propose a fare — accept or counter</Text>
-            </View>
-            <Pressable
-              style={styles.offerBtn}
-              onPress={() => router.push('/driver/pool-requests' as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.offerBtnText}>View →</Text>
-            </Pressable>
+        {/* ── 6. Earnings ── */}
+        <Card>
+          <Text style={styles.cardTitle}>Earnings</Text>
+          <Text style={styles.earnings}>{balance} PKR</Text>
+          <Text style={styles.muted}>{profile?.tripsCount ?? 0} trips · {profile?.rating ?? 5}★</Text>
+          <View style={{ marginTop: 10 }}>
+            <PrimaryButton variant="secondary" label="💳 Wallet & payouts" onPress={() => router.push('/driver/wallet')} />
           </View>
-          <Text style={styles.poolDesc}>
-            See passengers looking for shared rides near you. Accept their fare or offer a higher one.
-          </Text>
-        </View>
-
-        {/* Commute demand — anonymised aggregate passenger demand */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Commute Demand</Text>
-              <Text style={styles.poolSubtitle}>Where passengers commute — anonymised</Text>
-            </View>
-            <Pressable
-              style={styles.offerBtn}
-              onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.offerBtnText}>View →</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.poolDesc}>
-            See what areas have commuter demand today — no personal info, only area names and times.
-          </Text>
-        </View>
+        </Card>
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
       </ScrollView>
@@ -538,6 +584,43 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+
+  // Live preview cards inside pool sections
+  emptyPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 },
+  emptyPreviewIcon: { fontSize: 22 },
+  emptyPreviewText: { fontSize: 12, color: colors.muted, flex: 1 },
+  previewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 11,
+  },
+  previewRoute: { fontSize: 13, fontWeight: '700', color: colors.text },
+  previewMeta:  { fontSize: 11, color: colors.muted, marginTop: 2 },
+  previewFooter: { fontSize: 10, color: colors.muted, textAlign: 'center' as const, marginTop: 2 },
+  genderDot: { width: 8, height: 8, borderRadius: 4 },
+  fareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  fareBadgeAmt: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  fareBadgePkr: { fontSize: 9, fontWeight: '700', color: colors.primary },
+  commuteTimeBox: { alignItems: 'center', backgroundColor: '#1a2e0a', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  commuteTimeNum: { fontSize: 15, fontWeight: '900', color: colors.primary },
+  commuteTimeAmpm: { fontSize: 9, fontWeight: '700', color: colors.primary },
+  genderChip: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
+  genderChipTxt: { fontSize: 10, fontWeight: '700' },
+
+  requestedFareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}15`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  requestedFareAmt:   { fontSize: 18, fontWeight: '900', color: colors.primary },
+  requestedFarePkr:   { fontSize: 9, fontWeight: '700', color: colors.primary },
+  openReqBtn:  { backgroundColor: colors.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center' },
+  openReqBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
+  skipReqBtn:  { backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center' },
+  skipReqBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  seeAllBtn:   { backgroundColor: `${colors.primary}12`, borderRadius: 10, borderWidth: 1, borderColor: `${colors.primary}40`, paddingVertical: 10, alignItems: 'center' },
+  seeAllBtnTxt: { fontSize: 13, fontWeight: '800', color: colors.primary },
   badge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   badgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },

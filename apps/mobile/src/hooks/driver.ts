@@ -34,8 +34,8 @@ export interface OpenRequest {
   passengerGender: string;
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
-  pickup?: { address?: string };
-  dropoff?: { address?: string };
+  pickup?: { address?: string; lat?: number; lng?: number };
+  dropoff?: { address?: string; lat?: number; lng?: number };
 }
 
 const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';

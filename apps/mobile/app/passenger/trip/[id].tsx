@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
+import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { Badge, Card, PrimaryButton } from '../../../src/ui/components';
@@ -160,34 +161,58 @@ export default function TripScreen() {
             <View style={[styles.progressBarFill, { width: `${(timeLeft / 60) * 100}%` }]} />
           </View>
 
+          {/* Suggested fare note */}
+          {(() => {
+            const km = (trip.pickup?.lat && trip.pickup?.lng && trip.dropoff?.lat && trip.dropoff?.lng)
+              ? (() => {
+                  const R = 6371, toRad = (d: number) => d * Math.PI / 180;
+                  const dLat = toRad(trip.dropoff.lat - trip.pickup.lat);
+                  const dLng = toRad(trip.dropoff.lng - trip.pickup.lng);
+                  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(trip.pickup.lat))*Math.cos(toRad(trip.dropoff.lat))*Math.sin(dLng/2)**2;
+                  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                })()
+              : null;
+            const suggested = km ? Math.max(150, Math.round(80 + km * 40)) : null;
+            if (!suggested) return null;
+            return (
+              <Pressable
+                onPress={() => setAdjustedFare(suggested)}
+                style={{ alignSelf: 'center', marginBottom: 4 }}
+              >
+                <Text style={{ color: '#ccff00', fontSize: 12, fontWeight: '700' }}>
+                  💡 Suggested fare: PKR {suggested} (tap to use)
+                </Text>
+              </Pressable>
+            );
+          })()}
+
           {/* Stepper adjuster for fare */}
           <View style={styles.fareAdjusterRow}>
             <Pressable
-              style={[styles.adjustBtn, adjustedFare <= trip.offeredFare && styles.adjustBtnDisabled]}
-              onPress={() => setAdjustedFare((f) => Math.max(trip.offeredFare, f - 5))}
-              disabled={adjustedFare <= trip.offeredFare}
+              style={styles.adjustBtn}
+              onPress={() => setAdjustedFare((f) => Math.max(50, f - 10))}
             >
-              <Text style={styles.adjustBtnText}>- 5</Text>
+              <Text style={styles.adjustBtnText}>− 10</Text>
             </Pressable>
-            
+
             <Text style={styles.biddingFareValue}>PKR {adjustedFare}</Text>
-            
+
             <Pressable
               style={styles.adjustBtn}
-              onPress={() => setAdjustedFare((f) => f + 5)}
+              onPress={() => setAdjustedFare((f) => f + 10)}
             >
-              <Text style={styles.adjustBtnText}>+ 5</Text>
+              <Text style={styles.adjustBtnText}>+ 10</Text>
             </Pressable>
           </View>
 
-          {/* Raise fare button */}
+          {/* Update fare button */}
           <Pressable
-            style={[styles.raiseFareBtn, adjustedFare <= trip.offeredFare && styles.raiseFareBtnDisabled]}
-            disabled={adjustedFare <= trip.offeredFare || busy}
+            style={[styles.raiseFareBtn, adjustedFare === trip.offeredFare && styles.raiseFareBtnDisabled]}
+            disabled={adjustedFare === trip.offeredFare || busy}
             onPress={() => run(() => api.raiseTripFare({ tripId: trip.id, fare: adjustedFare }))}
           >
-            <Text style={[styles.raiseFareBtnText, adjustedFare <= trip.offeredFare && { color: '#8a8c8c' }]}>
-              Raise fare
+            <Text style={[styles.raiseFareBtnText, adjustedFare === trip.offeredFare && { color: '#8a8c8c' }]}>
+              {adjustedFare < trip.offeredFare ? 'Lower fare' : 'Raise fare'}
             </Text>
           </Pressable>
 
@@ -292,11 +317,9 @@ export default function TripScreen() {
             </Text>
             <Text style={[styles.fare, { marginTop: 6 }]}>Fare: {trip.fare} PKR</Text>
 
-            {/* Driver arrived banner */}
+            {/* Driver arrived — 5-min boarding countdown */}
             {trip.status === 'arrived' && (
-              <View style={styles.arrivedBanner}>
-                <Text style={styles.arrivedText}>🚗 Your driver is at the pickup point!</Text>
-              </View>
+              <ArrivalCountdown arrivedAt={trip.arrivedAt} role="passenger" />
             )}
 
             {/* Contact + share buttons */}
