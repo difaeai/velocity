@@ -66,11 +66,14 @@ export default function SignIn() {
       setConfirmation(result);
       setPhoneStep('enter_otp');
     } catch (e) {
-      const code = e instanceof FirebaseError ? e.code : '';
+      const code = e instanceof FirebaseError ? e.code : 'unknown';
+      const msg  = e instanceof FirebaseError ? e.message : String(e);
       if (code === 'auth/invalid-phone-number')       setError('Invalid phone number.');
       else if (code === 'auth/too-many-requests')     setError('Too many attempts. Try again later.');
       else if (code === 'auth/captcha-check-failed')  setError('Captcha failed. Try again.');
-      else setError('Failed to send OTP. Check your number and try again.');
+      else if (code === 'auth/app-not-authorized')    setError('App not authorized for Phone Auth. Enable Phone Auth in Firebase console → Authentication → Sign-in method.');
+      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded for this project.');
+      else setError(`OTP failed [${code}]: ${msg}`);
     } finally {
       setLoading(false);
     }
