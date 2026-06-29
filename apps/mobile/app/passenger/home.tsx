@@ -110,10 +110,49 @@ export default function PassengerHome() {
         </View>
       </SafeAreaView>
 
-      {/* 3. Bottom Booking Sheet (Image 5 grid layout) */}
-      <View style={styles.bottomSheet}>
+      {/* 3. Bottom Booking Sheet */}
+      <ScrollView
+        style={styles.bottomSheet}
+        contentContainerStyle={styles.bottomSheetContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.dragIndicator} />
-        
+
+        {/* Search trigger bar */}
+        <Pressable
+          style={styles.searchTrigger}
+          onPress={() => router.push('/passenger/booking')}
+        >
+          <View style={styles.searchRow}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <Text style={styles.searchPlaceholder}>Where to & for how much?</Text>
+          </View>
+        </Pressable>
+
+        {/* ── Secondary Services ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+        >
+          {[
+            { icon: '🚕', label: 'City Rides',    route: '/passenger/booking' },
+            { icon: '🚌', label: 'City to City',   route: '/passenger/city-to-city' },
+            { icon: '📦', label: 'Couriers',       route: '/passenger/couriers' },
+            { icon: '💼', label: 'Business',       route: '/passenger/business-delivery' },
+          ].map((s) => (
+            <Pressable
+              key={s.label}
+              style={styles.chip}
+              onPress={() => router.push(s.route as Parameters<typeof router.push>[0])}
+            >
+              <Text style={styles.chipEmoji}>{s.icon}</Text>
+              <Text style={styles.chipLabel}>{s.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
         {/* ── HERO: Ride Sharing ── */}
         <Pressable style={styles.poolHero} onPress={() => router.push('/passenger/pool-ride')}>
           <View style={styles.poolHeroBody}>
@@ -143,45 +182,22 @@ export default function PassengerHome() {
           </View>
         </Pressable>
 
-        {/* ── Secondary Services ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 14 }}
-          contentContainerStyle={styles.chipsRow}
-        >
-          {[
-            { icon: '🚕', label: 'City Rides',   route: '/passenger/booking' },
-            { icon: '🚌', label: 'City to City',  route: '/passenger/city-to-city' },
-            { icon: '📦', label: 'Couriers',      route: '/passenger/couriers' },
-            { icon: '💼', label: 'Business',      route: '/passenger/business-delivery' },
-          ].map((s) => (
-            <Pressable
-              key={s.label}
-              style={styles.chip}
-              onPress={() => router.push(s.route as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.chipEmoji}>{s.icon}</Text>
-              <Text style={styles.chipLabel}>{s.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Search trigger bar */}
+        {/* ── Travel Mate card ── */}
         <Pressable
-          style={styles.searchTrigger}
-          onPress={() => router.push('/passenger/booking')}
+          style={styles.travelMateCard}
+          onPress={() => router.push('/passenger/travel-mate')}
         >
-          <View style={styles.searchRow}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <Text style={styles.searchPlaceholder}>Where to & for how much?</Text>
+          <View style={styles.travelMateBody}>
+            <Text style={styles.travelMateTitle}>Travel Mate 💛</Text>
+            <Text style={styles.travelMateSub}>Meet people using Velocity today. Swipe, match, chat.</Text>
           </View>
+          <Text style={styles.travelMateArrow}>→</Text>
         </Pressable>
 
-        {/* Recent destinations from the rider's own trips (real data) */}
-        {recents.length > 0 ? (
+        {/* Recent destinations */}
+        {recents.length > 0 && (
           <View style={styles.historyList}>
-            {recents.slice(0, 4).map((r) => (
+            {recents.slice(0, 3).map((r) => (
               <Pressable
                 key={r.address}
                 style={styles.historyItem}
@@ -195,8 +211,10 @@ export default function PassengerHome() {
               </Pressable>
             ))}
           </View>
-        ) : null}
-      </View>
+        )}
+
+        <View style={{ height: 20 }} />
+      </ScrollView>
 
       {/* 4. Custom Slide-out Side Drawer Menu Overlay */}
       <Modal
@@ -457,14 +475,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    height: '55%',
     backgroundColor: '#151616',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+  },
+  bottomSheetContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
     paddingTop: 10,
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
+    gap: 14,
   },
   dragIndicator: {
     width: 40,
@@ -472,7 +494,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#3e4040',
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 4,
   },
   sheetTitle: {
     fontSize: 18,
@@ -557,6 +579,22 @@ const styles = StyleSheet.create({
   poolHeroPriceAmt: { fontSize: 28, fontWeight: '900', color: '#000', lineHeight: 30 },
   poolHeroPriceSub: { fontSize: 10, color: '#444', fontWeight: '600' },
   poolHeroArrow: { fontSize: 22, color: '#000', fontWeight: '900', marginTop: 4 },
+
+  /* ── Travel Mate card ── */
+  travelMateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1a00',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#ccff0040',
+    padding: 16,
+    gap: 12,
+  },
+  travelMateBody: { flex: 1, gap: 4 },
+  travelMateTitle: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  travelMateSub:   { fontSize: 12, color: '#8a8c8c', lineHeight: 17 },
+  travelMateArrow: { fontSize: 20, color: colors.primary, fontWeight: '900' },
 
   /* ── Secondary service chips ── */
   chipsRow: { gap: 10, paddingRight: 4 },

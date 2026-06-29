@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -146,11 +147,15 @@ export default function TravelMateMatches() {
                   style={s.matchRow}
                   onPress={() => router.push(`/passenger/travel-mate/chat/${match.id}` as Parameters<typeof router.push>[0])}
                 >
-                  <View style={s.avatar}><Text style={s.avatarEmoji}>👤</Text></View>
+                  {other?.photoURL ? (
+                    <Image source={{ uri: other.photoURL }} style={s.avatarPhoto} />
+                  ) : (
+                    <View style={s.avatar}><Text style={s.avatarEmoji}>👤</Text></View>
+                  )}
                   <View style={s.matchInfo}>
                     <Text style={s.matchName}>{other?.displayName ?? 'Travel mate'}</Text>
                     <Text style={s.matchSub} numberOfLines={1}>
-                      {match.lastMessageAt ? 'Last message' : 'Tap to say hello 👋'}
+                      {match.lastMessageAt ? 'Tap to continue chatting 💬' : 'Tap to say hello 👋'}
                     </Text>
                   </View>
                   <Text style={s.matchTime}>{ts ? timeAgo(ts.seconds) : ''}</Text>
@@ -240,8 +245,9 @@ const s = StyleSheet.create({
 
   // Match row
   matchRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 14 },
-  avatar:     { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  avatarEmoji:{ fontSize: 22 },
+  avatar:      { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  avatarEmoji: { fontSize: 22 },
+  avatarPhoto: { width: 52, height: 52, borderRadius: 26 },
   matchInfo:  { flex: 1, gap: 3 },
   matchName:  { fontSize: 15, fontWeight: '800', color: colors.text },
   matchSub:   { fontSize: 12, color: colors.muted },

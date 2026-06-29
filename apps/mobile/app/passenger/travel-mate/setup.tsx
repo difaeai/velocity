@@ -1,11 +1,7 @@
-/**
- * Travel Mate — profile setup / edit screen.
- *
- * Loaded when the user taps "Travel Mate" for the first time (no profile yet)
- * or from the swipe deck's gear icon to edit an existing profile.
- */
 import { useEffect, useState } from 'react';
 import {
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,172 +14,119 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { doc, getDoc } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
-import { db } from '../../../src/firebase';
+import { db, storage } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { api, type TravelMateDay, type UpsertTravelMateInput } from '../../../src/api/client';
-import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
-import { Card, PrimaryButton } from '../../../src/ui/components';
 
-const DAYS: { key: TravelMateDay; label: string }[] = [
-  { key: 'mon', label: 'Mo' },
-  { key: 'tue', label: 'Tu' },
-  { key: 'wed', label: 'We' },
-  { key: 'thu', label: 'Th' },
-  { key: 'fri', label: 'Fr' },
-  { key: 'sat', label: 'Sa' },
-  { key: 'sun', label: 'Su' },
-];
-
-const DEST_TYPES: { key: 'office' | 'university' | 'other'; label: string }[] = [
-  { key: 'office', label: 'Office' },
-  { key: 'university', label: 'University' },
-  { key: 'other', label: 'Other' },
+const INTERESTS = [
+  'Music', 'Movies', 'Sports', 'Gaming', 'Reading', 'Travel',
+  'Foodie', 'Fitness', 'Art', 'Tech', 'Photography', 'Cooking',
 ];
 
 export default function TravelMateSetup() {
   const { user } = useAuth();
   const router = useRouter();
-  const homeLocation = useCurrentLocation(false);
-  const destLocation = useCurrentLocation(false);
 
-  // Form state
+  const [photoUri, setPhotoUri]   = useState<string | null>(null);
+  const [photoURL, setPhotoURL]   = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
-  const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [age, setAge]             = useState('');
+  const [gender, setGender]       = useState<'male' | 'female'>('male');
   const [genderPref, setGenderPref] = useState<'male' | 'female' | 'any'>('any');
-  const [bio, setBio] = useState('');
-
-  const [homeLat, setHomeLat] = useState('');
-  const [homeLng, setHomeLng] = useState('');
-  const [homeAddress, setHomeAddress] = useState('');
-
-  const [destType, setDestType] = useState<'office' | 'university' | 'other'>('office');
-  const [destName, setDestName] = useState('');
-  const [destLat, setDestLat] = useState('');
-  const [destLng, setDestLng] = useState('');
-  const [destAddress, setDestAddress] = useState('');
-
-  const [days, setDays] = useState<TravelMateDay[]>(['mon', 'tue', 'wed', 'thu', 'fri']);
-  const [departTime, setDepartTime] = useState('08:00');
-  const [returnTime, setReturnTime] = useState('17:00');
-
-  const [active, setActive] = useState(true);
-  const [copyRidePhoto, setCopyRidePhoto] = useState(true);
-
-  const [loading, setLoading] = useState(false);
+  const [bio, setBio]             = useState('');
+  const [interests, setInterests] = useState<string[]>([]);
+  const [activeMode, setActiveMode] = useState<'today' | 'week'>('week');
+  const [active, setActive]       = useState(true);
+  const [loading, setLoading]     = useState(false);
   const [prefilling, setPrefilling] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Pre-fill from existing profile if the user already set one up.
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setPrefilling(false); return; }
     getDoc(doc(db, 'travelMateProfiles', user.uid))
       .then(snap => {
         if (!snap.exists()) return;
         const d = snap.data();
         setDisplayName(d.displayName ?? '');
+        setAge(d.age ? String(d.age) : '');
         setGender(d.gender ?? 'male');
-        setGenderPref(d.genderPreference ?? 'any');
+        setGenderPref(d.genderPref ?? 'any');
         setBio(d.bio ?? '');
-        if (d.home) {
-          setHomeLat(String(d.home.lat ?? ''));
-          setHomeLng(String(d.home.lng ?? ''));
-          setHomeAddress(d.home.address ?? '');
-        }
-        if (d.destination) {
-          setDestType(d.destination.type ?? 'office');
-          setDestName(d.destination.name ?? '');
-          setDestLat(String(d.destination.lat ?? ''));
-          setDestLng(String(d.destination.lng ?? ''));
-          setDestAddress(d.destination.address ?? '');
-        }
-        if (d.schedule) {
-          setDays(d.schedule.days ?? []);
-          setDepartTime(d.schedule.departTime ?? '08:00');
-          setReturnTime(d.schedule.returnTime ?? '17:00');
-        }
+        setInterests(d.interests ?? []);
+        setActiveMode(d.activeMode ?? 'week');
         setActive(d.active !== false);
-        setCopyRidePhoto(false); // they already have a TM photo
+        if (d.photoURL) setPhotoURL(d.photoURL);
       })
       .catch(() => {})
       .finally(() => setPrefilling(false));
   }, [user?.uid]);
 
-  // Pre-fill display name from auth user when not editing an existing profile.
   useEffect(() => {
     if (!prefilling && !displayName && user?.displayName) {
       setDisplayName(user.displayName);
     }
   }, [prefilling]);
 
-  // Apply location from GPS when "Use current location" is tapped.
-  useEffect(() => {
-    if (homeLocation.coords) {
-      setHomeLat(String(homeLocation.coords.lat));
-      setHomeLng(String(homeLocation.coords.lng));
-      if (homeLocation.address) setHomeAddress(homeLocation.address);
+  async function pickPhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo access to add a profile picture.');
+      return;
     }
-  }, [homeLocation.coords]);
-
-  useEffect(() => {
-    if (destLocation.coords) {
-      setDestLat(String(destLocation.coords.lat));
-      setDestLng(String(destLocation.coords.lng));
-      if (destLocation.address) setDestAddress(destLocation.address);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [3, 4],
+      quality: 0.75,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPhotoUri(result.assets[0].uri);
     }
-  }, [destLocation.coords]);
+  }
 
-  function toggleDay(key: TravelMateDay) {
-    setDays(prev =>
-      prev.includes(key) ? prev.filter(d => d !== key) : [...prev, key],
+  function toggleInterest(tag: string) {
+    setInterests(prev =>
+      prev.includes(tag) ? prev.filter(i => i !== tag) : [...prev, tag],
     );
   }
 
-  function validate(): string | null {
-    if (!displayName.trim()) return 'Enter your name.';
-    const lat = parseFloat(homeLat);
-    const lng = parseFloat(homeLng);
-    if (isNaN(lat) || isNaN(lng)) return 'Set your home location.';
-    const dlat = parseFloat(destLat);
-    const dlng = parseFloat(destLng);
-    if (isNaN(dlat) || isNaN(dlng)) return 'Set your destination location.';
-    if (!destName.trim()) return 'Enter your destination name.';
-    if (days.length === 0) return 'Pick at least one commute day.';
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(departTime)) return 'Depart time must be HH:MM (e.g. 08:30).';
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(returnTime)) return 'Return time must be HH:MM (e.g. 17:30).';
-    return null;
-  }
-
   async function save() {
-    const err = validate();
-    if (err) { setError(err); return; }
-    setError(null);
+    if (!user) return;
+    if (!displayName.trim()) { Alert.alert('Required', 'Enter your display name.'); return; }
+    const ageNum = parseInt(age, 10);
+    if (!age || isNaN(ageNum) || ageNum < 18 || ageNum > 99) {
+      Alert.alert('Required', 'Enter your age (18–99).');
+      return;
+    }
     setLoading(true);
     try {
-      const input: UpsertTravelMateInput = {
+      let finalPhotoURL = photoURL;
+      if (photoUri) {
+        const resp = await fetch(photoUri);
+        const blob = await resp.blob();
+        const storageRef = ref(storage, `travelMatePhotos/${user.uid}.jpg`);
+        await uploadBytes(storageRef, blob);
+        finalPhotoURL = await getDownloadURL(storageRef);
+      }
+      await setDoc(doc(db, 'travelMateProfiles', user.uid), {
+        uid: user.uid,
         displayName: displayName.trim(),
+        age: ageNum,
         gender,
-        genderPreference: genderPref,
+        genderPref,
         bio: bio.trim(),
-        home: { lat: parseFloat(homeLat), lng: parseFloat(homeLng), address: homeAddress.trim() },
-        destination: {
-          type: destType,
-          name: destName.trim(),
-          lat: parseFloat(destLat),
-          lng: parseFloat(destLng),
-          address: destAddress.trim(),
-        },
-        schedule: { days, departTime, returnTime },
+        interests,
+        photoURL: finalPhotoURL ?? null,
         active,
-        copyRidePhoto,
-      };
-      await api.upsertTravelMateProfile(input);
+        activeMode,
+        lastActive: serverTimestamp(),
+      });
       router.replace('/passenger/travel-mate');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to save. Try again.';
-      setError(msg);
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not save. Try again.');
     } finally {
       setLoading(false);
     }
@@ -192,226 +135,134 @@ export default function TravelMateSetup() {
   if (prefilling) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.center}>
-          <Text style={s.muted}>Loading your profile…</Text>
-        </View>
+        <View style={s.center}><Text style={s.muted}>Loading…</Text></View>
       </SafeAreaView>
     );
   }
+
+  const displayPhoto = photoUri ?? photoURL;
 
   return (
     <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
 
-          {/* Header */}
           <View style={s.header}>
             <Pressable onPress={() => router.back()} style={s.backBtn}>
               <Text style={s.backText}>←</Text>
             </Pressable>
-            <Text style={s.title}>Travel Mate profile</Text>
+            <Text style={s.title}>Your Travel Mate profile</Text>
           </View>
-          <Text style={s.subtitle}>
-            This profile is separate from your ride identity. Your home address is never shown to other commuters.
-          </Text>
+          <Text style={s.subtitle}>Only visible to people you match with.</Text>
 
-          {/* About you */}
-          <Card>
+          {/* Photo */}
+          <View style={s.photoSection}>
+            <Pressable style={s.photoWrap} onPress={pickPhoto}>
+              {displayPhoto ? (
+                <Image source={{ uri: displayPhoto }} style={s.photo} />
+              ) : (
+                <View style={s.photoPlaceholder}>
+                  <Text style={s.photoPlaceholderIcon}>📷</Text>
+                  <Text style={s.photoPlaceholderText}>Add photo</Text>
+                </View>
+              )}
+              <View style={s.photoBadge}>
+                <Text style={{ fontSize: 14 }}>✏️</Text>
+              </View>
+            </Pressable>
+          </View>
+
+          {/* About */}
+          <View style={s.card}>
             <Text style={s.sectionTitle}>About you</Text>
-            <Field label="Display name">
-              <TextInput
-                style={s.input}
-                value={displayName}
-                onChangeText={setDisplayName}
-                placeholder="e.g. Fatima A."
-                placeholderTextColor={colors.muted}
-              />
-            </Field>
-            <Field label="Bio (optional)">
-              <TextInput
-                style={[s.input, s.multiline]}
-                value={bio}
-                onChangeText={setBio}
-                placeholder="Student at FAST, commuting to Gulshan…"
-                placeholderTextColor={colors.muted}
-                multiline
-                numberOfLines={2}
-                maxLength={200}
-              />
-            </Field>
-            <Field label="Your gender">
-              <Pills
-                options={[{ key: 'male', label: 'Male' }, { key: 'female', label: 'Female' }]}
-                selected={gender}
-                onSelect={v => setGender(v as 'male' | 'female')}
-              />
-            </Field>
-            <Field label="Preferred co-commuter gender">
-              <Pills
-                options={[
-                  { key: 'male', label: 'Male' },
-                  { key: 'female', label: 'Female' },
-                  { key: 'any', label: 'Any' },
-                ]}
-                selected={genderPref}
-                onSelect={v => setGenderPref(v as 'male' | 'female' | 'any')}
-              />
-            </Field>
-            <View style={s.row}>
-              <Text style={s.label}>Use my Velocity profile photo</Text>
-              <Switch
-                value={copyRidePhoto}
-                onValueChange={setCopyRidePhoto}
-                trackColor={{ true: colors.primary }}
-                thumbColor={copyRidePhoto ? '#000' : colors.muted}
-              />
-            </View>
-          </Card>
-
-          {/* Home location */}
-          <Card>
-            <Text style={s.sectionTitle}>Home area</Text>
-            <Text style={s.hint}>Approximate neighbourhood — never shown to others.</Text>
-            <View style={s.locRow}>
-              <TextInput
-                style={[s.input, s.coordInput]}
-                value={homeLat}
-                onChangeText={setHomeLat}
-                placeholder="Lat"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={[s.input, s.coordInput]}
-                value={homeLng}
-                onChangeText={setHomeLng}
-                placeholder="Lng"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-              />
-              <Pressable
-                style={s.gpsBtn}
-                onPress={homeLocation.request}
-                disabled={homeLocation.status === 'loading'}
-              >
-                <Text style={s.gpsBtnText}>
-                  {homeLocation.status === 'loading' ? '…' : '📍 GPS'}
-                </Text>
-              </Pressable>
-            </View>
+            <Text style={s.label}>Display name</Text>
             <TextInput
               style={s.input}
-              value={homeAddress}
-              onChangeText={setHomeAddress}
-              placeholder="Neighbourhood / area (optional)"
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Your first name"
               placeholderTextColor={colors.muted}
+              maxLength={30}
             />
-          </Card>
-
-          {/* Destination */}
-          <Card>
-            <Text style={s.sectionTitle}>Destination</Text>
-            <Field label="Type">
-              <Pills
-                options={DEST_TYPES.map(t => ({ key: t.key, label: t.label }))}
-                selected={destType}
-                onSelect={v => setDestType(v as 'office' | 'university' | 'other')}
-              />
-            </Field>
-            <Field label="Name">
-              <TextInput
-                style={s.input}
-                value={destName}
-                onChangeText={setDestName}
-                placeholder="e.g. Systems Ltd, Karachi"
-                placeholderTextColor={colors.muted}
-              />
-            </Field>
-            <View style={s.locRow}>
-              <TextInput
-                style={[s.input, s.coordInput]}
-                value={destLat}
-                onChangeText={setDestLat}
-                placeholder="Lat"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={[s.input, s.coordInput]}
-                value={destLng}
-                onChangeText={setDestLng}
-                placeholder="Lng"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-              />
-              <Pressable
-                style={s.gpsBtn}
-                onPress={destLocation.request}
-                disabled={destLocation.status === 'loading'}
-              >
-                <Text style={s.gpsBtnText}>
-                  {destLocation.status === 'loading' ? '…' : '📍 GPS'}
-                </Text>
-              </Pressable>
-            </View>
+            <Text style={s.label}>Age</Text>
             <TextInput
-              style={s.input}
-              value={destAddress}
-              onChangeText={setDestAddress}
-              placeholder="Full address (optional)"
+              style={[s.input, { width: 100 }]}
+              value={age}
+              onChangeText={setAge}
+              placeholder="25"
               placeholderTextColor={colors.muted}
+              keyboardType="number-pad"
+              maxLength={2}
             />
-          </Card>
+            <Text style={s.label}>Bio (optional)</Text>
+            <TextInput
+              style={[s.input, s.multiline]}
+              value={bio}
+              onChangeText={setBio}
+              placeholder="Tell people something about yourself…"
+              placeholderTextColor={colors.muted}
+              multiline
+              numberOfLines={3}
+              maxLength={150}
+            />
+            <Text style={s.charCount}>{bio.length}/150</Text>
+          </View>
 
-          {/* Schedule */}
-          <Card>
-            <Text style={s.sectionTitle}>Commute schedule</Text>
-            <Text style={s.label}>Days</Text>
-            <View style={s.daysRow}>
-              {DAYS.map(({ key, label }) => (
-                <Pressable
-                  key={key}
-                  style={[s.dayPill, days.includes(key) && s.dayPillActive]}
-                  onPress={() => toggleDay(key)}
-                >
-                  <Text style={[s.dayPillText, days.includes(key) && s.dayPillTextActive]}>
-                    {label}
+          {/* Gender */}
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>Gender</Text>
+            <Text style={s.label}>I am</Text>
+            <View style={s.pillRow}>
+              {(['male', 'female'] as const).map(g => (
+                <Pressable key={g} style={[s.pill, gender === g && s.pillActive]} onPress={() => setGender(g)}>
+                  <Text style={[s.pillText, gender === g && s.pillTextActive]}>
+                    {g === 'male' ? 'Male' : 'Female'}
                   </Text>
                 </Pressable>
               ))}
             </View>
-            <View style={s.timeRow}>
-              <Field label="Depart" style={{ flex: 1 }}>
-                <TextInput
-                  style={s.input}
-                  value={departTime}
-                  onChangeText={setDepartTime}
-                  placeholder="08:00"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
-                />
-              </Field>
-              <Field label="Return" style={{ flex: 1 }}>
-                <TextInput
-                  style={s.input}
-                  value={returnTime}
-                  onChangeText={setReturnTime}
-                  placeholder="17:00"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
-                />
-              </Field>
+            <Text style={s.label}>Show me</Text>
+            <View style={s.pillRow}>
+              {[
+                { key: 'male' as const, label: 'Men' },
+                { key: 'female' as const, label: 'Women' },
+                { key: 'any' as const, label: 'Everyone' },
+              ].map(o => (
+                <Pressable key={o.key} style={[s.pill, genderPref === o.key && s.pillActive]} onPress={() => setGenderPref(o.key)}>
+                  <Text style={[s.pillText, genderPref === o.key && s.pillTextActive]}>{o.label}</Text>
+                </Pressable>
+              ))}
             </View>
-          </Card>
+          </View>
 
-          {/* Active toggle */}
-          <Card>
+          {/* Interests */}
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>Interests</Text>
+            <Text style={s.hint}>Pick up to 6 that describe you</Text>
+            <View style={s.tagsWrap}>
+              {INTERESTS.map(tag => {
+                const on = interests.includes(tag);
+                return (
+                  <Pressable
+                    key={tag}
+                    style={[s.tag, on && s.tagActive]}
+                    onPress={() => toggleInterest(tag)}
+                    disabled={!on && interests.length >= 6}
+                  >
+                    <Text style={[s.tagText, on && s.tagTextActive]}>{tag}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Visibility */}
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>Visibility</Text>
             <View style={s.row}>
               <View style={{ flex: 1 }}>
                 <Text style={s.label}>Show me in the feed</Text>
-                <Text style={s.hint}>Turn off to pause matching temporarily.</Text>
+                <Text style={s.hint}>Turn off to pause matching.</Text>
               </View>
               <Switch
                 value={active}
@@ -420,11 +271,22 @@ export default function TravelMateSetup() {
                 thumbColor={active ? '#000' : colors.muted}
               />
             </View>
-          </Card>
+            <Text style={s.label}>My active status</Text>
+            <View style={s.pillRow}>
+              {[
+                { key: 'today' as const, label: 'Active today' },
+                { key: 'week' as const, label: 'Active this week' },
+              ].map(o => (
+                <Pressable key={o.key} style={[s.pill, activeMode === o.key && s.pillActive]} onPress={() => setActiveMode(o.key)}>
+                  <Text style={[s.pillText, activeMode === o.key && s.pillTextActive]}>{o.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
 
-          {error ? <Text style={s.error}>{error}</Text> : null}
-
-          <PrimaryButton label="Save Travel Mate profile" onPress={save} loading={loading} />
+          <Pressable style={[s.saveBtn, loading && { opacity: 0.6 }]} onPress={save} disabled={loading}>
+            <Text style={s.saveBtnText}>{loading ? 'Saving…' : 'Save profile'}</Text>
+          </Pressable>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -432,71 +294,46 @@ export default function TravelMateSetup() {
   );
 }
 
-// ── Small helper components ────────────────────────────────────────────────────
-
-function Field({ label, children, style }: { label: string; children: React.ReactNode; style?: object }) {
-  return (
-    <View style={[{ gap: 4 }, style]}>
-      <Text style={s.label}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function Pills({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: { key: string; label: string }[];
-  selected: string;
-  onSelect: (v: string) => void;
-}) {
-  return (
-    <View style={s.pillRow}>
-      {options.map(o => (
-        <Pressable
-          key={o.key}
-          style={[s.pill, o.key === selected && s.pillActive]}
-          onPress={() => onSelect(o.key)}
-        >
-          <Text style={[s.pillText, o.key === selected && s.pillTextActive]}>{o.label}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
-  safe:           { flex: 1, backgroundColor: colors.background },
-  scroll:         { padding: 20, gap: 14, paddingBottom: 40 },
-  center:         { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header:         { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
-  backBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  backText:       { color: colors.text, fontSize: 18, fontWeight: '700' },
-  title:          { fontSize: 22, fontWeight: '900', color: colors.text },
-  subtitle:       { fontSize: 13, color: colors.muted, marginBottom: 4, lineHeight: 18 },
-  sectionTitle:   { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 4 },
-  label:          { fontSize: 13, fontWeight: '700', color: colors.text },
-  hint:           { fontSize: 11, color: colors.muted, marginBottom: 4 },
-  muted:          { color: colors.muted, fontSize: 14 },
-  input:          { height: 46, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 14, color: colors.text, backgroundColor: colors.surface },
-  multiline:      { height: 72, paddingTop: 12, textAlignVertical: 'top' },
-  row:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  timeRow:        { flexDirection: 'row', gap: 12 },
-  locRow:         { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  coordInput:     { flex: 1 },
-  gpsBtn:         { height: 46, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: `${colors.primary}18` },
-  gpsBtnText:     { fontSize: 12, fontWeight: '800', color: colors.primary },
-  pillRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  pill:           { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },
-  pillActive:     { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
-  pillText:       { fontSize: 13, fontWeight: '700', color: colors.muted },
+  safe:        { flex: 1, backgroundColor: colors.background },
+  scroll:      { padding: 20, gap: 16, paddingBottom: 40 },
+  center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  backText:    { color: colors.text, fontSize: 18, fontWeight: '700' },
+  title:       { fontSize: 20, fontWeight: '900', color: colors.text, flex: 1 },
+  subtitle:    { fontSize: 13, color: colors.muted },
+
+  photoSection:        { alignItems: 'center', paddingVertical: 8 },
+  photoWrap:           { position: 'relative' },
+  photo:               { width: 120, height: 160, borderRadius: 20 },
+  photoPlaceholder:    { width: 120, height: 160, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  photoPlaceholderIcon:{ fontSize: 36 },
+  photoPlaceholderText:{ fontSize: 12, fontWeight: '700', color: colors.muted },
+  photoBadge:          { position: 'absolute', bottom: -8, right: -8, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
+
+  card:         { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 10 },
+  sectionTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  label:        { fontSize: 13, fontWeight: '700', color: colors.text },
+  hint:         { fontSize: 11, color: colors.muted },
+  input:        { height: 46, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 14, color: colors.text, backgroundColor: colors.background },
+  multiline:    { height: 80, paddingTop: 12, textAlignVertical: 'top' },
+  charCount:    { fontSize: 11, color: colors.muted, textAlign: 'right' },
+  muted:        { color: colors.muted, fontSize: 14 },
+  row:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  pillRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pill:         { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background },
+  pillActive:   { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
+  pillText:     { fontSize: 13, fontWeight: '700', color: colors.muted },
   pillTextActive: { color: colors.primary },
-  daysRow:        { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 4 },
-  dayPill:        { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  dayPillActive:  { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
-  dayPillText:    { fontSize: 12, fontWeight: '800', color: colors.muted },
-  dayPillTextActive: { color: colors.primary },
-  error:          { color: colors.danger, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+
+  tagsWrap:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag:          { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background },
+  tagActive:    { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
+  tagText:      { fontSize: 13, fontWeight: '700', color: colors.muted },
+  tagTextActive:{ color: colors.primary },
+
+  saveBtn:      { height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  saveBtnText:  { fontSize: 16, fontWeight: '900', color: '#000' },
 });

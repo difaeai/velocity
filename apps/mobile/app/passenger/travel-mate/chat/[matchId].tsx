@@ -27,11 +27,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  addDoc,
   collection,
   doc,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
+  updateDoc,
 } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 
@@ -95,13 +98,27 @@ export default function TravelMateChat() {
 
   async function send() {
     const trimmed = text.trim();
-    if (!trimmed || sending || closed) return;
+    if (!trimmed || sending || closed || !user) return;
     setSending(true);
     setText('');
     try {
-      await api.sendTravelMateMessage({ matchId, text: trimmed });
+      // Write directly to Firestore for real-time delivery without Cloud Function dependency
+      await addDoc(collection(db, 'travelMateMatches', matchId, 'messages'), {
+        senderId: user.uid,
+        text: trimmed,
+        createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'travelMateMatches', matchId), {
+        lastMessage: trimmed.substring(0, 100),
+        lastMessageAt: serverTimestamp(),
+      });
     } catch {
-      setText(trimmed);
+      // Fall back to Cloud Function if direct write fails (e.g. Firestore rules)
+      try {
+        await api.sendTravelMateMessage({ matchId, text: trimmed });
+      } catch {
+        setText(trimmed);
+      }
     } finally {
       setSending(false);
     }
