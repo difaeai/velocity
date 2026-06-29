@@ -77,6 +77,8 @@ export default function Booking() {
   const [rideType, setRideType] = useState<RideType>('ac');
   const [fare, setFare] = useState<number>(BASE_FARES.ac);
   const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.ac, 3));
+  const [poolGender, setPoolGender] = useState<'same' | 'any'>('same');
+  const [poolLoading, setPoolLoading] = useState(false);
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
@@ -154,6 +156,32 @@ export default function Booking() {
       setError(code);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function startPoolRide() {
+    setError(null);
+    if (!coords) { requestLocation(); return; }
+    setPoolLoading(true);
+    try {
+      const pickupAddress = pickup.trim() || currentAddress || 'Current location';
+      const destCoords    = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
+      const res = await api.createTrip({
+        rideType,
+        offeredFare: poolFare,
+        seats: 1,
+        passengerGender: gender,
+        pool: true,
+        paymentMethod,
+        preferFemaleDriver: poolGender === 'same',
+        pickup:  { lat: coords.lat,        lng: coords.lng,        address: pickupAddress },
+        dropoff: { lat: destCoords.lat,     lng: destCoords.lng,    address: dropoff.trim() },
+      });
+      router.replace(`/passenger/trip/${res.tripId}`);
+    } catch (e) {
+      setError(e instanceof FirebaseError ? e.message : 'Could not start pool ride.');
+    } finally {
+      setPoolLoading(false);
     }
   }
 
@@ -361,14 +389,13 @@ export default function Booking() {
                     <Text style={styles.poolPrimaryBadgeText}>SAVE UP TO {maxSavePct}%</Text>
                   </View>
                 </View>
-                <Text style={styles.poolPrimarySub}>The more riders join, the less you pay</Text>
+                <Text style={styles.poolPrimarySub}>Your fare drops automatically as riders join</Text>
               </View>
               <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
 
-            {/* Live savings breakdown table */}
+            {/* Savings breakdown — informational only */}
             <View style={styles.poolTierTable}>
-              {/* Solo row */}
               <View style={styles.poolTierRow}>
                 <View style={styles.poolTierLeft}>
                   <Text style={styles.poolTierRiders}>👤  Just you</Text>
@@ -376,73 +403,71 @@ export default function Booking() {
                 <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
                 <Text style={styles.poolTierSavingNone}>—</Text>
               </View>
-
-              {/* Dynamic tier rows */}
               {POOL_TIERS.map((tier, i) => {
                 const tierFare = poolFareFor(fare, tier.extra);
                 const savePct  = Math.round((1 - tier.pct) * 100);
-                const isSelected = poolFare === tierFare;
                 return (
-                  <Pressable
-                    key={tier.extra}
-                    style={[styles.poolTierRow, isSelected && styles.poolTierRowSelected]}
-                    onPress={() => setPoolFare(tierFare)}
-                  >
+                  <View key={tier.extra} style={styles.poolTierRow}>
                     <View style={styles.poolTierLeft}>
-                      <Text style={styles.poolTierRidersEmoji}>
-                        {'👤'.repeat(Math.min(tier.extra + 1, 3))}{tier.extra + 1 > 3 ? '+' : ''}
-                      </Text>
-                      <Text style={[styles.poolTierRiders, isSelected && { color: colors.primary }]}>
-                        {tier.label}
-                      </Text>
+                      <Text style={styles.poolTierRiders}>{tier.label}</Text>
                     </View>
-                    <Text style={[styles.poolTierFare, isSelected && { color: colors.primary, fontWeight: '900' }]}>
-                      PKR {tierFare}
-                    </Text>
+                    <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
                     <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
                       <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
                         -{savePct}%
                       </Text>
                     </View>
-                  </Pressable>
+                  </View>
                 );
               })}
             </View>
 
-            <Text style={styles.poolHint}>
-              💡 Tap a row to set your offered fare · adjust below to attract more riders
-            </Text>
-
-            {/* Fare adjuster */}
-            <View style={styles.poolFareAdjRow}>
+            {/* Gender preference */}
+            <View style={styles.genderRow}>
               <Pressable
-                style={styles.poolFareAdjBtn}
-                onPress={() => setPoolFare(f => Math.max(poolFareFor(fare, 3), f - 10))}
+                style={[styles.genderOpt, poolGender === 'same' && styles.genderOptActive]}
+                onPress={() => setPoolGender('same')}
               >
-                <Text style={styles.poolFareAdjBtnText}>−</Text>
+                <Text style={styles.genderOptIcon}>🔒</Text>
+                <View>
+                  <Text style={[styles.genderOptTitle, poolGender === 'same' && { color: colors.primary }]}>
+                    Same gender
+                  </Text>
+                  <Text style={styles.genderOptSub}>Safer · default</Text>
+                </View>
               </Pressable>
-              <View style={{ alignItems: 'center', flex: 1 }}>
-                <Text style={styles.poolFareAdjValue}>PKR {poolFare}</Text>
-                <Text style={styles.poolFareAdjLabel}>your offered fare / seat</Text>
-              </View>
               <Pressable
-                style={styles.poolFareAdjBtn}
-                onPress={() => setPoolFare(f => Math.min(fare, f + 10))}
+                style={[styles.genderOpt, poolGender === 'any' && styles.genderOptActive]}
+                onPress={() => {
+                  if (poolGender !== 'any') {
+                    Alert.alert(
+                      'Mixed gender ride?',
+                      'You will travel with passengers of any gender.',
+                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Accept', onPress: () => setPoolGender('any') }],
+                    );
+                  } else setPoolGender('same');
+                }}
               >
-                <Text style={styles.poolFareAdjBtnText}>+</Text>
+                <Text style={styles.genderOptIcon}>👥</Text>
+                <View>
+                  <Text style={[styles.genderOptTitle, poolGender === 'any' && { color: colors.primary }]}>
+                    Any gender
+                  </Text>
+                  <Text style={styles.genderOptSub}>More options</Text>
+                </View>
               </Pressable>
             </View>
 
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
             <Pressable
-              style={styles.poolFindBtn}
-              onPress={() =>
-                router.push({
-                  pathname: '/passenger/pool-ride' as Parameters<typeof router.push>[0],
-                  params: { preDestination: dropoff.trim(), preOfferedFare: String(poolFare) },
-                })
-              }
+              style={[styles.poolFindBtn, poolLoading && { opacity: 0.7 }]}
+              onPress={startPoolRide}
+              disabled={poolLoading}
             >
-              <Text style={styles.poolFindBtnText}>Find Pool Ride →</Text>
+              <Text style={styles.poolFindBtnText}>
+                {poolLoading ? 'Finding riders…' : 'Start Pool Ride →'}
+              </Text>
             </Pressable>
           </View>
 
@@ -991,6 +1016,24 @@ const styles = StyleSheet.create({
   },
   poolTierSavingBest: { backgroundColor: `${colors.primary}20` },
   poolTierSavingText: { fontSize: 11, fontWeight: '900', color: '#4ade80' },
+
+  // Gender toggle inside pool card
+  genderRow: { flexDirection: 'row', gap: 8 },
+  genderOpt: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#131f0a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    padding: 11,
+  },
+  genderOptActive:  { borderColor: colors.primary, backgroundColor: '#1a2e0f' },
+  genderOptIcon:    { fontSize: 18 },
+  genderOptTitle:   { fontSize: 12, fontWeight: '700', color: colors.text },
+  genderOptSub:     { fontSize: 10, color: colors.muted, fontWeight: '600', marginTop: 1 },
 
   poolHint: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 15 },
 
