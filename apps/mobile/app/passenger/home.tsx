@@ -119,10 +119,10 @@ export default function PassengerHome() {
       >
         <View style={styles.dragIndicator} />
 
-        {/* ── Single search bar — always leads to pool ride ── */}
+        {/* ── Single search bar — destination first, then pool/solo choice ── */}
         <Pressable
           style={styles.searchBar}
-          onPress={() => router.push('/passenger/pool-ride')}
+          onPress={() => router.push('/passenger/booking')}
         >
           <View style={styles.searchBarLeft}>
             <Text style={styles.searchBarIcon}>🔍</Text>

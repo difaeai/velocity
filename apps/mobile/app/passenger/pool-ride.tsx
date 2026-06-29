@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   collection,
   doc,
@@ -307,9 +307,10 @@ export default function PoolRideScreen() {
   const router = useRouter();
   const { user }                                         = useAuth();
   const { coords, address: pickupAddress }               = useCurrentLocation();
+  const params = useLocalSearchParams<{ preDestination?: string; preOfferedFare?: string }>();
 
   const [step, setStep]               = useState<Step>('browse');
-  const [destination, setDestination] = useState('');
+  const [destination, setDestination] = useState(params.preDestination ?? '');
   const [genderPref, setGenderPref]   = useState<'same' | 'any'>('same');
   const [userGender, setUserGender]   = useState('unspecified');
   const [selectedCategory, setSelectedCategory] = useState('all');

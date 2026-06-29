@@ -72,6 +72,7 @@ export default function Booking() {
   // Details state
   const [rideType, setRideType] = useState<RideType>('ac');
   const [fare, setFare] = useState<number>(BASE_FARES.ac);
+  const [poolFare, setPoolFare] = useState<number>(poolPerSeat(BASE_FARES.ac, 4));
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
@@ -87,7 +88,9 @@ export default function Booking() {
 
   function selectRide(rt: RideType) {
     setRideType(rt);
-    setFare(BASE_FARES[rt]);
+    const base = BASE_FARES[rt];
+    setFare(base);
+    setPoolFare(poolPerSeat(base, 4));
   }
 
   function bumpFare(delta: number) {
@@ -291,20 +294,17 @@ export default function Booking() {
     );
   }
 
-  // STAGE 2: CATEGORY & FARE SELECTION
+  // STAGE 2: RIDE TYPE SELECTION — Pool first, then solo
+  const savePct = fare > poolFare ? Math.round(((fare - poolFare) / fare) * 100) : 0;
+
   return (
     <View style={styles.safe}>
-      {/* 1. Full-Screen Dark Map Representation */}
+      {/* Abstract map background */}
       <View style={styles.mapContainer}>
-        {/* Abstract Map Roads */}
         <View style={[styles.road, { top: 140, left: -50, width: '120%', transform: [{ rotate: '-15deg' }] }]} />
         <View style={[styles.road, { top: 280, left: -50, width: '120%', transform: [{ rotate: '25deg' }] }]} />
         <View style={[styles.road, { top: 480, left: -50, width: '120%', transform: [{ rotate: '-5deg' }] }]} />
-        
-        {/* Route Connection Graphic */}
         <View style={styles.routeLineGraphic} />
-
-        {/* Mock Map Pins for Pickup and Dropoff */}
         <View style={[styles.mapPinPoint, { top: 150, left: 130 }]}>
           <Text style={styles.pinPointEmoji}>👤</Text>
         </View>
@@ -313,13 +313,12 @@ export default function Booking() {
         </View>
       </View>
 
-      {/* 2. Top Floating Routing Details Card (from Image 4) */}
+      {/* Top: route summary */}
       <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
         <View style={styles.floatingHeaderBar}>
           <Pressable style={styles.floatingBackBtn} onPress={() => setStage('route')}>
             <Text style={styles.floatingBackTxt}>←</Text>
           </Pressable>
-
           <View style={styles.floatingRouteCard}>
             <View style={styles.floatingRoutePoint}>
               <Text style={styles.floatingIconBlue}>👤</Text>
@@ -338,130 +337,119 @@ export default function Booking() {
         </View>
       </SafeAreaView>
 
-      {/* 3. Bottom Slide-up Sheet */}
+      {/* Bottom sheet */}
       <View style={styles.bottomRideSheet}>
         <View style={styles.dragIndicator} />
-        
-        {/* Selected/Active Category Details */}
-        <View style={styles.activeCategoryBox}>
-          <View style={styles.activeCategoryMeta}>
-            <View style={styles.categoryTitleRow}>
-              <Text style={styles.categoryEmojiBig}>🚗</Text>
+
+        <ScrollView
+          style={styles.alternativeList}
+          contentContainerStyle={{ paddingBottom: 12 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ─── POOL RIDE — PRIMARY ─── */}
+          <View style={styles.poolPrimaryCard}>
+            <View style={styles.poolPrimaryTopRow}>
               <View style={{ flex: 1 }}>
-                <View style={styles.categoryNameRow}>
-                  <Text style={styles.categoryNameBig}>{RIDE_TYPE_LABELS[rideType]}</Text>
-                  <Text style={styles.infoIconCircle}>ⓘ</Text>
-                  <Text style={styles.editPencil}>✏️</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <Text style={styles.poolPrimaryTitle}>Pool Ride</Text>
+                  <View style={styles.poolPrimaryBadge}>
+                    <Text style={styles.poolPrimaryBadgeText}>RECOMMENDED</Text>
+                  </View>
                 </View>
-                <Text style={styles.categorySubtitleBig}>👤 {seats} seat{seats > 1 ? 's' : ''}</Text>
-                <Text style={styles.categoryDescriptionBig}>
-                  Fare range PKR {bounds.min}–{bounds.max}
-                </Text>
+                <Text style={styles.poolPrimarySub}>Share your route · Pay less · Travel smart</Text>
               </View>
+              <Text style={{ fontSize: 28 }}>🔀</Text>
             </View>
+
+            {/* Fare adjuster */}
+            <View style={styles.poolFareAdjRow}>
+              <Pressable
+                style={styles.poolFareAdjBtn}
+                onPress={() => setPoolFare(f => Math.max(50, f - 10))}
+              >
+                <Text style={styles.poolFareAdjBtnText}>−</Text>
+              </Pressable>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.poolFareAdjValue}>PKR {poolFare}</Text>
+                <Text style={styles.poolFareAdjLabel}>your offer per seat</Text>
+              </View>
+              <Pressable
+                style={styles.poolFareAdjBtn}
+                onPress={() => setPoolFare(f => Math.min(fare, f + 10))}
+              >
+                <Text style={styles.poolFareAdjBtnText}>+</Text>
+              </Pressable>
+            </View>
+
+            {savePct > 0 && (
+              <Text style={styles.poolSavingsHint}>
+                Solo costs PKR {fare} → you save <Text style={{ color: colors.primary, fontWeight: '900' }}>{savePct}%</Text> per seat with pool
+              </Text>
+            )}
+
+            <Pressable
+              style={styles.poolFindBtn}
+              onPress={() =>
+                router.push({
+                  pathname: '/passenger/pool-ride' as Parameters<typeof router.push>[0],
+                  params: { preDestination: dropoff.trim(), preOfferedFare: String(poolFare) },
+                })
+              }
+            >
+              <Text style={styles.poolFindBtnText}>Find Pool Ride →</Text>
+            </Pressable>
           </View>
 
-          {/* Stepper adjustment for the fare */}
-          <View style={styles.activeFareStepper}>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-              <Text style={styles.stepperText}>−</Text>
-            </Pressable>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-              <Text style={styles.stepperLabel}>Recommended fare</Text>
-            </View>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-              <Text style={styles.stepperText}>+</Text>
-            </Pressable>
+          {/* ─── OR BOOK SOLO ─── */}
+          <View style={styles.orDivider}>
+            <View style={styles.orDividerLine} />
+            <Text style={styles.orDividerText}>OR BOOK SOLO</Text>
+            <View style={styles.orDividerLine} />
           </View>
-        </View>
 
-        {/* Scrollable list of alternative categories */}
-        <ScrollView style={styles.alternativeList} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
-          {RIDE_TYPES.filter(rt => rt !== rideType).map((rt) => (
-            <Pressable key={rt} style={styles.categoryRow} onPress={() => selectRide(rt)}>
+          {/* Car type list */}
+          {RIDE_TYPES.map((rt) => (
+            <Pressable
+              key={rt}
+              style={[styles.categoryRow, rideType === rt && styles.categoryRowActive]}
+              onPress={() => selectRide(rt)}
+            >
               <View style={styles.categoryRowLeft}>
                 <Text style={styles.categoryEmojiSmall}>
                   {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
                 </Text>
                 <View>
-                  <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
+                  <Text style={[styles.categoryNameSmall, rideType === rt && { color: colors.primary }]}>
+                    {RIDE_TYPE_LABELS[rt]}
+                  </Text>
                   <Text style={styles.categorySubSmall}>
                     PKR {fareBounds(rt).min}–{fareBounds(rt).max}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
+              <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                <Text style={[styles.categoryFareSmall, rideType === rt && { color: colors.primary, fontWeight: '900' }]}>
+                  PKR {BASE_FARES[rt]}
+                </Text>
+                {rideType === rt && <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>selected ✓</Text>}
+              </View>
             </Pressable>
           ))}
 
-          {/* ── Pool Ride Incentive Banner ── */}
-          {(() => {
-            const riders4   = poolPerSeat(fare, 4);
-            const riders3   = poolPerSeat(fare, 3);
-            const driverSolo = fare;
-            const driver4    = poolDriverTotal(fare, 4);
-            const savePct    = Math.round(((fare - riders4) / fare) * 100);
-            const earnExtra  = Math.round(((driver4 - driverSolo) / driverSolo) * 100);
-            return (
-              <Pressable
-                style={styles.poolBanner}
-                onPress={() => router.push('/passenger/pool-ride')}
-              >
-                {/* Top row: title + badge */}
-                <View style={styles.poolBannerTop}>
-                  <Text style={styles.poolBannerTitle}>🔀 Ride Sharing (Pool)</Text>
-                  <View style={styles.poolSaveBadge}>
-                    <Text style={styles.poolSaveBadgeText}>Save up to {savePct}%</Text>
-                  </View>
-                </View>
+          {/* Solo fare stepper */}
+          <View style={styles.soloFareStepper}>
+            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+              <Text style={styles.stepperText}>−</Text>
+            </Pressable>
+            <View style={{ alignItems: 'center', flex: 1 }}>
+              <Text style={styles.stepperFareValue}>PKR {fare}</Text>
+              <Text style={styles.stepperLabel}>your offer · {RIDE_TYPE_LABELS[rideType]}</Text>
+            </View>
+            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+              <Text style={styles.stepperText}>+</Text>
+            </Pressable>
+          </View>
 
-                {/* Two columns: passenger | driver */}
-                <View style={styles.poolBannerCols}>
-                  {/* Left: passenger */}
-                  <View style={styles.poolBannerCol}>
-                    <Text style={styles.poolColIcon}>👤</Text>
-                    <Text style={styles.poolColHeading}>You pay</Text>
-                    <View style={styles.poolFareComparison}>
-                      <Text style={styles.poolFareBefore}>PKR {fare}</Text>
-                      <Text style={styles.poolFareArrow}> → </Text>
-                      <Text style={styles.poolFareAfter}>PKR {riders4}</Text>
-                    </View>
-                    <Text style={styles.poolColSub}>
-                      with 4 riders · <Text style={{ color: '#4ade80' }}>−{savePct}%</Text>
-                    </Text>
-                    <Text style={styles.poolColTip}>
-                      PKR {riders3} with 3 riders
-                    </Text>
-                  </View>
-
-                  <View style={styles.poolBannerDivider} />
-
-                  {/* Right: driver */}
-                  <View style={styles.poolBannerCol}>
-                    <Text style={styles.poolColIcon}>🚗</Text>
-                    <Text style={styles.poolColHeading}>Driver earns</Text>
-                    <View style={styles.poolFareComparison}>
-                      <Text style={styles.poolFareBefore}>PKR {driverSolo}</Text>
-                      <Text style={styles.poolFareArrow}> → </Text>
-                      <Text style={[styles.poolFareAfter, { color: '#fbbf24' }]}>PKR {driver4}</Text>
-                    </View>
-                    <Text style={styles.poolColSub}>
-                      with 4 riders · <Text style={{ color: '#fbbf24' }}>+{earnExtra}%</Text>
-                    </Text>
-                    <Text style={styles.poolColTip}>Same trip, more income</Text>
-                  </View>
-                </View>
-
-                {/* CTA */}
-                <View style={styles.poolBannerCTA}>
-                  <Text style={styles.poolBannerCTAText}>Try Pool Ride →</Text>
-                </View>
-              </Pressable>
-            );
-          })()}
-
-          {/* Notice Banner */}
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
             <Text style={styles.taxNoticeText}>
@@ -470,9 +458,8 @@ export default function Booking() {
           </View>
         </ScrollView>
 
-        {/* Footer controls */}
+        {/* Footer: solo booking controls */}
         <View style={styles.sheetActionsFooter}>
-          {/* Payment method toggle */}
           <View style={styles.paymentToggleRow}>
             <Pressable
               style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
@@ -490,9 +477,7 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* Option toggles row */}
           <View style={styles.optionTogglesRow}>
-            {/* Female driver preference */}
             <Pressable style={styles.optionToggle} onPress={() => setPreferFemale(v => !v)}>
               <Text style={styles.optionToggleIcon}>👩</Text>
               <Text style={[styles.optionToggleLabel, preferFemale && { color: colors.primary }]}>
@@ -502,7 +487,6 @@ export default function Booking() {
                 <View style={[styles.toggleSwitchKnobSmall, preferFemale && styles.toggleKnobOn]} />
               </View>
             </Pressable>
-            {/* Promo code */}
             <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
               <Text style={styles.optionToggleIcon}>🎟️</Text>
               <Text style={[styles.optionToggleLabel, promoCode && { color: colors.primary }]}>
@@ -511,7 +495,6 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* Promo code input */}
           {showPromo && (
             <View style={styles.promoInputRow}>
               <TextInput
@@ -544,7 +527,9 @@ export default function Booking() {
             disabled={loading}
           >
             <Text style={styles.findDriverButtonText}>
-              {loading ? 'Booking...' : `Find a driver · PKR ${fare}${paymentMethod === 'cash' ? ' cash' : ' wallet'}`}
+              {loading
+                ? 'Booking...'
+                : `Find Solo Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
             </Text>
           </Pressable>
         </View>
@@ -905,6 +890,83 @@ const styles = StyleSheet.create({
     borderColor: '#2d2f2f',
     paddingTop: 10,
   },
+  // ── Pool ride primary card ──────────────────────────────────────────────────
+  poolPrimaryCard: {
+    backgroundColor: '#0a1f05',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    padding: 16,
+    gap: 14,
+    marginBottom: 4,
+  },
+  poolPrimaryTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolPrimaryTitle:  { fontSize: 20, fontWeight: '900', color: colors.primary },
+  poolPrimaryBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  poolPrimaryBadgeText: { color: '#000', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  poolPrimarySub:    { fontSize: 12, color: '#8a8c8c', fontWeight: '600' },
+  poolFareAdjRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#131f0a',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    padding: 12,
+    gap: 8,
+  },
+  poolFareAdjBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolFareAdjBtnText: { fontSize: 20, fontWeight: '900', color: '#000', lineHeight: 24 },
+  poolFareAdjValue:   { fontSize: 22, fontWeight: '900', color: colors.primary },
+  poolFareAdjLabel:   { fontSize: 11, color: '#8a8c8c', fontWeight: '600', marginTop: 2 },
+  poolSavingsHint:    { fontSize: 11, color: '#8a8c8c', textAlign: 'center', lineHeight: 16 },
+  poolFindBtn: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolFindBtnText: { fontSize: 15, fontWeight: '900', color: '#000' },
+
+  // ── OR divider ──────────────────────────────────────────────────────────────
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 4,
+  },
+  orDividerLine: { flex: 1, height: 1, backgroundColor: '#2d2f2f' },
+  orDividerText: { fontSize: 11, fontWeight: '800', color: '#8a8c8c', letterSpacing: 1 },
+
+  // ── Category row active state ───────────────────────────────────────────────
+  categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
+
+  // ── Solo fare stepper ───────────────────────────────────────────────────────
+  soloFareStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#212222',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    padding: 12,
+    gap: 8,
+    marginTop: 4,
+  },
+
   activeCategoryBox: {
     paddingHorizontal: 20,
     paddingBottom: 14,
