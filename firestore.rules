@@ -54,13 +54,19 @@ service cloud.firestore {
     // or are server-only.
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      // Direct client creation is disabled; the backend creates the profile.
-      allow create: if false;
+      // Users create their own profile during onboarding (first sign-in).
+      // Restricted to safe fields only; role is forced to 'passenger'.
+      allow create: if isOwner(userId)
+                    && request.resource.data.uid == userId
+                    && request.resource.data.role == 'passenger'
+                    && request.resource.data.keys().hasOnly([
+                         'uid', 'phone', 'name', 'gender', 'dob', 'age',
+                         'role', 'profileComplete', 'createdAt', 'lastActive'
+                       ]);
       allow update: if isOwner(userId)
-                    && onlyChanges(['displayName', 'photoURL', 'gender', 'fcmToken', 'updatedAt'])
-                    && request.resource.data.gender in ['male', 'female', 'unspecified'];
+                    && onlyChanges(['name', 'gender', 'dob', 'age', 'photoURL', 'fcmToken', 'lastActive', 'updatedAt']);
       allow update: if isAdmin();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // ----- drivers/{uid} ---------------------------------------------------
