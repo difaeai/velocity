@@ -77,7 +77,7 @@ function roundTo15(time: string): string {
   const [hStr, mStr] = time.split(':');
   const h = parseInt(hStr, 10);
   const m = parseInt(mStr, 10);
-  const rounded = Math.round(m / 15) * 15;
+  const rounded = Math.ceil(m / 15) * 15;
   if (rounded === 60) return `${String(h + 1).padStart(2, '0')}:00`;
   return `${String(h).padStart(2, '0')}:${String(rounded).padStart(2, '0')}`;
 }

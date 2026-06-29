@@ -8,7 +8,11 @@ export default defineConfig({
     hookTimeout: 30000,
     reporters: ['verbose'],
     setupFiles: ['./src/travelMate/__tests__/setup.ts'],
-    include: ['src/travelMate/__tests__/**/*.test.ts'],
+    include: [
+      'src/travelMate/__tests__/**/*.test.ts',
+      'src/poolRideRequests/__tests__/**/*.test.ts',
+      'src/commute/__tests__/**/*.test.ts',
+    ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.
     pool: 'forks',
