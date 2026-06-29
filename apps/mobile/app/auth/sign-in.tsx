@@ -50,10 +50,16 @@ export default function SignIn() {
 
   async function sendOtp() {
     setError(null);
-    const cleaned = phone.trim().replace(/\s/g, '');
-    const withPrefix = cleaned.startsWith('+') ? cleaned : `+92${cleaned.replace(/^0/, '')}`;
-    if (withPrefix.length < 10) {
-      setError('Enter a valid Pakistani mobile number.');
+    // Strip everything except digits
+    let digits = phone.trim().replace(/\D/g, '');
+    // Remove country code if user typed it (e.g. 923001234567 or 9203001234567)
+    if (digits.startsWith('92') && digits.length > 10) digits = digits.slice(2);
+    // Remove leading zero (e.g. 03001234567 → 3001234567)
+    if (digits.startsWith('0')) digits = digits.slice(1);
+    const withPrefix = `+92${digits}`;
+    // Pakistani mobile numbers: +92 3XX XXXXXXX = 13 chars total
+    if (digits.length !== 10 || !digits.startsWith('3')) {
+      setError('Enter a valid Pakistani mobile number (e.g. 3001234567).');
       return;
     }
     if (!recaptchaRef.current) {
@@ -66,11 +72,14 @@ export default function SignIn() {
       setConfirmation(result);
       setPhoneStep('enter_otp');
     } catch (e) {
-      const code = e instanceof FirebaseError ? e.code : '';
+      const code = e instanceof FirebaseError ? e.code : 'unknown';
+      const msg  = e instanceof FirebaseError ? e.message : String(e);
       if (code === 'auth/invalid-phone-number')       setError('Invalid phone number.');
       else if (code === 'auth/too-many-requests')     setError('Too many attempts. Try again later.');
       else if (code === 'auth/captcha-check-failed')  setError('Captcha failed. Try again.');
-      else setError('Failed to send OTP. Check your number and try again.');
+      else if (code === 'auth/app-not-authorized')    setError('App not authorized for Phone Auth. Enable Phone Auth in Firebase console → Authentication → Sign-in method.');
+      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded for this project.');
+      else setError(`OTP failed [${code}]: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -170,12 +179,16 @@ export default function SignIn() {
                       </View>
                       <TextInput
                         value={phone}
-                        onChangeText={setPhone}
+                        onChangeText={(t) => {
+                          // Strip all non-digits, remove leading zeros in real time
+                          const digits = t.replace(/\D/g, '').replace(/^0+/, '');
+                          setPhone(digits);
+                        }}
                         keyboardType="phone-pad"
                         placeholder="3001234567"
                         placeholderTextColor={colors.muted}
                         style={[styles.input, styles.phoneInput]}
-                        maxLength={11}
+                        maxLength={10}
                       />
                     </View>
                     <Text style={styles.hint}>Enter your number without the leading 0, e.g. 3001234567</Text>

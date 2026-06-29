@@ -1,23 +1,33 @@
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { doc, getDoc } from 'firebase/firestore';
 
 import { useAuth } from '../src/auth/AuthContext';
+import { db } from '../src/firebase';
 import { colors } from '../src/config';
 
 /** Entry route: sends the user to the right experience based on auth + role. */
 export default function Index() {
   const { initializing, user, role } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [profileChecked, setProfileChecked] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 2500); // Display the splash screen for 2.5 seconds
+    const timer = setTimeout(() => setShowSplash(false), 2500);
     return () => clearTimeout(timer);
   }, []);
 
-  if (initializing || showSplash) {
+  useEffect(() => {
+    if (!user) { setProfileChecked(true); return; }
+    getDoc(doc(db, 'users', user.uid)).then((snap) => {
+      setProfileComplete(snap.exists() && snap.data()?.profileComplete === true);
+      setProfileChecked(true);
+    }).catch(() => { setProfileChecked(true); });
+  }, [user]);
+
+  if (initializing || showSplash || !profileChecked) {
     return (
       <View style={styles.container}>
         {/* Logo badge */}
@@ -38,6 +48,7 @@ export default function Index() {
   }
 
   if (!user) return <Redirect href="/auth/sign-in" />;
+  if (!profileComplete && role !== 'driver') return <Redirect href="/onboarding" />;
   if (role === 'driver') return <Redirect href="/driver/home" />;
   return <Redirect href="/passenger/home" />;
 }

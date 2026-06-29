@@ -14,22 +14,21 @@ export interface PlaceDetail {
   address: string;
 }
 
-const AUTOCOMPLETE_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-const DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
-
-// Pakistan bounding box for biasing results
-const PAKISTAN_LOCATION = '30.3753,69.3451';
-const PAKISTAN_RADIUS = 1500000; // 1500 km covers all of Pakistan
+// Places API (New) endpoints — v1
+const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
+const DETAILS_BASE_URL = 'https://places.googleapis.com/v1/places';
 
 export function usePlacesAutocomplete(input: string, sessionToken: string) {
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [apiStatus, setApiStatus] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const trimmed = input.trim();
     if (trimmed.length < 2) {
       setPredictions([]);
+      setApiStatus(null);
       return;
     }
 
@@ -38,34 +37,60 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          input: trimmed,
-          key: GOOGLE_MAPS_API_KEY,
-          sessiontoken: sessionToken,
-          components: 'country:pk',
-          location: PAKISTAN_LOCATION,
-          radius: String(PAKISTAN_RADIUS),
-          language: 'en',
+        const res = await fetch(AUTOCOMPLETE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+          },
+          body: JSON.stringify({
+            input: trimmed,
+            sessionToken,
+            includedRegionCodes: ['pk'],
+            languageCode: 'en',
+            locationBias: {
+              circle: {
+                center: { latitude: 30.3753, longitude: 69.3451 },
+                radius: 1500000.0,
+              },
+            },
+          }),
         });
-        const res = await fetch(`${AUTOCOMPLETE_URL}?${params}`);
+
         const data = await res.json();
-        if (data.status === 'OK' && Array.isArray(data.predictions)) {
-          setPredictions(
-            data.predictions.map((p: {
-              place_id: string;
-              structured_formatting: { main_text: string; secondary_text: string };
-              description: string;
-            }) => ({
-              placeId: p.place_id,
-              mainText: p.structured_formatting?.main_text ?? p.description,
-              secondaryText: p.structured_formatting?.secondary_text ?? '',
-              fullText: p.description,
-            })),
-          );
-        } else {
+
+        if (!res.ok) {
+          setApiStatus(data?.error?.status ?? `HTTP_${res.status}`);
           setPredictions([]);
+          return;
         }
+
+        setApiStatus('OK');
+        const suggestions = data.suggestions ?? [];
+        setPredictions(
+          suggestions
+            .filter((s: { placePrediction?: unknown }) => s.placePrediction)
+            .map((s: {
+              placePrediction: {
+                placeId: string;
+                text?: { text: string };
+                structuredFormat?: {
+                  mainText?: { text: string };
+                  secondaryText?: { text: string };
+                };
+              };
+            }) => {
+              const p = s.placePrediction;
+              return {
+                placeId: p.placeId,
+                mainText: p.structuredFormat?.mainText?.text ?? p.text?.text ?? '',
+                secondaryText: p.structuredFormat?.secondaryText?.text ?? '',
+                fullText: p.text?.text ?? '',
+              };
+            }),
+        );
       } catch {
+        setApiStatus('NETWORK_ERROR');
         setPredictions([]);
       } finally {
         setLoading(false);
@@ -77,24 +102,26 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
     };
   }, [input, sessionToken]);
 
-  return { predictions, loading };
+  return { predictions, loading, apiStatus };
 }
 
 export async function fetchPlaceDetail(placeId: string, sessionToken: string): Promise<PlaceDetail | null> {
   try {
-    const params = new URLSearchParams({
-      place_id: placeId,
-      key: GOOGLE_MAPS_API_KEY,
-      sessiontoken: sessionToken,
-      fields: 'geometry,formatted_address',
-    });
-    const res = await fetch(`${DETAILS_URL}?${params}`);
+    const res = await fetch(
+      `${DETAILS_BASE_URL}/${placeId}?sessionToken=${sessionToken}`,
+      {
+        headers: {
+          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+          'X-Goog-FieldMask': 'location,formattedAddress',
+        },
+      },
+    );
     const data = await res.json();
-    if (data.status === 'OK' && data.result?.geometry?.location) {
+    if (res.ok && data.location) {
       return {
-        lat: data.result.geometry.location.lat,
-        lng: data.result.geometry.location.lng,
-        address: data.result.formatted_address ?? '',
+        lat: data.location.latitude,
+        lng: data.location.longitude,
+        address: data.formattedAddress ?? '',
       };
     }
     return null;

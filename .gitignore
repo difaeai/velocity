@@ -29,7 +29,9 @@ service-account*.json
 .env.*
 !.env.example
 google-services.json
+!apps/mobile/google-services.json
 GoogleService-Info.plist
+!apps/mobile/GoogleService-Info.plist
 
 # Expo / React Native
 .expo/
