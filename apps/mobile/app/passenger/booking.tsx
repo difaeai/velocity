@@ -140,7 +140,7 @@ export default function Booking() {
     }
   }
 
-  const { predictions, loading: placesLoading } = usePlacesAutocomplete(dropoff, sessionToken);
+  const { predictions, loading: placesLoading, apiStatus } = usePlacesAutocomplete(dropoff, sessionToken);
   const query = dropoff.trim().toLowerCase();
   const filteredRecents = query
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
@@ -246,6 +246,16 @@ export default function Booking() {
               </View>
             </Pressable>
           ))}
+
+          {/* API error hint */}
+          {apiStatus && apiStatus !== 'OK' && apiStatus !== 'ZERO_RESULTS' && query.length > 1 && (
+            <View style={styles.emptyResults}>
+              <Text style={[styles.emptyResultsText, { color: '#ef4444' }]}>
+                Places API: {apiStatus}
+                {apiStatus === 'REQUEST_DENIED' ? ' — Enable Places API in Google Cloud Console and check your API key restrictions.' : ''}
+              </Text>
+            </View>
+          )}
 
           {/* Empty / fallback */}
           {query && predictions.length === 0 && filteredRecents.length === 0 && !placesLoading && (
