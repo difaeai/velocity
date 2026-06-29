@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import { comingSoon } from '../../src/ui/components';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
+import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
 import {
   BASE_FARES,
   RIDE_TYPE_LABELS,
@@ -47,6 +49,10 @@ export default function Booking() {
   const [stage, setStage] = useState<'route' | 'details'>('route');
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
+  // Resolved coords for the selected dropoff place
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // Session token groups autocomplete + detail calls for billing purposes
+  const sessionToken = useRef(Math.random().toString(36).slice(2)).current;
 
   // Prefill the pickup with the rider's real (reverse-geocoded) address once we
   // have it, unless they've already typed something.
@@ -79,8 +85,18 @@ export default function Booking() {
     setFare((f) => Math.min(bounds.max, Math.max(bounds.min, f + delta)));
   }
 
+  async function selectPrediction(pred: PlacePrediction) {
+    setDropoff(pred.fullText);
+    setDropoffCoords(null);
+    setStage('details');
+    // Fetch real lat/lng in the background; used when creating the trip
+    const detail = await fetchPlaceDetail(pred.placeId, sessionToken);
+    if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
+  }
+
   function selectLocation(locName: string) {
     setDropoff(locName);
+    setDropoffCoords(null);
     setStage('details');
   }
 
@@ -102,6 +118,7 @@ export default function Booking() {
       // The backend stores coordinates but matches by the public request feed,
       // not distance, and there is no geocoder yet — so the destination carries
       // the rider's coordinates and the typed address as the meaningful field.
+      const destCoords = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
       const res = await api.createTrip({
         rideType,
         offeredFare: fare,
@@ -112,7 +129,7 @@ export default function Booking() {
         preferFemaleDriver: preferFemale,
         promoCode: promoCode.trim() || undefined,
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
-        dropoff: { lat: coords.lat, lng: coords.lng, address: dropoff.trim() },
+        dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
       });
       router.replace(`/passenger/trip/${res.tripId}`);
     } catch (e) {
@@ -123,6 +140,7 @@ export default function Booking() {
     }
   }
 
+  const { predictions, loading: placesLoading } = usePlacesAutocomplete(dropoff, sessionToken);
   const query = dropoff.trim().toLowerCase();
   const filteredRecents = query
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
@@ -189,40 +207,59 @@ export default function Booking() {
         {/* Section header */}
         <View style={styles.tabsContainer}>
           <Text style={styles.sectionHeader}>
-            {query ? 'Recent matches' : 'Recent destinations'}
+            {placesLoading ? 'Searching...' : (query && predictions.length > 0 ? 'Suggestions' : 'Recent destinations')}
           </Text>
+          {placesLoading ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} /> : null}
         </View>
 
-        {/* Results: the rider's own recent destinations (real data) */}
         <ScrollView style={styles.resultsScroll} keyboardShouldPersistTaps="handled">
-          {filteredRecents.length > 0 ? (
-            filteredRecents.map((loc) => (
-              <Pressable
-                key={loc.address}
-                style={styles.resultItem}
-                onPress={() => selectLocation(loc.address)}
-              >
-                <View style={styles.resultIconCircle}>
-                  <Text style={styles.resultIcon}>🕒</Text>
-                </View>
-                <View style={styles.resultMeta}>
-                  <Text style={styles.resultName} numberOfLines={1}>{loc.address}</Text>
-                  <Text style={styles.resultAddress}>Recent destination</Text>
-                </View>
-              </Pressable>
-            ))
-          ) : (
+          {/* Google Places suggestions */}
+          {query && predictions.length > 0 && predictions.map((pred) => (
+            <Pressable
+              key={pred.placeId}
+              style={styles.resultItem}
+              onPress={() => selectPrediction(pred)}
+            >
+              <View style={styles.resultIconCircle}>
+                <Text style={styles.resultIcon}>📍</Text>
+              </View>
+              <View style={styles.resultMeta}>
+                <Text style={styles.resultName} numberOfLines={1}>{pred.mainText}</Text>
+                <Text style={styles.resultAddress} numberOfLines={1}>{pred.secondaryText}</Text>
+              </View>
+            </Pressable>
+          ))}
+
+          {/* Recent destinations (shown when no Places results or no query) */}
+          {(!query || predictions.length === 0) && filteredRecents.map((loc) => (
+            <Pressable
+              key={loc.address}
+              style={styles.resultItem}
+              onPress={() => selectLocation(loc.address)}
+            >
+              <View style={styles.resultIconCircle}>
+                <Text style={styles.resultIcon}>🕒</Text>
+              </View>
+              <View style={styles.resultMeta}>
+                <Text style={styles.resultName} numberOfLines={1}>{loc.address}</Text>
+                <Text style={styles.resultAddress}>Recent destination</Text>
+              </View>
+            </Pressable>
+          ))}
+
+          {/* Empty / fallback */}
+          {query && predictions.length === 0 && filteredRecents.length === 0 && !placesLoading && (
             <View style={styles.emptyResults}>
-              <Text style={styles.emptyResultsText}>
-                {dropoff.trim()
-                  ? 'No saved match — continue with what you typed.'
-                  : 'Type where you want to go. Destinations from your past rides will appear here.'}
-              </Text>
-              {dropoff.trim().length > 0 ? (
-                <Pressable style={styles.useTypedBtn} onPress={() => selectLocation(dropoff.trim())}>
-                  <Text style={styles.useTypedBtnText}>Continue to “{dropoff.trim()}”</Text>
-                </Pressable>
-              ) : null}
+              <Text style={styles.emptyResultsText}>No results found. You can still continue with what you typed.</Text>
+              <Pressable style={styles.useTypedBtn} onPress={() => selectLocation(dropoff.trim())}>
+                <Text style={styles.useTypedBtnText}>{'Continue to "' + dropoff.trim() + '"'}</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {!query && recents.length === 0 && (
+            <View style={styles.emptyResults}>
+              <Text style={styles.emptyResultsText}>Type your destination above to search for places.</Text>
             </View>
           )}
         </ScrollView>
