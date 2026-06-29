@@ -59,6 +59,18 @@ export const adminApi = {
     { passengerId: string; banned: boolean },
     { ok: boolean }
   >('banPassenger'),
+  adminCreatePassenger: callable<
+    { displayName: string; email?: string; phone?: string; gender?: string; password?: string },
+    { ok: boolean; uid: string }
+  >('adminCreatePassenger'),
+  adminUpdatePassenger: callable<
+    { passengerId: string; displayName?: string; email?: string; gender?: string; role?: string },
+    { ok: boolean }
+  >('adminUpdatePassenger'),
+  adminDeletePassenger: callable<
+    { passengerId: string },
+    { ok: boolean }
+  >('adminDeletePassenger'),
   resolveDispute: callable<
     { disputeId: string; resolution: string; refundAmount?: number },
     { ok: boolean }

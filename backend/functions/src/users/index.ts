@@ -175,6 +175,120 @@ export const resolveDispute = onCall(async (req) => {
   return { ok: true };
 });
 
+// ── Admin passenger CRUD ───────────────────────────────────────────────────
+
+const adminCreatePassengerSchema = z.object({
+  displayName: z.string().min(1).max(120),
+  email:       z.string().email().optional(),
+  phone:       z.string().min(6).max(20).optional(),
+  gender:      z.enum(['male', 'female', 'other', 'unspecified']).optional(),
+  password:    z.string().min(6).max(64).optional(),
+}).refine(d => d.email || d.phone, { message: 'Provide email or phone.' });
+
+/** Admin-only: manually create a passenger account. */
+export const adminCreatePassenger = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = adminCreatePassengerSchema.safeParse(req.data);
+  if (!parsed.success) invalid(parsed.error.errors[0]?.message ?? 'Invalid input.');
+  const { displayName, email, phone, gender, password } = parsed.data;
+
+  // Create Firebase Auth account — onUserCreate trigger provisions Firestore doc
+  const userRecord = await auth.createUser({
+    displayName,
+    email:       email   ?? undefined,
+    phoneNumber: phone   ?? undefined,
+    password:    password ?? undefined,
+  });
+
+  // Patch gender if supplied (trigger sets 'unspecified' by default)
+  if (gender && gender !== 'unspecified') {
+    await db.doc(`users/${userRecord.uid}`).set(
+      { gender, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  }
+
+  await db.collection('auditLogs').add({
+    type: 'passenger.created',
+    actor: admin.uid,
+    targetUid: userRecord.uid,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('adminCreatePassenger', { actor: admin.uid, uid: userRecord.uid });
+  return { ok: true, uid: userRecord.uid };
+});
+
+const adminUpdatePassengerSchema = z.object({
+  passengerId: z.string().min(1).max(128),
+  displayName: z.string().min(1).max(120).optional(),
+  email:       z.string().email().optional(),
+  gender:      z.enum(['male', 'female', 'other', 'unspecified']).optional(),
+  role:        z.enum(['passenger', 'driver', 'admin']).optional(),
+});
+
+/** Admin-only: update a passenger's profile fields. */
+export const adminUpdatePassenger = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = adminUpdatePassengerSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Invalid update input.');
+  const { passengerId, displayName, email, gender, role } = parsed.data;
+
+  // Update Firebase Auth record
+  const authPatch: { displayName?: string; email?: string } = {};
+  if (displayName) authPatch.displayName = displayName;
+  if (email)       authPatch.email       = email;
+  if (Object.keys(authPatch).length) {
+    await auth.updateUser(passengerId, authPatch);
+  }
+
+  // Update Firestore profile
+  const firestorePatch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+  if (displayName) firestorePatch.displayName = displayName;
+  if (email)       firestorePatch.email       = email;
+  if (gender)      firestorePatch.gender      = gender;
+  await db.doc(`users/${passengerId}`).set(firestorePatch, { merge: true });
+
+  // Role change (updates custom claim)
+  if (role) await applyRole(passengerId, role);
+
+  await db.collection('auditLogs').add({
+    type: 'passenger.updated',
+    actor: admin.uid,
+    targetUid: passengerId,
+    changes: { displayName, email, gender, role },
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('adminUpdatePassenger', { actor: admin.uid, passengerId });
+  return { ok: true };
+});
+
+const adminDeletePassengerSchema = z.object({
+  passengerId: z.string().min(1).max(128),
+});
+
+/** Admin-only: permanently delete a passenger's Auth account + Firestore data. */
+export const adminDeletePassenger = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = adminDeletePassengerSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide passengerId.');
+  const { passengerId } = parsed.data;
+
+  // onUserDelete trigger handles Firestore cleanup
+  await auth.deleteUser(passengerId);
+
+  await db.collection('auditLogs').add({
+    type: 'passenger.deleted',
+    actor: admin.uid,
+    targetUid: passengerId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('adminDeletePassenger', { actor: admin.uid, passengerId });
+  return { ok: true };
+});
+
 /** Sets a user's custom claim + mirrors the role onto their profile doc. */
 export async function applyRole(targetUid: string, role: Role): Promise<void> {
   const existing = await auth.getUser(targetUid);

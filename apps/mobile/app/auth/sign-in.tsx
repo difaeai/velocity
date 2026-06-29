@@ -1,87 +1,115 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPhoneNumber,
-  type ConfirmationResult,
-} from 'firebase/auth';
+import { signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { FirebaseError } from 'firebase/app';
 
-import { auth } from '../../src/firebase';
-import { firebaseConfig } from '../../src/firebase';
+import { auth, firebaseConfig } from '../../src/firebase';
 import { colors } from '../../src/config';
 import { PrimaryButton } from '../../src/ui/components';
 
-type AuthMode = 'phone' | 'email';
-type PhoneStep = 'enter_phone' | 'enter_otp';
+type Step = 'enter_phone' | 'enter_otp';
+
+function stripPhone(raw: string): string {
+  let d = raw.replace(/\D/g, '');
+  if (d.startsWith('92') && d.length > 10) d = d.slice(2);
+  d = d.replace(/^0+/, '');
+  return d;
+}
 
 export default function SignIn() {
-  // Auth mode toggle
-  const [authMode, setAuthMode] = useState<AuthMode>('phone');
-
-  // Phone OTP state
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
-  const [phone, setPhone]                       = useState('');
-  const [otp, setOtp]                           = useState('');
-  const [phoneStep, setPhoneStep]               = useState<PhoneStep>('enter_phone');
-  const [confirmation, setConfirmation]         = useState<ConfirmationResult | null>(null);
+  const otpRef       = useRef<TextInput>(null);
 
-  // Email state
-  const [emailMode, setEmailMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
+  const [step, setStep]                 = useState<Step>('enter_phone');
+  const [phone, setPhone]               = useState('');
+  const [otp, setOtp]                   = useState('');
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const [sending, setSending]           = useState(false);   // Send / Resend OTP
+  const [verifying, setVerifying]       = useState(false);   // Verify OTP
+  const [resendLabel, setResendLabel]   = useState('Resend OTP');
+  const [error, setError]               = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  // Resend cooldown timer
+  const [sentAt, setSentAt]               = useState<number | null>(null);
+  const [elapsed, setElapsed]             = useState(0);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Phone OTP ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (step !== 'enter_otp' || sentAt === null) return;
+    timerRef.current = setInterval(() => {
+      const s = Math.floor((Date.now() - sentAt) / 1000);
+      setElapsed(s);
+      setResendCooldown(Math.max(0, 60 - s));
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [step, sentAt]);
 
-  async function sendOtp() {
+  useEffect(() => {
+    if (step === 'enter_otp') setTimeout(() => otpRef.current?.focus(), 300);
+  }, [step]);
+
+  async function sendOtp(isResend = false) {
     setError(null);
-    // Strip everything except digits
-    let digits = phone.trim().replace(/\D/g, '');
-    // Remove country code if user typed it (e.g. 923001234567 or 9203001234567)
-    if (digits.startsWith('92') && digits.length > 10) digits = digits.slice(2);
-    // Remove leading zero (e.g. 03001234567 → 3001234567)
-    if (digits.startsWith('0')) digits = digits.slice(1);
-    const withPrefix = `+92${digits}`;
-    // Pakistani mobile numbers: +92 3XX XXXXXXX = 13 chars total
+    const digits = stripPhone(phone);
+    setPhone(digits);
+
     if (digits.length !== 10 || !digits.startsWith('3')) {
-      setError('Enter a valid Pakistani mobile number (e.g. 3001234567).');
+      setError('Enter a valid Pakistani mobile number, e.g. 3001234567');
       return;
     }
     if (!recaptchaRef.current) {
-      setError('Captcha not ready. Please wait a moment and try again.');
+      setError('Captcha not ready — please wait a moment.');
       return;
     }
-    setLoading(true);
+
+    setSending(true);
+    if (isResend) setResendLabel('Sending…');
+    setError(null);
     try {
-      const result = await signInWithPhoneNumber(auth, withPrefix, recaptchaRef.current);
+      // 15-second timeout — reCAPTCHA re-verification can hang on some devices
+      const result = await Promise.race([
+        signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 15000)
+        ),
+      ]);
       setConfirmation(result);
-      setPhoneStep('enter_otp');
+      setStep('enter_otp');
+      const now = Date.now();
+      setSentAt(now);
+      setElapsed(0);
+      setResendCooldown(60);
+      if (isResend) { setOtp(''); setResendLabel('Resend OTP'); }
     } catch (e) {
+      const isTimeout = e instanceof Error && e.message === 'timeout';
+      if (isTimeout) {
+        setError('Request timed out. Tap Resend OTP to try again.');
+        if (isResend) setResendLabel('Resend OTP');
+        return;
+      }
       const code = e instanceof FirebaseError ? e.code : 'unknown';
       const msg  = e instanceof FirebaseError ? e.message : String(e);
-      if (code === 'auth/invalid-phone-number')       setError('Invalid phone number.');
-      else if (code === 'auth/too-many-requests')     setError('Too many attempts. Try again later.');
+      if (code === 'auth/invalid-phone-number')       setError('Invalid phone number format.');
+      else if (code === 'auth/too-many-requests')     setError('Too many attempts — wait a few minutes.');
       else if (code === 'auth/captcha-check-failed')  setError('Captcha failed. Try again.');
-      else if (code === 'auth/app-not-authorized')    setError('App not authorized for Phone Auth. Enable Phone Auth in Firebase console → Authentication → Sign-in method.');
-      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded for this project.');
-      else setError(`OTP failed [${code}]: ${msg}`);
+      else if (code === 'auth/operation-not-allowed') setError('Pakistani numbers blocked. Enable Pakistan (+92) in Firebase Console → Authentication → Settings → SMS region policy.');
+      else if (code === 'auth/app-not-authorized')    setError('Phone Auth not enabled. Enable it in Firebase Console → Authentication → Sign-in method.');
+      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded.');
+      else setError(`Failed [${code}]: ${msg}`);
+      if (isResend) setResendLabel('Resend OTP');
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   }
 
@@ -89,45 +117,28 @@ export default function SignIn() {
     setError(null);
     if (!confirmation) { setError('Please request OTP first.'); return; }
     if (otp.length !== 6) { setError('Enter the 6-digit code.'); return; }
-    setLoading(true);
+    setVerifying(true);
     try {
       await confirmation.confirm(otp);
-      // AuthProvider picks up the signed-in user and redirects
     } catch {
-      setError('Incorrect code. Please try again.');
+      setError('Incorrect code — please try again.');
     } finally {
-      setLoading(false);
+      setVerifying(false);
     }
   }
 
-  // ── Email / Password ───────────────────────────────────────────────────────
-
-  async function submitEmail() {
+  function goBack() {
+    setStep('enter_phone');
+    setOtp('');
     setError(null);
-    if (!email.trim() || password.length < 6) {
-      setError('Enter an email and a password of at least 6 characters.');
-      return;
-    }
-    setLoading(true);
-    try {
-      if (emailMode === 'signup') {
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
-      } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-      }
-    } catch (e) {
-      const code = e instanceof FirebaseError ? e.code : 'unknown';
-      setError(humaniseAuthError(code));
-    } finally {
-      setLoading(false);
-    }
+    setSentAt(null);
+    setElapsed(0);
+    setResendCooldown(0);
+    if (timerRef.current) clearInterval(timerRef.current);
   }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Recaptcha verifier — invisible, needed for phone auth */}
       <FirebaseRecaptchaVerifierModal
         ref={recaptchaRef}
         firebaseConfig={firebaseConfig}
@@ -136,192 +147,162 @@ export default function SignIn() {
         cancelLabel="Close"
       />
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.container}>
           {/* Brand */}
           <View style={styles.brandRow}>
             <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
             <Text style={styles.brand}>Velocity</Text>
           </View>
-          <Text style={styles.title}>Welcome</Text>
-          <Text style={styles.subtitle}>Sign in to book rides or manage your account.</Text>
 
-          {/* Mode selector */}
-          <View style={styles.modeRow}>
-            <Pressable
-              style={[styles.modeBtn, authMode === 'phone' && styles.modeBtnActive]}
-              onPress={() => { setAuthMode('phone'); setError(null); }}
-            >
-              <Text style={[styles.modeBtnText, authMode === 'phone' && styles.modeBtnTextActive]}>
-                📱 Phone OTP
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modeBtn, authMode === 'email' && styles.modeBtnActive]}
-              onPress={() => { setAuthMode('email'); setError(null); }}
-            >
-              <Text style={[styles.modeBtnText, authMode === 'email' && styles.modeBtnTextActive]}>
-                ✉️ Email
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* ── Phone OTP ── */}
-          {authMode === 'phone' && (
+          {step === 'enter_phone' ? (
             <>
-              {phoneStep === 'enter_phone' ? (
-                <>
-                  <View style={styles.field}>
-                    <Text style={styles.label}>Mobile number</Text>
-                    <View style={styles.phoneRow}>
-                      <View style={styles.prefixBox}>
-                        <Text style={styles.prefixText}>🇵🇰 +92</Text>
-                      </View>
-                      <TextInput
-                        value={phone}
-                        onChangeText={(t) => {
-                          // Strip all non-digits, remove leading zeros in real time
-                          const digits = t.replace(/\D/g, '').replace(/^0+/, '');
-                          setPhone(digits);
-                        }}
-                        keyboardType="phone-pad"
-                        placeholder="3001234567"
-                        placeholderTextColor={colors.muted}
-                        style={[styles.input, styles.phoneInput]}
-                        maxLength={10}
-                      />
-                    </View>
-                    <Text style={styles.hint}>Enter your number without the leading 0, e.g. 3001234567</Text>
-                  </View>
-                  {error ? <Text style={styles.error}>{error}</Text> : null}
-                  <PrimaryButton label="Send OTP" onPress={sendOtp} loading={loading} />
-                </>
-              ) : (
-                <>
-                  <View style={styles.otpHeader}>
-                    <Text style={styles.otpTitle}>Enter verification code</Text>
-                    <Text style={styles.otpSub}>
-                      Sent to +92{phone.replace(/^0/, '')}
-                    </Text>
-                  </View>
-                  <View style={styles.field}>
-                    <Text style={styles.label}>6-digit OTP</Text>
-                    <TextInput
-                      value={otp}
-                      onChangeText={setOtp}
-                      keyboardType="number-pad"
-                      placeholder="123456"
-                      placeholderTextColor={colors.muted}
-                      style={[styles.input, styles.otpInput]}
-                      maxLength={6}
-                    />
-                  </View>
-                  {error ? <Text style={styles.error}>{error}</Text> : null}
-                  <PrimaryButton label="Verify & sign in" onPress={verifyOtp} loading={loading} />
-                  <Pressable onPress={() => { setPhoneStep('enter_phone'); setOtp(''); setError(null); }}>
-                    <Text style={styles.switch}>← Change number</Text>
-                  </Pressable>
-                  <Pressable onPress={sendOtp} disabled={loading}>
-                    <Text style={styles.switch}>Resend OTP</Text>
-                  </Pressable>
-                </>
-              )}
-            </>
-          )}
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Enter your mobile number to sign in or create an account.</Text>
 
-          {/* ── Email ── */}
-          {authMode === 'email' && (
-            <>
-              <View style={styles.field}>
-                <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>Mobile number</Text>
+              <View style={styles.phoneRow}>
+                <View style={styles.prefixBox}>
+                  <Text style={styles.prefixFlag}>🇵🇰</Text>
+                  <Text style={styles.prefixCode}>+92</Text>
+                </View>
                 <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  placeholder="you@example.com"
+                  value={phone}
+                  onChangeText={(t) => setPhone(stripPhone(t))}
+                  keyboardType="phone-pad"
+                  placeholder="3001234567"
                   placeholderTextColor={colors.muted}
-                  style={styles.input}
+                  style={styles.phoneInput}
+                  maxLength={11}
+                  returnKeyType="done"
+                  onSubmitEditing={() => sendOtp(false)}
                 />
               </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.muted}
-                  style={styles.input}
-                />
-              </View>
+              <Text style={styles.hint}>Leading zero is removed automatically</Text>
+
               {error ? <Text style={styles.error}>{error}</Text> : null}
+
               <PrimaryButton
-                label={emailMode === 'signup' ? 'Create account' : 'Sign in'}
-                onPress={submitEmail}
-                loading={loading}
+                label="Send OTP"
+                onPress={() => sendOtp(false)}
+                loading={sending}
               />
-              <Pressable onPress={() => { setEmailMode(m => m === 'signin' ? 'signup' : 'signin'); setError(null); }}>
-                <Text style={styles.switch}>
-                  {emailMode === 'signin' ? "Don't have an account? Sign up" : 'Already registered? Sign in'}
+            </>
+          ) : (
+            <>
+              <Text style={styles.title}>Enter code</Text>
+              <Text style={styles.subtitle}>
+                Sent to{' '}
+                <Text style={{ color: colors.primary, fontWeight: '800' }}>+92{phone}</Text>
+              </Text>
+
+              {/* Live wait banner */}
+              <View style={elapsed >= 60 ? styles.bannerOk : styles.bannerWaiting}>
+                <Text style={styles.bannerText}>
+                  {elapsed < 30
+                    ? `⏳  Waiting for SMS…  (${elapsed}s)`
+                    : elapsed < 60
+                    ? `⏳  Still waiting…  (${elapsed}s) — check your messages`
+                    : '✅  SMS should have arrived — enter the code below'}
                 </Text>
-              </Pressable>
+                {elapsed < 60 && (
+                  <Text style={styles.bannerSub}>
+                    Pakistani networks can take up to 60 seconds.
+                  </Text>
+                )}
+              </View>
+
+              <TextInput
+                ref={otpRef}
+                value={otp}
+                onChangeText={setOtp}
+                keyboardType="number-pad"
+                placeholder="• • • • • •"
+                placeholderTextColor={colors.muted}
+                style={styles.otpInput}
+                maxLength={6}
+                returnKeyType="done"
+                onSubmitEditing={verifyOtp}
+              />
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <PrimaryButton
+                label="Verify & sign in"
+                onPress={verifyOtp}
+                loading={verifying}
+              />
+
+              <View style={styles.otpFooter}>
+                <Pressable onPress={goBack} hitSlop={10}>
+                  <Text style={styles.link}>← Change number</Text>
+                </Pressable>
+                {resendCooldown > 0 ? (
+                  <Text style={styles.cooldown}>Resend in {resendCooldown}s</Text>
+                ) : (
+                  <Pressable onPress={() => sendOtp(true)} disabled={sending} hitSlop={10}>
+                    <Text style={[styles.link, sending && { opacity: 0.4 }]}>{resendLabel}</Text>
+                  </Pressable>
+                )}
+              </View>
             </>
           )}
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-function humaniseAuthError(code: string): string {
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      return 'Incorrect email or password.';
-    case 'auth/email-already-in-use':
-      return 'That email is already registered — try signing in.';
-    case 'auth/invalid-email':
-      return 'That email address looks invalid.';
-    case 'auth/network-request-failed':
-      return 'Network error. Check your connection and try again.';
-    default:
-      return 'Something went wrong. Please try again.';
-  }
-}
-
 const styles = StyleSheet.create({
-  safe:       { flex: 1, backgroundColor: colors.background },
-  flex:       { flex: 1 },
-  container:  { padding: 24, gap: 14, flexGrow: 1, justifyContent: 'center' },
-  brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  logo:       { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  logoText:   { color: '#fff', fontSize: 24, fontWeight: '900' },
-  brand:      { fontSize: 24, fontWeight: '900', color: colors.text },
-  title:      { fontSize: 26, fontWeight: '900', color: colors.text },
-  subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 8 },
+  safe:      { flex: 1, backgroundColor: colors.background },
+  flex:      { flex: 1 },
+  container: { flex: 1, padding: 28, justifyContent: 'center', gap: 14 },
 
-  modeRow:        { flexDirection: 'row', gap: 8 },
-  modeBtn:        { flex: 1, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center' },
-  modeBtnActive:  { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
-  modeBtnText:    { fontSize: 13, fontWeight: '700', color: colors.muted },
-  modeBtnTextActive: { color: colors.primary },
+  brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  logo:       { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  logoText:   { fontSize: 26, fontWeight: '900', color: '#000' },
+  brand:      { fontSize: 26, fontWeight: '900', color: colors.text },
+  title:      { fontSize: 28, fontWeight: '900', color: colors.text },
+  subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 4 },
 
-  field:      { gap: 6 },
-  label:      { fontSize: 13, fontWeight: '700', color: colors.text },
-  hint:       { fontSize: 11, color: colors.muted },
-  input:      { height: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, fontSize: 16, color: colors.text, backgroundColor: colors.surface },
-  phoneRow:   { flexDirection: 'row', gap: 8 },
-  prefixBox:  { height: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 12, justifyContent: 'center' },
-  prefixText: { fontSize: 15, fontWeight: '700', color: colors.text },
-  phoneInput: { flex: 1 },
+  label:     { fontSize: 13, fontWeight: '700', color: colors.text },
+  phoneRow:  { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  prefixBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    height: 54, paddingHorizontal: 14, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  prefixFlag: { fontSize: 20 },
+  prefixCode: { fontSize: 16, fontWeight: '800', color: colors.text },
+  phoneInput: {
+    flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5,
+    borderColor: colors.border, paddingHorizontal: 16,
+    fontSize: 20, fontWeight: '700', color: colors.text, backgroundColor: colors.surface,
+  },
+  hint:  { fontSize: 11, color: colors.muted, marginTop: -6 },
+  error: { color: colors.danger, fontSize: 13, fontWeight: '700' },
 
-  otpHeader:  { alignItems: 'center', gap: 4, marginBottom: 4 },
-  otpTitle:   { fontSize: 20, fontWeight: '900', color: colors.text },
-  otpSub:     { fontSize: 14, color: colors.muted },
-  otpInput:   { fontSize: 28, textAlign: 'center', letterSpacing: 8, fontWeight: '900' },
+  bannerWaiting: {
+    borderRadius: 14, padding: 14,
+    backgroundColor: '#f59e0b12', borderWidth: 1, borderColor: '#f59e0b35', gap: 4,
+  },
+  bannerOk: {
+    borderRadius: 14, padding: 14,
+    backgroundColor: `${colors.primary}12`, borderWidth: 1, borderColor: `${colors.primary}35`,
+  },
+  bannerText: { fontSize: 13, fontWeight: '700', color: colors.text },
+  bannerSub:  { fontSize: 12, color: colors.muted },
 
-  error:      { color: colors.danger, fontSize: 14, fontWeight: '600' },
-  switch:     { color: colors.secondary, fontWeight: '700', textAlign: 'center', paddingVertical: 6 },
+  otpInput: {
+    height: 68, borderRadius: 16, borderWidth: 2, borderColor: colors.primary,
+    paddingHorizontal: 20, fontSize: 34, fontWeight: '900', color: colors.text,
+    backgroundColor: colors.surface, textAlign: 'center', letterSpacing: 12,
+  },
+
+  otpFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  link:      { color: colors.secondary, fontWeight: '700', fontSize: 13, paddingVertical: 6 },
+  cooldown:  { fontSize: 12, color: colors.muted, fontWeight: '600' },
 });

@@ -53,14 +53,14 @@ service cloud.firestore {
     // edit only safe profile fields; role / verification / wallet live elsewhere
     // or are server-only.
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      // Direct client creation is disabled; the backend creates the profile.
-      allow create: if false;
+      allow read:   if isOwner(userId) || isAdmin();
+      // create only happens during the race before onUserCreate trigger fires
+      allow create: if isOwner(userId);
+      // update: owner may only touch safe profile fields — role is server-only
       allow update: if isOwner(userId)
-                    && onlyChanges(['displayName', 'photoURL', 'gender', 'fcmToken', 'updatedAt'])
-                    && request.resource.data.gender in ['male', 'female', 'unspecified'];
-      allow update: if isAdmin();
-      allow delete: if false;
+                    && onlyChanges(['displayName', 'name', 'gender', 'dob', 'age',
+                                    'profileComplete', 'photoURL', 'lastActive', 'updatedAt']);
+      allow update, delete: if isAdmin();
     }
 
     // ----- drivers/{uid} ---------------------------------------------------
