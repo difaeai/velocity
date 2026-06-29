@@ -328,7 +328,7 @@ export default function Booking() {
   }
 
   // STAGE 2: RIDE TYPE SELECTION — Pool first, then solo
-  const maxSavePct = Math.round((1 - POOL_TIERS[POOL_TIERS.length - 1].pct) * 100);
+  const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
 
   return (
     <View style={styles.safe}>
@@ -379,9 +379,63 @@ export default function Booking() {
           contentContainerStyle={{ paddingBottom: 12 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ─── POOL RIDE — PRIMARY ─── */}
+          {/* ─── 1. CAR TYPE SELECTOR — all 4 visible ─── */}
+          <View style={styles.carGrid}>
+            {RIDE_TYPES.map((rt) => {
+              const active = rideType === rt;
+              return (
+                <Pressable
+                  key={rt}
+                  style={[styles.carTile, active && styles.carTileActive]}
+                  onPress={() => selectRide(rt)}
+                >
+                  <Text style={styles.carTileEmoji}>
+                    {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
+                  </Text>
+                  <Text style={[styles.carTileName, active && { color: colors.primary }]}>
+                    {RIDE_TYPE_LABELS[rt]}
+                  </Text>
+                  <Text style={[styles.carTilePrice, active && { color: colors.primary }]}>
+                    PKR {BASE_FARES[rt]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* ─── 2. FARE ADJUSTER for selected car ─── */}
+          <View style={styles.selectedSoloCard}>
+            <View style={styles.selectedSoloTop}>
+              <Text style={styles.selectedSoloEmoji}>
+                {rideType === 'bike' ? '🏍️' : rideType === 'comfort' ? '🚙' : '🚗'}
+              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.selectedSoloName}>{RIDE_TYPE_LABELS[rideType]}</Text>
+                <Text style={styles.selectedSoloRange}>Range PKR {bounds.min}–{bounds.max}</Text>
+              </View>
+            </View>
+            <View style={styles.soloFareStepper}>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+                <Text style={styles.stepperText}>−</Text>
+              </Pressable>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.stepperFareValue}>PKR {fare}</Text>
+                <Text style={styles.stepperLabel}>your offered fare</Text>
+              </View>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+                <Text style={styles.stepperText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* ─── 3. POOL RIDE — below car selector ─── */}
+          <View style={styles.orDivider}>
+            <View style={styles.orDividerLine} />
+            <Text style={styles.orDividerText}>OR SHARE &amp; SAVE</Text>
+            <View style={styles.orDividerLine} />
+          </View>
+
           <View style={styles.poolPrimaryCard}>
-            {/* Header */}
             <View style={styles.poolPrimaryTopRow}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
@@ -395,7 +449,6 @@ export default function Booking() {
               <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
 
-            {/* Savings breakdown — informational only */}
             <View style={styles.poolTierTable}>
               <View style={styles.poolTierRow}>
                 <View style={styles.poolTierLeft}>
@@ -423,7 +476,6 @@ export default function Booking() {
               })}
             </View>
 
-            {/* Gender preference */}
             <View style={styles.genderRow}>
               <Pressable
                 style={[styles.genderOpt, poolGender === 'same' && styles.genderOptActive]}
@@ -431,9 +483,7 @@ export default function Booking() {
               >
                 <Text style={styles.genderOptIcon}>🔒</Text>
                 <View>
-                  <Text style={[styles.genderOptTitle, poolGender === 'same' && { color: colors.primary }]}>
-                    Same gender
-                  </Text>
+                  <Text style={[styles.genderOptTitle, poolGender === 'same' && { color: colors.primary }]}>Same gender</Text>
                   <Text style={styles.genderOptSub}>Safer · default</Text>
                 </View>
               </Pressable>
@@ -451,9 +501,7 @@ export default function Booking() {
               >
                 <Text style={styles.genderOptIcon}>👥</Text>
                 <View>
-                  <Text style={[styles.genderOptTitle, poolGender === 'any' && { color: colors.primary }]}>
-                    Any gender
-                  </Text>
+                  <Text style={[styles.genderOptTitle, poolGender === 'any' && { color: colors.primary }]}>Any gender</Text>
                   <Text style={styles.genderOptSub}>More options</Text>
                 </View>
               </Pressable>
@@ -472,69 +520,9 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* ─── OR BOOK SOLO ─── */}
-          <View style={styles.orDivider}>
-            <View style={styles.orDividerLine} />
-            <Text style={styles.orDividerText}>OR BOOK SOLO</Text>
-            <View style={styles.orDividerLine} />
-          </View>
-
-          {/* Selected car type — green box with fare adjuster */}
-          <View style={styles.selectedSoloCard}>
-            <View style={styles.selectedSoloTop}>
-              <Text style={styles.selectedSoloEmoji}>
-                {rideType === 'bike' ? '🏍️' : rideType === 'comfort' ? '🚙' : '🚗'}
-              </Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.selectedSoloName}>{RIDE_TYPE_LABELS[rideType]}</Text>
-                <Text style={styles.selectedSoloRange}>
-                  Range PKR {bounds.min}–{bounds.max}
-                </Text>
-              </View>
-              <View style={styles.selectedSoloBadge}>
-                <Text style={styles.selectedSoloBadgeTxt}>SELECTED</Text>
-              </View>
-            </View>
-
-            <View style={styles.soloFareStepper}>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-                <Text style={styles.stepperText}>−</Text>
-              </Pressable>
-              <View style={{ alignItems: 'center', flex: 1 }}>
-                <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-                <Text style={styles.stepperLabel}>your offered fare</Text>
-              </View>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-                <Text style={styles.stepperText}>+</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Other car types */}
-          {RIDE_TYPES.filter(rt => rt !== rideType).map((rt) => (
-            <Pressable
-              key={rt}
-              style={styles.categoryRow}
-              onPress={() => selectRide(rt)}
-            >
-              <View style={styles.categoryRowLeft}>
-                <Text style={styles.categoryEmojiSmall}>
-                  {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
-                </Text>
-                <View>
-                  <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
-                  <Text style={styles.categorySubSmall}>PKR {fareBounds(rt).min}–{fareBounds(rt).max}</Text>
-                </View>
-              </View>
-              <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
-            </Pressable>
-          ))}
-
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
-            <Text style={styles.taxNoticeText}>
-              Fare doesn't include state entry tax, tolls, or parking fees
-            </Text>
+            <Text style={styles.taxNoticeText}>Fare doesn't include state entry tax, tolls, or parking fees</Text>
           </View>
         </ScrollView>
 
@@ -1089,7 +1077,33 @@ const styles = StyleSheet.create({
   // ── Category row active state ───────────────────────────────────────────────
   categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
 
-  // ── Selected solo car card (green box, top of solo section) ────────────────
+  // ── Car type 2×2 grid ────────────────────────────────────────────────────────
+  carGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  carTile: {
+    width: '47.5%',
+    backgroundColor: '#212222',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  carTileActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#0e1e08',
+  },
+  carTileEmoji: { fontSize: 28 },
+  carTileName:  { fontSize: 14, fontWeight: '800', color: colors.text },
+  carTilePrice: { fontSize: 12, fontWeight: '700', color: colors.muted },
+
+  // ── Selected solo car card (green box, fare adjuster) ────────────────────────
   selectedSoloCard: {
     backgroundColor: '#0a1f05',
     borderRadius: 18,
