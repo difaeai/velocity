@@ -479,11 +479,42 @@ export default function Booking() {
             <View style={styles.orDividerLine} />
           </View>
 
-          {/* Car type list */}
-          {RIDE_TYPES.map((rt) => (
+          {/* Selected car type — green box with fare adjuster */}
+          <View style={styles.selectedSoloCard}>
+            <View style={styles.selectedSoloTop}>
+              <Text style={styles.selectedSoloEmoji}>
+                {rideType === 'bike' ? '🏍️' : rideType === 'comfort' ? '🚙' : '🚗'}
+              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.selectedSoloName}>{RIDE_TYPE_LABELS[rideType]}</Text>
+                <Text style={styles.selectedSoloRange}>
+                  Range PKR {bounds.min}–{bounds.max}
+                </Text>
+              </View>
+              <View style={styles.selectedSoloBadge}>
+                <Text style={styles.selectedSoloBadgeTxt}>SELECTED</Text>
+              </View>
+            </View>
+
+            <View style={styles.soloFareStepper}>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+                <Text style={styles.stepperText}>−</Text>
+              </Pressable>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.stepperFareValue}>PKR {fare}</Text>
+                <Text style={styles.stepperLabel}>your offered fare</Text>
+              </View>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+                <Text style={styles.stepperText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Other car types */}
+          {RIDE_TYPES.filter(rt => rt !== rideType).map((rt) => (
             <Pressable
               key={rt}
-              style={[styles.categoryRow, rideType === rt && styles.categoryRowActive]}
+              style={styles.categoryRow}
               onPress={() => selectRide(rt)}
             >
               <View style={styles.categoryRowLeft}>
@@ -491,36 +522,13 @@ export default function Booking() {
                   {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
                 </Text>
                 <View>
-                  <Text style={[styles.categoryNameSmall, rideType === rt && { color: colors.primary }]}>
-                    {RIDE_TYPE_LABELS[rt]}
-                  </Text>
-                  <Text style={styles.categorySubSmall}>
-                    PKR {fareBounds(rt).min}–{fareBounds(rt).max}
-                  </Text>
+                  <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
+                  <Text style={styles.categorySubSmall}>PKR {fareBounds(rt).min}–{fareBounds(rt).max}</Text>
                 </View>
               </View>
-              <View style={{ alignItems: 'flex-end', gap: 3 }}>
-                <Text style={[styles.categoryFareSmall, rideType === rt && { color: colors.primary, fontWeight: '900' }]}>
-                  PKR {BASE_FARES[rt]}
-                </Text>
-                {rideType === rt && <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>selected ✓</Text>}
-              </View>
+              <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
             </Pressable>
           ))}
-
-          {/* Solo fare stepper */}
-          <View style={styles.soloFareStepper}>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-              <Text style={styles.stepperText}>−</Text>
-            </Pressable>
-            <View style={{ alignItems: 'center', flex: 1 }}>
-              <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-              <Text style={styles.stepperLabel}>your offer · {RIDE_TYPE_LABELS[rideType]}</Text>
-            </View>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-              <Text style={styles.stepperText}>+</Text>
-            </Pressable>
-          </View>
 
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
@@ -1081,17 +1089,39 @@ const styles = StyleSheet.create({
   // ── Category row active state ───────────────────────────────────────────────
   categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
 
-  // ── Solo fare stepper ───────────────────────────────────────────────────────
+  // ── Selected solo car card (green box, top of solo section) ────────────────
+  selectedSoloCard: {
+    backgroundColor: '#0a1f05',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    padding: 14,
+    gap: 12,
+    marginBottom: 4,
+  },
+  selectedSoloTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  selectedSoloEmoji: { fontSize: 28 },
+  selectedSoloName:  { fontSize: 17, fontWeight: '900', color: colors.primary },
+  selectedSoloRange: { fontSize: 11, color: colors.muted, fontWeight: '600', marginTop: 2 },
+  selectedSoloBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  selectedSoloBadgeTxt: { fontSize: 9, fontWeight: '900', color: '#000', letterSpacing: 0.8 },
+
+  // ── Solo fare stepper (inside selected card) ─────────────────────────────────
   soloFareStepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#212222',
-    borderRadius: 14,
+    backgroundColor: '#131f0a',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2d2f2f',
+    borderColor: '#1e3010',
     padding: 12,
     gap: 8,
-    marginTop: 4,
   },
 
   activeCategoryBox: {
