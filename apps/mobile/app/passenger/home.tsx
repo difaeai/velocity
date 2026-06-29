@@ -119,28 +119,46 @@ export default function PassengerHome() {
       >
         <View style={styles.dragIndicator} />
 
-        {/* Search trigger bar */}
-        <Pressable
-          style={styles.searchTrigger}
-          onPress={() => router.push('/passenger/booking')}
-        >
-          <View style={styles.searchRow}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <Text style={styles.searchPlaceholder}>Where to & for how much?</Text>
+        {/* ── PRIMARY: Pool Ride ── */}
+        <Pressable style={styles.poolCTA} onPress={() => router.push('/passenger/pool-ride')}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.poolCTATopRow}>
+              <Text style={styles.poolCTATitle}>Pool Ride</Text>
+              <View style={styles.poolCTABadge}>
+                <Text style={styles.poolCTABadgeText}>SAVE UP TO 65%</Text>
+              </View>
+            </View>
+            <Text style={styles.poolCTASub}>Share a ride · Pay less · Travel smart</Text>
+            <View style={styles.poolCTAMeta}>
+              <Text style={styles.poolCTASeats}>💺💺💺💺  Up to 4 riders</Text>
+              {poolFromPrice
+                ? <Text style={styles.poolCTAPrice}>From {poolFromPrice} PKR/seat</Text>
+                : <Text style={styles.poolCTAPrice}>🔒 Same gender by default</Text>}
+            </View>
           </View>
+          <Text style={styles.poolCTAArrow}>→</Text>
         </Pressable>
 
-        {/* ── Secondary Services ── */}
+        {/* ── SECONDARY: Solo Ride ── */}
+        <Pressable style={styles.soloCTA} onPress={() => router.push('/passenger/booking')}>
+          <Text style={styles.soloCTAIcon}>🚕</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.soloCTALabel}>Solo Ride</Text>
+            <Text style={styles.soloCTASub}>Where to? Book a private ride</Text>
+          </View>
+          <Text style={styles.soloCTAArrow}>›</Text>
+        </Pressable>
+
+        {/* ── Other Services ── */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsRow}
         >
           {[
-            { icon: '🚕', label: 'City Rides',    route: '/passenger/booking' },
-            { icon: '🚌', label: 'City to City',   route: '/passenger/city-to-city' },
-            { icon: '📦', label: 'Couriers',       route: '/passenger/couriers' },
-            { icon: '💼', label: 'Business',       route: '/passenger/business-delivery' },
+            { icon: '🌐', label: 'City to City', route: '/passenger/city-to-city' },
+            { icon: '📦', label: 'Couriers',     route: '/passenger/couriers' },
+            { icon: '💼', label: 'Business',     route: '/passenger/business-delivery' },
           ].map((s) => (
             <Pressable
               key={s.label}
@@ -152,35 +170,6 @@ export default function PassengerHome() {
             </Pressable>
           ))}
         </ScrollView>
-
-        {/* ── HERO: Ride Sharing ── */}
-        <Pressable style={styles.poolHero} onPress={() => router.push('/passenger/pool-ride')}>
-          <View style={styles.poolHeroBody}>
-            <View style={styles.poolHeroTopRow}>
-              <Text style={styles.poolHeroTitle}>Ride Sharing</Text>
-              <View style={styles.poolPillBadge}>
-                <Text style={styles.poolPillBadgeText}>POOL</Text>
-              </View>
-            </View>
-            <Text style={styles.poolHeroSub}>Share · Save up to 65% · Travel smart</Text>
-            <View style={styles.poolGenderTag}>
-              <Text style={styles.poolGenderTagText}>🔒 Same gender by default</Text>
-            </View>
-            <View style={styles.poolSeatsRow}>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatsLabel}>Up to 4 riders</Text>
-            </View>
-          </View>
-          <View style={styles.poolHeroPriceCol}>
-            <Text style={styles.poolHeroPriceFrom}>From</Text>
-            <Text style={styles.poolHeroPriceAmt}>{poolFromPrice ?? '—'}</Text>
-            <Text style={styles.poolHeroPriceSub}>PKR/seat</Text>
-            <Text style={styles.poolHeroArrow}>→</Text>
-          </View>
-        </Pressable>
 
         {/* ── Travel Mate card ── */}
         <Pressable
@@ -201,13 +190,14 @@ export default function PassengerHome() {
               <Pressable
                 key={r.address}
                 style={styles.historyItem}
-                onPress={() => router.push('/passenger/booking')}
+                onPress={() => router.push('/passenger/pool-ride')}
               >
                 <Text style={styles.historyIcon}>🕒</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
-                  <Text style={styles.historyAddress}>Recent destination</Text>
+                  <Text style={styles.historyAddress}>Recent destination · Pool ride</Text>
                 </View>
+                <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700' }}>Pool →</Text>
               </Pressable>
             ))}
           </View>
@@ -540,45 +530,42 @@ const styles = StyleSheet.create({
     color: '#8a8c8c',
     marginLeft: 6,
   },
-  /* ── Pool hero card ── */
-  poolHero: {
+  /* ── Pool Ride primary CTA ── */
+  poolCTA: {
     backgroundColor: colors.primary,
     borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+    padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 120,
+    minHeight: 110,
+    gap: 10,
   },
-  poolHeroBody: { flex: 1, gap: 5 },
-  poolHeroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  poolHeroTitle: { fontSize: 20, fontWeight: '900', color: '#000' },
-  poolPillBadge: {
-    backgroundColor: '#000',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  poolPillBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
-  poolHeroSub: { fontSize: 12, color: '#1c1c1c', fontWeight: '600' },
-  poolGenderTag: {
+  poolCTATopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
+  poolCTATitle:  { fontSize: 22, fontWeight: '900', color: '#000' },
+  poolCTABadge:  { backgroundColor: '#000', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  poolCTABadgeText: { color: colors.primary, fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  poolCTASub:    { fontSize: 12, color: '#1c1c1c', fontWeight: '600', marginBottom: 8 },
+  poolCTAMeta:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  poolCTASeats:  { fontSize: 11, color: '#333', fontWeight: '700' },
+  poolCTAPrice:  { fontSize: 11, color: '#000', fontWeight: '800' },
+  poolCTAArrow:  { fontSize: 28, color: '#000', fontWeight: '900' },
+
+  /* ── Solo Ride secondary CTA ── */
+  soloCTA: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#00000015',
-    borderRadius: 99,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
+    backgroundColor: '#212222',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 12,
   },
-  poolGenderTagText: { fontSize: 11, color: '#000', fontWeight: '700' },
-  poolSeatsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  poolSeatIcon: { fontSize: 13 },
-  poolSeatsLabel: { fontSize: 11, color: '#333', fontWeight: '700', marginLeft: 3 },
-  poolHeroPriceCol: { alignItems: 'center', paddingLeft: 14, gap: 1 },
-  poolHeroPriceFrom: { fontSize: 10, color: '#444', fontWeight: '600' },
-  poolHeroPriceAmt: { fontSize: 28, fontWeight: '900', color: '#000', lineHeight: 30 },
-  poolHeroPriceSub: { fontSize: 10, color: '#444', fontWeight: '600' },
-  poolHeroArrow: { fontSize: 22, color: '#000', fontWeight: '900', marginTop: 4 },
+  soloCTAIcon:  { fontSize: 22 },
+  soloCTALabel: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
+  soloCTASub:   { fontSize: 11, color: '#8a8c8c', fontWeight: '600', marginTop: 1 },
+  soloCTAArrow: { fontSize: 22, color: '#8a8c8c' },
 
   /* ── Travel Mate card ── */
   travelMateCard: {

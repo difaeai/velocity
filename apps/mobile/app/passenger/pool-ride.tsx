@@ -694,79 +694,80 @@ export default function PoolRideScreen() {
         contentContainerStyle={styles.listPad}
         ListHeaderComponent={
           <>
-            {/* Location bar */}
-            <View style={styles.locationBar}>
-              <View style={[styles.locationDot, { backgroundColor: '#22c55e' }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.locationBarLabel}>Your location</Text>
-                <Text style={styles.locationBarVal} numberOfLines={1}>
-                  {pickupAddress ?? (coords ? 'Location acquired' : 'Getting location…')}
+            {/* Destination + pickup combined bar */}
+            <View style={styles.routeBar}>
+              <View style={styles.routeBarDots}>
+                <View style={[styles.routeDot, { backgroundColor: '#22c55e' }]} />
+                <View style={styles.routeStem} />
+                <View style={[styles.routeDot, { backgroundColor: '#ef4444' }]} />
+              </View>
+              <View style={{ flex: 1, gap: 0 }}>
+                <Text style={styles.routeBarFrom} numberOfLines={1}>
+                  {pickupAddress ?? 'Current location'}
                 </Text>
+                <View style={styles.routeBarDivider} />
+                <TextInput
+                  style={styles.routeBarInput}
+                  placeholder="Where are you going?"
+                  placeholderTextColor={colors.muted}
+                  value={destination}
+                  onChangeText={setDestination}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
               </View>
-              <View style={styles.radiusBadge}>
-                <Text style={styles.radiusBadgeText}>Within 1 km</Text>
-              </View>
+              {destination.length > 0 && (
+                <Pressable onPress={() => setDestination('')} hitSlop={10}>
+                  <Text style={{ color: colors.muted, fontSize: 20, lineHeight: 22 }}>×</Text>
+                </Pressable>
+              )}
             </View>
 
-            {/* Ride category selector */}
-            <View style={styles.categoryRow}>
-              {RIDE_CATEGORIES.map((cat) => {
-                const active = selectedCategory === cat.key;
-                return (
-                  <Pressable
-                    key={cat.key}
-                    style={[styles.catChip, active && styles.catChipActive]}
-                    onPress={() => setSelectedCategory(cat.key)}
-                  >
-                    <Text style={styles.catChipIcon}>{cat.icon}</Text>
-                    <Text style={[styles.catChipLabel, active && { color: colors.primary }]}>
-                      {cat.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* Gender toggle */}
-            <View style={styles.genderToggle}>
-              {([
-                { key: 'same' as const, icon: '🔒', title: 'Same gender', sub: 'Default · Safer' },
-                { key: 'any'  as const, icon: '👥', title: 'Any gender',  sub: 'More rides' },
-              ]).map((opt) => (
+            {/* Compact filter row */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}
+            >
+              {RIDE_CATEGORIES.map((cat) => (
                 <Pressable
-                  key={opt.key}
-                  style={[styles.genderOpt, genderPref === opt.key && styles.genderOptActive]}
-                  onPress={() => {
-                    if (opt.key === 'any' && genderPref !== 'any') {
-                      Alert.alert(
-                        'Travel with any gender?',
-                        'You will see rides where male and female passengers travel together. Are you sure?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Accept', onPress: () => setGenderPref('any') },
-                        ],
-                      );
-                    } else {
-                      setGenderPref(opt.key);
-                    }
-                  }}
+                  key={cat.key}
+                  style={[styles.filterChip, selectedCategory === cat.key && styles.filterChipActive]}
+                  onPress={() => setSelectedCategory(cat.key)}
                 >
-                  <Text style={styles.genderOptIcon}>{opt.icon}</Text>
-                  <View>
-                    <Text style={[styles.genderOptTitle, genderPref === opt.key && { color: colors.primary }]}>
-                      {opt.title}
-                    </Text>
-                    <Text style={styles.genderOptSub}>{opt.sub}</Text>
-                  </View>
+                  <Text style={[styles.filterChipText, selectedCategory === cat.key && { color: colors.primary }]}>
+                    {cat.icon} {cat.label}
+                  </Text>
                 </Pressable>
               ))}
-            </View>
+              <View style={styles.filterSep} />
+              <Pressable
+                style={[styles.filterChip, genderPref === 'same' && styles.filterChipActive]}
+                onPress={() => setGenderPref('same')}
+              >
+                <Text style={[styles.filterChipText, genderPref === 'same' && { color: colors.primary }]}>
+                  🔒 Same gender
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.filterChip, genderPref === 'any' && styles.filterChipActive]}
+                onPress={() => {
+                  if (genderPref !== 'any') {
+                    Alert.alert('Travel with any gender?',
+                      'You will see rides where male and female passengers travel together. Are you sure?',
+                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Accept', onPress: () => setGenderPref('any') }]);
+                  } else setGenderPref('same');
+                }}
+              >
+                <Text style={[styles.filterChipText, genderPref === 'any' && { color: colors.primary }]}>
+                  👥 Any gender
+                </Text>
+              </Pressable>
+            </ScrollView>
 
             {/* Section header */}
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>
-                LIVE {activeCat.key === 'all' ? '' : activeCat.label.toUpperCase() + ' '}RIDES NEARBY
-              </Text>
+              <Text style={styles.sectionTitle}>POOL RIDES NEARBY</Text>
               {!loadingRides && (
                 <View style={styles.liveBadge}>
                   <View style={styles.livePip} />
@@ -786,13 +787,26 @@ export default function PoolRideScreen() {
 
             {!loadingRides && visibleRides.length === 0 && (
               <View style={styles.emptyRides}>
-                <Text style={styles.emptyIcon}>{activeCat.icon}</Text>
-                <Text style={styles.emptyTitle}>
-                  No {activeCat.key === 'all' ? '' : activeCat.label + ' '}rides nearby
-                </Text>
+                <Text style={styles.emptyIcon}>🚗</Text>
+                <Text style={styles.emptyTitle}>No pool rides nearby yet</Text>
                 <Text style={styles.emptySub}>
-                  Try a different category · Or post a ride request below
+                  {destination.trim()
+                    ? `No rides heading toward "${destination.trim()}" right now.`
+                    : 'No rides available in your area right now.'}
+                  {'\n'}Request one — a driver will respond to your route.
                 </Text>
+                <Pressable
+                  style={styles.requestRideBtn}
+                  onPress={() => router.push('/passenger/pool-request/create' as Parameters<typeof router.push>[0])}
+                >
+                  <Text style={styles.requestRideBtnText}>✋ Request a Pool Ride</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.soloFallbackBtn}
+                  onPress={() => router.replace('/passenger/booking')}
+                >
+                  <Text style={styles.soloFallbackBtnText}>🚕 Book Solo Ride Instead</Text>
+                </Pressable>
               </View>
             )}
           </>
@@ -805,28 +819,17 @@ export default function PoolRideScreen() {
         )}
         ListFooterComponent={
           <>
-            {/* Quick links to new pool features */}
+            {/* More options */}
             <View style={styles.quickLinksSection}>
-              <Text style={styles.quickLinksTitle}>MORE POOL OPTIONS</Text>
+              <Text style={styles.quickLinksTitle}>MORE OPTIONS</Text>
               <Pressable
                 style={styles.quickLink}
                 onPress={() => router.push('/passenger/pool-request/create' as Parameters<typeof router.push>[0])}
               >
                 <Text style={styles.quickLinkIcon}>✋</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.quickLinkLabel}>Request a Ride</Text>
-                  <Text style={styles.quickLinkDesc}>Propose your own fare · driver accepts or counters</Text>
-                </View>
-                <Text style={styles.quickLinkArrow}>›</Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickLink}
-                onPress={() => router.push('/passenger/pool-request/nearby' as Parameters<typeof router.push>[0])}
-              >
-                <Text style={styles.quickLinkIcon}>🗺️</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.quickLinkLabel}>Browse Nearby Rides</Text>
-                  <Text style={styles.quickLinkDesc}>See active sharing rides around you (anonymised)</Text>
+                  <Text style={styles.quickLinkLabel}>Request a Pool Ride</Text>
+                  <Text style={styles.quickLinkDesc}>Propose your route & fare · driver accepts or counters</Text>
                 </View>
                 <Text style={styles.quickLinkArrow}>›</Text>
               </Pressable>
@@ -945,64 +948,53 @@ const styles = StyleSheet.create({
   quickLinkDesc:  { fontSize: 11, color: colors.muted, marginTop: 2 },
   quickLinkArrow: { fontSize: 20, color: colors.muted },
 
-  // Location bar
-  locationBar: {
+  // Route bar (destination + pickup combined)
+  routeBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 12,
+    padding: 14,
+  },
+  routeBarDots: { alignItems: 'center', paddingVertical: 2, width: 14 },
+  routeBarFrom: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    paddingBottom: 8,
+  },
+  routeBarDivider: { height: 1, backgroundColor: colors.border, marginBottom: 8 },
+  routeBarInput: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    height: 38,
+    padding: 0,
   },
   locationDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  locationBarLabel: { fontSize: 9, fontWeight: '700', color: colors.muted, textTransform: 'uppercase' },
-  locationBarVal: { fontSize: 13, fontWeight: '700', color: colors.text, marginTop: 2 },
-  radiusBadge: {
-    backgroundColor: `${colors.primary}15`,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+
+  // Compact filter row
+  filterRow: { gap: 8, paddingRight: 4 },
+  filterChip: {
+    backgroundColor: colors.surface,
+    borderRadius: 99,
     borderWidth: 1,
-    borderColor: `${colors.primary}40`,
-  },
-  radiusBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary },
-
-  // Category chips
-  categoryRow: { flexDirection: 'row', gap: 8 },
-  catChip: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1.5,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
-    gap: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
-  catChipActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
-  catChipIcon: { fontSize: 16 },
-  catChipLabel: { fontSize: 10, fontWeight: '800', color: colors.muted },
-
-  // Gender toggle
-  genderToggle: { flexDirection: 'row', gap: 8 },
-  genderOpt: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: 11,
+  filterChipActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}12` },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  filterSep: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginHorizontal: 2,
   },
-  genderOptActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
-  genderOptIcon: { fontSize: 18 },
-  genderOptTitle: { fontSize: 12, fontWeight: '700', color: colors.text },
-  genderOptSub: { fontSize: 10, color: colors.muted, fontWeight: '600' },
 
   // Section header
   sectionHeaderRow: {
@@ -1041,16 +1033,36 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 13, color: colors.muted },
   emptyRides: {
     alignItems: 'center',
-    padding: 28,
+    padding: 24,
     backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 8,
+    gap: 10,
   },
   emptyIcon: { fontSize: 40, marginBottom: 4 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   emptySub: { fontSize: 12, color: colors.muted, textAlign: 'center', lineHeight: 18 },
+  requestRideBtn: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    marginTop: 4,
+  },
+  requestRideBtnText: { fontSize: 15, fontWeight: '900', color: '#000' },
+  soloFallbackBtn: {
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  soloFallbackBtnText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 
   // ── Pool Ride Card ──────────────────────────────────────────────────────────
 
