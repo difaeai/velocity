@@ -77,14 +77,9 @@ export function useCurrentLocation(auto = true): CurrentLocation {
         if (!mounted.current) return;
         if (perm !== 'granted') { setStatus('denied'); return; }
 
-        // Show the last known position immediately (instant — no GPS wait).
-        const last = await Location!.getLastKnownPositionAsync({});
-        if (last && mounted.current) {
-          setCoords({ lat: last.coords.latitude, lng: last.coords.longitude });
-          setStatus('granted');
-        }
-
         // Start live GPS watch — updates the map as the user moves.
+        // NOTE: getLastKnownPositionAsync is intentionally skipped — it can
+        // return a stale cached position from a completely different city.
         watchSub.current?.remove();
         watchSub.current = await Location!.watchPositionAsync(
           { accuracy: Location!.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },

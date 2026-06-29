@@ -735,7 +735,20 @@ export default function PoolRideScreen() {
                 <Pressable
                   key={opt.key}
                   style={[styles.genderOpt, genderPref === opt.key && styles.genderOptActive]}
-                  onPress={() => setGenderPref(opt.key)}
+                  onPress={() => {
+                    if (opt.key === 'any' && genderPref !== 'any') {
+                      Alert.alert(
+                        'Travel with any gender?',
+                        'You will see rides where male and female passengers travel together. Are you sure?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Accept', onPress: () => setGenderPref('any') },
+                        ],
+                      );
+                    } else {
+                      setGenderPref(opt.key);
+                    }
+                  }}
                 >
                   <Text style={styles.genderOptIcon}>{opt.icon}</Text>
                   <View>
