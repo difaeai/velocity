@@ -29,6 +29,13 @@ import {
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 // Pool fare helpers — same progressive formula as pool-ride.tsx
 // factor(n) = (48 + (n-1)(n+6)) / 48
 function poolPerSeat(soloFare: number, riders: number): number {
@@ -51,8 +58,10 @@ export default function Booking() {
   const [dropoff, setDropoff] = useState('');
   // Resolved coords for the selected dropoff place
   const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
-  // Session token groups autocomplete + detail calls for billing purposes
-  const sessionToken = useRef(Math.random().toString(36).slice(2)).current;
+  // Places API (New) requires session tokens to be UUID v4
+  const sessionTokenRef = useRef(uuidv4());
+
+  function newSession() { sessionTokenRef.current = uuidv4(); }
 
   // Prefill the pickup with the rider's real (reverse-geocoded) address once we
   // have it, unless they've already typed something.
@@ -90,8 +99,9 @@ export default function Booking() {
     setDropoffCoords(null);
     setStage('details');
     // Fetch real lat/lng in the background; used when creating the trip
-    const detail = await fetchPlaceDetail(pred.placeId, sessionToken);
+    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
     if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
+    newSession(); // rotate token after detail call closes the billing session
   }
 
   function selectLocation(locName: string) {
@@ -140,7 +150,7 @@ export default function Booking() {
     }
   }
 
-  const { predictions, loading: placesLoading, apiStatus } = usePlacesAutocomplete(dropoff, sessionToken);
+  const { predictions, loading: placesLoading, apiStatus } = usePlacesAutocomplete(dropoff, sessionTokenRef.current);
   const query = dropoff.trim().toLowerCase();
   const filteredRecents = query
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
