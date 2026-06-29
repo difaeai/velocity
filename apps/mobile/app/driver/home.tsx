@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
+import type { CommuteDemandSlot } from '../../src/api/client';
 import {
   useDriverActiveTrip,
   useDriverPoolRides,
@@ -22,6 +23,7 @@ import { RatingModal } from '../../src/ui/RatingModal';
 import { ChatModal } from '../../src/ui/ChatModal';
 import { DriverDrawer } from '../../src/ui/DriverDrawer';
 import { DemandHeatmap } from '../../src/ui/DemandHeatmap';
+import { ArrivalCountdown } from '../../src/ui/ArrivalCountdown';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -60,6 +62,21 @@ export default function DriverHome() {
   // Drawer state
   const [drawerOpen, setDrawerOpen]   = useState(false);
 
+  // Skipped request IDs (client-side rejection without backend call)
+  const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  const skipRequest = (tripId: string) =>
+    setSkippedIds((prev) => new Set([...prev, tripId]));
+
+  // Live preview for commute demand section
+  const [commuteDemandPreview, setCommuteDemandPreview] = useState<CommuteDemandSlot[]>([]);
+
+  const loadPreviews = useCallback(async (lat: number, lng: number) => {
+    try {
+      const res = await api.getCommuteDemand({ lat, lng, radiusKm: 10 });
+      setCommuteDemandPreview((res as { demand: CommuteDemandSlot[] }).demand.slice(0, 3));
+    } catch { /* silent */ }
+  }, []);
+
   // Register FCM push token
   useEffect(() => {
     if (user) registerForPushNotifications().catch(() => {});
@@ -88,9 +105,16 @@ export default function DriverHome() {
       };
       updateLocation();
       watchId = setInterval(updateLocation, 30000);
+      // Load pool previews once we have location
+      if (driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
     }
     return () => { if (watchId) clearInterval(watchId); };
   }, [online, uid]);
+
+  // Reload pool previews whenever location updates
+  useEffect(() => {
+    if (online && driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
+  }, [online, driverCoords, loadPreviews]);
 
   // Subscribe to driver doc for live cycleGrossFare
   useEffect(() => {
@@ -221,6 +245,9 @@ export default function DriverHome() {
         {activeTrip ? (
           <Card>
             <Text style={styles.cardTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
+            {activeTrip.status === 'arrived' && (
+              <ArrivalCountdown arrivedAt={activeTrip.arrivedAt} role="driver" />
+            )}
             <MapPlaceholder
               pickup={activeTrip.pickup?.address}
               dropoff={activeTrip.dropoff?.address}
@@ -277,12 +304,12 @@ export default function DriverHome() {
           <>
             <DemandHeatmap />
             <Text style={styles.section}>Incoming requests — all ride types</Text>
-            {requests.length === 0 ? (
+            {requests.filter((r) => !skippedIds.has(r.tripId)).length === 0 ? (
               <Card>
                 <Text style={styles.muted}>No open requests nearby. Stay online…</Text>
               </Card>
             ) : (
-              requests.map((r) => (
+              requests.filter((r) => !skippedIds.has(r.tripId)).map((r) => (
                 <Card key={r.id}>
                   <View style={styles.reqRow}>
                     <View style={{ flex: 1 }}>
@@ -303,28 +330,31 @@ export default function DriverHome() {
                         {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
                       </Text>
                     </View>
-                    <Text style={styles.fare}>{r.offeredFare} PKR</Text>
+                    <View style={styles.requestedFareBadge}>
+                      <Text style={styles.requestedFareAmt}>{r.offeredFare}</Text>
+                      <Text style={styles.requestedFarePkr}>PKR</Text>
+                    </View>
                   </View>
                   <View style={styles.bidRow}>
                     <View style={{ flex: 1 }}>
                       <PrimaryButton
-                        label={commissionLocked ? '🔒 Locked' : `Accept ${r.offeredFare}`}
+                        label={commissionLocked ? '🔒 Locked' : 'Open Request'}
                         disabled={busy || commissionLocked}
                         onPress={() => {
                           if (commissionLocked) {
                             Alert.alert('Account Locked', `Pay your ${commissionOwed} PKR commission to accept rides.`);
                             return;
                           }
-                          run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare }));
+                          router.push(`/driver/request-detail/${r.tripId}` as Parameters<typeof router.push>[0]);
                         }}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
                       <PrimaryButton
                         variant="secondary"
-                        label={commissionLocked ? '🔒' : `+50 → ${r.offeredFare + 50}`}
-                        disabled={busy || commissionLocked}
-                        onPress={() => run(() => api.placeBid({ tripId: r.tripId, fare: r.offeredFare + 50 }))}
+                        label="Cancel"
+                        disabled={busy}
+                        onPress={() => skipRequest(r.tripId)}
                       />
                     </View>
                   </View>
@@ -406,42 +436,74 @@ export default function DriverHome() {
           )}
         </View>
 
-        {/* Passenger pool ride requests — InDrive-style negotiation */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Passenger Ride Requests</Text>
-              <Text style={styles.poolSubtitle}>Passengers propose a fare — accept or counter</Text>
-            </View>
-            <Pressable
-              style={styles.offerBtn}
-              onPress={() => router.push('/driver/pool-requests' as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.offerBtnText}>View →</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.poolDesc}>
-            See passengers looking for shared rides near you. Accept their fare or offer a higher one.
-          </Text>
-        </View>
-
         {/* Commute demand — anonymised aggregate passenger demand */}
         <View style={styles.poolSection}>
           <View style={styles.poolHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.poolTitle}>Commute Demand</Text>
-              <Text style={styles.poolSubtitle}>Where passengers commute — anonymised</Text>
+              <Text style={styles.poolSubtitle}>Today's anonymised commuter demand near you</Text>
             </View>
             <Pressable
               style={styles.offerBtn}
               onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
             >
-              <Text style={styles.offerBtnText}>View →</Text>
+              <Text style={styles.offerBtnText}>View all →</Text>
             </Pressable>
           </View>
-          <Text style={styles.poolDesc}>
-            See what areas have commuter demand today — no personal info, only area names and times.
-          </Text>
+
+          {commuteDemandPreview.length === 0 ? (
+            <View style={styles.emptyPreview}>
+              <Text style={styles.emptyPreviewIcon}>📊</Text>
+              <Text style={styles.emptyPreviewText}>No commute demand data in your area today</Text>
+            </View>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {commuteDemandPreview.map((slot) => {
+                const parts = slot.time.split(':');
+                const h = parseInt(parts[0] ?? '0', 10);
+                const m = parts[1] ?? '00';
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const h12 = h % 12 || 12;
+                return (
+                  <Pressable
+                    key={`${slot.time}::${slot.destinationAreaName}`}
+                    style={styles.previewCard}
+                    onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
+                  >
+                    <View style={styles.commuteTimeBox}>
+                      <Text style={styles.commuteTimeNum}>{h12}:{m}</Text>
+                      <Text style={styles.commuteTimeAmpm}>{ampm}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.previewRoute} numberOfLines={1}>→ {slot.destinationAreaName}</Text>
+                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                        {slot.genderBreakdown.male > 0 && (
+                          <View style={[styles.genderChip, { borderColor: '#4fc3f7' }]}>
+                            <Text style={[styles.genderChipTxt, { color: '#4fc3f7' }]}>♂ {slot.genderBreakdown.male}</Text>
+                          </View>
+                        )}
+                        {slot.genderBreakdown.female > 0 && (
+                          <View style={[styles.genderChip, { borderColor: '#ff69b4' }]}>
+                            <Text style={[styles.genderChipTxt, { color: '#ff69b4' }]}>♀ {slot.genderBreakdown.female}</Text>
+                          </View>
+                        )}
+                        {slot.genderBreakdown.any > 0 && (
+                          <View style={[styles.genderChip, { borderColor: colors.muted }]}>
+                            <Text style={[styles.genderChipTxt, { color: colors.muted }]}>👥 {slot.genderBreakdown.any}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.fareBadge}>
+                      <Text style={styles.fareBadgeAmt}>{slot.count}</Text>
+                      <Text style={styles.fareBadgePkr}>rider{slot.count !== 1 ? 's' : ''}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              <Text style={styles.previewFooter}>Anonymised — area names and rounded times only</Text>
+            </View>
+          )}
         </View>
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
@@ -538,6 +600,37 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+
+  // Live preview cards inside pool sections
+  emptyPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 },
+  emptyPreviewIcon: { fontSize: 22 },
+  emptyPreviewText: { fontSize: 12, color: colors.muted, flex: 1 },
+  previewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 11,
+  },
+  previewRoute: { fontSize: 13, fontWeight: '700', color: colors.text },
+  previewMeta:  { fontSize: 11, color: colors.muted, marginTop: 2 },
+  previewFooter: { fontSize: 10, color: colors.muted, textAlign: 'center' as const, marginTop: 2 },
+  genderDot: { width: 8, height: 8, borderRadius: 4 },
+  fareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  fareBadgeAmt: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  fareBadgePkr: { fontSize: 9, fontWeight: '700', color: colors.primary },
+  commuteTimeBox: { alignItems: 'center', backgroundColor: '#1a2e0a', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  commuteTimeNum: { fontSize: 15, fontWeight: '900', color: colors.primary },
+  commuteTimeAmpm: { fontSize: 9, fontWeight: '700', color: colors.primary },
+  genderChip: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
+  genderChipTxt: { fontSize: 10, fontWeight: '700' },
+
+  requestedFareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}15`, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
+  requestedFareAmt:   { fontSize: 18, fontWeight: '900', color: colors.primary },
+  requestedFarePkr:   { fontSize: 9, fontWeight: '700', color: colors.primary },
   badge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   badgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },

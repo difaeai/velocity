@@ -83,7 +83,7 @@ export function DemandHeatmap() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>🔥 Demand heatmap</Text>
+        <Text style={styles.title}>🔥 Demand Map</Text>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{totalOpen} open</Text>
         </View>

@@ -349,9 +349,10 @@ export const updateTripStatus = onCall(async (req) => {
     if (!DRIVER_TRANSITIONS.has(`${from}->${to}`)) {
       throw new HttpsError('failed-precondition', `Illegal transition ${from} → ${to}.`);
     }
+    const extra = to === 'arrived' ? { arrivedAt: FieldValue.serverTimestamp() } : {};
     tx.set(
       tripRef,
-      { status: to, updatedAt: FieldValue.serverTimestamp() },
+      { status: to, updatedAt: FieldValue.serverTimestamp(), ...extra },
       { merge: true },
     );
   });
