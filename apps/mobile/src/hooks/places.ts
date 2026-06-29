@@ -48,12 +48,6 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
             sessionToken,
             includedRegionCodes: ['pk'],
             languageCode: 'en',
-            locationBias: {
-              circle: {
-                center: { latitude: 30.3753, longitude: 69.3451 },
-                radius: 1500000.0,
-              },
-            },
           }),
         });
 
