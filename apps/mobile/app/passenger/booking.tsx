@@ -36,14 +36,18 @@ function uuidv4() {
   });
 }
 
-// Pool fare helpers — same progressive formula as pool-ride.tsx
-// factor(n) = (48 + (n-1)(n+6)) / 48
-function poolPerSeat(soloFare: number, riders: number): number {
-  const factor = (48 + (riders - 1) * (riders + 6)) / 48;
-  return Math.ceil((soloFare * factor) / riders);
-}
-function poolDriverTotal(soloFare: number, riders: number): number {
-  return poolPerSeat(soloFare, riders) * riders;
+// Pool fare breakdown — percentage of solo fare per seat based on total riders
+// 2 riders total (you + 1 joins): each pays 60%
+// 3 riders total (you + 2 join):  each pays 40%
+// 4 riders total (you + 3 join):  each pays 35%
+const POOL_TIERS = [
+  { extra: 1, pct: 0.60, label: '+1 joins' },
+  { extra: 2, pct: 0.40, label: '+2 join'  },
+  { extra: 3, pct: 0.35, label: '+3 join'  },
+];
+function poolFareFor(soloFare: number, extra: number): number {
+  const tier = POOL_TIERS.find(t => t.extra === extra);
+  return Math.ceil(soloFare * (tier?.pct ?? 1));
 }
 
 export default function Booking() {
@@ -72,7 +76,7 @@ export default function Booking() {
   // Details state
   const [rideType, setRideType] = useState<RideType>('ac');
   const [fare, setFare] = useState<number>(BASE_FARES.ac);
-  const [poolFare, setPoolFare] = useState<number>(poolPerSeat(BASE_FARES.ac, 4));
+  const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.ac, 3));
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
@@ -90,7 +94,7 @@ export default function Booking() {
     setRideType(rt);
     const base = BASE_FARES[rt];
     setFare(base);
-    setPoolFare(poolPerSeat(base, 4));
+    setPoolFare(poolFareFor(base, 3));
   }
 
   function bumpFare(delta: number) {
@@ -295,7 +299,7 @@ export default function Booking() {
   }
 
   // STAGE 2: RIDE TYPE SELECTION — Pool first, then solo
-  const savePct = fare > poolFare ? Math.round(((fare - poolFare) / fare) * 100) : 0;
+  const maxSavePct = Math.round((1 - POOL_TIERS[POOL_TIERS.length - 1].pct) * 100);
 
   return (
     <View style={styles.safe}>
@@ -348,30 +352,78 @@ export default function Booking() {
         >
           {/* ─── POOL RIDE — PRIMARY ─── */}
           <View style={styles.poolPrimaryCard}>
+            {/* Header */}
             <View style={styles.poolPrimaryTopRow}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                   <Text style={styles.poolPrimaryTitle}>Pool Ride</Text>
                   <View style={styles.poolPrimaryBadge}>
-                    <Text style={styles.poolPrimaryBadgeText}>RECOMMENDED</Text>
+                    <Text style={styles.poolPrimaryBadgeText}>SAVE UP TO {maxSavePct}%</Text>
                   </View>
                 </View>
-                <Text style={styles.poolPrimarySub}>Share your route · Pay less · Travel smart</Text>
+                <Text style={styles.poolPrimarySub}>The more riders join, the less you pay</Text>
               </View>
-              <Text style={{ fontSize: 28 }}>🔀</Text>
+              <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
+
+            {/* Live savings breakdown table */}
+            <View style={styles.poolTierTable}>
+              {/* Solo row */}
+              <View style={styles.poolTierRow}>
+                <View style={styles.poolTierLeft}>
+                  <Text style={styles.poolTierRiders}>👤  Just you</Text>
+                </View>
+                <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
+                <Text style={styles.poolTierSavingNone}>—</Text>
+              </View>
+
+              {/* Dynamic tier rows */}
+              {POOL_TIERS.map((tier, i) => {
+                const tierFare = poolFareFor(fare, tier.extra);
+                const savePct  = Math.round((1 - tier.pct) * 100);
+                const isSelected = poolFare === tierFare;
+                return (
+                  <Pressable
+                    key={tier.extra}
+                    style={[styles.poolTierRow, isSelected && styles.poolTierRowSelected]}
+                    onPress={() => setPoolFare(tierFare)}
+                  >
+                    <View style={styles.poolTierLeft}>
+                      <Text style={styles.poolTierRidersEmoji}>
+                        {'👤'.repeat(Math.min(tier.extra + 1, 3))}{tier.extra + 1 > 3 ? '+' : ''}
+                      </Text>
+                      <Text style={[styles.poolTierRiders, isSelected && { color: colors.primary }]}>
+                        {tier.label}
+                      </Text>
+                    </View>
+                    <Text style={[styles.poolTierFare, isSelected && { color: colors.primary, fontWeight: '900' }]}>
+                      PKR {tierFare}
+                    </Text>
+                    <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
+                      <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
+                        -{savePct}%
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.poolHint}>
+              💡 Tap a row to set your offered fare · adjust below to attract more riders
+            </Text>
 
             {/* Fare adjuster */}
             <View style={styles.poolFareAdjRow}>
               <Pressable
                 style={styles.poolFareAdjBtn}
-                onPress={() => setPoolFare(f => Math.max(50, f - 10))}
+                onPress={() => setPoolFare(f => Math.max(poolFareFor(fare, 3), f - 10))}
               >
                 <Text style={styles.poolFareAdjBtnText}>−</Text>
               </Pressable>
               <View style={{ alignItems: 'center', flex: 1 }}>
                 <Text style={styles.poolFareAdjValue}>PKR {poolFare}</Text>
-                <Text style={styles.poolFareAdjLabel}>your offer per seat</Text>
+                <Text style={styles.poolFareAdjLabel}>your offered fare / seat</Text>
               </View>
               <Pressable
                 style={styles.poolFareAdjBtn}
@@ -380,12 +432,6 @@ export default function Booking() {
                 <Text style={styles.poolFareAdjBtnText}>+</Text>
               </Pressable>
             </View>
-
-            {savePct > 0 && (
-              <Text style={styles.poolSavingsHint}>
-                Solo costs PKR {fare} → you save <Text style={{ color: colors.primary, fontWeight: '900' }}>{savePct}%</Text> per seat with pool
-              </Text>
-            )}
 
             <Pressable
               style={styles.poolFindBtn}
@@ -910,6 +956,44 @@ const styles = StyleSheet.create({
   },
   poolPrimaryBadgeText: { color: '#000', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
   poolPrimarySub:    { fontSize: 12, color: '#8a8c8c', fontWeight: '600' },
+
+  // Tier breakdown table
+  poolTierTable: {
+    backgroundColor: '#131f0a',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    overflow: 'hidden',
+  },
+  poolTierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e3010',
+    gap: 8,
+  },
+  poolTierRowSelected: { backgroundColor: '#1a2e0f' },
+  poolTierLeft:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  poolTierRidersEmoji: { fontSize: 12 },
+  poolTierRiders:   { fontSize: 13, fontWeight: '700', color: '#8a8c8c' },
+  poolTierFareSolo: { fontSize: 13, fontWeight: '700', color: '#8a8c8c', minWidth: 70, textAlign: 'right' },
+  poolTierFare:     { fontSize: 13, fontWeight: '700', color: '#ffffff', minWidth: 70, textAlign: 'right' },
+  poolTierSavingNone: { fontSize: 11, color: '#555', fontWeight: '700', minWidth: 46, textAlign: 'right' },
+  poolTierSavingBadge: {
+    backgroundColor: '#1a2e0f',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 46,
+    alignItems: 'center',
+  },
+  poolTierSavingBest: { backgroundColor: `${colors.primary}20` },
+  poolTierSavingText: { fontSize: 11, fontWeight: '900', color: '#4ade80' },
+
+  poolHint: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 15 },
+
   poolFareAdjRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -931,7 +1015,6 @@ const styles = StyleSheet.create({
   poolFareAdjBtnText: { fontSize: 20, fontWeight: '900', color: '#000', lineHeight: 24 },
   poolFareAdjValue:   { fontSize: 22, fontWeight: '900', color: colors.primary },
   poolFareAdjLabel:   { fontSize: 11, color: '#8a8c8c', fontWeight: '600', marginTop: 2 },
-  poolSavingsHint:    { fontSize: 11, color: '#8a8c8c', textAlign: 'center', lineHeight: 16 },
   poolFindBtn: {
     height: 50,
     borderRadius: 14,
