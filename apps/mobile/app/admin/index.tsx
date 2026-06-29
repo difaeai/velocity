@@ -244,6 +244,18 @@ export default function AdminDashboard() {
         {/* Quick actions */}
         <Text style={styles.sectionTitle}>QUICK ACTIONS</Text>
 
+        {/* Customers */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/customers')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>👥  Customers</Text>
+            <Text style={styles.ridersCardDesc}>
+              View, search, edit and delete all registered users.{'\n'}
+              Manage roles, profiles and account details.
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
         {/* Ride Categories — full in-app screen */}
         <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/riders')}>
           <View style={styles.ridersCardLeft}>
