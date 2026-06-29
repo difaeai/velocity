@@ -22,6 +22,7 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiStatus, setApiStatus] = useState<string | null>(null);
+  const [apiMessage, setApiMessage] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -48,19 +49,17 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
             sessionToken,
             includedRegionCodes: ['pk'],
             languageCode: 'en',
-            locationBias: {
-              circle: {
-                center: { latitude: 30.3753, longitude: 69.3451 },
-                radius: 1500000.0,
-              },
-            },
           }),
         });
 
         const data = await res.json();
 
         if (!res.ok) {
-          setApiStatus(data?.error?.status ?? `HTTP_${res.status}`);
+          const status = data?.error?.status ?? `HTTP_${res.status}`;
+          const message = data?.error?.message ?? 'Unknown error';
+          setApiStatus(status);
+          setApiMessage(message);
+          console.error('[Places API]', status, message, '| body:', JSON.stringify(data));
           setPredictions([]);
           return;
         }
@@ -102,7 +101,7 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
     };
   }, [input, sessionToken]);
 
-  return { predictions, loading, apiStatus };
+  return { predictions, loading, apiStatus, apiMessage };
 }
 
 export async function fetchPlaceDetail(placeId: string, sessionToken: string): Promise<PlaceDetail | null> {

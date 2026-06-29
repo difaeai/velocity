@@ -119,28 +119,34 @@ export default function PassengerHome() {
       >
         <View style={styles.dragIndicator} />
 
-        {/* Search trigger bar */}
+        {/* ── Single search bar — destination first, then pool/solo choice ── */}
         <Pressable
-          style={styles.searchTrigger}
+          style={styles.searchBar}
           onPress={() => router.push('/passenger/booking')}
         >
-          <View style={styles.searchRow}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <Text style={styles.searchPlaceholder}>Where to & for how much?</Text>
+          <View style={styles.searchBarLeft}>
+            <Text style={styles.searchBarIcon}>🔍</Text>
+            <View>
+              <Text style={styles.searchBarTitle}>Where are you going?</Text>
+              <Text style={styles.searchBarSub}>Pool ride · Save up to 65%</Text>
+            </View>
+          </View>
+          <View style={styles.poolBadge}>
+            <Text style={styles.poolBadgeText}>POOL</Text>
           </View>
         </Pressable>
 
-        {/* ── Secondary Services ── */}
+        {/* ── Service chips — Solo is just one option among many ── */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsRow}
         >
           {[
-            { icon: '🚕', label: 'City Rides',    route: '/passenger/booking' },
-            { icon: '🚌', label: 'City to City',   route: '/passenger/city-to-city' },
-            { icon: '📦', label: 'Couriers',       route: '/passenger/couriers' },
-            { icon: '💼', label: 'Business',       route: '/passenger/business-delivery' },
+            { icon: '🚕', label: 'Solo Ride',    route: '/passenger/booking' },
+            { icon: '🌐', label: 'City to City', route: '/passenger/city-to-city' },
+            { icon: '📦', label: 'Couriers',     route: '/passenger/couriers' },
+            { icon: '💼', label: 'Business',     route: '/passenger/business-delivery' },
           ].map((s) => (
             <Pressable
               key={s.label}
@@ -153,34 +159,16 @@ export default function PassengerHome() {
           ))}
         </ScrollView>
 
-        {/* ── HERO: Ride Sharing ── */}
-        <Pressable style={styles.poolHero} onPress={() => router.push('/passenger/pool-ride')}>
-          <View style={styles.poolHeroBody}>
-            <View style={styles.poolHeroTopRow}>
-              <Text style={styles.poolHeroTitle}>Ride Sharing</Text>
-              <View style={styles.poolPillBadge}>
-                <Text style={styles.poolPillBadgeText}>POOL</Text>
-              </View>
-            </View>
-            <Text style={styles.poolHeroSub}>Share · Save up to 65% · Travel smart</Text>
-            <View style={styles.poolGenderTag}>
-              <Text style={styles.poolGenderTagText}>🔒 Same gender by default</Text>
-            </View>
-            <View style={styles.poolSeatsRow}>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatIcon}>💺</Text>
-              <Text style={styles.poolSeatsLabel}>Up to 4 riders</Text>
-            </View>
-          </View>
-          <View style={styles.poolHeroPriceCol}>
-            <Text style={styles.poolHeroPriceFrom}>From</Text>
-            <Text style={styles.poolHeroPriceAmt}>{poolFromPrice ?? '—'}</Text>
-            <Text style={styles.poolHeroPriceSub}>PKR/seat</Text>
-            <Text style={styles.poolHeroArrow}>→</Text>
-          </View>
-        </Pressable>
+        {/* ── Savings info strip ── */}
+        <View style={styles.savingsStrip}>
+          <Text style={styles.savingsItem}>💺 Up to 4 riders</Text>
+          <View style={styles.savingsDot} />
+          <Text style={styles.savingsItem}>🔒 Same gender</Text>
+          <View style={styles.savingsDot} />
+          {poolFromPrice
+            ? <Text style={styles.savingsItem}>From <Text style={{ color: colors.primary, fontWeight: '900' }}>{poolFromPrice} PKR</Text>/seat</Text>
+            : <Text style={styles.savingsItem}>Save up to 65%</Text>}
+        </View>
 
         {/* ── Travel Mate card ── */}
         <Pressable
@@ -201,12 +189,12 @@ export default function PassengerHome() {
               <Pressable
                 key={r.address}
                 style={styles.historyItem}
-                onPress={() => router.push('/passenger/booking')}
+                onPress={() => router.push('/passenger/pool-ride')}
               >
                 <Text style={styles.historyIcon}>🕒</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
-                  <Text style={styles.historyAddress}>Recent destination</Text>
+                  <Text style={styles.historyAddress}>Tap to find a pool ride</Text>
                 </View>
               </Pressable>
             ))}
@@ -540,45 +528,39 @@ const styles = StyleSheet.create({
     color: '#8a8c8c',
     marginLeft: 6,
   },
-  /* ── Pool hero card ── */
-  poolHero: {
+  /* ── Search bar (single primary action → pool ride) ── */
+  searchBar: {
     backgroundColor: colors.primary,
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 120,
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  poolHeroBody: { flex: 1, gap: 5 },
-  poolHeroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  poolHeroTitle: { fontSize: 20, fontWeight: '900', color: '#000' },
-  poolPillBadge: {
+  searchBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  searchBarIcon:  { fontSize: 20 },
+  searchBarTitle: { fontSize: 16, fontWeight: '900', color: '#000' },
+  searchBarSub:   { fontSize: 11, color: '#1c1c1c', fontWeight: '700', marginTop: 2 },
+  poolBadge: {
     backgroundColor: '#000',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  poolPillBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
-  poolHeroSub: { fontSize: 12, color: '#1c1c1c', fontWeight: '600' },
-  poolGenderTag: {
+  poolBadgeText: { color: colors.primary, fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+
+  /* ── Savings info strip ── */
+  savingsStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#00000015',
-    borderRadius: 99,
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    gap: 8,
     paddingVertical: 4,
-    alignSelf: 'flex-start',
   },
-  poolGenderTagText: { fontSize: 11, color: '#000', fontWeight: '700' },
-  poolSeatsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  poolSeatIcon: { fontSize: 13 },
-  poolSeatsLabel: { fontSize: 11, color: '#333', fontWeight: '700', marginLeft: 3 },
-  poolHeroPriceCol: { alignItems: 'center', paddingLeft: 14, gap: 1 },
-  poolHeroPriceFrom: { fontSize: 10, color: '#444', fontWeight: '600' },
-  poolHeroPriceAmt: { fontSize: 28, fontWeight: '900', color: '#000', lineHeight: 30 },
-  poolHeroPriceSub: { fontSize: 10, color: '#444', fontWeight: '600' },
-  poolHeroArrow: { fontSize: 22, color: '#000', fontWeight: '900', marginTop: 4 },
+  savingsItem:  { fontSize: 11, fontWeight: '700', color: colors.muted },
+  savingsDot:   { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.border },
 
   /* ── Travel Mate card ── */
   travelMateCard: {
@@ -612,30 +594,6 @@ const styles = StyleSheet.create({
   },
   chipEmoji: { fontSize: 22 },
   chipLabel: { fontSize: 11, fontWeight: '800', color: colors.text },
-  searchTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#212222',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#2d2f2f',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  searchIcon: {
-    fontSize: 16,
-  },
-  searchPlaceholder: {
-    color: '#8a8c8c',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   historyList: {
     marginTop: 14,
     gap: 12,

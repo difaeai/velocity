@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,14 +30,25 @@ import {
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
-// Pool fare helpers — same progressive formula as pool-ride.tsx
-// factor(n) = (48 + (n-1)(n+6)) / 48
-function poolPerSeat(soloFare: number, riders: number): number {
-  const factor = (48 + (riders - 1) * (riders + 6)) / 48;
-  return Math.ceil((soloFare * factor) / riders);
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
-function poolDriverTotal(soloFare: number, riders: number): number {
-  return poolPerSeat(soloFare, riders) * riders;
+
+// Pool fare breakdown — percentage of solo fare per seat based on total riders
+// 2 riders total (you + 1 joins): each pays 60%
+// 3 riders total (you + 2 join):  each pays 40%
+// 4 riders total (you + 3 join):  each pays 35%
+const POOL_TIERS = [
+  { extra: 1, pct: 0.60, label: '+1 joins' },
+  { extra: 2, pct: 0.40, label: '+2 join'  },
+  { extra: 3, pct: 0.35, label: '+3 join'  },
+];
+function poolFareFor(soloFare: number, extra: number): number {
+  const tier = POOL_TIERS.find(t => t.extra === extra);
+  return Math.ceil(soloFare * (tier?.pct ?? 1));
 }
 
 export default function Booking() {
@@ -51,8 +63,10 @@ export default function Booking() {
   const [dropoff, setDropoff] = useState('');
   // Resolved coords for the selected dropoff place
   const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
-  // Session token groups autocomplete + detail calls for billing purposes
-  const sessionToken = useRef(Math.random().toString(36).slice(2)).current;
+  // Places API (New) requires session tokens to be UUID v4
+  const sessionTokenRef = useRef(uuidv4());
+
+  function newSession() { sessionTokenRef.current = uuidv4(); }
 
   // Prefill the pickup with the rider's real (reverse-geocoded) address once we
   // have it, unless they've already typed something.
@@ -63,6 +77,9 @@ export default function Booking() {
   // Details state
   const [rideType, setRideType] = useState<RideType>('ac');
   const [fare, setFare] = useState<number>(BASE_FARES.ac);
+  const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.ac, 3));
+  const [poolGender, setPoolGender] = useState<'same' | 'any'>('same');
+  const [poolLoading, setPoolLoading] = useState(false);
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
@@ -78,7 +95,9 @@ export default function Booking() {
 
   function selectRide(rt: RideType) {
     setRideType(rt);
-    setFare(BASE_FARES[rt]);
+    const base = BASE_FARES[rt];
+    setFare(base);
+    setPoolFare(poolFareFor(base, 3));
   }
 
   function bumpFare(delta: number) {
@@ -90,8 +109,9 @@ export default function Booking() {
     setDropoffCoords(null);
     setStage('details');
     // Fetch real lat/lng in the background; used when creating the trip
-    const detail = await fetchPlaceDetail(pred.placeId, sessionToken);
+    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
     if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
+    newSession(); // rotate token after detail call closes the billing session
   }
 
   function selectLocation(locName: string) {
@@ -140,7 +160,33 @@ export default function Booking() {
     }
   }
 
-  const { predictions, loading: placesLoading, apiStatus } = usePlacesAutocomplete(dropoff, sessionToken);
+  async function startPoolRide() {
+    setError(null);
+    if (!coords) { requestLocation(); return; }
+    setPoolLoading(true);
+    try {
+      const pickupAddress = pickup.trim() || currentAddress || 'Current location';
+      const destCoords    = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
+      const res = await api.createTrip({
+        rideType,
+        offeredFare: poolFare,
+        seats: 1,
+        passengerGender: gender,
+        pool: true,
+        paymentMethod,
+        preferFemaleDriver: poolGender === 'same',
+        pickup:  { lat: coords.lat,        lng: coords.lng,        address: pickupAddress },
+        dropoff: { lat: destCoords.lat,     lng: destCoords.lng,    address: dropoff.trim() },
+      });
+      router.replace(`/passenger/trip/${res.tripId}`);
+    } catch (e) {
+      setError(e instanceof FirebaseError ? e.message : 'Could not start pool ride.');
+    } finally {
+      setPoolLoading(false);
+    }
+  }
+
+  const { predictions, loading: placesLoading, apiStatus, apiMessage } = usePlacesAutocomplete(dropoff, sessionTokenRef.current);
   const query = dropoff.trim().toLowerCase();
   const filteredRecents = query
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
@@ -252,8 +298,12 @@ export default function Booking() {
             <View style={styles.emptyResults}>
               <Text style={[styles.emptyResultsText, { color: '#ef4444' }]}>
                 Places API: {apiStatus}
-                {apiStatus === 'REQUEST_DENIED' ? ' — Enable Places API in Google Cloud Console and check your API key restrictions.' : ''}
               </Text>
+              {apiMessage ? (
+                <Text style={[styles.emptyResultsText, { color: '#ef4444', fontSize: 11, marginTop: 2 }]}>
+                  {apiMessage}
+                </Text>
+              ) : null}
             </View>
           )}
 
@@ -277,20 +327,17 @@ export default function Booking() {
     );
   }
 
-  // STAGE 2: CATEGORY & FARE SELECTION
+  // STAGE 2: RIDE TYPE SELECTION — Pool first, then solo
+  const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
+
   return (
     <View style={styles.safe}>
-      {/* 1. Full-Screen Dark Map Representation */}
+      {/* Abstract map background */}
       <View style={styles.mapContainer}>
-        {/* Abstract Map Roads */}
         <View style={[styles.road, { top: 140, left: -50, width: '120%', transform: [{ rotate: '-15deg' }] }]} />
         <View style={[styles.road, { top: 280, left: -50, width: '120%', transform: [{ rotate: '25deg' }] }]} />
         <View style={[styles.road, { top: 480, left: -50, width: '120%', transform: [{ rotate: '-5deg' }] }]} />
-        
-        {/* Route Connection Graphic */}
         <View style={styles.routeLineGraphic} />
-
-        {/* Mock Map Pins for Pickup and Dropoff */}
         <View style={[styles.mapPinPoint, { top: 150, left: 130 }]}>
           <Text style={styles.pinPointEmoji}>👤</Text>
         </View>
@@ -299,13 +346,12 @@ export default function Booking() {
         </View>
       </View>
 
-      {/* 2. Top Floating Routing Details Card (from Image 4) */}
+      {/* Top: route summary */}
       <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
         <View style={styles.floatingHeaderBar}>
           <Pressable style={styles.floatingBackBtn} onPress={() => setStage('route')}>
             <Text style={styles.floatingBackTxt}>←</Text>
           </Pressable>
-
           <View style={styles.floatingRouteCard}>
             <View style={styles.floatingRoutePoint}>
               <Text style={styles.floatingIconBlue}>👤</Text>
@@ -324,141 +370,160 @@ export default function Booking() {
         </View>
       </SafeAreaView>
 
-      {/* 3. Bottom Slide-up Sheet */}
+      {/* Bottom sheet */}
       <View style={styles.bottomRideSheet}>
         <View style={styles.dragIndicator} />
-        
-        {/* Selected/Active Category Details */}
-        <View style={styles.activeCategoryBox}>
-          <View style={styles.activeCategoryMeta}>
-            <View style={styles.categoryTitleRow}>
-              <Text style={styles.categoryEmojiBig}>🚗</Text>
+
+        <ScrollView
+          style={styles.alternativeList}
+          contentContainerStyle={{ paddingBottom: 12 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ─── SOLO BOOKING BOX: car selector + fare adjuster in one card ─── */}
+          <View style={styles.soloBookingCard}>
+            <Text style={styles.soloBookingLabel}>Book a Solo Ride</Text>
+
+            {/* 2×2 car grid inside the card */}
+            <View style={styles.carGrid}>
+              {RIDE_TYPES.map((rt) => {
+                const active = rideType === rt;
+                return (
+                  <Pressable
+                    key={rt}
+                    style={[styles.carTile, active && styles.carTileActive]}
+                    onPress={() => selectRide(rt)}
+                  >
+                    <Text style={styles.carTileEmoji}>
+                      {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
+                    </Text>
+                    <Text style={[styles.carTileName, active && { color: colors.primary }]}>
+                      {RIDE_TYPE_LABELS[rt]}
+                    </Text>
+                    <Text style={[styles.carTilePrice, active && { color: colors.primary }]}>
+                      PKR {BASE_FARES[rt]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Fare adjuster for selected car — inside the same card */}
+            <View style={styles.soloFareStepper}>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+                <Text style={styles.stepperText}>−</Text>
+              </Pressable>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.stepperFareValue}>PKR {fare}</Text>
+                <Text style={styles.stepperLabel}>
+                  {RIDE_TYPE_LABELS[rideType]} · Range {bounds.min}–{bounds.max}
+                </Text>
+              </View>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+                <Text style={styles.stepperText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* ─── 3. POOL RIDE — below car selector ─── */}
+          <View style={styles.orDivider}>
+            <View style={styles.orDividerLine} />
+            <Text style={styles.orDividerText}>OR SHARE &amp; SAVE</Text>
+            <View style={styles.orDividerLine} />
+          </View>
+
+          <View style={styles.poolPrimaryCard}>
+            <View style={styles.poolPrimaryTopRow}>
               <View style={{ flex: 1 }}>
-                <View style={styles.categoryNameRow}>
-                  <Text style={styles.categoryNameBig}>{RIDE_TYPE_LABELS[rideType]}</Text>
-                  <Text style={styles.infoIconCircle}>ⓘ</Text>
-                  <Text style={styles.editPencil}>✏️</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <Text style={styles.poolPrimaryTitle}>Pool Ride</Text>
+                  <View style={styles.poolPrimaryBadge}>
+                    <Text style={styles.poolPrimaryBadgeText}>SAVE UP TO {maxSavePct}%</Text>
+                  </View>
                 </View>
-                <Text style={styles.categorySubtitleBig}>👤 {seats} seat{seats > 1 ? 's' : ''}</Text>
-                <Text style={styles.categoryDescriptionBig}>
-                  Fare range PKR {bounds.min}–{bounds.max}
-                </Text>
+                <Text style={styles.poolPrimarySub}>Your fare drops automatically as riders join</Text>
               </View>
+              <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
-          </View>
 
-          {/* Stepper adjustment for the fare */}
-          <View style={styles.activeFareStepper}>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-              <Text style={styles.stepperText}>−</Text>
-            </Pressable>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-              <Text style={styles.stepperLabel}>Recommended fare</Text>
-            </View>
-            <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-              <Text style={styles.stepperText}>+</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Scrollable list of alternative categories */}
-        <ScrollView style={styles.alternativeList} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
-          {RIDE_TYPES.filter(rt => rt !== rideType).map((rt) => (
-            <Pressable key={rt} style={styles.categoryRow} onPress={() => selectRide(rt)}>
-              <View style={styles.categoryRowLeft}>
-                <Text style={styles.categoryEmojiSmall}>
-                  {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
-                </Text>
-                <View>
-                  <Text style={styles.categoryNameSmall}>{RIDE_TYPE_LABELS[rt]}</Text>
-                  <Text style={styles.categorySubSmall}>
-                    PKR {fareBounds(rt).min}–{fareBounds(rt).max}
-                  </Text>
+            <View style={styles.poolTierTable}>
+              <View style={styles.poolTierRow}>
+                <View style={styles.poolTierLeft}>
+                  <Text style={styles.poolTierRiders}>👤  Just you</Text>
                 </View>
+                <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
+                <Text style={styles.poolTierSavingNone}>—</Text>
               </View>
-              <Text style={styles.categoryFareSmall}>PKR {BASE_FARES[rt]}</Text>
-            </Pressable>
-          ))}
+              {POOL_TIERS.map((tier, i) => {
+                const tierFare = poolFareFor(fare, tier.extra);
+                const savePct  = Math.round((1 - tier.pct) * 100);
+                return (
+                  <View key={tier.extra} style={styles.poolTierRow}>
+                    <View style={styles.poolTierLeft}>
+                      <Text style={styles.poolTierRiders}>{tier.label}</Text>
+                    </View>
+                    <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
+                    <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
+                      <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
+                        -{savePct}%
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
 
-          {/* ── Pool Ride Incentive Banner ── */}
-          {(() => {
-            const riders4   = poolPerSeat(fare, 4);
-            const riders3   = poolPerSeat(fare, 3);
-            const driverSolo = fare;
-            const driver4    = poolDriverTotal(fare, 4);
-            const savePct    = Math.round(((fare - riders4) / fare) * 100);
-            const earnExtra  = Math.round(((driver4 - driverSolo) / driverSolo) * 100);
-            return (
+            <View style={styles.genderRow}>
               <Pressable
-                style={styles.poolBanner}
-                onPress={() => router.push('/passenger/pool-ride')}
+                style={[styles.genderOpt, poolGender === 'same' && styles.genderOptActive]}
+                onPress={() => setPoolGender('same')}
               >
-                {/* Top row: title + badge */}
-                <View style={styles.poolBannerTop}>
-                  <Text style={styles.poolBannerTitle}>🔀 Ride Sharing (Pool)</Text>
-                  <View style={styles.poolSaveBadge}>
-                    <Text style={styles.poolSaveBadgeText}>Save up to {savePct}%</Text>
-                  </View>
-                </View>
-
-                {/* Two columns: passenger | driver */}
-                <View style={styles.poolBannerCols}>
-                  {/* Left: passenger */}
-                  <View style={styles.poolBannerCol}>
-                    <Text style={styles.poolColIcon}>👤</Text>
-                    <Text style={styles.poolColHeading}>You pay</Text>
-                    <View style={styles.poolFareComparison}>
-                      <Text style={styles.poolFareBefore}>PKR {fare}</Text>
-                      <Text style={styles.poolFareArrow}> → </Text>
-                      <Text style={styles.poolFareAfter}>PKR {riders4}</Text>
-                    </View>
-                    <Text style={styles.poolColSub}>
-                      with 4 riders · <Text style={{ color: '#4ade80' }}>−{savePct}%</Text>
-                    </Text>
-                    <Text style={styles.poolColTip}>
-                      PKR {riders3} with 3 riders
-                    </Text>
-                  </View>
-
-                  <View style={styles.poolBannerDivider} />
-
-                  {/* Right: driver */}
-                  <View style={styles.poolBannerCol}>
-                    <Text style={styles.poolColIcon}>🚗</Text>
-                    <Text style={styles.poolColHeading}>Driver earns</Text>
-                    <View style={styles.poolFareComparison}>
-                      <Text style={styles.poolFareBefore}>PKR {driverSolo}</Text>
-                      <Text style={styles.poolFareArrow}> → </Text>
-                      <Text style={[styles.poolFareAfter, { color: '#fbbf24' }]}>PKR {driver4}</Text>
-                    </View>
-                    <Text style={styles.poolColSub}>
-                      with 4 riders · <Text style={{ color: '#fbbf24' }}>+{earnExtra}%</Text>
-                    </Text>
-                    <Text style={styles.poolColTip}>Same trip, more income</Text>
-                  </View>
-                </View>
-
-                {/* CTA */}
-                <View style={styles.poolBannerCTA}>
-                  <Text style={styles.poolBannerCTAText}>Try Pool Ride →</Text>
+                <Text style={styles.genderOptIcon}>🔒</Text>
+                <View>
+                  <Text style={[styles.genderOptTitle, poolGender === 'same' && { color: colors.primary }]}>Same gender</Text>
+                  <Text style={styles.genderOptSub}>Safer · default</Text>
                 </View>
               </Pressable>
-            );
-          })()}
+              <Pressable
+                style={[styles.genderOpt, poolGender === 'any' && styles.genderOptActive]}
+                onPress={() => {
+                  if (poolGender !== 'any') {
+                    Alert.alert(
+                      'Mixed gender ride?',
+                      'You will travel with passengers of any gender.',
+                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Accept', onPress: () => setPoolGender('any') }],
+                    );
+                  } else setPoolGender('same');
+                }}
+              >
+                <Text style={styles.genderOptIcon}>👥</Text>
+                <View>
+                  <Text style={[styles.genderOptTitle, poolGender === 'any' && { color: colors.primary }]}>Any gender</Text>
+                  <Text style={styles.genderOptSub}>More options</Text>
+                </View>
+              </Pressable>
+            </View>
 
-          {/* Notice Banner */}
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <Pressable
+              style={[styles.poolFindBtn, poolLoading && { opacity: 0.7 }]}
+              onPress={startPoolRide}
+              disabled={poolLoading}
+            >
+              <Text style={styles.poolFindBtnText}>
+                {poolLoading ? 'Finding riders…' : 'Start Pool Ride →'}
+              </Text>
+            </Pressable>
+          </View>
+
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
-            <Text style={styles.taxNoticeText}>
-              Fare doesn't include state entry tax, tolls, or parking fees
-            </Text>
+            <Text style={styles.taxNoticeText}>Fare doesn't include state entry tax, tolls, or parking fees</Text>
           </View>
         </ScrollView>
 
-        {/* Footer controls */}
+        {/* Footer: solo booking controls */}
         <View style={styles.sheetActionsFooter}>
-          {/* Payment method toggle */}
           <View style={styles.paymentToggleRow}>
             <Pressable
               style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
@@ -476,9 +541,7 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* Option toggles row */}
           <View style={styles.optionTogglesRow}>
-            {/* Female driver preference */}
             <Pressable style={styles.optionToggle} onPress={() => setPreferFemale(v => !v)}>
               <Text style={styles.optionToggleIcon}>👩</Text>
               <Text style={[styles.optionToggleLabel, preferFemale && { color: colors.primary }]}>
@@ -488,7 +551,6 @@ export default function Booking() {
                 <View style={[styles.toggleSwitchKnobSmall, preferFemale && styles.toggleKnobOn]} />
               </View>
             </Pressable>
-            {/* Promo code */}
             <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
               <Text style={styles.optionToggleIcon}>🎟️</Text>
               <Text style={[styles.optionToggleLabel, promoCode && { color: colors.primary }]}>
@@ -497,7 +559,6 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* Promo code input */}
           {showPromo && (
             <View style={styles.promoInputRow}>
               <TextInput
@@ -530,7 +591,9 @@ export default function Booking() {
             disabled={loading}
           >
             <Text style={styles.findDriverButtonText}>
-              {loading ? 'Booking...' : `Find a driver · PKR ${fare}${paymentMethod === 'cash' ? ' cash' : ' wallet'}`}
+              {loading
+                ? 'Booking...'
+                : `Find Solo Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
             </Text>
           </Pressable>
         </View>
@@ -891,6 +954,180 @@ const styles = StyleSheet.create({
     borderColor: '#2d2f2f',
     paddingTop: 10,
   },
+  // ── Pool ride primary card ──────────────────────────────────────────────────
+  poolPrimaryCard: {
+    backgroundColor: '#0a1f05',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    padding: 16,
+    gap: 14,
+    marginBottom: 4,
+  },
+  poolPrimaryTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolPrimaryTitle:  { fontSize: 20, fontWeight: '900', color: colors.primary },
+  poolPrimaryBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  poolPrimaryBadgeText: { color: '#000', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  poolPrimarySub:    { fontSize: 12, color: '#8a8c8c', fontWeight: '600' },
+
+  // Tier breakdown table
+  poolTierTable: {
+    backgroundColor: '#131f0a',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    overflow: 'hidden',
+  },
+  poolTierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e3010',
+    gap: 8,
+  },
+  poolTierRowSelected: { backgroundColor: '#1a2e0f' },
+  poolTierLeft:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  poolTierRidersEmoji: { fontSize: 12 },
+  poolTierRiders:   { fontSize: 13, fontWeight: '700', color: '#8a8c8c' },
+  poolTierFareSolo: { fontSize: 13, fontWeight: '700', color: '#8a8c8c', minWidth: 70, textAlign: 'right' },
+  poolTierFare:     { fontSize: 13, fontWeight: '700', color: '#ffffff', minWidth: 70, textAlign: 'right' },
+  poolTierSavingNone: { fontSize: 11, color: '#555', fontWeight: '700', minWidth: 46, textAlign: 'right' },
+  poolTierSavingBadge: {
+    backgroundColor: '#1a2e0f',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 46,
+    alignItems: 'center',
+  },
+  poolTierSavingBest: { backgroundColor: `${colors.primary}20` },
+  poolTierSavingText: { fontSize: 11, fontWeight: '900', color: '#4ade80' },
+
+  // Gender toggle inside pool card
+  genderRow: { flexDirection: 'row', gap: 8 },
+  genderOpt: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#131f0a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    padding: 11,
+  },
+  genderOptActive:  { borderColor: colors.primary, backgroundColor: '#1a2e0f' },
+  genderOptIcon:    { fontSize: 18 },
+  genderOptTitle:   { fontSize: 12, fontWeight: '700', color: colors.text },
+  genderOptSub:     { fontSize: 10, color: colors.muted, fontWeight: '600', marginTop: 1 },
+
+  poolHint: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 15 },
+
+  poolFareAdjRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#131f0a',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1e3010',
+    padding: 12,
+    gap: 8,
+  },
+  poolFareAdjBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolFareAdjBtnText: { fontSize: 20, fontWeight: '900', color: '#000', lineHeight: 24 },
+  poolFareAdjValue:   { fontSize: 22, fontWeight: '900', color: colors.primary },
+  poolFareAdjLabel:   { fontSize: 11, color: '#8a8c8c', fontWeight: '600', marginTop: 2 },
+  poolFindBtn: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolFindBtnText: { fontSize: 15, fontWeight: '900', color: '#000' },
+
+  // ── OR divider ──────────────────────────────────────────────────────────────
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 4,
+  },
+  orDividerLine: { flex: 1, height: 1, backgroundColor: '#2d2f2f' },
+  orDividerText: { fontSize: 11, fontWeight: '800', color: '#8a8c8c', letterSpacing: 1 },
+
+  // ── Category row active state ───────────────────────────────────────────────
+  categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
+
+  // ── Unified solo booking card (car selector + fare adjuster) ────────────────
+  soloBookingCard: {
+    backgroundColor: '#141515',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#2a2b2b',
+    padding: 14,
+    gap: 12,
+    marginBottom: 4,
+  },
+  soloBookingLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+
+  // ── Car type 2×2 grid (inside soloBookingCard) ───────────────────────────────
+  carGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  carTile: {
+    width: '47.5%',
+    backgroundColor: '#1c1d1d',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#2d2f2f',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    gap: 3,
+  },
+  carTileActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#0e1e08',
+  },
+  carTileEmoji: { fontSize: 26 },
+  carTileName:  { fontSize: 13, fontWeight: '800', color: colors.text },
+  carTilePrice: { fontSize: 11, fontWeight: '700', color: colors.muted },
+
+  // ── Solo fare stepper (inside soloBookingCard) ───────────────────────────────
+  soloFareStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a1f05',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    padding: 12,
+    gap: 8,
+  },
+
   activeCategoryBox: {
     paddingHorizontal: 20,
     paddingBottom: 14,
