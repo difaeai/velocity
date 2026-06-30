@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';
+import { LogoMark } from '../src/ui/LogoMark';
 
 const GENDERS = ['Male', 'Female', 'Other'] as const;
 type Gender = typeof GENDERS[number];
@@ -163,7 +164,7 @@ export default function Onboarding() {
 
         {/* Header */}
         <View style={styles.logoRow}>
-          <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
+          <View style={styles.logo}><LogoMark size={38} color="#000" /></View>
         </View>
         <Text style={styles.title}>One last step</Text>
         <Text style={styles.subtitle}>Tell us a little about yourself to get started.</Text>
@@ -303,7 +304,6 @@ const styles = StyleSheet.create({
   container: { padding: 24, gap: 20, flexGrow: 1, justifyContent: 'center' },
   logoRow:   { alignItems: 'center', marginBottom: 4 },
   logo:      { width: 60, height: 60, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  logoText:  { fontSize: 36, fontWeight: '900', color: '#000' },
   title:     { fontSize: 28, fontWeight: '900', color: colors.text, textAlign: 'center' },
   subtitle:  { fontSize: 15, color: colors.muted, textAlign: 'center', marginBottom: 4 },
 

@@ -17,6 +17,7 @@ import { auth } from '../src/firebase';
 import { api } from '../src/api/client';
 import { colors } from '../src/config';
 import { PrimaryButton } from '../src/ui/components';
+import { LogoMark } from '../src/ui/LogoMark';
 
 function humaniseAuthError(code: string): string {
   switch (code) {
@@ -100,7 +101,7 @@ export default function DriverSignIn() {
           {/* Header */}
           <View style={styles.logoRow}>
             <View style={styles.logoBadge}>
-              <Text style={styles.logoV}>V</Text>
+              <LogoMark size={46} color="#1a1a1a" />
             </View>
           </View>
 
@@ -170,7 +171,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoV: { fontSize: 40, fontWeight: '900', color: '#1a1a1a' },
 
   title:    { fontSize: 30, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
   subtitle: { fontSize: 15, color: colors.muted, textAlign: 'center', lineHeight: 22, marginBottom: 8 },

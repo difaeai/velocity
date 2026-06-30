@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
 import { colors } from '../src/config';
+import { LogoMark } from '../src/ui/LogoMark';
 
 /** Entry route: sends the user to the right experience based on auth + role. */
 export default function Index() {
@@ -66,7 +67,7 @@ export default function Index() {
       <View style={styles.container}>
         {/* Logo badge */}
         <View style={styles.logoBadge}>
-          <Text style={styles.logoV}>V</Text>
+          <LogoMark size={64} color="#1a1c1c" />
         </View>
 
         {/* Brand name */}
@@ -103,12 +104,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-  },
-  logoV: {
-    fontSize: 62,
-    fontWeight: '900',
-    color: '#1a1c1c',
-    lineHeight: 70,
   },
   brandText: {
     fontSize: 32,

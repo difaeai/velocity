@@ -27,6 +27,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { LogoMark } from '../../src/ui/LogoMark';
 
 interface Message {
   id: string;
@@ -140,7 +141,7 @@ export default function SupportChatScreen() {
         </Pressable>
         <View style={styles.agentInfo}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>V</Text>
+            <LogoMark size={24} color="#000" />
           </View>
           <View>
             <Text style={styles.agentName}>Velocity Support</Text>
@@ -176,7 +177,7 @@ export default function SupportChatScreen() {
                 <View style={[styles.msgRow, isUser ? styles.msgRowRight : styles.msgRowLeft]}>
                   {!isUser && (
                     <View style={[styles.msgAvatar, !showSender && { opacity: 0 }]}>
-                      <Text style={styles.msgAvatarText}>V</Text>
+                      <LogoMark size={17} color="#000" />
                     </View>
                   )}
                   <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleSupport]}>
@@ -244,7 +245,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 18, fontWeight: '900', color: '#000' },
   agentName: { fontSize: 15, fontWeight: '800', color: colors.text },
   agentStatus: { fontSize: 12, color: '#22c55e', fontWeight: '600' },
 
@@ -265,7 +265,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'flex-end',
   },
-  msgAvatarText: { fontSize: 13, fontWeight: '900', color: '#000' },
 
   bubble: {
     maxWidth: '75%',

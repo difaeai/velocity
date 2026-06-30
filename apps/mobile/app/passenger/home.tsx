@@ -22,6 +22,7 @@ import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
+import { TravelMateCard } from '../../src/ui/TravelMateCard';
 
 const { width } = Dimensions.get('window');
 
@@ -171,16 +172,7 @@ export default function PassengerHome() {
         </View>
 
         {/* ── Travel Mate card ── */}
-        <Pressable
-          style={styles.travelMateCard}
-          onPress={() => router.push('/passenger/travel-mate')}
-        >
-          <View style={styles.travelMateBody}>
-            <Text style={styles.travelMateTitle}>Travel Mate 💛</Text>
-            <Text style={styles.travelMateSub}>Meet people using Velocity today. Swipe, match, chat.</Text>
-          </View>
-          <Text style={styles.travelMateArrow}>→</Text>
-        </Pressable>
+        <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
 
         {/* Recent destinations */}
         {recents.length > 0 && (
@@ -561,22 +553,6 @@ const styles = StyleSheet.create({
   },
   savingsItem:  { fontSize: 11, fontWeight: '700', color: colors.muted },
   savingsDot:   { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.border },
-
-  /* ── Travel Mate card ── */
-  travelMateCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e1a00',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#ccff0040',
-    padding: 16,
-    gap: 12,
-  },
-  travelMateBody: { flex: 1, gap: 4 },
-  travelMateTitle: { fontSize: 16, fontWeight: '900', color: colors.primary },
-  travelMateSub:   { fontSize: 12, color: '#8a8c8c', lineHeight: 17 },
-  travelMateArrow: { fontSize: 20, color: colors.primary, fontWeight: '900' },
 
   /* ── Secondary service chips ── */
   chipsRow: { gap: 10, paddingRight: 4 },
