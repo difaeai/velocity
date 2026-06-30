@@ -231,19 +231,23 @@ service cloud.firestore {
     }
 
     // ----- travelMateProfiles/{uid} ----------------------------------------
-    // Profiles are OPAQUE to all clients. The getTravelMateFeed CF serves
-    // candidates via Admin SDK so we never expose another user's home address
-    // or commute details directly. All writes go through upsertTravelMateProfile.
     match /travelMateProfiles/{userId} {
-      // The owner may read their own profile (to pre-fill the setup form).
-      allow read: if isOwner(userId);
-      allow write: if false; // CF (Admin SDK) only
+      // Owner reads own profile to pre-fill the setup form.
+      // Any signed-in user can read profiles to show swipe deck cards.
+      allow read: if isSignedIn();
+      // Owner writes own profile directly from the setup screen.
+      allow write: if isOwner(userId);
+    }
 
-      // Swipe records — the owner can read their own swipe history.
-      match /swipes/{targetId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
-      }
+    // ----- travelMateSwipes/{swipeId} ----------------------------------------
+    // swipeId format: {swiperId}_{swipedId}
+    match /travelMateSwipes/{swipeId} {
+      allow read: if isSignedIn() && (
+        resource.data.swiperId == uid() || resource.data.swipedId == uid()
+      );
+      // Owner can write their own swipes (checked by swiperId == uid in the app).
+      allow create: if isSignedIn() && request.resource.data.swiperId == uid();
+      allow update, delete: if false;
     }
 
     // ----- travelMateMatches/{matchId} -------------------------------------
@@ -251,7 +255,10 @@ service cloud.firestore {
     // Only the two matched users may read the match or its chat.
     match /travelMateMatches/{matchId} {
       allow read: if isSignedIn() && uid() in resource.data.users;
-      allow write: if false;
+      // Either matched user can create the match doc (written from swipe logic).
+      allow create: if isSignedIn() && uid() in request.resource.data.users;
+      allow update: if false;
+      allow delete: if false;
 
       match /chat/{msgId} {
         allow read: if isSignedIn()
