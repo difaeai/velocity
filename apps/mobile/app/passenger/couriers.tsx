@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   continueBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
 
   // Stage 2 map
-  mapBg: { ...StyleSheet.absoluteFillObject, backgroundColor: '#151616' },
+  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#151616' },
   road: {
     position: 'absolute',
     height: 28,
