@@ -16,6 +16,7 @@ import { FirebaseError } from 'firebase/app';
 import { auth, firebaseConfig } from '../../src/firebase';
 import { colors } from '../../src/config';
 import { PrimaryButton } from '../../src/ui/components';
+import { LogoMark } from '../../src/ui/LogoMark';
 
 type Step = 'enter_phone' | 'enter_otp';
 
@@ -154,7 +155,7 @@ export default function SignIn() {
         <View style={styles.container}>
           {/* Brand */}
           <View style={styles.brandRow}>
-            <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
+            <View style={styles.logo}><LogoMark size={28} color="#000" /></View>
             <Text style={styles.brand}>Velocity</Text>
           </View>
 
@@ -263,7 +264,6 @@ const styles = StyleSheet.create({
 
   brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   logo:       { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  logoText:   { fontSize: 26, fontWeight: '900', color: '#000' },
   brand:      { fontSize: 26, fontWeight: '900', color: colors.text },
   title:      { fontSize: 28, fontWeight: '900', color: colors.text },
   subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 4 },
