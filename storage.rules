@@ -40,6 +40,13 @@ service firebase.storage {
       allow write: if isOwner(driverId) && underSize(15);
     }
 
+    // TravelMate profile photos: owner writes their own, any signed-in user can
+    // read (needed to display photos in the swipe deck and match grid).
+    match /travelMatePhotos/{userId}.jpg {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) && isImage() && underSize(5);
+    }
+
     // Everything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;

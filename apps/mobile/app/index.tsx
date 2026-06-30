@@ -23,13 +23,19 @@ export default function Index() {
     if (!user) { setProfileChecked(true); return; }
     getDoc(doc(db, 'users', user.uid)).then((snap) => {
       const data = snap.data();
-      // Accept either the explicit flag (new sign-ups) or an existing displayName
-      // (accounts created before the profileComplete field was introduced).
+      // profileComplete flag (set by onboarding save) is the primary signal.
+      // data.name is the fallback for accounts created before the flag existed —
+      // the onboarding form saves 'name'; the onUserCreate trigger never does.
       setProfileComplete(
-        snap.exists() && (data?.profileComplete === true || !!data?.displayName),
+        snap.exists() && (data?.profileComplete === true || !!data?.name),
       );
       setProfileChecked(true);
-    }).catch(() => { setProfileChecked(true); });
+    }).catch(() => {
+      // On read failure treat the profile as complete so the user isn't stuck
+      // on the onboarding screen due to a temporary network or rules issue.
+      setProfileComplete(true);
+      setProfileChecked(true);
+    });
   }, [user]);
 
   if (initializing || showSplash || !profileChecked) {
