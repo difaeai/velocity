@@ -40,11 +40,19 @@ service firebase.storage {
       allow write: if isOwner(driverId) && underSize(15);
     }
 
-    // TravelMate profile photos: owner writes their own, any signed-in user can
-    // read (needed to display photos in the swipe deck and match grid).
-    match /travelMatePhotos/{userId}.jpg {
+    // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
+    // Admin SDK bypasses rules so only a read rule is needed here.
+    match /avatars/{fileName} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId) && isImage() && underSize(5);
+      allow write: if false;
+    }
+
+    // TravelMate profile photos uploaded via Cloud Function (travelMatePhotos/{uid}.jpg).
+    // Storage Rules cannot mix a wildcard and a literal suffix in one segment,
+    // so we match the whole directory. Writes go through the Admin SDK only.
+    match /travelMatePhotos/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // Everything else is denied.
