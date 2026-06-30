@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   Alert,
@@ -47,7 +47,6 @@ interface TMProfile {
   bio?: string;
   interests?: string[];
   photoURL?: string | null;
-  activeMode?: 'today' | 'week';
   lastActive?: { seconds: number };
 }
 
@@ -164,21 +163,16 @@ export default function TravelMateDeck() {
   const [noProfile, setNoProfile]   = useState(false);
   const [outOfCards, setOutOfCards] = useState(false);
   const [swiping, setSwiping]       = useState(false);
-  const [filter, setFilter]         = useState<'today' | 'week'>('week');
   const [matchInfo, setMatchInfo]   = useState<{ name: string; matchId: string } | null>(null);
 
   const loadFeed = useCallback(async (
     myUid: string,
     myGenderPref: string,
     excludeUids: string[],
-    activeFilter: 'today' | 'week',
   ) => {
     setLoading(true);
     try {
-      const cutoff = activeFilter === 'today'
-        ? Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000))
-        : Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-
+      const cutoff = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
       const snap = await getDocs(query(
         collection(db, 'travelMateProfiles'),
         where('active', '==', true),
@@ -202,33 +196,44 @@ export default function TravelMateDeck() {
     }
   }, []);
 
-  // Reload profile on every focus so returning from setup always picks up the new profile
+  // On every focus: re-read profile (catches returning from setup with new profile)
+  // then load the feed. Cancellation flag prevents state updates after unmount.
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
+      let cancelled = false;
       setLoading(true);
-      setNoProfile(false);
-      getDoc(doc(db, 'travelMateProfiles', user.uid))
-        .then(snap => {
-          if (!snap.exists()) { setNoProfile(true); setLoading(false); return; }
-          const p = { uid: user.uid, ...snap.data() } as TMProfile;
+
+      (async () => {
+        try {
+          const profileSnap = await getDoc(doc(db, 'travelMateProfiles', user.uid));
+          if (cancelled) return;
+
+          if (!profileSnap.exists()) {
+            setNoProfile(true);
+            setLoading(false);
+            return;
+          }
+
+          setNoProfile(false);
+          const p = { uid: user.uid, ...profileSnap.data() } as TMProfile;
           setMyProfile(p);
           setDoc(doc(db, 'travelMateProfiles', user.uid), { lastActive: serverTimestamp() }, { merge: true }).catch(() => {});
-        })
-        .catch(() => setLoading(false));
-    }, [user?.uid]),
-  );
 
-  // Reload feed when profile is ready or filter changes
-  useEffect(() => {
-    if (!myProfile || !user) return;
-    getDocs(query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)))
-      .then(swipedSnap => {
-        const swipedUids = swipedSnap.docs.map(d => d.data().swipedId as string);
-        loadFeed(user.uid, myProfile.genderPref, swipedUids, filter);
-      })
-      .catch(() => setLoading(false));
-  }, [myProfile?.uid, filter, loadFeed]);
+          const swipedSnap = await getDocs(
+            query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)),
+          );
+          if (cancelled) return;
+          const swipedUids = swipedSnap.docs.map(d => d.data().swipedId as string);
+          await loadFeed(user.uid, p.genderPref, swipedUids);
+        } catch {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+
+      return () => { cancelled = true; };
+    }, [user?.uid, loadFeed]),
+  );
 
   async function swipe(direction: 'like' | 'pass') {
     if (cards.length === 0 || swiping || !user || !myProfile) return;
@@ -269,7 +274,7 @@ export default function TravelMateDeck() {
         const allSwiped = await getDocs(
           query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)),
         ).then(s => s.docs.map(d => d.data().swipedId as string));
-        loadFeed(user.uid, myProfile.genderPref, allSwiped, filter);
+        loadFeed(user.uid, myProfile.genderPref, allSwiped);
       }
       if (next.length === 0) setOutOfCards(true);
     } catch {
@@ -325,21 +330,6 @@ export default function TravelMateDeck() {
     <SafeAreaView style={s.safe}>
       <TopBar />
 
-      {/* Filter row */}
-      <View style={s.filterRow}>
-        {(['today', 'week'] as const).map(f => (
-          <Pressable
-            key={f}
-            style={[s.filterTab, filter === f && s.filterTabActive]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={[s.filterTabText, filter === f && s.filterTabTextActive]}>
-              {f === 'today' ? 'Active today' : 'This week'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
       {/* Card deck */}
       <View style={s.deck}>
         {outOfCards ? (
@@ -354,7 +344,7 @@ export default function TravelMateDeck() {
                   getDocs(query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)))
                     .then(s => {
                       const uids = s.docs.map(d => d.data().swipedId as string);
-                      loadFeed(user.uid, myProfile.genderPref, uids, filter);
+                      loadFeed(user.uid, myProfile.genderPref, uids);
                     });
                 }
               }}
@@ -425,12 +415,6 @@ const s = StyleSheet.create({
   screenTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
   gearBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   gearText:    { fontSize: 16 },
-
-  filterRow:           { flexDirection: 'row', paddingHorizontal: 20, paddingBottom: 8, gap: 8, alignItems: 'center' },
-  filterTab:           { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },
-  filterTabActive:     { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
-  filterTabText:       { fontSize: 12, fontWeight: '700', color: colors.muted },
-  filterTabTextActive: { color: colors.primary },
 
   deck: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 

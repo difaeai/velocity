@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/functions/**'
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'storage.rules'
       - 'firebase.json'
 
@@ -37,5 +38,5 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
-      - name: Deploy Cloud Functions + Firestore rules + Storage rules
-        run: firebase deploy --only functions,firestore:rules,storage --project velocity-fe379 --non-interactive
+      - name: Deploy Cloud Functions + Firestore rules + indexes + Storage rules
+        run: firebase deploy --only functions,firestore,storage --project velocity-fe379 --non-interactive
