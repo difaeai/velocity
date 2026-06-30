@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useRouter } from 'expo-router';
 
 import { db, storage } from '../src/firebase';
@@ -52,8 +52,7 @@ export default function Onboarding() {
   const [dob, setDob]                 = useState<Date | null>(null);
   const [pickerTemp, setPickerTemp]   = useState<Date>(DEFAULT_DOB);
   const [showPicker, setShowPicker]   = useState(false);
-  const [photoUri, setPhotoUri]       = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [saving, setSaving]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError]             = useState<string | null>(null);
@@ -69,21 +68,27 @@ export default function Onboarding() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
-      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
-      setPhotoBase64(result.assets[0].base64 ?? null);
       setError(null);
     }
   }
 
   async function uploadPhoto(uid: string): Promise<string | null> {
-    if (!photoBase64) return null;
+    if (!photoUri) return null;
     setUploadProgress('Uploading photo…');
     try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => resolve(xhr.response as Blob);
+        xhr.onerror = () => reject(new Error('Failed to read photo'));
+        xhr.responseType = 'blob';
+        xhr.open('GET', photoUri, true);
+        xhr.send(null);
+      });
       const storageRef = ref(storage, `avatars/${uid}.jpg`);
-      await uploadString(storageRef, photoBase64, 'base64', { contentType: 'image/jpeg' });
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
       return await getDownloadURL(storageRef);
     } catch {
       return null;
