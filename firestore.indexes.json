@@ -41,5 +41,14 @@
       ]
     }
   ],
+    {
+      "collectionGroup": "travelMateProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "lastActive", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

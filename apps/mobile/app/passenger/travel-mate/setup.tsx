@@ -40,7 +40,6 @@ export default function TravelMateSetup() {
   const [genderPref, setGenderPref] = useState<'male' | 'female' | 'any'>('any');
   const [bio, setBio]             = useState('');
   const [interests, setInterests] = useState<string[]>([]);
-  const [activeMode, setActiveMode] = useState<'today' | 'week'>('week');
   const [active, setActive]       = useState(true);
   const [loading, setLoading]     = useState(false);
   const [prefilling, setPrefilling] = useState(true);
@@ -57,7 +56,6 @@ export default function TravelMateSetup() {
         setGenderPref(d.genderPref ?? 'any');
         setBio(d.bio ?? '');
         setInterests(d.interests ?? []);
-        setActiveMode(d.activeMode ?? 'week');
         setActive(d.active !== false);
         if (d.photoURL) setPhotoURL(d.photoURL);
       })
@@ -130,7 +128,6 @@ export default function TravelMateSetup() {
         interests,
         photoURL: finalPhotoURL ?? null,
         active,
-        activeMode,
         lastActive: serverTimestamp(),
       });
       router.replace('/passenger/travel-mate');
@@ -279,17 +276,6 @@ export default function TravelMateSetup() {
                 trackColor={{ true: colors.primary }}
                 thumbColor={active ? '#000' : colors.muted}
               />
-            </View>
-            <Text style={s.label}>My active status</Text>
-            <View style={s.pillRow}>
-              {[
-                { key: 'today' as const, label: 'Active today' },
-                { key: 'week' as const, label: 'Active this week' },
-              ].map(o => (
-                <Pressable key={o.key} style={[s.pill, activeMode === o.key && s.pillActive]} onPress={() => setActiveMode(o.key)}>
-                  <Text style={[s.pillText, activeMode === o.key && s.pillTextActive]}>{o.label}</Text>
-                </Pressable>
-              ))}
             </View>
           </View>
 
