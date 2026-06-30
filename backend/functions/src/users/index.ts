@@ -299,3 +299,5 @@ export async function applyRole(targetUid: string, role: Role): Promise<void> {
     { merge: true },
   );
 }
+
+export { uploadUserPhoto } from './uploadPhoto';

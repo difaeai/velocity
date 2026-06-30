@@ -16,10 +16,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { httpsCallable } from 'firebase/functions';
 import { useRouter } from 'expo-router';
 
-import { db, storage } from '../src/firebase';
+import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';
 
@@ -52,7 +52,8 @@ export default function Onboarding() {
   const [dob, setDob]                 = useState<Date | null>(null);
   const [pickerTemp, setPickerTemp]   = useState<Date>(DEFAULT_DOB);
   const [showPicker, setShowPicker]   = useState(false);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoUri, setPhotoUri]       = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [saving, setSaving]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError]             = useState<string | null>(null);
@@ -68,29 +69,26 @@ export default function Onboarding() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
+      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoBase64(result.assets[0].base64 ?? null);
       setError(null);
     }
   }
 
-  async function uploadPhoto(uid: string): Promise<string | null> {
-    if (!photoUri) return null;
+  async function uploadPhoto(): Promise<string | null> {
+    if (!photoBase64) return null;
     setUploadProgress('Uploading photo…');
     try {
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.onload = () => resolve(xhr.response as Blob);
-        xhr.onerror = () => reject(new Error('Failed to read photo'));
-        xhr.responseType = 'blob';
-        xhr.open('GET', photoUri, true);
-        xhr.send(null);
-      });
-      const storageRef = ref(storage, `avatars/${uid}.jpg`);
-      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-      return await getDownloadURL(storageRef);
+      const upload = httpsCallable<{ base64: string; kind: string }, { photoURL: string }>(
+        functions, 'uploadUserPhoto',
+      );
+      const res = await upload({ base64: photoBase64, kind: 'avatar' });
+      return res.data.photoURL;
     } catch {
+      // Non-blocking: the profile still saves without a photo.
       return null;
     } finally {
       setUploadProgress(null);
@@ -111,7 +109,7 @@ export default function Onboarding() {
     setSaving(true);
     setError(null);
     try {
-      const photoURL = await uploadPhoto(user.uid);
+      const photoURL = await uploadPhoto();
 
       // setDoc with merge:true works whether onUserCreate trigger has already
       // created the doc or not — avoids "NOT_FOUND" from updateDoc race condition.
