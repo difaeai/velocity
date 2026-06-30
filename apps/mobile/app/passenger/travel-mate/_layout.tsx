@@ -72,6 +72,8 @@ export default function TravelMateLayout() {
       {/* Not tabs — push-navigated full-screen */}
       <Tabs.Screen name="setup" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="subscription" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="chat" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="group" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

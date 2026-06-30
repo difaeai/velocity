@@ -23,20 +23,27 @@ export default function Index() {
     if (!user) { setProfileChecked(true); return; }
     getDoc(doc(db, 'users', user.uid)).then((snap) => {
       const data = snap.data();
-      // profileComplete flag (set by onboarding save) is the primary signal.
-      // data.name is the fallback for accounts created before the flag existed —
-      // the onboarding form saves 'name'; the onUserCreate trigger never does.
-      setProfileComplete(
-        snap.exists() && (data?.profileComplete === true || !!data?.name),
-      );
+      // Accept as complete if ANY onboarding field exists on the doc.
+      // profileComplete is set by the current onboarding save.
+      // name / age / gender / dob are fallbacks for accounts onboarded before
+      // the profileComplete flag was introduced.
+      // If the doc doesn't exist yet (trigger race) we also let them through
+      // so users aren't trapped on the onboarding screen.
+      const done =
+        !snap.exists() ||
+        data?.profileComplete === true ||
+        !!data?.name ||
+        !!data?.age ||
+        !!data?.gender ||
+        !!data?.dob;
+      setProfileComplete(done);
       setProfileChecked(true);
     }).catch(() => {
-      // On read failure treat the profile as complete so the user isn't stuck
-      // on the onboarding screen due to a temporary network or rules issue.
+      // On any read failure treat as complete — don't trap the user.
       setProfileComplete(true);
       setProfileChecked(true);
     });
-  }, [user]);
+  }, [user?.uid]); // depend on uid only — user object ref changes on token refresh
 
   if (initializing || showSplash || !profileChecked) {
     return (
