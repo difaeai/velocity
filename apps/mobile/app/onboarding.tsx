@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { useRouter } from 'expo-router';
 
 import { db, storage } from '../src/firebase';
@@ -53,6 +53,7 @@ export default function Onboarding() {
   const [pickerTemp, setPickerTemp]   = useState<Date>(DEFAULT_DOB);
   const [showPicker, setShowPicker]   = useState(false);
   const [photoUri, setPhotoUri]       = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [saving, setSaving]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError]             = useState<string | null>(null);
@@ -68,21 +69,21 @@ export default function Onboarding() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
+      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoBase64(result.assets[0].base64 ?? null);
       setError(null);
     }
   }
 
   async function uploadPhoto(uid: string): Promise<string | null> {
-    if (!photoUri) return null;
+    if (!photoBase64) return null;
     setUploadProgress('Uploading photo…');
     try {
-      const resp = await fetch(photoUri);
-      const blob = await resp.blob();
       const storageRef = ref(storage, `avatars/${uid}.jpg`);
-      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
+      await uploadString(storageRef, photoBase64, 'base64', { contentType: 'image/jpeg' });
       return await getDownloadURL(storageRef);
     } catch {
       return null;

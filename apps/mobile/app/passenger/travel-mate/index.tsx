@@ -275,15 +275,23 @@ export default function TravelMateDeck() {
     }
   }
 
+  const TopBar = () => (
+    <View style={s.topBar}>
+      <Pressable onPress={() => router.back()} style={s.backBtn}>
+        <Text style={s.backBtnText}>← Book Ride</Text>
+      </Pressable>
+      <Text style={s.screenTitle}>TravelMate</Text>
+      <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.gearBtn}>
+        <Text style={s.gearText}>⚙️</Text>
+      </Pressable>
+    </View>
+  );
+
   // ── Empty states ──────────────────────────────────────────────────────────────
   if (noProfile) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.topBar}>
-          <Pressable onPress={() => router.back()} style={s.backBtn}><Text style={s.backText}>←</Text></Pressable>
-          <Text style={s.screenTitle}>Travel Mate</Text>
-          <View style={{ width: 36 }} />
-        </View>
+        <TopBar />
         <View style={s.emptyBox}>
           <Text style={s.emptyEmoji}>💛</Text>
           <Text style={s.emptyTitle}>Set up your profile</Text>
@@ -299,11 +307,7 @@ export default function TravelMateDeck() {
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
-        <View style={s.topBar}>
-          <Pressable onPress={() => router.back()} style={s.backBtn}><Text style={s.backText}>←</Text></Pressable>
-          <Text style={s.screenTitle}>Travel Mate</Text>
-          <View style={{ width: 36 }} />
-        </View>
+        <TopBar />
         <View style={s.emptyBox}>
           <Text style={s.emptyEmoji}>💛</Text>
           <Text style={s.emptyTitle}>Finding people…</Text>
@@ -315,21 +319,9 @@ export default function TravelMateDeck() {
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* Top bar */}
-      <View style={s.topBar}>
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
-          <Text style={s.backText}>←</Text>
-        </Pressable>
-        <Text style={s.screenTitle}>Travel Mate</Text>
-        <Pressable
-          onPress={() => router.push('/passenger/travel-mate/setup')}
-          style={s.gearBtn}
-        >
-          <Text style={s.gearText}>⚙️</Text>
-        </Pressable>
-      </View>
+      <TopBar />
 
-      {/* Filter + matches row */}
+      {/* Filter row */}
       <View style={s.filterRow}>
         {(['today', 'week'] as const).map(f => (
           <Pressable
@@ -342,12 +334,6 @@ export default function TravelMateDeck() {
             </Text>
           </Pressable>
         ))}
-        <Pressable
-          style={s.matchesBtn}
-          onPress={() => router.push('/passenger/travel-mate/matches')}
-        >
-          <Text style={s.matchesBtnText}>💬 Matches</Text>
-        </Pressable>
       </View>
 
       {/* Card deck */}
@@ -429,9 +415,9 @@ export default function TravelMateDeck() {
 
 const s = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
-  topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
-  backBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  backText:    { color: colors.text, fontSize: 18, fontWeight: '700' },
+  topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  backBtn:     { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
+  backBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   screenTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
   gearBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   gearText:    { fontSize: 16 },
@@ -441,8 +427,6 @@ const s = StyleSheet.create({
   filterTabActive:     { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
   filterTabText:       { fontSize: 12, fontWeight: '700', color: colors.muted },
   filterTabTextActive: { color: colors.primary },
-  matchesBtn:          { marginLeft: 'auto', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}20`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
-  matchesBtnText:      { fontSize: 12, fontWeight: '800', color: colors.primary },
 
   deck: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
