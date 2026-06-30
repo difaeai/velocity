@@ -159,7 +159,7 @@ export default function RideSettingsPage() {
           </div>
           <div style={{
             padding: '12px 20px',
-            background: colors.card,
+            background: colors.surface,
             borderRadius: 12,
             border: `1px solid ${colors.border}`,
             textAlign: 'center',
