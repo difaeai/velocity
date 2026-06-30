@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   Alert,
   Animated,
@@ -201,19 +202,22 @@ export default function TravelMateDeck() {
     }
   }, []);
 
-  // Load my profile once on mount
-  useEffect(() => {
-    if (!user) return;
-    getDoc(doc(db, 'travelMateProfiles', user.uid))
-      .then(snap => {
-        if (!snap.exists()) { setNoProfile(true); setLoading(false); return; }
-        const p = { uid: user.uid, ...snap.data() } as TMProfile;
-        setMyProfile(p);
-        // Refresh lastActive
-        setDoc(doc(db, 'travelMateProfiles', user.uid), { lastActive: serverTimestamp() }, { merge: true }).catch(() => {});
-      })
-      .catch(() => setLoading(false));
-  }, [user?.uid]);
+  // Reload profile on every focus so returning from setup always picks up the new profile
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      setLoading(true);
+      setNoProfile(false);
+      getDoc(doc(db, 'travelMateProfiles', user.uid))
+        .then(snap => {
+          if (!snap.exists()) { setNoProfile(true); setLoading(false); return; }
+          const p = { uid: user.uid, ...snap.data() } as TMProfile;
+          setMyProfile(p);
+          setDoc(doc(db, 'travelMateProfiles', user.uid), { lastActive: serverTimestamp() }, { merge: true }).catch(() => {});
+        })
+        .catch(() => setLoading(false));
+    }, [user?.uid]),
+  );
 
   // Reload feed when profile is ready or filter changes
   useEffect(() => {
