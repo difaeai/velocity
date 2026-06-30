@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Image,
   Pressable,
@@ -16,9 +15,6 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 
-const { width } = Dimensions.get('window');
-const TILE = (width - 48) / 2;
-
 type MatchStatus = 'active' | 'unmatched';
 interface TravelMatch {
   id: string;
@@ -33,12 +29,12 @@ interface TravelMatch {
 function timeAgo(seconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - seconds);
   if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
-export default function TravelMateMatches() {
+export default function TravelMateChats() {
   const { user } = useAuth();
   const router = useRouter();
   const [matches, setMatches] = useState<TravelMatch[]>([]);
@@ -51,7 +47,8 @@ export default function TravelMateMatches() {
     );
   }, [user?.uid]);
 
-  const activeMatches = useMemo(
+  // Only show active matches — sorted newest message first
+  const chatList = useMemo(
     () => [...matches]
       .filter(m => m.status === 'active')
       .sort((a, b) => (b.lastMessageAt?.seconds ?? b.matchedAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? a.matchedAt?.seconds ?? 0)),
@@ -64,23 +61,21 @@ export default function TravelMateMatches() {
         <Pressable onPress={() => router.back()} style={s.backBtn}>
           <Text style={s.backBtnText}>← Book Ride</Text>
         </Pressable>
-        <Text style={s.title}>Matches</Text>
+        <Text style={s.title}>Chats</Text>
         <View style={{ width: 80 }} />
       </View>
 
-      {activeMatches.length === 0 ? (
+      {chatList.length === 0 ? (
         <View style={s.emptyBox}>
-          <Text style={s.emptyEmoji}>❤️</Text>
-          <Text style={s.emptyTitle}>No matches yet</Text>
-          <Text style={s.emptySub}>Keep swiping — your matches will appear here when you and someone else both swipe right.</Text>
+          <Text style={s.emptyEmoji}>💬</Text>
+          <Text style={s.emptyTitle}>No conversations yet</Text>
+          <Text style={s.emptySub}>Once you match with someone, your chats will appear here.</Text>
         </View>
       ) : (
         <FlatList
-          data={activeMatches}
+          data={chatList}
           keyExtractor={m => m.id}
-          numColumns={2}
-          contentContainerStyle={s.grid}
-          columnWrapperStyle={s.row}
+          ItemSeparatorComponent={() => <View style={s.divider} />}
           renderItem={({ item: match }) => {
             const otherId = match.users.find(u => u !== user?.uid) ?? '';
             const other = match.userInfo?.[otherId];
@@ -88,25 +83,26 @@ export default function TravelMateMatches() {
             const hasChat = !!match.lastMessageAt;
             return (
               <Pressable
-                style={s.tile}
+                style={s.chatRow}
                 onPress={() => router.push(`/passenger/travel-mate/chat/${match.id}` as Parameters<typeof router.push>[0])}
               >
-                {other?.photoURL ? (
-                  <Image source={{ uri: other.photoURL }} style={s.tilePhoto} />
-                ) : (
-                  <View style={s.tilePhotoPlaceholder}>
-                    <Text style={{ fontSize: 40 }}>👤</Text>
-                  </View>
-                )}
-                {/* Gradient overlay */}
-                <View style={s.tileOverlay}>
-                  <Text style={s.tileName} numberOfLines={1}>{other?.displayName ?? 'Travel Mate'}</Text>
-                  {ts && <Text style={s.tileTime}>{hasChat ? '💬 ' : '❤️ '}{timeAgo(ts.seconds)}</Text>}
+                <View style={s.avatarWrap}>
+                  {other?.photoURL ? (
+                    <Image source={{ uri: other.photoURL }} style={s.avatar} />
+                  ) : (
+                    <View style={s.avatarFallback}><Text style={{ fontSize: 22 }}>👤</Text></View>
+                  )}
+                  <View style={[s.dot, hasChat ? s.dotActive : s.dotNew]} />
                 </View>
-                {/* Unread indicator */}
-                {!hasChat && (
-                  <View style={s.newBadge}><Text style={s.newBadgeText}>NEW</Text></View>
-                )}
+                <View style={s.chatInfo}>
+                  <Text style={s.chatName}>{other?.displayName ?? 'Travel Mate'}</Text>
+                  <Text style={s.chatPreview} numberOfLines={1}>
+                    {hasChat
+                      ? (match.lastMessage ?? 'Tap to continue chatting…')
+                      : '👋 Say hello — you matched!'}
+                  </Text>
+                </View>
+                <Text style={s.chatTime}>{ts ? timeAgo(ts.seconds) : ''}</Text>
               </Pressable>
             );
           }}
@@ -128,29 +124,18 @@ const s = StyleSheet.create({
   emptyTitle:{ fontSize: 20, fontWeight: '900', color: colors.text, textAlign: 'center' },
   emptySub:  { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 22 },
 
-  grid: { padding: 16, gap: 12 },
-  row:  { gap: 12 },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: 84 },
 
-  tile: {
-    width: TILE,
-    height: TILE * 1.3,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-  },
-  tilePhoto:            { width: '100%', height: '100%', resizeMode: 'cover' },
-  tilePhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: '#2a2c2c', alignItems: 'center', justifyContent: 'center' },
-  tileOverlay: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 2,
-  },
-  tileName: { fontSize: 14, fontWeight: '900', color: '#fff' },
-  tileTime: { fontSize: 11, color: 'rgba(255,255,255,0.75)' },
+  chatRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
+  avatarWrap: { position: 'relative' },
+  avatar:     { width: 54, height: 54, borderRadius: 27 },
+  avatarFallback: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  dot:        { position: 'absolute', bottom: 1, right: 1, width: 13, height: 13, borderRadius: 7, borderWidth: 2, borderColor: colors.background },
+  dotActive:  { backgroundColor: '#4ade80' },
+  dotNew:     { backgroundColor: '#E8637A' },
 
-  newBadge:     { position: 'absolute', top: 10, right: 10, backgroundColor: '#E8637A', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
-  newBadgeText: { fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  chatInfo:    { flex: 1, gap: 3 },
+  chatName:    { fontSize: 15, fontWeight: '800', color: colors.text },
+  chatPreview: { fontSize: 13, color: colors.muted },
+  chatTime:    { fontSize: 11, color: colors.muted },
 });

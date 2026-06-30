@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 
 import { db, storage } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -31,8 +31,9 @@ export default function TravelMateSetup() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const [photoUri, setPhotoUri]   = useState<string | null>(null);
-  const [photoURL, setPhotoURL]   = useState<string | null>(null);
+  const [photoUri, setPhotoUri]     = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [photoURL, setPhotoURL]     = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [age, setAge]             = useState('');
   const [gender, setGender]       = useState<'male' | 'female'>('male');
@@ -81,9 +82,11 @@ export default function TravelMateSetup() {
       allowsEditing: true,
       aspect: [3, 4],
       quality: 0.75,
+      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoBase64(result.assets[0].base64 ?? null);
     }
   }
 
@@ -104,11 +107,9 @@ export default function TravelMateSetup() {
     setLoading(true);
     try {
       let finalPhotoURL = photoURL;
-      if (photoUri) {
-        const resp = await fetch(photoUri);
-        const blob = await resp.blob();
+      if (photoBase64) {
         const storageRef = ref(storage, `travelMatePhotos/${user.uid}.jpg`);
-        await uploadBytes(storageRef, blob);
+        await uploadString(storageRef, photoBase64, 'base64', { contentType: 'image/jpeg' });
         finalPhotoURL = await getDownloadURL(storageRef);
       }
       await setDoc(doc(db, 'travelMateProfiles', user.uid), {
