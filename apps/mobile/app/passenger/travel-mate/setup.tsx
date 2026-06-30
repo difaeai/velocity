@@ -16,9 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { httpsCallable } from 'firebase/functions';
 
-import { db, storage } from '../../../src/firebase';
+import { db, functions } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 
@@ -31,8 +31,9 @@ export default function TravelMateSetup() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoURL, setPhotoURL] = useState<string | null>(null);
+  const [photoUri, setPhotoUri]     = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [photoURL, setPhotoURL]     = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [age, setAge]             = useState('');
   const [gender, setGender]       = useState<'male' | 'female'>('male');
@@ -81,9 +82,11 @@ export default function TravelMateSetup() {
       allowsEditing: true,
       aspect: [3, 4],
       quality: 0.75,
+      base64: true,
     });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
+      setPhotoBase64(result.assets[0].base64 ?? null);
     }
   }
 
@@ -104,20 +107,18 @@ export default function TravelMateSetup() {
     setLoading(true);
     try {
       let finalPhotoURL = photoURL;
-      if (photoUri) {
-        // XHR creates a native Blob — avoids the "ArrayBuffer not supported" error
-        // that both fetch().blob() and uploadString('base64') trigger in React Native.
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.onload = () => resolve(xhr.response as Blob);
-          xhr.onerror = () => reject(new Error('Failed to read photo'));
-          xhr.responseType = 'blob';
-          xhr.open('GET', photoUri, true);
-          xhr.send(null);
-        });
-        const storageRef = ref(storage, `travelMatePhotos/${user.uid}.jpg`);
-        await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-        finalPhotoURL = await getDownloadURL(storageRef);
+      if (photoBase64) {
+        try {
+          const upload = httpsCallable<{ base64: string; kind: string }, { photoURL: string }>(
+            functions, 'uploadUserPhoto',
+          );
+          const res = await upload({ base64: photoBase64, kind: 'travelMate' });
+          finalPhotoURL = res.data.photoURL;
+        } catch (uploadErr) {
+          // Non-blocking: profile saves even if photo upload fails.
+          // User can update photo from profile settings later.
+          console.warn('Photo upload failed:', uploadErr);
+        }
       }
       await setDoc(doc(db, 'travelMateProfiles', user.uid), {
         uid: user.uid,

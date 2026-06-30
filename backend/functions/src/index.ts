@@ -13,6 +13,7 @@ export {
   onUserCreate, onUserDelete,
   setUserRole, banPassenger, resolveDispute, registerFcmToken,
   adminCreatePassenger, adminUpdatePassenger, adminDeletePassenger,
+  uploadUserPhoto,
 } from './users';
 
 // Driver onboarding & verification
