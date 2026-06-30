@@ -22,7 +22,12 @@ export default function Index() {
   useEffect(() => {
     if (!user) { setProfileChecked(true); return; }
     getDoc(doc(db, 'users', user.uid)).then((snap) => {
-      setProfileComplete(snap.exists() && snap.data()?.profileComplete === true);
+      const data = snap.data();
+      // Accept either the explicit flag (new sign-ups) or an existing displayName
+      // (accounts created before the profileComplete field was introduced).
+      setProfileComplete(
+        snap.exists() && (data?.profileComplete === true || !!data?.displayName),
+      );
       setProfileChecked(true);
     }).catch(() => { setProfileChecked(true); });
   }, [user]);
