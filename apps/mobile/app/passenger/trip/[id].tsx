@@ -112,10 +112,17 @@ export default function TripScreen() {
 
         {/* 2. Top floating counter: real driver offers on this request */}
         <SafeAreaView style={styles.floatingTopArea} pointerEvents="box-none">
+          {trip.pool && (
+            <View style={styles.poolRideBanner}>
+              <Text style={styles.poolRideBannerText}>🔀 Pool Ride · Fare drops as riders join</Text>
+            </View>
+          )}
           <View style={styles.viewersBanner}>
             <Text style={styles.viewersText}>
               {pendingBids.length > 0
                 ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} sent an offer`
+                : trip.pool
+                ? 'Searching for pool drivers nearby…'
                 : 'Searching for nearby drivers…'}
             </Text>
             {pendingBids.length > 0 ? (
@@ -515,9 +522,26 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
   },
-  viewersBanner: {
+  poolRideBanner: {
     marginHorizontal: 16,
     marginTop: 10,
+    backgroundColor: '#0a1f05',
+    borderWidth: 1.5,
+    borderColor: '#4caf50',
+    borderRadius: 99,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  poolRideBannerText: {
+    color: '#4caf50',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  viewersBanner: {
+    marginHorizontal: 16,
+    marginTop: 6,
     backgroundColor: '#1c1b1b',
     borderWidth: 1,
     borderColor: '#2d2f2f',

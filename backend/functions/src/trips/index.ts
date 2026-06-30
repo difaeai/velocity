@@ -14,7 +14,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { encodeGeohash } from '../lib/geohash';
-import { sendToUser } from '../lib/fcm';
+import { sendToUser, sendToUsers } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { DriverPublicInfo, TripStatus } from '../domain/types';
 import {
@@ -143,8 +143,62 @@ export const createTrip = onCall(async (req) => {
   });
 
   logger.info('Trip created', { tripId: tripRef.id, passenger: ctx.uid });
+
+  // Broadcast to nearby online drivers — best-effort, does not block the response.
+  broadcastTripToNearbyDrivers(
+    tripRef.id,
+    data.pickup,
+    data.pool ?? false,
+    data.rideType,
+  ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
+
   return { ok: true, tripId: tripRef.id };
 });
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const toRad = (d: number) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function broadcastTripToNearbyDrivers(
+  tripId: string,
+  pickup: { lat: number; lng: number },
+  isPool: boolean,
+  rideType: string,
+): Promise<void> {
+  const settingsSnap = await db.doc('config/rideSettings').get();
+  const radiusKm = (settingsSnap.get('searchRadiusKm') as number) ?? 2;
+
+  const driversSnap = await db.collection('drivers')
+    .where('online', '==', true)
+    .where('verificationStatus', '==', 'approved')
+    .get();
+
+  const nearbyUids: string[] = [];
+  for (const d of driversSnap.docs) {
+    const loc = d.get('lastLocation') as { lat: number; lng: number } | undefined;
+    if (!loc?.lat || !loc?.lng) continue;
+    if (haversineKm(pickup.lat, pickup.lng, loc.lat, loc.lng) <= radiusKm) {
+      nearbyUids.push(d.id);
+    }
+  }
+
+  if (nearbyUids.length === 0) {
+    logger.info('No nearby drivers for broadcast', { tripId });
+    return;
+  }
+
+  const title = isPool ? '🔀 Pool ride request nearby' : '🚗 Ride request nearby';
+  const body  = `A passenger needs a ${rideType} — tap to view`;
+
+  await sendToUsers(nearbyUids, title, body, { tripId, screen: 'request-detail' });
+  logger.info('Broadcast complete', { tripId, driverCount: nearbyUids.length, radiusKm });
+}
 
 const placeBidSchema = z.object({
   tripId: z.string().min(1).max(128),
