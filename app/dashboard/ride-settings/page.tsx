@@ -27,28 +27,34 @@ const DEFAULT_FARE: FareConfig = { baseFare: 100, perKm: 30, perMin: 2, minFare:
 type Fares = Record<Category, FareConfig>;
 
 export default function RideSettingsPage() {
-  const [fares, setFares]     = useState<Fares>({
+  const [fares, setFares]           = useState<Fares>({
     mini:    { ...DEFAULT_FARE, baseFare: 80,  perKm: 25, minFare: 60  },
     ac:      { ...DEFAULT_FARE, baseFare: 120, perKm: 35, minFare: 100 },
     comfort: { ...DEFAULT_FARE, baseFare: 160, perKm: 50, minFare: 140 },
   });
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy]       = useState(false);
-  const [saved, setSaved]     = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [searchRadiusKm, setSearchRadiusKm] = useState(2);
+  const [loading, setLoading]       = useState(true);
+  const [busy, setBusy]             = useState(false);
+  const [saved, setSaved]           = useState(false);
+  const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
-    getDoc(doc(db, 'config', 'rideFares'))
-      .then((snap) => {
-        if (snap.exists()) {
-          const d = snap.data() as Partial<Fares>;
-          setFares((prev) => ({
-            mini:    { ...prev.mini,    ...(d.mini    ?? {}) },
-            ac:      { ...prev.ac,      ...(d.ac      ?? {}) },
-            comfort: { ...prev.comfort, ...(d.comfort ?? {}) },
-          }));
-        }
-      })
+    Promise.all([
+      getDoc(doc(db, 'config', 'rideFares')),
+      getDoc(doc(db, 'config', 'rideSettings')),
+    ]).then(([faresSnap, settingsSnap]) => {
+      if (faresSnap.exists()) {
+        const d = faresSnap.data() as Partial<Fares>;
+        setFares((prev) => ({
+          mini:    { ...prev.mini,    ...(d.mini    ?? {}) },
+          ac:      { ...prev.ac,      ...(d.ac      ?? {}) },
+          comfort: { ...prev.comfort, ...(d.comfort ?? {}) },
+        }));
+      }
+      if (settingsSnap.exists()) {
+        setSearchRadiusKm(settingsSnap.get('searchRadiusKm') ?? 2);
+      }
+    })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -68,10 +74,17 @@ export default function RideSettingsPage() {
       if (f.baseFare < 0)  { setError(`${cat.label}: base fare can't be negative.`); return; }
       if (f.minFare < 0)   { setError(`${cat.label}: minimum fare can't be negative.`); return; }
     }
+    if (searchRadiusKm <= 0 || searchRadiusKm > 50) {
+      setError('Search radius must be between 0.1 and 50 km.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await setDoc(doc(db, 'config', 'rideFares'), fares, { merge: true });
+      await Promise.all([
+        setDoc(doc(db, 'config', 'rideFares'), fares, { merge: true }),
+        setDoc(doc(db, 'config', 'rideSettings'), { searchRadiusKm }, { merge: true }),
+      ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -92,7 +105,73 @@ export default function RideSettingsPage() {
       </p>
 
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
-      {saved && <div style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>✓ Fares saved</div>}
+      {saved && <div style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>✓ Settings saved</div>}
+
+      {/* Driver notification radius */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 24 }}>📡</span>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: colors.text }}>Driver search radius</div>
+            <div style={{ fontSize: 12, color: colors.muted }}>
+              Notify all online drivers within this distance when a passenger requests a ride
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{
+              display: 'block',
+              fontSize: 11,
+              fontWeight: 800,
+              color: colors.primary,
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              marginBottom: 3,
+            }}>
+              Radius (km)
+            </label>
+            <input
+              type="number"
+              min={0.5}
+              max={50}
+              step={0.5}
+              value={searchRadiusKm}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!isNaN(v)) { setSearchRadiusKm(v); setSaved(false); }
+              }}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: `2px solid ${colors.primary}`,
+                background: `${colors.primary}08`,
+                color: colors.text,
+                fontSize: 24,
+                fontWeight: 900,
+                boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
+              Default 2 km — increase for rural areas, decrease for dense cities
+            </div>
+          </div>
+          <div style={{
+            padding: '12px 20px',
+            background: colors.surface,
+            borderRadius: 12,
+            border: `1px solid ${colors.border}`,
+            textAlign: 'center',
+            minWidth: 120,
+          }}>
+            <div style={{ fontSize: 11, color: colors.muted, fontWeight: 700 }}>Coverage area</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: colors.primary }}>
+              ~{(Math.PI * searchRadiusKm ** 2).toFixed(1)} km²
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <div style={{ display: 'grid', gap: 16, marginBottom: 24 }}>
         {CATEGORIES.map(({ key, label, icon, desc }) => {
