@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
@@ -125,6 +126,8 @@ export default function Onboarding() {
       if (photoURL) patch.photoURL = photoURL;
 
       await setDoc(doc(db, 'users', user.uid), patch, { merge: true });
+      // Cache locally: prevents Firestore read failures from re-showing onboarding.
+      await AsyncStorage.setItem(`onboarding_done_${user.uid}`, '1').catch(() => {});
       router.replace('/passenger/home');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

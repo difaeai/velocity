@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
@@ -21,29 +22,44 @@ export default function Index() {
 
   useEffect(() => {
     if (!user) { setProfileChecked(true); return; }
-    getDoc(doc(db, 'users', user.uid)).then((snap) => {
-      const data = snap.data();
-      // Accept as complete if ANY onboarding field exists on the doc.
-      // profileComplete is set by the current onboarding save.
-      // name / age / gender / dob are fallbacks for accounts onboarded before
-      // the profileComplete flag was introduced.
-      // If the doc doesn't exist yet (trigger race) we also let them through
-      // so users aren't trapped on the onboarding screen.
-      const done =
-        !snap.exists() ||
-        data?.profileComplete === true ||
-        !!data?.name ||
-        !!data?.age ||
-        !!data?.gender ||
-        !!data?.dob;
-      setProfileComplete(done);
+
+    async function check() {
+      const key = `onboarding_done_${user!.uid}`;
+
+      // Fast path: once the user completed onboarding on this device we cache
+      // a local flag so Firestore read failures can never re-trap them.
+      const local = await AsyncStorage.getItem(key).catch(() => null);
+      if (local === '1') {
+        setProfileComplete(true);
+        setProfileChecked(true);
+        return;
+      }
+
+      // Slow path: ask Firestore.
+      try {
+        const snap = await getDoc(doc(db, 'users', user!.uid));
+        const data = snap.data();
+        // Accept as complete if any field written by the onboarding form exists.
+        // profileComplete is the canonical flag. name / dob / gender (not the
+        // trigger default 'unspecified') are fallbacks for older accounts.
+        const done = snap.exists() && (
+          data?.profileComplete === true ||
+          !!data?.name ||
+          !!data?.dob ||
+          (!!data?.gender && data.gender !== 'unspecified')
+        );
+        setProfileComplete(done);
+        // Persist locally so a future Firestore failure doesn't re-trigger this.
+        if (done) AsyncStorage.setItem(key, '1').catch(() => {});
+      } catch {
+        // On any read failure don't trap the user in onboarding.
+        setProfileComplete(true);
+      }
       setProfileChecked(true);
-    }).catch(() => {
-      // On any read failure treat as complete — don't trap the user.
-      setProfileComplete(true);
-      setProfileChecked(true);
-    });
-  }, [user?.uid]); // depend on uid only — user object ref changes on token refresh
+    }
+
+    check();
+  }, [user?.uid]);
 
   if (initializing || showSplash || !profileChecked) {
     return (
