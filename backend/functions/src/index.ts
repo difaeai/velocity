@@ -42,6 +42,9 @@ export {
   poolArrivePassenger,
   poolPassengerBoarded,
   completePoolRide,
+  joinPoolRide,
+  driverBlockPoolPassenger,
+  reportPoolGenderMisrepresentation,
 } from './poolRides';
 
 // Safety

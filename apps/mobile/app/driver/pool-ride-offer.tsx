@@ -105,6 +105,12 @@ export default function PoolRideOfferScreen() {
         return;
       }
 
+      // Initial genderComposition derives from driver's hard preference;
+      // no passengers yet so maleSeats/femaleSeats start at 0.
+      const initComposition =
+        genderPref === 'male_only'   ? 'male' :
+        genderPref === 'female_only' ? 'female' : 'all';
+
       await addDoc(collection(db, 'poolRides'), {
         driverId: user.uid,
         driverName: profile.fullName ?? user.displayName ?? 'Driver',
@@ -127,7 +133,10 @@ export default function PoolRideOfferScreen() {
         pickupRadius,
         dropoffRadius,
         maxSeats,
-        takenSeats: 0,
+        takenSeats:        0,
+        maleSeats:         0,
+        femaleSeats:       0,
+        genderComposition: initComposition,
         baseFare: baseFareNum,
         perSeatFare,
         departureTime: deptTime,

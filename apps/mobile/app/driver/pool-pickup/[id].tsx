@@ -19,6 +19,7 @@ import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 import { Card, PrimaryButton } from '../../../src/ui/components';
 import { ChatModal } from '../../../src/ui/ChatModal';
+import { genderLabel } from '../../../src/lib/genderAccess';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ interface PoolPassenger {
   uid:            string;
   userName?:      string;
   userPhone?:     string;
+  userGender?:    string;
   pickupAddress?: string;
   pickupLat?:     number;
   pickupLng?:     number;
@@ -78,6 +80,30 @@ export default function PoolPickup() {
     });
   }, [rideId]);
 
+  async function blockPassenger(passengerId: string, passengerName: string) {
+    if (!rideId) return;
+    Alert.alert(
+      'Block passenger?',
+      `Remove ${passengerName} from this ride and block them from all pool booking? Use this if they misrepresented their gender.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () =>
+            run(async () => {
+              await api.driverBlockPoolPassenger({
+                rideId,
+                passengerId,
+                reason: 'Driver blocked passenger for gender misrepresentation.',
+              });
+              Alert.alert('Blocked', 'Passenger removed and blocked from pool rides.');
+            }),
+        },
+      ],
+    );
+  }
+
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     try {
@@ -122,7 +148,15 @@ export default function PoolPickup() {
               <Text style={styles.sectionLabel}>Passengers joined</Text>
               {allPassengers.map((p) => (
                 <Card key={p.uid}>
-                  <Text style={styles.passName}>{p.userName ?? 'Passenger'}</Text>
+                  <View style={styles.passHeaderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.passName}>{p.userName ?? 'Passenger'}</Text>
+                      <Text style={styles.passGender}>{genderLabel(p.userGender ?? 'unspecified')}</Text>
+                    </View>
+                    <Pressable style={styles.blockBtn} onPress={() => blockPassenger(p.uid, p.userName ?? 'Passenger')}>
+                      <Text style={styles.blockBtnText}>Block</Text>
+                    </Pressable>
+                  </View>
                   <Text style={styles.passSub}>{p.pickupAddress ?? 'Pickup location'}</Text>
                   <Text style={styles.passDropoff}>→ {p.dropoffAddress ?? 'Their dropoff'}</Text>
                 </Card>
@@ -411,6 +445,17 @@ const styles = StyleSheet.create({
   stopBadgeText: { fontSize: 11, fontWeight: '800', color: colors.primary },
 
   passName:    { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 2 },
+  passGender:  { fontSize: 12, color: colors.muted, fontWeight: '700' },
+  passHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
+  blockBtn: {
+    backgroundColor: '#ef444418',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ef444440',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  blockBtnText: { fontSize: 11, fontWeight: '800', color: '#ef4444' },
   passSub:     { fontSize: 13, color: colors.muted, marginBottom: 2 },
   passDropoff: { fontSize: 13, color: colors.muted },
 

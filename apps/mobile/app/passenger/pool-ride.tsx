@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -16,22 +17,28 @@ import {
   collection,
   doc,
   getDoc,
-  increment,
   limit,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
+  updateDoc,
   where,
-  writeBatch,
 } from 'firebase/firestore';
 import type { Timestamp } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
+import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { ChatModal } from '../../src/ui/ChatModal';
+import {
+  canJoinPool,
+  computeGenderAccess,
+  genderLabel,
+  isRideVisibleToUser,
+  type GenderComposition,
+} from '../../src/lib/genderAccess';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +54,9 @@ interface PoolRide {
   driverPlate: string;
   driverGender: string;
   genderPref: PoolGenderPref;
+  maleSeats?: number;
+  femaleSeats?: number;
+  genderComposition?: GenderComposition;
   rideCategory?: string;
   pickup: { lat: number; lng: number; address: string };
   dropoff: { lat: number; lng: number; address: string };
@@ -59,6 +69,12 @@ interface PoolRide {
   departureTime: Timestamp;
   boardingStartedAt?: Timestamp;
   status: string;
+}
+
+interface PoolPassenger {
+  uid: string;
+  userName?: string;
+  userGender?: string;
 }
 
 // ── Fare formula (progressive multiplier) ─────────────────────────────────────
@@ -311,29 +327,80 @@ export default function PoolRideScreen() {
 
   const [step, setStep]               = useState<Step>('browse');
   const [destination, setDestination] = useState(params.preDestination ?? '');
-  const [genderPref, setGenderPref]   = useState<'same' | 'any'>('same');
+  const [mixedRideOk, setMixedRideOk] = useState(false);
+  const [mixedRideSaving, setMixedRideSaving] = useState(false);
   const [userGender, setUserGender]   = useState('unspecified');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [allRides, setAllRides]       = useState<PoolRide[]>([]);
   const [loadingRides, setLoadingRides] = useState(true);
   const [selected, setSelected]       = useState<PoolRide | null>(null);
+  const [poolPassengers, setPoolPassengers] = useState<PoolPassenger[]>([]);
   const [booking, setBooking]             = useState(false);
   const [showFareTable, setShowFareTable] = useState(false);
   const [destForBooking, setDestForBooking] = useState('');
+  const [rulesAccepted, setRulesAccepted]   = useState(false);
   // Confirmed booking state — subscribe to real-time status updates
   const [bookingStatus, setBookingStatus] = useState<string>('confirmed');
   const [chatOpen, setChatOpen]           = useState(false);
 
-  // Load user gender from profile
+  // Load user gender + mixed-ride preference from profile
   useEffect(() => {
     if (!user) return;
     getDoc(doc(db, 'users', user.uid))
       .then((snap) => {
-        const g = snap.data()?.gender as string | undefined;
+        const data = snap.data();
+        const g = data?.gender as string | undefined;
         if (g) setUserGender(g);
+        if (typeof data?.mixedRideOk === 'boolean') setMixedRideOk(data.mixedRideOk);
       })
       .catch(() => {});
   }, [user]);
+
+  async function persistMixedRideOk(value: boolean) {
+    if (!user) return;
+    setMixedRideSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { mixedRideOk: value });
+      setMixedRideOk(value);
+      if (!value) setRulesAccepted(false);
+    } catch {
+      Alert.alert('Could not save preference', 'Please try again.');
+    } finally {
+      setMixedRideSaving(false);
+    }
+  }
+
+  function promptMixedRideOk(value: boolean) {
+    if (!value) {
+      persistMixedRideOk(false);
+      return;
+    }
+    Alert.alert(
+      'Mixed-gender pool rides',
+      'In Pakistan, sharing a car with the opposite gender requires both parties to opt in.\n\nBy enabling this you accept:\n• Only join pools where seating is culturally appropriate\n• 2+ male or 2+ female pools stay same-gender only\n• A 1M+1F pool closes when a third passenger joins\n• Misrepresenting your gender leads to a permanent pool ban\n\nDo you accept these rules?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'I Accept', onPress: () => persistMixedRideOk(true) },
+      ],
+    );
+  }
+
+  // Load passengers already on the selected ride (detail step)
+  useEffect(() => {
+    if (!selected?.id || step !== 'detail') {
+      setPoolPassengers([]);
+      return;
+    }
+    return onSnapshot(collection(db, 'poolRides', selected.id, 'passengers'), (snap) => {
+      setPoolPassengers(
+        snap.docs.map((d) => ({
+          uid: d.id,
+          userName: d.get('userName') as string | undefined,
+          userGender: d.get('userGender') as string | undefined,
+        })),
+      );
+    });
+  }, [selected?.id, step]);
 
   // Real-time booking status — shows driver_arrived / picked_up banners
   useEffect(() => {
@@ -384,21 +451,40 @@ export default function PoolRideScreen() {
       result = result.filter((r) => (r.rideCategory ?? 'mini') === selectedCategory);
     }
 
-    // Gender filter
-    if (genderPref === 'same') {
-      result = result.filter((r) => {
-        // If gender is unspecified, only show open-to-all rides (safest default)
-        if (userGender === 'unspecified') return r.genderPref === 'any';
-        if (userGender === 'male')   return r.genderPref === 'male_only' || r.genderPref === 'any';
-        if (userGender === 'female') return r.genderPref === 'female_only' || r.genderPref === 'any';
-        return r.genderPref === 'any';
-      });
-    }
+    // Gender-composition filter (Pakistani cultural pool rules)
+    result = result.filter((r) => isRideVisibleToUser(r, userGender, mixedRideOk));
 
     return result;
-  }, [allRides, selectedCategory, genderPref, userGender]);
+  }, [allRides, selectedCategory, userGender, mixedRideOk]);
 
   // ── Book seat ───────────────────────────────────────────────────────────────
+
+  async function reportPassenger(reportedUid: string, reportedName: string) {
+    if (!selected || !user || reportedUid === user.uid) return;
+    Alert.alert(
+      'Report gender misrepresentation?',
+      `Report ${reportedName} for not matching their registered gender? They will be removed and blocked from pool rides.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.reportPoolGenderMisrepresentation({
+                rideId: selected.id,
+                reportedUid,
+                note: 'Reported by fellow passenger for gender misrepresentation.',
+              });
+              Alert.alert('Reported', 'The passenger has been removed and blocked from pool booking.');
+            } catch (e) {
+              Alert.alert('Report failed', e instanceof Error ? e.message : 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }
 
   async function bookSeat() {
     if (!selected || !user) return;
@@ -407,37 +493,47 @@ export default function PoolRideScreen() {
       Alert.alert('Destination required', 'Please enter your destination before booking.');
       return;
     }
+
+    const maleSeats   = selected.maleSeats   ?? 0;
+    const femaleSeats = selected.femaleSeats ?? 0;
+    const composition =
+      selected.genderComposition ??
+      computeGenderAccess(maleSeats, femaleSeats, selected.maxSeats, selected.genderPref);
+
+    const check = canJoinPool({
+      currentComposition: composition,
+      maleSeats,
+      femaleSeats,
+      joinerGender: userGender,
+      joinerMixedRideOk: mixedRideOk,
+    });
+    if (!check.allowed) {
+      Alert.alert('Cannot join', check.reason);
+      return;
+    }
+
+    const newMale   = maleSeats   + (userGender === 'male'   ? 1 : 0);
+    const newFemale = femaleSeats + (userGender === 'female' ? 1 : 0);
+    const willBeMixed = newMale >= 1 && newFemale >= 1;
+    const is3FPlusMale = femaleSeats === 3 && userGender === 'male';
+
+    if (willBeMixed && !is3FPlusMale && !rulesAccepted) {
+      Alert.alert(
+        'Accept pool rules',
+        'This ride will include passengers of the opposite gender. Please confirm you accept the mixed-gender pool rules before booking.',
+      );
+      return;
+    }
+
     setBooking(true);
     try {
-      const rideRef      = doc(db, 'poolRides', selected.id);
-      const passengerRef = doc(collection(db, 'poolRides', selected.id, 'passengers'), user.uid);
-      const batch        = writeBatch(db);
-
-      batch.set(passengerRef, {
-        userId:         user.uid,
-        userName:       user.displayName ?? 'Passenger',
-        userPhone:      user.phoneNumber ?? null,
-        userGender,
-        pickupAddress:  pickupAddress ?? 'Current location',
+      await api.joinPoolRide({
+        rideId: selected.id,
         pickupLat:      coords?.lat ?? selected.pickup.lat,
         pickupLng:      coords?.lng ?? selected.pickup.lng,
+        pickupAddress:  pickupAddress ?? 'Current location',
         dropoffAddress: dest,
-        fare:           selected.perSeatFare,
-        status:         'confirmed',
-        joinedAt:       serverTimestamp(),
       });
-
-      const isFirst  = selected.takenSeats === 0;
-      const newSeats = selected.takenSeats + 1;
-      const isFull   = newSeats >= selected.maxSeats;
-
-      batch.update(rideRef, {
-        takenSeats: increment(1),
-        status:     isFull ? 'full' : 'collecting',
-        ...(isFirst ? { boardingStartedAt: serverTimestamp() } : {}),
-      });
-
-      await batch.commit();
       setDestination(dest);
       setBookingStatus('confirmed');
       setStep('confirmed');
@@ -542,6 +638,14 @@ export default function PoolRideScreen() {
     const meta    = GENDER_META[selected.genderPref] ?? GENDER_META.any;
     const avail   = selected.maxSeats - selected.takenSeats;
     const boarding = getBoardingStatus(selected);
+    const detailMale   = selected.maleSeats   ?? 0;
+    const detailFemale = selected.femaleSeats ?? 0;
+    const detailNewMale   = detailMale   + (userGender === 'male'   ? 1 : 0);
+    const detailNewFemale = detailFemale + (userGender === 'female' ? 1 : 0);
+    const detailWouldBeMixed =
+      detailNewMale >= 1 &&
+      detailNewFemale >= 1 &&
+      !(detailFemale === 3 && userGender === 'male');
 
     return (
       <SafeAreaView style={styles.safe}>
@@ -621,6 +725,32 @@ export default function PoolRideScreen() {
             ))}
           </View>
 
+          {/* Passengers already in pool — verify gender before joining */}
+          {poolPassengers.length > 0 && (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionCardLabel}>PASSENGERS IN THIS POOL</Text>
+              <Text style={styles.poolPassengerHint}>
+                Verify each passenger matches their registered gender. Report anyone who does not.
+              </Text>
+              {poolPassengers.map((p) => (
+                <View key={p.uid} style={styles.poolPassengerRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.poolPassengerName}>{p.userName ?? 'Passenger'}</Text>
+                    <Text style={styles.poolPassengerGender}>{genderLabel(p.userGender ?? 'unspecified')}</Text>
+                  </View>
+                  {p.uid !== user?.uid && (
+                    <Pressable
+                      style={styles.reportBtn}
+                      onPress={() => reportPassenger(p.uid, p.userName ?? 'Passenger')}
+                    >
+                      <Text style={styles.reportBtnText}>Report</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* Destination input */}
           <Text style={styles.fieldLabel}>YOUR DESTINATION</Text>
           <View style={styles.destField}>
@@ -654,10 +784,24 @@ export default function PoolRideScreen() {
             ))}
           </View>
 
+          {detailWouldBeMixed && (
+            <Pressable
+              style={styles.rulesRow}
+              onPress={() => setRulesAccepted((v) => !v)}
+            >
+              <View style={[styles.rulesCheck, rulesAccepted && styles.rulesCheckOn]}>
+                {rulesAccepted && <Text style={styles.rulesCheckMark}>✓</Text>}
+              </View>
+              <Text style={styles.rulesText}>
+                I accept the mixed-gender pool rules and confirm my registered gender is correct.
+              </Text>
+            </Pressable>
+          )}
+
           <Pressable
-            style={[styles.primaryBtn, booking && { opacity: 0.6 }]}
+            style={[styles.primaryBtn, (booking || (detailWouldBeMixed && !rulesAccepted)) && { opacity: 0.6 }]}
             onPress={bookSeat}
-            disabled={booking}
+            disabled={booking || (detailWouldBeMixed && !rulesAccepted)}
           >
             {booking
               ? <ActivityIndicator color="#000" />
@@ -741,30 +885,24 @@ export default function PoolRideScreen() {
                   </Text>
                 </Pressable>
               ))}
-              <View style={styles.filterSep} />
-              <Pressable
-                style={[styles.filterChip, genderPref === 'same' && styles.filterChipActive]}
-                onPress={() => setGenderPref('same')}
-              >
-                <Text style={[styles.filterChipText, genderPref === 'same' && { color: colors.primary }]}>
-                  🔒 Same gender
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.filterChip, genderPref === 'any' && styles.filterChipActive]}
-                onPress={() => {
-                  if (genderPref !== 'any') {
-                    Alert.alert('Travel with any gender?',
-                      'You will see rides where male and female passengers travel together. Are you sure?',
-                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Accept', onPress: () => setGenderPref('any') }]);
-                  } else setGenderPref('same');
-                }}
-              >
-                <Text style={[styles.filterChipText, genderPref === 'any' && { color: colors.primary }]}>
-                  👥 Any gender
-                </Text>
-              </Pressable>
             </ScrollView>
+
+            {/* Mixed-gender pool preference */}
+            <View style={styles.mixedRideRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mixedRideLabel}>Open to mixed-gender rides</Text>
+                <Text style={styles.mixedRideSub}>
+                  Required to join pools with opposite-gender passengers
+                </Text>
+              </View>
+              <Switch
+                value={mixedRideOk}
+                onValueChange={promptMixedRideOk}
+                disabled={mixedRideSaving}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
 
             {/* Section header */}
             <View style={styles.sectionHeaderRow}>
@@ -996,6 +1134,65 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginHorizontal: 2,
   },
+
+  mixedRideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginTop: 10,
+  },
+  mixedRideLabel: { fontSize: 13, fontWeight: '800', color: colors.text },
+  mixedRideSub:   { fontSize: 11, color: colors.muted, marginTop: 2, lineHeight: 16 },
+
+  poolPassengerHint: { fontSize: 11, color: colors.muted, lineHeight: 16 },
+  poolPassengerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  poolPassengerName:   { fontSize: 14, fontWeight: '800', color: colors.text },
+  poolPassengerGender: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  reportBtn: {
+    backgroundColor: '#ef444418',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ef444440',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  reportBtnText: { fontSize: 11, fontWeight: '800', color: '#ef4444' },
+
+  rulesRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#1a1200',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f59e0b40',
+    padding: 14,
+  },
+  rulesCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  rulesCheckOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  rulesCheckMark: { fontSize: 13, fontWeight: '900', color: '#000' },
+  rulesText: { flex: 1, fontSize: 12, color: '#f5d384', lineHeight: 18 },
 
   // Section header
   sectionHeaderRow: {
