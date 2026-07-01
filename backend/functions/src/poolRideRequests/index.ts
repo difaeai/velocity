@@ -4,6 +4,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireRole, invalid } from '../lib/guards';
+import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
 
@@ -16,6 +17,11 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number 
 async function getUserGender(uid: string): Promise<string> {
   const snap = await db.doc(`users/${uid}`).get();
   return snap.exists ? (snap.data()!.gender ?? 'unspecified') : 'unspecified';
+}
+
+async function getUserMixedRideOk(uid: string): Promise<boolean> {
+  const snap = await db.doc(`users/${uid}`).get();
+  return snap.exists ? ((snap.data()!.mixedRideOk as boolean) ?? false) : false;
 }
 
 function genderAllowed(userGender: string, pref: GenderPref): boolean {
@@ -57,6 +63,11 @@ export const createPoolRideRequest = onCall(async (req) => {
   // Expire in 30 minutes if no driver responds.
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
+  // Seed passenger gender composition from the leader.
+  const initMale   = leaderGender === 'male'   ? 1 : 0;
+  const initFemale = leaderGender === 'female' ? 1 : 0;
+  const initComposition = computeGenderAccess(initMale, initFemale, d.totalSlots, d.genderPref as 'male_only' | 'female_only' | 'any');
+
   const ref = db.collection('poolRideRequests').doc();
   await ref.set({
     leaderId:            ctx.uid,
@@ -75,6 +86,9 @@ export const createPoolRideRequest = onCall(async (req) => {
     filledSlots:         1,
     passengers:          [ctx.uid],
     genderPref:          d.genderPref,
+    maleSeats:           initMale,
+    femaleSeats:         initFemale,
+    genderComposition:   initComposition,
     driverId:            null,
     driverName:          null,
     driverVehicle:       null,
@@ -220,6 +234,13 @@ export const joinPoolRideRequest = onCall(async (req) => {
   const { requestId } = p.data;
 
   const passengerGender = await getUserGender(ctx.uid);
+  const userSnap = await db.doc(`users/${ctx.uid}`).get();
+  if (userSnap.exists && userSnap.data()!.poolBookingBlocked === true) {
+    throw new HttpsError(
+      'permission-denied',
+      'Your account is blocked from pool rides due to a gender misrepresentation report.',
+    );
+  }
   const reqRef = db.doc(`poolRideRequests/${requestId}`);
 
   let farePerSeat: number;
@@ -241,19 +262,46 @@ export const joinPoolRideRequest = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'This ride is full.');
     }
 
-    // Gender enforcement — joining passengers must also match.
+    // Gender enforcement — joining passenger must match the leader's preference.
     if (!genderAllowed(passengerGender, data.genderPref as GenderPref)) {
       throw new HttpsError('permission-denied', 'Your gender does not match this ride\'s preference.');
     }
+
+    // Composition rules — check whether the resulting mix is acceptable.
+    const maleSeats   = (data.maleSeats   as number) ?? 0;
+    const femaleSeats = (data.femaleSeats as number) ?? 0;
+    const currentComposition = computeGenderAccess(
+      maleSeats, femaleSeats, data.totalSlots as number, data.genderPref as GenderPref,
+    );
+
+    // Fetch mixedRideOk outside the transaction value already read.
+    const joinerMixedRideOk = await getUserMixedRideOk(ctx.uid);
+    const check = canJoinPool({
+      currentComposition,
+      maleSeats,
+      femaleSeats,
+      joinerGender: passengerGender,
+      joinerMixedRideOk,
+    });
+    if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
+
+    const newMale   = maleSeats   + (passengerGender === 'male'   ? 1 : 0);
+    const newFemale = femaleSeats + (passengerGender === 'female' ? 1 : 0);
+    const newComposition = computeGenderAccess(
+      newMale, newFemale, data.totalSlots as number, data.genderPref as GenderPref,
+    );
 
     farePerSeat = data.agreedFarePerSeat as number;
     const newFilledSlots = (data.filledSlots as number) + 1;
 
     tx.update(reqRef, {
-      passengers:  FieldValue.arrayUnion(ctx.uid),
-      filledSlots: newFilledSlots,
-      status:      newFilledSlots >= data.totalSlots ? 'full' : 'active',
-      updatedAt:   FieldValue.serverTimestamp(),
+      passengers:        FieldValue.arrayUnion(ctx.uid),
+      filledSlots:       newFilledSlots,
+      maleSeats:         newMale,
+      femaleSeats:       newFemale,
+      genderComposition: newComposition,
+      status:            newFilledSlots >= data.totalSlots ? 'full' : 'active',
+      updatedAt:         FieldValue.serverTimestamp(),
     });
   });
 
@@ -415,6 +463,9 @@ export const getNearbyActiveRides = onCall(async (req) => {
         totalSlots:          d.totalSlots,
         slotsAvailable:      (d.totalSlots as number) - (d.filledSlots as number),
         genderPref:          d.genderPref,
+        maleSeats:           (d.maleSeats   as number) ?? 0,
+        femaleSeats:         (d.femaleSeats as number) ?? 0,
+        genderComposition:   d.genderComposition ?? 'all',
         distanceKm:          Math.round(distKmVal * 10) / 10,
       });
     }
@@ -440,6 +491,9 @@ export const getNearbyActiveRides = onCall(async (req) => {
       totalSlots:          d.maxSeats,
       slotsAvailable:      (d.maxSeats as number) - (d.takenSeats as number),
       genderPref:          d.genderPref,
+      maleSeats:           (d.maleSeats   as number) ?? 0,
+      femaleSeats:         (d.femaleSeats as number) ?? 0,
+      genderComposition:   d.genderComposition ?? 'all',
       rideCategory:        d.rideCategory,
       distanceKm:          Math.round(distKmVal * 10) / 10,
     });

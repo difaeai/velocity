@@ -3,7 +3,8 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireRole, invalid } from '../lib/guards';
+import { requireRole, requireAuth, invalid } from '../lib/guards';
+import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 
 // ── Haversine distance in km ─────────────────────────────────────────────────
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -234,5 +235,265 @@ export const completePoolRide = onCall(async (req) => {
   });
 
   logger.info('Pool ride completed', { rideId, driver: ctx.uid });
+  return { ok: true };
+});
+
+// ── joinPoolRide ──────────────────────────────────────────────────────────────
+
+const JoinRideSchema = z.object({
+  rideId:         z.string().min(1).max(128),
+  pickupLat:      z.number().min(-90).max(90),
+  pickupLng:      z.number().min(-180).max(180),
+  pickupAddress:  z.string().trim().min(1).max(300),
+  dropoffAddress: z.string().trim().min(1).max(300),
+});
+
+/**
+ * Atomically joins a driver-posted pool ride.
+ *
+ * Enforces Pakistani gender-composition rules:
+ *   - Reads the ride's live maleSeats / femaleSeats counts inside a transaction.
+ *   - Blocks the join when the resulting passenger mix would be uncomfortable
+ *     (e.g. 2M+1F, 2F+1M, females in a 3-male pool, etc.).
+ *   - Requires mixedRideOk opt-in from the user when joining a mixed-gender pool.
+ *   - Atomically updates maleSeats, femaleSeats, genderComposition, and takenSeats.
+ */
+export const joinPoolRide = onCall(async (req) => {
+  const ctx = requireRole(req, 'passenger');
+  const p = JoinRideSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+  const { rideId, pickupLat, pickupLng, pickupAddress, dropoffAddress } = p.data;
+
+  // Fetch caller profile once outside the transaction (non-transactional reads are fine
+  // for immutable-ish fields like gender and mixedRideOk preference).
+  const userSnap = await db.doc(`users/${ctx.uid}`).get();
+  if (!userSnap.exists) throw new HttpsError('not-found', 'User profile not found.');
+  const userData        = userSnap.data()!;
+  if (userData.poolBookingBlocked === true) {
+    throw new HttpsError(
+      'permission-denied',
+      'Your account is blocked from pool rides due to a gender misrepresentation report. Contact support if this is a mistake.',
+    );
+  }
+  const joinerGender    = (userData.gender    as string)  ?? 'unspecified';
+  const mixedRideOk     = (userData.mixedRideOk as boolean) ?? false;
+  const joinerName      = (userData.name       as string)  ?? 'Passenger';
+  const joinerPhone     = (userData.phone      as string | null) ?? null;
+
+  const rideRef = db.doc(`poolRides/${rideId}`);
+
+  await db.runTransaction(async (tx) => {
+    const rideSnap = await tx.get(rideRef);
+    if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
+    const ride = rideSnap.data()!;
+
+    if (!['open', 'collecting'].includes(ride.status as string)) {
+      throw new HttpsError('failed-precondition', 'This ride is not accepting passengers right now.');
+    }
+    if ((ride.takenSeats as number) >= (ride.maxSeats as number)) {
+      throw new HttpsError('failed-precondition', 'This ride is full.');
+    }
+
+    const maleSeats   = (ride.maleSeats   as number) ?? 0;
+    const femaleSeats = (ride.femaleSeats as number) ?? 0;
+    const driverPref  = (ride.genderPref  as 'male_only' | 'female_only' | 'any') ?? 'any';
+
+    const currentComposition = computeGenderAccess(maleSeats, femaleSeats, ride.maxSeats as number, driverPref);
+
+    const check = canJoinPool({ currentComposition, maleSeats, femaleSeats, joinerGender, joinerMixedRideOk: mixedRideOk });
+    if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
+
+    const newMale   = maleSeats   + (joinerGender === 'male'   ? 1 : 0);
+    const newFemale = femaleSeats + (joinerGender === 'female' ? 1 : 0);
+    const newTotal  = (ride.takenSeats as number) + 1;
+    const isFull    = newTotal >= (ride.maxSeats as number);
+    const newComposition = computeGenderAccess(newMale, newFemale, ride.maxSeats as number, driverPref);
+    const isFirst   = (ride.takenSeats as number) === 0;
+
+    const passRef = db.doc(`poolRides/${rideId}/passengers/${ctx.uid}`);
+    tx.set(passRef, {
+      userId:         ctx.uid,
+      userName:       joinerName,
+      userPhone:      joinerPhone,
+      userGender:     joinerGender,
+      pickupAddress,
+      pickupLat,
+      pickupLng,
+      dropoffAddress,
+      fare:           ride.perSeatFare,
+      status:         'confirmed',
+      joinedAt:       FieldValue.serverTimestamp(),
+    });
+
+    tx.update(rideRef, {
+      takenSeats:        FieldValue.increment(1),
+      maleSeats:         newMale,
+      femaleSeats:       newFemale,
+      genderComposition: newComposition,
+      status:            isFull ? 'full' : 'collecting',
+      updatedAt:         FieldValue.serverTimestamp(),
+      ...(isFirst ? { boardingStartedAt: FieldValue.serverTimestamp() } : {}),
+    });
+  });
+
+  logger.info('Passenger joined pool ride', { rideId, uid: ctx.uid, gender: joinerGender });
+  return { ok: true };
+});
+
+// ── Shared helper: remove a passenger and recompute gender composition ─────────
+
+async function removePassengerFromRide(
+  rideId: string,
+  passengerId: string,
+  blockedReason: string,
+): Promise<void> {
+  const rideRef = db.doc(`poolRides/${rideId}`);
+  const passRef = db.doc(`poolRides/${rideId}/passengers/${passengerId}`);
+
+  await db.runTransaction(async (tx) => {
+    const [rideSnap, passSnap] = await Promise.all([tx.get(rideRef), tx.get(passRef)]);
+    if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
+    if (!passSnap.exists) return;
+
+    const ride = rideSnap.data()!;
+    const passGender = (passSnap.get('userGender') as string) ?? 'unspecified';
+    const maleSeats   = (ride.maleSeats   as number) ?? 0;
+    const femaleSeats = (ride.femaleSeats as number) ?? 0;
+    const newMale   = maleSeats   - (passGender === 'male'   ? 1 : 0);
+    const newFemale = femaleSeats - (passGender === 'female' ? 1 : 0);
+    const newTaken  = Math.max(0, (ride.takenSeats as number) - 1);
+    const driverPref = (ride.genderPref as 'male_only' | 'female_only' | 'any') ?? 'any';
+    const newComposition = computeGenderAccess(
+      Math.max(0, newMale),
+      Math.max(0, newFemale),
+      ride.maxSeats as number,
+      driverPref,
+    );
+
+    tx.delete(passRef);
+    tx.update(rideRef, {
+      takenSeats:        newTaken,
+      maleSeats:         Math.max(0, newMale),
+      femaleSeats:       Math.max(0, newFemale),
+      genderComposition: newComposition,
+      status:            newTaken === 0 ? 'open' : 'collecting',
+      updatedAt:         FieldValue.serverTimestamp(),
+    });
+
+    tx.set(
+      db.doc(`users/${passengerId}`),
+      {
+        poolBookingBlocked: true,
+        poolBlockedReason:  blockedReason,
+        poolBlockedAt:      FieldValue.serverTimestamp(),
+        updatedAt:          FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+}
+
+// ── driverBlockPoolPassenger ──────────────────────────────────────────────────
+
+const BlockPassengerSchema = z.object({
+  rideId:      z.string().min(1).max(128),
+  passengerId: z.string().min(1).max(128),
+  reason:      z.string().trim().min(3).max(500).optional(),
+});
+
+/**
+ * Driver removes a passenger who misrepresented their gender and blocks them
+ * from booking any future pool rides.
+ */
+export const driverBlockPoolPassenger = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const p = BlockPassengerSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+  const { rideId, passengerId, reason } = p.data;
+
+  const rideSnap = await db.doc(`poolRides/${rideId}`).get();
+  if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
+  if (rideSnap.get('driverId') !== ctx.uid) {
+    throw new HttpsError('permission-denied', 'Not your pool ride.');
+  }
+
+  const blockedReason =
+    reason?.trim() ||
+    'Blocked by driver for gender misrepresentation on a pool ride.';
+
+  await removePassengerFromRide(rideId, passengerId, blockedReason);
+
+  await db.collection('poolGenderReports').add({
+    rideId,
+    reporterId:  ctx.uid,
+    reporterRole: 'driver',
+    reportedUid: passengerId,
+    reason:      blockedReason,
+    action:      'driver_block',
+    createdAt:   FieldValue.serverTimestamp(),
+  });
+
+  logger.info('Driver blocked pool passenger', { rideId, passengerId, driver: ctx.uid });
+  return { ok: true };
+});
+
+// ── reportPoolGenderMisrepresentation ─────────────────────────────────────────
+
+const ReportGenderSchema = z.object({
+  rideId:      z.string().min(1).max(128),
+  reportedUid: z.string().min(1).max(128),
+  note:        z.string().trim().min(3).max(500).optional(),
+});
+
+/**
+ * A passenger (or driver) reports that another pool member misrepresented their
+ * gender. The reported user is removed from the ride and blocked from pool booking.
+ */
+export const reportPoolGenderMisrepresentation = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const p = ReportGenderSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+  const { rideId, reportedUid, note } = p.data;
+
+  if (reportedUid === ctx.uid) {
+    throw new HttpsError('invalid-argument', 'You cannot report yourself.');
+  }
+
+  const rideSnap = await db.doc(`poolRides/${rideId}`).get();
+  if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
+
+  const driverId = rideSnap.get('driverId') as string;
+  const isDriver = driverId === ctx.uid;
+
+  if (!isDriver) {
+    const myPassSnap = await db.doc(`poolRides/${rideId}/passengers/${ctx.uid}`).get();
+    if (!myPassSnap.exists) {
+      throw new HttpsError('permission-denied', 'You must be on this ride to report a passenger.');
+    }
+  }
+
+  const reportedPassSnap = await db.doc(`poolRides/${rideId}/passengers/${reportedUid}`).get();
+  if (!reportedPassSnap.exists) {
+    throw new HttpsError('not-found', 'That passenger is not on this ride.');
+  }
+
+  const blockedReason =
+    note?.trim() ||
+    'Reported by another pool passenger for gender misrepresentation.';
+
+  await removePassengerFromRide(rideId, reportedUid, blockedReason);
+
+  await db.collection('poolGenderReports').add({
+    rideId,
+    reporterId:   ctx.uid,
+    reporterRole: isDriver ? 'driver' : 'passenger',
+    reportedUid,
+    reportedGender: reportedPassSnap.get('userGender') ?? 'unspecified',
+    reason:       blockedReason,
+    action:       'passenger_report',
+    createdAt:    FieldValue.serverTimestamp(),
+  });
+
+  logger.info('Pool gender misrepresentation reported', { rideId, reportedUid, reporter: ctx.uid });
   return { ok: true };
 });

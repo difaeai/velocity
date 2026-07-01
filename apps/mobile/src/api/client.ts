@@ -169,6 +169,18 @@ export const api = {
     { requestId: string },
     { ok: boolean }
   >('cancelPoolRideRequest'),
+  joinPoolRide: callable<
+    { rideId: string; pickupLat: number; pickupLng: number; pickupAddress: string; dropoffAddress: string },
+    { ok: boolean }
+  >('joinPoolRide'),
+  driverBlockPoolPassenger: callable<
+    { rideId: string; passengerId: string; reason?: string },
+    { ok: boolean }
+  >('driverBlockPoolPassenger'),
+  reportPoolGenderMisrepresentation: callable<
+    { rideId: string; reportedUid: string; note?: string },
+    { ok: boolean }
+  >('reportPoolGenderMisrepresentation'),
 
   // ── Nearby active rides — anonymised discovery (Task 2) ───────────────────
   getNearbyPoolRequests: callable<
@@ -191,7 +203,8 @@ export const api = {
 
 // ── Pool ride request / nearby ride types ────────────────────────────────────
 
-export type PoolGenderPref = 'male_only' | 'female_only' | 'any';
+export type PoolGenderPref     = 'male_only' | 'female_only' | 'any';
+export type GenderComposition  = 'all' | 'male' | 'female' | 'none';
 export type CommuteDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export interface NearbyPoolRequest {
@@ -215,6 +228,9 @@ export interface NearbyActiveRide {
   totalSlots: number;
   slotsAvailable: number;
   genderPref: PoolGenderPref;
+  maleSeats?: number;
+  femaleSeats?: number;
+  genderComposition?: GenderComposition;
   rideCategory?: string;
   distanceKm: number;
 }
