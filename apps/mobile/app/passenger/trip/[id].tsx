@@ -10,6 +10,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { Badge, Card, PrimaryButton } from '../../../src/ui/components';
 import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
+import { LiveMap } from '../../../src/ui/LiveMap';
 import { RatingModal } from '../../../src/ui/RatingModal';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
@@ -95,19 +96,9 @@ export default function TripScreen() {
 
     return (
       <View style={styles.safeDark}>
-        {/* 1. Full Screen Dark Map */}
+        {/* 1. Full Screen Live Map */}
         <View style={styles.mapContainerFull}>
-          {/* Abstract Map Roads */}
-          <View style={[styles.roadLine, { top: 120, left: -50, width: '130%', transform: [{ rotate: '-15deg' }] }]} />
-          <View style={[styles.roadLine, { top: 260, left: -50, width: '130%', transform: [{ rotate: '25deg' }] }]} />
-          <View style={[styles.roadLine, { top: 400, left: -50, width: '130%', transform: [{ rotate: '-10deg' }] }]} />
-          <View style={[styles.roadLine, { top: 0, left: 160, width: 4, height: '100%' }]} />
-
-          {/* User Location Pulse (from Image 3) */}
-          <View style={[styles.pulsePin, { top: 220, left: 180 }]}>
-            <View style={styles.pinGlow} />
-            <Text style={{ fontSize: 24 }}>👤</Text>
-          </View>
+          <LiveMap coords={trip.pickup ? { lat: trip.pickup.lat, lng: trip.pickup.lng } : null} />
         </View>
 
         {/* 2. Top floating counter: real driver offers on this request */}
@@ -197,18 +188,18 @@ export default function TripScreen() {
           <View style={styles.fareAdjusterRow}>
             <Pressable
               style={styles.adjustBtn}
-              onPress={() => setAdjustedFare((f) => Math.max(50, f - 10))}
+              onPress={() => setAdjustedFare((f) => Math.max(50, f - 5))}
             >
-              <Text style={styles.adjustBtnText}>− 10</Text>
+              <Text style={styles.adjustBtnText}>− 5</Text>
             </Pressable>
 
             <Text style={styles.biddingFareValue}>PKR {adjustedFare}</Text>
 
             <Pressable
               style={styles.adjustBtn}
-              onPress={() => setAdjustedFare((f) => f + 10)}
+              onPress={() => setAdjustedFare((f) => f + 5)}
             >
-              <Text style={styles.adjustBtnText}>+ 10</Text>
+              <Text style={styles.adjustBtnText}>+ 5</Text>
             </Pressable>
           </View>
 
