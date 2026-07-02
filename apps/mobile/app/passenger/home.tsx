@@ -23,6 +23,7 @@ import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
+import { CarIllustration, MotoIllustration } from '../../src/ui/VehicleIllustrations';
 
 const { width } = Dimensions.get('window');
 
@@ -129,8 +130,8 @@ export default function PassengerHome() {
           >
             <Text style={styles.cityRidesTitle}>City Rides</Text>
             <View style={styles.cityRidesIllustration}>
-              <Text style={styles.cityRidesCarIcon}>🚗</Text>
-              <Text style={styles.cityRidesMotoIcon}>🏍️</Text>
+              <CarIllustration width={100} height={52} />
+              <MotoIllustration width={64} height={52} />
             </View>
           </Pressable>
 
@@ -551,11 +552,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'flex-end',
-    gap: 4,
-    marginBottom: -4,
+    gap: 6,
+    marginBottom: -2,
   },
-  cityRidesCarIcon:  { fontSize: 52, lineHeight: 60 },
-  cityRidesMotoIcon: { fontSize: 36, lineHeight: 42, marginBottom: 4 },
   serviceRightCol: {
     flex: 1,
     gap: 10,
