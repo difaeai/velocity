@@ -292,6 +292,30 @@ export default function AdminDashboard() {
           <Text style={styles.ridersCardArrow}>→</Text>
         </Pressable>
 
+        {/* Courier Orders */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/courier-orders')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>📦  Courier Orders</Text>
+            <Text style={styles.ridersCardDesc}>
+              View, assign drivers and update status of{'\n'}
+              all same-city parcel delivery orders.
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
+        {/* Freight Orders */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/freight-orders')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>🚛  Freight Orders</Text>
+            <Text style={styles.ridersCardDesc}>
+              Send quotes, confirm and track business{'\n'}
+              freight & delivery requests.
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
         {/* Ride Categories — full in-app screen */}
         <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/riders')}>
           <View style={styles.ridersCardLeft}>

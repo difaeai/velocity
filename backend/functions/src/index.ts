@@ -102,5 +102,11 @@ export {
   seedIntercityTrips,
 } from './intercity';
 
+// Courier delivery — same-city parcel delivery
+export { createCourierOrder, cancelCourierOrder, adminUpdateCourierStatus } from './couriers';
+
+// Freight / business delivery
+export { createFreightRequest, cancelFreightRequest, acceptFreightQuote, adminUpdateFreightStatus } from './freight';
+
 // Admin: broadcast push notification
 export { adminSendPushNotification } from './users';

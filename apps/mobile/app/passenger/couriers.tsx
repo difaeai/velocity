@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
+import { api } from '../../src/api/client';
 
 type PackageSize = 'document' | 'parcel' | 'box';
 
@@ -48,18 +49,26 @@ export default function CouriersScreen() {
     setFare(f => Math.min(selected.maxPrice, Math.max(selected.basePrice, f + delta)));
   }
 
-  function book() {
+  async function book() {
     if (!recipientName.trim())  { Alert.alert('Missing', 'Enter the recipient name.');         return; }
     if (!recipientPhone.trim()) { Alert.alert('Missing', 'Enter the recipient phone number.'); return; }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await api.createCourierOrder({
+        pickup,
+        dropoff,
+        packageType: pkgType,
+        offeredFare: fare,
+        recipientName:  recipientName.trim(),
+        recipientPhone: recipientPhone.trim(),
+        instructions:   instructions.trim() || undefined,
+      });
+      router.replace(`/passenger/courier-order/${res.orderId}`);
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to place order.');
+    } finally {
       setLoading(false);
-      Alert.alert(
-        'Courier Booked! 📦',
-        `Your ${selected.label.toLowerCase()} will be picked up shortly.\n\nTo: ${recipientName} · ${recipientPhone}\nOffer: PKR ${fare}`,
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
-    }, 1200);
+    }
   }
 
   // ── STAGE 1: Route ───────────────────────────────────────────────────────────
@@ -133,7 +142,6 @@ export default function CouriersScreen() {
   // ── STAGE 2: Package type + details ──────────────────────────────────────────
   return (
     <View style={styles.safe}>
-      {/* Abstract map background */}
       <View style={styles.mapBg}>
         <View style={[styles.road, { top: 120, left: -50, width: '120%', transform: [{ rotate: '-10deg' }] }]} />
         <View style={[styles.road, { top: 260, left: -50, width: '120%', transform: [{ rotate: '20deg'  }] }]} />
@@ -142,7 +150,6 @@ export default function CouriersScreen() {
         <View style={[styles.mapPin, { top: 280, left: 230 }]}><Text style={styles.mapPinTxt}>🏁</Text></View>
       </View>
 
-      {/* Floating route header */}
       <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
         <View style={styles.floatingBar}>
           <Pressable style={styles.backBtn} onPress={() => setStage('route')}>
@@ -162,7 +169,6 @@ export default function CouriersScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Bottom sheet */}
       <View style={styles.sheet}>
         <View style={styles.dragIndicator} />
 
@@ -171,7 +177,6 @@ export default function CouriersScreen() {
           contentContainerStyle={{ paddingBottom: 12 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Selected package — main card with price adjuster */}
           <View style={styles.selectedCard}>
             <View style={styles.selectedCardTop}>
               <Text style={styles.selectedEmoji}>{selected.emoji}</Text>
@@ -198,7 +203,6 @@ export default function CouriersScreen() {
             </View>
           </View>
 
-          {/* Alternative package types */}
           {PACKAGE_TYPES.filter(p => p.key !== pkgType).map(p => (
             <Pressable key={p.key} style={styles.altRow} onPress={() => selectPkg(p.key)}>
               <Text style={styles.altEmoji}>{p.emoji}</Text>
@@ -210,7 +214,6 @@ export default function CouriersScreen() {
             </Pressable>
           ))}
 
-          {/* Recipient */}
           <Text style={styles.sectionLabel}>RECIPIENT</Text>
           <View style={styles.inputCard}>
             <TextInput
@@ -258,7 +261,7 @@ export default function CouriersScreen() {
             disabled={loading}
           >
             <Text style={styles.bookBtnTxt}>
-              {loading ? 'Booking…' : `Book Courier · PKR ${fare}`}
+              {loading ? 'Placing Order…' : `Book Courier · PKR ${fare}`}
             </Text>
           </Pressable>
         </View>
@@ -270,7 +273,6 @@ export default function CouriersScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
-  // Stage 1
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -314,7 +316,6 @@ const styles = StyleSheet.create({
   },
   continueBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
 
-  // Stage 2 map
   mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#151616' },
   road: {
     position: 'absolute',
@@ -333,7 +334,6 @@ const styles = StyleSheet.create({
   },
   mapPinTxt: { fontSize: 16 },
 
-  // Floating header
   floatingHeaderArea: {
     position: 'absolute',
     top: 0,
@@ -373,7 +373,6 @@ const styles = StyleSheet.create({
   floatingAddr:    { fontSize: 12, fontWeight: '700', color: colors.text, flex: 1 },
   floatingDivider: { height: 1, backgroundColor: colors.border, marginLeft: 22 },
 
-  // Bottom sheet
   sheet: {
     position: 'absolute',
     bottom: 0,
@@ -397,7 +396,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  // Selected package card
   selectedCard: {
     backgroundColor: '#0a1f05',
     borderRadius: 18,
@@ -442,7 +440,6 @@ const styles = StyleSheet.create({
   fareValue:  { fontSize: 22, fontWeight: '900', color: colors.primary },
   fareLabel:  { fontSize: 11, color: colors.muted, fontWeight: '600', marginTop: 2 },
 
-  // Alternatives
   altRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -457,7 +454,6 @@ const styles = StyleSheet.create({
   altDesc:  { fontSize: 11, color: colors.muted, marginTop: 1 },
   altPrice: { fontSize: 13, fontWeight: '800', color: colors.muted },
 
-  // Recipient
   sectionLabel: {
     fontSize: 11,
     fontWeight: '800',
@@ -490,7 +486,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  // Footer
   footer: { paddingTop: 10, paddingBottom: 28 },
   bookBtn: {
     height: 54,

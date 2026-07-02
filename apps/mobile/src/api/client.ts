@@ -253,6 +253,29 @@ export const api = {
   >('adminCancelIntercityTrip'),
   seedIntercityTrips: callable<Record<string, never>, { ok: boolean; seeded: number }>('seedIntercityTrips'),
 
+  // ── Courier delivery ──────────────────────────────────────────────────────
+  createCourierOrder: callable<
+    { pickup: string; dropoff: string; packageType: 'document' | 'parcel' | 'box'; offeredFare: number; recipientName: string; recipientPhone: string; instructions?: string },
+    { ok: boolean; orderId: string }
+  >('createCourierOrder'),
+  cancelCourierOrder: callable<{ orderId: string }, { ok: boolean }>('cancelCourierOrder'),
+  adminUpdateCourierStatus: callable<
+    { orderId: string; status: string; driverName?: string; driverPhone?: string; note?: string },
+    { ok: boolean }
+  >('adminUpdateCourierStatus'),
+
+  // ── Freight / business delivery ───────────────────────────────────────────
+  createFreightRequest: callable<
+    { businessName: string; contactPerson: string; contactPhone: string; pickup: string; dropoff: string; priority: string; loadType: string; notes?: string; estimatedQuote: number },
+    { ok: boolean; requestId: string }
+  >('createFreightRequest'),
+  cancelFreightRequest: callable<{ requestId: string }, { ok: boolean }>('cancelFreightRequest'),
+  acceptFreightQuote: callable<{ requestId: string }, { ok: boolean }>('acceptFreightQuote'),
+  adminUpdateFreightStatus: callable<
+    { requestId: string; status: string; finalQuote?: number; adminNote?: string },
+    { ok: boolean }
+  >('adminUpdateFreightStatus'),
+
   // ── Admin push notifications ──────────────────────────────────────────────
   adminSendPushNotification: callable<
     { title: string; body: string; type?: string; target?: string },

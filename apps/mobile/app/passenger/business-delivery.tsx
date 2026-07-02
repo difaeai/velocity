@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
+import { api } from '../../src/api/client';
 
 type Priority = 'standard' | 'express' | 'same-day';
 type LoadType  = 'documents' | 'goods' | 'perishable' | 'fragile';
@@ -48,16 +49,26 @@ export default function BusinessDeliveryScreen() {
   const selectedPriority = PRIORITIES.find(p => p.key === priority)!;
   const estimatedQuote   = Math.round(BASE_QUOTE * (1 + selectedPriority.pct / 100));
 
-  function requestQuote() {
+  async function requestQuote() {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await api.createFreightRequest({
+        businessName:   businessName.trim(),
+        contactPerson:  contactPerson.trim(),
+        contactPhone:   contactPhone.trim(),
+        pickup:         pickup.trim(),
+        dropoff:        dropoff.trim(),
+        priority,
+        loadType,
+        notes:          notes.trim() || undefined,
+        estimatedQuote,
+      });
+      router.replace(`/passenger/freight-order/${res.requestId}`);
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to submit request.');
+    } finally {
       setLoading(false);
-      Alert.alert(
-        'Quote Requested! 💼',
-        `Our business team will contact you within 30 minutes.\n\nBusiness: ${businessName}\nPhone: ${contactPhone}\nPriority: ${selectedPriority.label} (${selectedPriority.eta})\nEstimated: PKR ${estimatedQuote.toLocaleString()}+`,
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
-    }, 1200);
+    }
   }
 
   // ── STAGE 1: Business info + addresses ───────────────────────────────────────
@@ -152,7 +163,6 @@ export default function BusinessDeliveryScreen() {
   // ── STAGE 2: Priority + load type + quote ────────────────────────────────────
   return (
     <View style={styles.safe}>
-      {/* Abstract map background */}
       <View style={styles.mapBg}>
         <View style={[styles.road, { top: 110, left: -50, width: '120%', transform: [{ rotate: '-12deg' }] }]} />
         <View style={[styles.road, { top: 260, left: -50, width: '120%', transform: [{ rotate: '18deg'  }] }]} />
@@ -161,7 +171,6 @@ export default function BusinessDeliveryScreen() {
         <View style={[styles.mapPin, { top: 280, left: 220 }]}><Text style={styles.mapPinTxt}>🏁</Text></View>
       </View>
 
-      {/* Floating header */}
       <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
         <View style={styles.floatingBar}>
           <Pressable style={styles.backBtn} onPress={() => setStage('info')}>
@@ -181,12 +190,10 @@ export default function BusinessDeliveryScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Bottom sheet */}
       <View style={styles.sheet}>
         <View style={styles.dragIndicator} />
 
         <ScrollView contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
-          {/* Selected priority — main card */}
           <View style={styles.selectedCard}>
             <View style={styles.selectedTop}>
               <View style={{ flex: 1 }}>
@@ -211,7 +218,6 @@ export default function BusinessDeliveryScreen() {
             </View>
           </View>
 
-          {/* Other priority options */}
           {PRIORITIES.filter(p => p.key !== priority).map(p => (
             <Pressable key={p.key} style={styles.altRow} onPress={() => setPriority(p.key)}>
               <View style={{ flex: 1 }}>
@@ -229,7 +235,6 @@ export default function BusinessDeliveryScreen() {
             </Pressable>
           ))}
 
-          {/* Load type */}
           <Text style={styles.sectionLabel}>LOAD TYPE</Text>
           <View style={styles.loadRow}>
             {LOAD_TYPES.map(l => (
@@ -246,7 +251,6 @@ export default function BusinessDeliveryScreen() {
             ))}
           </View>
 
-          {/* Notes */}
           <Pressable style={styles.notesToggle} onPress={() => setShowNotes(v => !v)}>
             <Text style={styles.notesTxt}>
               {showNotes ? '▾' : '▸'} Special instructions (optional)
@@ -271,7 +275,7 @@ export default function BusinessDeliveryScreen() {
             disabled={loading}
           >
             <Text style={styles.bookBtnTxt}>
-              {loading ? 'Requesting…' : `Request Quote · PKR ${estimatedQuote.toLocaleString()}+`}
+              {loading ? 'Submitting…' : `Request Quote · PKR ${estimatedQuote.toLocaleString()}+`}
             </Text>
           </Pressable>
         </View>
@@ -283,7 +287,6 @@ export default function BusinessDeliveryScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
-  // Stage 1
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,7 +329,6 @@ const styles = StyleSheet.create({
   },
   continueBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
 
-  // Stage 2 map
   mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#151616' },
   road: {
     position: 'absolute',
@@ -345,7 +347,6 @@ const styles = StyleSheet.create({
   },
   mapPinTxt: { fontSize: 16 },
 
-  // Floating header
   floatingHeaderArea: {
     position: 'absolute',
     top: 0,
@@ -385,7 +386,6 @@ const styles = StyleSheet.create({
   floatingAddr:    { fontSize: 12, fontWeight: '700', color: colors.text, flex: 1 },
   floatingDivider: { height: 1, backgroundColor: colors.border, marginLeft: 22 },
 
-  // Bottom sheet
   sheet: {
     position: 'absolute',
     bottom: 0,
@@ -409,7 +409,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  // Selected priority card
   selectedCard: {
     backgroundColor: '#0a1f05',
     borderRadius: 18,
@@ -439,7 +438,6 @@ const styles = StyleSheet.create({
   quoteValue: { fontSize: 22, fontWeight: '900', color: colors.primary },
   quoteLabel: { fontSize: 11, color: colors.muted, fontWeight: '600', marginTop: 3 },
 
-  // Alt priority rows
   altRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -462,7 +460,6 @@ const styles = StyleSheet.create({
   },
   altBadgeTxt: { fontSize: 10, fontWeight: '800', color: colors.muted },
 
-  // Load type
   loadRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 },
   loadChip: {
     flexDirection: 'row',
@@ -479,7 +476,6 @@ const styles = StyleSheet.create({
   loadEmoji: { fontSize: 14 },
   loadLabel: { fontSize: 12, fontWeight: '700', color: colors.text },
 
-  // Notes
   notesToggle: { paddingVertical: 10 },
   notesTxt:    { fontSize: 13, fontWeight: '700', color: colors.muted },
   notesInput: {
@@ -494,7 +490,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  // Footer
   footer: { paddingTop: 10, paddingBottom: 28 },
   bookBtn: {
     height: 54,
