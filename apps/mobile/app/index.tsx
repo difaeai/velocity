@@ -73,10 +73,8 @@ export default function Index() {
   if (initializing || showSplash || !profileChecked) {
     return (
       <View style={styles.container}>
-        {/* Logo badge */}
-        <View style={styles.logoBadge}>
-          <LogoMark size={64} color="#1a1c1c" />
-        </View>
+        {/* Logo — no background, just the lime mark */}
+        <LogoMark size={96} color="#ccff00" />
 
         {/* Brand name */}
         <Text style={styles.brandText}>VELOCITY</Text>
@@ -103,15 +101,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#1a1c1c',
     gap: 16,
-  },
-  logoBadge: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    backgroundColor: '#ccff00',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
   },
   brandText: {
     fontSize: 32,

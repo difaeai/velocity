@@ -164,7 +164,7 @@ export default function Onboarding() {
 
         {/* Header */}
         <View style={styles.logoRow}>
-          <View style={styles.logo}><LogoMark size={38} color="#000" /></View>
+          <LogoMark size={52} color="#ccff00" />
         </View>
         <Text style={styles.title}>One last step</Text>
         <Text style={styles.subtitle}>Tell us a little about yourself to get started.</Text>
@@ -303,7 +303,6 @@ const styles = StyleSheet.create({
   safe:      { flex: 1, backgroundColor: colors.background },
   container: { padding: 24, gap: 20, flexGrow: 1, justifyContent: 'center' },
   logoRow:   { alignItems: 'center', marginBottom: 4 },
-  logo:      { width: 60, height: 60, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   title:     { fontSize: 28, fontWeight: '900', color: colors.text, textAlign: 'center' },
   subtitle:  { fontSize: 15, color: colors.muted, textAlign: 'center', marginBottom: 4 },
 
