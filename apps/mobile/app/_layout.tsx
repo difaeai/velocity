@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import { Slot, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,7 +19,7 @@ export default function RootLayout() {
 
   // Handle FCM notification tap → deep-link driver to request-detail screen
   useEffect(() => {
-    if (isExpoGo) return;
+    if (isExpoGo || Platform.OS === 'web') return;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require('expo-notifications');
 
