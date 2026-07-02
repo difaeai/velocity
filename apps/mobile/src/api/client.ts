@@ -206,6 +206,58 @@ export const api = {
     { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number; surgeApplied: number }
   >('getFareEstimate'),
   seedFareConfig: callable<Record<string, never>, { seeded: string[] }>('seedFareConfig'),
+
+  // ── Intercity travel ──────────────────────────────────────────────────────
+  createIntercityBooking: callable<
+    { tripId: string; seatsBooked: number; paymentMethod: 'cash' | 'wallet' },
+    { ok: boolean; bookingId: string }
+  >('createIntercityBooking'),
+  cancelIntercityBooking: callable<
+    { bookingId: string },
+    { ok: boolean }
+  >('cancelIntercityBooking'),
+  sendIntercityMessage: callable<
+    { tripId: string; text: string },
+    { ok: boolean; messageId: string }
+  >('sendIntercityMessage'),
+  adminCreateIntercityTrip: callable<{
+    fromCityId: string; fromCityName: string;
+    toCityId: string;   toCityName: string;
+    departureTime: number;
+    estimatedArrivalTime?: number;
+    vehicleType: string;
+    totalSeats: number;
+    farePerSeat: number;
+    operatorName?: string;
+    pickupPoint?: string;
+    dropoffPoint?: string;
+    driverName?: string;
+    driverPhone?: string;
+    plateNumber?: string;
+    notes?: string;
+  }, { ok: boolean; tripId: string }>('adminCreateIntercityTrip'),
+  adminUpdateIntercityTrip: callable<{
+    tripId: string;
+    status?: string;
+    driverName?: string;
+    driverPhone?: string;
+    plateNumber?: string;
+    notes?: string;
+    estimatedArrivalTime?: number;
+    pickupPoint?: string;
+    dropoffPoint?: string;
+  }, { ok: boolean }>('adminUpdateIntercityTrip'),
+  adminCancelIntercityTrip: callable<
+    { tripId: string; reason?: string },
+    { ok: boolean; affectedPassengers: number }
+  >('adminCancelIntercityTrip'),
+  seedIntercityTrips: callable<Record<string, never>, { ok: boolean; seeded: number }>('seedIntercityTrips'),
+
+  // ── Admin push notifications ──────────────────────────────────────────────
+  adminSendPushNotification: callable<
+    { title: string; body: string; type?: string; target?: string },
+    { ok: boolean; sent: number }
+  >('adminSendPushNotification'),
 };
 
 // ── Pool ride request / nearby ride types ────────────────────────────────────

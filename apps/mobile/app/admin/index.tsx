@@ -268,6 +268,30 @@ export default function AdminDashboard() {
           <Text style={styles.ridersCardArrow}>→</Text>
         </Pressable>
 
+        {/* Intercity Trips */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/intercity-trips')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>🚌  Intercity Trips</Text>
+            <Text style={styles.ridersCardDesc}>
+              Schedule, manage and track city-to-city trips.{'\n'}
+              Update status, assign drivers, cancel runs.
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
+        {/* Send Notification */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/send-notification')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>🔔  Send Notification</Text>
+            <Text style={styles.ridersCardDesc}>
+              Broadcast push notifications to all users,{'\n'}
+              passengers only, or drivers only.
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
         {/* Ride Categories — full in-app screen */}
         <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/riders')}>
           <View style={styles.ridersCardLeft}>

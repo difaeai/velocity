@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { broadcastNotification } from '../lib/fcm';
 import { Role } from '../domain/types';
 
 /**
@@ -301,3 +302,44 @@ export async function applyRole(targetUid: string, role: Role): Promise<void> {
 }
 
 export { uploadUserPhoto } from './uploadPhoto';
+
+// ── Admin: broadcast push notification to all/segment of users ───────────────
+
+const sendPushSchema = z.object({
+  title:  z.string().min(1).max(120),
+  body:   z.string().min(1).max(500),
+  type:   z.enum(['ride', 'promo', 'system', 'wallet']).default('system'),
+  target: z.enum(['all', 'passengers', 'drivers']).default('all'),
+});
+
+export const adminSendPushNotification = onCall(
+  { timeoutSeconds: 540 },
+  async (req) => {
+    requireAdmin(req);
+    const parsed = sendPushSchema.safeParse(req.data);
+    if (!parsed.success) invalid('Invalid notification data: ' + parsed.error.message);
+    const { title, body, type, target } = parsed.data!;
+
+    const roleFilter = target === 'all' ? 'all'
+      : target === 'passengers' ? 'passenger'
+      : 'driver';
+
+    const sent = await broadcastNotification(
+      title, body, type as 'ride' | 'promo' | 'system' | 'wallet',
+      roleFilter as 'passenger' | 'driver' | 'all',
+    );
+
+    await db.collection('auditLogs').add({
+      type:      'notification.broadcast',
+      actor:     req.auth?.uid,
+      target,
+      title,
+      body,
+      sentCount: sent,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('adminSendPushNotification', { target, sent });
+    return { ok: true, sent };
+  },
+);

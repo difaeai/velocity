@@ -90,3 +90,17 @@ export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from '
 
 // Fare engine — estimate, bid validation, pooling quote, admin seeding
 export { getFareEstimate, submitBid, getPoolingQuote, seedFareConfig } from './fare';
+
+// Intercity travel — booking, chat, admin trip management
+export {
+  createIntercityBooking,
+  cancelIntercityBooking,
+  sendIntercityMessage,
+  adminCreateIntercityTrip,
+  adminUpdateIntercityTrip,
+  adminCancelIntercityTrip,
+  seedIntercityTrips,
+} from './intercity';
+
+// Admin: broadcast push notification
+export { adminSendPushNotification } from './users';
