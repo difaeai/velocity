@@ -61,6 +61,11 @@ service cloud.firestore {
                     && onlyChanges(['displayName', 'name', 'gender', 'dob', 'age',
                                     'profileComplete', 'photoURL', 'lastActive', 'updatedAt']);
       allow update, delete: if isAdmin();
+
+      // Saved places (home / work / favourites) — owner-managed bookmarks.
+      match /savedPlaces/{placeId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // ----- drivers/{uid} ---------------------------------------------------
@@ -331,6 +336,84 @@ service cloud.firestore {
     match /commuteSchedules/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow write: if false;
+    }
+
+    // ----- fareConfig/{cityId} ----------------------------------------------
+    // City-level fare engine rates (per-km / per-min, base fares, bid floors,
+    // surge cap, pooling factors, commission). The booking screen reads these
+    // to compute live estimates; admins edit them from the Fare Configuration
+    // screen. The getFareEstimate / submitBid CFs read the same docs server-side.
+    match /fareConfig/{cityId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ----- notifications/{uid}/items/{notifId} -------------------------------
+    // In-app notification feed. Written only server-side (notifyUser /
+    // broadcastNotification via Admin SDK). The owner may read and mark read.
+    match /notifications/{userId}/items/{notifId} {
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId) && onlyChanges(['read']);
+      allow create, delete: if false;
+    }
+
+    // ----- intercityTrips/{tripId} -------------------------------------------
+    // Scheduled city-to-city trips. Browsable by any signed-in user; created
+    // and mutated only via the intercity CFs (Admin SDK bypasses rules).
+    match /intercityTrips/{tripId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- intercityBookings/{bookingId} --------------------------------------
+    // Written by createIntercityBooking CF. The booking passenger and admins
+    // may read (the activity screen queries where passengerId == uid).
+    match /intercityBookings/{bookingId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.passengerId == uid());
+      allow write: if false;
+    }
+
+    // ----- intercityChats/{tripId}/messages/{msgId} ----------------------------
+    // Trip group chat. Writes go through sendIntercityMessage CF, which verifies
+    // a confirmed booking. Reads are signed-in only — bookings are keyed by
+    // bookingId, so there is no per-uid doc to gate reads against.
+    match /intercityChats/{tripId}/messages/{msgId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- courierOrders/{orderId} ---------------------------------------------
+    // Same-city parcel deliveries. Written via courier CFs. The ordering
+    // passenger and admins may read (admin console lists all orders).
+    match /courierOrders/{orderId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.passengerId == uid());
+      allow write: if false;
+    }
+
+    // ----- freightRequests/{requestId} -----------------------------------------
+    // Business freight quote requests. Written via freight CFs. The requesting
+    // passenger and admins may read.
+    match /freightRequests/{requestId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.passengerId == uid());
+      allow write: if false;
+    }
+
+    // ----- supportChats/{uid} ---------------------------------------------------
+    // 1:1 support thread. The owner writes their own messages directly from the
+    // app; admins can read (and later reply from an admin console).
+    match /supportChats/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId) || isAdmin();
+      allow delete: if false;
+
+      match /messages/{msgId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if (isOwner(userId) || isAdmin())
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 1000;
+        allow update, delete: if false;
+      }
     }
 
     // ----- Catch-all DENY --------------------------------------------------
