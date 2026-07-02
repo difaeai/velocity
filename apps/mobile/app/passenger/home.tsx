@@ -120,59 +120,60 @@ export default function PassengerHome() {
       >
         <View style={styles.dragIndicator} />
 
-        {/* ── Single search bar — destination first, then pool/solo choice ── */}
+        {/* ── Service category grid (inDrive style) ── */}
+        <View style={styles.serviceGrid}>
+          {/* Left: big City Rides card */}
+          <Pressable
+            style={styles.cityRidesCard}
+            onPress={() => router.push('/passenger/booking')}
+          >
+            <Text style={styles.cityRidesTitle}>City Rides</Text>
+            <View style={styles.cityRidesIllustration}>
+              <Text style={styles.cityRidesCarIcon}>🚗</Text>
+              <Text style={styles.cityRidesMotoIcon}>🏍️</Text>
+            </View>
+          </Pressable>
+
+          {/* Right: stacked smaller cards */}
+          <View style={styles.serviceRightCol}>
+            <Pressable
+              style={styles.serviceCardLg}
+              onPress={() => router.push('/passenger/city-to-city')}
+            >
+              <Text style={styles.serviceCardTitle}>City to City</Text>
+              <Text style={styles.serviceCardIcon}>🚗💼</Text>
+            </Pressable>
+
+            <View style={styles.serviceBottomRow}>
+              <Pressable
+                style={styles.serviceCardSm}
+                onPress={() => router.push('/passenger/couriers')}
+              >
+                <Text style={styles.serviceCardTitle}>Couriers</Text>
+                <Text style={styles.serviceCardIconSm}>📦</Text>
+              </Pressable>
+              <Pressable
+                style={styles.serviceCardSm}
+                onPress={() => router.push('/passenger/business-delivery')}
+              >
+                <Text style={styles.serviceCardTitle}>Freight</Text>
+                <Text style={styles.serviceCardIconSm}>🚛</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Main search / booking bar ── */}
         <Pressable
           style={styles.searchBar}
           onPress={() => router.push('/passenger/booking')}
         >
-          <View style={styles.searchBarLeft}>
-            <Text style={styles.searchBarIcon}>🔍</Text>
-            <View>
-              <Text style={styles.searchBarTitle}>Where are you going?</Text>
-              <Text style={styles.searchBarSub}>Pool ride · Save up to 65%</Text>
-            </View>
+          <Text style={styles.searchBarIcon}>🔍</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.searchBarTitle}>Where to &amp; for how much?</Text>
           </View>
-          <View style={styles.poolBadge}>
-            <Text style={styles.poolBadgeText}>POOL</Text>
-          </View>
+          <Text style={styles.searchBarArrow}>→</Text>
         </Pressable>
-
-        {/* ── Service chips — Solo is just one option among many ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-        >
-          {[
-            { icon: '🚕', label: 'Solo Ride',    route: '/passenger/booking' },
-            { icon: '🌐', label: 'City to City', route: '/passenger/city-to-city' },
-            { icon: '📦', label: 'Couriers',     route: '/passenger/couriers' },
-            { icon: '💼', label: 'Business',     route: '/passenger/business-delivery' },
-          ].map((s) => (
-            <Pressable
-              key={s.label}
-              style={styles.chip}
-              onPress={() => router.push(s.route as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.chipEmoji}>{s.icon}</Text>
-              <Text style={styles.chipLabel}>{s.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* ── Savings info strip ── */}
-        <View style={styles.savingsStrip}>
-          <Text style={styles.savingsItem}>💺 Up to 4 riders</Text>
-          <View style={styles.savingsDot} />
-          <Text style={styles.savingsItem}>🔒 Same gender</Text>
-          <View style={styles.savingsDot} />
-          {poolFromPrice
-            ? <Text style={styles.savingsItem}>From <Text style={{ color: colors.primary, fontWeight: '900' }}>{poolFromPrice} PKR</Text>/seat</Text>
-            : <Text style={styles.savingsItem}>Save up to 65%</Text>}
-        </View>
-
-        {/* ── Travel Mate card ── */}
-        <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
 
         {/* Recent destinations */}
         {recents.length > 0 && (
@@ -181,17 +182,22 @@ export default function PassengerHome() {
               <Pressable
                 key={r.address}
                 style={styles.historyItem}
-                onPress={() => router.push('/passenger/pool-ride')}
+                onPress={() => router.push('/passenger/booking')}
               >
-                <Text style={styles.historyIcon}>🕒</Text>
+                <View style={styles.historyIconCircle}>
+                  <Text style={styles.historyIcon}>🕒</Text>
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
-                  <Text style={styles.historyAddress}>Tap to find a pool ride</Text>
+                  <Text style={styles.historyAddress} numberOfLines={1}>{r.address}</Text>
                 </View>
               </Pressable>
             ))}
           </View>
         )}
+
+        {/* ── Travel Mate card ── */}
+        <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -520,69 +526,110 @@ const styles = StyleSheet.create({
     color: '#8a8c8c',
     marginLeft: 6,
   },
-  /* ── Search bar (single primary action → pool ride) ── */
-  searchBar: {
-    backgroundColor: colors.primary,
+  /* ── Service card grid ── */
+  serviceGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    height: 160,
+  },
+  cityRidesCard: {
+    flex: 0.9,
+    backgroundColor: '#1a2210',
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2e4010',
+    padding: 14,
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+  },
+  cityRidesTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  cityRidesIllustration: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginBottom: -4,
+  },
+  cityRidesCarIcon:  { fontSize: 52, lineHeight: 60 },
+  cityRidesMotoIcon: { fontSize: 36, lineHeight: 42, marginBottom: 4 },
+  serviceRightCol: {
+    flex: 1,
+    gap: 10,
+  },
+  serviceCardLg: {
+    flex: 1,
+    backgroundColor: '#1c1c1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  serviceBottomRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  serviceCardSm: {
+    flex: 1,
+    backgroundColor: '#1c1c1e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  serviceCardTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  serviceCardIcon:   { fontSize: 22, textAlign: 'right' },
+  serviceCardIconSm: { fontSize: 18, textAlign: 'right' },
+
+  /* ── Search bar ── */
+  searchBar: {
+    backgroundColor: '#212222',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2d2f2f',
     paddingHorizontal: 16,
     paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 12,
   },
-  searchBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  searchBarIcon:  { fontSize: 20 },
-  searchBarTitle: { fontSize: 16, fontWeight: '900', color: '#000' },
-  searchBarSub:   { fontSize: 11, color: '#1c1c1c', fontWeight: '700', marginTop: 2 },
-  poolBadge: {
-    backgroundColor: '#000',
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  poolBadgeText: { color: colors.primary, fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  searchBarIcon:  { fontSize: 18, color: '#8a8c8c' },
+  searchBarTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  searchBarArrow: { fontSize: 16, color: '#8a8c8c' },
 
-  /* ── Savings info strip ── */
-  savingsStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  savingsItem:  { fontSize: 11, fontWeight: '700', color: colors.muted },
-  savingsDot:   { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.border },
-
-  /* ── Secondary service chips ── */
-  chipsRow: { gap: 10, paddingRight: 4 },
-  chip: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 6,
-    minWidth: 82,
-  },
-  chipEmoji: { fontSize: 22 },
-  chipLabel: { fontSize: 11, fontWeight: '800', color: colors.text },
+  /* ── Recent destinations ── */
   historyList: {
-    marginTop: 14,
-    gap: 12,
+    marginTop: 4,
+    gap: 0,
   },
   historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e1f1f',
     gap: 12,
+  },
+  historyIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#212222',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   historyIcon: {
     fontSize: 16,
-    color: '#8a8c8c',
   },
   historyName: {
     fontSize: 14,

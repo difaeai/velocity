@@ -75,17 +75,15 @@ export default function Booking() {
   }, [currentAddress]);
 
   // Details state
-  const [rideType, setRideType] = useState<RideType>('ac');
-  const [fare, setFare] = useState<number>(BASE_FARES.ac);
-  const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.ac, 3));
-  const [poolGender, setPoolGender] = useState<'same' | 'any'>('same');
+  const [rideType, setRideType] = useState<RideType>('mini');
+  const [fare, setFare] = useState<number>(BASE_FARES.mini);
+  const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.mini, 3));
   const [poolLoading, setPoolLoading] = useState(false);
   const [seats, setSeats] = useState(1);
   const [gender, setGender] = useState<Gender>('unspecified');
   const [pool, setPool] = useState(false);
   const [autoAccept, setAutoAccept] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
-  const [preferFemale, setPreferFemale] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [showPromo, setShowPromo] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -147,7 +145,7 @@ export default function Booking() {
         passengerGender: gender,
         pool,
         paymentMethod,
-        preferFemaleDriver: preferFemale,
+        preferFemaleDriver: false,
         promoCode: promoCode.trim() || undefined,
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
         dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
@@ -175,7 +173,7 @@ export default function Booking() {
         passengerGender: gender,
         pool: true,
         paymentMethod,
-        preferFemaleDriver: poolGender === 'same',
+        preferFemaleDriver: false,
         pickup:  { lat: coords.lat,        lng: coords.lng,        address: pickupAddress },
         dropoff: { lat: destCoords.lat,     lng: destCoords.lng,    address: dropoff.trim() },
       });
@@ -446,39 +444,7 @@ export default function Booking() {
               </View>
             )}
 
-            {/* 3. Gender preference */}
-            <View style={styles.genderRow}>
-              <Pressable
-                style={[styles.genderOpt, poolGender === 'same' && styles.genderOptActive]}
-                onPress={() => setPoolGender('same')}
-              >
-                <Text style={styles.genderOptIcon}>🔒</Text>
-                <View>
-                  <Text style={[styles.genderOptTitle, poolGender === 'same' && { color: colors.primary }]}>Same gender</Text>
-                  <Text style={styles.genderOptSub}>Safer · default</Text>
-                </View>
-              </Pressable>
-              <Pressable
-                style={[styles.genderOpt, poolGender === 'any' && styles.genderOptActive]}
-                onPress={() => {
-                  if (poolGender !== 'any') {
-                    Alert.alert(
-                      'Mixed gender ride?',
-                      'You will travel with passengers of any gender.',
-                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Accept', onPress: () => setPoolGender('any') }],
-                    );
-                  } else setPoolGender('same');
-                }}
-              >
-                <Text style={styles.genderOptIcon}>👥</Text>
-                <View>
-                  <Text style={[styles.genderOptTitle, poolGender === 'any' && { color: colors.primary }]}>Any gender</Text>
-                  <Text style={styles.genderOptSub}>More options</Text>
-                </View>
-              </Pressable>
-            </View>
-
-            {/* 4. Savings breakdown */}
+            {/* 3. Savings breakdown */}
             <View style={styles.poolTierTable}>
               <View style={styles.poolTierRow}>
                 <View style={styles.poolTierLeft}>
@@ -527,28 +493,33 @@ export default function Booking() {
             <View style={styles.orDividerLine} />
           </View>
 
-          {RIDE_TYPES.map((rt) => (
+          {([
+            { key: 'mini'    as RideType, label: 'Mini',     desc: 'Lower fares, no AC',       icon: '🚗', seats: 4 },
+            { key: 'bike'    as RideType, label: 'Moto',     desc: 'No traffic, lower prices', icon: '🏍️', seats: 1 },
+            { key: 'ac'      as RideType, label: 'Ride A/C', desc: 'Cars with AC',             icon: '❄️', seats: 4 },
+            { key: 'comfort' as RideType, label: 'Premium',  desc: 'Sedans with AC',           icon: '⭐', seats: 4 },
+          ] as const).map((rt) => (
             <Pressable
-              key={rt}
-              style={[styles.categoryRow, rideType === rt && styles.categoryRowActive]}
-              onPress={() => selectRide(rt)}
+              key={rt.key}
+              style={[styles.categoryRow, rideType === rt.key && styles.categoryRowActive]}
+              onPress={() => selectRide(rt.key)}
             >
               <View style={styles.categoryRowLeft}>
-                <Text style={styles.categoryEmojiSmall}>
-                  {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
-                </Text>
+                <Text style={styles.categoryEmojiSmall}>{rt.icon}</Text>
                 <View>
-                  <Text style={[styles.categoryNameSmall, rideType === rt && { color: colors.primary }]}>
-                    {RIDE_TYPE_LABELS[rt]}
+                  <Text style={[styles.categoryNameSmall, rideType === rt.key && { color: colors.primary }]}>
+                    {rt.label}
                   </Text>
-                  <Text style={styles.categorySubSmall}>PKR {fareBounds(rt).min}–{fareBounds(rt).max}</Text>
+                  <Text style={styles.categorySubSmall}>
+                    {rt.seats > 1 ? `${rt.seats} seats · ` : ''}{rt.desc}
+                  </Text>
                 </View>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <Text style={[styles.categoryFareSmall, rideType === rt && { color: colors.primary, fontWeight: '900' }]}>
-                  PKR {BASE_FARES[rt]}
+                <Text style={[styles.categoryFareSmall, rideType === rt.key && { color: colors.primary, fontWeight: '900' }]}>
+                  PKR {BASE_FARES[rt.key]}
                 </Text>
-                {rideType === rt && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>selected ✓</Text>}
+                {rideType === rt.key && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>selected ✓</Text>}
               </View>
             </Pressable>
           ))}
@@ -579,13 +550,13 @@ export default function Booking() {
           </View>
 
           <View style={styles.optionTogglesRow}>
-            <Pressable style={styles.optionToggle} onPress={() => setPreferFemale(v => !v)}>
-              <Text style={styles.optionToggleIcon}>👩</Text>
-              <Text style={[styles.optionToggleLabel, preferFemale && { color: colors.primary }]}>
-                Female driver
+            <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
+              <Text style={styles.optionToggleIcon}>⚡</Text>
+              <Text style={[styles.optionToggleLabel, autoAccept && { color: colors.primary }]}>
+                Auto-accept offer of PKR {fare}
               </Text>
-              <View style={[styles.toggleSwitchSmall, preferFemale && { backgroundColor: colors.primary }]}>
-                <View style={[styles.toggleSwitchKnobSmall, preferFemale && styles.toggleKnobOn]} />
+              <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
+                <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
               </View>
             </Pressable>
             <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
