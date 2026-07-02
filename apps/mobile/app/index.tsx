@@ -22,7 +22,15 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
-    if (!user) { setProfileChecked(true); return; }
+    if (!user) {
+      setProfileComplete(false);
+      setProfileChecked(true);
+      return;
+    }
+
+    // Reset while async check runs — prevents stale profileComplete=false
+    // from a previous null-user render causing a premature /onboarding redirect.
+    setProfileChecked(false);
 
     async function check() {
       const key = `onboarding_done_${user!.uid}`;
