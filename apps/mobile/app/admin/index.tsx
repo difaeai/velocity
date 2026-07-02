@@ -256,6 +256,18 @@ export default function AdminDashboard() {
           <Text style={styles.ridersCardArrow}>→</Text>
         </Pressable>
 
+        {/* Fare Config — city-level rate engine */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/fare-config')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>💰  Fare Configuration</Text>
+            <Text style={styles.ridersCardDesc}>
+              Set base fares, per-km / per-min rates, bid floors,{'\n'}
+              surge cap, pooling factors and commission per city
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
         {/* Ride Categories — full in-app screen */}
         <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/riders')}>
           <View style={styles.ridersCardLeft}>

@@ -199,6 +199,13 @@ export const api = {
     { lat: number; lng: number; radiusKm?: number },
     { demand: CommuteDemandSlot[] }
   >('getCommuteDemand'),
+
+  // ── Fare engine ───────────────────────────────────────────────────────────
+  getFareEstimate: callable<
+    { cityId: string; category: string; distanceKm: number; durationMin: number; geohash?: string },
+    { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number; surgeApplied: number }
+  >('getFareEstimate'),
+  seedFareConfig: callable<Record<string, never>, { seeded: string[] }>('seedFareConfig'),
 };
 
 // ── Pool ride request / nearby ride types ────────────────────────────────────

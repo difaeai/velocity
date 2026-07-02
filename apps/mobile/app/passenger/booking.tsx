@@ -29,6 +29,20 @@ import {
   type Gender,
   type RideType,
 } from '../../src/domain/types';
+import {
+  CityFareConfig, VehicleCategory,
+  calculateFare, round5,
+} from '../../src/lib/fareEngine';
+
+// Map app RideType keys to fareEngine VehicleCategory keys
+const RIDE_TO_CAT: Record<RideType, VehicleCategory> = {
+  mini:    'mini',
+  bike:    'moto',
+  auto:    'rickshaw',
+  ac:      'ac_car',
+  comfort: 'luxury',
+  xl:      'luxury',
+};
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371;
@@ -86,12 +100,11 @@ export default function Booking() {
     if (currentAddress) setPickup((prev) => (prev.trim() ? prev : currentAddress));
   }, [currentAddress]);
 
-  // Admin fare config fetched from Firestore
-  const [adminFares, setAdminFares] = useState<Record<string, { baseFare: number; perKm: number }>>({});
-
+  // Fare engine config from Firestore (city-level rates set by admin)
+  const [fareConfig, setFareConfig] = useState<CityFareConfig | null>(null);
   useEffect(() => {
-    getDoc(doc(db, 'config', 'rideFares')).then((snap) => {
-      if (snap.exists()) setAdminFares(snap.data() as Record<string, { baseFare: number; perKm: number }>);
+    getDoc(doc(db, 'fareConfig', 'islamabad_rawalpindi')).then((snap) => {
+      if (snap.exists()) setFareConfig(snap.data() as CityFareConfig);
     }).catch(() => {});
   }, []);
 
@@ -114,25 +127,38 @@ export default function Booking() {
 
   const bounds = fareBounds(rideType);
 
+  // Compute engine estimate whenever route + config are available
+  const distKm = coords && dropoffCoords ? haversineKm(coords, dropoffCoords) : null;
+  const engineEst = fareConfig && distKm
+    ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rideType], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
+    : null;
+
   function selectRide(rt: RideType) {
     setRideType(rt);
-    const base = BASE_FARES[rt];
+    const est = fareConfig && distKm
+      ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rt], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
+      : null;
+    const base = est ? est.recommendedFare : BASE_FARES[rt];
     setFare(base);
     setFareText(String(base));
     setPoolFare(poolFareFor(base, 3));
   }
 
   function bumpFare(delta: number) {
+    const min = engineEst?.minAcceptableBid ?? bounds.min;
+    const max = engineEst?.suggestedMaxBid  ?? bounds.max;
     setFare((f) => {
-      const next = Math.min(bounds.max, Math.max(bounds.min, f + delta));
+      const next = Math.min(max, Math.max(min, f + delta));
       setFareText(String(next));
       return next;
     });
   }
 
   function commitFareText() {
-    const parsed = parseInt(fareText, 10);
-    const clamped = isNaN(parsed) ? fare : Math.min(bounds.max, Math.max(bounds.min, parsed));
+    const parsed  = parseInt(fareText, 10);
+    const min     = engineEst?.minAcceptableBid ?? bounds.min;
+    const max     = engineEst?.suggestedMaxBid  ?? bounds.max;
+    const clamped = isNaN(parsed) ? fare : Math.min(max, Math.max(min, parsed));
     setFare(clamped);
     setFareText(String(clamped));
   }
@@ -431,21 +457,23 @@ export default function Booking() {
               <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
 
-            {/* Admin per-km suggestion */}
-            {(() => {
-              const cfg = adminFares[rideType];
-              const distKm = (coords && dropoffCoords) ? haversineKm(coords, dropoffCoords) : null;
-              const estFare = cfg && distKm ? Math.ceil(cfg.baseFare + cfg.perKm * distKm) : null;
-              if (!cfg) return null;
-              return (
-                <View style={styles.fareHintRow}>
-                  <Text style={styles.fareHintText}>
-                    PKR {cfg.perKm}/km admin rate
-                    {estFare && distKm ? ` · Est. PKR ${estFare} for ${distKm.toFixed(1)} km` : ''}
-                  </Text>
-                </View>
-              );
-            })()}
+            {/* Fare engine hint — recommended, floor, max from Firestore config */}
+            {engineEst ? (
+              <View style={styles.fareHintRow}>
+                <Text style={styles.fareHintText}>
+                  {distKm ? `~${distKm.toFixed(1)} km · ` : ''}
+                  Rec PKR {engineEst.recommendedFare}
+                  {' · '}Floor PKR {engineEst.minAcceptableBid}
+                  {engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}
+                </Text>
+              </View>
+            ) : fareConfig && (
+              <View style={styles.fareHintRow}>
+                <Text style={styles.fareHintText}>
+                  PKR {fareConfig.categories[RIDE_TO_CAT[rideType]]?.perKm}/km · Set dropoff for estimate
+                </Text>
+              </View>
+            )}
 
             {/* 1. Fare adjuster */}
             <View style={styles.soloFareStepper}>

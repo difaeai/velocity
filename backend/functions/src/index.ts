@@ -87,3 +87,6 @@ export {
 
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';
+
+// Fare engine — estimate, bid validation, pooling quote, admin seeding
+export { getFareEstimate, submitBid, getPoolingQuote, seedFareConfig } from './fare';
