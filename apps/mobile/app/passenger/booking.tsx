@@ -12,7 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
+import { doc, getDoc } from 'firebase/firestore';
 
+import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
@@ -27,6 +29,16 @@ import {
   type Gender,
   type RideType,
 } from '../../src/domain/types';
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
+}
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
@@ -74,9 +86,19 @@ export default function Booking() {
     if (currentAddress) setPickup((prev) => (prev.trim() ? prev : currentAddress));
   }, [currentAddress]);
 
+  // Admin fare config fetched from Firestore
+  const [adminFares, setAdminFares] = useState<Record<string, { baseFare: number; perKm: number }>>({});
+
+  useEffect(() => {
+    getDoc(doc(db, 'config', 'rideFares')).then((snap) => {
+      if (snap.exists()) setAdminFares(snap.data() as Record<string, { baseFare: number; perKm: number }>);
+    }).catch(() => {});
+  }, []);
+
   // Details state
   const [rideType, setRideType] = useState<RideType>('mini');
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
+  const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
   const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.mini, 3));
   const [poolLoading, setPoolLoading] = useState(false);
   const [seats, setSeats] = useState(1);
@@ -96,11 +118,23 @@ export default function Booking() {
     setRideType(rt);
     const base = BASE_FARES[rt];
     setFare(base);
+    setFareText(String(base));
     setPoolFare(poolFareFor(base, 3));
   }
 
   function bumpFare(delta: number) {
-    setFare((f) => Math.min(bounds.max, Math.max(bounds.min, f + delta)));
+    setFare((f) => {
+      const next = Math.min(bounds.max, Math.max(bounds.min, f + delta));
+      setFareText(String(next));
+      return next;
+    });
+  }
+
+  function commitFareText() {
+    const parsed = parseInt(fareText, 10);
+    const clamped = isNaN(parsed) ? fare : Math.min(bounds.max, Math.max(bounds.min, parsed));
+    setFare(clamped);
+    setFareText(String(clamped));
   }
 
   async function selectPrediction(pred: PlacePrediction) {
@@ -397,14 +431,42 @@ export default function Booking() {
               <Text style={{ fontSize: 26 }}>🔀</Text>
             </View>
 
+            {/* Admin per-km suggestion */}
+            {(() => {
+              const cfg = adminFares[rideType];
+              const distKm = (coords && dropoffCoords) ? haversineKm(coords, dropoffCoords) : null;
+              const estFare = cfg && distKm ? Math.ceil(cfg.baseFare + cfg.perKm * distKm) : null;
+              if (!cfg) return null;
+              return (
+                <View style={styles.fareHintRow}>
+                  <Text style={styles.fareHintText}>
+                    PKR {cfg.perKm}/km admin rate
+                    {estFare && distKm ? ` · Est. PKR ${estFare} for ${distKm.toFixed(1)} km` : ''}
+                  </Text>
+                </View>
+              );
+            })()}
+
             {/* 1. Fare adjuster */}
             <View style={styles.soloFareStepper}>
               <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
                 <Text style={styles.stepperText}>−</Text>
               </Pressable>
               <View style={{ alignItems: 'center', flex: 1 }}>
-                <Text style={styles.stepperFareValue}>PKR {fare}</Text>
-                <Text style={styles.stepperLabel}>your offered fare</Text>
+                <View style={styles.fareInputRow}>
+                  <Text style={styles.fareInputPrefix}>PKR</Text>
+                  <TextInput
+                    value={fareText}
+                    onChangeText={(t) => setFareText(t.replace(/[^0-9]/g, ''))}
+                    onBlur={commitFareText}
+                    keyboardType="number-pad"
+                    style={styles.fareInput}
+                    selectTextOnFocus
+                    returnKeyType="done"
+                    onSubmitEditing={commitFareText}
+                  />
+                </View>
+                <Text style={styles.stepperLabel}>tap to edit · or use − +</Text>
               </View>
               <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
                 <Text style={styles.stepperText}>+</Text>
@@ -1255,6 +1317,39 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     marginTop: 2,
+  },
+  fareHintRow: {
+    backgroundColor: '#0a1505',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+  },
+  fareHintText: {
+    color: '#8cc840',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  fareInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  fareInputPrefix: {
+    color: '#8a8c8c',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  fareInput: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '900',
+    minWidth: 64,
+    textAlign: 'center',
+    padding: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccff0060',
   },
   alternativeList: {
     flex: 1,
