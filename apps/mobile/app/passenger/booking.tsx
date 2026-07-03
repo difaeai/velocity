@@ -44,13 +44,15 @@ const RIDE_TO_CAT: Record<RideType, VehicleCategory> = {
   xl:      'luxury',
 };
 
-// Where the prefilled offer sits inside the allowed bid range [minBid..maxBid]:
-// 0.5 = dead centre, 1.0 = max. 0.6 = centre leaning to the higher side, so
-// drivers accept fast while the passenger can still edit down to the minimum.
-const ANCHOR_POSITION = 0.6;
+// The prefilled offer is pinned below the engine's market-fair estimate so
+// Velocity always reads cheaper than inDrive/Yango for the same trip:
+// display = recommendedFare × ANCHOR_FACTOR, clamped to the allowed bid range.
+// 0.80 = "we look ~20% cheaper than the market". Tune here.
+const ANCHOR_FACTOR = 0.8;
 
-function anchorFare(est: { minAcceptableBid: number; suggestedMaxBid: number }): number {
-  return round5(est.minAcceptableBid + ANCHOR_POSITION * (est.suggestedMaxBid - est.minAcceptableBid));
+function anchorFare(est: { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number }): number {
+  const target = est.recommendedFare * ANCHOR_FACTOR;
+  return round5(Math.min(est.suggestedMaxBid, Math.max(est.minAcceptableBid, target)));
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
