@@ -133,18 +133,39 @@ export default function Booking() {
     ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rideType], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
     : null;
 
+  // Auto-fill the offer from the admin-configured fare engine (low side of the
+  // range, inDrive-style anchor) — but never override a fare the passenger has
+  // typed or bumped for this route.
+  const userEditedFare = useRef(false);
+  useEffect(() => {
+    userEditedFare.current = false;
+  }, [dropoffCoords, rideType]);
+
+  const lowAnchor = engineEst
+    ? engineEst.minAcceptableBid
+    : fareConfig
+      ? fareConfig.categories[RIDE_TO_CAT[rideType]]?.minFare ?? null
+      : null;
+  useEffect(() => {
+    if (lowAnchor == null || userEditedFare.current) return;
+    setFare(lowAnchor);
+    setFareText(String(lowAnchor));
+    setPoolFare(poolFareFor(lowAnchor, 3));
+  }, [lowAnchor]);
+
   function selectRide(rt: RideType) {
     setRideType(rt);
     const est = fareConfig && distKm
       ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rt], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
       : null;
-    const base = est ? est.recommendedFare : BASE_FARES[rt];
+    const base = est ? est.minAcceptableBid : BASE_FARES[rt];
     setFare(base);
     setFareText(String(base));
     setPoolFare(poolFareFor(base, 3));
   }
 
   function bumpFare(delta: number) {
+    userEditedFare.current = true;
     const min = engineEst?.minAcceptableBid ?? bounds.min;
     const max = engineEst?.suggestedMaxBid  ?? bounds.max;
     setFare((f) => {
@@ -155,6 +176,7 @@ export default function Booking() {
   }
 
   function commitFareText() {
+    userEditedFare.current = true;
     const parsed  = parseInt(fareText, 10);
     const min     = engineEst?.minAcceptableBid ?? bounds.min;
     const max     = engineEst?.suggestedMaxBid  ?? bounds.max;

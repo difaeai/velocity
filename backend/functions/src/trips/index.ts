@@ -21,8 +21,8 @@ import {
   MAX_SEATS,
   computeSettlement,
   fareBounds,
-  isValidOfferedFare,
 } from '../domain/fares';
+import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 
 const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -44,6 +44,46 @@ const geoSchema = z.object({
   lng: z.number().min(-180).max(180),
   address: z.string().max(200).optional(),
 });
+
+// RideType → fare-engine category (must stay in sync with RIDE_TO_CAT in the
+// mobile booking screen so client previews and server validation agree).
+const RIDE_TO_ENGINE_CAT: Record<string, VehicleCategory> = {
+  bike: 'moto',
+  auto: 'rickshaw',
+  mini: 'mini',
+  ac: 'ac_car',
+  comfort: 'luxury',
+  xl: 'luxury',
+};
+
+/**
+ * Acceptable offered-fare range for a trip. Follows the admin-configured fare
+ * engine (fareConfig/{cityId} — the same doc the booking screen prices from);
+ * the static per-type bounds remain only as a fallback when no config exists.
+ */
+async function offeredFareBounds(
+  rideType: string,
+  pickup: { lat: number; lng: number },
+  dropoff: { lat: number; lng: number },
+): Promise<{ min: number; max: number }> {
+  try {
+    const snap = await db.doc('fareConfig/islamabad_rawalpindi').get();
+    if (snap.exists) {
+      const cfg = snap.data() as CityFareConfig;
+      const category = RIDE_TO_ENGINE_CAT[rideType] ?? 'mini';
+      const distanceKm = Math.max(0.5, haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng));
+      const est = calculateFare(cfg, {
+        category,
+        distanceKm,
+        durationMin: Math.max(3, Math.round(distanceKm * 3.5)),
+      });
+      return { min: est.minAcceptableBid, max: est.suggestedMaxBid };
+    }
+  } catch (e) {
+    logger.warn('offeredFareBounds: falling back to static bounds', e);
+  }
+  return fareBounds(rideType as Parameters<typeof fareBounds>[0]);
+}
 
 const createTripSchema = z.object({
   rideType: z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']),
@@ -68,9 +108,9 @@ export const createTrip = onCall(async (req) => {
   }
   const data = parsed.data;
 
-  if (!isValidOfferedFare(data.rideType, data.offeredFare)) {
-    const { min, max } = fareBounds(data.rideType);
-    invalid(`Offered fare for ${data.rideType} must be between ${min} and ${max} PKR.`);
+  const { min: fareMin, max: fareMax } = await offeredFareBounds(data.rideType, data.pickup, data.dropoff);
+  if (data.offeredFare < fareMin || data.offeredFare > fareMax) {
+    invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
 
   const tripRef = db.collection('trips').doc();
@@ -226,7 +266,12 @@ export const placeBid = onCall(async (req) => {
   if (tripSnap.get('status') !== 'requested') {
     throw new HttpsError('failed-precondition', 'This trip is no longer open for bids.');
   }
-  if (!isValidOfferedFare(tripSnap.get('rideType'), fare)) {
+  const bidBounds = await offeredFareBounds(
+    tripSnap.get('rideType'),
+    tripSnap.get('pickup'),
+    tripSnap.get('dropoff'),
+  );
+  if (fare < bidBounds.min || fare > bidBounds.max) {
     invalid('Bid fare is outside the allowed range.');
   }
 
@@ -279,6 +324,18 @@ export const raiseTripFare = onCall(async (req) => {
   const { tripId, fare } = parsed.data;
 
   const tripRef = db.doc(`trips/${tripId}`);
+
+  // Route never changes after creation, so bounds can be computed outside the
+  // transaction (offeredFareBounds reads the fare config, which must not be a
+  // transactional read).
+  const preSnap = await tripRef.get();
+  if (!preSnap.exists) invalid('Trip not found.');
+  const raiseBounds = await offeredFareBounds(
+    preSnap.get('rideType'),
+    preSnap.get('pickup'),
+    preSnap.get('dropoff'),
+  );
+
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(tripRef);
     if (!snap.exists) invalid('Trip not found.');
@@ -292,7 +349,7 @@ export const raiseTripFare = onCall(async (req) => {
     if (fare <= current) {
       throw new HttpsError('failed-precondition', 'New fare must be higher than the current offer.');
     }
-    if (!isValidOfferedFare(snap.get('rideType'), fare)) {
+    if (fare < raiseBounds.min || fare > raiseBounds.max) {
       invalid('Fare is outside the allowed range.');
     }
     tx.set(tripRef, { offeredFare: fare, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
