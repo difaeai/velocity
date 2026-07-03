@@ -44,6 +44,15 @@ const RIDE_TO_CAT: Record<RideType, VehicleCategory> = {
   xl:      'luxury',
 };
 
+// Where the prefilled offer sits inside the allowed bid range [minBid..maxBid]:
+// 0.5 = dead centre, 1.0 = max. 0.6 = centre leaning to the higher side, so
+// drivers accept fast while the passenger can still edit down to the minimum.
+const ANCHOR_POSITION = 0.6;
+
+function anchorFare(est: { minAcceptableBid: number; suggestedMaxBid: number }): number {
+  return round5(est.minAcceptableBid + ANCHOR_POSITION * (est.suggestedMaxBid - est.minAcceptableBid));
+}
+
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -133,32 +142,31 @@ export default function Booking() {
     ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rideType], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
     : null;
 
-  // Auto-fill the offer from the admin-configured fare engine (low side of the
-  // range, inDrive-style anchor) — but never override a fare the passenger has
-  // typed or bumped for this route.
+  // Auto-fill the offer from the admin-configured fare engine — but never
+  // override a fare the passenger has typed or bumped for this route.
   const userEditedFare = useRef(false);
   useEffect(() => {
     userEditedFare.current = false;
   }, [dropoffCoords, rideType]);
 
-  const lowAnchor = engineEst
-    ? engineEst.minAcceptableBid
+  const prefillAnchor = engineEst
+    ? anchorFare(engineEst)
     : fareConfig
       ? fareConfig.categories[RIDE_TO_CAT[rideType]]?.minFare ?? null
       : null;
   useEffect(() => {
-    if (lowAnchor == null || userEditedFare.current) return;
-    setFare(lowAnchor);
-    setFareText(String(lowAnchor));
-    setPoolFare(poolFareFor(lowAnchor, 3));
-  }, [lowAnchor]);
+    if (prefillAnchor == null || userEditedFare.current) return;
+    setFare(prefillAnchor);
+    setFareText(String(prefillAnchor));
+    setPoolFare(poolFareFor(prefillAnchor, 3));
+  }, [prefillAnchor]);
 
   function selectRide(rt: RideType) {
     setRideType(rt);
     const est = fareConfig && distKm
       ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rt], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
       : null;
-    const base = est ? est.minAcceptableBid : BASE_FARES[rt];
+    const base = est ? anchorFare(est) : BASE_FARES[rt];
     setFare(base);
     setFareText(String(base));
     setPoolFare(poolFareFor(base, 3));
