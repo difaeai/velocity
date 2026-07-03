@@ -56,10 +56,13 @@ export function isValidOfferedFare(rideType: RideType, fare: number): boolean {
 /**
  * Compute the canonical money breakdown for a completed trip. This is the
  * single source of truth for revenue, commission and driver payout.
+ * `rate` comes from config/commissionSettings (admin dashboard); the
+ * COMMISSION_RATE constant is only the fallback when no config exists.
  */
-export function computeSettlement(grossFare: number, seats: number): Settlement {
+export function computeSettlement(grossFare: number, seats: number, rate: number = COMMISSION_RATE): Settlement {
   const safeSeats = Math.min(Math.max(Math.trunc(seats) || 1, 1), MAX_SEATS);
-  const commission = Math.round(grossFare * COMMISSION_RATE);
+  const safeRate = Number.isFinite(rate) && rate > 0 && rate <= 0.5 ? rate : COMMISSION_RATE;
+  const commission = Math.round(grossFare * safeRate);
   const driverPayout = grossFare - commission;
   const passengerShare = Math.round(grossFare / safeSeats);
   return {

@@ -91,6 +91,10 @@ export const api = {
     { tripId: string; stars: number; comment?: string; targetRole: 'driver' | 'passenger' },
     { ok: boolean }
   >('submitRating'),
+  createDispute: callable<
+    { tripId: string; category: 'fare' | 'behaviour' | 'safety' | 'lost_item' | 'other'; description: string },
+    { ok: boolean; disputeId: string }
+  >('createDispute'),
   startPoolBoarding: callable<
     { rideId: string; driverLat: number; driverLng: number },
     { ok: boolean; pickupOrder: string[] }

@@ -14,20 +14,81 @@ interface FareConfig {
   minFare:  number;
 }
 
-type Category = 'mini' | 'ac' | 'comfort';
+type Category = 'bike' | 'auto' | 'mini' | 'ac' | 'comfort';
 
 const CATEGORIES: { key: Category; label: string; icon: string; desc: string }[] = [
-  { key: 'mini',    label: 'Mini',    icon: '🚙', desc: 'Hatchback · No AC' },
-  { key: 'ac',      label: 'AC',      icon: '❄️', desc: 'Air conditioned' },
-  { key: 'comfort', label: 'Comfort', icon: '🚘', desc: 'Premium sedan' },
+  { key: 'bike',    label: 'Moto',     icon: '🏍️', desc: 'Motorbike · 1 passenger' },
+  { key: 'auto',    label: 'Rickshaw', icon: '🛺', desc: 'Auto rickshaw' },
+  { key: 'mini',    label: 'Mini',     icon: '🚙', desc: 'Hatchback · No AC' },
+  { key: 'ac',      label: 'AC',       icon: '❄️', desc: 'Air conditioned' },
+  { key: 'comfort', label: 'Comfort',  icon: '🚘', desc: 'Premium sedan' },
 ];
 
 const DEFAULT_FARE: FareConfig = { baseFare: 100, perKm: 30, perMin: 2, minFare: 80 };
 
 type Fares = Record<Category, FareConfig>;
 
+// ── Fare-engine bridge ────────────────────────────────────────────────────────
+// The booking screen and the getFareEstimate/submitBid Cloud Functions price
+// trips from fareConfig/{cityId} (the fare engine), NOT from config/rideFares.
+// Saving here must therefore also update the engine docs, otherwise these
+// numbers would only affect the home-screen teaser price.
+//
+// UI category → engine category (mirrors RIDE_TO_CAT in the mobile app).
+const CAT_TO_ENGINE: Record<Category, 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury'> = {
+  bike: 'moto',
+  auto: 'rickshaw',
+  mini: 'mini',
+  ac: 'ac_car',
+  comfort: 'luxury',
+};
+
+// Full default engine config, used to seed fareConfig/{cityId} when the doc
+// doesn't exist yet (calculateFare requires every field to be present).
+// Mirrors DEFAULT_ISLAMABAD_RAWALPINDI in backend/functions/src/fare/fareEngine.ts.
+const ENGINE_DEFAULTS = {
+  currency: 'PKR',
+  categories: {
+    moto:     { base: 60,  includedKm: 1.5, includedMin: 4, perKm: 14, perMin: 3,  minFare: 100, bidFloorPerKm: 12, freeWaitMin: 5, waitPerMin: 3  },
+    rickshaw: { base: 80,  includedKm: 1.5, includedMin: 4, perKm: 16, perMin: 4,  minFare: 130, bidFloorPerKm: 14, freeWaitMin: 5, waitPerMin: 4  },
+    mini:     { base: 120, includedKm: 1.5, includedMin: 5, perKm: 26, perMin: 6,  minFare: 200, bidFloorPerKm: 22, freeWaitMin: 5, waitPerMin: 6  },
+    ac_car:   { base: 160, includedKm: 1.5, includedMin: 5, perKm: 34, perMin: 8,  minFare: 280, bidFloorPerKm: 30, freeWaitMin: 5, waitPerMin: 8  },
+    luxury:   { base: 300, includedKm: 1.5, includedMin: 5, perKm: 60, perMin: 12, minFare: 600, bidFloorPerKm: 55, freeWaitMin: 8, waitPerMin: 12 },
+  },
+  surge: { enabled: true, maxMultiplier: 1.8 },
+  pooling: {
+    enabled: true,
+    perRiderFactor: { 2: 0.65, 3: 0.5, 4: 0.42 },
+    maxDetourMin: 8,
+    detourDiscountPerMin: 0.02,
+  },
+  commission: { rate: 0.07, flatFee: 0 },
+};
+
+const ENGINE_CITY_IDS = ['islamabad_rawalpindi', 'karachi'];
+
+/** Map the dashboard rates into engine CategoryRates patches. */
+function engineCategoryPatch(fares: Fares) {
+  const patch: Record<string, Record<string, number>> = {};
+  for (const cat of Object.keys(fares) as Category[]) {
+    const f = fares[cat];
+    patch[CAT_TO_ENGINE[cat]] = {
+      base:    f.baseFare,
+      perKm:   f.perKm,
+      perMin:  f.perMin,
+      minFare: f.minFare,
+      // Keep the driver-protection bid floor consistent with the new rate so
+      // minimum acceptable bids never exceed the recommended fare.
+      bidFloorPerKm: Math.max(1, Math.round(f.perKm * 0.85)),
+    };
+  }
+  return patch;
+}
+
 export default function RideSettingsPage() {
   const [fares, setFares]           = useState<Fares>({
+    bike:    { ...DEFAULT_FARE, baseFare: 50,  perKm: 15, perMin: 1, minFare: 50  },
+    auto:    { ...DEFAULT_FARE, baseFare: 60,  perKm: 18, perMin: 2, minFare: 70  },
     mini:    { ...DEFAULT_FARE, baseFare: 80,  perKm: 25, minFare: 60  },
     ac:      { ...DEFAULT_FARE, baseFare: 120, perKm: 35, minFare: 100 },
     comfort: { ...DEFAULT_FARE, baseFare: 160, perKm: 50, minFare: 140 },
@@ -46,6 +107,8 @@ export default function RideSettingsPage() {
       if (faresSnap.exists()) {
         const d = faresSnap.data() as Partial<Fares>;
         setFares((prev) => ({
+          bike:    { ...prev.bike,    ...(d.bike    ?? {}) },
+          auto:    { ...prev.auto,    ...(d.auto    ?? {}) },
           mini:    { ...prev.mini,    ...(d.mini    ?? {}) },
           ac:      { ...prev.ac,      ...(d.ac      ?? {}) },
           comfort: { ...prev.comfort, ...(d.comfort ?? {}) },
@@ -81,9 +144,23 @@ export default function RideSettingsPage() {
     setBusy(true);
     setError(null);
     try {
+      // Seed any missing fare-engine docs with full defaults first, then merge
+      // the dashboard rates into every city so booking estimates, bid floors
+      // and the server-side fare functions all follow these numbers.
+      const patch = engineCategoryPatch(fares);
+      const engineWrites = ENGINE_CITY_IDS.map(async (cityId) => {
+        const ref  = doc(db, 'fareConfig', cityId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await setDoc(ref, { cityId, ...ENGINE_DEFAULTS, updatedAt: Date.now() });
+        }
+        await setDoc(ref, { categories: patch, updatedAt: Date.now() }, { merge: true });
+      });
+
       await Promise.all([
         setDoc(doc(db, 'config', 'rideFares'), fares, { merge: true }),
         setDoc(doc(db, 'config', 'rideSettings'), { searchRadiusKm }, { merge: true }),
+        ...engineWrites,
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

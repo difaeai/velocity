@@ -338,6 +338,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- disputes/{disputeId} -----------------------------------------------
+    // Created via the createDispute CF; resolved via resolveDispute CF.
+    // The involved passenger/driver may read their own dispute; admins read all
+    // (the web dashboard Disputes page lists open ones live).
+    match /disputes/{disputeId} {
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.passengerId == uid())
+                  || (isSignedIn() && resource.data.driverId == uid());
+      allow write: if false;
+    }
+
+    // ----- franchises/{franchiseId} ---------------------------------------------
+    // Created via adminCreateFranchise CF. Dashboard-only visibility.
+    match /franchises/{franchiseId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- fareConfig/{cityId} ----------------------------------------------
     // City-level fare engine rates (per-km / per-min, base fares, bid floors,
     // surge cap, pooling factors, commission). The booking screen reads these

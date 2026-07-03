@@ -11,7 +11,7 @@ setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 // Users & roles
 export {
   onUserCreate, onUserDelete,
-  setUserRole, banPassenger, resolveDispute, registerFcmToken,
+  setUserRole, banPassenger, createDispute, resolveDispute, registerFcmToken,
   adminCreatePassenger, adminUpdatePassenger, adminDeletePassenger,
   uploadUserPhoto,
 } from './users';

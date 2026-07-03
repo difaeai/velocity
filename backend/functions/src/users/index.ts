@@ -176,6 +176,64 @@ export const resolveDispute = onCall(async (req) => {
   return { ok: true };
 });
 
+const createDisputeSchema = z.object({
+  tripId:      z.string().min(1).max(128),
+  category:    z.enum(['fare', 'behaviour', 'safety', 'lost_item', 'other']).default('other'),
+  description: z.string().min(5).max(1000),
+});
+
+/**
+ * Passenger or driver raises a dispute about a trip they were part of.
+ * Shows up live on the admin dashboard Disputes page, where it is resolved
+ * via resolveDispute (optionally crediting a refund to the passenger wallet).
+ */
+export const createDispute = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = createDisputeSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a tripId and a description (5–1000 chars).');
+  const { tripId, category, description } = parsed.data!;
+
+  const tripSnap = await db.doc(`trips/${tripId}`).get();
+  if (!tripSnap.exists) invalid('Trip not found.');
+  const passengerId = tripSnap.get('passengerId') as string | undefined;
+  const driverId    = tripSnap.get('driverId') as string | undefined;
+  if (ctx.uid !== passengerId && ctx.uid !== driverId) {
+    invalid('You were not part of this trip.');
+  }
+
+  const dupe = await db.collection('disputes')
+    .where('tripId', '==', tripId)
+    .where('raisedBy', '==', ctx.uid)
+    .where('status', '==', 'open')
+    .limit(1)
+    .get();
+  if (!dupe.empty) invalid('You already have an open dispute for this trip.');
+
+  const [passengerSnap, driverSnap] = await Promise.all([
+    passengerId ? db.doc(`users/${passengerId}`).get() : Promise.resolve(null),
+    driverId ? db.doc(`users/${driverId}`).get() : Promise.resolve(null),
+  ]);
+
+  const ref = db.collection('disputes').doc();
+  await ref.set({
+    tripId,
+    passengerId:   passengerId ?? null,
+    passengerName: passengerSnap?.get('displayName') ?? null,
+    driverId:      driverId ?? null,
+    driverName:    driverSnap?.get('displayName') ?? tripSnap.get('driverInfo.name') ?? null,
+    raisedBy:      ctx.uid,
+    raisedByRole:  ctx.uid === passengerId ? 'passenger' : 'driver',
+    category,
+    description,
+    fare:          tripSnap.get('fare') ?? null,
+    status:        'open',
+    createdAt:     FieldValue.serverTimestamp(),
+  });
+
+  logger.info('createDispute', { actor: ctx.uid, tripId, category });
+  return { ok: true, disputeId: ref.id };
+});
+
 // ── Admin passenger CRUD ───────────────────────────────────────────────────
 
 const adminCreatePassengerSchema = z.object({

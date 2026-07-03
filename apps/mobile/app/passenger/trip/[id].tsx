@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -39,6 +39,7 @@ export default function TripScreen() {
   const [autoAccept,   setAutoAccept]   = useState(false);
   const [showRating,   setShowRating]   = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
+  const [reportOpen,   setReportOpen]   = useState(false);
 
   // Initialize adjustedFare when trip loads
   useEffect(() => {
@@ -389,6 +390,9 @@ export default function TripScreen() {
             <Row label="Your share" value={`${trip.settlement?.passengerShare ?? 0} PKR`} bold />
             <View style={{ height: 10 }} />
             <PrimaryButton label="Done" onPress={goHome} />
+            <Pressable style={styles.reportLink} onPress={() => setReportOpen(true)}>
+              <Text style={styles.reportLinkTxt}>⚠️  Report an issue with this trip</Text>
+            </Pressable>
           </Card>
         )}
 
@@ -397,9 +401,19 @@ export default function TripScreen() {
             <Text style={styles.muted}>This trip was cancelled.</Text>
             <View style={{ height: 10 }} />
             <PrimaryButton label="Back to home" onPress={goHome} />
+            <Pressable style={styles.reportLink} onPress={() => setReportOpen(true)}>
+              <Text style={styles.reportLinkTxt}>⚠️  Report an issue with this trip</Text>
+            </Pressable>
           </Card>
         )}
       </ScrollView>
+
+      {/* Dispute / issue report */}
+      <ReportIssueModal
+        visible={reportOpen}
+        tripId={trip.id}
+        onClose={() => setReportOpen(false)}
+      />
 
       {/* Rating overlay — appears when trip completes */}
       <RatingModal
@@ -423,6 +437,135 @@ export default function TripScreen() {
   );
 }
 
+const ISSUE_CATEGORIES: { key: 'fare' | 'behaviour' | 'safety' | 'lost_item' | 'other'; label: string; icon: string }[] = [
+  { key: 'fare',      label: 'Fare issue',   icon: '💰' },
+  { key: 'behaviour', label: 'Behaviour',    icon: '😠' },
+  { key: 'safety',    label: 'Safety',       icon: '🛡️' },
+  { key: 'lost_item', label: 'Lost item',    icon: '🎒' },
+  { key: 'other',     label: 'Other',        icon: '📝' },
+];
+
+function ReportIssueModal({ visible, tripId, onClose }: { visible: boolean; tripId: string; onClose: () => void }) {
+  const [category, setCategory]       = useState<typeof ISSUE_CATEGORIES[number]['key']>('other');
+  const [description, setDescription] = useState('');
+  const [sending, setSending]         = useState(false);
+
+  async function submit() {
+    if (description.trim().length < 5) {
+      Alert.alert('Too short', 'Please describe the issue in a few words.');
+      return;
+    }
+    setSending(true);
+    try {
+      await api.createDispute({ tripId, category, description: description.trim() });
+      setDescription('');
+      onClose();
+      Alert.alert('Report Submitted ✅', 'Our team will review your report and get back to you. You can also reach us via Support chat.');
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to submit report.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1 }}>
+        <Pressable style={reportStyles.overlay} onPress={onClose} />
+        <View style={reportStyles.sheet}>
+          <View style={reportStyles.handle} />
+          <Text style={reportStyles.title}>Report an Issue</Text>
+          <Text style={reportStyles.sub}>Tell us what went wrong on this trip. An admin will review it.</Text>
+
+          <View style={reportStyles.chipRow}>
+            {ISSUE_CATEGORIES.map(c => (
+              <Pressable
+                key={c.key}
+                style={[reportStyles.chip, category === c.key && reportStyles.chipActive]}
+                onPress={() => setCategory(c.key)}
+              >
+                <Text style={reportStyles.chipIcon}>{c.icon}</Text>
+                <Text style={[reportStyles.chipTxt, category === c.key && { color: colors.primary }]}>{c.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <TextInput
+            style={reportStyles.input}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Describe what happened…"
+            placeholderTextColor={colors.muted}
+            multiline
+            maxLength={1000}
+            textAlignVertical="top"
+          />
+
+          <Pressable
+            style={[reportStyles.submitBtn, (sending || description.trim().length < 5) && { opacity: 0.5 }]}
+            onPress={submit}
+            disabled={sending || description.trim().length < 5}
+          >
+            {sending
+              ? <ActivityIndicator color="#000" />
+              : <Text style={reportStyles.submitTxt}>Submit Report</Text>}
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const reportStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    padding: 20,
+    paddingBottom: 36,
+    gap: 12,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center' },
+  title:  { fontSize: 18, fontWeight: '800', color: colors.text },
+  sub:    { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipActive: { borderColor: colors.primary, backgroundColor: '#1f2a10' },
+  chipIcon:   { fontSize: 14 },
+  chipTxt:    { fontSize: 12, fontWeight: '700', color: colors.text },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    fontSize: 14,
+    color: colors.text,
+    height: 110,
+  },
+  submitBtn: {
+    height: 52,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitTxt: { fontSize: 15, fontWeight: '900', color: '#000' },
+});
+
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <View style={styles.invoiceRow}>
@@ -440,6 +583,8 @@ const styles = StyleSheet.create({
   status:    { fontSize: 20, fontWeight: '900', color: colors.text, flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   muted:     { fontSize: 13, color: colors.muted },
+  reportLink:    { paddingTop: 12, alignItems: 'center' },
+  reportLinkTxt: { fontSize: 13, fontWeight: '700', color: colors.muted },
   fare:      { fontSize: 18, fontWeight: '900', color: colors.primary },
   invoiceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
   invoiceVal: { fontSize: 14, fontWeight: '700', color: colors.text },

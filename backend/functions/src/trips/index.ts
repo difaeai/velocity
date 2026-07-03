@@ -498,6 +498,10 @@ export const completeTrip = onCall(async (req) => {
   const tripRef    = db.doc(`trips/${tripId}`);
   const driverRef  = db.doc(`drivers/${ctx.uid}`);
 
+  // Commission rate is admin-configurable from the dashboard (Commission page).
+  const commissionSnap = await db.doc('config/commissionSettings').get();
+  const commissionRate = (commissionSnap.get('rate') as number | undefined) ?? undefined;
+
   const settlement = await db.runTransaction(async (tx) => {
     const [snap, driverSnap] = await Promise.all([
       tx.get(tripRef),
@@ -516,10 +520,11 @@ export const completeTrip = onCall(async (req) => {
     const passengerId   = snap.get('passengerId') as string;
     const franchiseId   = driverSnap.get('franchiseId') as string | null | undefined;
     const paymentMethod = (snap.get('paymentMethod') as string | undefined) ?? 'cash';
-    const s             = computeSettlement(grossFare, seats);
+    const s             = computeSettlement(grossFare, seats, commissionRate);
 
-    // 5% of gross fare goes to the franchise (from Velocity's 10% commission).
-    const franchiseCut = franchiseId ? Math.round(grossFare * 0.05) : 0;
+    // 5% of gross fare goes to the franchise, capped at the commission actually
+    // taken so a low admin-set rate can never make Velocity's net negative.
+    const franchiseCut = franchiseId ? Math.min(Math.round(grossFare * 0.05), s.commission) : 0;
     const velocityNet  = s.commission - franchiseCut;
 
     const walletRef   = db.doc(`wallets/${ctx.uid}`);
