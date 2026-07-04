@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -73,6 +73,20 @@ export default function PoolRideOfferScreen() {
   const baseFareNum = parseInt(baseFare, 10) || 0;
   const perSeatFare = calcPerSeatFare(baseFareNum, maxSeats);
   const driverEarns = perSeatFare * maxSeats;
+
+  // Seed the radius steppers from the driver's saved preference (set on the
+  // driver home screen); the driver can still fine-tune per route here.
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'drivers', user.uid))
+      .then((snap) => {
+        const pickupPref  = snap.get('poolPickupRadiusM')  as number | undefined;
+        const dropoffPref = snap.get('poolDropoffRadiusM') as number | undefined;
+        if (pickupPref)  setPickupRadius(pickupPref);
+        if (dropoffPref) setDropoffRadius(dropoffPref);
+      })
+      .catch(() => {});
+  }, [user?.uid]);
 
   function buildDepartureTime(): Timestamp {
     const d = new Date();

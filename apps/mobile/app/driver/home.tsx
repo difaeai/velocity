@@ -47,6 +47,16 @@ export default function DriverHome() {
   const balance  = useWalletBalance(uid);
   const [busy, setBusy] = useState(false);
 
+  // Pool pickup/drop radius preference (metres) — stored on the driver doc and
+  // used as the default zones when posting a new pool route.
+  const poolPickupRadiusM  = (profile as { poolPickupRadiusM?: number }  | null)?.poolPickupRadiusM  ?? 400;
+  const poolDropoffRadiusM = (profile as { poolDropoffRadiusM?: number } | null)?.poolDropoffRadiusM ?? 300;
+  function saveRadius(field: 'poolPickupRadiusM' | 'poolDropoffRadiusM', value: number) {
+    if (!uid) return;
+    const v = Math.min(2000, Math.max(100, value));
+    setDoc(doc(db, 'drivers', uid), { [field]: v }, { merge: true }).catch(() => {});
+  }
+
   // Commission lock state
   const [cycleGrossFare, setCycleGrossFare] = useState(0);
   const [commThreshold,  setCommThreshold]  = useState(5000);
@@ -233,6 +243,31 @@ export default function DriverHome() {
           disabled={busy}
           onPress={toggleOnline}
         />
+
+        {/* Pool pickup & drop radius — default zones for new pool routes */}
+        <View style={styles.radiusHomeCard}>
+          <Text style={styles.radiusHomeTitle}>🧭 Pool pickup & drop radius</Text>
+          <Text style={styles.radiusHomeSub}>
+            Passengers within these zones of your route can join your pool rides
+          </Text>
+          {([
+            { label: 'Pickup zone',  field: 'poolPickupRadiusM' as const,  value: poolPickupRadiusM },
+            { label: 'Drop zone',    field: 'poolDropoffRadiusM' as const, value: poolDropoffRadiusM },
+          ]).map((row) => (
+            <View key={row.field} style={styles.radiusHomeRow}>
+              <Text style={styles.radiusHomeLabel}>{row.label}</Text>
+              <View style={styles.radiusHomeStepper}>
+                <Pressable style={styles.radiusHomeBtn} onPress={() => saveRadius(row.field, row.value - 100)} hitSlop={6}>
+                  <Text style={styles.radiusHomeBtnTxt}>−</Text>
+                </Pressable>
+                <Text style={styles.radiusHomeValue}>{row.value}m</Text>
+                <Pressable style={styles.radiusHomeBtn} onPress={() => saveRadius(row.field, row.value + 100)} hitSlop={6}>
+                  <Text style={styles.radiusHomeBtnTxt}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
 
         {/* Commission lock banner */}
         {commissionLocked && (
@@ -705,6 +740,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   batchBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
+
+  radiusHomeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 10,
+  },
+  radiusHomeTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  radiusHomeSub:   { fontSize: 11, color: colors.muted, lineHeight: 16, marginTop: -4 },
+  radiusHomeRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  radiusHomeLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
+  radiusHomeStepper: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  radiusHomeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radiusHomeBtnTxt: { fontSize: 18, fontWeight: '900', color: colors.primary, lineHeight: 20 },
+  radiusHomeValue:  { fontSize: 14, fontWeight: '800', color: colors.text, minWidth: 56, textAlign: 'center' },
 
   // Live preview cards inside pool sections
   emptyPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 },

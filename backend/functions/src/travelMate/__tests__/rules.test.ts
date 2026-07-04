@@ -147,14 +147,21 @@ describe('travelMateProfiles rules', () => {
     await assertSucceeds(alice.firestore().doc('travelMateProfiles/alice').get());
   });
 
-  it('other user cannot read a profile', async () => {
+  // Signed-in reads are intentional: the swipe deck renders profile cards
+  // directly (see the travelMateProfiles rules comment).
+  it('any signed-in user can read a profile (swipe deck)', async () => {
     const eve = testEnv.authenticatedContext('eve');
-    await assertFails(eve.firestore().doc('travelMateProfiles/alice').get());
+    await assertSucceeds(eve.firestore().doc('travelMateProfiles/alice').get());
   });
 
-  it('nobody can write their own profile directly (CF only)', async () => {
+  it('owner can write their own profile (setup screen)', async () => {
     const alice = testEnv.authenticatedContext('alice');
-    await assertFails(alice.firestore().doc('travelMateProfiles/alice').set({ displayName: 'Alice' }));
+    await assertSucceeds(alice.firestore().doc('travelMateProfiles/alice').set({ displayName: 'Alice' }));
+  });
+
+  it('SECURITY: non-owner cannot write someone else\'s profile', async () => {
+    const eve = testEnv.authenticatedContext('eve');
+    await assertFails(eve.firestore().doc('travelMateProfiles/alice').set({ displayName: 'Hacked' }));
   });
 });
 

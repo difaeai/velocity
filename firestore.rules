@@ -77,7 +77,8 @@ service cloud.firestore {
       allow create: if false;
       allow update: if isOwner(driverId)
                     && isDriver()
-                    && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt']);
+                    && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
+                                    'poolPickupRadiusM', 'poolDropoffRadiusM']);
       allow update: if isAdmin();
       allow delete: if false;
     }

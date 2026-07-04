@@ -11,6 +11,7 @@ export default defineConfig({
     include: [
       'src/travelMate/__tests__/**/*.test.ts',
       'src/poolRideRequests/__tests__/**/*.test.ts',
+      'src/poolRides/__tests__/**/*.test.ts',
       'src/commute/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
