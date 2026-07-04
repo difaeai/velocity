@@ -20,6 +20,7 @@ import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
+import { getThemeMode, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
@@ -77,6 +78,13 @@ export default function PassengerHome() {
   const goDriverMode = () => {
     setDrawerOpen(false);
     router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver');
+  };
+  const switchTheme = async () => {
+    setDrawerOpen(false);
+    const reloaded = await toggleTheme();
+    if (!reloaded) {
+      Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
+    }
   };
 
   return (
@@ -293,6 +301,13 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Safety</Text>
                   </Pressable>
 
+                  <Pressable style={styles.menuItem} onPress={switchTheme}>
+                    <Text style={styles.menuItemIcon}>{getThemeMode() === 'dark' ? '☀️' : '🌙'}</Text>
+                    <Text style={styles.menuItemText}>
+                      {getThemeMode() === 'dark' ? 'Light mode' : 'Dark mode'}
+                    </Text>
+                  </Pressable>
+
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/settings')}>
                     <Text style={styles.menuItemIcon}>⚙️</Text>
                     <Text style={styles.menuItemText}>Settings</Text>
@@ -369,7 +384,7 @@ const styles = StyleSheet.create({
   },
   cabPin: {
     position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     padding: 6,
     borderRadius: 99,
     borderWidth: 1,
@@ -388,9 +403,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -483,7 +498,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.glassStrong,
     alignSelf: 'center',
     marginBottom: 4,
   },
@@ -539,10 +554,10 @@ const styles = StyleSheet.create({
   },
   cityRidesCard: {
     flex: 0.9,
-    backgroundColor: 'rgba(204,255,0,0.10)',
+    backgroundColor: colors.glassLime,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(204,255,0,0.30)',
+    borderColor: colors.glassLimeBorder,
     padding: 14,
     overflow: 'hidden',
     justifyContent: 'space-between',
@@ -565,10 +580,10 @@ const styles = StyleSheet.create({
   },
   serviceCardLg: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     padding: 12,
     justifyContent: 'space-between',
   },
@@ -579,10 +594,10 @@ const styles = StyleSheet.create({
   },
   serviceCardSm: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     padding: 10,
     justifyContent: 'space-between',
   },
@@ -596,10 +611,10 @@ const styles = StyleSheet.create({
 
   /* ── Search bar ── */
   searchBar: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     paddingHorizontal: 16,
     paddingVertical: 16,
     flexDirection: 'row',
@@ -620,14 +635,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: colors.surface,
     gap: 12,
   },
   historyIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -657,7 +672,7 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: 'rgba(16,18,17,0.94)',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.12)',
+    borderRightColor: colors.glassStrong,
   },
   drawerSafeArea: {
     flex: 1,
@@ -671,13 +686,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomColor: colors.glassStrong,
   },
   avatarCircle: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -727,7 +742,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   menuItemActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glassStrong,
   },
   menuItemIcon: {
     fontSize: 18,
@@ -744,7 +759,7 @@ const styles = StyleSheet.create({
   drawerFooter: {
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopColor: colors.glassStrong,
     gap: 16,
   },
   driverModeButton: {

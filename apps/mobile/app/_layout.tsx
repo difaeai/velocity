@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { LogBox, Platform } from 'react-native';
 import { Slot, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 
 import { AuthProvider } from '../src/auth/AuthContext';
+import { loadTheme, type ThemeMode } from '../src/theme';
 
 LogBox.ignoreLogs([
   'Could not reach Cloud Firestore backend',
@@ -16,6 +17,13 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 export default function RootLayout() {
   const router = useRouter();
+
+  // Screens bake theme colors into their StyleSheets at module load, so the
+  // saved theme must be applied BEFORE any route module is evaluated.
+  const [themeMode, setThemeMode] = useState<ThemeMode | null>(null);
+  useEffect(() => {
+    loadTheme().then(setThemeMode);
+  }, []);
 
   // Handle FCM notification tap → deep-link driver to request-detail screen
   useEffect(() => {
@@ -47,10 +55,12 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
+  if (!themeMode) return null;
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style="light" />
+        <StatusBar style={themeMode === 'light' ? 'dark' : 'light'} />
         <Slot />
       </AuthProvider>
     </SafeAreaProvider>

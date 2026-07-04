@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
 
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   msgRowMe: { flexDirection: 'row-reverse' },
-  msgAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  msgAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.glassStrong, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   msgAvatarTxt: { fontSize: 13, fontWeight: '800', color: colors.primary },
   msgBubble: { maxWidth: '75%', backgroundColor: colors.surface, borderRadius: 16, borderTopLeftRadius: 4, padding: 10, gap: 2 },
   msgBubbleMe: { backgroundColor: '#1a2e0a', borderTopLeftRadius: 16, borderTopRightRadius: 4 },

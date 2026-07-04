@@ -746,7 +746,7 @@ const styles = StyleSheet.create({
   previewBarTrack: {
     flex: 1,
     height: 5,
-    backgroundColor: 'rgba(204,255,0,0.12)',
+    backgroundColor: colors.glassLime,
     borderRadius: 3,
     overflow: 'hidden',
     flexDirection: 'row',
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(204,255,0,0.12)',
+    borderTopColor: colors.glassLime,
   },
   previewNightLabel: { fontSize: 11, color: colors.muted },
   previewNightVal: { fontSize: 12, fontWeight: '700', color: colors.text },

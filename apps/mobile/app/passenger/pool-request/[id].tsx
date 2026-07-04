@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   driverName:      { fontSize: 15, fontWeight: '800', color: colors.text },
   driverVehicle:   { fontSize: 12, color: colors.muted, marginTop: 2 },
 
-  joinInfoCard:    { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}40`, padding: 14, alignItems: 'center', gap: 4 },
+  joinInfoCard:    { backgroundColor: colors.glassLime, borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}40`, padding: 14, alignItems: 'center', gap: 4 },
   joinInfoTitle:   { fontSize: 11, color: colors.muted, fontWeight: '700' },
   joinInfoFare:    { fontSize: 24, fontWeight: '900', color: colors.primary },
   joinInfoNote:    { fontSize: 11, color: colors.muted, textAlign: 'center' },

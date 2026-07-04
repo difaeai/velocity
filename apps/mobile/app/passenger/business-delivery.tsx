@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
   },
   continueBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
 
-  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#101211' },
+  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: colors.background },
   road: {
     position: 'absolute',
     height: 28,
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -366,14 +366,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backTxt: { fontSize: 20, color: colors.text },
   floatingRouteCard: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
   },
 
   selectedCard: {
-    backgroundColor: 'rgba(204,255,0,0.10)',
+    backgroundColor: colors.glassLime,
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: colors.primary,
@@ -429,10 +429,10 @@ const styles = StyleSheet.create({
   selectedBadgeTxt: { fontSize: 9, fontWeight: '900', color: '#000', letterSpacing: 0.8 },
   selectedEta: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   quoteRow: {
-    backgroundColor: 'rgba(204,255,0,0.10)',
+    backgroundColor: colors.glassLime,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(204,255,0,0.30)',
+    borderColor: colors.glassLimeBorder,
     padding: 14,
   },
   quoteValue: { fontSize: 22, fontWeight: '900', color: colors.primary },
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  loadChipActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  loadChipActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   loadEmoji: { fontSize: 14 },
   loadLabel: { fontSize: 12, fontWeight: '700', color: colors.text },
 

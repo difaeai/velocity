@@ -234,7 +234,7 @@ export default function CourierOrderScreen() {
 
         {/* Driver card (only when assigned) */}
         {(order.driverName || order.driverPhone) && (
-          <View style={[styles.card, { borderColor: colors.primary + '40', backgroundColor: 'rgba(204,255,0,0.10)' }]}>
+          <View style={[styles.card, { borderColor: colors.primary + '40', backgroundColor: colors.glassLime }]}>
             <Text style={styles.cardTitle}>COURIER DRIVER</Text>
             {order.driverName  ? <Row icon="🧑" label="Driver" value={order.driverName}  /> : null}
             {order.driverPhone ? <Row icon="📞" label="Phone"  value={order.driverPhone} /> : null}
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   statusLabel:  { fontSize: 15, fontWeight: '800' },
   statusDesc:   { fontSize: 12, color: colors.muted, marginTop: 2 },
 
-  noteBox: { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.primary + '30' },
+  noteBox: { backgroundColor: colors.glassLime, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.primary + '30' },
   noteTxt: { fontSize: 13, color: colors.muted, lineHeight: 18 },
 
   card: {

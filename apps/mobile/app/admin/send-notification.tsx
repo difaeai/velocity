@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6 },
   optionsList: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   optionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  optionRowActive: { backgroundColor: 'rgba(204,255,0,0.10)' },
+  optionRowActive: { backgroundColor: colors.glassLime },
   optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   optionIcon: { fontSize: 20 },
   optionLabel: { fontSize: 14, fontWeight: '700', color: colors.text },

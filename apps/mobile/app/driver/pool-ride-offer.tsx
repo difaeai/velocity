@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  dayOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   dayOptText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   dayOptTextActive: { color: colors.primary },
 
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     gap: 4,
   },
-  seatOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  seatOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   seatOptNum: { fontSize: 28, fontWeight: '900', color: colors.text },
   seatOptLabel: { fontSize: 10, color: colors.muted, textAlign: 'center', fontWeight: '600' },
 
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: 14,
   },
-  genderOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  genderOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   genderIcon: { fontSize: 20, width: 28, textAlign: 'center' },
   genderLabel: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
   genderLabelActive: { color: colors.primary },
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
   fareField: { flex: 1, fontSize: 22, fontWeight: '900', color: colors.text },
 
   earningsCard: {
-    backgroundColor: 'rgba(204,255,0,0.10)',
+    backgroundColor: colors.glassLime,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: `${colors.primary}40`,

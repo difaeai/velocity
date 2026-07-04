@@ -214,7 +214,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#101211', // Slate dark background
+    backgroundColor: colors.background, // Slate dark background
   },
   header: {
     flexDirection: 'row',
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomColor: colors.glassStrong,
   },
   backButton: {
     marginRight: 16,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 24,
-    color: '#ffffff',
+    color: colors.text,
   },
   profileSummary: {
     flex: 1,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 22,
     fontWeight: '900',
-    color: '#ffffff',
+    color: colors.text,
   },
   arrowIcon: {
     fontSize: 14,
@@ -272,9 +272,9 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -284,12 +284,12 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.text,
   },
   completeProfileCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     padding: 16,
     gap: 12,
   },
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 13,
-    color: '#ffffff',
+    color: colors.text,
     fontWeight: '700',
   },
   completeLink: {
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glassStrong,
     borderRadius: 2,
     width: '100%',
   },
@@ -345,25 +345,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     marginTop: 4,
   },
   checkIconCircle: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkIcon: {
     fontSize: 14,
-    color: '#ffffff',
+    color: colors.text,
   },
   checkLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -375,16 +375,16 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.glassStrong,
   },
   dotActive: {
     backgroundColor: '#3b82f6',
   },
   listCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.glassChip,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.glassStrong,
     overflow: 'hidden',
   },
   listItem: {
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text,
   },
   itemSubtitle: {
     fontSize: 11,
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glassStrong,
     marginLeft: 48,
   },
   cashBadgeContainer: {
@@ -442,12 +442,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.12)', // Dark banner surface
+    backgroundColor: colors.glassStrong, // Dark banner surface
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: colors.glassStrong,
   },
   bannerLeft: {
     flexDirection: 'row',
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   bannerText: {
-    color: '#ffffff',
+    color: colors.text,
     fontSize: 15,
     fontWeight: '800',
   },

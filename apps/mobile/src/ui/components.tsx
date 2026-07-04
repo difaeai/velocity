@@ -38,8 +38,12 @@ export function PrimaryButton({
   disabled?: boolean;
   variant?: Variant;
 }) {
+  // Primary buttons take their fill/label from theme tokens: lime with BLACK
+  // text in dark mode (white-on-lime was unreadable), black with white text
+  // in light mode. Danger/secondary fills keep white labels in both themes.
   const bg =
-    variant === 'danger' ? colors.danger : variant === 'secondary' ? colors.secondary : colors.primary;
+    variant === 'danger' ? colors.danger : variant === 'secondary' ? colors.secondary : colors.btnBg;
+  const fg = variant === 'primary' ? colors.btnText : '#ffffff';
   return (
     <Pressable
       onPress={onPress}
@@ -49,7 +53,7 @@ export function PrimaryButton({
         { backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
       ]}
     >
-      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>{label}</Text>}
+      {loading ? <ActivityIndicator color={fg} /> : <Text style={[styles.btnText, { color: fg }]}>{label}</Text>}
     </Pressable>
   );
 }

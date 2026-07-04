@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 17, fontWeight: '900', color: '#000' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalSheet:   { backgroundColor: 'rgba(255,255,255,0.06)', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
+  modalSheet:   { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
   modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
   modalTitle:   { fontSize: 16, fontWeight: '800', color: colors.text },
   modalCancel:  { fontSize: 15, color: colors.muted, fontWeight: '600' },

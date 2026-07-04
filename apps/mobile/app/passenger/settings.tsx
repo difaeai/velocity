@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -7,6 +7,7 @@ import Constants from 'expo-constants';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
+import { getThemeMode, toggleTheme } from '../../src/theme';
 
 function Row({
   icon,
@@ -35,6 +36,15 @@ export default function Settings() {
   const router = useRouter();
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
+  const [lightMode, setLightMode] = useState(getThemeMode() === 'light');
+
+  async function onToggleTheme(next: boolean) {
+    setLightMode(next);
+    const reloaded = await toggleTheme();
+    if (!reloaded) {
+      Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -60,6 +70,17 @@ export default function Settings() {
 
         <Text style={styles.sectionLabel}>PREFERENCES</Text>
         <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.rowIcon}>{lightMode ? '☀️' : '🌙'}</Text>
+            <Text style={styles.rowLabel}>Light mode</Text>
+            <Switch
+              value={lightMode}
+              onValueChange={onToggleTheme}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor="#fff"
+            />
+          </View>
+          <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.rowIcon}>🔔</Text>
             <Text style={styles.rowLabel}>Push notifications</Text>

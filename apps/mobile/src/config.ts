@@ -44,6 +44,8 @@ export const colors = {
   muted: '#9aa19e',                         // Light grey muted text
   border: 'rgba(255,255,255,0.12)',         // Glass edge highlight
   danger: '#ef4444',                        // Danger red
+  btnBg: '#ccff00',                         // Primary button fill (black in light mode)
+  btnText: '#000000',                       // Primary button label (white in light mode)
 
   // ── Glassmorphism helpers ──────────────────────────────────────────────────
   glassPanel: 'rgba(13,15,14,0.90)',        // Dark translucent sheets over maps

@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
   orderLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, width: 70 },
   orderValue: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text },
 
-  noteBox: { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: colors.primary + '30' },
+  noteBox: { backgroundColor: colors.glassLime, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: colors.primary + '30' },
   noteTxt: { fontSize: 12, color: colors.muted },
 
   actionRow:       { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },

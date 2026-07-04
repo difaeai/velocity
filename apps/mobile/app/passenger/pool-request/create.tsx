@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   sectionTitle:  { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6 },
   helperText:    { fontSize: 12, color: colors.muted, lineHeight: 17 },
 
-  infoCard:      { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}30`, padding: 14, marginBottom: 14 },
+  infoCard:      { backgroundColor: colors.glassLime, borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}30`, padding: 14, marginBottom: 14 },
   infoTitle:     { fontSize: 13, fontWeight: '800', color: colors.primary, marginBottom: 6 },
   infoText:      { fontSize: 12, color: colors.muted, lineHeight: 18 },
 
@@ -213,18 +213,18 @@ const styles = StyleSheet.create({
   fareRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, height: 52, gap: 8 },
   farePrefix:    { fontSize: 14, fontWeight: '700', color: colors.muted },
   fareInput:     { flex: 1, fontSize: 22, fontWeight: '900', color: colors.text },
-  totalChip:     { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 10, borderWidth: 1, borderColor: `${colors.primary}30`, paddingHorizontal: 12, paddingVertical: 8 },
+  totalChip:     { backgroundColor: colors.glassLime, borderRadius: 10, borderWidth: 1, borderColor: `${colors.primary}30`, paddingHorizontal: 12, paddingVertical: 8 },
   totalChipText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
 
   seatsRow:      { flexDirection: 'row', gap: 10 },
   seatOpt:       { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, gap: 4 },
-  seatOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  seatOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   seatNum:       { fontSize: 28, fontWeight: '900', color: colors.text },
   seatLabel:     { fontSize: 10, color: colors.muted, fontWeight: '600' },
 
   genderList:    { gap: 8 },
   genderOpt:     { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
-  genderOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
+  genderOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   genderIcon:    { fontSize: 20, width: 28, textAlign: 'center' },
   genderLabel:   { fontSize: 14, fontWeight: '700', color: colors.text },
   genderDesc:    { fontSize: 11, color: colors.muted, marginTop: 2 },
