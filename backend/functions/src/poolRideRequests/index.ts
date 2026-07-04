@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire-common';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireRole, invalid } from '../lib/guards';
+import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
@@ -46,7 +46,7 @@ const CreateSchema = z.object({
 });
 
 export const createPoolRideRequest = onCall(async (req) => {
-  const ctx = requireRole(req, 'passenger');
+  const ctx = requireAuth(req); // drivers off shift may act as passengers too
   const p = CreateSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const d = p.data;
@@ -134,6 +134,9 @@ export const driverRespondToRequest = onCall(async (req) => {
     if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
     const data = snap.data()!;
 
+    if (data.leaderId === ctx.uid) {
+      throw new HttpsError('failed-precondition', 'You cannot accept your own ride request.');
+    }
     if (data.status !== 'open') {
       throw new HttpsError('failed-precondition', `Request is not open (current status: ${data.status}).`);
     }
@@ -174,7 +177,7 @@ const LeaderRespondSchema = z.object({
 });
 
 export const leaderRespondToOffer = onCall(async (req) => {
-  const ctx = requireRole(req, 'passenger');
+  const ctx = requireAuth(req); // drivers off shift may act as passengers too
   const p = LeaderRespondSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const { requestId, action } = p.data;
@@ -228,7 +231,7 @@ const JoinSchema = z.object({
 });
 
 export const joinPoolRideRequest = onCall(async (req) => {
-  const ctx = requireRole(req, 'passenger');
+  const ctx = requireAuth(req); // drivers off shift may act as passengers too
   const p = JoinSchema.safeParse(req.data);
   if (!p.success) invalid('Invalid request.');
   const { requestId } = p.data;
@@ -313,7 +316,7 @@ export const joinPoolRideRequest = onCall(async (req) => {
 const CancelSchema = z.object({ requestId: z.string().min(1).max(128) });
 
 export const cancelPoolRideRequest = onCall(async (req) => {
-  const ctx = requireRole(req, 'passenger');
+  const ctx = requireAuth(req); // drivers off shift may act as passengers too
   const p = CancelSchema.safeParse(req.data);
   if (!p.success) invalid('Invalid request.');
   const { requestId } = p.data;

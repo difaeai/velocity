@@ -132,6 +132,7 @@ export function DriverDrawer({
         <View style={styles.divider} />
 
         <View style={styles.navSection}>
+          <NavItem icon="🧍" label="Ride as Passenger"      onPress={() => go('/passenger/home')} />
           <NavItem icon="🚪" label="Sign out" onPress={() => { onClose(); setTimeout(onSignOut, 220); }} danger />
         </View>
 

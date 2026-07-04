@@ -260,7 +260,8 @@ const JoinRideSchema = z.object({
  *   - Atomically updates maleSeats, femaleSeats, genderComposition, and takenSeats.
  */
 export const joinPoolRide = onCall(async (req) => {
-  const ctx = requireRole(req, 'passenger');
+  // Any signed-in user may ride as a passenger — including drivers off shift.
+  const ctx = requireAuth(req);
   const p = JoinRideSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const { rideId, pickupLat, pickupLng, pickupAddress, dropoffAddress } = p.data;
@@ -292,6 +293,10 @@ export const joinPoolRide = onCall(async (req) => {
     const rideSnap = await tx.get(rideRef);
     if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
     const ride = rideSnap.data()!;
+
+    if (ride.driverId === ctx.uid) {
+      throw new HttpsError('failed-precondition', 'You cannot join your own pool ride as a passenger.');
+    }
 
     const existingPass = await tx.get(db.doc(`poolRides/${rideId}/passengers/${ctx.uid}`));
     if (existingPass.exists) {

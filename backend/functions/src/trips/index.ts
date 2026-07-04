@@ -263,6 +263,9 @@ export const placeBid = onCall(async (req) => {
 
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');
+  if (tripSnap.get('passengerId') === ctx.uid) {
+    throw new HttpsError('failed-precondition', 'You cannot bid on your own trip.');
+  }
   if (tripSnap.get('status') !== 'requested') {
     throw new HttpsError('failed-precondition', 'This trip is no longer open for bids.');
   }
