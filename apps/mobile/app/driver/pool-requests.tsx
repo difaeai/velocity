@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   card:           { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   cardHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
   distLabel:      { fontSize: 12, color: colors.muted, fontWeight: '700' },
-  genderBadge:    { backgroundColor: '#0d1a06', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  genderBadge:    { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   genderBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary },
 
   routeArea:      { padding: 14, gap: 4 },

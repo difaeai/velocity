@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   },
   continueBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
 
-  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#151616' },
+  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#101211' },
   road: {
     position: 'absolute',
     height: 28,
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -353,14 +353,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   backTxt: { fontSize: 20, color: colors.text },
   floatingRouteCard: {
     flex: 1,
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   },
 
   selectedCard: {
-    backgroundColor: '#0a1f05',
+    backgroundColor: 'rgba(204,255,0,0.10)',
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: colors.primary,
@@ -421,10 +421,10 @@ const styles = StyleSheet.create({
   fareRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#131f0a',
+    backgroundColor: 'rgba(204,255,0,0.10)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1e3010',
+    borderColor: 'rgba(204,255,0,0.30)',
     padding: 12,
     gap: 8,
   },

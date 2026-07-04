@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   backArrow:      { fontSize: 24, color: colors.text },
   headerTitle:    { fontSize: 17, fontWeight: '800', color: colors.text },
 
-  anonymousBanner: { backgroundColor: '#0d1a06', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: `${colors.primary}20` },
+  anonymousBanner: { backgroundColor: 'rgba(204,255,0,0.10)', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: `${colors.primary}20` },
   anonText:       { fontSize: 12, color: colors.primary, fontWeight: '600', textAlign: 'center' },
 
   mixedRideRow: {
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   cardFull:       { opacity: 0.6 },
   cardHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   typeBadge:      { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  typeBadgeReq:   { backgroundColor: '#1c2c0a' },
+  typeBadgeReq:   { backgroundColor: 'rgba(204,255,0,0.12)' },
   typeBadgeRide:  { backgroundColor: '#0d1a3a' },
   typeBadgeText:  { fontSize: 10, fontWeight: '800', color: colors.muted },
   distLabel:      { fontSize: 11, color: colors.muted, fontWeight: '700' },

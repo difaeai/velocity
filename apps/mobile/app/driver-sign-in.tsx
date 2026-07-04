@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 16,
     color: '#ffffff',
-    backgroundColor: '#2a2a2a',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
 
   error: { color: colors.danger, fontSize: 14, fontWeight: '600', textAlign: 'center' },

@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
+    borderBottomColor: 'rgba(255,255,255,0.10)',
     alignItems: 'center',
     gap: 6,
   },
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   stat:          { flex: 1, alignItems: 'center', gap: 2 },
   statNum:       { fontSize: 15, fontWeight: '800', color: '#fff' },
   statLabel:     { fontSize: 10, color: colors.muted },
-  statDivider:   { width: 1, backgroundColor: '#2a2a2a', marginVertical: 4 },
+  statDivider:   { width: 1, backgroundColor: 'rgba(255,255,255,0.10)', marginVertical: 4 },
 
   navSection:    { paddingVertical: 8, paddingHorizontal: 12 },
   navItem:       {
@@ -204,11 +204,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 14,
   },
-  navItemPressed:{ backgroundColor: '#2a2a2a' },
+  navItemPressed:{ backgroundColor: 'rgba(255,255,255,0.10)' },
   navIcon:       { fontSize: 20, width: 28, textAlign: 'center' },
   navLabel:      { fontSize: 16, fontWeight: '700', color: '#fff' },
 
-  divider:       { height: 1, backgroundColor: '#2a2a2a', marginHorizontal: 20, marginVertical: 4 },
+  divider:       { height: 1, backgroundColor: 'rgba(255,255,255,0.10)', marginHorizontal: 20, marginVertical: 4 },
 
   brand:         { position: 'absolute', bottom: 32, left: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandBadge:    { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },

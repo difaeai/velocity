@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   sectionTitle:   { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6 },
   helperText:     { fontSize: 12, color: colors.muted, lineHeight: 17 },
 
-  privacyCard:    { backgroundColor: '#0d1a06', borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}30`, padding: 14, marginBottom: 14 },
+  privacyCard:    { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}30`, padding: 14, marginBottom: 14 },
   privacyTitle:   { fontSize: 13, fontWeight: '800', color: colors.primary, marginBottom: 6 },
   privacyText:    { fontSize: 12, color: colors.muted, lineHeight: 18 },
 
@@ -369,13 +369,13 @@ const styles = StyleSheet.create({
 
   daysRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dayBtn:         { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  dayBtnActive:   { borderColor: colors.primary, backgroundColor: '#1c2c0a' },
+  dayBtnActive:   { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
   dayBtnText:     { fontSize: 13, fontWeight: '700', color: colors.muted },
   dayBtnTextActive: { color: colors.primary },
 
   genderList:     { gap: 8 },
   genderOpt:      { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
-  genderOptActive: { borderColor: colors.primary, backgroundColor: '#1c2c0a' },
+  genderOptActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.12)' },
   genderIcon:     { fontSize: 20, width: 28, textAlign: 'center' },
   genderLabel:    { fontSize: 14, fontWeight: '700', color: colors.text },
 

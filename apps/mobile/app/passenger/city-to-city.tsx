@@ -546,29 +546,29 @@ const styles = StyleSheet.create({
   counterValue: { fontSize: 22, fontWeight: '900', color: colors.text, minWidth: 28, textAlign: 'center' },
 
   payBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: colors.surface },
-  payBtnActive: { borderColor: colors.primary, backgroundColor: '#1a2010' },
+  payBtnActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.10)' },
   payBtnTxt: { fontSize: 13, fontWeight: '700', color: colors.muted },
 
   searchBtn: { height: 54, backgroundColor: colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   searchBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
 
   // Stage 2 map
-  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#151616' },
+  mapBg: { ...StyleSheet.absoluteFill, backgroundColor: '#101211' },
   road: { position: 'absolute', left: -50, width: '120%', height: 28, backgroundColor: '#1e2020', borderRadius: 4 },
-  mapPin: { position: 'absolute', width: 34, height: 34, borderRadius: 17, backgroundColor: '#212222', alignItems: 'center', justifyContent: 'center' },
+  mapPin: { position: 'absolute', width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   mapPinTxt: { fontSize: 14 },
 
   floatArea: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   floatBar:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 8, gap: 8 },
-  backBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: '#212222', alignItems: 'center', justifyContent: 'center' },
+  backBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   backTxt:   { fontSize: 20, color: colors.text },
-  floatRoute: { flex: 1, backgroundColor: '#212222', borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 8, gap: 4 },
+  floatRoute: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 8, gap: 4 },
   floatPoint: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   floatDotGreen: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' },
   floatDotRed:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' },
   floatLine:  { height: 1, backgroundColor: colors.border, marginLeft: 16 },
   floatCity:  { fontSize: 13, fontWeight: '900', color: colors.text },
-  floatBadge: { backgroundColor: '#212222', borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
+  floatBadge: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
   floatBadgePax: { fontSize: 13, fontWeight: '900', color: colors.primary },
   floatBadgeDay: { fontSize: 10, color: colors.muted },
 
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
   sheetHeader: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6, marginBottom: 10 },
 
   tripCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 10 },
-  tripCardActive: { borderColor: colors.primary, backgroundColor: '#1a2010' },
+  tripCardActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.10)' },
   tripCardTop: { flexDirection: 'row', gap: 10 },
   tripTimeBlock: { width: 72, gap: 2 },
   tripTime: { fontSize: 15, fontWeight: '900', color: colors.text },
@@ -624,7 +624,7 @@ const modal = StyleSheet.create({
   popularSection: { paddingHorizontal: 16, marginBottom: 8 },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6, marginBottom: 8 },
   popularGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  popularChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.primary + '60', backgroundColor: '#1a2010' },
+  popularChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.primary + '60', backgroundColor: 'rgba(204,255,0,0.10)' },
   popularChipText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   provinceHeader: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.5, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.background },
   cityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },

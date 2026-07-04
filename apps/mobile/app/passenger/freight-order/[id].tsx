@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#0a1f05',
+    backgroundColor: 'rgba(204,255,0,0.10)',
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.primary,
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
   },
   acceptBtnTxt: { fontSize: 15, fontWeight: '900', color: '#000' },
 
-  noteBox: { backgroundColor: '#131c0a', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.primary + '30' },
+  noteBox: { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.primary + '30' },
   noteTxt: { fontSize: 13, color: colors.muted, lineHeight: 18 },
 
   card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14 },

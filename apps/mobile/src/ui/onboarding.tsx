@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
  * accents). These tokens are local so they never leak into the dark passenger UI.
  */
 export const oc = {
-  header: '#1c1b1b', // dark top bar
+  header: 'rgba(16,18,17,0.94)', // dark top bar
   screen: '#e7e8ea', // light grey page background
   card: '#ffffff', // white card
   text: '#1b1b1b', // near-black text

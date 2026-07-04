@@ -416,7 +416,7 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' },
   statusPillTxt: { fontSize: 11, fontWeight: '800' },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  actionBtn: { borderRadius: 8, borderWidth: 1, borderColor: colors.primary + '60', backgroundColor: '#1a2010', paddingHorizontal: 12, paddingVertical: 6 },
+  actionBtn: { borderRadius: 8, borderWidth: 1, borderColor: colors.primary + '60', backgroundColor: 'rgba(204,255,0,0.10)', paddingHorizontal: 12, paddingVertical: 6 },
   actionBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.primary },
   cancelActionBtn: { borderRadius: 8, borderWidth: 1, borderColor: colors.danger + '60', backgroundColor: '#ef444415', paddingHorizontal: 12, paddingVertical: 6 },
   cancelActionTxt: { fontSize: 12, fontWeight: '700', color: colors.danger },
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
   formInput: { backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: colors.text },
   twoCol: { flexDirection: 'row', gap: 12 },
   vtChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
-  vtChipActive: { borderColor: colors.primary, backgroundColor: '#1a2010' },
+  vtChipActive: { borderColor: colors.primary, backgroundColor: 'rgba(204,255,0,0.10)' },
   vtChipTxt: { fontSize: 12, fontWeight: '700', color: colors.muted },
 
   fieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 12 },
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
   pickerSearch: { margin: 16, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
   pickerSearchInput: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: colors.text },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  pickerRowActive: { backgroundColor: '#1a2010' },
+  pickerRowActive: { backgroundColor: 'rgba(204,255,0,0.10)' },
   pickerRowTxt: { fontSize: 15, fontWeight: '700', color: colors.text },
   pickerRowProv: { fontSize: 12, color: colors.muted },
 });

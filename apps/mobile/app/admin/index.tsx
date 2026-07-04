@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   stepperValue: { fontSize: 15, fontWeight: '800', color: colors.text, minWidth: 72, textAlign: 'center' },
   settingsDivider: { height: 1, backgroundColor: colors.border },
   formulaBox: {
-    backgroundColor: '#131c0a',
+    backgroundColor: 'rgba(204,255,0,0.10)',
     margin: 12,
     borderRadius: 12,
     padding: 12,
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
   ridersCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#131c0a',
+    backgroundColor: 'rgba(204,255,0,0.10)',
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.primary + '50',

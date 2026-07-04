@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   placeActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   editBtn:      { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   editBtnTxt:   { fontSize: 12, fontWeight: '700', color: colors.text },
-  deleteBtn:    { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, backgroundColor: '#2a1010', borderWidth: 1, borderColor: colors.danger + '40' },
+  deleteBtn:    { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: colors.danger + '40' },
   deleteBtnTxt: { fontSize: 12, fontWeight: '900', color: colors.danger },
 
   addMoreBtn: {

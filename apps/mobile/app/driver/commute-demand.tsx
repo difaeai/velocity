@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   backArrow:       { fontSize: 24, color: colors.text },
   headerTitle:     { fontSize: 17, fontWeight: '800', color: colors.text },
 
-  privacyBanner:   { backgroundColor: '#0d1a06', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: `${colors.primary}20` },
+  privacyBanner:   { backgroundColor: 'rgba(204,255,0,0.10)', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: `${colors.primary}20` },
   privacyText:     { fontSize: 12, color: colors.primary, fontWeight: '600', textAlign: 'center' },
 
   list:            { padding: 16, gap: 12 },
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   card:            { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', gap: 0 },
   cardHeader:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   timeLabel:       { fontSize: 20, fontWeight: '900', color: colors.primary },
-  countBadge:      { alignItems: 'center', backgroundColor: '#1c2c0a', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  countBadge:      { alignItems: 'center', backgroundColor: 'rgba(204,255,0,0.12)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
   countBadgeNum:   { fontSize: 20, fontWeight: '900', color: colors.primary },
   countBadgeLabel: { fontSize: 9, color: colors.primary, fontWeight: '700' },
 

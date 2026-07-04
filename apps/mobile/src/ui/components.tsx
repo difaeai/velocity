@@ -77,11 +77,16 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
     borderWidth: 1,
     borderColor: colors.border,
     gap: 8,
+    // Glass depth — soft drop shadow on iOS; Android relies on the alpha border
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
   },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },

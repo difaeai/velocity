@@ -272,15 +272,15 @@ export default function FareConfig() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#151616' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#2d2f2f' },
+  safe:   { flex: 1, backgroundColor: '#101211' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.12)' },
   backBtn:{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   backTxt:{ color: '#fff', fontSize: 20 },
   title:  { flex: 1, fontSize: 17, fontWeight: '800', color: '#fff', marginLeft: 8 },
   saveBtn:{ backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
   saveBtnText: { fontWeight: '900', fontSize: 13, color: '#000' },
 
-  segmentRow: { flexDirection: 'row', margin: 16, backgroundColor: '#1c1e1e', borderRadius: 12, padding: 4 },
+  segmentRow: { flexDirection: 'row', margin: 16, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 4 },
   segment:    { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
   segmentActive: { backgroundColor: colors.primary },
   segmentText:   { fontSize: 12, fontWeight: '700', color: '#8a8c8c' },
@@ -290,12 +290,12 @@ const styles = StyleSheet.create({
   emptyText:  { color: '#8a8c8c', fontSize: 15, textAlign: 'center' },
 
   scroll: { flex: 1, paddingHorizontal: 16 },
-  card:   { backgroundColor: '#1c1e1e', borderRadius: 16, padding: 16, marginBottom: 14, gap: 12 },
+  card:   { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: 16, marginBottom: 14, gap: 12 },
   cardTitle:{ fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 4 },
   cardHint: { fontSize: 11, color: '#8a8c8c', lineHeight: 16, marginBottom: 4 },
 
   catTabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  catTab:    { flex: 1, backgroundColor: '#1c1e1e', borderRadius: 10, padding: 8, alignItems: 'center', gap: 2 },
+  catTab:    { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: 8, alignItems: 'center', gap: 2 },
   catTabActive: { backgroundColor: '#1e3a10', borderWidth: 1, borderColor: colors.primary },
   catTabIcon: { fontSize: 18 },
   catTabText: { fontSize: 10, fontWeight: '700', color: '#8a8c8c' },
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   rateRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rateLabel:   { flex: 1, fontSize: 13, color: '#ccc', fontWeight: '600' },
   rateControls:{ flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rateBtn:     { width: 28, height: 28, borderRadius: 14, backgroundColor: '#2d2f2f', alignItems: 'center', justifyContent: 'center' },
+  rateBtn:     { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   rateBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', lineHeight: 18 },
   rateInput:   { width: 56, textAlign: 'center', color: '#fff', fontSize: 14, fontWeight: '800', backgroundColor: '#0e1505', borderRadius: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#2d4010' },
   rateUnit:    { fontSize: 11, color: '#8a8c8c', width: 26 },
@@ -314,6 +314,6 @@ const styles = StyleSheet.create({
   previewLine: { fontSize: 13, color: '#ccc' },
   previewVal:  { fontWeight: '900', color: colors.primary },
 
-  defaultsBtn:     { backgroundColor: '#1c1e1e', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 4 },
+  defaultsBtn:     { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 4 },
   defaultsBtnText: { color: '#8a8c8c', fontWeight: '700', fontSize: 13 },
 });

@@ -23,17 +23,33 @@ export const FUNCTIONS_REGION = 'asia-south1';
 export const GOOGLE_MAPS_API_KEY =
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? 'AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg';
 
-/** Brand palette (kept in sync with the original design). */
+/**
+ * Brand palette — glassmorphism edition.
+ *
+ * Surfaces are translucent white-on-dark ("frosted glass") with soft alpha
+ * borders, so every card and panel picks up depth from whatever sits behind
+ * it (map, gradients, other layers). Pure JS — no native blur module — which
+ * keeps the current dev/production builds valid and stays fast on low-end
+ * Android devices. Accent tokens (primary/danger/secondary) stay hex because
+ * screens derive tints from them via string concat (e.g. colors.primary+'40').
+ */
 export const colors = {
-  primary: '#ccff00',      // Lime green for active controls / branding
-  primaryDark: '#99c200',  // Darker lime green
-  secondary: '#3b82f6',    // Blue accents
-  surface: '#212222',      // Dark grey card/surface background
-  card: '#212222',         // Alias for surface (used by new UI components)
-  background: '#151616',   // Deep black/grey background
-  text: '#ffffff',         // White text
-  muted: '#8a8c8c',        // Light grey muted text
-  border: '#2d2f2f',       // Dark border color
-  danger: '#ef4444',       // Danger red
+  primary: '#ccff00',                       // Lime green for active controls / branding
+  primaryDark: '#99c200',                   // Darker lime green
+  secondary: '#3b82f6',                     // Blue accents
+  surface: 'rgba(255,255,255,0.06)',        // Frosted glass card
+  card: 'rgba(255,255,255,0.06)',           // Alias for surface (used by new UI components)
+  background: '#101211',                    // Deep charcoal backdrop behind the glass
+  text: '#ffffff',                          // White text
+  muted: '#9aa19e',                         // Light grey muted text
+  border: 'rgba(255,255,255,0.12)',         // Glass edge highlight
+  danger: '#ef4444',                        // Danger red
+
+  // ── Glassmorphism helpers ──────────────────────────────────────────────────
+  glassPanel: 'rgba(13,15,14,0.90)',        // Dark translucent sheets over maps
+  glassChip: 'rgba(255,255,255,0.10)',      // Floating buttons / pills over maps
+  glassStrong: 'rgba(255,255,255,0.12)',    // Elevated glass (modals, selected rows)
+  glassLime: 'rgba(204,255,0,0.10)',        // Lime-tinted glass accents
+  glassLimeBorder: 'rgba(204,255,0,0.35)',  // Lime glass edge
 };
 

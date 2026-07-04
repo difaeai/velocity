@@ -214,7 +214,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#151616', // Slate dark background
+    backgroundColor: '#101211', // Slate dark background
   },
   header: {
     flexDirection: 'row',
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#2d2f2f',
+    borderBottomColor: 'rgba(255,255,255,0.12)',
   },
   backButton: {
     marginRight: 16,
@@ -272,9 +272,9 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: '#2d2f2f',
+    borderColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -287,9 +287,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   completeProfileCard: {
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: '#2d2f2f',
+    borderColor: 'rgba(255,255,255,0.12)',
     padding: 16,
     gap: 12,
   },
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 4,
-    backgroundColor: '#2d2f2f',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 2,
     width: '100%',
   },
@@ -345,14 +345,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2d2f2f',
+    borderColor: 'rgba(255,255,255,0.12)',
     marginTop: 4,
   },
   checkIconCircle: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#2d2f2f',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -375,16 +375,16 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#3e4040',
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   dotActive: {
     backgroundColor: '#3b82f6',
   },
   listCard: {
-    backgroundColor: '#212222',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2d2f2f',
+    borderColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
   },
   listItem: {
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#2d2f2f',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     marginLeft: 48,
   },
   cashBadgeContainer: {
@@ -442,12 +442,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#2d2f2f', // Dark banner surface
+    backgroundColor: 'rgba(255,255,255,0.12)', // Dark banner surface
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: '#3e4040',
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   bannerLeft: {
     flexDirection: 'row',

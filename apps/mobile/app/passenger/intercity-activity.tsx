@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   sectionHeader: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6, marginTop: 4, marginBottom: 4 },
 
   card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12 },
-  cardUpcoming: { borderColor: colors.primary + '50', backgroundColor: '#1a2010' },
+  cardUpcoming: { borderColor: colors.primary + '50', backgroundColor: 'rgba(204,255,0,0.10)' },
   routeRow: { flexDirection: 'row', alignItems: 'center' },
   routeCol: { flex: 1 },
   cityName: { fontSize: 17, fontWeight: '900', color: colors.text },

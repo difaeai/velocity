@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
   orderLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, width: 70 },
   orderValue: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text },
 
-  noteBox: { backgroundColor: '#131c0a', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: colors.primary + '30' },
+  noteBox: { backgroundColor: 'rgba(204,255,0,0.10)', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: colors.primary + '30' },
   noteTxt: { fontSize: 12, color: colors.muted },
 
   actionRow:       { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
   advanceBtnTxt:   { fontSize: 12, fontWeight: '800', color: '#000' },
   editOrderBtn:    { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   editOrderBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.text },
-  cancelOrderBtn:    { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.danger + '50', backgroundColor: '#1a0808', alignItems: 'center', justifyContent: 'center' },
+  cancelOrderBtn:    { flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.danger + '50', backgroundColor: 'rgba(239,68,68,0.10)', alignItems: 'center', justifyContent: 'center' },
   cancelOrderBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.danger },
 
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
