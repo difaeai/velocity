@@ -69,12 +69,14 @@ interface PoolRide {
   departureTime: Timestamp;
   boardingStartedAt?: Timestamp;
   status: string;
+  ridersPublic?: { uid: string; name: string; gender: string; pickupArea: string }[];
 }
 
 interface PoolPassenger {
   uid: string;
   userName?: string;
   userGender?: string;
+  pickupArea?: string;
 }
 
 // ── Fare formula (progressive multiplier) ─────────────────────────────────────
@@ -335,6 +337,7 @@ export default function PoolRideScreen() {
   const [loadingRides, setLoadingRides] = useState(true);
   const [selected, setSelected]       = useState<PoolRide | null>(null);
   const [poolPassengers, setPoolPassengers] = useState<PoolPassenger[]>([]);
+  const [joinQueued, setJoinQueued] = useState(false);
   const [booking, setBooking]             = useState(false);
   const [showFareTable, setShowFareTable] = useState(false);
   const [destForBooking, setDestForBooking] = useState('');
@@ -385,22 +388,49 @@ export default function PoolRideScreen() {
     );
   }
 
-  // Load passengers already on the selected ride (detail step)
+  // Co-riders on the selected ride (detail step). Read from the ride doc's
+  // ridersPublic array (name + gender + pickup point, no phone numbers) —
+  // the passengers subcollection itself is not readable by other passengers.
   useEffect(() => {
     if (!selected?.id || step !== 'detail') {
       setPoolPassengers([]);
       return;
     }
-    return onSnapshot(collection(db, 'poolRides', selected.id, 'passengers'), (snap) => {
+    return onSnapshot(doc(db, 'poolRides', selected.id), (snap) => {
+      const riders = (snap.get('ridersPublic') as PoolRide['ridersPublic']) ?? [];
       setPoolPassengers(
-        snap.docs.map((d) => ({
-          uid: d.id,
-          userName: d.get('userName') as string | undefined,
-          userGender: d.get('userGender') as string | undefined,
+        riders.map((r) => ({
+          uid: r.uid,
+          userName: r.name,
+          userGender: r.gender,
+          pickupArea: r.pickupArea,
         })),
       );
     });
   }, [selected?.id, step]);
+
+  // My queued join request on this ride (mixed-car pairing) — live status
+  useEffect(() => {
+    if (!selected?.id || !user || step !== 'detail') {
+      setJoinQueued(false);
+      return;
+    }
+    return onSnapshot(doc(db, 'poolRides', selected.id, 'joinRequests', user.uid), (snap) => {
+      setJoinQueued(snap.exists() && snap.get('status') === 'queued');
+    });
+  }, [selected?.id, user?.uid, step]);
+
+  // When the driver accepts my pair, my passenger doc appears — move straight
+  // to the confirmed screen.
+  useEffect(() => {
+    if (!selected?.id || !user || step !== 'detail') return;
+    return onSnapshot(doc(db, 'poolRides', selected.id, 'passengers', user.uid), (snap) => {
+      if (snap.exists()) {
+        setBookingStatus((snap.get('status') as string) ?? 'confirmed');
+        setStep('confirmed');
+      }
+    });
+  }, [selected?.id, user?.uid, step]);
 
   // Real-time booking status — shows driver_arrived / picked_up banners
   useEffect(() => {
@@ -527,16 +557,28 @@ export default function PoolRideScreen() {
 
     setBooking(true);
     try {
-      await api.joinPoolRide({
+      const res = await api.joinPoolRide({
         rideId: selected.id,
         pickupLat:      coords?.lat ?? selected.pickup.lat,
         pickupLng:      coords?.lng ?? selected.pickup.lng,
         pickupAddress:  pickupAddress ?? 'Current location',
         dropoffAddress: dest,
       });
-      setDestination(dest);
-      setBookingStatus('confirmed');
-      setStep('confirmed');
+      if (res.queued) {
+        // Mixed car (1M+1F): riders are added in same-gender pairs. The driver
+        // is notified once a second same-gender rider requests this pool.
+        setDestination(dest);
+        Alert.alert(
+          'Request Queued ⏳',
+          (res.waitingSameGender ?? 1) >= 2
+            ? 'Another rider of your gender is also waiting — the driver has been notified to confirm you both together.'
+            : 'This car already has one male and one female rider. You\'ll be confirmed together with the next rider of your gender, so the back seat stays comfortable. We\'ll notify you!',
+        );
+      } else {
+        setDestination(dest);
+        setBookingStatus('confirmed');
+        setStep('confirmed');
+      }
     } catch (e) {
       Alert.alert('Booking failed', e instanceof Error ? e.message : 'Please try again.');
     } finally {
@@ -725,10 +767,10 @@ export default function PoolRideScreen() {
             ))}
           </View>
 
-          {/* Passengers already in pool — verify gender before joining */}
+          {/* Passengers already in pool — who is riding and from where */}
           {poolPassengers.length > 0 && (
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionCardLabel}>PASSENGERS IN THIS POOL</Text>
+              <Text style={styles.sectionCardLabel}>WHO'S IN THIS POOL</Text>
               <Text style={styles.poolPassengerHint}>
                 Verify each passenger matches their registered gender. Report anyone who does not.
               </Text>
@@ -737,6 +779,11 @@ export default function PoolRideScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.poolPassengerName}>{p.userName ?? 'Passenger'}</Text>
                     <Text style={styles.poolPassengerGender}>{genderLabel(p.userGender ?? 'unspecified')}</Text>
+                    {p.pickupArea ? (
+                      <Text style={styles.poolPassengerPickup} numberOfLines={1}>
+                        📍 Joining from {p.pickupArea}
+                      </Text>
+                    ) : null}
                   </View>
                   {p.uid !== user?.uid && (
                     <Pressable
@@ -798,15 +845,38 @@ export default function PoolRideScreen() {
             </Pressable>
           )}
 
-          <Pressable
-            style={[styles.primaryBtn, (booking || (detailWouldBeMixed && !rulesAccepted)) && { opacity: 0.6 }]}
-            onPress={bookSeat}
-            disabled={booking || (detailWouldBeMixed && !rulesAccepted)}
-          >
-            {booking
-              ? <ActivityIndicator color="#000" />
-              : <Text style={styles.primaryBtnText}>Confirm Booking — {selected.perSeatFare} PKR</Text>}
-          </Pressable>
+          {joinQueued ? (
+            <View style={styles.queuedCard}>
+              <Text style={styles.queuedTitle}>⏳ Waiting to pair you</Text>
+              <Text style={styles.queuedText}>
+                This car already has one male and one female rider. You'll be confirmed together
+                with the next {userGender === 'female' ? 'female' : 'male'} rider who requests this
+                pool — the driver accepts you both as a pair so the back seat stays comfortable.
+              </Text>
+              <Pressable
+                style={styles.queuedCancelBtn}
+                onPress={async () => {
+                  try {
+                    await api.cancelPoolJoinRequest({ rideId: selected.id });
+                  } catch (e) {
+                    Alert.alert('Error', e instanceof Error ? e.message : 'Could not cancel.');
+                  }
+                }}
+              >
+                <Text style={styles.queuedCancelTxt}>Cancel Request</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={[styles.primaryBtn, (booking || (detailWouldBeMixed && !rulesAccepted)) && { opacity: 0.6 }]}
+              onPress={bookSeat}
+              disabled={booking || (detailWouldBeMixed && !rulesAccepted)}
+            >
+              {booking
+                ? <ActivityIndicator color="#000" />
+                : <Text style={styles.primaryBtnText}>Confirm Booking — {selected.perSeatFare} PKR</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       </SafeAreaView>
     );
@@ -1160,6 +1230,28 @@ const styles = StyleSheet.create({
   },
   poolPassengerName:   { fontSize: 14, fontWeight: '800', color: colors.text },
   poolPassengerGender: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  poolPassengerPickup: { fontSize: 11, color: colors.muted, marginTop: 2 },
+
+  queuedCard: {
+    backgroundColor: '#1f1a08',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#f59e0b50',
+    padding: 16,
+    gap: 10,
+  },
+  queuedTitle: { fontSize: 15, fontWeight: '800', color: '#f59e0b' },
+  queuedText:  { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  queuedCancelBtn: {
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  queuedCancelTxt: { fontSize: 14, fontWeight: '800', color: colors.danger },
   reportBtn: {
     backgroundColor: '#ef444418',
     borderRadius: 8,

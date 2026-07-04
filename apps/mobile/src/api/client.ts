@@ -175,8 +175,13 @@ export const api = {
   >('cancelPoolRideRequest'),
   joinPoolRide: callable<
     { rideId: string; pickupLat: number; pickupLng: number; pickupAddress: string; dropoffAddress: string },
-    { ok: boolean }
+    { ok: boolean; queued: boolean; waitingSameGender?: number }
   >('joinPoolRide'),
+  driverAcceptPoolBatch: callable<
+    { rideId: string; gender: 'male' | 'female' },
+    { ok: boolean; accepted: number }
+  >('driverAcceptPoolBatch'),
+  cancelPoolJoinRequest: callable<{ rideId: string }, { ok: boolean }>('cancelPoolJoinRequest'),
   driverBlockPoolPassenger: callable<
     { rideId: string; passengerId: string; reason?: string },
     { ok: boolean }

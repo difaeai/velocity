@@ -135,6 +135,18 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // Queued join requests for mixed (1M+1F) pools. Written only by the
+      // joinPoolRide / driverAcceptPoolBatch CFs. The requester sees their own
+      // request; the ride's driver sees the queue to accept same-gender pairs.
+      match /joinRequests/{userId} {
+        allow read: if isSignedIn() && (
+          uid() == userId
+          || get(/databases/$(database)/documents/poolRides/$(rideId)).data.driverId == uid()
+          || isAdmin()
+        );
+        allow write: if false;
+      }
+
       // Group chat for the pool ride (driver + all passengers)
       match /chat/{msgId} {
         allow read: if isSignedIn();

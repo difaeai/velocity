@@ -43,6 +43,8 @@ export {
   poolPassengerBoarded,
   completePoolRide,
   joinPoolRide,
+  driverAcceptPoolBatch,
+  cancelPoolJoinRequest,
   driverBlockPoolPassenger,
   reportPoolGenderMisrepresentation,
 } from './poolRides';

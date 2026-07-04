@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../src/auth/AuthContext';
@@ -480,24 +480,29 @@ export default function DriverHome() {
           {poolRides.length > 0 ? (
             <View style={{ gap: 10 }}>
               {poolRides.map((pr) => (
-                <Pressable key={pr.id} style={styles.poolRideCard} onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.poolRideRoute} numberOfLines={1}>
-                      {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
-                    </Text>
-                    <Text style={styles.poolRideMeta}>{pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat</Text>
-                  </View>
-                  <View style={styles.poolRideStatusBadge}>
-                    <Text style={styles.poolRideStatusText}>
-                      {pr.status === 'open' ? '🟡 Open'
-                        : pr.status === 'collecting' ? '🟢 Collecting'
-                        : pr.status === 'full' ? '🔵 Full'
-                        : pr.status === 'boarding' ? '🚗 Boarding'
-                        : pr.status === 'in_progress' ? '🏁 En route'
-                        : pr.status}
-                    </Text>
-                  </View>
-                </Pressable>
+                <View key={pr.id} style={{ gap: 8 }}>
+                  <Pressable style={styles.poolRideCard} onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.poolRideRoute} numberOfLines={1}>
+                        {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
+                      </Text>
+                      <Text style={styles.poolRideMeta}>{pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat</Text>
+                    </View>
+                    <View style={styles.poolRideStatusBadge}>
+                      <Text style={styles.poolRideStatusText}>
+                        {pr.status === 'open' ? '🟡 Open'
+                          : pr.status === 'collecting' ? '🟢 Collecting'
+                          : pr.status === 'full' ? '🔵 Full'
+                          : pr.status === 'boarding' ? '🚗 Boarding'
+                          : pr.status === 'in_progress' ? '🏁 En route'
+                          : pr.status}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  {['open', 'collecting'].includes(pr.status) && (
+                    <PoolBatchRequests rideId={pr.id} />
+                  )}
+                </View>
               ))}
             </View>
           ) : (
@@ -557,6 +562,72 @@ export default function DriverHome() {
   );
 }
 
+/**
+ * Queued join requests on a mixed (1M+1F) pool ride. A batch only becomes
+ * visible once TWO riders of the same gender are waiting — single requests
+ * are hidden from the driver by design, so the back row never has to mix a
+ * female with an unrelated male.
+ */
+function PoolBatchRequests({ rideId }: { rideId: string }) {
+  const [counts, setCounts] = useState<{ gender: 'male' | 'female'; count: number }[]>([]);
+  const [accepting, setAccepting] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'poolRides', rideId, 'joinRequests'), where('status', '==', 'queued'));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const tally: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          const g = (d.get('userGender') as string) ?? 'unspecified';
+          tally[g] = (tally[g] ?? 0) + 1;
+        });
+        setCounts(
+          (['male', 'female'] as const)
+            .filter((g) => (tally[g] ?? 0) > 0)
+            .map((g) => ({ gender: g, count: tally[g]! })),
+        );
+      },
+      () => setCounts([]),
+    );
+  }, [rideId]);
+
+  // The rule: 1 waiting rider → invisible. 2+ of the same gender → show batch.
+  const batches = counts.filter((c) => c.count >= 2);
+  if (batches.length === 0) return null;
+
+  return (
+    <View style={{ gap: 8 }}>
+      {batches.map((b) => (
+        <View key={b.gender} style={styles.batchRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.batchTitle}>
+              {b.gender === 'female' ? '♀' : '♂'} {b.count} {b.gender} riders waiting to join
+            </Text>
+            <Text style={styles.batchSub}>Accepted as a pair — back row stays same-gender</Text>
+          </View>
+          <Pressable
+            style={[styles.batchBtn, accepting !== null && { opacity: 0.6 }]}
+            disabled={accepting !== null}
+            onPress={async () => {
+              setAccepting(b.gender);
+              try {
+                await api.driverAcceptPoolBatch({ rideId, gender: b.gender });
+              } catch (e) {
+                Alert.alert('Could not accept', e instanceof Error ? e.message : 'Please try again.');
+              } finally {
+                setAccepting(null);
+              }
+            }}
+          >
+            <Text style={styles.batchBtnTxt}>{accepting === b.gender ? 'Accepting…' : 'Accept Pair'}</Text>
+          </Pressable>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: 18, gap: 14 },
@@ -612,6 +683,28 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+
+  batchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#131c0a',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '50',
+    padding: 12,
+  },
+  batchTitle: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  batchSub:   { fontSize: 11, color: colors.muted, marginTop: 2 },
+  batchBtn: {
+    height: 40,
+    paddingHorizontal: 14,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  batchBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
 
   // Live preview cards inside pool sections
   emptyPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 },

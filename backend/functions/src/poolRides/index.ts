@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireRole, requireAuth, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { notifyUser } from '../lib/fcm';
 
 // ── Haversine distance in km ─────────────────────────────────────────────────
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -282,10 +283,20 @@ export const joinPoolRide = onCall(async (req) => {
 
   const rideRef = db.doc(`poolRides/${rideId}`);
 
+  // Set when the car already has a mixed (1M+1F) load: the join is queued per
+  // gender instead of confirmed, and the driver is only told once two riders
+  // of the same gender are waiting (so the back row stays same-gender).
+  let queuedResult: { waitingSameGender: number; driverId: string } | null = null;
+
   await db.runTransaction(async (tx) => {
     const rideSnap = await tx.get(rideRef);
     if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
     const ride = rideSnap.data()!;
+
+    const existingPass = await tx.get(db.doc(`poolRides/${rideId}/passengers/${ctx.uid}`));
+    if (existingPass.exists) {
+      throw new HttpsError('already-exists', 'You already have a seat on this ride.');
+    }
 
     if (!['open', 'collecting'].includes(ride.status as string)) {
       throw new HttpsError('failed-precondition', 'This ride is not accepting passengers right now.');
@@ -302,6 +313,52 @@ export const joinPoolRide = onCall(async (req) => {
 
     const check = canJoinPool({ currentComposition, maleSeats, femaleSeats, joinerGender, joinerMixedRideOk: mixedRideOk });
     if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
+
+    // ── Mixed-car batching rule ────────────────────────────────────────────
+    // With one male and one female already seated, a lone joiner of either
+    // gender cannot be placed without risking a female sharing the back row
+    // with an unrelated male. Queue the request; the driver accepts riders
+    // in same-gender pairs via driverAcceptPoolBatch.
+    if (maleSeats >= 1 && femaleSeats >= 1) {
+      if (joinerGender !== 'male' && joinerGender !== 'female') {
+        throw new HttpsError(
+          'failed-precondition',
+          'Set your gender in your profile to join a mixed pool — riders are paired by gender for seating.',
+        );
+      }
+
+      const reqRef  = db.doc(`poolRides/${rideId}/joinRequests/${ctx.uid}`);
+      const reqSnap = await tx.get(reqRef);
+      if (reqSnap.exists && reqSnap.get('status') === 'queued') {
+        throw new HttpsError('already-exists', 'You already have a pending request for this ride.');
+      }
+
+      const queuedSnap = await tx.get(
+        db.collection(`poolRides/${rideId}/joinRequests`)
+          .where('status', '==', 'queued')
+          .where('userGender', '==', joinerGender),
+      );
+
+      tx.set(reqRef, {
+        userId:         ctx.uid,
+        userName:       joinerName,
+        userPhone:      joinerPhone,
+        userGender:     joinerGender,
+        pickupAddress,
+        pickupLat,
+        pickupLng,
+        dropoffAddress,
+        fare:           ride.perSeatFare,
+        status:         'queued',
+        createdAt:      FieldValue.serverTimestamp(),
+      });
+
+      queuedResult = {
+        waitingSameGender: queuedSnap.size + 1,
+        driverId: ride.driverId as string,
+      };
+      return;
+    }
 
     const newMale   = maleSeats   + (joinerGender === 'male'   ? 1 : 0);
     const newFemale = femaleSeats + (joinerGender === 'female' ? 1 : 0);
@@ -332,11 +389,171 @@ export const joinPoolRide = onCall(async (req) => {
       genderComposition: newComposition,
       status:            isFull ? 'full' : 'collecting',
       updatedAt:         FieldValue.serverTimestamp(),
+      // Public co-rider info shown to passengers browsing this ride —
+      // first name + pickup point only, never the phone number.
+      ridersPublic: FieldValue.arrayUnion({
+        uid:        ctx.uid,
+        name:       joinerName.split(' ')[0],
+        gender:     joinerGender,
+        pickupArea: pickupAddress,
+      }),
       ...(isFirst ? { boardingStartedAt: FieldValue.serverTimestamp() } : {}),
     });
   });
 
+  if (queuedResult) {
+    const { waitingSameGender, driverId } = queuedResult;
+    const genderLabelTxt = joinerGender === 'female' ? 'female' : 'male';
+    if (waitingSameGender >= 2) {
+      // Pair complete — tell the driver there is a batch to accept.
+      await notifyUser(
+        driverId,
+        `${waitingSameGender} ${genderLabelTxt} riders waiting 🚗`,
+        'Two riders of the same gender want to join your pool. Open your route to accept them together.',
+        'ride',
+      ).catch(() => {});
+    }
+    logger.info('Pool join queued (mixed car)', { rideId, uid: ctx.uid, gender: joinerGender, waitingSameGender });
+    return { ok: true, queued: true, waitingSameGender };
+  }
+
   logger.info('Passenger joined pool ride', { rideId, uid: ctx.uid, gender: joinerGender });
+  return { ok: true, queued: false };
+});
+
+// ── driverAcceptPoolBatch ─────────────────────────────────────────────────────
+
+const AcceptBatchSchema = z.object({
+  rideId: z.string().min(1).max(128),
+  gender: z.enum(['male', 'female']),
+});
+
+/**
+ * Driver accepts a same-gender pair of queued join requests on a mixed
+ * (1M+1F) pool. Requests are only surfaced to the driver once at least two
+ * riders of one gender are waiting; accepting seats both atomically so the
+ * back row never mixes a female with an unrelated male.
+ */
+export const driverAcceptPoolBatch = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const p = AcceptBatchSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+  const { rideId, gender } = p.data;
+
+  const rideRef = db.doc(`poolRides/${rideId}`);
+  const accepted: { uid: string }[] = [];
+
+  await db.runTransaction(async (tx) => {
+    const rideSnap = await tx.get(rideRef);
+    if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
+    const ride = rideSnap.data()!;
+    if (ride.driverId !== ctx.uid) {
+      throw new HttpsError('permission-denied', 'Not your pool ride.');
+    }
+    if (!['open', 'collecting'].includes(ride.status as string)) {
+      throw new HttpsError('failed-precondition', 'This ride is not accepting passengers right now.');
+    }
+
+    const maxSeats   = ride.maxSeats as number;
+    const takenSeats = ride.takenSeats as number;
+    if (maxSeats - takenSeats < 2) {
+      throw new HttpsError('failed-precondition', 'Need two free seats to accept a rider pair.');
+    }
+
+    const queuedSnap = await tx.get(
+      db.collection(`poolRides/${rideId}/joinRequests`)
+        .where('status', '==', 'queued')
+        .where('userGender', '==', gender),
+    );
+    const queued = queuedSnap.docs
+      .sort((a, b) => {
+        const ta = (a.get('createdAt')?.toMillis?.() as number) ?? 0;
+        const tb = (b.get('createdAt')?.toMillis?.() as number) ?? 0;
+        return ta - tb;
+      })
+      .slice(0, 2);
+    if (queued.length < 2) {
+      throw new HttpsError('failed-precondition', `Need at least two waiting ${gender} riders to accept a pair.`);
+    }
+
+    const maleSeats   = (ride.maleSeats   as number) ?? 0;
+    const femaleSeats = (ride.femaleSeats as number) ?? 0;
+    const driverPref  = (ride.genderPref  as 'male_only' | 'female_only' | 'any') ?? 'any';
+    const newMale     = maleSeats   + (gender === 'male'   ? 2 : 0);
+    const newFemale   = femaleSeats + (gender === 'female' ? 2 : 0);
+    const newTotal    = takenSeats + 2;
+
+    const riderEntries = queued.map((d) => ({
+      uid:        d.id,
+      name:       ((d.get('userName') as string) ?? 'Rider').split(' ')[0],
+      gender,
+      pickupArea: (d.get('pickupAddress') as string) ?? '',
+    }));
+
+    for (const d of queued) {
+      tx.set(db.doc(`poolRides/${rideId}/passengers/${d.id}`), {
+        userId:         d.id,
+        userName:       d.get('userName') ?? 'Rider',
+        userPhone:      d.get('userPhone') ?? null,
+        userGender:     gender,
+        pickupAddress:  d.get('pickupAddress') ?? '',
+        pickupLat:      d.get('pickupLat') ?? 0,
+        pickupLng:      d.get('pickupLng') ?? 0,
+        dropoffAddress: d.get('dropoffAddress') ?? '',
+        fare:           d.get('fare') ?? ride.perSeatFare,
+        status:         'confirmed',
+        joinedAt:       FieldValue.serverTimestamp(),
+      });
+      tx.update(d.ref, { status: 'accepted', acceptedAt: FieldValue.serverTimestamp() });
+      accepted.push({ uid: d.id });
+    }
+
+    tx.update(rideRef, {
+      takenSeats:        newTotal,
+      maleSeats:         newMale,
+      femaleSeats:       newFemale,
+      genderComposition: computeGenderAccess(newMale, newFemale, maxSeats, driverPref),
+      status:            newTotal >= maxSeats ? 'full' : 'collecting',
+      ridersPublic:      FieldValue.arrayUnion(...riderEntries),
+      updatedAt:         FieldValue.serverTimestamp(),
+    });
+  });
+
+  await Promise.all(
+    accepted.map(({ uid }) =>
+      notifyUser(
+        uid,
+        'Pool Seat Confirmed! 🎉',
+        `The driver accepted you together with another ${gender} rider — you'll share the back row. Check the ride for pickup details.`,
+        'ride',
+      ).catch(() => {}),
+    ),
+  );
+
+  logger.info('Driver accepted pool batch', { rideId, gender, count: accepted.length, driver: ctx.uid });
+  return { ok: true, accepted: accepted.length };
+});
+
+// ── cancelPoolJoinRequest ─────────────────────────────────────────────────────
+
+const CancelJoinRequestSchema = z.object({
+  rideId: z.string().min(1).max(128),
+});
+
+/** Passenger withdraws their queued (not yet accepted) pool join request. */
+export const cancelPoolJoinRequest = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const p = CancelJoinRequestSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+
+  const reqRef = db.doc(`poolRides/${p.data.rideId}/joinRequests/${ctx.uid}`);
+  const snap   = await reqRef.get();
+  if (!snap.exists || snap.get('status') !== 'queued') {
+    invalid('No pending join request to cancel.');
+  }
+  await reqRef.delete();
+
+  logger.info('Pool join request cancelled', { rideId: p.data.rideId, uid: ctx.uid });
   return { ok: true };
 });
 
@@ -370,12 +587,17 @@ async function removePassengerFromRide(
       driverPref,
     );
 
+    const ridersPublic = ((ride.ridersPublic as { uid: string }[] | undefined) ?? []).filter(
+      (r) => r.uid !== passengerId,
+    );
+
     tx.delete(passRef);
     tx.update(rideRef, {
       takenSeats:        newTaken,
       maleSeats:         Math.max(0, newMale),
       femaleSeats:       Math.max(0, newFemale),
       genderComposition: newComposition,
+      ridersPublic,
       status:            newTaken === 0 ? 'open' : 'collecting',
       updatedAt:         FieldValue.serverTimestamp(),
     });
