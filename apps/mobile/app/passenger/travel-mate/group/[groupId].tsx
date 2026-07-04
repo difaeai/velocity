@@ -227,7 +227,7 @@ export default function TravelMateGroup() {
         <Text style={s.sectionHead}>Actions</Text>
         <Card>
           <Pressable
-            onPress={() => router.push('/passenger')}
+            onPress={() => router.push('/passenger/booking')}
             style={s.actionBtn}
           >
             <Text style={s.actionBtnIcon}>🚗</Text>

@@ -155,6 +155,7 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number 
 }
 
 function fmtTime(ts: Timestamp): string {
+  if (!ts?.toDate) return '—';
   const d    = ts.toDate();
   const h    = d.getHours();
   const m    = d.getMinutes().toString().padStart(2, '0');
@@ -163,6 +164,7 @@ function fmtTime(ts: Timestamp): string {
 }
 
 function fmtDay(ts: Timestamp): string {
+  if (!ts?.toDate) return '—';
   const d    = ts.toDate();
   const today = new Date();
   const tmrw  = new Date(today);
@@ -173,6 +175,7 @@ function fmtDay(ts: Timestamp): string {
 }
 
 function fmtRelativeDeparture(ts: Timestamp): string {
+  if (!ts?.toMillis) return '';
   const diffMs  = ts.toMillis() - Date.now();
   const diffMin = Math.round(diffMs / 60000);
   if (diffMin <= 0)   return 'Departing now';
