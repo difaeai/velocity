@@ -75,6 +75,9 @@ export { sendTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from '
 export { adminSuspendTravelMateProfile } from './travelMate/moderation';
 // Phase 4 — groups + fare split
 export { createTravelMateGroup, joinTravelMateGroup, settleTravelMateSplit } from './travelMate/groups';
+// Phase 5 — shareable ride links + group chat + private DMs
+export { shareTravelMateRide, getSharedTravelMateRide, bookSharedTravelMateRide } from './travelMate/shareRide';
+export { sendTravelMateGroupMessage, openTravelMateDirectChat, previewTravelMateGroup } from './travelMate/groupChat';
 
 // Pool ride requests — InDrive-style passenger-initiated negotiation (Task 1 + Task 2)
 export {

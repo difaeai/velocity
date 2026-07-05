@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ExpoLinking from 'expo-linking';
+import { FirebaseError } from 'firebase/app';
+import { collection, getDocs, query as fsQuery, where } from 'firebase/firestore';
+
+import { db } from '../../../src/firebase';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
@@ -75,6 +80,47 @@ export default function TripScreen() {
     if (!tripId) return;
     await api.submitRating({ tripId, stars, comment: comment || undefined, targetRole: 'driver' });
     setShowRating(false);
+  }
+
+  // Travel Mate ride link: only travel partners (matched mates / group members)
+  // can book the same ride from this link — the backend enforces the gate.
+  async function shareWithTravelMates() {
+    if (!trip || !user) return;
+    try {
+      // If the user is in a commute group, the ride card is also posted to the
+      // group chat so every member can book and split the fare afterwards.
+      let groupId: string | undefined;
+      try {
+        const snap = await getDocs(
+          fsQuery(collection(db, 'travelMateGroups'), where('members', 'array-contains', user.uid)),
+        );
+        groupId = snap.docs[0]?.id;
+      } catch { /* no group — plain link share */ }
+
+      const { shareId } = await api.shareTravelMateRide({ tripId: trip.id, groupId });
+      const link = ExpoLinking.createURL(`/passenger/travel-mate/shared-ride/${shareId}`);
+      await Share.share({
+        message:
+          `🚗 Ride with me on Velocity!\n\n` +
+          `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
+          `Travel partners can book the same ride here:\n${link}`,
+        title: 'Share ride with Travel Mates',
+      });
+    } catch (e: unknown) {
+      const reason = (e as { details?: { reason?: string } })?.details?.reason;
+      if (e instanceof FirebaseError && reason === 'no_profile') {
+        Alert.alert(
+          'Travel Mates only',
+          'Ride links are a Travel Mate feature. Set up your Travel Mate profile to share rides with travel partners.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Set up', onPress: () => router.push('/passenger/travel-mate/setup' as Parameters<typeof router.push>[0]) },
+          ],
+        );
+      } else {
+        Alert.alert('Error', e instanceof Error ? e.message : 'Could not share the ride.');
+      }
+    }
   }
 
   if (loading || !trip) {
@@ -275,6 +321,14 @@ export default function TripScreen() {
             )}
           </ScrollView>
 
+          {/* Share ride link with travel partners */}
+          <Pressable
+            style={({ pressed }) => [styles.travelMateShareBtn, pressed && { opacity: 0.85 }]}
+            onPress={shareWithTravelMates}
+          >
+            <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Mates</Text>
+          </Pressable>
+
           {/* Cancel Request Button */}
           <Pressable
             style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
@@ -357,6 +411,11 @@ export default function TripScreen() {
               }}
             >
               <Text style={styles.whatsappBtnText}>📤 Share trip via WhatsApp</Text>
+            </Pressable>
+
+            {/* Travel Mate ride link — partners can book onto this ride */}
+            <Pressable style={styles.travelMateShareBtn} onPress={shareWithTravelMates}>
+              <Text style={styles.travelMateShareBtnText}>🤝 Share ride link with Travel Mates</Text>
             </Pressable>
           </Card>
         )}
@@ -618,6 +677,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   whatsappBtnText: { fontSize: 13, fontWeight: '800', color: '#25D366' },
+
+  travelMateShareBtn: {
+    marginTop: 10,
+    backgroundColor: `${colors.primary}18`,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${colors.primary}40`,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  travelMateShareBtnText: { fontSize: 13, fontWeight: '800', color: colors.primary },
 
   // Custom dark-mode requested screen styles (Image 2 & 3)
   safeDark: {

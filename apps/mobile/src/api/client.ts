@@ -147,6 +147,32 @@ export const api = {
     { settled: boolean; fare: number; share: number; riders: number; collected: number; bookerNetCost: number }
   >('settleTravelMateSplit'),
 
+  // ── Travel Mate Phase 5 — ride links + group chat + private DMs ──────────
+  shareTravelMateRide: callable<
+    { tripId: string; groupId?: string },
+    { shareId: string; reused: boolean }
+  >('shareTravelMateRide'),
+  getSharedTravelMateRide: callable<
+    { shareId: string },
+    SharedTravelMateRideResult
+  >('getSharedTravelMateRide'),
+  bookSharedTravelMateRide: callable<
+    { shareId: string },
+    { booked: boolean; alreadyJoined: boolean; tripId: string | null }
+  >('bookSharedTravelMateRide'),
+  sendTravelMateGroupMessage: callable<
+    { groupId: string; text: string },
+    { messageId: string }
+  >('sendTravelMateGroupMessage'),
+  openTravelMateDirectChat: callable<
+    { targetUid: string; groupId: string },
+    { matchId: string; created: boolean }
+  >('openTravelMateDirectChat'),
+  previewTravelMateGroup: callable<
+    { groupId: string },
+    TravelMateGroupPreview
+  >('previewTravelMateGroup'),
+
   // ── Pool ride requests — InDrive-style negotiation (Task 1) ───────────────
   createPoolRideRequest: callable<
     {
@@ -362,6 +388,40 @@ export interface TravelMateCard {
   distanceKm: number;
   ratingAvg: number;
   ratingCount: number;
+}
+
+export interface SharedTravelMateRide {
+  sharerUid: string;
+  sharerInfo: { displayName: string; photoURL: string | null };
+  pickupAddress: string;
+  dropoffAddress: string;
+  rideType: string | null;
+  fare: number | null;
+  status: 'open' | 'closed';
+  groupId: string | null;
+  coRiderCount: number;
+  maxCoRiders: number;
+  coRiderNames: string[];
+  tripId: string | null;
+}
+
+export type SharedTravelMateRideResult =
+  | { ride: SharedTravelMateRide; eligible: true; alreadyJoined: boolean }
+  | { ride: SharedTravelMateRide; eligible: false; reason: 'no_profile' | 'not_partner' };
+
+export interface TravelMateGroupPreview {
+  group: {
+    name: string;
+    destinationName: string;
+    schedule: { days: TravelMateDay[]; departTime: string } | null;
+    memberCount: number;
+    maxSize: number;
+    status: string;
+    memberNames: string[];
+  };
+  alreadyMember: boolean;
+  canJoin: boolean;
+  reason: 'member' | 'no_profile' | 'not_partner' | 'ok';
 }
 
 export interface UpsertTravelMateInput {

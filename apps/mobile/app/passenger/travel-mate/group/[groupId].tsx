@@ -14,7 +14,6 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -34,6 +33,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Share } from 'react-native';
+import * as Linking from 'expo-linking';
 import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../../src/firebase';
@@ -85,6 +85,8 @@ export default function TravelMateGroup() {
   const [selectedRiders, setSelectedRiders] = useState<Record<string, boolean>>({});
   const [settling, setSettling] = useState(false);
   const [settleResult, setSettleResult] = useState<{ fare: number; share: number; bookerNetCost: number } | null>(null);
+  const [dmTarget, setDmTarget] = useState<string | null>(null);
+  const [openingDm, setOpeningDm] = useState(false);
 
   useEffect(() => {
     if (!groupId) return;
@@ -146,6 +148,28 @@ export default function TravelMateGroup() {
     setTripIdInput('');
   }
 
+  function shareInvite() {
+    const link = Linking.createURL(`/passenger/travel-mate/group-invite/${groupId}`);
+    Share.share({
+      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nIf the link doesn't open, go to Travel Mate → Matches & Groups → "+ Join" and paste this Group ID:\n${groupId}`,
+      title: 'Join my Travel Mate group',
+    }).catch(() => Alert.alert('Share failed', `Copy this Group ID manually:\n\n${groupId}`));
+  }
+
+  async function openPrivateChat(targetUid: string) {
+    if (!groupId || openingDm) return;
+    setOpeningDm(true);
+    try {
+      const { matchId } = await api.openTravelMateDirectChat({ targetUid, groupId });
+      setDmTarget(null);
+      router.push(`/passenger/travel-mate/chat/${matchId}` as Parameters<typeof router.push>[0]);
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not open the chat.');
+    } finally {
+      setOpeningDm(false);
+    }
+  }
+
   if (!group) {
     return (
       <SafeAreaView style={s.safe}>
@@ -190,16 +214,8 @@ export default function TravelMateGroup() {
               </View>
             </>
           )}
-          <Pressable
-            onPress={() => {
-              Share.share({
-                message: `Join my Travel Mate commute group!\n\nGroup ID: ${groupId}\n\nOpen the Velocity app → Travel Mate → Matches & Groups → "+ Join" and paste this ID.`,
-                title: 'Join my Travel Mate group',
-              }).catch(() => Alert.alert('Share failed', `Copy this Group ID manually:\n\n${groupId}`));
-            }}
-            style={s.copyIdBtn}
-          >
-            <Text style={s.copyIdText}>📋 Share Group ID</Text>
+          <Pressable onPress={shareInvite} style={s.copyIdBtn}>
+            <Text style={s.copyIdText}>🔗 Share invite link</Text>
           </Pressable>
         </Card>
 
@@ -208,17 +224,25 @@ export default function TravelMateGroup() {
         <Card>
           {group.members.map((uid, i) => {
             const info = group.memberInfo[uid];
+            const isMe = uid === user?.uid;
             return (
-              <View key={uid} style={[s.memberRow, i < group.members.length - 1 && s.memberSep]}>
+              <Pressable
+                key={uid}
+                style={[s.memberRow, i < group.members.length - 1 && s.memberSep]}
+                disabled={isMe}
+                onPress={() => setDmTarget(uid)}
+              >
                 <View style={s.memberAvatar}><Text style={{ fontSize: 18 }}>👤</Text></View>
                 <Text style={s.memberName}>{info?.displayName ?? uid}</Text>
                 {uid === group.createdBy && (
                   <View style={s.creatorBadge}><Text style={s.creatorBadgeText}>Creator</Text></View>
                 )}
-                {uid === user?.uid && (
+                {isMe ? (
                   <View style={s.youBadge}><Text style={s.youBadgeText}>You</Text></View>
+                ) : (
+                  <Text style={{ fontSize: 14 }}>💬</Text>
                 )}
-              </View>
+              </Pressable>
             );
           })}
         </Card>
@@ -227,13 +251,24 @@ export default function TravelMateGroup() {
         <Text style={s.sectionHead}>Actions</Text>
         <Card>
           <Pressable
+            onPress={() => router.push(`/passenger/travel-mate/group-chat/${groupId}` as Parameters<typeof router.push>[0])}
+            style={s.actionBtn}
+          >
+            <Text style={s.actionBtnIcon}>💬</Text>
+            <View>
+              <Text style={s.actionBtnLabel}>Group chat</Text>
+              <Text style={s.actionBtnSub}>Chat with all members — shared rides appear here too</Text>
+            </View>
+          </Pressable>
+          <View style={s.actionDivider} />
+          <Pressable
             onPress={() => router.push('/passenger/booking')}
             style={s.actionBtn}
           >
             <Text style={s.actionBtnIcon}>🚗</Text>
             <View>
               <Text style={s.actionBtnLabel}>Book shared ride</Text>
-              <Text style={s.actionBtnSub}>Opens normal trip booking — driver sees a standard single trip</Text>
+              <Text style={s.actionBtnSub}>Anyone in the group can book — then share the ride link from the trip screen</Text>
             </View>
           </Pressable>
           <View style={s.actionDivider} />
@@ -286,6 +321,27 @@ export default function TravelMateGroup() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Member mini-profile → private chat */}
+      <Modal visible={!!dmTarget} transparent animationType="fade" onRequestClose={() => setDmTarget(null)}>
+        <Pressable style={s.dmOverlay} onPress={() => setDmTarget(null)}>
+          <Pressable style={s.dmBox} onPress={() => {}}>
+            <View style={s.dmAvatar}><Text style={{ fontSize: 34 }}>👤</Text></View>
+            <Text style={s.dmName}>{(dmTarget && group.memberInfo[dmTarget]?.displayName) ?? 'Member'}</Text>
+            <Text style={s.dmSub}>Group member</Text>
+            <Pressable
+              style={[s.dmBtn, openingDm && { opacity: 0.6 }]}
+              disabled={openingDm}
+              onPress={() => dmTarget && openPrivateChat(dmTarget)}
+            >
+              <Text style={s.dmBtnText}>{openingDm ? 'Opening…' : '💬 Message privately'}</Text>
+            </Pressable>
+            <Pressable style={s.dmCancel} onPress={() => setDmTarget(null)}>
+              <Text style={s.dmCancelText}>Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Settle fare modal */}
       <Modal visible={settleOpen} transparent animationType="slide" onRequestClose={closeSettle}>
@@ -413,6 +469,17 @@ const s = StyleSheet.create({
   settlNet:   { alignItems: 'flex-end' },
   settlNetLabel: { fontSize: 11, color: colors.muted },
   settlNetAmt:   { fontSize: 16, fontWeight: '900', marginTop: 2 },
+
+  // Member DM modal
+  dmOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  dmBox:        { backgroundColor: colors.surface, borderRadius: 24, padding: 28, alignItems: 'center', gap: 6, alignSelf: 'stretch' },
+  dmAvatar:     { width: 72, height: 72, borderRadius: 36, backgroundColor: `${colors.primary}20`, alignItems: 'center', justifyContent: 'center' },
+  dmName:       { fontSize: 20, fontWeight: '900', color: colors.text, marginTop: 6 },
+  dmSub:        { fontSize: 12, color: colors.muted },
+  dmBtn:        { alignSelf: 'stretch', height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  dmBtnText:    { fontSize: 15, fontWeight: '800', color: '#fff' },
+  dmCancel:     { paddingVertical: 10 },
+  dmCancelText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
