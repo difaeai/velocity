@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,12 +21,18 @@ const TXN_LABEL: Record<string, string> = {
 };
 
 type PayoutMethod = 'jazzcash' | 'easypaisa' | 'bank';
+type TopupProvider = 'jazzcash' | 'easypaisa';
 
 const PAYOUT_METHODS: { key: PayoutMethod; label: string }[] = [
   { key: 'easypaisa', label: 'Easypaisa' },
   { key: 'jazzcash', label: 'JazzCash' },
   { key: 'bank', label: 'Bank (IBAN)' },
 ];
+
+const PROVIDER_LABEL: Record<TopupProvider, string> = {
+  easypaisa: 'Easypaisa',
+  jazzcash: 'JazzCash',
+};
 
 export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const { user } = useAuth();
@@ -38,6 +44,21 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const [busy, setBusy] = useState(false);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('easypaisa');
   const [payoutAccount, setPayoutAccount] = useState('');
+  const [topupProviders, setTopupProviders] = useState<TopupProvider[]>([]);
+  const [topupProvider, setTopupProvider] = useState<TopupProvider | undefined>(undefined);
+
+  // Which gateways the backend has configured (empty → mock/dev mode).
+  useEffect(() => {
+    let cancelled = false;
+    api.getPaymentOptions({})
+      .then((res) => {
+        if (cancelled) return;
+        setTopupProviders(res.providers);
+        setTopupProvider(res.providers[0]);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   async function topup() {
     const amt = parseInt(amount, 10);
@@ -47,7 +68,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
     }
     setBusy(true);
     try {
-      const res = await api.createTopupIntent({ amount: amt });
+      const res = await api.createTopupIntent({ amount: amt, provider: topupProvider });
       if (res.mock) {
         await api.mockConfirmTopup({ intentId: res.intentId });
         Alert.alert('Wallet topped up', `${amt} PKR added (mock provider).`);
@@ -113,6 +134,21 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
 
         <Card>
           <Text style={styles.label}>Amount (PKR)</Text>
+          {topupProviders.length > 0 ? (
+            <View style={styles.methodRow}>
+              {topupProviders.map((p) => (
+                <Pressable
+                  key={p}
+                  onPress={() => setTopupProvider(p)}
+                  style={[styles.methodChip, topupProvider === p && styles.methodChipActive]}
+                >
+                  <Text style={[styles.methodChipText, topupProvider === p && styles.methodChipTextActive]}>
+                    {PROVIDER_LABEL[p]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <TextInput
             value={amount}
             onChangeText={setAmount}

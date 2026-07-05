@@ -77,9 +77,13 @@ export const api = {
     { tripId: string; kind?: 'sos' | 'route_deviation'; note?: string },
     { ok: boolean; eventId: string }
   >('raiseSafetyEvent'),
+  getPaymentOptions: callable<
+    Record<string, never>,
+    { ok: boolean; providers: ('jazzcash' | 'easypaisa')[]; mock: boolean }
+  >('getPaymentOptions'),
   createTopupIntent: callable<
-    { amount: number; phone?: string },
-    { ok: boolean; intentId: string; redirectUrl: string | null; mock: boolean }
+    { amount: number; provider?: 'jazzcash' | 'easypaisa'; phone?: string },
+    { ok: boolean; intentId: string; provider: string; redirectUrl: string | null; mock: boolean }
   >('createTopupIntent'),
   mockConfirmTopup: callable<{ intentId: string }, { ok: boolean }>('mockConfirmTopup'),
   requestPayout: callable<
