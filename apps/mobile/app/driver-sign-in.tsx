@@ -101,7 +101,7 @@ export default function DriverSignIn() {
           {/* Header */}
           <View style={styles.logoRow}>
             <View style={styles.logoBadge}>
-              <LogoMark size={46} color="#1a1a1a" />
+              <LogoMark size={46} color="#1a1a1a" spin />
             </View>
           </View>
 

@@ -17,7 +17,8 @@ export default function Index() {
   const [profileComplete, setProfileComplete] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2500);
+    // 3000ms matches the logo's decelerating 3D spin (2x → 1x → stop).
+    const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -74,7 +75,7 @@ export default function Index() {
     return (
       <View style={styles.container}>
         {/* Logo — no background, just the lime mark */}
-        <LogoMark size={96} color="#ccff00" />
+        <LogoMark size={96} color="#ccff00" spin />
 
         {/* Brand name */}
         <Text style={styles.brandText}>VELOCITY</Text>

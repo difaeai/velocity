@@ -164,7 +164,7 @@ export default function Onboarding() {
 
         {/* Header */}
         <View style={styles.logoRow}>
-          <LogoMark size={52} color="#ccff00" />
+          <LogoMark size={52} color="#ccff00" spin />
         </View>
         <Text style={styles.title}>One last step</Text>
         <Text style={styles.subtitle}>Tell us a little about yourself to get started.</Text>

@@ -155,7 +155,7 @@ export default function SignIn() {
         <View style={styles.container}>
           {/* Brand */}
           <View style={styles.brandRow}>
-            <View style={styles.logo}><LogoMark size={28} color="#000" /></View>
+            <View style={styles.logo}><LogoMark size={28} color="#000" spin /></View>
             <Text style={styles.brand}>Velocity</Text>
           </View>
 
