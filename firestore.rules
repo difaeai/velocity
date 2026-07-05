@@ -310,6 +310,30 @@ service cloud.firestore {
           && uid() in get(/databases/$(database)/documents/travelMateGroups/$(groupId)).data.members;
         allow write: if false;
       }
+
+      // Joint group chat. CF (sendTravelMateGroupMessage) is the primary
+      // writer (it also pushes FCM); a member may create a plain text message
+      // directly as a fallback path.
+      match /messages/{msgId} {
+        allow read: if isSignedIn()
+          && uid() in get(/databases/$(database)/documents/travelMateGroups/$(groupId)).data.members;
+        allow create: if isSignedIn()
+          && uid() in get(/databases/$(database)/documents/travelMateGroups/$(groupId)).data.members
+          && request.resource.data.senderId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow update, delete: if false;
+      }
+    }
+
+    // ----- travelMateSharedRides/{shareId} ----------------------------------
+    // Shareable ride links. Resolution + booking go through CFs (which gate on
+    // travel-partner status); direct reads are limited to people already on
+    // the ride so live co-rider updates work.
+    match /travelMateSharedRides/{shareId} {
+      allow read: if isSignedIn() && uid() in resource.data.coRiders;
+      allow write: if false;
     }
 
     // ----- travelMateReports/{reportId} ------------------------------------

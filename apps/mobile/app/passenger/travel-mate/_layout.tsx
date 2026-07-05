@@ -74,6 +74,9 @@ export default function TravelMateLayout() {
       <Tabs.Screen name="subscription" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="chat" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="group" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="group-chat" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="group-invite" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="shared-ride" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }
