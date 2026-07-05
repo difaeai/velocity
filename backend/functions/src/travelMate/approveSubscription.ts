@@ -141,7 +141,26 @@ export const approveTravelMateSubscription = onCall(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      // 4) Audit log (matches existing admin action log).
+      // 4) Ledger the subscription revenue in the platform books. Wallet
+      //    payments were collected via verified top-ups (gateway settlement);
+      //    manual methods were paid straight into the platform's accounts and
+      //    verified by the approving admin.
+      if (price > 0) {
+        tx.set(db.collection('platformLedger').doc(), {
+          type: 'travelmate_subscription',
+          source: sub.paymentMethod ?? 'manual',
+          uid,
+          subscriptionId,
+          amount: price,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        tx.set(db.doc('system/counters'), {
+          travelMateRevenue: admin.firestore.FieldValue.increment(price),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      // 5) Audit log (matches existing admin action log).
       const auditRef = db.collection('auditLogs').doc();
       tx.set(auditRef, {
         action: 'travelMate.subscription.approved',

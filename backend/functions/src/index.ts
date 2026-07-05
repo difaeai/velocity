@@ -54,11 +54,14 @@ export { raiseSafetyEvent, resolveSafetyEvent } from './safety';
 
 // Payments
 export {
+  getPaymentOptions,
   createTopupIntent,
+  paymentCheckout,
   paymentWebhook,
   mockConfirmTopup,
   requestPayout,
   markPayoutPaid,
+  adminSetSettlementAccounts,
 } from './payments';
 
 // Travel Mate — commute-partner matching (identity-walled from ride data)

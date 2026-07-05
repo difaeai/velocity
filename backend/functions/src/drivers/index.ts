@@ -6,7 +6,7 @@
  * Approval is now an admin-only callable that sets a custom claim the rules
  * trust, and onboarding only ever moves a driver to 'pending'.
  */
-import { onCall } from 'firebase-functions/v2/https';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
@@ -314,9 +314,10 @@ export const rejectDriver = onCall(async (req) => {
 });
 
 /**
- * Driver-callable: record commission payment and unlock their profile.
- * In production this would verify a payment receipt; here it resets the cycle
- * counter so the driver can accept rides again.
+ * Driver-callable: pay the accumulated cash-ride commission from the driver's
+ * wallet and unlock their profile. Cash trips leave the platform's commission
+ * with the driver, so settling the cycle debits their wallet (funded by
+ * top-ups) and ledgers the amount as realized platform revenue.
  */
 export const payCommission = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
@@ -327,12 +328,54 @@ export const payCommission = onCall(async (req) => {
   const rate: number = settingsSnap.get('rate') ?? 0.10;
 
   await db.runTransaction(async (tx) => {
-    const snap = await tx.get(driverRef);
-    if (!snap.exists) throw new Error('Driver record not found.');
+    const walletRef = db.doc(`wallets/${ctx.uid}`);
+    const [snap, walletSnap] = await Promise.all([tx.get(driverRef), tx.get(walletRef)]);
+    if (!snap.exists) throw new HttpsError('not-found', 'Driver record not found.');
     const cycleGrossFare: number = snap.get('cycleGrossFare') ?? 0;
-    if (cycleGrossFare < threshold) throw new Error('Commission threshold not reached yet.');
+    if (cycleGrossFare < threshold) {
+      throw new HttpsError('failed-precondition', 'Commission threshold not reached yet.');
+    }
 
     const amountPaid = Math.round(threshold * rate);
+    const balance: number = walletSnap.get('balance') ?? 0;
+    if (balance < amountPaid) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Commission due is ${amountPaid} PKR but your wallet has ${balance} PKR. Top up your wallet first.`,
+      );
+    }
+
+    // Debit the driver's wallet and ledger both sides of the movement.
+    tx.set(
+      walletRef,
+      { balance: FieldValue.increment(-amountPaid), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    tx.set(walletRef.collection('transactions').doc(), {
+      type: 'commission_payment',
+      amount: -amountPaid,
+      threshold,
+      rate,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(db.collection('platformLedger').doc(), {
+      type: 'ride_commission',
+      source: 'cash_cycle',
+      driverId: ctx.uid,
+      amount: amountPaid,
+      threshold,
+      rate,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      db.doc('system/counters'),
+      {
+        cashCommissionCollected: FieldValue.increment(amountPaid),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
     tx.set(
       driverRef,
       {

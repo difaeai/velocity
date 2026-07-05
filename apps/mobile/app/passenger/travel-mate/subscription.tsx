@@ -61,11 +61,32 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   bank: '🏦 Bank transfer (upload receipt)',
 };
 
+interface SettlementAccounts {
+  easypaisaNumber?: string;
+  jazzcashNumber?: string;
+  bankName?: string;
+  bankIban?: string;
+  accountTitle?: string;
+}
+
+/** The platform account the user must send a manual payment to. */
+function receivingAccount(accounts: SettlementAccounts | null, method: PaymentMethod): string | null {
+  if (!accounts) return null;
+  const title = accounts.accountTitle ? ` (${accounts.accountTitle})` : '';
+  if (method === 'easypaisa' && accounts.easypaisaNumber) return `${accounts.easypaisaNumber}${title}`;
+  if (method === 'jazzcash' && accounts.jazzcashNumber) return `${accounts.jazzcashNumber}${title}`;
+  if (method === 'bank' && accounts.bankIban) {
+    return `${accounts.bankName ? `${accounts.bankName} — ` : ''}${accounts.bankIban}${title}`;
+  }
+  return null;
+}
+
 export default function TravelMateSubscription() {
   const { user } = useAuth();
   const router = useRouter();
 
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [accounts, setAccounts] = useState<SettlementAccounts | null>(null);
   const [activeSub, setActiveSub] = useState<Sub | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [payMethod, setPayMethod] = useState<PaymentMethod>('wallet');
@@ -80,6 +101,13 @@ export default function TravelMateSubscription() {
       query(collection(db, 'travelMatePlans'), where('active', '==', true), orderBy('pricePKR')),
       snap => setPlans(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Plan)),
     );
+  }, []);
+
+  // Platform receiving accounts for manual payments (admin-maintained config).
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'settlementAccounts'), snap => {
+      setAccounts(snap.exists() ? (snap.data() as SettlementAccounts) : null);
+    });
   }, []);
 
   // Current user's pending or active subscription
@@ -226,6 +254,12 @@ export default function TravelMateSubscription() {
 
             {payMethod !== 'wallet' && (
               <Card>
+                {receivingAccount(accounts, payMethod) ? (
+                  <View style={s.accountBox}>
+                    <Text style={s.accountLabel}>Send PKR {selectedPlan.pricePKR.toLocaleString()} to</Text>
+                    <Text style={s.accountValue}>{receivingAccount(accounts, payMethod)}</Text>
+                  </View>
+                ) : null}
                 <Text style={s.proofLabel}>Payment proof (transaction ID or screenshot URL)</Text>
                 <TextInput
                   style={s.proofInput}
@@ -308,6 +342,11 @@ const s = StyleSheet.create({
   payRadio:     { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border },
   payRadioActive:{ borderColor: colors.primary, backgroundColor: colors.primary },
   payLabel:     { fontSize: 14, fontWeight: '600', color: colors.muted, flex: 1 },
+
+  // Receiving account for manual payments
+  accountBox:   { backgroundColor: `${colors.primary}12`, borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: `${colors.primary}40` },
+  accountLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, marginBottom: 2 },
+  accountValue: { fontSize: 15, fontWeight: '900', color: colors.text },
 
   // Proof
   proofLabel:   { fontSize: 12, fontWeight: '700', color: colors.muted, marginBottom: 6 },
