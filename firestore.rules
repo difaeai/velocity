@@ -203,6 +203,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- platformLedger/{id} ----------------------------------------------
+    // Realized platform revenue (ride commissions, subscription payments).
+    // Written only by the backend inside money transactions; admin-readable.
+    match /platformLedger/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- config/{doc} ----------------------------------------------------
     // Public app configuration (ride types, base fares, service areas). Any
     // authenticated user may read; only admins may change it.

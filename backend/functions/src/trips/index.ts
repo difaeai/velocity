@@ -126,6 +126,14 @@ export const createTrip = onCall(async (req) => {
       }
     }
 
+    // Wallet trips: the fare is held at bid-acceptance, but reject requests the
+    // passenger can already not afford so drivers don't bid on dead trips.
+    let walletBalance = 0;
+    if (data.paymentMethod === 'wallet') {
+      const walletSnap = await tx.get(db.doc(`wallets/${ctx.uid}`));
+      walletBalance = (walletSnap.get('balance') as number) ?? 0;
+    }
+
     // Validate promo code if provided
     let promoDiscount = 0;
     if (data.promoCode) {
@@ -142,6 +150,13 @@ export const createTrip = onCall(async (req) => {
     }
 
     const finalFare = Math.max(50, data.offeredFare - promoDiscount);
+
+    if (data.paymentMethod === 'wallet' && walletBalance < finalFare) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Insufficient wallet balance (${walletBalance} PKR). Top up your wallet or pay with cash.`,
+      );
+    }
 
     tx.set(tripRef, {
       id: tripRef.id,
@@ -395,12 +410,41 @@ export const acceptBid = onCall(async (req) => {
     const driverInfo = bidSnap.get('driverInfo') as DriverPublicInfo;
     const fare = bidSnap.get('fare') as number;
     const passengerId = tripSnap.get('passengerId') as string;
+    const paymentMethod = (tripSnap.get('paymentMethod') as string | undefined) ?? 'cash';
 
     // Read phone numbers so both sides can contact each other in-ride
     const [passengerUserSnap, driverDocSnap] = await Promise.all([
       tx.get(db.doc(`users/${passengerId}`)),
       tx.get(db.doc(`drivers/${driverInfo.driverId}`)),
     ]);
+
+    // Wallet trips: hold the full fare from the passenger's wallet now, so the
+    // driver is guaranteed payment. Released back on cancel; settled to the
+    // driver (minus commission) on completion.
+    let walletHold = 0;
+    if (paymentMethod === 'wallet') {
+      const walletRef = db.doc(`wallets/${passengerId}`);
+      const walletSnap = await tx.get(walletRef);
+      const balance = (walletSnap.get('balance') as number) ?? 0;
+      if (balance < fare) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Insufficient wallet balance (${balance} PKR) for this ${fare} PKR fare. Top up first.`,
+        );
+      }
+      walletHold = fare;
+      tx.set(
+        walletRef,
+        { balance: FieldValue.increment(-fare), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      tx.set(walletRef.collection('transactions').doc(), {
+        type: 'ride_hold',
+        amount: -fare,
+        tripId,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
     const passengerPhone =
       (passengerUserSnap.get('phoneNumber') as string | null) ?? null;
     const driverPhone =
@@ -415,6 +459,7 @@ export const acceptBid = onCall(async (req) => {
         driverId: driverInfo.driverId,
         driverInfo,
         fare,
+        walletHold,
         passengerPhone,
         driverPhone,
         matchedAt: FieldValue.serverTimestamp(),
@@ -513,12 +558,31 @@ export const cancelTrip = onCall(async (req) => {
     if (status === 'in_progress' || status === 'completed' || status === 'cancelled') {
       throw new HttpsError('failed-precondition', `Cannot cancel a ${status} trip.`);
     }
+
+    // Release any wallet hold back to the passenger in the same transaction.
+    const walletHold = (snap.get('walletHold') as number) ?? 0;
+    if (walletHold > 0) {
+      const walletRef = db.doc(`wallets/${passengerId}`);
+      tx.set(
+        walletRef,
+        { balance: FieldValue.increment(walletHold), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      tx.set(walletRef.collection('transactions').doc(), {
+        type: 'ride_hold_refund',
+        amount: walletHold,
+        tripId,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
     tx.set(
       tripRef,
       {
         status: 'cancelled' as TripStatus,
         cancelledBy: ctx.uid,
         cancelReason: reason ?? null,
+        walletHold: 0,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -591,21 +655,31 @@ export const completeTrip = onCall(async (req) => {
     const txRef       = walletRef.collection('transactions').doc();
     const countersRef = db.doc('system/counters');
 
+    const walletHold = (snap.get('walletHold') as number) ?? 0;
+
     tx.set(
       tripRef,
       {
         status: 'completed' as TripStatus,
         settlement: { ...s, franchiseCut, velocityNet, paymentMethod },
+        walletHold: 0,
+        walletSettled: paymentMethod === 'wallet',
         completedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
 
-    // Wallet trips: credit driver payout to their digital wallet.
+    // Wallet trips: the passenger's fare was held at bid-acceptance. Settle it
+    // now — driver payout to their wallet, commission to the platform ledger.
     // Cash trips: driver already received cash from passenger — only track
     // the gross fare for commission cycle purposes; no wallet credit.
     if (paymentMethod === 'wallet') {
+      if (walletHold !== grossFare) {
+        // Should never happen (fare locks at accept); settle from the fare and
+        // leave an audit trail rather than blocking the trip.
+        logger.error('Wallet hold does not match fare at settlement', { tripId, walletHold, grossFare });
+      }
       tx.set(
         walletRef,
         { balance: FieldValue.increment(s.driverPayout), updatedAt: FieldValue.serverTimestamp() },
@@ -621,6 +695,25 @@ export const completeTrip = onCall(async (req) => {
         paymentMethod,
         createdAt: FieldValue.serverTimestamp(),
       });
+      // Commission collected instantly from the held fare — this money is
+      // already in the platform's gateway settlement account (it entered via a
+      // verified top-up), so ledger it as realized revenue.
+      tx.set(db.collection('platformLedger').doc(), {
+        type: 'ride_commission',
+        source: 'wallet',
+        tripId,
+        driverId: ctx.uid,
+        passengerId,
+        amount: s.commission,
+        franchiseCut,
+        velocityNet,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(
+        countersRef,
+        { walletCommissionCollected: FieldValue.increment(s.commission) },
+        { merge: true },
+      );
     } else {
       // Cash: log the trip for audit but no balance movement
       tx.set(txRef, {

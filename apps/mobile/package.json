@@ -49,7 +49,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "export": "expo export -p ios -p android",
-    "postinstall": "patch-package && node scripts/postinstall.js"
+    "postinstall": "patch-package && node scripts/postinstall.js",
+    "lint": "expo lint"
   },
   "overrides": {
     "react-dom": "19.2.3"

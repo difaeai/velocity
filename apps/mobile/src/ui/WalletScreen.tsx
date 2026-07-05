@@ -12,8 +12,21 @@ import { Card, PrimaryButton } from './components';
 const TXN_LABEL: Record<string, string> = {
   topup: 'Top-up',
   trip_payout: 'Trip earnings',
+  trip_cash: 'Cash trip',
   payout_request: 'Payout',
+  ride_hold: 'Ride payment',
+  ride_hold_refund: 'Ride refund',
+  commission_payment: 'Commission paid',
+  debit: 'Subscription',
 };
+
+type PayoutMethod = 'jazzcash' | 'easypaisa' | 'bank';
+
+const PAYOUT_METHODS: { key: PayoutMethod; label: string }[] = [
+  { key: 'easypaisa', label: 'Easypaisa' },
+  { key: 'jazzcash', label: 'JazzCash' },
+  { key: 'bank', label: 'Bank (IBAN)' },
+];
 
 export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const { user } = useAuth();
@@ -23,6 +36,8 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const txns = useWalletTransactions(uid);
   const [amount, setAmount] = useState('500');
   const [busy, setBusy] = useState(false);
+  const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('easypaisa');
+  const [payoutAccount, setPayoutAccount] = useState('');
 
   async function topup() {
     const amt = parseInt(amount, 10);
@@ -52,10 +67,23 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
       Alert.alert('Invalid amount', 'Enter an amount within your balance.');
       return;
     }
+    const account = payoutAccount.trim();
+    if (account.length < 5) {
+      Alert.alert(
+        'Account required',
+        payoutMethod === 'bank'
+          ? 'Enter the IBAN the money should be sent to.'
+          : `Enter your ${payoutMethod === 'easypaisa' ? 'Easypaisa' : 'JazzCash'} mobile number.`,
+      );
+      return;
+    }
     setBusy(true);
     try {
-      await api.requestPayout({ amount: amt });
-      Alert.alert('Payout requested', `${amt} PKR will be transferred to your account.`);
+      await api.requestPayout({ amount: amt, method: payoutMethod, account });
+      Alert.alert(
+        'Payout requested',
+        `${amt} PKR will be transferred to your ${PAYOUT_METHODS.find((m) => m.key === payoutMethod)?.label} account (${account}).`,
+      );
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Payout failed.');
     } finally {
@@ -92,12 +120,39 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             style={styles.input}
           />
           <PrimaryButton label="Add money" onPress={topup} loading={busy} />
-          {role === 'driver' ? (
-            <View style={{ marginTop: 8 }}>
-              <PrimaryButton variant="secondary" label="Request payout" onPress={payout} disabled={busy} />
-            </View>
-          ) : null}
         </Card>
+
+        {role === 'driver' ? (
+          <Card>
+            <Text style={styles.label}>Withdraw earnings</Text>
+            <View style={styles.methodRow}>
+              {PAYOUT_METHODS.map((m) => (
+                <Pressable
+                  key={m.key}
+                  onPress={() => setPayoutMethod(m.key)}
+                  style={[styles.methodChip, payoutMethod === m.key && styles.methodChipActive]}
+                >
+                  <Text style={[styles.methodChipText, payoutMethod === m.key && styles.methodChipTextActive]}>
+                    {m.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              value={payoutAccount}
+              onChangeText={setPayoutAccount}
+              placeholder={payoutMethod === 'bank' ? 'IBAN (PK…)' : 'Mobile number (03…)'}
+              placeholderTextColor={colors.muted}
+              autoCapitalize="characters"
+              keyboardType={payoutMethod === 'bank' ? 'default' : 'phone-pad'}
+              style={styles.input}
+            />
+            <PrimaryButton variant="secondary" label="Request payout" onPress={payout} disabled={busy} />
+            <Text style={styles.payoutHint}>
+              The amount above will be sent to this account after admin verification.
+            </Text>
+          </Card>
+        ) : null}
 
         <Text style={styles.section}>Recent transactions</Text>
         {txns.length === 0 ? (
@@ -154,6 +209,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   section: { fontSize: 14, fontWeight: '800', color: colors.text, marginTop: 4 },
+  methodRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  methodChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  methodChipActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}20` },
+  methodChipText: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  methodChipTextActive: { color: colors.primary },
+  payoutHint: { fontSize: 11, color: colors.muted, marginTop: 8 },
   muted: { fontSize: 13, color: colors.muted },
   txnRow: {
     flexDirection: 'row',

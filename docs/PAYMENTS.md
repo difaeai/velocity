@@ -1,25 +1,64 @@
 # Payments
 
-Wallet top-ups and driver payouts. **All money movement is server-authoritative
-and transactional** — wallets are never client-writable (enforced by the rules).
+Wallet top-ups, ride payments, commission collection and driver payouts.
+**All money movement is server-authoritative and transactional** — wallets are
+never client-writable (enforced by the rules).
 
 ## Flow
 
 **Top-up:** app → `createTopupIntent(amount)` → backend creates a `paymentIntents`
 doc + asks the provider to charge → user pays on the gateway → the gateway calls
 `paymentWebhook` → the backend verifies it and **credits the wallet idempotently**.
+Gateway settlement (where the customer's money physically lands) is the JazzCash /
+Easypaisa / bank **merchant account registered with the gateway**.
 
-**Payout:** driver → `requestPayout(amount)` → backend checks balance, reserves
-the funds and queues a `payouts` doc → an admin disburses it (gateway/bank) and
-calls `markPayoutPaid`.
+**Wallet ride (escrow):** trips created with `paymentMethod: 'wallet'` are
+rejected at `createTrip` if the passenger can't afford the offer. When the
+passenger accepts a bid, `acceptBid` **holds the full fare** from their wallet
+(`ride_hold` ledger entry, `walletHold` on the trip). `cancelTrip` releases the
+hold back (`ride_hold_refund`). `completeTrip` settles it: the driver's wallet
+is credited with the fare minus commission, and the commission is written to
+`platformLedger` (`ride_commission`, source `wallet`) plus the
+`system/counters.walletCommissionCollected` counter.
+
+**Cash ride commission:** cash fares stay with the driver, accumulating
+`cycleGrossFare`. `payCommission` now **debits the commission from the driver's
+wallet** (they top it up via the gateway, so the money reaches the platform),
+ledgers it (`platformLedger`, source `cash_cycle`,
+`system/counters.cashCommissionCollected`) and resets the cycle.
+
+**Travel Mate subscriptions:** wallet payments are debited at admin approval
+(never held in escrow); manual Easypaisa/JazzCash/bank payments are sent
+directly to the platform accounts shown in the app (from
+`config/settlementAccounts`, admin-maintained) and verified by the approving
+admin. Either way the approval writes a `travelmate_subscription` entry to
+`platformLedger` and bumps `system/counters.travelMateRevenue`.
+
+**Payout:** driver → `requestPayout(amount, method, account)` → backend checks
+balance, reserves the funds and queues a `payouts` doc with the driver's
+Easypaisa/JazzCash number or bank IBAN → an admin disburses it from the platform
+account and calls `markPayoutPaid`.
 
 | Function | Caller | Purpose |
 |----------|--------|---------|
 | `createTopupIntent` | any user | Start a wallet top-up; returns a gateway redirect. |
 | `paymentWebhook` (HTTP) | gateway | Verified callback that credits the wallet. |
 | `mockConfirmTopup` | owner (mock only) | Dev shortcut to simulate a successful charge. |
-| `requestPayout` | driver | Reserve balance and queue a cash-out. |
+| `requestPayout` | driver | Reserve balance and queue a cash-out to Easypaisa/JazzCash/bank. |
 | `markPayoutPaid` | admin | Mark a payout disbursed. |
+| `payCommission` | driver | Pay the cash-ride commission cycle from the wallet. |
+
+## Platform books
+
+- `platformLedger/{id}` — one append-only entry per realized platform revenue
+  event (`ride_commission` wallet/cash, `travelmate_subscription`). Admin-read
+  only; written exclusively inside the money transactions above.
+- `system/counters` — running totals (`walletCommissionCollected`,
+  `cashCommissionCollected`, `travelMateRevenue`, plus the existing trip
+  totals) for the dashboard.
+- `config/settlementAccounts` — the platform's receiving accounts
+  (`easypaisaNumber`, `jazzcashNumber`, `bankName`, `bankIban`, `accountTitle`),
+  maintained by admins; the app shows the right one for manual transfers.
 
 ## Providers
 
