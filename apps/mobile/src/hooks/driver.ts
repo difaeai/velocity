@@ -12,6 +12,10 @@ export interface DriverProfile {
   tripsCount?: number;
   reviewReason?: string;
   rejectedSections?: string[];
+  /** Gross fares (cash + online) accumulated in the current commission cycle. */
+  cycleGrossFare?: number;
+  /** Cash-only portion of the cycle — what the settle amount is computed from. */
+  cycleCashFare?: number;
 }
 
 export function useDriverProfile(uid?: string): DriverProfile | null {
@@ -137,6 +141,79 @@ export function useDriverPoolRides(uid?: string): DriverPoolRide[] {
     );
   }, [uid]);
   return rides;
+}
+
+export interface CommissionSettings {
+  /** Fraction of cash fares owed per cycle (e.g. 0.10). */
+  rate: number;
+  /** Gross fare (cash + online) at which the driver is locked, in PKR. */
+  threshold: number;
+}
+
+/**
+ * Live admin-set commission settings (dashboard → Commission page). Streams so
+ * an admin change applies across the app without a restart.
+ */
+export function useCommissionSettings(): CommissionSettings {
+  const [settings, setSettings] = useState<CommissionSettings>({ rate: 0.10, threshold: 5000 });
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'commissionSettings'), (s) => {
+      if (!s.exists()) return;
+      const rate = s.get('rate') as number | undefined;
+      const threshold = s.get('threshold') as number | undefined;
+      setSettings({
+        rate: typeof rate === 'number' && rate > 0 && rate <= 0.5 ? rate : 0.10,
+        threshold: typeof threshold === 'number' && threshold >= 100 ? threshold : 5000,
+      });
+    }, () => undefined);
+  }, []);
+  return settings;
+}
+
+export interface CommissionStatus extends CommissionSettings {
+  cycleGrossFare: number;
+  cycleCashFare: number;
+  /** PKR the driver must pay Velocity to settle the current cycle. */
+  due: number;
+  /** True when the cycle hit the threshold and something is still owed. */
+  locked: boolean;
+}
+
+/** Combines the driver profile and admin settings into one settle status. */
+export function useCommissionStatus(profile: DriverProfile | null): CommissionStatus {
+  const settings = useCommissionSettings();
+  const cycleGrossFare = profile?.cycleGrossFare ?? 0;
+  // Pre-migration drivers have no cycleCashFare — their cycles were all cash.
+  const cycleCashFare = profile?.cycleCashFare ?? cycleGrossFare;
+  const due = Math.round(cycleCashFare * settings.rate);
+  return {
+    ...settings,
+    cycleGrossFare,
+    cycleCashFare,
+    due,
+    locked: cycleGrossFare >= settings.threshold && due > 0,
+  };
+}
+
+export interface SettlementAccounts {
+  easypaisaNumber?: string;
+  jazzcashNumber?: string;
+  bankName?: string;
+  bankIban?: string;
+  accountTitle?: string;
+}
+
+/** Velocity's official receiving accounts (admin-maintained). */
+export function useSettlementAccounts(): SettlementAccounts | null {
+  const [accounts, setAccounts] = useState<SettlementAccounts | null>(null);
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, 'config', 'settlementAccounts'),
+      (s) => setAccounts(s.exists() ? (s.data() as SettlementAccounts) : null),
+      () => setAccounts(null),
+    );
+  }, []);
+  return accounts;
 }
 
 export function useWalletBalance(uid?: string): number {

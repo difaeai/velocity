@@ -5,6 +5,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
 
@@ -124,6 +125,8 @@ export const driverRespondToRequest = onCall(async (req) => {
   // Fetch driver profile for name/vehicle info.
   const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver profile not found.');
+  // Locked drivers must settle their commission cycle before taking new work.
+  assertCommissionClear(driverSnap, await getCommissionSettings());
   const driverData = driverSnap.data()!;
 
   const reqRef = db.doc(`poolRideRequests/${requestId}`);

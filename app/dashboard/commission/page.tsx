@@ -81,7 +81,9 @@ export default function CommissionSettingsPage() {
             <div>
               <label style={labelStyle}>Commission rate (%)</label>
               <p style={{ color: colors.muted, fontSize: 12, marginBottom: 6 }}>
-                Percentage of the threshold the driver must pay to unlock. Example: 10% of 5 000 PKR = 500 PKR.
+                Velocity&apos;s cut of every fare, applied app-wide. Online (wallet) rides are collected
+                instantly at trip completion; cash fares are settled from the driver&apos;s wallet each
+                cycle. Example: 15% of 5 000 PKR cash = 750 PKR.
               </p>
               <input
                 type="number"
@@ -106,10 +108,10 @@ export default function CommissionSettingsPage() {
                 How it works
               </div>
               <ul style={{ color: colors.muted, fontSize: 13, paddingLeft: 18, margin: 0, lineHeight: 1.7 }}>
-                <li>Driver collects cash from passengers for each ride.</li>
-                <li>When total fares reach <strong>{threshold.toLocaleString()} PKR</strong>, the driver app is locked.</li>
-                <li>Driver must pay <strong>{Math.round(threshold * rate / 100).toLocaleString()} PKR</strong> ({rate}%) to Velocity to unlock.</li>
-                <li>After payment the cycle resets and the driver can accept rides again.</li>
+                <li>Every completed ride — cash or online — counts toward the driver&apos;s cycle.</li>
+                <li>When cycle earnings reach <strong>{threshold.toLocaleString()} PKR</strong>, the driver app is paused on the wallet screen; new rides stay blurred.</li>
+                <li>The driver owes <strong>{rate}%</strong> of the cycle&apos;s <em>cash</em> fares (e.g. {Math.round(threshold * rate / 100).toLocaleString()} PKR on an all-cash cycle). Commission on online rides was already deducted at trip completion, so it&apos;s never charged twice.</li>
+                <li>The driver tops up their wallet via JazzCash/Easypaisa (money lands in Velocity&apos;s merchant account), Velocity deducts the commission, and the app unlocks. All-online cycles clear automatically.</li>
               </ul>
             </div>
 

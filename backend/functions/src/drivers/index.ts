@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireAdmin, requireRole, invalid } from '../lib/guards';
 import { applyRole } from '../users';
+import { cycleCashFare, getCommissionSettings } from '../domain/commission';
 
 const onboardingSchema = z.object({
   fullName:            z.string().min(2).max(120),
@@ -314,20 +315,21 @@ export const rejectDriver = onCall(async (req) => {
 });
 
 /**
- * Driver-callable: pay the accumulated cash-ride commission from the driver's
- * wallet and unlock their profile. Cash trips leave the platform's commission
- * with the driver, so settling the cycle debits their wallet (funded by
- * top-ups) and ledgers the amount as realized platform revenue.
+ * Driver-callable: settle the commission cycle from the driver's wallet and
+ * unlock their profile. The amount owed is the admin-set rate applied to the
+ * cycle's **cash** fares only — commission on online (wallet) rides was
+ * already deducted from the held fare at completion, so mixed cash/online
+ * cycles never pay twice. Settling debits the driver's wallet (funded by
+ * JazzCash/Easypaisa top-ups, so the money reaches Velocity), ledgers the
+ * amount as realized platform revenue and resets the cycle to zero.
  */
 export const payCommission = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
 
   const driverRef = db.doc(`drivers/${ctx.uid}`);
-  const settingsSnap = await db.doc('config/commissionSettings').get();
-  const threshold: number = settingsSnap.get('threshold') ?? 5000;
-  const rate: number = settingsSnap.get('rate') ?? 0.10;
+  const { rate, threshold } = await getCommissionSettings();
 
-  await db.runTransaction(async (tx) => {
+  const amountPaid = await db.runTransaction(async (tx) => {
     const walletRef = db.doc(`wallets/${ctx.uid}`);
     const [snap, walletSnap] = await Promise.all([tx.get(driverRef), tx.get(walletRef)]);
     if (!snap.exists) throw new HttpsError('not-found', 'Driver record not found.');
@@ -336,66 +338,78 @@ export const payCommission = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'Commission threshold not reached yet.');
     }
 
-    const amountPaid = Math.round(threshold * rate);
-    const balance: number = walletSnap.get('balance') ?? 0;
-    if (balance < amountPaid) {
-      throw new HttpsError(
-        'failed-precondition',
-        `Commission due is ${amountPaid} PKR but your wallet has ${balance} PKR. Top up your wallet first.`,
+    const cashFare = cycleCashFare(snap);
+    const due = Math.round(cashFare * rate);
+    if (due > 0) {
+      const balance: number = walletSnap.get('balance') ?? 0;
+      if (balance < due) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Commission due is ${due} PKR but your wallet has ${balance} PKR. Top up ${due - balance} PKR first.`,
+        );
+      }
+
+      // Debit the driver's wallet and ledger both sides of the movement.
+      tx.set(
+        walletRef,
+        { balance: FieldValue.increment(-due), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      tx.set(walletRef.collection('transactions').doc(), {
+        type: 'commission_payment',
+        amount: -due,
+        cycleGrossFare,
+        cycleCashFare: cashFare,
+        threshold,
+        rate,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(db.collection('platformLedger').doc(), {
+        type: 'ride_commission',
+        source: 'cash_cycle',
+        driverId: ctx.uid,
+        amount: due,
+        cycleGrossFare,
+        cycleCashFare: cashFare,
+        threshold,
+        rate,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(
+        db.doc('system/counters'),
+        {
+          cashCommissionCollected: FieldValue.increment(due),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
       );
     }
 
-    // Debit the driver's wallet and ledger both sides of the movement.
-    tx.set(
-      walletRef,
-      { balance: FieldValue.increment(-amountPaid), updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
-    tx.set(walletRef.collection('transactions').doc(), {
-      type: 'commission_payment',
-      amount: -amountPaid,
-      threshold,
-      rate,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    tx.set(db.collection('platformLedger').doc(), {
-      type: 'ride_commission',
-      source: 'cash_cycle',
-      driverId: ctx.uid,
-      amount: amountPaid,
-      threshold,
-      rate,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    tx.set(
-      db.doc('system/counters'),
-      {
-        cashCommissionCollected: FieldValue.increment(amountPaid),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-
+    // The whole cycle is settled (commission charged on its full cash
+    // portion), so it resets to zero rather than rolling any overflow.
     tx.set(
       driverRef,
       {
-        cycleGrossFare: FieldValue.increment(-threshold),
+        cycleGrossFare: 0,
+        cycleCashFare: 0,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
     // Log the payment in a sub-collection for audit.
-    const paymentRef = driverRef.collection('commissionPayments').doc();
-    tx.set(paymentRef, {
-      amount: amountPaid,
+    tx.set(driverRef.collection('commissionPayments').doc(), {
+      amount: due,
+      cycleGrossFare,
+      cycleCashFare: cashFare,
       threshold,
       rate,
       paidAt: FieldValue.serverTimestamp(),
     });
+    return due;
   });
 
-  logger.info('Commission paid', { driverId: ctx.uid });
-  return { ok: true };
+  logger.info('Commission paid', { driverId: ctx.uid, amountPaid });
+  return { ok: true, amountPaid };
 });
 
 // ── Admin CRUD for existing drivers ───────────────────────────────────────────
