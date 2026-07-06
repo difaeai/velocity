@@ -22,6 +22,7 @@ import {
   computeSettlement,
   fareBounds,
 } from '../domain/fares';
+import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 
 const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
@@ -275,6 +276,8 @@ export const placeBid = onCall(async (req) => {
   if (driverSnap.get('online') !== true) {
     throw new HttpsError('failed-precondition', 'Go online before bidding.');
   }
+  // Locked drivers must settle their commission cycle before taking new work.
+  assertCommissionClear(driverSnap, await getCommissionSettings());
 
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');
@@ -622,9 +625,10 @@ export const completeTrip = onCall(async (req) => {
   const tripRef    = db.doc(`trips/${tripId}`);
   const driverRef  = db.doc(`drivers/${ctx.uid}`);
 
-  // Commission rate is admin-configurable from the dashboard (Commission page).
-  const commissionSnap = await db.doc('config/commissionSettings').get();
-  const commissionRate = (commissionSnap.get('rate') as number | undefined) ?? undefined;
+  // Commission rate/threshold are admin-configurable from the dashboard
+  // (Commission page) and apply app-wide.
+  const commissionSettings = await getCommissionSettings();
+  const commissionRate = commissionSettings.rate;
 
   const settlement = await db.runTransaction(async (tx) => {
     const [snap, driverSnap] = await Promise.all([
@@ -738,12 +742,34 @@ export const completeTrip = onCall(async (req) => {
       },
       { merge: true },
     );
-    // Accumulate cycle earnings for commission lock tracking.
+    // Accumulate cycle earnings for commission lock tracking. Cash fares also
+    // grow the settleable (owed) portion; wallet commission was collected just
+    // above, so a cycle earned entirely online hits the threshold owing
+    // nothing and clears itself without locking the driver.
+    const prevGross = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
+    const prevCash  = cycleCashFare(driverSnap);
+    let newGross = prevGross + grossFare;
+    let newCash  = prevCash + (paymentMethod === 'wallet' ? 0 : grossFare);
+    const cashDue = Math.round(newCash * commissionSettings.rate);
+    if (newGross >= commissionSettings.threshold && cashDue === 0) {
+      tx.set(driverRef.collection('commissionPayments').doc(), {
+        amount: 0,
+        threshold: commissionSettings.threshold,
+        rate: commissionSettings.rate,
+        cycleGrossFare: newGross,
+        cycleCashFare: newCash,
+        auto: true,
+        paidAt: FieldValue.serverTimestamp(),
+      });
+      newGross = 0;
+      newCash  = 0;
+    }
     tx.set(
       driverRef,
       {
         tripsCount: FieldValue.increment(1),
-        cycleGrossFare: FieldValue.increment(grossFare),
+        cycleGrossFare: newGross,
+        cycleCashFare: newCash,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -763,7 +789,13 @@ export const completeTrip = onCall(async (req) => {
       );
     }
 
-    return { ...s, franchiseCut, velocityNet };
+    return {
+      ...s,
+      franchiseCut,
+      velocityNet,
+      commissionLocked: newGross >= commissionSettings.threshold && cashDue > 0,
+      commissionDue: cashDue,
+    };
   });
 
   // Notify both parties
@@ -774,6 +806,14 @@ export const completeTrip = onCall(async (req) => {
     await sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId });
   }
   await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
+  if (settlement.commissionLocked) {
+    await sendToUser(
+      ctx.uid,
+      '🔒 Commission due',
+      `Your earnings cycle is complete. Settle PKR ${settlement.commissionDue} with Velocity to keep receiving rides.`,
+      { tripId },
+    );
+  }
 
   logger.info('Trip completed', { tripId, settlement });
   return { ok: true, settlement };

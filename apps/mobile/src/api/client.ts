@@ -90,7 +90,7 @@ export const api = {
     { amount: number; method?: 'jazzcash' | 'easypaisa' | 'bank'; account?: string },
     { ok: boolean; payoutId: string }
   >('requestPayout'),
-  payCommission: callable<Record<string, never>, { ok: boolean }>('payCommission'),
+  payCommission: callable<Record<string, never>, { ok: boolean; amountPaid: number }>('payCommission'),
   submitRating: callable<
     { tripId: string; stars: number; comment?: string; targetRole: 'driver' | 'passenger' },
     { ok: boolean }

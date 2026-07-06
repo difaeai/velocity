@@ -6,6 +6,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireRole, requireAuth, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
+import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
 
 // ── Haversine distance in km ─────────────────────────────────────────────────
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -174,10 +175,12 @@ export const completePoolRide = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid rideId.');
   const { rideId } = parsed.data;
 
-  const rideRef = db.doc(`poolRides/${rideId}`);
+  const rideRef   = db.doc(`poolRides/${rideId}`);
+  const driverRef = db.doc(`drivers/${ctx.uid}`);
 
   await db.runTransaction(async (tx) => {
-    const rideSnap = await tx.get(rideRef);
+    // Transactional reads must all happen before the first write.
+    const [rideSnap, driverSnap] = await Promise.all([tx.get(rideRef), tx.get(driverRef)]);
     if (!rideSnap.exists) invalid('Pool ride not found.');
     if (rideSnap.get('driverId') !== ctx.uid) throw new HttpsError('permission-denied', 'Not your pool ride.');
     if (rideSnap.get('status') !== 'in_progress') {
@@ -195,12 +198,13 @@ export const completePoolRide = onCall(async (req) => {
       tx.set(pd.ref, { status: 'dropped_off', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     }
 
-    // Update driver commission cycle
-    const driverRef = db.doc(`drivers/${ctx.uid}`);
+    // Update driver commission cycle — pool fares are collected in cash, so
+    // they grow both the threshold counter and the settleable portion.
     tx.set(
       driverRef,
       {
-        cycleGrossFare: FieldValue.increment(grossFare),
+        cycleGrossFare: ((driverSnap.get('cycleGrossFare') as number | undefined) ?? 0) + grossFare,
+        cycleCashFare:  cycleCashFare(driverSnap) + grossFare,
         tripsCount:     FieldValue.increment(1),
         updatedAt:      FieldValue.serverTimestamp(),
       },
@@ -208,7 +212,6 @@ export const completePoolRide = onCall(async (req) => {
     );
 
     // Handle franchise commission if driver belongs to a franchise
-    const driverSnap = await tx.get(driverRef);
     const franchiseId: string | null = driverSnap.get('franchiseId') ?? null;
     if (franchiseId && grossFare > 0) {
       const franchiseCut = Math.round(grossFare * 0.05);
@@ -444,6 +447,9 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
   const p = AcceptBatchSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const { rideId, gender } = p.data;
+
+  // Locked drivers must settle their commission cycle before taking new work.
+  assertCommissionClear(await db.doc(`drivers/${ctx.uid}`).get(), await getCommissionSettings());
 
   const rideRef = db.doc(`poolRides/${rideId}`);
   const accepted: { uid: string }[] = [];

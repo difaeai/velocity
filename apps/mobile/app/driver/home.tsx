@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../../src/auth/AuthContext';
@@ -11,12 +11,14 @@ import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import type { CommuteDemandSlot } from '../../src/api/client';
 import {
+  useCommissionStatus,
   useDriverActiveTrip,
   useDriverPoolRides,
   useDriverProfile,
   useOpenRequests,
   useWalletBalance,
 } from '../../src/hooks/driver';
+import { CommissionLock } from '../../src/ui/CommissionLock';
 import { colors } from '../../src/config';
 import { Badge, Card, PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
@@ -57,11 +59,8 @@ export default function DriverHome() {
     setDoc(doc(db, 'drivers', uid), { [field]: v }, { merge: true }).catch(() => {});
   }
 
-  // Commission lock state
-  const [cycleGrossFare, setCycleGrossFare] = useState(0);
-  const [commThreshold,  setCommThreshold]  = useState(5000);
-  const [commRate,       setCommRate]       = useState(0.10);
-  const [payingComm,     setPayingComm]     = useState(false);
+  // Commission settle status — live driver cycle + admin-set rate/threshold.
+  const commission = useCommissionStatus(profile);
 
   // Rating state: shown after driver completes a trip
   const [ratingTrip, setRatingTrip]   = useState<Trip | null>(null);
@@ -154,25 +153,6 @@ export default function DriverHome() {
     if (online && driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
   }, [online, driverCoords, loadPreviews]);
 
-  // Subscribe to driver doc for live cycleGrossFare
-  useEffect(() => {
-    if (!uid) return;
-    const unsub = onSnapshot(doc(db, 'drivers', uid), (snap) => {
-      setCycleGrossFare(snap.get('cycleGrossFare') ?? 0);
-    });
-    return unsub;
-  }, [uid]);
-
-  // Fetch commission settings once
-  useEffect(() => {
-    getDoc(doc(db, 'config', 'commissionSettings')).then((snap) => {
-      if (snap.exists()) {
-        setCommThreshold(snap.get('threshold') ?? 5000);
-        setCommRate(snap.get('rate') ?? 0.10);
-      }
-    }).catch(() => {});
-  }, []);
-
   // When active trip disappears (driver completed it), capture it for rating
   useEffect(() => {
     if (prevTripRef.current && !activeTrip) {
@@ -184,25 +164,12 @@ export default function DriverHome() {
     prevTripRef.current = activeTrip;
   }, [activeTrip]);
 
-  const commissionLocked = cycleGrossFare >= commThreshold;
-  const commissionOwed   = Math.round(commThreshold * commRate);
+  const commissionLocked = commission.locked;
 
   async function handleRate(stars: number, comment: string) {
     if (!ratingTrip) return;
     await api.submitRating({ tripId: ratingTrip.id, stars, comment: comment || undefined, targetRole: 'passenger' });
     setRatingTrip(null);
-  }
-
-  async function handlePayCommission() {
-    setPayingComm(true);
-    try {
-      await api.payCommission({});
-      Alert.alert('Commission paid', 'Your account has been unlocked. You can now accept rides.');
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Payment failed.');
-    } finally {
-      setPayingComm(false);
-    }
   }
 
   async function run(fn: () => Promise<unknown>) {
@@ -244,7 +211,34 @@ export default function DriverHome() {
           onPress={toggleOnline}
         />
 
+        {/* Commission settle takeover — the app pauses here until the driver
+            settles the cycle's commission with Velocity. An in-progress trip
+            can still be finished first. */}
+        {commissionLocked && !activeTrip && (
+          <>
+            <CommissionLock
+              status={commission}
+              balance={balance}
+              requests={requests.filter((r) => !skippedIds.has(r.tripId))}
+            />
+            <PrimaryButton
+              variant="secondary"
+              label="💳 Open wallet"
+              onPress={() => router.push('/driver/wallet')}
+            />
+          </>
+        )}
+        {commissionLocked && activeTrip && (
+          <View style={styles.lockBanner}>
+            <Text style={styles.lockTitle}>🔒 Commission due — {commission.due.toLocaleString()} PKR</Text>
+            <Text style={styles.lockBody}>
+              Finish your current trip, then settle with Velocity to keep receiving rides.
+            </Text>
+          </View>
+        )}
+
         {/* Pool pickup & drop radius — default zones for new pool routes */}
+        {!commissionLocked && (
         <View style={styles.radiusHomeCard}>
           <Text style={styles.radiusHomeTitle}>🧭 Pool pickup & drop radius</Text>
           <Text style={styles.radiusHomeSub}>
@@ -268,38 +262,17 @@ export default function DriverHome() {
             </View>
           ))}
         </View>
-
-        {/* Commission lock banner */}
-        {commissionLocked && (
-          <View style={styles.lockBanner}>
-            <Text style={styles.lockIcon}>🔒</Text>
-            <Text style={styles.lockTitle}>Account Locked — Commission Due</Text>
-            <Text style={styles.lockBody}>
-              Your total fares reached {commThreshold.toLocaleString()} PKR.{'\n'}
-              Pay <Text style={styles.lockAmt}>{commissionOwed.toLocaleString()} PKR</Text> ({Math.round(commRate * 100)}%) to Velocity to unlock your account and accept rides again.
-            </Text>
-            <Text style={styles.lockSub}>You can still see incoming requests below.</Text>
-            <Pressable
-              style={[styles.lockPayBtn, payingComm && { opacity: 0.6 }]}
-              onPress={handlePayCommission}
-              disabled={payingComm}
-            >
-              <Text style={styles.lockPayBtnText}>
-                {payingComm ? 'Processing…' : `Pay ${commissionOwed.toLocaleString()} PKR commission`}
-              </Text>
-            </Pressable>
-          </View>
         )}
 
         {/* Cycle earnings progress */}
-        {!commissionLocked && cycleGrossFare > 0 && (
+        {!commissionLocked && commission.cycleGrossFare > 0 && (
           <View style={styles.cycleBar}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={styles.cycleLabel}>Cycle earnings</Text>
-              <Text style={styles.cycleLabel}>{cycleGrossFare.toLocaleString()} / {commThreshold.toLocaleString()} PKR</Text>
+              <Text style={styles.cycleLabel}>Cycle earnings · commission so far {commission.due.toLocaleString()} PKR</Text>
+              <Text style={styles.cycleLabel}>{commission.cycleGrossFare.toLocaleString()} / {commission.threshold.toLocaleString()} PKR</Text>
             </View>
             <View style={styles.cycleTrack}>
-              <View style={[styles.cycleFill, { width: `${Math.min((cycleGrossFare / commThreshold) * 100, 100)}%` }]} />
+              <View style={[styles.cycleFill, { width: `${Math.min((commission.cycleGrossFare / commission.threshold) * 100, 100)}%` }]} />
             </View>
           </View>
         )}
@@ -348,6 +321,7 @@ export default function DriverHome() {
           </Card>
         )}
 
+        {!commissionLocked && (<>
         {/* ── 2. Incoming Requests ── */}
         <View style={styles.poolSection}>
           <View style={styles.poolHeader}>
@@ -402,7 +376,7 @@ export default function DriverHome() {
                       style={styles.openReqBtn}
                       disabled={busy || commissionLocked}
                       onPress={() => {
-                        if (commissionLocked) { Alert.alert('Account Locked', `Pay ${commissionOwed} PKR commission to accept rides.`); return; }
+                        if (commissionLocked) { Alert.alert('Account Locked', `Pay ${commission.due} PKR commission to accept rides.`); return; }
                         router.push(`/driver/request-detail/${r.tripId}` as Parameters<typeof router.push>[0]);
                       }}
                     >
@@ -557,6 +531,7 @@ export default function DriverHome() {
             <PrimaryButton variant="secondary" label="💳 Wallet & payouts" onPress={() => router.push('/driver/wallet')} />
           </View>
         </Card>
+        </>)}
 
         <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
       </ScrollView>

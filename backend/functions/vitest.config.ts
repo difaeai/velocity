@@ -13,6 +13,7 @@ export default defineConfig({
       'src/poolRideRequests/__tests__/**/*.test.ts',
       'src/poolRides/__tests__/**/*.test.ts',
       'src/commute/__tests__/**/*.test.ts',
+      'src/drivers/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.

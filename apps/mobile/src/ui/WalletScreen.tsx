@@ -5,7 +5,12 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
-import { useWalletBalance, useWalletTransactions } from '../hooks/driver';
+import {
+  useCommissionStatus,
+  useDriverProfile,
+  useWalletBalance,
+  useWalletTransactions,
+} from '../hooks/driver';
 import { colors } from '../config';
 import { Card, PrimaryButton } from './components';
 
@@ -46,6 +51,11 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const [payoutAccount, setPayoutAccount] = useState('');
   const [topupProviders, setTopupProviders] = useState<TopupProvider[]>([]);
   const [topupProvider, setTopupProvider] = useState<TopupProvider | undefined>(undefined);
+  const [settling, setSettling] = useState(false);
+
+  // Commission cycle — only meaningful for drivers.
+  const driverProfile = useDriverProfile(role === 'driver' ? uid : undefined);
+  const commission = useCommissionStatus(driverProfile);
 
   // Which gateways the backend has configured (empty → mock/dev mode).
   useEffect(() => {
@@ -131,6 +141,69 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           <Text style={styles.balanceLabel}>Balance</Text>
           <Text style={styles.balance}>{balance} PKR</Text>
         </Card>
+
+        {/* Commission cycle — drivers settle Velocity's cut from the wallet */}
+        {role === 'driver' && commission.cycleGrossFare > 0 ? (
+          <Card style={commission.locked ? styles.commCardLocked : undefined}>
+            <Text style={styles.label}>
+              {commission.locked ? '🔒 Commission due' : 'Commission cycle'}
+            </Text>
+            <View style={styles.commRow}>
+              <Text style={styles.commMeta}>Cycle earnings</Text>
+              <Text style={styles.commMeta}>
+                {commission.cycleGrossFare.toLocaleString()} / {commission.threshold.toLocaleString()} PKR
+              </Text>
+            </View>
+            <View style={styles.commTrack}>
+              <View
+                style={[
+                  styles.commFill,
+                  { width: `${Math.min((commission.cycleGrossFare / commission.threshold) * 100, 100)}%` },
+                  commission.locked && { backgroundColor: colors.danger },
+                ]}
+              />
+            </View>
+            <View style={styles.commRow}>
+              <Text style={styles.commMeta}>
+                Velocity commission ({Math.round(commission.rate * 100)}% of cash fares)
+              </Text>
+              <Text style={[styles.commDue, commission.locked && { color: colors.danger }]}>
+                {commission.due.toLocaleString()} PKR
+              </Text>
+            </View>
+            {commission.locked ? (
+              <>
+                <PrimaryButton
+                  label={settling ? 'Processing…' : `Pay ${commission.due.toLocaleString()} PKR & unlock`}
+                  disabled={settling}
+                  onPress={async () => {
+                    setSettling(true);
+                    try {
+                      const res = await api.payCommission({});
+                      Alert.alert('Commission settled ✅', `${res.amountPaid} PKR paid to Velocity. Your account is unlocked.`);
+                    } catch (e) {
+                      Alert.alert('Could not settle', e instanceof Error ? e.message : 'Payment failed.');
+                    } finally {
+                      setSettling(false);
+                    }
+                  }}
+                />
+                {balance < commission.due && (
+                  <Text style={styles.payoutHint}>
+                    Top up {(commission.due - balance).toLocaleString()} PKR above first — your wallet
+                    doesn&apos;t cover the commission yet.
+                  </Text>
+                )}
+              </>
+            ) : (
+              <Text style={styles.payoutHint}>
+                You&apos;ll settle this from your wallet when cycle earnings reach{' '}
+                {commission.threshold.toLocaleString()} PKR. Commission on online (wallet) rides is
+                collected automatically.
+              </Text>
+            )}
+          </Card>
+        ) : null}
 
         <Card>
           <Text style={styles.label}>Amount (PKR)</Text>
@@ -259,6 +332,12 @@ const styles = StyleSheet.create({
   methodChipText: { fontSize: 12, fontWeight: '700', color: colors.muted },
   methodChipTextActive: { color: colors.primary },
   payoutHint: { fontSize: 11, color: colors.muted, marginTop: 8 },
+  commCardLocked: { borderColor: colors.danger, borderWidth: 1.5 },
+  commRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  commMeta: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  commDue: { fontSize: 15, fontWeight: '900', color: colors.text },
+  commTrack: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden', marginBottom: 10 },
+  commFill: { height: 6, borderRadius: 3, backgroundColor: colors.primary },
   muted: { fontSize: 13, color: colors.muted },
   txnRow: {
     flexDirection: 'row',

@@ -21,11 +21,19 @@ is credited with the fare minus commission, and the commission is written to
 `platformLedger` (`ride_commission`, source `wallet`) plus the
 `system/counters.walletCommissionCollected` counter.
 
-**Cash ride commission:** cash fares stay with the driver, accumulating
-`cycleGrossFare`. `payCommission` now **debits the commission from the driver's
-wallet** (they top it up via the gateway, so the money reaches the platform),
-ledgers it (`platformLedger`, source `cash_cycle`,
-`system/counters.cashCommissionCollected`) and resets the cycle.
+**Cash ride commission (settle cycle):** every completed ride grows the
+driver's `cycleGrossFare`; cash rides also grow `cycleCashFare`. When
+`cycleGrossFare` reaches the admin threshold (`config/commissionSettings`,
+dashboard Commission page) the driver is **locked**: `placeBid`,
+`driverRespondToRequest` and `driverAcceptPoolBatch` reject them, and the app
+pauses on the wallet screen with incoming rides blurred. What they owe is
+`rate × cycleCashFare` only — commission on wallet rides was already deducted
+at completion, so mixed cycles never pay twice and an all-online cycle clears
+automatically at `completeTrip` without locking. `payCommission` **debits the
+amount from the driver's wallet** (they top it up via the gateway, so the money
+reaches the platform), ledgers it (`platformLedger`, source `cash_cycle`,
+`system/counters.cashCommissionCollected`) and resets both cycle counters to
+zero.
 
 **Travel Mate subscriptions:** wallet payments are debited at admin approval
 (never held in escrow); manual Easypaisa/JazzCash/bank payments are sent
