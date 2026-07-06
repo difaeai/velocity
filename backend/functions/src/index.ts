@@ -19,6 +19,9 @@ export {
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
 
+// Commission settlement (manual bank transfer + AI-verified screenshot)
+export { submitCommissionSettlement, adminReviewCommissionSettlement } from './drivers/commissionSettlement';
+
 // Franchise management
 export { adminCreateFranchise, adminAssignFranchise } from './franchises';
 

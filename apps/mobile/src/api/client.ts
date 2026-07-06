@@ -79,7 +79,7 @@ export const api = {
   >('raiseSafetyEvent'),
   getPaymentOptions: callable<
     Record<string, never>,
-    { ok: boolean; providers: ('jazzcash' | 'easypaisa')[]; mock: boolean }
+    { ok: boolean; providers: ('jazzcash' | 'easypaisa')[]; mock: boolean; comingSoon?: boolean }
   >('getPaymentOptions'),
   createTopupIntent: callable<
     { amount: number; provider?: 'jazzcash' | 'easypaisa'; phone?: string },
@@ -91,6 +91,14 @@ export const api = {
     { ok: boolean; payoutId: string }
   >('requestPayout'),
   payCommission: callable<Record<string, never>, { ok: boolean; amountPaid: number }>('payCommission'),
+  submitCommissionSettlement: callable<
+    { proofPath: string; method?: 'easypaisa' | 'jazzcash' | 'bank' },
+    { ok: boolean; settlementId: string; status: 'approved' | 'rejected' | 'pending_review'; amountDue: number; reason: string | null }
+  >('submitCommissionSettlement'),
+  adminReviewCommissionSettlement: callable<
+    { settlementId: string; approve: boolean; reason?: string },
+    { ok: boolean; status: string }
+  >('adminReviewCommissionSettlement'),
   submitRating: callable<
     { tripId: string; stars: number; comment?: string; targetRole: 'driver' | 'passenger' },
     { ok: boolean }

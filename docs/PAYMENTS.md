@@ -4,6 +4,23 @@ Wallet top-ups, ride payments, commission collection and driver payouts.
 **All money movement is server-authoritative and transactional** — wallets are
 never client-writable (enforced by the rules).
 
+## Launch posture (feature flags)
+
+The wallet top-up economy and Travel Mate subscriptions are **fully built but
+switched off for launch** — we grow the user base first, monetise later. Flags
+live in `config/featureFlags` (admin-editable from the dashboard → Feature
+flags) and are read live by the app, so flipping one re-enables the feature
+app-wide with no deploy. Defaults:
+
+| Flag | Default | Effect when off |
+|------|---------|-----------------|
+| `walletTopupEnabled` | `false` | Wallet top-ups show "Coming Soon"; `createTopupIntent`/`getPaymentOptions` decline; ride booking is cash-only (the Wallet pay option is disabled). |
+| `travelMateSubscriptionsEnabled` | `false` | Paid plans show "Coming Soon"; `requestTravelMateSubscription` declines. |
+| `travelMateFree` | `true` | Travel Mate likes are unlimited for everyone (`travelMateSwipe` grants a very high free allowance). |
+
+While top-ups are off, drivers settle their commission by **manual bank
+transfer + AI-verified screenshot** (below) rather than from their wallet.
+
 ## Flow
 
 **Top-up:** app → `createTopupIntent(amount)` → backend creates a `paymentIntents`
@@ -33,7 +50,23 @@ automatically at `completeTrip` without locking. `payCommission` **debits the
 amount from the driver's wallet** (they top it up via the gateway, so the money
 reaches the platform), ledgers it (`platformLedger`, source `cash_cycle`,
 `system/counters.cashCommissionCollected`) and resets both cycle counters to
-zero.
+zero. `payCommission` is the wallet path and stays wired for when top-ups are
+re-enabled; at launch drivers use the manual path below instead.
+
+**Manual settlement (launch — bank transfer + AI-verified screenshot):** with
+wallet top-ups off, the locked driver transfers the amount due to Velocity's
+account (`config/settlementAccounts`) and uploads a screenshot.
+`submitCommissionSettlement` sends it to a Claude vision model
+(`lib/paymentProofAI.ts`, key = `ANTHROPIC_API_KEY` secret) which checks the
+receipt is genuine, ≥ the amount due, and sent to a Velocity account. Policy is
+**safe auto-unlock**: only a clearly-genuine, correct-amount, correct-recipient
+verdict settles automatically (resets the cycle, ledgers `platformLedger`
+source `manual_bank`, `system/counters.manualCommissionCollected`, unlocks the
+driver). An obvious fake is rejected (driver re-uploads); anything uncertain —
+and everything, if no AI key is set — becomes a `commissionSettlements` doc with
+status `pending_review` for an admin to approve/reject
+(`adminReviewCommissionSettlement`, dashboard → Settlements). AI-approve and
+admin-approve share the same money transaction (`applyManualSettlement`).
 
 **Travel Mate subscriptions:** wallet payments are debited at admin approval
 (never held in escrow); manual Easypaisa/JazzCash/bank payments are sent

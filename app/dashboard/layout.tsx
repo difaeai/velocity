@@ -20,6 +20,8 @@ const NAV = [
   { href: '/dashboard/travel-mate',    label: '🤝 Travel Mate' },
   { href: '/dashboard/safety',         label: '🆘 Safety desk' },
   { href: '/dashboard/commission',     label: '📋 Commission' },
+  { href: '/dashboard/settlements',    label: '🧾 Settlements' },
+  { href: '/dashboard/features',       label: '🚦 Feature flags' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

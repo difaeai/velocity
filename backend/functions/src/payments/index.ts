@@ -22,6 +22,7 @@ import { randomBytes } from 'crypto';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, requireAdmin, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
+import { getFeatureFlags } from '../domain/featureFlags';
 import {
   configuredProviders,
   easypaisaProvider,
@@ -62,13 +63,23 @@ const topupSchema = z.object({
 /** Which top-up methods the app should offer right now. */
 export const getPaymentOptions = onCall(async (req) => {
   requireAuth(req);
+  const flags = await getFeatureFlags();
+  if (!flags.walletTopupEnabled) {
+    // Wallet top-ups are "Coming Soon" — advertise nothing so the app shows
+    // the disabled state. The gateway code stays wired for the flip.
+    return { ok: true, providers: [], mock: false, comingSoon: true };
+  }
   const providers = configuredProviders().map((p) => p.name);
-  return { ok: true, providers, mock: providers.length === 0 && isMockProvider() };
+  return { ok: true, providers, mock: providers.length === 0 && isMockProvider(), comingSoon: false };
 });
 
 /** Passenger/driver starts a wallet top-up; returns a gateway redirect. */
 export const createTopupIntent = onCall(async (req) => {
   const ctx = requireAuth(req);
+  const flags = await getFeatureFlags();
+  if (!flags.walletTopupEnabled) {
+    throw new HttpsError('failed-precondition', 'Wallet top-ups are coming soon.');
+  }
   await rateLimit(ctx.uid, 'createTopupIntent', 10, 3600);
   const parsed = topupSchema.safeParse(req.data);
   if (!parsed.success) invalid(`Amount must be ${MIN_TOPUP}–${MAX_TOPUP} PKR.`);

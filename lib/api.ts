@@ -75,6 +75,10 @@ export const adminApi = {
     { disputeId: string; resolution: string; refundAmount?: number },
     { ok: boolean }
   >('resolveDispute'),
+  adminReviewCommissionSettlement: callable<
+    { settlementId: string; approve: boolean; reason?: string },
+    { ok: boolean; status: string }
+  >('adminReviewCommissionSettlement'),
 
   // ── Travel Mate admin ─────────────────────────────────────────────────────
   approveTravelMateSubscription: callable<

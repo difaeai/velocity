@@ -19,6 +19,7 @@ import { api } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
@@ -130,6 +131,9 @@ export default function Booking() {
   const [pool, setPool] = useState(false);
   const [autoAccept, setAutoAccept] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
+  // Wallet ride payments depend on wallet top-ups, which are "Coming Soon" for
+  // launch — until then rides are cash-only.
+  const { walletTopupEnabled } = useFeatureFlags();
   const [promoCode, setPromoCode] = useState('');
   const [showPromo, setShowPromo] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -663,11 +667,24 @@ export default function Booking() {
               <Text style={[styles.paymentBtnLabel, paymentMethod === 'cash' && styles.paymentBtnLabelActive]}>Cash</Text>
             </Pressable>
             <Pressable
-              style={[styles.paymentBtn, paymentMethod === 'wallet' && styles.paymentBtnActive]}
-              onPress={() => setPaymentMethod('wallet')}
+              style={[
+                styles.paymentBtn,
+                paymentMethod === 'wallet' && styles.paymentBtnActive,
+                !walletTopupEnabled && { opacity: 0.5 },
+              ]}
+              disabled={!walletTopupEnabled}
+              onPress={() => {
+                if (!walletTopupEnabled) {
+                  Alert.alert('Coming soon', 'Wallet payments are coming soon. Please pay the driver in cash for now.');
+                  return;
+                }
+                setPaymentMethod('wallet');
+              }}
             >
               <Text style={styles.paymentBtnIcon}>💳</Text>
-              <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>Wallet</Text>
+              <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>
+                {walletTopupEnabled ? 'Wallet' : 'Wallet (soon)'}
+              </Text>
             </Pressable>
           </View>
 
