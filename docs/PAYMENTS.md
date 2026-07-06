@@ -78,16 +78,24 @@ The provider is selected by the `PAYMENTS_PROVIDER` env var (default `mock`).
 
 ### Going live
 
-1. Implement `createCharge` (gateway "initiate" API) and `verifyWebhook`
-   (HMAC / secure-hash check) in the adapter.
-2. Store gateway credentials as **Cloud Functions secrets** (never commit them):
-   ```bash
-   firebase functions:secrets:set JAZZCASH_MERCHANT_ID
-   firebase functions:secrets:set JAZZCASH_PASSWORD
-   firebase functions:secrets:set JAZZCASH_INTEGRITY_SALT
-   ```
-   and bind them on the relevant functions.
-3. Set `PAYMENTS_PROVIDER=jazzcash` (or `easypaisa`) and deploy.
-4. Configure the gateway's webhook URL to the deployed `paymentWebhook` endpoint.
+The adapters are fully implemented (JazzCash Page Redirection v1.1 with
+HMAC-SHA256 secure-hash verification; Easypaisa hosted checkout with optional
+server-to-server inquiry). Going live is **configuration only**:
 
-> Until then, the **mock** provider keeps the full wallet UX testable end-to-end.
+1. Get merchant credentials from the JazzCash / Easypay merchant portals.
+2. Provide them as function environment variables — the keys are listed in
+   `backend/functions/.env.example`:
+   - **CI (normal path):** create a `PAYMENTS_GATEWAY_ENV` GitHub Actions
+     secret whose content is the filled-in `KEY=value` lines. The deploy
+     workflow writes it to `backend/functions/.env.velocity-fe379` before
+     `firebase deploy`, so the next merge to main ships it.
+   - **Manual deploy:** copy `.env.example` to `.env.velocity-fe379` locally,
+     fill it in (it is gitignored) and deploy.
+3. Flip `JAZZCASH_ENV` / `EASYPAISA_ENV` to `live` when leaving the sandbox.
+4. No webhook needs registering with the gateway — the signed checkout form
+   already carries the callback URL (`paymentWebhook` with the per-intent
+   secret token) on every transaction.
+
+A provider appears in the app's top-up picker automatically once its
+credentials are non-empty (`getPaymentOptions`). Until then, the **mock**
+provider keeps the full wallet UX testable end-to-end.

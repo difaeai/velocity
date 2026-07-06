@@ -43,7 +43,9 @@ function functionsBaseUrl(): string {
   if (!projectId && process.env.FIREBASE_CONFIG) {
     try { projectId = (JSON.parse(process.env.FIREBASE_CONFIG) as { projectId?: string }).projectId; } catch { /* noop */ }
   }
-  return `https://us-central1-${projectId ?? 'unknown'}.cloudfunctions.net`;
+  // Must match the region in setGlobalOptions (src/index.ts).
+  const region = process.env.FUNCTION_REGION ?? 'asia-south1';
+  return `https://${region}-${projectId ?? 'unknown'}.cloudfunctions.net`;
 }
 
 /** Gateway-safe alphanumeric transaction reference (JazzCash caps at 20 chars). */
