@@ -231,6 +231,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- commissionSettlements/{id} -------------------------------------
+    // Manual commission settlements (bank transfer + AI-verified screenshot).
+    // Written only by the backend; the owning driver and admins may read.
+    match /commissionSettlements/{settlementId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == uid());
+      allow write: if false;
+    }
+
     // ----- openRequests/{tripId} ------------------------------------------
     // Public-safe feed of open ride requests, written only by the backend.
     // Approved drivers (driver role) read it to discover work; the full trip

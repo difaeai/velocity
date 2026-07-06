@@ -195,6 +195,66 @@ export function useCommissionStatus(profile: DriverProfile | null): CommissionSt
   };
 }
 
+export interface FeatureFlags {
+  /** Gateway wallet top-ups. Off = "Coming Soon". */
+  walletTopupEnabled: boolean;
+  /** Paid Travel Mate subscriptions. Off = "Coming Soon". */
+  travelMateSubscriptionsEnabled: boolean;
+  /** Travel Mate likes unlimited for everyone. */
+  travelMateFree: boolean;
+}
+
+/** Live launch-posture feature flags from config/featureFlags. */
+export function useFeatureFlags(): FeatureFlags {
+  const [flags, setFlags] = useState<FeatureFlags>({
+    walletTopupEnabled: false,
+    travelMateSubscriptionsEnabled: false,
+    travelMateFree: true,
+  });
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, 'config', 'featureFlags'),
+      (s) => {
+        const d = s.data() ?? {};
+        setFlags({
+          walletTopupEnabled: d.walletTopupEnabled === true,
+          travelMateSubscriptionsEnabled: d.travelMateSubscriptionsEnabled === true,
+          travelMateFree: d.travelMateFree !== false,
+        });
+      },
+      () => undefined,
+    );
+  }, []);
+  return flags;
+}
+
+export interface CommissionSettlement {
+  id: string;
+  status: 'verifying' | 'approved' | 'rejected' | 'pending_review';
+  amountDue?: number;
+  rejectionReason?: string | null;
+  createdAt?: { seconds: number };
+}
+
+/** The driver's most recent commission settlement attempt (for status UI). */
+export function useLatestCommissionSettlement(uid?: string): CommissionSettlement | null {
+  const [row, setRow] = useState<CommissionSettlement | null>(null);
+  useEffect(() => {
+    if (!uid) { setRow(null); return; }
+    // Equality-only query (no composite index needed); newest picked client-side.
+    return onSnapshot(
+      query(collection(db, 'commissionSettlements'), where('driverId', '==', uid)),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CommissionSettlement & { createdAt?: { seconds: number } });
+        docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+        setRow(docs[0] ?? null);
+      },
+      () => setRow(null),
+    );
+  }, [uid]);
+  return row;
+}
+
 export interface SettlementAccounts {
   easypaisaNumber?: string;
   jazzcashNumber?: string;

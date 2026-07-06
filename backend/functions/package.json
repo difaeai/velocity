@@ -17,6 +17,7 @@
     "test": "firebase emulators:exec --only auth,firestore --project demo-velocity \"vitest run --config vitest.config.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.1",
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.2",
     "geofire-common": "^6.0.0",

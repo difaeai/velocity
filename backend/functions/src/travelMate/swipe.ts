@@ -95,8 +95,16 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
 
   // Settings read outside the txn (rarely changes, reduces contention).
   const settingsSnap = await db.doc('config/travelMateSettings').get();
-  const freeMonthlySwipes: number = settingsSnap.exists
+  const configuredFreeSwipes: number = settingsSnap.exists
     ? (settingsSnap.data()!.freeMonthlySwipes ?? 4) : 4;
+
+  // Launch posture: Travel Mate is free for everyone (config/featureFlags
+  // travelMateFree, default on) — grant a very high free allowance so the like
+  // paywall never triggers. The subscription/quota machinery stays intact for
+  // when we flip it back on.
+  const flagsSnap = await db.doc('config/featureFlags').get();
+  const travelMateFree: boolean = flagsSnap.data()?.travelMateFree !== false;
+  const freeMonthlySwipes: number = travelMateFree ? 1_000_000 : configuredFreeSwipes;
 
   const swipeRef        = db.doc(`travelMateProfiles/${uid}/swipes/${targetUid}`);
   const reverseSwipeRef = db.doc(`travelMateProfiles/${targetUid}/swipes/${uid}`);

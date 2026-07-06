@@ -218,7 +218,7 @@ export default function DriverHome() {
           <>
             <CommissionLock
               status={commission}
-              balance={balance}
+              uid={uid}
               requests={requests.filter((r) => !skippedIds.has(r.tripId))}
             />
             <PrimaryButton

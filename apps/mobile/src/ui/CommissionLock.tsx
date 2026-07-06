@@ -1,24 +1,28 @@
-import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 import { api } from '../api/client';
 import { colors } from '../config';
+import { uploadDriverDoc } from '../lib/uploadDoc';
 import {
+  useLatestCommissionSettlement,
   useSettlementAccounts,
   type CommissionStatus,
   type OpenRequest,
 } from '../hooks/driver';
 import { PrimaryButton } from './components';
 
-type TopupProvider = 'jazzcash' | 'easypaisa';
+type PayMethod = 'easypaisa' | 'jazzcash' | 'bank';
 
-const PROVIDER_LABEL: Record<TopupProvider, string> = {
+const METHOD_LABEL: Record<PayMethod, string> = {
   easypaisa: 'Easypaisa',
   jazzcash: 'JazzCash',
+  bank: 'Bank transfer',
 };
 
-/** "F-7 Markaz, Islamabad" → "F-7 ▓▓▓▓▓▓, ▓▓▓▓▓▓▓▓▓" — readable enough to
- * tease the ride, useless for actually working it. */
+/** "F-7 Markaz, Islamabad" → "F-7 ▓▓▓▓▓▓, ▓▓▓▓▓▓▓▓▓" — teases the ride, useless
+ * for actually working it. */
 function blurText(s: string | undefined, keep = 3): string {
   if (!s) return '▓▓▓▓▓▓▓▓';
   return s.slice(0, keep) + s.slice(keep).replace(/[^\s,]/g, '▓');
@@ -26,68 +30,72 @@ function blurText(s: string | undefined, keep = 3): string {
 
 /**
  * Full-screen takeover shown when the driver's commission cycle is locked.
- * The app is paused on this settle flow: incoming rides stay visible but
- * blurred until the commission is paid to Velocity from the wallet.
+ * The app is paused here until the driver settles: they transfer the amount due
+ * to Velocity's account, upload a screenshot, and an AI check either unlocks
+ * them instantly or sends it to our team for review. Incoming rides stay
+ * visible but blurred until then.
  */
 export function CommissionLock({
   status,
-  balance,
   requests,
+  uid,
 }: {
   status: CommissionStatus;
-  balance: number;
   requests: OpenRequest[];
+  uid?: string;
 }) {
   const accounts = useSettlementAccounts();
+  const settlement = useLatestCommissionSettlement(uid);
   const [busy, setBusy] = useState(false);
-  const [topupProviders, setTopupProviders] = useState<TopupProvider[]>([]);
-  const [topupProvider, setTopupProvider] = useState<TopupProvider | undefined>(undefined);
+  const [method, setMethod] = useState<PayMethod>('easypaisa');
 
   const { due, rate, cycleGrossFare, cycleCashFare } = status;
   const onlineFare = Math.max(0, cycleGrossFare - cycleCashFare);
-  const shortfall = Math.max(0, due - balance);
-  // Backend minimum top-up is 100 PKR.
-  const topupAmount = Math.max(100, shortfall);
 
-  useEffect(() => {
-    let cancelled = false;
-    api.getPaymentOptions({})
-      .then((res) => {
-        if (cancelled) return;
-        setTopupProviders(res.providers);
-        setTopupProvider(res.providers[0]);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
+  // Which methods we can actually receive on.
+  const available: PayMethod[] = [];
+  if (accounts?.easypaisaNumber) available.push('easypaisa');
+  if (accounts?.jazzcashNumber) available.push('jazzcash');
+  if (accounts?.bankIban) available.push('bank');
+  const activeMethod = available.includes(method) ? method : available[0] ?? 'easypaisa';
 
-  async function topupShortfall() {
-    setBusy(true);
-    try {
-      const res = await api.createTopupIntent({ amount: topupAmount, provider: topupProvider });
-      if (res.mock) {
-        await api.mockConfirmTopup({ intentId: res.intentId });
-        Alert.alert('Wallet topped up', `${topupAmount} PKR added (mock provider).`);
-      } else if (res.redirectUrl) {
-        await Linking.openURL(res.redirectUrl);
-      }
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Top-up failed.');
-    } finally {
-      setBusy(false);
-    }
+  function accountValue(m: PayMethod): string | null {
+    if (!accounts) return null;
+    if (m === 'easypaisa') return accounts.easypaisaNumber ?? null;
+    if (m === 'jazzcash') return accounts.jazzcashNumber ?? null;
+    return accounts.bankIban ? `${accounts.bankName ? `${accounts.bankName} — ` : ''}${accounts.bankIban}` : null;
   }
 
-  async function settle() {
+  // A settlement is awaiting our team; hide the upload button until it resolves.
+  const underReview = settlement?.status === 'pending_review';
+  const wasRejected = settlement?.status === 'rejected';
+
+  async function pickAndSubmit() {
+    if (!uid) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo access to upload your payment screenshot.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
     setBusy(true);
     try {
-      const res = await api.payCommission({});
-      Alert.alert(
-        'Commission settled ✅',
-        `${res.amountPaid} PKR paid to Velocity. Your account is unlocked — incoming rides are visible again.`,
-      );
+      const upload = await uploadDriverDoc(uid, 'settlement', result.assets[0].uri);
+      const res = await api.submitCommissionSettlement({ proofPath: upload.path, method: activeMethod });
+      if (res.status === 'approved') {
+        Alert.alert('✅ Commission settled', `Your payment of PKR ${res.amountDue} was verified. Your account is unlocked.`);
+      } else if (res.status === 'rejected') {
+        Alert.alert('❌ Not verified', res.reason ?? 'We could not verify your payment. Please upload a clear, unedited receipt.');
+      } else {
+        Alert.alert('⏳ Under review', 'Your payment is being reviewed by our team. Your account will unlock once it is approved.');
+      }
     } catch (e) {
-      Alert.alert('Could not settle', e instanceof Error ? e.message : 'Payment failed.');
+      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
@@ -107,85 +115,87 @@ export function CommissionLock({
         </Text>
         {onlineFare > 0 && (
           <Text style={styles.lockNote}>
-            ✓ Commission on your {onlineFare.toLocaleString()} PKR of online (wallet) fares was
-            already collected automatically — you won&apos;t pay it twice.
+            ✓ Commission on your {onlineFare.toLocaleString()} PKR of online fares was already
+            collected automatically — you won&apos;t pay it twice.
           </Text>
         )}
         <View style={styles.dueRow}>
           <Text style={styles.dueLabel}>Amount due</Text>
           <Text style={styles.dueAmt}>{due.toLocaleString()} PKR</Text>
         </View>
-        <View style={styles.dueRow}>
-          <Text style={styles.dueLabel}>Wallet balance</Text>
-          <Text style={[styles.dueBalance, { color: balance >= due ? colors.primary : colors.danger }]}>
-            {balance.toLocaleString()} PKR
-          </Text>
-        </View>
-
-        {balance >= due ? (
-          <PrimaryButton
-            label={busy ? 'Processing…' : `Pay ${due.toLocaleString()} PKR & unlock`}
-            disabled={busy}
-            onPress={settle}
-          />
-        ) : (
-          <>
-            <Text style={styles.shortfall}>
-              Top up {shortfall.toLocaleString()} PKR to your wallet to settle. The top-up goes to
-              Velocity&apos;s account through the payment gateway.
-            </Text>
-            {topupProviders.length > 0 && (
-              <View style={styles.methodRow}>
-                {topupProviders.map((p) => (
-                  <Pressable
-                    key={p}
-                    onPress={() => setTopupProvider(p)}
-                    style={[styles.methodChip, topupProvider === p && styles.methodChipActive]}
-                  >
-                    <Text style={[styles.methodChipText, topupProvider === p && styles.methodChipTextActive]}>
-                      {PROVIDER_LABEL[p]}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            <PrimaryButton
-              label={busy ? 'Processing…' : `Top up ${topupAmount.toLocaleString()} PKR`}
-              disabled={busy}
-              onPress={topupShortfall}
-            />
-          </>
-        )}
       </View>
 
-      {/* ── Velocity's receiving accounts ── */}
-      {accounts && (accounts.easypaisaNumber || accounts.jazzcashNumber || accounts.bankIban) ? (
-        <View style={styles.accountsCard}>
-          <Text style={styles.accountsTitle}>Velocity official accounts</Text>
-          <Text style={styles.accountsSub}>
-            Your commission is paid to Velocity ({accounts.accountTitle ?? 'Velocity'}). For
-            reference:
+      {/* ── How to settle ── */}
+      <View style={styles.stepsCard}>
+        <Text style={styles.stepsTitle}>How to settle</Text>
+        <Text style={styles.step}>
+          <Text style={styles.bold}>1.</Text> Send <Text style={styles.bold}>PKR {due.toLocaleString()}</Text> to Velocity&apos;s account below.
+        </Text>
+        <Text style={styles.step}>
+          <Text style={styles.bold}>2.</Text> Take a screenshot of the successful payment.
+        </Text>
+        <Text style={styles.step}>
+          <Text style={styles.bold}>3.</Text> Upload it here — we verify it and unlock your account automatically.
+        </Text>
+
+        {/* Velocity's receiving accounts */}
+        {available.length > 0 ? (
+          <>
+            <View style={styles.methodRow}>
+              {available.map((m) => (
+                <Pressable
+                  key={m}
+                  onPress={() => setMethod(m)}
+                  style={[styles.methodChip, activeMethod === m && styles.methodChipActive]}
+                >
+                  <Text style={[styles.methodChipText, activeMethod === m && styles.methodChipTextActive]}>
+                    {METHOD_LABEL[m]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.accountBox}>
+              <Text style={styles.accountLabel}>
+                Send PKR {due.toLocaleString()} to{accounts?.accountTitle ? ` ${accounts.accountTitle}` : ''}
+              </Text>
+              <Text style={styles.accountValue}>{accountValue(activeMethod) ?? '—'}</Text>
+            </View>
+          </>
+        ) : (
+          <Text style={styles.noAccounts}>
+            Velocity&apos;s payment account isn&apos;t set up yet. Please contact support to settle.
           </Text>
-          {accounts.easypaisaNumber ? (
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>Easypaisa</Text>
-              <Text style={styles.accountValue}>{accounts.easypaisaNumber}</Text>
-            </View>
-          ) : null}
-          {accounts.jazzcashNumber ? (
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>JazzCash</Text>
-              <Text style={styles.accountValue}>{accounts.jazzcashNumber}</Text>
-            </View>
-          ) : null}
-          {accounts.bankIban ? (
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>{accounts.bankName ?? 'Bank'}</Text>
-              <Text style={styles.accountValue}>{accounts.bankIban}</Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
+        )}
+
+        {/* Status of the latest attempt */}
+        {underReview && (
+          <View style={[styles.statusBox, { borderColor: '#f59e0b' }]}>
+            <Text style={[styles.statusText, { color: '#f59e0b' }]}>
+              ⏳ Your payment is under review. We&apos;ll unlock your account as soon as it&apos;s approved.
+            </Text>
+          </View>
+        )}
+        {wasRejected && (
+          <View style={[styles.statusBox, { borderColor: colors.danger }]}>
+            <Text style={[styles.statusText, { color: colors.danger }]}>
+              ❌ {settlement?.rejectionReason ?? 'Your last screenshot could not be verified.'} Please upload a clear, unedited receipt.
+            </Text>
+          </View>
+        )}
+
+        {busy ? (
+          <View style={styles.busyRow}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.busyText}>Uploading & verifying your payment…</Text>
+          </View>
+        ) : underReview ? null : (
+          <PrimaryButton
+            label={wasRejected ? 'Upload a new screenshot' : '📤 Upload payment screenshot'}
+            onPress={pickAndSubmit}
+            disabled={available.length === 0}
+          />
+        )}
+      </View>
 
       {/* ── Blurred incoming rides ── */}
       <View style={styles.blurSection}>
@@ -254,34 +264,46 @@ const styles = StyleSheet.create({
   },
   dueLabel: { fontSize: 13, fontWeight: '700', color: '#ffbbbb' },
   dueAmt: { fontSize: 20, fontWeight: '900', color: '#ff6666' },
-  dueBalance: { fontSize: 16, fontWeight: '900' },
-  shortfall: { fontSize: 12, color: '#ffbbbb', lineHeight: 18, textAlign: 'center' },
-  methodRow: { flexDirection: 'row', gap: 8 },
+
+  stepsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+  },
+  stepsTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  step: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  noAccounts: { fontSize: 12, color: colors.danger, lineHeight: 18 },
+
+  methodRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   methodChip: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#ffffff30',
+    borderColor: colors.border,
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   methodChipActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}20` },
-  methodChipText: { fontSize: 12, fontWeight: '700', color: '#ffbbbb' },
+  methodChipText: { fontSize: 12, fontWeight: '700', color: colors.muted },
   methodChipTextActive: { color: colors.primary },
-
-  accountsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
+  accountBox: {
+    backgroundColor: `${colors.primary}12`,
+    borderRadius: 10,
+    padding: 12,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    gap: 8,
+    borderColor: `${colors.primary}40`,
   },
-  accountsTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
-  accountsSub: { fontSize: 11, color: colors.muted, lineHeight: 16 },
-  accountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  accountLabel: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  accountValue: { fontSize: 13, fontWeight: '800', color: colors.text },
+  accountLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, marginBottom: 2 },
+  accountValue: { fontSize: 16, fontWeight: '900', color: colors.text },
+
+  statusBox: { borderRadius: 10, borderWidth: 1, padding: 12 },
+  statusText: { fontSize: 12, fontWeight: '600', lineHeight: 18 },
+  busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  busyText: { fontSize: 13, color: colors.muted },
 
   blurSection: {
     backgroundColor: colors.surface,

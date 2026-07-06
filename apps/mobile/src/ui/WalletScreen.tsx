@@ -51,18 +51,20 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const [payoutAccount, setPayoutAccount] = useState('');
   const [topupProviders, setTopupProviders] = useState<TopupProvider[]>([]);
   const [topupProvider, setTopupProvider] = useState<TopupProvider | undefined>(undefined);
-  const [settling, setSettling] = useState(false);
+  const [topupComingSoon, setTopupComingSoon] = useState(false);
 
   // Commission cycle — only meaningful for drivers.
   const driverProfile = useDriverProfile(role === 'driver' ? uid : undefined);
   const commission = useCommissionStatus(driverProfile);
 
-  // Which gateways the backend has configured (empty → mock/dev mode).
+  // Which gateways the backend has configured. `comingSoon` = top-ups are off
+  // for launch (feature flag); we show a Coming Soon card instead of the form.
   useEffect(() => {
     let cancelled = false;
     api.getPaymentOptions({})
       .then((res) => {
         if (cancelled) return;
+        setTopupComingSoon(res.comingSoon === true);
         setTopupProviders(res.providers);
         setTopupProvider(res.providers[0]);
       })
@@ -174,62 +176,64 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             {commission.locked ? (
               <>
                 <PrimaryButton
-                  label={settling ? 'Processing…' : `Pay ${commission.due.toLocaleString()} PKR & unlock`}
-                  disabled={settling}
-                  onPress={async () => {
-                    setSettling(true);
-                    try {
-                      const res = await api.payCommission({});
-                      Alert.alert('Commission settled ✅', `${res.amountPaid} PKR paid to Velocity. Your account is unlocked.`);
-                    } catch (e) {
-                      Alert.alert('Could not settle', e instanceof Error ? e.message : 'Payment failed.');
-                    } finally {
-                      setSettling(false);
-                    }
-                  }}
+                  label="Settle commission →"
+                  onPress={() => router.replace('/driver')}
                 />
-                {balance < commission.due && (
-                  <Text style={styles.payoutHint}>
-                    Top up {(commission.due - balance).toLocaleString()} PKR above first — your wallet
-                    doesn&apos;t cover the commission yet.
-                  </Text>
-                )}
+                <Text style={styles.payoutHint}>
+                  Go to your Home screen to pay Velocity and upload your payment screenshot. Your
+                  account unlocks once it&apos;s verified.
+                </Text>
               </>
             ) : (
               <Text style={styles.payoutHint}>
-                You&apos;ll settle this from your wallet when cycle earnings reach{' '}
-                {commission.threshold.toLocaleString()} PKR. Commission on online (wallet) rides is
-                collected automatically.
+                When cycle earnings reach {commission.threshold.toLocaleString()} PKR you&apos;ll settle
+                by paying Velocity and uploading a screenshot. Commission on online rides is collected
+                automatically.
               </Text>
             )}
           </Card>
         ) : null}
 
-        <Card>
-          <Text style={styles.label}>Amount (PKR)</Text>
-          {topupProviders.length > 0 ? (
-            <View style={styles.methodRow}>
-              {topupProviders.map((p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => setTopupProvider(p)}
-                  style={[styles.methodChip, topupProvider === p && styles.methodChipActive]}
-                >
-                  <Text style={[styles.methodChipText, topupProvider === p && styles.methodChipTextActive]}>
-                    {PROVIDER_LABEL[p]}
-                  </Text>
-                </Pressable>
-              ))}
+        {topupComingSoon ? (
+          <Card>
+            <View style={styles.comingSoonRow}>
+              <Text style={styles.label}>Add money</Text>
+              <View style={styles.comingSoonBadge}>
+                <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
+              </View>
             </View>
-          ) : null}
-          <TextInput
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="number-pad"
-            style={styles.input}
-          />
-          <PrimaryButton label="Add money" onPress={topup} loading={busy} />
-        </Card>
+            <Text style={styles.comingSoonText}>
+              Wallet top-ups with JazzCash and Easypaisa are on the way. You&apos;ll be able to load
+              your wallet and pay for rides from it here soon.
+            </Text>
+          </Card>
+        ) : (
+          <Card>
+            <Text style={styles.label}>Amount (PKR)</Text>
+            {topupProviders.length > 0 ? (
+              <View style={styles.methodRow}>
+                {topupProviders.map((p) => (
+                  <Pressable
+                    key={p}
+                    onPress={() => setTopupProvider(p)}
+                    style={[styles.methodChip, topupProvider === p && styles.methodChipActive]}
+                  >
+                    <Text style={[styles.methodChipText, topupProvider === p && styles.methodChipTextActive]}>
+                      {PROVIDER_LABEL[p]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <TextInput
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="number-pad"
+              style={styles.input}
+            />
+            <PrimaryButton label="Add money" onPress={topup} loading={busy} />
+          </Card>
+        )}
 
         {role === 'driver' ? (
           <Card>
@@ -338,6 +342,10 @@ const styles = StyleSheet.create({
   commDue: { fontSize: 15, fontWeight: '900', color: colors.text },
   commTrack: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden', marginBottom: 10 },
   commFill: { height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  comingSoonRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  comingSoonBadge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: `${colors.primary}50` },
+  comingSoonBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary, textTransform: 'uppercase' },
+  comingSoonText: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   muted: { fontSize: 13, color: colors.muted },
   txnRow: {
     flexDirection: 'row',

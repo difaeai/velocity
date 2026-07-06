@@ -38,6 +38,13 @@ export const requestTravelMateSubscription = onCall(
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
     const uid = req.auth.uid;
 
+    // Subscriptions are "Coming Soon" — Travel Mate is free for everyone right
+    // now, so we don't take subscription requests. The flow stays wired up.
+    const flagsSnap = await db.doc('config/featureFlags').get();
+    if (flagsSnap.data()?.travelMateSubscriptionsEnabled !== true) {
+      throw new HttpsError('failed-precondition', 'Travel Mate is free for everyone right now — no subscription needed.');
+    }
+
     const parsed = Input.safeParse(req.data);
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
     const { planId, paymentMethod, paymentProofURL } = parsed.data;

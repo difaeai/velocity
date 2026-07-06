@@ -31,6 +31,7 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { useFeatureFlags } from '../../../src/hooks/driver';
 import { Card, PrimaryButton } from '../../../src/ui/components';
 
 type PaymentMethod = 'wallet' | 'easypaisa' | 'jazzcash' | 'bank';
@@ -84,6 +85,7 @@ function receivingAccount(accounts: SettlementAccounts | null, method: PaymentMe
 export default function TravelMateSubscription() {
   const { user } = useAuth();
   const router = useRouter();
+  const { travelMateSubscriptionsEnabled } = useFeatureFlags();
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [accounts, setAccounts] = useState<SettlementAccounts | null>(null);
@@ -209,6 +211,28 @@ export default function TravelMateSubscription() {
           </Card>
         )}
 
+        {!travelMateSubscriptionsEnabled ? (
+          /* Launch posture: Travel Mate is free for everyone. */
+          <>
+            <Card style={{ borderColor: colors.primary }}>
+              <Text style={s.sectionLabel}>FREE FOR EVERYONE</Text>
+              <Text style={s.freeTierText}>Unlimited likes 🎉</Text>
+              <Text style={s.freeTierSub}>
+                Travel Mate is completely free right now — like as many travel companions as you want.
+              </Text>
+            </Card>
+            <Card>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={s.heading}>Subscription plans</Text>
+                <View style={s.comingSoonBadge}><Text style={s.comingSoonBadgeText}>Coming soon</Text></View>
+              </View>
+              <Text style={s.freeTierSub}>
+                Paid plans with extra perks are on the way. For now, enjoy everything for free.
+              </Text>
+            </Card>
+          </>
+        ) : (
+          <>
         {/* Free tier info */}
         <Card>
           <Text style={s.sectionLabel}>FREE TIER</Text>
@@ -296,6 +320,8 @@ export default function TravelMateSubscription() {
             )}
           </>
         )}
+          </>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -312,6 +338,9 @@ const s = StyleSheet.create({
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 },
   heading:      { fontSize: 15, fontWeight: '900', color: colors.text, marginTop: 4 },
   sectionLabel: { fontSize: 10, fontWeight: '900', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase' },
+
+  comingSoonBadge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: `${colors.primary}50` },
+  comingSoonBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary, textTransform: 'uppercase' },
 
   // Current sub banner
   subStatusRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
