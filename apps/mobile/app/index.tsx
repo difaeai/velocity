@@ -15,6 +15,10 @@ export default function Index() {
   const [showSplash, setShowSplash] = useState(true);
   const [profileChecked, setProfileChecked] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
+  // Driver application status (drivers/{uid}.verificationStatus). A "pending"
+  // applicant is sent to the submitted-status screen so they always land back
+  // on it until an admin approves them.
+  const [driverStatus, setDriverStatus] = useState<string | null>(null);
 
   useEffect(() => {
     // 3000ms matches the logo's decelerating 3D spin (2x → 1x → stop).
@@ -25,6 +29,7 @@ export default function Index() {
   useEffect(() => {
     if (!user) {
       setProfileComplete(false);
+      setDriverStatus(null);
       setProfileChecked(true);
       return;
     }
@@ -34,6 +39,15 @@ export default function Index() {
     setProfileChecked(false);
 
     async function check() {
+      // Driver application status — routes a pending applicant to the submitted
+      // screen. Read failures fall back to null (treated as "not an applicant").
+      try {
+        const dsnap = await getDoc(doc(db, 'drivers', user!.uid));
+        setDriverStatus(dsnap.exists() ? ((dsnap.get('verificationStatus') as string) ?? null) : null);
+      } catch {
+        setDriverStatus(null);
+      }
+
       const key = `onboarding_done_${user!.uid}`;
 
       // Fast path: once the user completed onboarding on this device we cache
@@ -90,8 +104,11 @@ export default function Index() {
   }
 
   if (!user) return <Redirect href="/auth/sign-in" />;
-  if (!profileComplete && role !== 'driver') return <Redirect href="/onboarding" />;
+  // Approved drivers go straight to their dashboard — they never sign in again.
   if (role === 'driver') return <Redirect href="/driver/home" />;
+  // A submitted (pending) driver applicant waits on the status screen.
+  if (driverStatus === 'pending') return <Redirect href="/passenger/become-driver/submitted" />;
+  if (!profileComplete) return <Redirect href="/onboarding" />;
   return <Redirect href="/passenger/home" />;
 }
 

@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -25,10 +25,9 @@ export default function Checklist() {
   async function onSubmit() {
     const ok = await submit();
     if (ok) {
-      Alert.alert(
-        'Application submitted',
-        "We're reviewing your documents. You'll be notified once you're approved.",
-      );
+      // Registration is now with admin — show the live "submitted" status screen,
+      // which redirects to the driver home the moment the account is approved.
+      router.replace('/passenger/become-driver/submitted');
     }
   }
 

@@ -25,7 +25,6 @@ export default function DriverIntro() {
   const router = useRouter();
   const goDriver = () => router.push('/passenger/become-driver/checklist');
   const goPassenger = () => router.replace('/passenger/home');
-  const goDriverSignIn = () => router.push('/driver-sign-in');
 
   const goCourier = () =>
     Alert.alert('Coming soon', 'Courier sign-up will be available shortly. You can register as a driver now.');
@@ -58,9 +57,6 @@ export default function DriverIntro() {
 
         <View style={styles.spacer} />
 
-        <Pressable style={styles.accountBtn} onPress={goDriverSignIn}>
-          <Text style={styles.accountText}>I already have an account</Text>
-        </Pressable>
         <Pressable onPress={goPassenger} style={styles.passengerBtn}>
           <Text style={styles.passengerLink}>Go to passenger mode</Text>
         </Pressable>
@@ -96,8 +92,6 @@ const styles = StyleSheet.create({
 
   spacer: { flex: 1, minHeight: 30 },
 
-  accountBtn: { backgroundColor: '#fff', borderRadius: 16, height: 60, alignItems: 'center', justifyContent: 'center' },
-  accountText: { color: '#1b1b1b', fontSize: 18, fontWeight: '700' },
   passengerBtn: { paddingVertical: 14, alignItems: 'center' },
   passengerLink: { color: '#e6e6e6', fontSize: 18, fontWeight: '600' },
 });
