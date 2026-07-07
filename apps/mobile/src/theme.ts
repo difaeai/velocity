@@ -66,9 +66,28 @@ export function getThemeMode(): ThemeMode {
   return currentMode;
 }
 
-function apply(mode: ThemeMode) {
+/**
+ * Synchronously apply a theme to the shared `colors` object. Exported so the
+ * app entry point can apply the saved theme BEFORE expo-router imports the
+ * route screens — otherwise each screen's StyleSheet bakes the default (dark)
+ * palette and the theme never visually applies until the next reload.
+ */
+export function applyTheme(mode: ThemeMode) {
   currentMode = mode;
   Object.assign(colors, mode === 'light' ? LIGHT : DARK);
+}
+
+/** Read the saved theme synchronously is impossible (AsyncStorage is async),
+ * so the entry point reads it and calls applyTheme. This maps the raw stored
+ * value to a valid mode. */
+export function normalizeMode(saved: string | null): ThemeMode {
+  return saved === 'light' ? 'light' : 'dark';
+}
+
+export const THEME_STORAGE_KEY = STORAGE_KEY;
+
+function apply(mode: ThemeMode) {
+  applyTheme(mode);
 }
 
 /** Load + apply the saved theme. Must resolve before any screen renders. */
@@ -88,6 +107,21 @@ export async function loadTheme(): Promise<ThemeMode> {
  * without expo-updates) — callers should then ask the user to reopen the app.
  */
 async function reloadApp(): Promise<boolean> {
+  // In development the app is served by Metro, so a JS fast-reload is the only
+  // valid path — calling expo-updates reloadAsync() against a dev server errors
+  // out ("cannot reload in development"). Use DevSettings and never touch Updates.
+  if (__DEV__) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { DevSettings } = require('react-native');
+      if (DevSettings?.reload) {
+        DevSettings.reload();
+        return true;
+      }
+    } catch { /* not available */ }
+    return false;
+  }
+  // Production: reload via expo-updates when it's present.
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Updates = require('expo-updates');
@@ -96,14 +130,6 @@ async function reloadApp(): Promise<boolean> {
       return true;
     }
   } catch { /* expo-updates not installed */ }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { DevSettings } = require('react-native');
-    if (__DEV__ && DevSettings?.reload) {
-      DevSettings.reload();
-      return true;
-    }
-  } catch { /* not available */ }
   return false;
 }
 

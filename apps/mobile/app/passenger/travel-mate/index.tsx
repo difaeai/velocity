@@ -1,292 +1,125 @@
-import { useCallback, useRef, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+/**
+ * Travel Mate — Home hub.
+ *
+ * The landing screen for Travel Mate. Surfaces every action in one place:
+ *   - Find travel partners  → swipe deck (discover)
+ *   - Create a group / Join a group (invite code)
+ *   - Matches / Chats
+ *   - Share a ride link (book a ride, then invite partners to split it)
+ *   - My groups (live list)
+ *
+ * Gated on having a Travel Mate profile — otherwise shows a create-profile CTA.
+ */
+import { useEffect, useState } from 'react';
 import {
   Alert,
-  Animated,
-  Dimensions,
-  Image,
   Modal,
-  PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import {
-  Timestamp,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 
-const { width, height } = Dimensions.get('window');
-const CARD_W = width - 40;
-const CARD_H = height * 0.60;
-const SWIPE_THRESHOLD = CARD_W * 0.35;
-const ROTATE_DEG = 12;
+const PINK = '#E8637A';
 
-interface TMProfile {
-  uid: string;
-  displayName: string;
-  age?: number;
-  gender: 'male' | 'female';
-  genderPref: 'male' | 'female' | 'any';
-  bio?: string;
-  interests?: string[];
-  photoURL?: string | null;
-  lastActive?: { seconds: number };
+interface Group {
+  id: string;
+  name: string;
+  members: string[];
+  destinationName?: string;
+  maxSize?: number;
 }
 
-function activityLabel(p: TMProfile): string | null {
-  if (!p.lastActive) return null;
-  const diffSecs = Date.now() / 1000 - p.lastActive.seconds;
-  if (diffSecs < 86400) return 'Active today';
-  if (diffSecs < 7 * 86400) return 'Active this week';
-  return null;
-}
-
-// ── Single photo-first swipeable card ─────────────────────────────────────────
-function SwipeCard({
-  card, isTop, onLike, onPass,
-}: {
-  card: TMProfile; isTop: boolean; onLike: () => void; onPass: () => void;
-}) {
-  const pan = useRef(new Animated.ValueXY()).current;
-  const [hint, setHint] = useState<'like' | 'pass' | null>(null);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => isTop,
-      onPanResponderMove: (_, g) => {
-        pan.setValue({ x: g.dx, y: g.dy });
-        setHint(g.dx > 20 ? 'like' : g.dx < -20 ? 'pass' : null);
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dx > SWIPE_THRESHOLD) {
-          Animated.timing(pan, { toValue: { x: width * 1.5, y: g.dy }, duration: 250, useNativeDriver: true })
-            .start(() => { pan.setValue({ x: 0, y: 0 }); setHint(null); onLike(); });
-        } else if (g.dx < -SWIPE_THRESHOLD) {
-          Animated.timing(pan, { toValue: { x: -width * 1.5, y: g.dy }, duration: 250, useNativeDriver: true })
-            .start(() => { pan.setValue({ x: 0, y: 0 }); setHint(null); onPass(); });
-        } else {
-          Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true }).start(() => setHint(null));
-        }
-      },
-    }),
-  ).current;
-
-  const rotate = pan.x.interpolate({
-    inputRange: [-width, width],
-    outputRange: [`-${ROTATE_DEG}deg`, `${ROTATE_DEG}deg`],
-    extrapolate: 'clamp',
-  });
-
-  const actLabel = activityLabel(card);
-
-  return (
-    <Animated.View
-      style={[s.card, {
-        transform: [
-          { translateX: pan.x },
-          { translateY: pan.y },
-          { rotate: isTop ? rotate : '0deg' },
-        ],
-        zIndex: isTop ? 10 : 1,
-      }]}
-      {...(isTop ? panResponder.panHandlers : {})}
-    >
-      {/* Photo fills the card */}
-      {card.photoURL ? (
-        <Image source={{ uri: card.photoURL }} style={s.cardPhoto} />
-      ) : (
-        <View style={s.cardPhotoPlaceholder}>
-          <Text style={s.cardAvatarEmoji}>👤</Text>
-        </View>
-      )}
-
-      {/* Hint labels */}
-      {hint === 'like' && (
-        <View style={[s.hintBadge, s.hintLike]}><Text style={s.hintText}>LIKE ❤️</Text></View>
-      )}
-      {hint === 'pass' && (
-        <View style={[s.hintBadge, s.hintPass]}><Text style={s.hintText}>PASS ✗</Text></View>
-      )}
-
-      {/* Info overlay at the bottom */}
-      <View style={s.cardOverlay}>
-        {actLabel && (
-          <View style={s.activeBadge}>
-            <Text style={s.activeBadgeTxt}>{actLabel}</Text>
-          </View>
-        )}
-        <Text style={s.cardName}>
-          {card.displayName}{card.age ? `, ${card.age}` : ''}
-        </Text>
-        {card.bio ? (
-          <Text style={s.cardBio} numberOfLines={2}>{card.bio}</Text>
-        ) : null}
-        {card.interests && card.interests.length > 0 && (
-          <View style={s.cardTags}>
-            {card.interests.slice(0, 4).map(tag => (
-              <View key={tag} style={s.cardTag}>
-                <Text style={s.cardTagTxt}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-    </Animated.View>
-  );
-}
-
-// ── Main screen ────────────────────────────────────────────────────────────────
-export default function TravelMateDeck() {
-  const router = useRouter();
+export default function TravelMateHome() {
   const { user } = useAuth();
+  const router = useRouter();
 
-  const [myProfile, setMyProfile]   = useState<TMProfile | null>(null);
-  const [cards, setCards]           = useState<TMProfile[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [noProfile, setNoProfile]   = useState(false);
-  const [outOfCards, setOutOfCards] = useState(false);
-  const [swiping, setSwiping]       = useState(false);
-  const [matchInfo, setMatchInfo]   = useState<{ name: string; matchId: string } | null>(null);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
 
-  const loadFeed = useCallback(async (
-    myUid: string,
-    myGenderPref: string,
-    excludeUids: string[],
-  ) => {
-    setLoading(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDest, setCreateDest] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joining, setJoining] = useState(false);
+
+  // Profile gate
+  useEffect(() => {
+    if (!user) { setHasProfile(false); return; }
+    return onSnapshot(
+      doc(db, 'travelMateProfiles', user.uid),
+      snap => setHasProfile(snap.exists()),
+      () => setHasProfile(false),
+    );
+  }, [user?.uid]);
+
+  // My groups (live)
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(
+      query(collection(db, 'travelMateGroups'), where('members', 'array-contains', user.uid)),
+      snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Group)),
+      () => {},
+    );
+  }, [user?.uid]);
+
+  async function createGroup() {
+    if (creating) return;
+    setCreating(true);
     try {
-      const cutoff = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-      const snap = await getDocs(query(
-        collection(db, 'travelMateProfiles'),
-        where('active', '==', true),
-        where('lastActive', '>', cutoff),
-        orderBy('lastActive', 'desc'),
-        limit(60),
-      ));
-
-      const excludeSet = new Set([myUid, ...excludeUids]);
-      const profiles = snap.docs
-        .map(d => ({ uid: d.id, ...d.data() }) as TMProfile)
-        .filter(p => !excludeSet.has(p.uid))
-        .filter(p => myGenderPref === 'any' || p.gender === myGenderPref);
-
-      setCards(profiles);
-      setOutOfCards(profiles.length === 0);
-    } catch {
-      Alert.alert('Error', 'Could not load profiles. Check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // On every focus: re-read profile (catches returning from setup with new profile)
-  // then load the feed. Cancellation flag prevents state updates after unmount.
-  useFocusEffect(
-    useCallback(() => {
-      if (!user) return;
-      let cancelled = false;
-      setLoading(true);
-
-      (async () => {
-        try {
-          const profileSnap = await getDoc(doc(db, 'travelMateProfiles', user.uid));
-          if (cancelled) return;
-
-          if (!profileSnap.exists()) {
-            setNoProfile(true);
-            setLoading(false);
-            return;
-          }
-
-          setNoProfile(false);
-          const p = { uid: user.uid, ...profileSnap.data() } as TMProfile;
-          setMyProfile(p);
-          setDoc(doc(db, 'travelMateProfiles', user.uid), { lastActive: serverTimestamp() }, { merge: true }).catch(() => {});
-
-          const swipedSnap = await getDocs(
-            query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)),
-          );
-          if (cancelled) return;
-          const swipedUids = swipedSnap.docs.map(d => d.data().swipedId as string);
-          await loadFeed(user.uid, p.genderPref, swipedUids);
-        } catch {
-          if (!cancelled) setLoading(false);
-        }
-      })();
-
-      return () => { cancelled = true; };
-    }, [user?.uid, loadFeed]),
-  );
-
-  async function swipe(direction: 'like' | 'pass') {
-    if (cards.length === 0 || swiping || !user || !myProfile) return;
-    const top = cards[0]!;
-    setSwiping(true);
-    try {
-      await setDoc(doc(db, 'travelMateSwipes', `${user.uid}_${top.uid}`), {
-        swiperId: user.uid,
-        swipedId: top.uid,
-        direction,
-        createdAt: serverTimestamp(),
+      const { groupId } = await api.createTravelMateGroup({
+        name: createName.trim() || undefined,
+        destinationName: createDest.trim() || undefined,
       });
-
-      if (direction === 'like') {
-        const theirSwipe = await getDoc(doc(db, 'travelMateSwipes', `${top.uid}_${user.uid}`));
-        if (theirSwipe.exists() && theirSwipe.data().direction === 'like') {
-          // Mutual like → create match
-          const matchId = [user.uid, top.uid].sort().join('_');
-          await setDoc(doc(db, 'travelMateMatches', matchId), {
-            users: [user.uid, top.uid],
-            userInfo: {
-              [user.uid]: { displayName: myProfile.displayName, photoURL: myProfile.photoURL ?? null },
-              [top.uid]: { displayName: top.displayName, photoURL: top.photoURL ?? null },
-            },
-            status: 'active',
-            createdAt: serverTimestamp(),
-            lastMessage: null,
-            lastMessageAt: null,
-          });
-          setMatchInfo({ name: top.displayName, matchId });
-        }
+      setCreateOpen(false);
+      setCreateName('');
+      setCreateDest('');
+      router.push(`/passenger/travel-mate/group/${groupId}` as Parameters<typeof router.push>[0]);
+    } catch (e: unknown) {
+      if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
+        Alert.alert('Profile needed', 'Set up your Travel Mate profile first, then create a group.');
+      } else {
+        Alert.alert('Could not create group', e instanceof Error ? e.message : 'Please try again.');
       }
-
-      const next = cards.slice(1);
-      setCards(next);
-      if (next.length <= 2) {
-        // Preload next batch
-        const allSwiped = await getDocs(
-          query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)),
-        ).then(s => s.docs.map(d => d.data().swipedId as string));
-        loadFeed(user.uid, myProfile.genderPref, allSwiped);
-      }
-      if (next.length === 0) setOutOfCards(true);
-    } catch {
-      setCards(prev => prev.slice(1));
     } finally {
-      setSwiping(false);
+      setCreating(false);
     }
   }
 
+  async function joinGroup() {
+    const code = joinCode.trim();
+    if (!code || joining) return;
+    setJoining(true);
+    try {
+      await api.joinTravelMateGroup({ groupId: code });
+      setJoinOpen(false);
+      setJoinCode('');
+      router.push(`/passenger/travel-mate/group/${code}` as Parameters<typeof router.push>[0]);
+    } catch (e: unknown) {
+      Alert.alert('Could not join', e instanceof FirebaseError ? e.message : 'Please check the invite code and try again.');
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  // ── Top bar ─────────────────────────────────────────────────────────────────
   const TopBar = () => (
     <View style={s.topBar}>
-      <Pressable onPress={() => router.back()} style={s.backBtn}>
+      <Pressable onPress={() => router.push('/passenger/home')} style={s.backBtn}>
         <Text style={s.backBtnText}>← Book Ride</Text>
       </Pressable>
       <Text style={s.screenTitle}>TravelMate</Text>
@@ -296,31 +129,21 @@ export default function TravelMateDeck() {
     </View>
   );
 
-  // ── Empty states ──────────────────────────────────────────────────────────────
-  if (noProfile) {
+  // ── No profile → create-profile CTA ───────────────────────────────────────────
+  if (hasProfile === false) {
     return (
       <SafeAreaView style={s.safe}>
         <TopBar />
-        <View style={s.emptyBox}>
-          <Text style={s.emptyEmoji}>💛</Text>
-          <Text style={s.emptyTitle}>Set up your profile</Text>
-          <Text style={s.emptySub}>Add a photo and tell people about yourself to start connecting.</Text>
-          <Pressable style={s.primaryBtn} onPress={() => router.push('/passenger/travel-mate/setup')}>
-            <Text style={s.primaryBtnText}>Create profile</Text>
+        <View style={s.gateBox}>
+          <Text style={s.gateEmoji}>💛</Text>
+          <Text style={s.gateTitle}>Welcome to TravelMate</Text>
+          <Text style={s.gateSub}>
+            Find travel partners heading your way, form commute groups, and split the fare.
+            Set up your profile to get started.
+          </Text>
+          <Pressable style={s.gateBtn} onPress={() => router.push('/passenger/travel-mate/setup')}>
+            <Text style={s.gateBtnText}>Create my profile</Text>
           </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (loading) {
-    return (
-      <SafeAreaView style={s.safe}>
-        <TopBar />
-        <View style={s.emptyBox}>
-          <Text style={s.emptyEmoji}>💛</Text>
-          <Text style={s.emptyTitle}>Finding people…</Text>
-          <Text style={s.emptySub}>Looking for active profiles near you.</Text>
         </View>
       </SafeAreaView>
     );
@@ -330,80 +153,180 @@ export default function TravelMateDeck() {
     <SafeAreaView style={s.safe}>
       <TopBar />
 
-      {/* Card deck */}
-      <View style={s.deck}>
-        {outOfCards ? (
-          <View style={s.emptyCard}>
-            <Text style={s.emptyEmoji}>✨</Text>
-            <Text style={s.emptyTitle}>You're all caught up!</Text>
-            <Text style={s.emptySub}>No new people right now. Try the other filter or check back later.</Text>
-            <Pressable
-              onPress={() => {
-                setOutOfCards(false);
-                if (user && myProfile) {
-                  getDocs(query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)))
-                    .then(s => {
-                      const uids = s.docs.map(d => d.data().swipedId as string);
-                      loadFeed(user.uid, myProfile.genderPref, uids);
-                    });
-                }
-              }}
-              style={s.refreshBtn}
-            >
-              <Text style={s.refreshText}>Refresh</Text>
-            </Pressable>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* Hero — Find travel partners */}
+        <Pressable style={s.hero} onPress={() => router.push('/passenger/travel-mate/discover')}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heroKicker}>DISCOVER</Text>
+            <Text style={s.heroTitle}>Find travel partners</Text>
+            <Text style={s.heroSub}>Swipe to match with riders going your way</Text>
           </View>
+          <View style={s.heroIconWrap}>
+            <Text style={s.heroIcon}>🔍</Text>
+          </View>
+        </Pressable>
+
+        {/* Quick actions grid */}
+        <View style={s.grid}>
+          <ActionTile
+            emoji="🤝"
+            label="Create a group"
+            sub="Start a commute group"
+            onPress={() => setCreateOpen(true)}
+          />
+          <ActionTile
+            emoji="➕"
+            label="Join a group"
+            sub="Use an invite code"
+            onPress={() => setJoinOpen(true)}
+          />
+          <ActionTile
+            emoji="❤️"
+            label="Matches"
+            sub="People you matched"
+            onPress={() => router.push('/passenger/travel-mate/matches')}
+          />
+          <ActionTile
+            emoji="💬"
+            label="Chats"
+            sub="Your conversations"
+            onPress={() => router.push('/passenger/travel-mate/chats')}
+          />
+        </View>
+
+        {/* Share a ride link */}
+        <Pressable style={s.shareCard} onPress={() => router.push('/passenger/booking')}>
+          <Text style={s.shareIcon}>🚗</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.shareTitle}>Share a ride link</Text>
+            <Text style={s.shareSub}>Book a ride, then invite partners to join and split the fare</Text>
+          </View>
+          <Text style={s.chevron}>›</Text>
+        </Pressable>
+
+        {/* My groups */}
+        <View style={s.sectionRow}>
+          <Text style={s.sectionHead}>My groups</Text>
+          {groups.length > 0 && (
+            <Pressable onPress={() => setJoinOpen(true)}>
+              <Text style={s.sectionAction}>+ Join</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {groups.length === 0 ? (
+          <Pressable style={s.emptyGroups} onPress={() => setCreateOpen(true)}>
+            <Text style={s.emptyGroupsEmoji}>🤝</Text>
+            <Text style={s.emptyGroupsTitle}>No groups yet</Text>
+            <Text style={s.emptyGroupsSub}>Create a commute group and invite your matches to share rides.</Text>
+            <View style={s.emptyGroupsBtn}><Text style={s.emptyGroupsBtnText}>Create a group</Text></View>
+          </Pressable>
         ) : (
-          [...cards].slice(0, 3).reverse().map((card, idx, arr) => (
-            <SwipeCard
-              key={card.uid}
-              card={card}
-              isTop={idx === arr.length - 1}
-              onLike={() => swipe('like')}
-              onPass={() => swipe('pass')}
-            />
+          groups.map(g => (
+            <Pressable
+              key={g.id}
+              style={s.groupRow}
+              onPress={() => router.push(`/passenger/travel-mate/group/${g.id}` as Parameters<typeof router.push>[0])}
+            >
+              <View style={s.groupIcon}><Text style={{ fontSize: 22 }}>🤝</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.groupName} numberOfLines={1}>{g.name}</Text>
+                <Text style={s.groupSub} numberOfLines={1}>
+                  {g.members.length}/{g.maxSize ?? 4} members{g.destinationName ? ` · ${g.destinationName}` : ''}
+                </Text>
+              </View>
+              <Text style={s.chevron}>›</Text>
+            </Pressable>
           ))
         )}
-      </View>
 
-      {/* Like / Pass buttons */}
-      {!outOfCards && cards.length > 0 && (
-        <View style={s.actions}>
-          <Pressable style={s.actionBtn} onPress={() => swipe('pass')} disabled={swiping}>
-            <Text style={s.passIcon}>✕</Text>
-          </Pressable>
-          <Pressable style={[s.actionBtn, s.likeBtn]} onPress={() => swipe('like')} disabled={swiping}>
-            <Text style={s.likeIcon}>❤️</Text>
-          </Pressable>
+        {/* Profile shortcut */}
+        <Pressable style={s.profileRow} onPress={() => router.push('/passenger/travel-mate/profile')}>
+          <Text style={{ fontSize: 20 }}>👤</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.profileTitle}>My profile</Text>
+            <Text style={s.profileSub}>Edit photo, bio, interests and visibility</Text>
+          </View>
+          <Text style={s.chevron}>›</Text>
+        </Pressable>
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
+
+      {/* Create group modal */}
+      <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => setCreateOpen(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>Create a group</Text>
+            <Text style={s.modalSub}>Name your commute group. You can invite matched partners once it's created.</Text>
+            <TextInput
+              style={s.input}
+              value={createName}
+              onChangeText={setCreateName}
+              placeholder="Group name (e.g. Office Commute)"
+              placeholderTextColor={colors.muted}
+              maxLength={40}
+            />
+            <TextInput
+              style={s.input}
+              value={createDest}
+              onChangeText={setCreateDest}
+              placeholder="Destination (optional)"
+              placeholderTextColor={colors.muted}
+              maxLength={60}
+            />
+            <View style={s.modalActions}>
+              <Pressable onPress={() => { setCreateOpen(false); setCreateName(''); setCreateDest(''); }} style={s.cancelBtn}>
+                <Text style={s.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={createGroup} disabled={creating} style={[s.confirmBtn, creating && { opacity: 0.5 }]}>
+                <Text style={s.confirmBtnText}>{creating ? 'Creating…' : 'Create'}</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
-      )}
+      </Modal>
 
-      {/* Match celebration modal */}
-      <Modal visible={!!matchInfo} transparent animationType="fade">
-        <View style={s.matchOverlay}>
-          <View style={s.matchBox}>
-            <Text style={{ fontSize: 64 }}>🎉</Text>
-            <Text style={s.matchTitle}>It's a match!</Text>
-            <Text style={s.matchSub}>
-              You and {matchInfo?.name} both liked each other.
-            </Text>
-            <Pressable
-              style={s.primaryBtn}
-              onPress={() => {
-                const id = matchInfo?.matchId;
-                setMatchInfo(null);
-                if (id) router.push(`/passenger/travel-mate/chat/${id}` as Parameters<typeof router.push>[0]);
-              }}
-            >
-              <Text style={s.primaryBtnText}>Say hello 👋</Text>
-            </Pressable>
-            <Pressable onPress={() => setMatchInfo(null)} style={s.keepSwiping}>
-              <Text style={s.keepSwipingText}>Keep swiping</Text>
-            </Pressable>
+      {/* Join group modal */}
+      <Modal visible={joinOpen} transparent animationType="slide" onRequestClose={() => setJoinOpen(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>Join a group</Text>
+            <Text style={s.modalSub}>Ask the group creator to share their invite code with you.</Text>
+            <TextInput
+              style={s.input}
+              value={joinCode}
+              onChangeText={setJoinCode}
+              placeholder="Paste invite code…"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={s.modalActions}>
+              <Pressable onPress={() => { setJoinOpen(false); setJoinCode(''); }} style={s.cancelBtn}>
+                <Text style={s.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={joinGroup} disabled={joining || !joinCode.trim()} style={[s.confirmBtn, (!joinCode.trim() || joining) && { opacity: 0.5 }]}>
+                <Text style={s.confirmBtnText}>{joining ? 'Joining…' : 'Join'}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+// ── Quick-action tile ──────────────────────────────────────────────────────────
+function ActionTile({
+  emoji, label, sub, onPress,
+}: { emoji: string; label: string; sub: string; onPress: () => void }) {
+  return (
+    <Pressable style={s.tile} onPress={onPress}>
+      <Text style={s.tileEmoji}>{emoji}</Text>
+      <Text style={s.tileLabel}>{label}</Text>
+      <Text style={s.tileSub}>{sub}</Text>
+    </Pressable>
   );
 }
 
@@ -416,47 +339,71 @@ const s = StyleSheet.create({
   gearBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   gearText:    { fontSize: 16 },
 
-  deck: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { padding: 16, gap: 14 },
 
-  // Cards
-  card:               { position: 'absolute', width: CARD_W, height: CARD_H, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.surface, elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  cardPhoto:          { width: '100%', height: '100%', resizeMode: 'cover' },
-  cardPhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: '#2a2c2c', alignItems: 'center', justifyContent: 'center' },
-  cardAvatarEmoji:    { fontSize: 80 },
-  cardOverlay:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.65)', padding: 20, paddingBottom: 22, gap: 6 },
-  activeBadge:        { alignSelf: 'flex-start', backgroundColor: colors.primary, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 2 },
-  activeBadgeTxt:     { fontSize: 11, fontWeight: '900', color: '#000' },
-  cardName:           { fontSize: 26, fontWeight: '900', color: '#fff' },
-  cardBio:            { fontSize: 13, color: 'rgba(255,255,255,0.8)', lineHeight: 18 },
-  cardTags:           { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
-  cardTag:            { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
-  cardTagTxt:         { fontSize: 11, fontWeight: '700', color: '#fff' },
+  // Hero
+  hero:        { flexDirection: 'row', alignItems: 'center', borderRadius: 20, padding: 20, backgroundColor: PINK, gap: 14 },
+  heroKicker:  { fontSize: 11, fontWeight: '900', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.2 },
+  heroTitle:   { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 4 },
+  heroSub:     { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 4, lineHeight: 18 },
+  heroIconWrap:{ width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  heroIcon:    { fontSize: 30 },
 
-  hintBadge: { position: 'absolute', top: 24, zIndex: 20, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 2 },
-  hintLike:  { right: 16, borderColor: '#4ade80', backgroundColor: '#4ade8030' },
-  hintPass:  { left: 16, borderColor: colors.danger, backgroundColor: `${colors.danger}30` },
-  hintText:  { fontSize: 18, fontWeight: '900', color: '#fff' },
+  // Quick actions grid
+  grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  tile:      { flexBasis: '47%', flexGrow: 1, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 3 },
+  tileEmoji: { fontSize: 26, marginBottom: 4 },
+  tileLabel: { fontSize: 15, fontWeight: '800', color: colors.text },
+  tileSub:   { fontSize: 12, color: colors.muted },
 
-  actions:   { flexDirection: 'row', justifyContent: 'center', gap: 28, paddingVertical: 18 },
-  actionBtn: { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  likeBtn:   { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
-  passIcon:  { fontSize: 28, color: colors.danger, fontWeight: '900' },
-  likeIcon:  { fontSize: 28 },
+  // Share a ride
+  shareCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },
+  shareIcon: { fontSize: 26 },
+  shareTitle:{ fontSize: 15, fontWeight: '800', color: colors.text },
+  shareSub:  { fontSize: 12, color: colors.muted, marginTop: 2, lineHeight: 16 },
 
-  emptyBox:    { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
-  emptyCard:   { alignItems: 'center', padding: 32, gap: 12 },
-  emptyEmoji:  { fontSize: 56 },
-  emptyTitle:  { fontSize: 20, fontWeight: '900', color: colors.text, textAlign: 'center' },
-  emptySub:    { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
-  refreshBtn:  { marginTop: 8, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary },
-  refreshText: { fontSize: 14, fontWeight: '700', color: colors.primary },
-  primaryBtn:  { width: '100%', height: 52, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  primaryBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
+  // Sections
+  sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  sectionHead:  { fontSize: 13, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, textTransform: 'uppercase' },
+  sectionAction:{ fontSize: 13, fontWeight: '800', color: colors.primary },
 
-  matchOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  matchBox:       { backgroundColor: colors.surface, borderRadius: 28, padding: 36, alignItems: 'center', gap: 12, width: '100%', borderWidth: 1.5, borderColor: colors.primary },
-  matchTitle:     { fontSize: 28, fontWeight: '900', color: colors.primary },
-  matchSub:       { fontSize: 15, color: colors.muted, textAlign: 'center', lineHeight: 22 },
-  keepSwiping:    { paddingVertical: 12 },
-  keepSwipingText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
+  // Group rows
+  groupRow:  { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 14 },
+  groupIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${PINK}22`, alignItems: 'center', justifyContent: 'center' },
+  groupName: { fontSize: 15, fontWeight: '800', color: colors.text },
+  groupSub:  { fontSize: 12, color: colors.muted, marginTop: 2 },
+  chevron:   { fontSize: 22, color: colors.muted },
+
+  // Empty groups
+  emptyGroups:     { alignItems: 'center', padding: 24, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 6 },
+  emptyGroupsEmoji:{ fontSize: 30 },
+  emptyGroupsTitle:{ fontSize: 15, fontWeight: '900', color: colors.text },
+  emptyGroupsSub:  { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 },
+  emptyGroupsBtn:  { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: PINK },
+  emptyGroupsBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+
+  // Profile shortcut
+  profileRow:  { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: 6 },
+  profileTitle:{ fontSize: 15, fontWeight: '800', color: colors.text },
+  profileSub:  { fontSize: 12, color: colors.muted, marginTop: 2 },
+
+  // Profile gate
+  gateBox:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
+  gateEmoji: { fontSize: 60 },
+  gateTitle: { fontSize: 24, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  gateSub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 21 },
+  gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  gateBtnText: { fontSize: 16, fontWeight: '900', color: '#fff' },
+
+  // Modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalBox:     { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, gap: 14 },
+  modalTitle:   { fontSize: 18, fontWeight: '900', color: colors.text },
+  modalSub:     { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  input:        { height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, fontSize: 14, color: colors.text, backgroundColor: colors.background },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  cancelBtn:    { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  cancelBtnText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
+  confirmBtn:   { flex: 1, height: 46, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
+  confirmBtnText:{ fontSize: 14, fontWeight: '800', color: '#fff' },
 });

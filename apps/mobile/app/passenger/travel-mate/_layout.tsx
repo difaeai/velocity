@@ -7,6 +7,9 @@ const PINK = '#E8637A';
 
 export default function TravelMateLayout() {
   const insets = useSafeAreaInsets();
+  // Always keep the bar clear of the system navigation bar / gesture area,
+  // even on devices that under-report the bottom inset.
+  const bottomInset = Math.max(insets.bottom, 12);
 
   return (
     <Tabs
@@ -17,9 +20,9 @@ export default function TravelMateLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 60 + insets.bottom,
-          paddingBottom: insets.bottom + 6,
-          paddingTop: 4,
+          height: 58 + bottomInset,
+          paddingBottom: bottomInset,
+          paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
       }}
@@ -27,9 +30,9 @@ export default function TravelMateLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Discover',
+          title: 'Home',
           tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '💛' : '🤍'}</Text>
+            <Text style={{ fontSize: 20 }}>{focused ? '🏠' : '🏡'}</Text>
           ),
         }}
       />
@@ -52,15 +55,6 @@ export default function TravelMateLayout() {
         }}
       />
       <Tabs.Screen
-        name="more"
-        options={{
-          title: 'More',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20, color: focused ? PINK : colors.muted }}>⊞</Text>
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -70,6 +64,7 @@ export default function TravelMateLayout() {
         }}
       />
       {/* Not tabs — push-navigated full-screen */}
+      <Tabs.Screen name="discover" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="setup" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="subscription" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="chat" options={{ href: null, tabBarStyle: { display: 'none' } }} />

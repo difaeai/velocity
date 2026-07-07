@@ -113,10 +113,15 @@ export default function PassengerHome() {
             <Text style={styles.pickupArrow}>➔</Text>
           </Pressable>
 
-          <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
-            <Text style={styles.notificationText}>🔔</Text>
-            <View style={styles.badgeDot} />
-          </Pressable>
+          <View style={styles.topRightGroup}>
+            <Pressable style={styles.themeButton} onPress={switchTheme}>
+              <Text style={styles.themeIcon}>{getThemeMode() === 'dark' ? '🌙' : '☀️'}</Text>
+            </Pressable>
+            <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
+              <Text style={styles.notificationText}>🔔</Text>
+              <View style={styles.badgeDot} />
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -449,6 +454,29 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 22,
   },
+  topRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  themeButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(18,21,20,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  themeIcon: {
+    fontSize: 18,
+  },
   notificationButton: {
     width: 46,
     height: 46,
@@ -511,7 +539,7 @@ const styles = StyleSheet.create({
   pickupPillFloating: {
     position: 'absolute',
     left: 80,
-    right: 80,
+    right: 116,
     top: 4,
     backgroundColor: 'rgba(18,21,20,0.78)',
     borderRadius: 99,
