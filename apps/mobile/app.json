@@ -43,6 +43,7 @@
     },
     "plugins": [
       "./plugins/withGradleConfig",
+      "./plugins/withRemovePermissions",
       "expo-router",
       "expo-status-bar",
       [
