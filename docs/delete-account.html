@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velocity Rides — Delete Your Account</title>
+<meta name="description" content="How to request deletion of your Velocity Rides account and associated data.">
+<style>
+  :root{
+    --bg:#f7f8f6; --surface:#ffffff; --ink:#161d18; --muted:#5c665f;
+    --border:#e5e9e3; --accent:#c3f000; --accent-ink:#1f2b10; --link:#2c7a46;
+    --danger:#c0392b;
+    --shadow:0 1px 2px rgba(20,30,22,.05),0 8px 30px rgba(20,30,22,.05);
+    --maxw:44rem;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1210; --surface:#151a17; --ink:#e7ede8; --muted:#98a49b;
+      --border:#242b26; --link:#a8e05a; --danger:#ef6a5a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:clamp(1.25rem,4vw,3rem) clamp(1.1rem,4vw,2rem) 4rem}
+  header.doc{margin-bottom:2.25rem}
+  .brandbar{display:flex;align-items:center;gap:.7rem;margin-bottom:1.75rem}
+  .mark{display:inline-grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:.55rem;
+    background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:1.05rem;
+    letter-spacing:-.02em;box-shadow:var(--shadow)}
+  .brandname{font-weight:700;letter-spacing:-.01em;font-size:1.02rem}
+  .brandname small{display:block;font-weight:500;color:var(--muted);font-size:.72rem;letter-spacing:.02em}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 .6rem}
+  h1{font-size:clamp(1.9rem,5vw,2.6rem);line-height:1.08;letter-spacing:-.025em;
+    text-wrap:balance;margin:0 0 1rem;font-weight:800}
+  .lede{font-size:1.06rem;color:var(--ink);margin:1.2rem 0 0;max-width:38rem}
+  .meta{display:flex;flex-wrap:wrap;gap:.5rem .9rem;font-size:.85rem;color:var(--muted);
+    padding-top:1rem;border-top:1px solid var(--border);margin-top:1.4rem}
+  .meta b{color:var(--ink);font-weight:600}
+  section{margin-top:2.4rem}
+  h2{font-size:1.18rem;letter-spacing:-.01em;margin:0 0 .8rem;font-weight:700;text-wrap:balance}
+  p{margin:.7rem 0}
+  a{color:var(--link);text-underline-offset:2px}
+  a:focus-visible{outline:2px solid var(--link);outline-offset:3px;border-radius:2px}
+  strong{font-weight:650}
+
+  .steps{list-style:none;margin:1.1rem 0 0;padding:0;counter-reset:step}
+  .steps li{counter-increment:step;position:relative;padding:0 0 0 3rem;margin:0 0 1.1rem}
+  .steps li::before{content:counter(step);position:absolute;left:0;top:-.1rem;
+    width:2rem;height:2rem;display:grid;place-items:center;border-radius:.5rem;
+    background:var(--accent);color:var(--accent-ink);font-weight:800;font-family:var(--mono);
+    font-size:.95rem;box-shadow:var(--shadow)}
+  .steps li b{font-weight:700}
+
+  .cta{display:block;background:var(--surface);border:1px solid var(--border);border-radius:.9rem;
+    padding:1.15rem 1.3rem;box-shadow:var(--shadow);margin-top:1.2rem}
+  .cta .lbl{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .cta a{font-size:1.15rem;font-weight:700;word-break:break-all}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:.9rem;margin-top:1.1rem;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;background:var(--surface)}
+  th,td{text-align:left;padding:.72rem .9rem;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    background:color-mix(in srgb,var(--surface) 92%,var(--ink))}
+  tr:last-child td{border-bottom:none}
+  .tag{font-family:var(--mono);font-size:.7rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;
+    display:inline-block}
+  .tag.del{color:#fff;background:var(--danger)}
+  .tag.keep{color:var(--accent-ink);background:var(--accent)}
+  footer.doc{margin-top:3.2rem;padding-top:1.4rem;border-top:1px solid var(--border);
+    color:var(--muted);font-size:.85rem;display:flex;flex-direction:column;gap:.4rem}
+  footer.doc a{color:var(--link)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;
+    color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:.2rem .6rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="doc">
+    <div class="brandbar">
+      <span class="mark" aria-hidden="true">V</span>
+      <span class="brandname">Velocity Rides<small>com.velocityridzpk.app</small></span>
+    </div>
+    <p class="eyebrow">Account · Data deletion</p>
+    <h1>Delete your account &amp; data</h1>
+    <p class="lede">This page explains how to request deletion of your Velocity Rides account
+      and the personal data associated with it.</p>
+    <div class="meta">
+      <span><b>App:</b> Velocity Rides</span>
+      <span><b>Developer:</b> Velocity Rides</span>
+      <span><b>Effective:</b> 8 July 2026</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>How to request deletion</h2>
+    <ol class="steps">
+      <li><b>Email us</b> at <a href="mailto:berreto01@gmail.com?subject=Account%20Deletion%20Request">berreto01@gmail.com</a>
+        with the subject line <b>“Account Deletion Request”</b>.</li>
+      <li><b>Include your registered mobile number</b> (the phone number you use to sign in) so we
+        can verify the request belongs to you.</li>
+      <li><b>We verify and delete.</b> Once verified, we will delete your account and associated
+        personal data within <b>30 days</b> and confirm by email.</li>
+    </ol>
+
+    <div class="cta">
+      <span class="lbl">Send your request to</span><br>
+      <a href="mailto:berreto01@gmail.com?subject=Account%20Deletion%20Request">berreto01@gmail.com</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is deleted, and what we keep</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Data</th><th>Outcome</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Name &amp; profile</td><td><span class="tag del">Deleted</span></td><td>Removed within 30 days</td></tr>
+          <tr><td>Phone number</td><td><span class="tag del">Deleted</span></td><td>Removed within 30 days</td></tr>
+          <tr><td>Trip history &amp; location data</td><td><span class="tag del">Deleted</span></td><td>Removed within 30 days</td></tr>
+          <tr><td>Driver verification photos</td><td><span class="tag del">Deleted</span></td><td>Removed within 30 days</td></tr>
+          <tr><td>Chat messages</td><td><span class="tag del">Deleted</span></td><td>Removed within 30 days</td></tr>
+          <tr><td>Transaction / legal records</td><td><span class="tag keep">Retained</span></td><td>Kept only where required by law, then deleted</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>We retain a limited set of records only where we are legally required to (for example,
+      records needed for tax, fraud-prevention, or dispute-resolution purposes). These are kept
+      no longer than the period required by applicable law and are then deleted.</p>
+  </section>
+
+  <section>
+    <h2>Questions</h2>
+    <p>If you need help with your request, contact us at
+      <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a>. See also our
+      <a href="./privacy-policy.html">Privacy Policy</a>.</p>
+  </section>
+
+  <footer class="doc">
+    <span class="pill">Velocity Rides · com.velocityridzpk.app</span>
+    <span>© 2026 Velocity Rides. All rights reserved.</span>
+  </footer>
+</div>
+</body>
+</html>
