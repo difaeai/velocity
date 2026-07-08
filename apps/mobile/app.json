@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.velocity.app",
+      "bundleIdentifier": "com.velocityridzpk.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos to upload driver verification documents.",
@@ -19,7 +19,7 @@
       }
     },
     "android": {
-      "package": "com.velocity.app",
+      "package": "com.velocityridzpk.app",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg"
@@ -34,7 +34,6 @@
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ]
@@ -44,6 +43,7 @@
     },
     "plugins": [
       "./plugins/withGradleConfig",
+      "./plugins/withRemovePermissions",
       "expo-router",
       "expo-status-bar",
       [
