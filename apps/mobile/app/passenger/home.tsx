@@ -76,7 +76,10 @@ export default function PassengerHome() {
   };
   const goDriverMode = () => {
     setDrawerOpen(false);
-    router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver');
+    // Active drivers jump straight to their dashboard; everyone else re-verifies
+    // by OTP on the driver login, which then routes them to registration (first
+    // time) or the driver home (already registered).
+    router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver/login');
   };
 
   return (

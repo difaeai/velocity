@@ -156,7 +156,7 @@ export default function ProfileScreen() {
         {/* Earn as a driver banner */}
         <Pressable
           style={styles.driverBanner}
-          onPress={() => router.push('/passenger/become-driver')}
+          onPress={() => router.push('/passenger/become-driver/login')}
         >
           <View style={styles.bannerLeft}>
             <View style={styles.starBadgeCircle}>

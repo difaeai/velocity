@@ -13,8 +13,10 @@ import { useRouter } from 'expo-router';
 import { signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { FirebaseError } from 'firebase/app';
+import { doc, getDoc } from 'firebase/firestore';
 
-import { auth, firebaseConfig } from '../../../src/firebase';
+import { auth, db, firebaseConfig } from '../../../src/firebase';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { PrimaryButton } from '../../../src/ui/components';
 import { LogoMark } from '../../../src/ui/LogoMark';
@@ -34,6 +36,7 @@ function stripPhone(raw: string): string {
  */
 export default function DriverLogin() {
   const router = useRouter();
+  const { refreshRole } = useAuth();
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
   const otpRef = useRef<TextInput>(null);
 
@@ -124,11 +127,37 @@ export default function DriverLogin() {
     if (otp.length !== 6) { setError('Enter the 6-digit code.'); return; }
     setVerifying(true);
     try {
-      await confirmation.confirm(otp);
-      // Verified → continue to the driver registration checklist.
-      router.replace('/passenger/become-driver/checklist');
-    } catch {
-      setError('Incorrect code — please try again.');
+      const cred = await confirmation.confirm(otp);
+
+      // Decide where to send the verified driver based on whether they already
+      // have a driver record:
+      //   • no record        → first time, collect registration details
+      //   • approved record  → registered & active, go to the driver dashboard
+      //   • any other status  → registered but under review, show status screen
+      let exists = false;
+      let status: string | null = null;
+      try {
+        const snap = await getDoc(doc(db, 'drivers', cred.user.uid));
+        exists = snap.exists();
+        status = exists ? ((snap.get('verificationStatus') as string) ?? null) : null;
+      } catch {
+        // If the lookup fails, treat as a new applicant rather than blocking.
+        exists = false;
+      }
+
+      if (!exists) {
+        router.replace('/passenger/become-driver/checklist');
+      } else if (status === 'approved') {
+        // Refresh the role claim first so the driver layout guard lets us in
+        // instead of bouncing back to the passenger home.
+        await refreshRole();
+        router.replace('/driver/home');
+      } else {
+        router.replace('/passenger/become-driver/submitted');
+      }
+    } catch (e) {
+      const isFirebase = e instanceof FirebaseError;
+      setError(isFirebase ? 'Incorrect code — please try again.' : 'Sign-in failed — please try again.');
     } finally {
       setVerifying(false);
     }
@@ -161,13 +190,13 @@ export default function DriverLogin() {
         <View style={styles.container}>
           <View style={styles.brandRow}>
             <View style={styles.logo}><LogoMark size={28} color="#000" spin /></View>
-            <Text style={styles.brand}>Driver sign up</Text>
+            <Text style={styles.brand}>Driver login</Text>
           </View>
 
           {step === 'enter_phone' ? (
             <>
               <Text style={styles.title}>Verify your number</Text>
-              <Text style={styles.subtitle}>Enter your mobile number to start your driver registration.</Text>
+              <Text style={styles.subtitle}>Enter your mobile number to log in or start your driver registration.</Text>
 
               <Text style={styles.label}>Mobile number</Text>
               <View style={styles.phoneRow}>
