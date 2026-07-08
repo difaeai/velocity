@@ -20,7 +20,6 @@ import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
-import { getThemeMode, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
@@ -79,13 +78,6 @@ export default function PassengerHome() {
     setDrawerOpen(false);
     router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver');
   };
-  const switchTheme = async () => {
-    setDrawerOpen(false);
-    const reloaded = await toggleTheme();
-    if (!reloaded) {
-      Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -114,9 +106,6 @@ export default function PassengerHome() {
           </Pressable>
 
           <View style={styles.topRightGroup}>
-            <Pressable style={styles.themeButton} onPress={switchTheme}>
-              <Text style={styles.themeIcon}>{getThemeMode() === 'dark' ? '🌙' : '☀️'}</Text>
-            </Pressable>
             <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
               <Text style={styles.notificationText}>🔔</Text>
               <View style={styles.badgeDot} />
@@ -306,13 +295,6 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Safety</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={switchTheme}>
-                    <Text style={styles.menuItemIcon}>{getThemeMode() === 'dark' ? '☀️' : '🌙'}</Text>
-                    <Text style={styles.menuItemText}>
-                      {getThemeMode() === 'dark' ? 'Light mode' : 'Dark mode'}
-                    </Text>
-                  </Pressable>
-
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/settings')}>
                     <Text style={styles.menuItemIcon}>⚙️</Text>
                     <Text style={styles.menuItemText}>Settings</Text>
@@ -458,24 +440,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  themeButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(18,21,20,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  themeIcon: {
-    fontSize: 18,
   },
   notificationButton: {
     width: 46,

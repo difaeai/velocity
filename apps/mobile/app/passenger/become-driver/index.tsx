@@ -23,7 +23,7 @@ function RoleCard({ emoji, label, onPress }: { emoji: string; label: string; onP
 
 export default function DriverIntro() {
   const router = useRouter();
-  const goDriver = () => router.push('/passenger/become-driver/checklist');
+  const goDriver = () => router.push('/passenger/become-driver/account');
   const goPassenger = () => router.replace('/passenger/home');
 
   const goCourier = () =>
