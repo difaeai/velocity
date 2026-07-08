@@ -151,9 +151,9 @@ export default function TravelMateGroup() {
   function shareInvite() {
     const link = Linking.createURL(`/passenger/travel-mate/group-invite/${groupId}`);
     Share.share({
-      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nIf the link doesn't open, go to Travel Mate → Matches & Groups → "+ Join" and paste this Group ID:\n${groupId}`,
+      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nIf the link doesn't open, go to Travel Mate → More → "+ Join group" and paste this invite code:\n${groupId}`,
       title: 'Join my Travel Mate group',
-    }).catch(() => Alert.alert('Share failed', `Copy this Group ID manually:\n\n${groupId}`));
+    }).catch(() => Alert.alert('Share failed', `Copy this invite code manually:\n\n${groupId}`));
   }
 
   async function openPrivateChat(targetUid: string) {

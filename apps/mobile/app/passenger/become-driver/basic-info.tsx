@@ -31,15 +31,6 @@ export default function BasicInfo() {
           onChangeText={(t) => set({ dob: t })}
           placeholder="DD / MM / YYYY"
         />
-        <Field
-          label="Email"
-          optional
-          value={data.email}
-          onChangeText={(t) => set({ email: t })}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          placeholder="you@example.com"
-        />
 
         <OnbButton label="Next" onPress={() => router.back()} disabled={!data.photo || !data.firstName.trim() || !data.lastName.trim()} />
       </ScrollView>

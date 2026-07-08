@@ -137,7 +137,7 @@ export default function GroupInviteScreen() {
               </Text>
               <PrimaryButton
                 label="Open Discover"
-                onPress={() => router.replace('/passenger/travel-mate' as Parameters<typeof router.replace>[0])}
+                onPress={() => router.replace('/passenger/travel-mate/discover' as Parameters<typeof router.replace>[0])}
               />
             </Card>
           ) : (
