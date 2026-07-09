@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -15,6 +16,7 @@ import { useRouter } from 'expo-router';
 
 import { api } from '../../src/api/client';
 import type { NearbyPoolRequest } from '../../src/api/client';
+import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 
 const GENDER_LABEL: Record<string, string> = {
@@ -86,14 +88,26 @@ function RequestCard({
 
 export default function PoolRequestsScreen() {
   const router = useRouter();
+  const { coords, status: locStatus, request: requestLocation } = useCurrentLocation();
   const [requests, setRequests]     = useState<NearbyPoolRequest[]>([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing]         = useState<string | null>(null);
 
+  // Counter-offer modal (Alert.prompt is iOS-only, so we use our own modal)
+  const [counterTarget, setCounterTarget] = useState<NearbyPoolRequest | null>(null);
+  const [counterValue, setCounterValue]   = useState('');
+
   const load = useCallback(async () => {
+    // Requests are matched around the driver's real position — without GPS
+    // the geohash query would run at (0,0) and return nothing meaningful.
+    if (!coords) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
-      const res = await api.getNearbyPoolRequests({ lat: 0, lng: 0, radiusKm: 5 });
+      const res = await api.getNearbyPoolRequests({ lat: coords.lat, lng: coords.lng, radiusKm: 5 });
       setRequests(res.requests);
     } catch {
       // silently fail
@@ -101,7 +115,7 @@ export default function PoolRequestsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [coords?.lat, coords?.lng]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -123,42 +137,36 @@ export default function PoolRequestsScreen() {
   }
 
   function promptCounter(req: NearbyPoolRequest) {
-    let counterFare = String(req.proposedFarePerSeat + 50);
-    Alert.prompt(
-      'Counter Offer',
-      `Passenger proposed ${req.proposedFarePerSeat} PKR/seat. Enter your counter fare per seat:`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send Counter',
-          onPress: async (value?: string) => {
-            const fareNum = parseInt(value ?? '', 10);
-            if (!fareNum || fareNum <= req.proposedFarePerSeat) {
-              Alert.alert('Invalid', 'Counter fare must be higher than the proposed fare.');
-              return;
-            }
-            setActing(req.requestId);
-            try {
-              await api.driverRespondToRequest({
-                requestId:          req.requestId,
-                action:             'counter',
-                counterFarePerSeat: fareNum,
-              });
-              Alert.alert('Counter Sent!', `The passenger will see your offer of ${fareNum} PKR/seat.`, [
-                { text: 'OK', onPress: load },
-              ]);
-            } catch (e: any) {
-              Alert.alert('Failed', e?.message ?? 'Could not send counter.');
-            } finally {
-              setActing(null);
-            }
-          },
-        },
-      ],
-      'plain-text',
-      counterFare,
-      'number-pad',
-    );
+    // Alert.prompt is iOS-only — on Android it silently does nothing, which
+    // would make countering impossible. Use our own modal on all platforms.
+    setCounterValue(String(req.proposedFarePerSeat + 50));
+    setCounterTarget(req);
+  }
+
+  async function sendCounter() {
+    const req = counterTarget;
+    if (!req) return;
+    const fareNum = parseInt(counterValue, 10);
+    if (!fareNum || fareNum <= req.proposedFarePerSeat) {
+      Alert.alert('Invalid', 'Counter fare must be higher than the proposed fare.');
+      return;
+    }
+    setCounterTarget(null);
+    setActing(req.requestId);
+    try {
+      await api.driverRespondToRequest({
+        requestId:          req.requestId,
+        action:             'counter',
+        counterFarePerSeat: fareNum,
+      });
+      Alert.alert('Counter Sent!', `The passenger will see your offer of ${fareNum} PKR/seat.`, [
+        { text: 'OK', onPress: load },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Failed', e?.message ?? 'Could not send counter.');
+    } finally {
+      setActing(null);
+    }
   }
 
   return (
@@ -186,11 +194,26 @@ export default function PoolRequestsScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyTitle}>No requests nearby</Text>
-              <Text style={styles.emptyText}>No passengers are requesting rides in your area right now. Pull to refresh.</Text>
-            </View>
+            !coords ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>📍</Text>
+                <Text style={styles.emptyTitle}>Location needed</Text>
+                <Text style={styles.emptyText}>
+                  {locStatus === 'denied'
+                    ? 'Location permission was denied. Enable it to see passenger requests near you.'
+                    : 'Getting your location to find passenger requests near you…'}
+                </Text>
+                <Pressable style={styles.enableLocBtn} onPress={requestLocation}>
+                  <Text style={styles.enableLocText}>Enable location</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>📭</Text>
+                <Text style={styles.emptyTitle}>No requests nearby</Text>
+                <Text style={styles.emptyText}>No passengers are requesting rides in your area right now. Pull to refresh.</Text>
+              </View>
+            )
           }
           renderItem={({ item }) => (
             <RequestCard
@@ -208,6 +231,39 @@ export default function PoolRequestsScreen() {
           <Text style={styles.actingText}>Responding...</Text>
         </View>
       )}
+
+      {/* Counter-offer modal (cross-platform) */}
+      <Modal
+        visible={counterTarget !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCounterTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Counter Offer</Text>
+            <Text style={styles.modalSub}>
+              Passenger proposed {counterTarget?.proposedFarePerSeat} PKR/seat. Enter your counter fare per seat:
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              value={counterValue}
+              onChangeText={(t) => setCounterValue(t.replace(/\D/g, ''))}
+              keyboardType="number-pad"
+              autoFocus
+              maxLength={5}
+            />
+            <View style={styles.modalBtns}>
+              <Pressable style={styles.modalCancelBtn} onPress={() => setCounterTarget(null)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.modalSendBtn} onPress={sendCounter}>
+                <Text style={styles.modalSendText}>Send Counter</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -258,4 +314,18 @@ const styles = StyleSheet.create({
 
   actingOverlay:  { position: 'absolute', bottom: 32, left: 32, right: 32, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, elevation: 10 },
   actingText:     { fontSize: 14, color: colors.text, fontWeight: '700' },
+
+  enableLocBtn:   { marginTop: 8, backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 22, paddingVertical: 11 },
+  enableLocText:  { color: '#000', fontWeight: '900', fontSize: 13 },
+
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalBox:        { backgroundColor: colors.glassPanel, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },
+  modalTitle:      { fontSize: 18, fontWeight: '900', color: colors.text },
+  modalSub:        { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  modalInput:      { height: 56, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, paddingHorizontal: 16, fontSize: 24, fontWeight: '900', color: colors.text, backgroundColor: colors.surface, textAlign: 'center' },
+  modalBtns:       { flexDirection: 'row', gap: 12, marginTop: 4 },
+  modalCancelBtn:  { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  modalCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
+  modalSendBtn:    { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  modalSendText:   { fontSize: 14, fontWeight: '900', color: '#000' },
 });

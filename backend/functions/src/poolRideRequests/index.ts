@@ -384,8 +384,10 @@ export const getNearbyPoolRequests = onCall(async (req) => {
       const distKmVal = distKm(lat, lng, d.pickupLat as number, d.pickupLng as number);
       if (distKmVal > radiusKm) continue;
 
-      // Filter out expired requests.
-      if (d.expiresAt && (d.expiresAt as Date) < now) continue;
+      // Filter out expired requests. Firestore returns Timestamps — comparing
+      // a Timestamp object to a Date with < is always false, so convert first.
+      if (d.expiresAt && typeof (d.expiresAt as { toDate?: () => Date }).toDate === 'function'
+          && (d.expiresAt as { toDate: () => Date }).toDate() < now) continue;
 
       // Gender match: driver must match the request's pref.
       if (!genderAllowed(driverGender, d.genderPref as GenderPref)) continue;

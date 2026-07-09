@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,17 @@ import { useRouter } from 'expo-router';
 
 import { api } from '../../../src/api/client';
 import type { PoolGenderPref } from '../../../src/api/client';
+import { useCurrentLocation } from '../../../src/hooks/location';
+import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { colors } from '../../../src/config';
+
+// Places API (New) requires session tokens to be UUID v4
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const GENDER_OPTIONS: { key: PoolGenderPref; label: string; icon: string; desc: string }[] = [
   { key: 'any',         label: 'Open to all',  icon: '👥', desc: 'Any gender' },
@@ -24,30 +34,63 @@ const GENDER_OPTIONS: { key: PoolGenderPref; label: string; icon: string; desc: 
 
 export default function CreatePoolRequestScreen() {
   const router = useRouter();
+  const { coords, address: gpsAddress, status: locStatus, request: requestLocation } = useCurrentLocation();
 
   const [pickupArea, setPickupArea]     = useState('');
   const [destArea, setDestArea]         = useState('');
+  const [destCoords, setDestCoords]     = useState<{ lat: number; lng: number } | null>(null);
+  const [showPredictions, setShowPredictions] = useState(false);
   const [farePerSeat, setFarePerSeat]   = useState('');
   const [totalSlots, setTotalSlots]     = useState(2);
   const [genderPref, setGenderPref]     = useState<PoolGenderPref>('any');
   const [submitting, setSubmitting]     = useState(false);
 
+  const sessionTokenRef = useRef(uuidv4());
+  const { predictions } = usePlacesAutocomplete(showPredictions ? destArea : '', sessionTokenRef.current);
+
+  // Auto-fill the pickup area from the rider's reverse-geocoded GPS position;
+  // they can still edit the label, but the coordinates stay from GPS so the
+  // 1km driver/passenger radius matching works.
+  useEffect(() => {
+    if (gpsAddress) setPickupArea((prev) => (prev.trim() ? prev : gpsAddress));
+  }, [gpsAddress]);
+
   const fareNum = parseInt(farePerSeat, 10) || 0;
   const totalFare = fareNum * totalSlots;
 
+  async function selectPrediction(pred: PlacePrediction) {
+    setDestArea(pred.fullText);
+    setShowPredictions(false);
+    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    if (detail) setDestCoords({ lat: detail.lat, lng: detail.lng });
+    sessionTokenRef.current = uuidv4(); // rotate token after detail call closes the billing session
+  }
+
   async function submit() {
+    if (!coords) {
+      Alert.alert(
+        'Location needed',
+        'We use your current location as the pickup point so nearby drivers and passengers can find your ride. Please enable location access.',
+        [{ text: 'Cancel' }, { text: 'Enable', onPress: requestLocation }],
+      );
+      return;
+    }
     if (!pickupArea.trim())  { Alert.alert('Required', 'Enter your pickup area.'); return; }
     if (!destArea.trim())    { Alert.alert('Required', 'Enter your destination area.'); return; }
     if (fareNum < 50)        { Alert.alert('Invalid fare', 'Enter at least 50 PKR per seat.'); return; }
 
     setSubmitting(true);
     try {
+      // Destination coordinates come from the selected Places suggestion; if
+      // the rider typed a free-form area instead, fall back to the pickup
+      // coordinates (same behaviour as the solo booking screen).
+      const dest = destCoords ?? coords;
       const { requestId } = await api.createPoolRideRequest({
-        pickupLat:           0,
-        pickupLng:           0,
+        pickupLat:           coords.lat,
+        pickupLng:           coords.lng,
         pickupAreaName:      pickupArea.trim(),
-        destinationLat:      0,
-        destinationLng:      0,
+        destinationLat:      dest.lat,
+        destinationLng:      dest.lng,
         destinationAreaName: destArea.trim(),
         proposedFarePerSeat: fareNum,
         totalSlots,
@@ -101,10 +144,43 @@ export default function CreatePoolRequestScreen() {
                 placeholder="Destination area"
                 placeholderTextColor={colors.muted}
                 value={destArea}
-                onChangeText={setDestArea}
+                onChangeText={(t) => {
+                  setDestArea(t);
+                  setDestCoords(null);
+                  setShowPredictions(true);
+                }}
               />
             </View>
           </View>
+
+          {/* Destination suggestions (Google Places) */}
+          {showPredictions && predictions.length > 0 && (
+            <View style={styles.predictionsBox}>
+              {predictions.slice(0, 5).map((pred) => (
+                <Pressable
+                  key={pred.placeId}
+                  style={styles.predictionRow}
+                  onPress={() => selectPrediction(pred)}
+                >
+                  <Text style={styles.predictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                  {!!pred.secondaryText && (
+                    <Text style={styles.predictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {/* GPS status */}
+          {coords ? (
+            <Text style={styles.gpsOk}>📍 Pickup pinned to your current location</Text>
+          ) : locStatus === 'denied' || locStatus === 'unavailable' ? (
+            <Pressable onPress={requestLocation}>
+              <Text style={styles.gpsErr}>⚠️ Location is off — nearby drivers can't find your request. Tap to enable.</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.gpsWait}>Getting your location…</Text>
+          )}
         </View>
 
         {/* Fare */}
@@ -209,6 +285,15 @@ const styles = StyleSheet.create({
   dot:           { width: 10, height: 10, borderRadius: 5 },
   routeInput:    { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
   routeDivider:  { height: 1, backgroundColor: colors.border, marginLeft: 34 },
+
+  predictionsBox: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  predictionRow:  { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 },
+  predictionMain: { fontSize: 13, fontWeight: '700', color: colors.text },
+  predictionSub:  { fontSize: 11, color: colors.muted },
+
+  gpsOk:   { fontSize: 11, color: '#22c55e', fontWeight: '600' },
+  gpsErr:  { fontSize: 11, color: '#f59e0b', fontWeight: '600' },
+  gpsWait: { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
   fareRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, height: 52, gap: 8 },
   farePrefix:    { fontSize: 14, fontWeight: '700', color: colors.muted },

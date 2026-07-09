@@ -92,7 +92,7 @@ function RideCard({ ride, onJoin }: { ride: NearbyActiveRide; onJoin: () => void
 export default function NearbyRidesScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { coords } = useCurrentLocation();
+  const { coords, status: locStatus, request: requestLocation } = useCurrentLocation();
 
   const [rides, setRides]             = useState<NearbyActiveRide[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -142,10 +142,15 @@ export default function NearbyRidesScreen() {
   }
 
   const load = useCallback(async () => {
+    // Rides are matched around the user's real position — querying at (0,0)
+    // would just return nothing (or garbage), so wait for a GPS fix.
+    if (!coords) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
-      const lat = coords?.lat ?? 0;
-      const lng = coords?.lng ?? 0;
-      const res = await api.getNearbyActiveRides({ lat, lng, radiusKm: 5 });
+      const res = await api.getNearbyActiveRides({ lat: coords.lat, lng: coords.lng, radiusKm: 5 });
       setRides(res.rides);
     } catch {
       // silently fail, user sees empty list
@@ -240,14 +245,29 @@ export default function NearbyRidesScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🚗</Text>
-              <Text style={styles.emptyTitle}>No rides nearby</Text>
-              <Text style={styles.emptyText}>No pool rides match your gender preferences in your area right now. Try enabling mixed-gender rides or create your own request.</Text>
-              <Pressable style={styles.createBtn} onPress={() => router.push('/passenger/pool-request/create' as Parameters<typeof router.push>[0])}>
-                <Text style={styles.createBtnText}>Create a Ride Request</Text>
-              </Pressable>
-            </View>
+            !coords ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>📍</Text>
+                <Text style={styles.emptyTitle}>Location needed</Text>
+                <Text style={styles.emptyText}>
+                  {locStatus === 'denied'
+                    ? 'Location permission was denied. Enable it to see pool rides near you.'
+                    : 'Getting your location to find pool rides near you…'}
+                </Text>
+                <Pressable style={styles.createBtn} onPress={requestLocation}>
+                  <Text style={styles.createBtnText}>Enable location</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>🚗</Text>
+                <Text style={styles.emptyTitle}>No rides nearby</Text>
+                <Text style={styles.emptyText}>No pool rides match your gender preferences in your area right now. Try enabling mixed-gender rides or create your own request.</Text>
+                <Pressable style={styles.createBtn} onPress={() => router.push('/passenger/pool-request/create' as Parameters<typeof router.push>[0])}>
+                  <Text style={styles.createBtnText}>Create a Ride Request</Text>
+                </Pressable>
+              </View>
+            )
           }
           renderItem={({ item }) => (
             <RideCard

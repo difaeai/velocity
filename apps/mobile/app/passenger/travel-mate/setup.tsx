@@ -20,6 +20,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { db, functions } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 
 const INTERESTS = [
@@ -27,9 +28,18 @@ const INTERESTS = [
   'Foodie', 'Fitness', 'Art', 'Tech', 'Photography', 'Cooking',
 ];
 
+// Discovery radius options (km). null = show everyone, anywhere.
+const RADIUS_OPTIONS: { km: number | null; label: string }[] = [
+  { km: 5,    label: '5 km' },
+  { km: 10,   label: '10 km' },
+  { km: 25,   label: '25 km' },
+  { km: null, label: 'Anywhere' },
+];
+
 export default function TravelMateSetup() {
   const { user } = useAuth();
   const router = useRouter();
+  const { coords } = useCurrentLocation();
 
   const [photoUri, setPhotoUri]     = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
@@ -40,6 +50,8 @@ export default function TravelMateSetup() {
   const [genderPref, setGenderPref] = useState<'male' | 'female' | 'any'>('any');
   const [bio, setBio]             = useState('');
   const [interests, setInterests] = useState<string[]>([]);
+  const [searchRadiusKm, setSearchRadiusKm] = useState<number | null>(null);
+  const [savedLocation, setSavedLocation]   = useState<{ lat: number; lng: number } | null>(null);
   const [active, setActive]       = useState(true);
   const [loading, setLoading]     = useState(false);
   const [prefilling, setPrefilling] = useState(true);
@@ -57,6 +69,8 @@ export default function TravelMateSetup() {
         setBio(d.bio ?? '');
         setInterests(d.interests ?? []);
         setActive(d.active !== false);
+        setSearchRadiusKm(typeof d.searchRadiusKm === 'number' ? d.searchRadiusKm : null);
+        setSavedLocation(d.location ?? null);
         if (d.photoURL) setPhotoURL(d.photoURL);
       })
       .catch(() => {})
@@ -128,6 +142,10 @@ export default function TravelMateSetup() {
         interests,
         photoURL: finalPhotoURL ?? null,
         active,
+        // Freshest GPS fix wins; otherwise keep whatever was saved before so a
+        // temporary permission denial doesn't wipe the radius feature.
+        location: coords ?? savedLocation ?? null,
+        searchRadiusKm,
         lastActive: serverTimestamp(),
       });
       router.replace('/passenger/travel-mate');
@@ -259,6 +277,26 @@ export default function TravelMateSetup() {
                   </Pressable>
                 );
               })}
+            </View>
+          </View>
+
+          {/* Discovery radius */}
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>Discovery radius</Text>
+            <Text style={s.hint}>
+              Only show people within this distance of you.
+              {!coords && !savedLocation ? ' Enable location access to use a radius.' : ''}
+            </Text>
+            <View style={s.pillRow}>
+              {RADIUS_OPTIONS.map(o => (
+                <Pressable
+                  key={o.label}
+                  style={[s.pill, searchRadiusKm === o.km && s.pillActive]}
+                  onPress={() => setSearchRadiusKm(o.km)}
+                >
+                  <Text style={[s.pillText, searchRadiusKm === o.km && s.pillTextActive]}>{o.label}</Text>
+                </Pressable>
+              ))}
             </View>
           </View>
 

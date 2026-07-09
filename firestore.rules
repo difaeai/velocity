@@ -56,10 +56,13 @@ service cloud.firestore {
       allow read:   if isOwner(userId) || isAdmin();
       // create only happens during the race before onUserCreate trigger fires
       allow create: if isOwner(userId);
-      // update: owner may only touch safe profile fields — role is server-only
+      // update: owner may only touch safe profile fields — role is server-only.
+      // mixedRideOk is the pool-ride opposite-gender opt-in toggled from the
+      // nearby-rides screens.
       allow update: if isOwner(userId)
                     && onlyChanges(['displayName', 'name', 'gender', 'dob', 'age',
-                                    'profileComplete', 'photoURL', 'lastActive', 'updatedAt']);
+                                    'profileComplete', 'photoURL', 'lastActive', 'updatedAt',
+                                    'mixedRideOk']);
       allow update, delete: if isAdmin();
 
       // Saved places (home / work / favourites) — owner-managed bookmarks.
@@ -121,18 +124,22 @@ service cloud.firestore {
     }
 
     // ----- poolRides/{rideId} ----------------------------------------------
+    // Seats / status / gender counters are mutated ONLY by the joinPoolRide /
+    // driverAcceptPoolBatch / startPoolBoarding CFs (Admin SDK). The owning
+    // driver may edit their own offer; nobody else writes.
     match /poolRides/{rideId} {
       allow read: if isSignedIn();
       allow create: if isDriver() && request.resource.data.driverId == uid();
-      allow update: if (isDriver() && resource.data.driverId == uid())
-                    || (isSignedIn()
-                        && onlyChanges(['takenSeats', 'status', 'boardingStartedAt', 'updatedAt']));
+      allow update: if isDriver() && resource.data.driverId == uid();
       allow delete: if false;
 
+      // Passenger seat docs are created exclusively by the joinPoolRide CF —
+      // a direct client create would bypass seat limits and gender rules.
       match /passengers/{passengerId} {
         allow read: if isSignedIn() && (uid() == passengerId || isDriver() || isAdmin());
-        allow create: if isSignedIn() && uid() == passengerId;
-        allow update: if isDriver() || isAdmin();
+        allow create: if false;
+        allow update: if (isDriver() && get(/databases/$(database)/documents/poolRides/$(rideId)).data.driverId == uid())
+                      || isAdmin();
         allow delete: if false;
       }
 
@@ -269,28 +276,52 @@ service cloud.firestore {
       // Owner reads own profile to pre-fill the setup form.
       // Any signed-in user can read profiles to show swipe deck cards.
       allow read: if isSignedIn();
-      // Owner writes own profile directly from the setup screen.
-      allow write: if isOwner(userId);
+      // Owner writes own profile directly from the setup screen — but only the
+      // fields that screen edits. Rating / moderation fields stay server-only.
+      allow create: if isOwner(userId)
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'displayName', 'age', 'gender', 'genderPref', 'bio',
+                          'interests', 'photoURL', 'active', 'lastActive',
+                          'location', 'searchRadiusKm']);
+      allow update: if isOwner(userId)
+                    && onlyChanges(['displayName', 'age', 'gender', 'genderPref', 'bio',
+                                    'interests', 'photoURL', 'active', 'lastActive',
+                                    'location', 'searchRadiusKm']);
+      allow delete: if false;
     }
 
     // ----- travelMateSwipes/{swipeId} ----------------------------------------
-    // swipeId format: {swiperId}_{swipedId}
+    // swipeId format: {swiperId}_{swipedId}. The doc ID MUST encode the real
+    // swiper — otherwise a user could forge someone else's like and then
+    // create a "mutual" match below.
     match /travelMateSwipes/{swipeId} {
       allow read: if isSignedIn() && (
         resource.data.swiperId == uid() || resource.data.swipedId == uid()
       );
-      // Owner can write their own swipes (checked by swiperId == uid in the app).
-      allow create: if isSignedIn() && request.resource.data.swiperId == uid();
+      allow create: if isSignedIn()
+                    && request.resource.data.swiperId == uid()
+                    && request.resource.data.swipedId is string
+                    && request.resource.data.swipedId != uid()
+                    && swipeId == uid() + '_' + request.resource.data.swipedId
+                    && request.resource.data.direction in ['like', 'pass'];
       allow update, delete: if false;
     }
 
     // ----- travelMateMatches/{matchId} -------------------------------------
     // A match doc's `users` array contains exactly two sorted UIDs.
     // Only the two matched users may read the match or its chat.
+    // Creation requires a verified MUTUAL like: both swipe docs must exist
+    // with direction == 'like' (swipe doc IDs are bound to the swiper above,
+    // so neither can be forged).
     match /travelMateMatches/{matchId} {
       allow read: if isSignedIn() && uid() in resource.data.users;
-      // Either matched user can create the match doc (written from swipe logic).
-      allow create: if isSignedIn() && uid() in request.resource.data.users;
+      allow create: if isSignedIn()
+                    && uid() in request.resource.data.users
+                    && request.resource.data.users.size() == 2
+                    && request.resource.data.users[0] != request.resource.data.users[1]
+                    && matchId == request.resource.data.users[0] + '_' + request.resource.data.users[1]
+                    && get(/databases/$(database)/documents/travelMateSwipes/$(request.resource.data.users[0] + '_' + request.resource.data.users[1])).data.direction == 'like'
+                    && get(/databases/$(database)/documents/travelMateSwipes/$(request.resource.data.users[1] + '_' + request.resource.data.users[0])).data.direction == 'like';
       allow update: if false;
       allow delete: if false;
 
