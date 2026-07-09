@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// `expo-location` is native-only; never evaluate it on web (same pattern as
+// src/hooks/location.ts). navigator.geolocation does NOT exist in React
+// Native, so the native path must use expo-location.
+const ExpoLocation =
+  Platform.OS === 'web' ? null : (require('expo-location') as typeof import('expo-location'));
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
@@ -119,22 +125,37 @@ export default function DriverHome() {
     if (user) registerForPushNotifications().catch(() => {});
   }, [user?.uid]);
 
-  // Location tracking for geohash proximity filtering
+  // Location tracking for geohash proximity filtering + the passenger-facing
+  // live driver marker (drivers/{uid}.lastLocation).
   useEffect(() => {
     let watchId: ReturnType<typeof setInterval> | undefined;
     if (online) {
+      const publish = (lat: number, lng: number) => {
+        setDriverCoords({ lat, lng });
+        if (uid) {
+          setDoc(doc(db, 'drivers', uid), {
+            lastLocation: { lat, lng },
+            lastSeenAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {});
+        }
+      };
       const updateLocation = () => {
-        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        if (ExpoLocation) {
+          // Native: navigator.geolocation does not exist in React Native.
+          ExpoLocation.requestForegroundPermissionsAsync()
+            .then(({ status }) => {
+              if (status !== 'granted') return null;
+              return ExpoLocation.getCurrentPositionAsync({
+                accuracy: ExpoLocation.Accuracy.Balanced,
+              });
+            })
+            .then((pos) => {
+              if (pos) publish(pos.coords.latitude, pos.coords.longitude);
+            })
+            .catch(() => {});
+        } else if (typeof navigator !== 'undefined' && navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            pos => {
-              setDriverCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-              if (uid) {
-                setDoc(doc(db, 'drivers', uid), {
-                  lastLocation: { lat: pos.coords.latitude, lng: pos.coords.longitude },
-                  lastSeenAt: serverTimestamp(),
-                }, { merge: true }).catch(() => {});
-              }
-            },
+            pos => publish(pos.coords.latitude, pos.coords.longitude),
             () => {},
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
           );
