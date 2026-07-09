@@ -48,6 +48,18 @@ interface TMProfile {
   interests?: string[];
   photoURL?: string | null;
   lastActive?: { seconds: number };
+  location?: { lat: number; lng: number } | null;
+  searchRadiusKm?: number | null;
+}
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
 }
 
 function activityLabel(p: TMProfile): string | null {
@@ -166,8 +178,7 @@ export default function TravelMateDiscover() {
   const [matchInfo, setMatchInfo]   = useState<{ name: string; matchId: string } | null>(null);
 
   const loadFeed = useCallback(async (
-    myUid: string,
-    myGenderPref: string,
+    me: TMProfile,
     excludeUids: string[],
   ) => {
     setLoading(true);
@@ -181,11 +192,19 @@ export default function TravelMateDiscover() {
         limit(60),
       ));
 
-      const excludeSet = new Set([myUid, ...excludeUids]);
-      const profiles = snap.docs
+      const excludeSet = new Set([me.uid, ...excludeUids]);
+      let profiles = snap.docs
         .map(d => ({ uid: d.id, ...d.data() }) as TMProfile)
         .filter(p => !excludeSet.has(p.uid))
-        .filter(p => myGenderPref === 'any' || p.gender === myGenderPref);
+        .filter(p => me.genderPref === 'any' || p.gender === me.genderPref);
+
+      // Radius preference: when set (and my location is known), only show
+      // people whose saved location falls inside my chosen radius.
+      if (me.searchRadiusKm && me.location) {
+        profiles = profiles.filter(
+          p => p.location && haversineKm(me.location!, p.location) <= me.searchRadiusKm!,
+        );
+      }
 
       setCards(profiles);
       setOutOfCards(profiles.length === 0);
@@ -225,7 +244,7 @@ export default function TravelMateDiscover() {
           );
           if (cancelled) return;
           const swipedUids = swipedSnap.docs.map(d => d.data().swipedId as string);
-          await loadFeed(user.uid, p.genderPref, swipedUids);
+          await loadFeed(p, swipedUids);
         } catch {
           if (!cancelled) setLoading(false);
         }
@@ -250,10 +269,11 @@ export default function TravelMateDiscover() {
       if (direction === 'like') {
         const theirSwipe = await getDoc(doc(db, 'travelMateSwipes', `${top.uid}_${user.uid}`));
         if (theirSwipe.exists() && theirSwipe.data().direction === 'like') {
-          // Mutual like → create match
+          // Mutual like → create match. Security rules verify both swipe docs
+          // and require users == the sorted pair that forms the match ID.
           const matchId = [user.uid, top.uid].sort().join('_');
           await setDoc(doc(db, 'travelMateMatches', matchId), {
-            users: [user.uid, top.uid],
+            users: [user.uid, top.uid].sort(),
             userInfo: {
               [user.uid]: { displayName: myProfile.displayName, photoURL: myProfile.photoURL ?? null },
               [top.uid]: { displayName: top.displayName, photoURL: top.photoURL ?? null },
@@ -274,7 +294,7 @@ export default function TravelMateDiscover() {
         const allSwiped = await getDocs(
           query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)),
         ).then(s => s.docs.map(d => d.data().swipedId as string));
-        loadFeed(user.uid, myProfile.genderPref, allSwiped);
+        loadFeed(myProfile, allSwiped);
       }
       if (next.length === 0) setOutOfCards(true);
     } catch {
@@ -344,7 +364,7 @@ export default function TravelMateDiscover() {
                   getDocs(query(collection(db, 'travelMateSwipes'), where('swiperId', '==', user.uid)))
                     .then(s => {
                       const uids = s.docs.map(d => d.data().swipedId as string);
-                      loadFeed(user.uid, myProfile.genderPref, uids);
+                      loadFeed(myProfile, uids);
                     });
                 }
               }}

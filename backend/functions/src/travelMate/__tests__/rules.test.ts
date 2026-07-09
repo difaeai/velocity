@@ -156,12 +156,113 @@ describe('travelMateProfiles rules', () => {
 
   it('owner can write their own profile (setup screen)', async () => {
     const alice = testEnv.authenticatedContext('alice');
-    await assertSucceeds(alice.firestore().doc('travelMateProfiles/alice').set({ displayName: 'Alice' }));
+    // Mirrors the exact payload the setup screen writes.
+    await assertSucceeds(alice.firestore().doc('travelMateProfiles/alice').set({
+      uid: 'alice',
+      displayName: 'Alice',
+      age: 25,
+      gender: 'female',
+      genderPref: 'any',
+      bio: '',
+      interests: [],
+      photoURL: null,
+      active: true,
+      location: null,
+      searchRadiusKm: null,
+      lastActive: Timestamp.now(),
+    }));
   });
 
   it('SECURITY: non-owner cannot write someone else\'s profile', async () => {
     const eve = testEnv.authenticatedContext('eve');
     await assertFails(eve.firestore().doc('travelMateProfiles/alice').set({ displayName: 'Hacked' }));
+  });
+
+  it('SECURITY: owner cannot smuggle server-only fields into their profile', async () => {
+    const alice = testEnv.authenticatedContext('alice');
+    await assertFails(alice.firestore().doc('travelMateProfiles/alice').set(
+      { ratingAvg: 5, ratingCount: 9999 },
+      { merge: true },
+    ));
+  });
+});
+
+describe('travelMateSwipes rules', () => {
+  it('user can record their own swipe under the {swiper}_{swiped} doc ID', async () => {
+    const alice = testEnv.authenticatedContext('alice');
+    await assertSucceeds(alice.firestore().doc('travelMateSwipes/alice_carol').set({
+      swiperId: 'alice', swipedId: 'carol', direction: 'like', createdAt: Timestamp.now(),
+    }));
+  });
+
+  it('SECURITY: cannot forge someone else\'s swipe via a mismatched doc ID', async () => {
+    const eve = testEnv.authenticatedContext('eve');
+    // Doc ID claims bob swiped eve, but the writer is eve.
+    await assertFails(eve.firestore().doc('travelMateSwipes/bob_eve').set({
+      swiperId: 'eve', swipedId: 'eve', direction: 'like', createdAt: Timestamp.now(),
+    }));
+    await assertFails(eve.firestore().doc('travelMateSwipes/bob_eve').set({
+      swiperId: 'bob', swipedId: 'eve', direction: 'like', createdAt: Timestamp.now(),
+    }));
+  });
+
+  it('SECURITY: cannot swipe yourself', async () => {
+    const eve = testEnv.authenticatedContext('eve');
+    await assertFails(eve.firestore().doc('travelMateSwipes/eve_eve').set({
+      swiperId: 'eve', swipedId: 'eve', direction: 'like', createdAt: Timestamp.now(),
+    }));
+  });
+});
+
+describe('travelMateMatches creation rules', () => {
+  it('mutual like allows either user to create the match', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const fs = ctx.firestore();
+      await fs.doc('travelMateSwipes/carol_dave').set({ swiperId: 'carol', swipedId: 'dave', direction: 'like' });
+      await fs.doc('travelMateSwipes/dave_carol').set({ swiperId: 'dave', swipedId: 'carol', direction: 'like' });
+    });
+    const carol = testEnv.authenticatedContext('carol');
+    await assertSucceeds(carol.firestore().doc('travelMateMatches/carol_dave').set({
+      users: ['carol', 'dave'],
+      userInfo: {},
+      status: 'active',
+      createdAt: Timestamp.now(),
+      lastMessage: null,
+      lastMessageAt: null,
+    }));
+  });
+
+  it('SECURITY: cannot create a match without a mutual like', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      // Only eve liked dave — dave never liked eve back.
+      await ctx.firestore().doc('travelMateSwipes/eve_dave').set({ swiperId: 'eve', swipedId: 'dave', direction: 'like' });
+    });
+    const eve = testEnv.authenticatedContext('eve');
+    await assertFails(eve.firestore().doc('travelMateMatches/dave_eve').set({
+      users: ['dave', 'eve'],
+      userInfo: {},
+      status: 'active',
+      createdAt: Timestamp.now(),
+      lastMessage: null,
+      lastMessageAt: null,
+    }));
+  });
+
+  it('SECURITY: cannot create a match you are not part of', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const fs = ctx.firestore();
+      await fs.doc('travelMateSwipes/carol_dave').set({ swiperId: 'carol', swipedId: 'dave', direction: 'like' });
+      await fs.doc('travelMateSwipes/dave_carol').set({ swiperId: 'dave', swipedId: 'carol', direction: 'like' });
+    });
+    const eve = testEnv.authenticatedContext('eve');
+    await assertFails(eve.firestore().doc('travelMateMatches/carol_dave').set({
+      users: ['carol', 'dave'],
+      userInfo: {},
+      status: 'active',
+      createdAt: Timestamp.now(),
+      lastMessage: null,
+      lastMessageAt: null,
+    }));
   });
 });
 

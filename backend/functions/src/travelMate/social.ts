@@ -63,7 +63,8 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
   const now = admin.firestore.FieldValue.serverTimestamp();
   const batch = db.batch();
   batch.set(msgRef, { senderId: uid, text, createdAt: now });
-  batch.update(matchRef, { lastMessageAt: now });
+  // lastMessage is the preview line on the chats/matches list screens.
+  batch.update(matchRef, { lastMessage: text.slice(0, 100), lastMessageAt: now });
   await batch.commit();
 
   const recipient = otherUser(match.users, uid);

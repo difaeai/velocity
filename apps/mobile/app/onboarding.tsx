@@ -183,7 +183,7 @@ export default function Onboarding() {
           </Pressable>
           <Text style={styles.photoOptional}>Optional · tap to choose</Text>
           {photoUri && (
-            <Pressable onPress={() => setPhotoUri(null)}>
+            <Pressable onPress={() => { setPhotoUri(null); setPhotoBase64(null); }}>
               <Text style={styles.removePhoto}>Remove</Text>
             </Pressable>
           )}
