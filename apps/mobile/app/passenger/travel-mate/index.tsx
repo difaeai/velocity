@@ -16,6 +16,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -23,6 +24,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as ExpoLinking from 'expo-linking';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 
@@ -46,6 +48,7 @@ export default function TravelMateHome() {
   const router = useRouter();
 
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [myName, setMyName] = useState<string>('');
   const [groups, setGroups] = useState<Group[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -62,10 +65,35 @@ export default function TravelMateHome() {
     if (!user) { setHasProfile(false); return; }
     return onSnapshot(
       doc(db, 'travelMateProfiles', user.uid),
-      snap => setHasProfile(snap.exists()),
+      snap => {
+        setHasProfile(snap.exists());
+        setMyName((snap.data()?.displayName as string) ?? '');
+      },
       () => setHasProfile(false),
     );
   }, [user?.uid]);
+
+  function shareProfile() {
+    if (!user) return;
+    if (!hasProfile) {
+      Alert.alert(
+        'No profile yet',
+        'Create your TravelMate profile first, then share your link with other riders.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Create profile', onPress: () => router.push('/passenger/travel-mate/setup') },
+        ],
+      );
+      return;
+    }
+    const link = ExpoLinking.createURL(`/passenger/travel-mate/mate/${user.uid}`);
+    Share.share({
+      message:
+        `👋 I'm ${myName ? `${myName} ` : ''}on Velocity TravelMate.\n\n` +
+        `Check out my profile and match with me to share rides:\n${link}`,
+      title: 'Share my TravelMate profile',
+    }).catch(() => {});
+  }
 
   // My groups (live)
   useEffect(() => {
@@ -200,6 +228,16 @@ export default function TravelMateHome() {
           <View style={{ flex: 1 }}>
             <Text style={s.shareTitle}>Share a ride link</Text>
             <Text style={s.shareSub}>Book a ride, then invite partners to join and split the fare</Text>
+          </View>
+          <Text style={s.chevron}>›</Text>
+        </Pressable>
+
+        {/* Share my profile */}
+        <Pressable style={s.shareCard} onPress={shareProfile}>
+          <Text style={s.shareIcon}>📤</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.shareTitle}>Share my profile</Text>
+            <Text style={s.shareSub}>Send your profile link so other riders can view and match with you</Text>
           </View>
           <Text style={s.chevron}>›</Text>
         </Pressable>

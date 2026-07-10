@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as ExpoLinking from 'expo-linking';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
@@ -47,6 +50,28 @@ export default function TravelMateProfile() {
       .finally(() => setLoading(false));
   }, [user?.uid]);
 
+  function shareProfile() {
+    if (!user) return;
+    if (!profile) {
+      Alert.alert(
+        'No profile yet',
+        'Create your TravelMate profile first, then share your link with other riders.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Create profile', onPress: () => router.push('/passenger/travel-mate/setup') },
+        ],
+      );
+      return;
+    }
+    const link = ExpoLinking.createURL(`/passenger/travel-mate/mate/${user.uid}`);
+    Share.share({
+      message:
+        `👋 I'm ${profile.displayName} on Velocity TravelMate.\n\n` +
+        `Check out my profile and match with me to share rides:\n${link}`,
+      title: 'Share my TravelMate profile',
+    }).catch(() => {});
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
@@ -66,6 +91,9 @@ export default function TravelMateProfile() {
           <Text style={s.emptySub}>Create your TravelMate profile to start matching with other riders.</Text>
           <Pressable style={s.editBtn} onPress={() => router.push('/passenger/travel-mate/setup')}>
             <Text style={s.editBtnText}>Create profile</Text>
+          </Pressable>
+          <Pressable style={s.shareBtnGhost} onPress={shareProfile}>
+            <Text style={s.shareBtnGhostText}>📤 Share my profile</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -134,6 +162,10 @@ export default function TravelMateProfile() {
           <Text style={s.editBtnText}>Edit profile</Text>
         </Pressable>
 
+        <Pressable style={s.shareBtnGhost} onPress={shareProfile}>
+          <Text style={s.shareBtnGhostText}>📤 Share my profile</Text>
+        </Pressable>
+
         <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
@@ -190,4 +222,7 @@ const s = StyleSheet.create({
 
   editBtn:     { width: '100%', height: 52, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   editBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
+
+  shareBtnGhost:     { width: '100%', height: 52, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  shareBtnGhostText: { fontSize: 15, fontWeight: '800', color: colors.text },
 });
