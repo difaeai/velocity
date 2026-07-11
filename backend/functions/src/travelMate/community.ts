@@ -90,14 +90,16 @@ export async function assertNotBlocked(a: string, b: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // createTravelMatePost
 // ---------------------------------------------------------------------------
+// Optional fields are nullish, not optional: the mobile Firebase SDK encodes
+// absent optional fields as null on the wire, which plain .optional() rejects.
 const CreatePostInput = z.object({
   text: z.string().trim().max(2000).default(''),
   // Image travels as base64 through the callable (proven RN-safe path, ~6 MB).
-  imageBase64: z.string().min(10).max(8_000_000).optional(),
+  imageBase64: z.string().min(10).max(8_000_000).nullish(),
   // Videos are uploaded by the client straight to Storage (rules-capped at
   // 50 MB, video/* only); the post only carries the storage path.
-  videoPath: z.string().min(1).max(512).optional(),
-  communityId: z.string().min(1).max(128).optional(),
+  videoPath: z.string().min(1).max(512).nullish(),
+  communityId: z.string().min(1).max(128).nullish(),
 }).refine(v => !(v.imageBase64 && v.videoPath), { message: 'Attach an image OR a video, not both.' });
 
 export const createTravelMatePost = onCall(

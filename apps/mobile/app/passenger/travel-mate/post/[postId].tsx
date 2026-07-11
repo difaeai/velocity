@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
+import { appLink } from '../../../../src/share/links';
 import { WebView } from 'react-native-webview';
 import {
   collection,
@@ -159,7 +159,7 @@ export default function PostDetail() {
 
   function sharePost() {
     if (!post) return;
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/post/${post.id}`);
+    const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message:
         `${post.authorName} on Velocity TravelMate:\n\n` +

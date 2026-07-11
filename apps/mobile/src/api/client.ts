@@ -9,9 +9,27 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import type { Gender, GeoPoint, RideType } from '../domain/types';
 
+/**
+ * The Firebase callable serializer encodes `undefined` object values as
+ * `null` on the wire, which the backend zod schemas reject for `.optional()`
+ * fields ("Invalid post data." etc.). Drop undefined keys before sending so
+ * optional fields are truly absent.
+ */
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value !== null && typeof value === 'object' && value.constructor === Object) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name);
-  return async (data: Req) => (await fn(data)).data;
+  return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
 }
 
 export interface DriverOnboardingInput {

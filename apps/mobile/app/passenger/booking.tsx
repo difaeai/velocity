@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
@@ -93,6 +93,9 @@ function poolFareFor(soloFare: number, extra: number): number {
 export default function Booking() {
   const router = useRouter();
   const { user } = useAuth();
+  // The ride sheet is absolutely pinned to the screen bottom; edge-to-edge
+  // Android draws it behind the system navigation bar unless padded.
+  const insets = useSafeAreaInsets();
   const { coords, address: currentAddress, status: locStatus, request: requestLocation } =
     useCurrentLocation();
   const recents = useRecentDestinations(user?.uid);
@@ -524,7 +527,7 @@ export default function Booking() {
       </SafeAreaView>
 
       {/* Bottom sheet */}
-      <View style={styles.bottomRideSheet}>
+      <View style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
         <View style={styles.dragIndicator} />
 
         <ScrollView
@@ -825,7 +828,7 @@ export default function Booking() {
       {/* Schedule-ride modal */}
       <Modal visible={scheduleOpen} transparent animationType="slide" onRequestClose={() => setScheduleOpen(false)}>
         <View style={styles.schedOverlay}>
-          <View style={styles.schedBox}>
+          <View style={[styles.schedBox, { paddingBottom: 24 + insets.bottom }]}>
             <Text style={styles.schedTitle}>🗓️ Schedule this ride</Text>
             <Text style={styles.schedSub}>
               {`${(pickup.trim() || currentAddress || 'Current location')} → ${dropoff.trim() || 'Destination'}`}

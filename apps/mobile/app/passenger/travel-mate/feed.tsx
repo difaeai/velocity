@@ -30,9 +30,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
+import { appLink } from '../../../src/share/links';
 import * as ImagePicker from 'expo-image-picker';
 import {
   collection,
@@ -138,6 +138,9 @@ export function PostCard({
 export default function TravelMateFeed() {
   const { user } = useAuth();
   const router = useRouter();
+  // Composer opens as a bottom sheet in a Modal (outside the SafeAreaView) —
+  // pad past the system navigation bar or its toolbar is hidden behind it.
+  const insets = useSafeAreaInsets();
   const myProfile = useMyTMProfile();
   const blocked = useBlockedSet();
   const following = useFollowingSet();
@@ -306,7 +309,7 @@ export default function TravelMateFeed() {
   }
 
   function sharePost(post: TMPost) {
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/post/${post.id}`);
+    const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message:
         `${post.authorName} on Velocity TravelMate:\n\n` +
@@ -586,7 +589,7 @@ export default function TravelMateFeed() {
           style={s.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={s.composeBox}>
+          <View style={[s.composeBox, { paddingBottom: 20 + insets.bottom }]}>
             <View style={s.composeHead}>
               <Pressable onPress={() => !posting && setComposeOpen(false)} hitSlop={10}>
                 <Text style={s.composeCancel}>Cancel</Text>

@@ -8,7 +8,9 @@ import { requireAuth, invalid } from '../lib/guards';
 const submitRatingSchema = z.object({
   tripId:     z.string().min(1).max(128),
   stars:      z.number().int().min(1).max(5),
-  comment:    z.string().max(300).optional(),
+  // nullish, not optional: the mobile Firebase SDK encodes absent optional
+  // fields as null on the wire.
+  comment:    z.string().max(300).nullish(),
   targetRole: z.enum(['driver', 'passenger']),
 });
 

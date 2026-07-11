@@ -23,7 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
+import { appLink } from '../../../../src/share/links';
 import {
   collection,
   collectionGroup,
@@ -313,7 +313,7 @@ export default function FeedProfile() {
 
   function shareProfile() {
     if (!profile) return;
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/feed-profile/${profile.uid}`);
+    const link = appLink(`/passenger/travel-mate/feed-profile/${profile.uid}`);
     Share.share({
       message: isOwn
         ? `👋 I'm ${profile.displayName} on Velocity TravelMate. Follow me and see my posts:\n${link}`
@@ -363,7 +363,7 @@ export default function FeedProfile() {
   }
 
   function sharePost(post: TMPost) {
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/post/${post.id}`);
+    const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message: `${post.authorName} on Velocity TravelMate:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
     }).catch(() => {});

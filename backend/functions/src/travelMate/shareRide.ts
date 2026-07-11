@@ -52,9 +52,11 @@ async function requireProfile(uid: string): Promise<MemberInfo> {
 }
 
 // ---------------------------------------------------------------------------
+// groupId is nullish, not optional: the mobile Firebase SDK encodes absent
+// optional fields as null on the wire, which plain .optional() rejects.
 const ShareInput = z.object({
   tripId: z.string().min(1).max(128),
-  groupId: z.string().min(1).max(128).optional(),
+  groupId: z.string().min(1).max(128).nullish(),
 });
 
 export const shareTravelMateRide = onCall({ region: REGION }, async (req: CallableRequest) => {
