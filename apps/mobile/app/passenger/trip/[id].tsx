@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
+import { appLink } from '../../../src/share/links';
 import { FirebaseError } from 'firebase/app';
 import { collection, getDocs, query as fsQuery, where } from 'firebase/firestore';
 
@@ -98,7 +98,7 @@ export default function TripScreen() {
       } catch { /* no group — plain link share */ }
 
       const { shareId } = await api.shareTravelMateRide({ tripId: trip.id, groupId });
-      const link = ExpoLinking.createURL(`/passenger/travel-mate/shared-ride/${shareId}`);
+      const link = appLink(`/passenger/travel-mate/shared-ride/${shareId}`);
       await Share.share({
         message:
           `🚗 Ride with me on Velocity!\n\n` +

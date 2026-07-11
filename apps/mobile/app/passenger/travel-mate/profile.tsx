@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
+import { appLink } from '../../../src/share/links';
 import { collection, doc, getCountFromServer, getDoc, query, where } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
@@ -77,7 +77,7 @@ export default function TravelMateProfile() {
       );
       return;
     }
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/mate/${user.uid}`);
+    const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
         `👋 I'm ${profile.displayName} on Velocity TravelMate.\n\n` +

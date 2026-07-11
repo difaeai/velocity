@@ -23,7 +23,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -33,7 +33,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Share } from 'react-native';
-import * as Linking from 'expo-linking';
+import { appLink } from '../../../../src/share/links';
 import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../../src/firebase';
@@ -74,6 +74,7 @@ export default function TravelMateGroup() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const { user } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -149,9 +150,9 @@ export default function TravelMateGroup() {
   }
 
   function shareInvite() {
-    const link = Linking.createURL(`/passenger/travel-mate/group-invite/${groupId}`);
+    const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
     Share.share({
-      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nIf the link doesn't open, go to Travel Mate → More → "+ Join group" and paste this invite code:\n${groupId}`,
+      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nOr open the app → TravelMate → "Join a group" and paste this invite code:\n${groupId}`,
       title: 'Join my Travel Mate group',
     }).catch(() => Alert.alert('Share failed', `Copy this invite code manually:\n\n${groupId}`));
   }
@@ -214,8 +215,16 @@ export default function TravelMateGroup() {
               </View>
             </>
           )}
+          {/* Invite code — always visible so members can dictate/copy it */}
+          <View style={s.inviteBox}>
+            <Text style={s.inviteLabel}>INVITE CODE</Text>
+            <Text style={s.inviteCode} selectable>{groupId}</Text>
+            <Text style={s.inviteHint}>
+              Long-press to copy. Partners must be matched with a member to join.
+            </Text>
+          </View>
           <Pressable onPress={shareInvite} style={s.copyIdBtn}>
-            <Text style={s.copyIdText}>🔗 Share invite link</Text>
+            <Text style={s.copyIdText}>🔗 Share invite link + code</Text>
           </Pressable>
         </Card>
 
@@ -346,7 +355,7 @@ export default function TravelMateGroup() {
       {/* Settle fare modal */}
       <Modal visible={settleOpen} transparent animationType="slide" onRequestClose={closeSettle}>
         <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
+          <View style={[s.modalBox, { paddingBottom: 24 + insets.bottom }]}>
             {settleResult ? (
               <>
                 <Text style={s.resultEmoji}>✅</Text>
@@ -444,6 +453,10 @@ const s = StyleSheet.create({
   daysRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   dayChip:    { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   dayChipText:{ fontSize: 11, fontWeight: '800', color: colors.primary },
+  inviteBox:  { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: `${colors.primary}12`, borderWidth: 1, borderColor: `${colors.primary}40`, gap: 4 },
+  inviteLabel:{ fontSize: 10, fontWeight: '900', color: colors.primary, letterSpacing: 1 },
+  inviteCode: { fontSize: 15, fontWeight: '800', color: colors.text, fontFamily: 'monospace' },
+  inviteHint: { fontSize: 11, color: colors.muted, lineHeight: 15 },
   copyIdBtn:  { marginTop: 8, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   copyIdText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 

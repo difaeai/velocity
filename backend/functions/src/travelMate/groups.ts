@@ -30,13 +30,15 @@ async function areMatched(a: string, b: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Optional fields are nullish, not optional: the mobile Firebase SDK encodes
+// absent optional fields as null on the wire, which plain .optional() rejects.
 const CreateInput = z.object({
-  name: z.string().trim().max(80).optional(),
-  destinationName: z.string().trim().max(120).optional(),
+  name: z.string().trim().max(80).nullish(),
+  destinationName: z.string().trim().max(120).nullish(),
   schedule: z.object({
     days: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).min(1),
     departTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  }).optional(),
+  }).nullish(),
 });
 
 export const createTravelMateGroup = onCall({ region: REGION }, async (req: CallableRequest) => {

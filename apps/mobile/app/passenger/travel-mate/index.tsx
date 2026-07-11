@@ -22,15 +22,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import * as ExpoLinking from 'expo-linking';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
+import { appLink } from '../../../src/share/links';
 import { colors } from '../../../src/config';
 
 const PINK = '#E8637A';
@@ -46,6 +46,9 @@ interface Group {
 export default function TravelMateHome() {
   const { user } = useAuth();
   const router = useRouter();
+  // Edge-to-edge Android draws behind the system navigation bar — bottom
+  // sheets must pad past it or their last row is hidden behind the OS bar.
+  const insets = useSafeAreaInsets();
 
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   const [myName, setMyName] = useState<string>('');
@@ -109,7 +112,7 @@ export default function TravelMateHome() {
       );
       return;
     }
-    const link = ExpoLinking.createURL(`/passenger/travel-mate/mate/${user.uid}`);
+    const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
         `👋 I'm ${myName ? `${myName} ` : ''}on Velocity TravelMate.\n\n` +
@@ -140,6 +143,27 @@ export default function TravelMateHome() {
       setCreateName('');
       setCreateDest('');
       router.push(`/passenger/travel-mate/group/${groupId}` as Parameters<typeof router.push>[0]);
+      // Surface the invite code immediately — people kept creating groups and
+      // never finding the code others need to join.
+      Alert.alert(
+        'Group created 🎉',
+        `Invite code:\n\n${groupId}\n\nShare it with matched travel partners — they join via "Join a group", or by opening your invite link. The code also stays visible on the group screen.`,
+        [
+          {
+            text: 'Share invite',
+            onPress: () => {
+              const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
+              Share.share({
+                message:
+                  `Join my Travel Mate commute group on Velocity!\n\n${link}\n\n` +
+                  `Or open the app → TravelMate → "Join a group" and paste this invite code:\n${groupId}`,
+                title: 'Join my Travel Mate group',
+              }).catch(() => {});
+            },
+          },
+          { text: 'Done' },
+        ],
+      );
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
         Alert.alert('Profile needed', 'Set up your Travel Mate profile first, then create a group.');
@@ -165,6 +189,34 @@ export default function TravelMateHome() {
     } finally {
       setJoining(false);
     }
+  }
+
+  // "Share a ride link" used to dead-end on the booking screen with no
+  // explanation. Now: an active ride jumps straight to its trip screen (where
+  // the share button lives); otherwise explain the flow first.
+  async function openShareRide() {
+    if (!user) return;
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'trips'),
+        where('passengerId', '==', user.uid),
+        where('status', 'in', ['requested', 'accepted', 'arriving', 'arrived', 'in_progress']),
+        limit(1),
+      ));
+      const active = snap.docs[0];
+      if (active) {
+        router.push(`/passenger/trip/${active.id}` as Parameters<typeof router.push>[0]);
+        return;
+      }
+    } catch { /* query unavailable — fall through to the explainer */ }
+    Alert.alert(
+      'Share a ride link',
+      'Ride links come from a booked ride:\n\n1. Book a ride as usual.\n2. On the trip screen, tap "🤝 Share ride link with Travel Mates".\n3. Matched partners open your link, join the same ride, and you split the fare.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Book a ride', onPress: () => router.push('/passenger/booking') },
+      ],
+    );
   }
 
   // ── Top bar ─────────────────────────────────────────────────────────────────
@@ -259,11 +311,11 @@ export default function TravelMateHome() {
         </View>
 
         {/* Share a ride link */}
-        <Pressable style={s.shareCard} onPress={() => router.push('/passenger/booking')}>
+        <Pressable style={s.shareCard} onPress={openShareRide}>
           <Text style={s.shareIcon}>🚗</Text>
           <View style={{ flex: 1 }}>
             <Text style={s.shareTitle}>Share a ride link</Text>
-            <Text style={s.shareSub}>Book a ride, then invite partners to join and split the fare</Text>
+            <Text style={s.shareSub}>Share your active ride so partners join it and split the fare</Text>
           </View>
           <Text style={s.chevron}>›</Text>
         </Pressable>
@@ -347,7 +399,7 @@ export default function TravelMateHome() {
       {/* Create group modal */}
       <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => setCreateOpen(false)}>
         <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
+          <View style={[s.modalBox, { paddingBottom: 28 + insets.bottom }]}>
             <Text style={s.modalTitle}>Create a group</Text>
             <Text style={s.modalSub}>Name your commute group. You can invite matched partners once it's created.</Text>
             <TextInput
@@ -421,7 +473,7 @@ export default function TravelMateHome() {
       {/* Join group modal */}
       <Modal visible={joinOpen} transparent animationType="slide" onRequestClose={() => setJoinOpen(false)}>
         <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
+          <View style={[s.modalBox, { paddingBottom: 28 + insets.bottom }]}>
             <Text style={s.modalTitle}>Join a group</Text>
             <Text style={s.modalSub}>Ask the group creator to share their invite code with you.</Text>
             <TextInput
