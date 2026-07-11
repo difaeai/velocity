@@ -28,6 +28,7 @@ import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
+import { areaLabel } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
 import { PrimaryButton } from '../../../../src/ui/components';
 
@@ -160,13 +161,15 @@ export default function TravelMateVisitorProfile() {
             </View>
           )}
 
+          {/* Visitors only ever see coarse AREA names (e.g. "F-7", "Bahria
+              Town Phase 1") — never a street or house address. */}
           {(profile.travelPrefs?.homeLocations?.length ?? 0) > 0 && (
             <View style={s.card}>
               <Text style={s.cardLabel}>Usually starts rides from</Text>
               <View style={s.tagsRow}>
                 {profile.travelPrefs!.homeLocations!.map((p, i) => (
                   <View key={`${p.label}-${i}`} style={s.tag}>
-                    <Text style={s.tagText}>📍 {p.label}</Text>
+                    <Text style={s.tagText}>📍 {areaLabel(p.label)}</Text>
                   </View>
                 ))}
               </View>
@@ -179,7 +182,7 @@ export default function TravelMateVisitorProfile() {
               <View style={s.tagsRow}>
                 {profile.travelPrefs!.travelToLocations!.map((p, i) => (
                   <View key={`${p.label}-${i}`} style={s.tag}>
-                    <Text style={s.tagText}>🧭 {p.label}</Text>
+                    <Text style={s.tagText}>🧭 {areaLabel(p.label)}</Text>
                   </View>
                 ))}
               </View>

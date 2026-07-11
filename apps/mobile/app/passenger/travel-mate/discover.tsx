@@ -30,7 +30,9 @@ import {
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { api } from '../../../src/api/client';
 import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
+import { areaSummary } from '../../../src/lib/areaLabel';
 import { colors } from '../../../src/config';
 
 const { width, height } = Dimensions.get('window');
@@ -164,15 +166,16 @@ function SwipeCard({
             ))}
           </View>
         )}
-        {/* FROM / TO — helps decide whether their routes match yours */}
-        {(card.travelPrefs?.homeLocations?.length ?? 0) > 0 && (
+        {/* FROM / TO — coarse AREA names only (never street/house level), just
+            enough to judge whether their usual routes overlap with yours */}
+        {areaSummary(card.travelPrefs?.homeLocations) && (
           <Text style={s.cardTravelsTo} numberOfLines={1}>
-            📍 From: {card.travelPrefs!.homeLocations!.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
+            📍 From: {areaSummary(card.travelPrefs?.homeLocations)}
           </Text>
         )}
-        {(card.travelPrefs?.travelToLocations?.length ?? 0) > 0 && (
+        {areaSummary(card.travelPrefs?.travelToLocations) && (
           <Text style={s.cardTravelsTo} numberOfLines={1}>
-            🧭 To: {card.travelPrefs!.travelToLocations!.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
+            🧭 To: {areaSummary(card.travelPrefs?.travelToLocations)}
           </Text>
         )}
       </View>
@@ -192,6 +195,7 @@ export default function TravelMateDiscover() {
   const [noProfile, setNoProfile]   = useState(false);
   const [outOfCards, setOutOfCards] = useState(false);
   const [swiping, setSwiping]       = useState(false);
+  const [messaging, setMessaging]   = useState(false);
   const [matchInfo, setMatchInfo]   = useState<{ name: string; matchId: string } | null>(null);
 
   const loadFeed = useCallback(async (
@@ -322,6 +326,29 @@ export default function TravelMateDiscover() {
     }
   }
 
+  // Message the person on the top card without swiping — opens (or reuses) a
+  // direct chat through the same DM infrastructure as the community feed.
+  async function messageTop() {
+    if (cards.length === 0 || messaging || !user) return;
+    const top = cards[0]!;
+    setMessaging(true);
+    try {
+      const { matchId } = await api.openTravelMateFeedChat({ targetUid: top.uid });
+      router.push(`/passenger/travel-mate/chat/${matchId}` as Parameters<typeof router.push>[0]);
+    } catch (e: unknown) {
+      const code = e instanceof Error && 'code' in e ? (e as { code: string }).code : '';
+      if (code === 'functions/failed-precondition') {
+        Alert.alert('Cannot message', e instanceof Error ? e.message : 'Set up your profile first.');
+      } else if (code === 'functions/permission-denied') {
+        Alert.alert('Unavailable', 'You cannot message this user.');
+      } else {
+        Alert.alert('Error', 'Could not open the chat. Try again.');
+      }
+    } finally {
+      setMessaging(false);
+    }
+  }
+
   const TopBar = () => (
     <View style={s.topBar}>
       <Pressable onPress={() => router.back()} style={s.backBtn}>
@@ -404,11 +431,18 @@ export default function TravelMateDiscover() {
         )}
       </View>
 
-      {/* Like / Pass buttons */}
+      {/* Pass / Message / Like buttons */}
       {!outOfCards && cards.length > 0 && (
         <View style={s.actions}>
           <Pressable style={s.actionBtn} onPress={() => swipe('pass')} disabled={swiping}>
             <Text style={s.passIcon}>✕</Text>
+          </Pressable>
+          <Pressable
+            style={[s.actionBtn, s.msgBtn, messaging && { opacity: 0.5 }]}
+            onPress={messageTop}
+            disabled={messaging}
+          >
+            <Text style={s.msgIcon}>💬</Text>
           </Pressable>
           <Pressable style={[s.actionBtn, s.likeBtn]} onPress={() => swipe('like')} disabled={swiping}>
             <Text style={s.likeIcon}>❤️</Text>
@@ -479,8 +513,10 @@ const s = StyleSheet.create({
   actions:   { flexDirection: 'row', justifyContent: 'center', gap: 28, paddingVertical: 18 },
   actionBtn: { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
   likeBtn:   { borderColor: colors.primary, backgroundColor: `${colors.primary}18` },
+  msgBtn:    { borderColor: colors.secondary, backgroundColor: `${colors.secondary}18`, width: 58, height: 58, borderRadius: 29 },
   passIcon:  { fontSize: 28, color: colors.danger, fontWeight: '900' },
   likeIcon:  { fontSize: 28 },
+  msgIcon:   { fontSize: 24 },
 
   emptyBox:    { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
   emptyCard:   { alignItems: 'center', padding: 32, gap: 12 },
