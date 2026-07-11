@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,6 +30,7 @@ import { db } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
 import { colors } from '../../src/config';
 import { ChatModal } from '../../src/ui/ChatModal';
 import {
@@ -152,6 +153,12 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number 
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Rides posted before dropoff geocoding stored (0,0) — no zone check possible.
+function hasRealDropoff(ride: PoolRide): boolean {
+  return !!ride.dropoff?.lat && !!ride.dropoff?.lng &&
+    !(ride.dropoff.lat === 0 && ride.dropoff.lng === 0);
 }
 
 function fmtTime(ts: Timestamp): string {
@@ -344,10 +351,57 @@ export default function PoolRideScreen() {
   const [booking, setBooking]             = useState(false);
   const [showFareTable, setShowFareTable] = useState(false);
   const [destForBooking, setDestForBooking] = useState('');
+  // Coordinates of the joiner's chosen drop-off — must land inside the ride's
+  // drop zone (validated here for instant feedback, re-validated server-side).
+  const [destCoordsForBooking, setDestCoordsForBooking] = useState<{ lat: number; lng: number } | null>(null);
+  const [destPredictionsOpen, setDestPredictionsOpen]   = useState(false);
   const [rulesAccepted, setRulesAccepted]   = useState(false);
   // Confirmed booking state — subscribe to real-time status updates
   const [bookingStatus, setBookingStatus] = useState<string>('confirmed');
   const [chatOpen, setChatOpen]           = useState(false);
+
+  // Places autocomplete for the joiner's drop-off (Places API needs UUID v4 tokens)
+  const sessionTokenRef = useRef(
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    }),
+  );
+  const { predictions: destPredictions } = usePlacesAutocomplete(
+    destPredictionsOpen && step === 'detail' ? destForBooking : '',
+    sessionTokenRef.current,
+  );
+
+  async function selectDestPrediction(pred: PlacePrediction) {
+    if (!selected) return;
+    setDestPredictionsOpen(false);
+    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    if (!detail) {
+      Alert.alert('Could not load place', 'Please try another suggestion.');
+      return;
+    }
+    const distM = distKm(selected.dropoff.lat, selected.dropoff.lng, detail.lat, detail.lng) * 1000;
+    if (hasRealDropoff(selected) && distM > selected.dropoffRadius) {
+      Alert.alert(
+        'Outside the drop zone',
+        `That spot is ${(distM / 1000).toFixed(1)} km from the pool destination. ` +
+        `Your drop-off must be within ${selected.dropoffRadius} m of "${selected.dropoff.address}". ` +
+        'Pick a closer point, use the same destination, or ask the driver to drop you inside the zone.',
+      );
+      return;
+    }
+    setDestForBooking(pred.fullText || detail.address);
+    setDestCoordsForBooking({ lat: detail.lat, lng: detail.lng });
+  }
+
+  function useSameDestination() {
+    if (!selected) return;
+    setDestForBooking(selected.dropoff.address);
+    setDestCoordsForBooking(
+      hasRealDropoff(selected) ? { lat: selected.dropoff.lat, lng: selected.dropoff.lng } : null,
+    );
+    setDestPredictionsOpen(false);
+  }
 
   // Load user gender + mixed-ride preference from profile
   useEffect(() => {
@@ -527,6 +581,24 @@ export default function PoolRideScreen() {
       return;
     }
 
+    // Drop-zone check (server re-validates): the chosen drop-off must fall
+    // inside the ride's drop radius of the pool destination.
+    if (destCoordsForBooking && hasRealDropoff(selected)) {
+      const distM = distKm(
+        selected.dropoff.lat, selected.dropoff.lng,
+        destCoordsForBooking.lat, destCoordsForBooking.lng,
+      ) * 1000;
+      if (distM > selected.dropoffRadius) {
+        Alert.alert(
+          'Outside the drop zone',
+          `Your drop-off is ${(distM / 1000).toFixed(1)} km from the pool destination — it must be ` +
+          `within ${selected.dropoffRadius} m of "${selected.dropoff.address}". Pick a closer point, ` +
+          'use the same destination, or ask the driver to drop you inside the zone.',
+        );
+        return;
+      }
+    }
+
     const maleSeats   = selected.maleSeats   ?? 0;
     const femaleSeats = selected.femaleSeats ?? 0;
     const composition =
@@ -566,6 +638,9 @@ export default function PoolRideScreen() {
         pickupLng:      coords?.lng ?? selected.pickup.lng,
         pickupAddress:  pickupAddress ?? 'Current location',
         dropoffAddress: dest,
+        ...(destCoordsForBooking
+          ? { dropoffLat: destCoordsForBooking.lat, dropoffLng: destCoordsForBooking.lng }
+          : {}),
       });
       if (res.queued) {
         // Mixed car (1M+1F): riders are added in same-gender pairs. The driver
@@ -801,21 +876,48 @@ export default function PoolRideScreen() {
             </View>
           )}
 
-          {/* Destination input */}
-          <Text style={styles.fieldLabel}>YOUR DESTINATION</Text>
+          {/* Destination input — must land inside the ride's drop zone */}
+          <Text style={styles.fieldLabel}>YOUR DROP-OFF</Text>
+          <Pressable style={styles.sameDestChip} onPress={useSameDestination}>
+            <Text style={styles.sameDestChipText}>
+              🏁 Same as pool destination — {selected.dropoff.address}
+            </Text>
+          </Pressable>
           <View style={styles.destField}>
             <View style={[styles.locationDot, { backgroundColor: '#ef4444' }]} />
             <TextInput
               style={styles.destInput}
-              placeholder="Where are you going?"
+              placeholder="Or search a spot inside the drop zone…"
               placeholderTextColor={colors.muted}
               value={destForBooking}
-              onChangeText={setDestForBooking}
+              onChangeText={(t) => {
+                setDestForBooking(t);
+                setDestCoordsForBooking(null);
+                setDestPredictionsOpen(true);
+              }}
               returnKeyType="done"
             />
           </View>
+          {destPredictionsOpen && destPredictions.length > 0 && (
+            <View style={styles.destPredictionsBox}>
+              {destPredictions.slice(0, 5).map((pred) => (
+                <Pressable
+                  key={pred.placeId}
+                  style={styles.destPredictionRow}
+                  onPress={() => selectDestPrediction(pred)}
+                >
+                  <Text style={styles.destPredictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                  {!!pred.secondaryText && (
+                    <Text style={styles.destPredictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          )}
           <Text style={styles.destHint}>
-            Driver will drop you within {selected.dropoffRadius}m of your destination
+            Pool rule: everyone is dropped within {selected.dropoffRadius}m of the pool
+            destination. Choose the same spot, a point inside that zone, or ask the driver
+            to drop you within it.
           </Text>
 
           {/* How it works */}
@@ -1026,7 +1128,13 @@ export default function PoolRideScreen() {
         renderItem={({ item }) => (
           <PoolRideCard
             ride={item}
-            onJoin={() => { setSelected(item); setDestForBooking(''); setStep('detail'); }}
+            onJoin={() => {
+              setSelected(item);
+              setDestForBooking('');
+              setDestCoordsForBooking(null);
+              setDestPredictionsOpen(false);
+              setStep('detail');
+            }}
           />
         )}
         ListFooterComponent={
@@ -1637,6 +1745,13 @@ const styles = StyleSheet.create({
   },
   destInput: { flex: 1, height: 46, fontSize: 14, fontWeight: '700', color: colors.text },
   destHint: { fontSize: 10, color: colors.muted, fontStyle: 'italic' },
+
+  sameDestChip: { backgroundColor: colors.glassLime, borderRadius: 12, borderWidth: 1, borderColor: `${colors.primary}40`, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  sameDestChipText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  destPredictionsBox: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginTop: 6 },
+  destPredictionRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 },
+  destPredictionMain: { fontSize: 13, fontWeight: '700', color: colors.text },
+  destPredictionSub: { fontSize: 11, color: colors.muted },
 
   howRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   howNum: {

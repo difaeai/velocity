@@ -93,6 +93,19 @@ export default function FareConfig() {
   const [config,  setConfig]  = useState<CityFareConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
+  // Pool drop zone default (config/poolSettings) — how far from the pool
+  // destination a joiner's drop-off may be when the driver didn't set a
+  // per-ride radius. City-independent.
+  const [poolDropRadiusM, setPoolDropRadiusM] = useState(1000);
+
+  useEffect(() => {
+    getDoc(doc(db, 'config', 'poolSettings'))
+      .then((snap) => {
+        const v = snap.get('dropRadiusM') as number | undefined;
+        if (typeof v === 'number') setPoolDropRadiusM(v);
+      })
+      .catch(() => {});
+  }, []);
 
   const city = CITIES[cityIdx]!;
   const cat  = CATEGORIES[catIdx]!;
@@ -140,6 +153,11 @@ export default function FareConfig() {
     setSaving(true);
     try {
       await setDoc(doc(db, 'fareConfig', city.id), { ...config, updatedAt: Date.now() });
+      await setDoc(
+        doc(db, 'config', 'poolSettings'),
+        { dropRadiusM: poolDropRadiusM, updatedAt: Date.now() },
+        { merge: true },
+      );
       Alert.alert('Saved', `Fare config for ${city.label} saved successfully.`);
     } catch (e) {
       Alert.alert('Error', String(e));
@@ -206,6 +224,12 @@ export default function FareConfig() {
               onChange={(v) => setConfig((p) => p ? { ...p, pooling: { ...p.pooling, perRiderFactor: { ...p.pooling.perRiderFactor, 3: v / 100 } } } : p)} />
             <RateField label="Pool: 4 riders factor (%)" unit="%" value={+((config.pooling.perRiderFactor[4] ?? 0.42) * 100)} step={5}
               onChange={(v) => setConfig((p) => p ? { ...p, pooling: { ...p.pooling, perRiderFactor: { ...p.pooling.perRiderFactor, 4: v / 100 } } } : p)} />
+            <RateField label="Pool drop zone default (m)" unit="m" value={poolDropRadiusM} step={100}
+              onChange={(v) => setPoolDropRadiusM(Math.min(5000, Math.max(100, v)))} />
+            <Text style={styles.poolRadiusHint}>
+              Joiners must be dropped within this radius of the pool destination when the driver
+              hasn't set a per-ride radius. Drivers must end the ride inside this zone.
+            </Text>
           </View>
 
           {/* Category tabs */}
@@ -293,6 +317,7 @@ const styles = StyleSheet.create({
   card:   { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, gap: 12 },
   cardTitle:{ fontSize: 15, fontWeight: '900', color: '#fff', marginBottom: 4 },
   cardHint: { fontSize: 11, color: '#8a8c8c', lineHeight: 16, marginBottom: 4 },
+  poolRadiusHint: { fontSize: 11, color: '#8a8c8c', lineHeight: 16 },
 
   catTabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   catTab:    { flex: 1, backgroundColor: colors.surface, borderRadius: 10, padding: 8, alignItems: 'center', gap: 2 },

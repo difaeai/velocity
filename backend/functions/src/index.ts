@@ -99,6 +99,9 @@ export {
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';
 
+// Scheduled rides — auto-book recurring rides from the Book Ride screen
+export { upsertScheduledRide, deleteScheduledRide, runScheduledRides } from './scheduledRides';
+
 // Fare engine — estimate, bid validation, pooling quote, admin seeding
 export { getFareEstimate, submitBid, getPoolingQuote, seedFareConfig } from './fare';
 

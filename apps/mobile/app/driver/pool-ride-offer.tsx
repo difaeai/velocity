@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
 import { colors } from '../../src/config';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
@@ -59,6 +60,20 @@ export default function PoolRideOfferScreen() {
 
   const [pickupAddr, setPickupAddr] = useState('');
   const [dropoffAddr, setDropoffAddr] = useState('');
+  // Real coordinates for the dropoff (from Places) — the drop zone every
+  // passenger must be dropped inside is centred here.
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [showDropPredictions, setShowDropPredictions] = useState(false);
+  const sessionTokenRef = useRef(
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    }),
+  );
+  const { predictions: dropPredictions } = usePlacesAutocomplete(
+    showDropPredictions ? dropoffAddr : '',
+    sessionTokenRef.current,
+  );
   const [rideCategory, setRideCategory] = useState('mini');
   const [pickupRadius, setPickupRadius] = useState(400);
   const [dropoffRadius, setDropoffRadius] = useState(300);
@@ -140,8 +155,10 @@ export default function PoolRideOfferScreen() {
           address: pickupAddr.trim(),
         },
         dropoff: {
-          lat: coords?.lat ?? 0,
-          lng: coords?.lng ?? 0,
+          // Real destination pin from Places — the centre of the drop zone all
+          // passengers must be dropped inside. (0,0) only when never selected.
+          lat: dropoffCoords?.lat ?? 0,
+          lng: dropoffCoords?.lng ?? 0,
           address: dropoffAddr.trim(),
         },
         pickupRadius,
@@ -233,12 +250,44 @@ export default function PoolRideOfferScreen() {
                 placeholder="Dropoff area / neighbourhood"
                 placeholderTextColor={colors.muted}
                 value={dropoffAddr}
-                onChangeText={setDropoffAddr}
+                onChangeText={(t) => {
+                  setDropoffAddr(t);
+                  setDropoffCoords(null);
+                  setShowDropPredictions(true);
+                }}
               />
             </View>
           </View>
+
+          {/* Dropoff suggestions (Google Places) — pins the drop zone centre */}
+          {showDropPredictions && dropPredictions.length > 0 && (
+            <View style={styles.predictionsBox}>
+              {dropPredictions.slice(0, 5).map((pred) => (
+                <Pressable
+                  key={pred.placeId}
+                  style={styles.predictionRow}
+                  onPress={async () => {
+                    setDropoffAddr(pred.fullText);
+                    setShowDropPredictions(false);
+                    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+                    if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
+                  }}
+                >
+                  <Text style={styles.predictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                  {!!pred.secondaryText && (
+                    <Text style={styles.predictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {dropoffCoords && (
+            <Text style={styles.dropPinnedText}>✓ Drop zone pinned to this destination</Text>
+          )}
+
           <Text style={styles.helperText}>
             Passengers within your set radius of the pickup/drop zone can join your ride.
+            Every passenger's drop-off must fall inside your drop radius around the destination.
           </Text>
         </View>
 
@@ -492,7 +541,9 @@ export default function PoolRideOfferScreen() {
         </Pressable>
 
         <Text style={styles.legalNote}>
-          By posting, you agree to pick up all confirmed passengers within {pickupRadius}m of the origin and drop them within {dropoffRadius}m of their destination.
+          By posting, you agree to pick up all confirmed passengers within {pickupRadius}m of the
+          origin, drop every passenger within {dropoffRadius}m of the destination, and end the ride
+          before leaving that drop zone.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -518,6 +569,12 @@ const styles = StyleSheet.create({
   section: { gap: 8, marginBottom: 14 },
   sectionTitle: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6 },
   helperText: { fontSize: 12, color: colors.muted, lineHeight: 17 },
+
+  predictionsBox: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  predictionRow:  { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 },
+  predictionMain: { fontSize: 13, fontWeight: '700', color: colors.text },
+  predictionSub:  { fontSize: 11, color: colors.muted },
+  dropPinnedText: { fontSize: 11, color: '#22c55e', fontWeight: '600' },
 
   // Category grid
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

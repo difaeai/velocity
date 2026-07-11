@@ -49,6 +49,8 @@ export default function TravelMateHome() {
 
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   const [myName, setMyName] = useState<string>('');
+  const [hasTravelPrefs, setHasTravelPrefs] = useState<boolean | null>(null);
+  const [travelPrefsDismissed, setTravelPrefsDismissed] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -68,10 +70,17 @@ export default function TravelMateHome() {
       snap => {
         setHasProfile(snap.exists());
         setMyName((snap.data()?.displayName as string) ?? '');
+        setHasTravelPrefs(snap.exists() ? !!snap.data()?.travelPrefs : null);
       },
       () => setHasProfile(false),
     );
   }, [user?.uid]);
+
+  // Right after the profile exists but travel locations were never set up,
+  // prompt for them — the pins tell partners (and riders) where this user
+  // usually starts rides from and travels to.
+  const showTravelPrefsDialog =
+    hasProfile === true && hasTravelPrefs === false && !travelPrefsDismissed;
 
   function shareProfile() {
     if (!user) return;
@@ -288,6 +297,23 @@ export default function TravelMateHome() {
           <Text style={s.chevron}>›</Text>
         </Pressable>
 
+        {/* Travel locations shortcut */}
+        <Pressable
+          style={s.profileRow}
+          onPress={() => router.push('/passenger/travel-mate/travel-locations' as Parameters<typeof router.push>[0])}
+        >
+          <Text style={{ fontSize: 20 }}>🗺️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.profileTitle}>My travel locations</Text>
+            <Text style={s.profileSub}>
+              {hasTravelPrefs
+                ? 'Where you usually start rides from and travel to'
+                : 'Set where you usually start rides from and travel to'}
+            </Text>
+          </View>
+          <Text style={s.chevron}>›</Text>
+        </Pressable>
+
         <View style={{ height: 24 }} />
       </ScrollView>
 
@@ -321,6 +347,43 @@ export default function TravelMateHome() {
                 <Text style={s.confirmBtnText}>{creating ? 'Creating…' : 'Create'}</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Post-profile travel-locations dialog */}
+      <Modal
+        visible={showTravelPrefsDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTravelPrefsDismissed(true)}
+      >
+        <View style={s.dialogOverlay}>
+          <View style={s.dialogBox}>
+            <Text style={s.dialogEmoji}>🗺️</Text>
+            <Text style={s.dialogTitle}>Set your travel locations</Text>
+            <Text style={s.dialogText}>
+              First, drop the pin you usually <Text style={s.dialogBold}>start rides from</Text> —
+              it's wherever you are when you book (a coffee shop counts!), not a permanent home
+              address. Then add the places you usually <Text style={s.dialogBold}>travel to</Text>.
+              You can save more than one of each.
+            </Text>
+            <Text style={s.dialogText}>
+              This helps other TravelMate users guess your routes and find you as a partner —
+              and helps riders see where you usually go.
+            </Text>
+            <Pressable
+              style={s.dialogPrimaryBtn}
+              onPress={() => {
+                setTravelPrefsDismissed(true);
+                router.push('/passenger/travel-mate/travel-locations' as Parameters<typeof router.push>[0]);
+              }}
+            >
+              <Text style={s.dialogPrimaryText}>Set up now</Text>
+            </Pressable>
+            <Pressable style={s.dialogSkipBtn} onPress={() => setTravelPrefsDismissed(true)}>
+              <Text style={s.dialogSkipText}>Maybe later</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -432,6 +495,18 @@ const s = StyleSheet.create({
   gateSub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 21 },
   gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   gateBtnText: { fontSize: 16, fontWeight: '900', color: '#fff' },
+
+  // Travel-locations dialog
+  dialogOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center', padding: 28 },
+  dialogBox:        { width: '100%', backgroundColor: colors.surface, borderRadius: 24, padding: 26, gap: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  dialogEmoji:      { fontSize: 44 },
+  dialogTitle:      { fontSize: 19, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  dialogText:       { fontSize: 13, color: colors.muted, lineHeight: 19, textAlign: 'center' },
+  dialogBold:       { fontWeight: '900', color: colors.text },
+  dialogPrimaryBtn: { width: '100%', height: 50, borderRadius: 14, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  dialogPrimaryText:{ fontSize: 15, fontWeight: '900', color: '#fff' },
+  dialogSkipBtn:    { paddingVertical: 6 },
+  dialogSkipText:   { fontSize: 13, fontWeight: '700', color: colors.muted },
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },

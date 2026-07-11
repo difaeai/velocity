@@ -282,11 +282,13 @@ service cloud.firestore {
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'displayName', 'age', 'gender', 'genderPref', 'bio',
                           'interests', 'photoURL', 'active', 'lastActive',
-                          'location', 'searchRadiusKm']);
+                          'location', 'searchRadiusKm',
+                          'travelPrefs', 'travelPrefsUpdatedAt']);
       allow update: if isOwner(userId)
                     && onlyChanges(['displayName', 'age', 'gender', 'genderPref', 'bio',
                                     'interests', 'photoURL', 'active', 'lastActive',
-                                    'location', 'searchRadiusKm']);
+                                    'location', 'searchRadiusKm',
+                                    'travelPrefs', 'travelPrefsUpdatedAt']);
       allow delete: if false;
     }
 
@@ -419,6 +421,15 @@ service cloud.firestore {
     // the exact home/destination coordinates are NEVER returned to drivers.
     match /commuteSchedules/{userId} {
       allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- scheduledRides/{scheduleId} ---------------------------------------
+    // Recurring auto-booked rides. Written only by the upsertScheduledRide /
+    // deleteScheduledRide CFs; the cron creates the actual trips. Owners read
+    // their own schedules to render the "Scheduled rides" screen.
+    match /scheduledRides/{scheduleId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
       allow write: if false;
     }
 
