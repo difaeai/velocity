@@ -61,6 +61,11 @@ export default function SignIn() {
   }, [step]);
 
   async function sendOtp(isResend = false) {
+    // Reentrancy guard — the keyboard "Done" key and the Send button can both
+    // fire. Two concurrent sends orphan one captcha session, which then hangs
+    // until its timeout and dumps a phantom "timed out" error on the OTP screen.
+    if (sending) return;
+
     setError(null);
     const digits = stripPhone(phone);
     setPhone(digits);
@@ -77,13 +82,16 @@ export default function SignIn() {
     setSending(true);
     if (isResend) setResendLabel('Sending…');
     setError(null);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      // 15-second timeout — reCAPTCHA re-verification can hang on some devices
+      // Generous 60-second timeout: when Google escalates to a VISIBLE captcha
+      // the user needs time to solve it — a short timeout fires mid-challenge.
+      // The timer is cleared once the race settles so it can never fire late.
       const result = await Promise.race([
         signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 15000)
-        ),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('timeout')), 60000);
+        }),
       ]);
       setConfirmation(result);
       setStep('enter_otp');
@@ -95,7 +103,10 @@ export default function SignIn() {
     } catch (e) {
       const isTimeout = e instanceof Error && e.message === 'timeout';
       if (isTimeout) {
-        setError('Request timed out. Tap Resend OTP to try again.');
+        // Say the right thing for the button that is actually on screen.
+        setError(isResend
+          ? 'Request timed out. Tap Resend OTP to try again.'
+          : 'Request timed out. Tap Send OTP to try again.');
         if (isResend) setResendLabel('Resend OTP');
         return;
       }
@@ -110,11 +121,13 @@ export default function SignIn() {
       else setError(`Failed [${code}]: ${msg}`);
       if (isResend) setResendLabel('Resend OTP');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setSending(false);
     }
   }
 
   async function verifyOtp() {
+    if (verifying) return;
     setError(null);
     if (!confirmation) { setError('Please request OTP first.'); return; }
     if (otp.length !== 6) { setError('Enter the 6-digit code.'); return; }
@@ -153,10 +166,10 @@ export default function SignIn() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.container}>
-          {/* Brand */}
-          <View style={styles.brandRow}>
-            <View style={styles.logo}><LogoMark size={28} color="#000" spin /></View>
-            <Text style={styles.brand}>Velocity</Text>
+          {/* Brand — centered at the top, same lime mark as the splash screen */}
+          <View style={styles.brandBlock}>
+            <LogoMark size={72} color={colors.primary} spin />
+            <Text style={styles.brand}>VELOCITY</Text>
           </View>
 
           {step === 'enter_phone' ? (
@@ -262,11 +275,10 @@ const styles = StyleSheet.create({
   flex:      { flex: 1 },
   container: { flex: 1, padding: 28, justifyContent: 'center', gap: 14 },
 
-  brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  logo:       { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  brand:      { fontSize: 26, fontWeight: '900', color: colors.text },
-  title:      { fontSize: 28, fontWeight: '900', color: colors.text },
-  subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 4 },
+  brandBlock: { alignItems: 'center', gap: 12, marginBottom: 16 },
+  brand:      { fontSize: 26, fontWeight: '900', color: colors.text, letterSpacing: 4 },
+  title:      { fontSize: 28, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  subtitle:   { fontSize: 15, color: colors.muted, marginBottom: 4, textAlign: 'center' },
 
   label:     { fontSize: 13, fontWeight: '700', color: colors.text },
   phoneRow:  { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
