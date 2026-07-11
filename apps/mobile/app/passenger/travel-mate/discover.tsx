@@ -50,6 +50,10 @@ interface TMProfile {
   lastActive?: { seconds: number };
   location?: { lat: number; lng: number } | null;
   searchRadiusKm?: number | null;
+  travelPrefs?: {
+    homeLocations?: { lat: number; lng: number; label: string }[];
+    travelToLocations?: { lat: number; lng: number; label: string }[];
+  };
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -158,6 +162,11 @@ function SwipeCard({
               </View>
             ))}
           </View>
+        )}
+        {(card.travelPrefs?.travelToLocations?.length ?? 0) > 0 && (
+          <Text style={s.cardTravelsTo} numberOfLines={1}>
+            🧭 Travels to {card.travelPrefs!.travelToLocations!.map(p => p.label).slice(0, 2).join(' · ')}
+          </Text>
         )}
       </View>
     </Animated.View>
@@ -451,6 +460,7 @@ const s = StyleSheet.create({
   cardTags:           { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   cardTag:            { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
   cardTagTxt:         { fontSize: 11, fontWeight: '700', color: '#fff' },
+  cardTravelsTo:      { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.92)', marginTop: 4 },
 
   hintBadge: { position: 'absolute', top: 24, zIndex: 20, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 2 },
   hintLike:  { right: 16, borderColor: '#4ade80', backgroundColor: '#4ade8030' },

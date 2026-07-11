@@ -6,6 +6,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
 
@@ -64,6 +65,11 @@ export const createPoolRideRequest = onCall(async (req) => {
   // Expire in 30 minutes if no driver responds.
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
+  // Drop zone: joiners must be dropped within this radius of the leader's
+  // destination (admin-configurable, default 1 km). Fixed at creation so the
+  // rule everyone agreed to cannot shift under them mid-ride.
+  const dropRadiusM = await getAdminDropRadiusM();
+
   // Seed passenger gender composition from the leader.
   const initMale   = leaderGender === 'male'   ? 1 : 0;
   const initFemale = leaderGender === 'female' ? 1 : 0;
@@ -86,6 +92,8 @@ export const createPoolRideRequest = onCall(async (req) => {
     totalSlots:          d.totalSlots,
     filledSlots:         1,
     passengers:          [ctx.uid],
+    dropRadiusM,
+    passengerDropoffs:   {},
     genderPref:          d.genderPref,
     maleSeats:           initMale,
     femaleSeats:         initFemale,
@@ -231,13 +239,19 @@ export const leaderRespondToOffer = onCall(async (req) => {
 
 const JoinSchema = z.object({
   requestId: z.string().min(1).max(128),
+  // Joiner's own drop-off. Optional — omitted means "same destination as the
+  // leader". When given it must be inside the request's drop zone.
+  dropoffLat:      z.number().min(-90).max(90).optional(),
+  dropoffLng:      z.number().min(-180).max(180).optional(),
+  dropoffAreaName: z.string().trim().min(1).max(120).optional(),
 });
 
 export const joinPoolRideRequest = onCall(async (req) => {
   const ctx = requireAuth(req); // drivers off shift may act as passengers too
   const p = JoinSchema.safeParse(req.data);
   if (!p.success) invalid('Invalid request.');
-  const { requestId } = p.data;
+  const { requestId, dropoffLat, dropoffLng, dropoffAreaName } = p.data;
+  const adminDropRadiusM = await getAdminDropRadiusM();
 
   const passengerGender = await getUserGender(ctx.uid);
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
@@ -271,6 +285,25 @@ export const joinPoolRideRequest = onCall(async (req) => {
     // Gender enforcement — joining passenger must match the leader's preference.
     if (!genderAllowed(passengerGender, data.genderPref as GenderPref)) {
       throw new HttpsError('permission-denied', 'Your gender does not match this ride\'s preference.');
+    }
+
+    // Drop-zone rule — the joiner's drop-off must be within the request's
+    // drop radius of the leader's destination (the pool destination decided
+    // when the ride was created). Omitted coords mean "same destination".
+    if (typeof dropoffLat === 'number' && typeof dropoffLng === 'number') {
+      const dropRadiusM = effectiveDropRadiusM(data.dropRadiusM as number | undefined, adminDropRadiusM);
+      const distM = distanceM(
+        data.destinationLat as number, data.destinationLng as number,
+        dropoffLat, dropoffLng,
+      );
+      if (distM > dropRadiusM) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Your drop-off is ${(distM / 1000).toFixed(1)} km from the pool destination. ` +
+          `It must be within ${dropRadiusM} m of "${data.destinationAreaName}" — ` +
+          'pick the same destination, a point inside the drop zone, or ask the driver to drop you within it.',
+        );
+      }
     }
 
     // Composition rules — check whether the resulting mix is acceptable.
@@ -307,6 +340,13 @@ export const joinPoolRideRequest = onCall(async (req) => {
       femaleSeats:       newFemale,
       genderComposition: newComposition,
       status:            newFilledSlots >= data.totalSlots ? 'full' : 'active',
+      // Record where this joiner wants to be dropped (leader/driver can see
+      // every stop stays inside the drop zone). Null coords = same destination.
+      [`passengerDropoffs.${ctx.uid}`]: {
+        lat:      dropoffLat ?? null,
+        lng:      dropoffLng ?? null,
+        areaName: dropoffAreaName ?? (data.destinationAreaName as string),
+      },
       updatedAt:         FieldValue.serverTimestamp(),
     });
   });
@@ -467,6 +507,10 @@ export const getNearbyActiveRides = onCall(async (req) => {
         id:                  doc.id,
         pickupAreaName:      d.pickupAreaName,
         destinationAreaName: d.destinationAreaName,
+        // Destination pin + drop zone so joiners can pick a drop-off inside it.
+        destinationLat:      d.destinationLat,
+        destinationLng:      d.destinationLng,
+        dropRadiusM:         (d.dropRadiusM as number) ?? 1000,
         farePerSeat:         d.agreedFarePerSeat ?? d.proposedFarePerSeat,
         totalSlots:          d.totalSlots,
         slotsAvailable:      (d.totalSlots as number) - (d.filledSlots as number),
@@ -495,6 +539,9 @@ export const getNearbyActiveRides = onCall(async (req) => {
       id:                  doc.id,
       pickupAreaName:      d.pickup?.address ?? 'Nearby',
       destinationAreaName: d.dropoff?.address ?? 'Destination',
+      destinationLat:      d.dropoff?.lat ?? null,
+      destinationLng:      d.dropoff?.lng ?? null,
+      dropRadiusM:         (d.dropoffRadius as number) ?? 1000,
       farePerSeat:         d.perSeatFare,
       totalSlots:          d.maxSeats,
       slotsAvailable:      (d.maxSeats as number) - (d.takenSeats as number),

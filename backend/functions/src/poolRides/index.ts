@@ -7,6 +7,13 @@ import { requireRole, requireAuth, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import {
+  DRIVER_END_RIDE_SLACK_M,
+  distanceM,
+  effectiveDropRadiusM,
+  getAdminDropRadiusM,
+  hasRealCoords,
+} from '../lib/poolRadius';
 
 // ── Haversine distance in km ─────────────────────────────────────────────────
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -168,15 +175,27 @@ export const poolPassengerBoarded = onCall(async (req) => {
  * Driver completes the pool ride after reaching the destination.
  * Marks all boarded passengers as dropped_off, increments driver's
  * cycleGrossFare for commission tracking.
+ *
+ * Drop-zone rule: the driver must end the ride BEFORE leaving the drop zone —
+ * when the client reports a GPS position, completion is rejected if the driver
+ * is outside the ride's drop radius of the pool destination (+ GPS slack), so
+ * every passenger is dropped inside the zone.
  */
+const CompletePoolSchema = z.object({
+  rideId:    z.string().min(1).max(128),
+  driverLat: z.number().min(-90).max(90).optional(),
+  driverLng: z.number().min(-180).max(180).optional(),
+});
+
 export const completePoolRide = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
-  const parsed = z.object({ rideId: z.string().min(1).max(128) }).safeParse(req.data);
+  const parsed = CompletePoolSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid rideId.');
-  const { rideId } = parsed.data;
+  const { rideId, driverLat, driverLng } = parsed.data;
 
   const rideRef   = db.doc(`poolRides/${rideId}`);
   const driverRef = db.doc(`drivers/${ctx.uid}`);
+  const adminDropRadiusM = await getAdminDropRadiusM();
 
   await db.runTransaction(async (tx) => {
     // Transactional reads must all happen before the first write.
@@ -185,6 +204,24 @@ export const completePoolRide = onCall(async (req) => {
     if (rideSnap.get('driverId') !== ctx.uid) throw new HttpsError('permission-denied', 'Not your pool ride.');
     if (rideSnap.get('status') !== 'in_progress') {
       throw new HttpsError('failed-precondition', 'Ride is not in progress.');
+    }
+
+    // Driver must still be inside the drop zone when ending the ride.
+    const dropoff = rideSnap.get('dropoff') as { lat?: number; lng?: number; address?: string } | undefined;
+    if (
+      typeof driverLat === 'number' && typeof driverLng === 'number' &&
+      hasRealCoords(dropoff?.lat, dropoff?.lng)
+    ) {
+      const dropRadiusM = effectiveDropRadiusM(rideSnap.get('dropoffRadius') as number | undefined, adminDropRadiusM);
+      const distM = distanceM(dropoff!.lat!, dropoff!.lng!, driverLat, driverLng);
+      if (distM > dropRadiusM + DRIVER_END_RIDE_SLACK_M) {
+        throw new HttpsError(
+          'failed-precondition',
+          `You are ${(distM / 1000).toFixed(1)} km from the pool destination. ` +
+          `Drop all passengers and end the ride within ${dropRadiusM} m of ` +
+          `"${dropoff?.address ?? 'the destination'}" before driving on.`,
+        );
+      }
     }
 
     const perSeatFare: number = rideSnap.get('perSeatFare') ?? 0;
@@ -250,6 +287,10 @@ const JoinRideSchema = z.object({
   pickupLng:      z.number().min(-180).max(180),
   pickupAddress:  z.string().trim().min(1).max(300),
   dropoffAddress: z.string().trim().min(1).max(300),
+  // Joiner's chosen drop-off point. Optional for backward compatibility —
+  // when omitted the joiner is treated as going to the pool destination.
+  dropoffLat:     z.number().min(-90).max(90).optional(),
+  dropoffLng:     z.number().min(-180).max(180).optional(),
 });
 
 /**
@@ -261,13 +302,18 @@ const JoinRideSchema = z.object({
  *     (e.g. 2M+1F, 2F+1M, females in a 3-male pool, etc.).
  *   - Requires mixedRideOk opt-in from the user when joining a mixed-gender pool.
  *   - Atomically updates maleSeats, femaleSeats, genderComposition, and takenSeats.
+ *
+ * Drop-zone rule: the joiner's drop-off must lie within the ride's drop radius
+ * of the pool destination (driver-set, else admin default, else 1 km).
  */
 export const joinPoolRide = onCall(async (req) => {
   // Any signed-in user may ride as a passenger — including drivers off shift.
   const ctx = requireAuth(req);
   const p = JoinRideSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
-  const { rideId, pickupLat, pickupLng, pickupAddress, dropoffAddress } = p.data;
+  const { rideId, pickupLat, pickupLng, pickupAddress, dropoffAddress, dropoffLat, dropoffLng } = p.data;
+
+  const adminDropRadiusM = await getAdminDropRadiusM();
 
   // Fetch caller profile once outside the transaction (non-transactional reads are fine
   // for immutable-ish fields like gender and mixedRideOk preference).
@@ -313,6 +359,28 @@ export const joinPoolRide = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'This ride is full.');
     }
 
+    // ── Drop-zone rule ─────────────────────────────────────────────────────
+    // The joiner's drop-off must be within the ride's drop radius of the pool
+    // destination. Omitted coords mean "same as the pool destination", which
+    // is always allowed.
+    const rideDropLat = ride.dropoff?.lat as number | undefined;
+    const rideDropLng = ride.dropoff?.lng as number | undefined;
+    const dropRadiusM = effectiveDropRadiusM(ride.dropoffRadius as number | undefined, adminDropRadiusM);
+    if (
+      typeof dropoffLat === 'number' && typeof dropoffLng === 'number' &&
+      hasRealCoords(rideDropLat, rideDropLng)
+    ) {
+      const distM = distanceM(rideDropLat!, rideDropLng!, dropoffLat, dropoffLng);
+      if (distM > dropRadiusM) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Your drop-off is ${(distM / 1000).toFixed(1)} km from the pool destination. ` +
+          `It must be within ${dropRadiusM} m of "${ride.dropoff?.address ?? 'the destination'}" — ` +
+          'pick the same destination, a point inside the drop zone, or ask the driver to drop you within it.',
+        );
+      }
+    }
+
     const maleSeats   = (ride.maleSeats   as number) ?? 0;
     const femaleSeats = (ride.femaleSeats as number) ?? 0;
     const driverPref  = (ride.genderPref  as 'male_only' | 'female_only' | 'any') ?? 'any';
@@ -356,6 +424,8 @@ export const joinPoolRide = onCall(async (req) => {
         pickupLat,
         pickupLng,
         dropoffAddress,
+        dropoffLat:     dropoffLat ?? null,
+        dropoffLng:     dropoffLng ?? null,
         fare:           ride.perSeatFare,
         status:         'queued',
         createdAt:      FieldValue.serverTimestamp(),
@@ -385,6 +455,8 @@ export const joinPoolRide = onCall(async (req) => {
       pickupLat,
       pickupLng,
       dropoffAddress,
+      dropoffLat:     dropoffLat ?? null,
+      dropoffLng:     dropoffLng ?? null,
       fare:           ride.perSeatFare,
       status:         'confirmed',
       joinedAt:       FieldValue.serverTimestamp(),
@@ -511,6 +583,8 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
         pickupLat:      d.get('pickupLat') ?? 0,
         pickupLng:      d.get('pickupLng') ?? 0,
         dropoffAddress: d.get('dropoffAddress') ?? '',
+        dropoffLat:     d.get('dropoffLat') ?? null,
+        dropoffLng:     d.get('dropoffLng') ?? null,
         fare:           d.get('fare') ?? ride.perSeatFare,
         status:         'confirmed',
         joinedAt:       FieldValue.serverTimestamp(),

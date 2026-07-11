@@ -62,7 +62,7 @@ const RIDE_TO_ENGINE_CAT: Record<string, VehicleCategory> = {
  * engine (fareConfig/{cityId} — the same doc the booking screen prices from);
  * the static per-type bounds remain only as a fallback when no config exists.
  */
-async function offeredFareBounds(
+export async function offeredFareBounds(
   rideType: string,
   pickup: { lat: number; lng: number },
   dropoff: { lat: number; lng: number },
@@ -221,7 +221,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function broadcastTripToNearbyDrivers(
+export async function broadcastTripToNearbyDrivers(
   tripId: string,
   pickup: { lat: number; lng: number },
   isPool: boolean,

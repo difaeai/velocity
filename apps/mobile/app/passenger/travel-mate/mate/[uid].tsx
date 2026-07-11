@@ -31,6 +31,8 @@ import { useAuth } from '../../../../src/auth/AuthContext';
 import { colors } from '../../../../src/config';
 import { PrimaryButton } from '../../../../src/ui/components';
 
+interface TravelPoint { lat: number; lng: number; label: string }
+
 interface TMProfile {
   uid: string;
   displayName: string;
@@ -40,6 +42,10 @@ interface TMProfile {
   interests?: string[];
   photoURL?: string | null;
   active?: boolean;
+  travelPrefs?: {
+    homeLocations?: TravelPoint[];
+    travelToLocations?: TravelPoint[];
+  };
 }
 
 const GENDER_LABEL: Record<string, string> = { male: 'Male', female: 'Female' };
@@ -148,6 +154,32 @@ export default function TravelMateVisitorProfile() {
                 {profile.interests.map(tag => (
                   <View key={tag} style={s.tag}>
                     <Text style={s.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {(profile.travelPrefs?.homeLocations?.length ?? 0) > 0 && (
+            <View style={s.card}>
+              <Text style={s.cardLabel}>Usually starts rides from</Text>
+              <View style={s.tagsRow}>
+                {profile.travelPrefs!.homeLocations!.map((p, i) => (
+                  <View key={`${p.label}-${i}`} style={s.tag}>
+                    <Text style={s.tagText}>📍 {p.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {(profile.travelPrefs?.travelToLocations?.length ?? 0) > 0 && (
+            <View style={s.card}>
+              <Text style={s.cardLabel}>Usually travels to</Text>
+              <View style={s.tagsRow}>
+                {profile.travelPrefs!.travelToLocations!.map((p, i) => (
+                  <View key={`${p.label}-${i}`} style={s.tag}>
+                    <Text style={s.tagText}>🧭 {p.label}</Text>
                   </View>
                 ))}
               </View>

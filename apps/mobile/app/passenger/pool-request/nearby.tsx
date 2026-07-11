@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,9 +20,20 @@ import { api } from '../../../src/api/client';
 import type { NearbyActiveRide } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
+import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { db } from '../../../src/firebase';
 import { colors } from '../../../src/config';
 import { isRideVisibleToUser } from '../../../src/lib/genderAccess';
+
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const GENDER_LABEL: Record<string, string> = {
   male_only:   '♂ Males only',
@@ -102,6 +115,22 @@ export default function NearbyRidesScreen() {
   const [mixedRideOk, setMixedRideOk] = useState(false);
   const [mixedRideSaving, setMixedRideSaving] = useState(false);
 
+  // Drop-off picker for joining a pool request. Every joiner is dropped within
+  // the pool's drop zone (dropRadiusM around the leader's destination).
+  const [joinTarget, setJoinTarget]   = useState<NearbyActiveRide | null>(null);
+  const [dropQuery, setDropQuery]     = useState('');
+  const [dropChoice, setDropChoice]   = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const sessionTokenRef = useRef(
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    }),
+  );
+  const { predictions: dropPredictions } = usePlacesAutocomplete(
+    joinTarget ? dropQuery : '',
+    sessionTokenRef.current,
+  );
+
   useEffect(() => {
     if (!user) return;
     getDoc(doc(db, 'users', user.uid))
@@ -180,14 +209,58 @@ export default function NearbyRidesScreen() {
     [rides, userGender, mixedRideOk],
   );
 
-  async function joinRide(ride: NearbyActiveRide) {
+  function joinRide(ride: NearbyActiveRide) {
     if (ride.type === 'ride') {
       router.push(`/passenger/pool-ride` as Parameters<typeof router.push>[0]);
       return;
     }
+    // Ask where they want to be dropped before joining — must be inside the
+    // pool's drop zone (or simply the same destination).
+    setDropQuery('');
+    setDropChoice(null);
+    setJoinTarget(ride);
+  }
+
+  async function selectDropPrediction(pred: PlacePrediction) {
+    if (!joinTarget) return;
+    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    if (!detail) {
+      Alert.alert('Could not load place', 'Please try another suggestion.');
+      return;
+    }
+    const radiusM = joinTarget.dropRadiusM ?? 1000;
+    if (typeof joinTarget.destinationLat === 'number' && typeof joinTarget.destinationLng === 'number') {
+      const distM = haversineM(joinTarget.destinationLat, joinTarget.destinationLng, detail.lat, detail.lng);
+      if (distM > radiusM) {
+        Alert.alert(
+          'Outside the drop zone',
+          `That spot is ${(distM / 1000).toFixed(1)} km from the pool destination. Your drop-off must be ` +
+          `within ${radiusM} m of "${joinTarget.destinationAreaName}" — pick a closer point, choose the ` +
+          'same destination, or ask the driver to drop you inside the zone.',
+        );
+        return;
+      }
+    }
+    setDropChoice({ lat: detail.lat, lng: detail.lng, label: pred.fullText || detail.address });
+    setDropQuery(pred.fullText || detail.address);
+  }
+
+  async function confirmJoin(sameDestination: boolean) {
+    const ride = joinTarget;
+    if (!ride) return;
+    if (!sameDestination && !dropChoice) {
+      Alert.alert('Pick a drop-off', 'Choose the same destination, or search a spot inside the drop zone.');
+      return;
+    }
+    setJoinTarget(null);
     setJoining(ride.id);
     try {
-      const res = await api.joinPoolRideRequest({ requestId: ride.id });
+      const res = await api.joinPoolRideRequest({
+        requestId: ride.id,
+        ...(!sameDestination && dropChoice
+          ? { dropoffLat: dropChoice.lat, dropoffLng: dropChoice.lng, dropoffAreaName: dropChoice.label }
+          : {}),
+      });
       Alert.alert(
         'Joined!',
         `You have joined this pool ride at ${res.farePerSeat} PKR/seat. Open "My Requests" to track your ride.`,
@@ -284,6 +357,74 @@ export default function NearbyRidesScreen() {
           <Text style={styles.joiningText}>Joining ride...</Text>
         </View>
       )}
+
+      {/* Drop-off picker — every joiner is dropped inside the pool's drop zone */}
+      <Modal
+        visible={!!joinTarget}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setJoinTarget(null)}
+      >
+        <View style={styles.dropOverlay}>
+          <View style={styles.dropBox}>
+            <Text style={styles.dropTitle}>Where should we drop you?</Text>
+            <Text style={styles.dropSub}>
+              Pool rule: all passengers are dropped within{' '}
+              {(joinTarget?.dropRadiusM ?? 1000)} m of the pool destination
+              {joinTarget ? ` "${joinTarget.destinationAreaName}"` : ''} — the spot the first
+              rider set. You can also ask the driver to drop you anywhere inside that zone.
+            </Text>
+
+            <Pressable style={styles.dropSameBtn} onPress={() => confirmJoin(true)}>
+              <Text style={styles.dropSameBtnText}>
+                🏁 Same destination — {joinTarget?.destinationAreaName ?? ''}
+              </Text>
+            </Pressable>
+
+            <Text style={styles.dropOrText}>or pick a spot inside the drop zone</Text>
+
+            <TextInput
+              style={styles.dropInput}
+              value={dropQuery}
+              onChangeText={(t) => { setDropQuery(t); setDropChoice(null); }}
+              placeholder="Search your drop-off…"
+              placeholderTextColor={colors.muted}
+            />
+            {!dropChoice && dropPredictions.length > 0 && (
+              <View style={styles.dropPredictionsBox}>
+                {dropPredictions.slice(0, 4).map((pred) => (
+                  <Pressable
+                    key={pred.placeId}
+                    style={styles.dropPredictionRow}
+                    onPress={() => selectDropPrediction(pred)}
+                  >
+                    <Text style={styles.dropPredictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                    {!!pred.secondaryText && (
+                      <Text style={styles.dropPredictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {dropChoice && (
+              <Text style={styles.dropChosenText}>✓ Drop-off inside the zone: {dropChoice.label}</Text>
+            )}
+
+            <View style={styles.dropActions}>
+              <Pressable style={styles.dropCancelBtn} onPress={() => setJoinTarget(null)}>
+                <Text style={styles.dropCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.dropJoinBtn, !dropChoice && { opacity: 0.5 }]}
+                onPress={() => confirmJoin(false)}
+                disabled={!dropChoice}
+              >
+                <Text style={styles.dropJoinText}>Join with my drop-off</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -347,4 +488,24 @@ const styles = StyleSheet.create({
 
   joiningOverlay: { position: 'absolute', bottom: 32, left: 32, right: 32, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, elevation: 10 },
   joiningText:    { fontSize: 14, color: colors.text, fontWeight: '700' },
+
+  // Drop-off picker modal
+  dropOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  dropBox:     { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },
+  dropTitle:   { fontSize: 18, fontWeight: '900', color: colors.text },
+  dropSub:     { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  dropSameBtn: { backgroundColor: colors.glassLime, borderRadius: 12, borderWidth: 1, borderColor: `${colors.primary}40`, paddingHorizontal: 14, paddingVertical: 12 },
+  dropSameBtnText: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  dropOrText:  { fontSize: 11, color: colors.muted, textAlign: 'center', fontWeight: '700' },
+  dropInput:   { height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 14, color: colors.text, backgroundColor: colors.background },
+  dropPredictionsBox: { backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  dropPredictionRow:  { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 },
+  dropPredictionMain: { fontSize: 13, fontWeight: '700', color: colors.text },
+  dropPredictionSub:  { fontSize: 11, color: colors.muted },
+  dropChosenText: { fontSize: 12, fontWeight: '700', color: '#22c55e' },
+  dropActions:   { flexDirection: 'row', gap: 12, marginTop: 4 },
+  dropCancelBtn: { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  dropCancelText:{ fontSize: 13, fontWeight: '700', color: colors.muted },
+  dropJoinBtn:   { flex: 2, height: 46, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  dropJoinText:  { fontSize: 13, fontWeight: '900', color: '#000' },
 });

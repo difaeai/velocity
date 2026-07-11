@@ -113,7 +113,10 @@ export const api = {
   >('startPoolBoarding'),
   poolArrivePassenger: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolArrivePassenger'),
   poolPassengerBoarded: callable<{ rideId: string; passengerId: string }, { ok: boolean }>('poolPassengerBoarded'),
-  completePoolRide: callable<{ rideId: string }, { ok: boolean }>('completePoolRide'),
+  completePoolRide: callable<
+    { rideId: string; driverLat?: number; driverLng?: number },
+    { ok: boolean }
+  >('completePoolRide'),
   registerFcmToken: callable<{ token: string; platform?: 'ios' | 'android' | 'web' }, { ok: boolean }>('registerFcmToken'),
 
   // ── Travel Mate ──────────────────────────────────────────────────────────────
@@ -204,7 +207,11 @@ export const api = {
     { ok: boolean; status: string }
   >('leaderRespondToOffer'),
   joinPoolRideRequest: callable<
-    { requestId: string },
+    {
+      requestId: string;
+      // Optional drop-off inside the pool's drop zone; omitted = same destination.
+      dropoffLat?: number; dropoffLng?: number; dropoffAreaName?: string;
+    },
     { ok: boolean; farePerSeat: number }
   >('joinPoolRideRequest'),
   cancelPoolRideRequest: callable<
@@ -212,7 +219,12 @@ export const api = {
     { ok: boolean }
   >('cancelPoolRideRequest'),
   joinPoolRide: callable<
-    { rideId: string; pickupLat: number; pickupLng: number; pickupAddress: string; dropoffAddress: string },
+    {
+      rideId: string; pickupLat: number; pickupLng: number; pickupAddress: string;
+      dropoffAddress: string;
+      // Optional drop-off pin — must fall inside the ride's drop zone.
+      dropoffLat?: number; dropoffLng?: number;
+    },
     { ok: boolean; queued: boolean; waitingSameGender?: number }
   >('joinPoolRide'),
   driverAcceptPoolBatch: callable<
@@ -238,6 +250,10 @@ export const api = {
     { lat: number; lng: number; radiusKm?: number },
     { rides: NearbyActiveRide[] }
   >('getNearbyActiveRides'),
+
+  // ── Scheduled rides — auto-booked frequent rides ──────────────────────────
+  upsertScheduledRide: callable<ScheduledRideInput, { ok: boolean; scheduleId: string }>('upsertScheduledRide'),
+  deleteScheduledRide: callable<{ scheduleId: string }, { ok: boolean }>('deleteScheduledRide'),
 
   // ── Commute schedule (Task 3) ─────────────────────────────────────────────
   upsertCommuteSchedule: callable<CommuteScheduleInput, { ok: boolean }>('upsertCommuteSchedule'),
@@ -353,6 +369,10 @@ export interface NearbyActiveRide {
   id: string;
   pickupAreaName: string;
   destinationAreaName: string;
+  /** Pool destination pin + drop zone — joiner drop-offs must fall inside it. */
+  destinationLat?: number | null;
+  destinationLng?: number | null;
+  dropRadiusM?: number;
   farePerSeat: number;
   totalSlots: number;
   slotsAvailable: number;
@@ -362,6 +382,20 @@ export interface NearbyActiveRide {
   genderComposition?: GenderComposition;
   rideCategory?: string;
   distanceKm: number;
+}
+
+export interface ScheduledRideInput {
+  scheduleId?: string;
+  pickup: { lat: number; lng: number; address: string };
+  dropoff: { lat: number; lng: number; address: string };
+  rideType: RideType;
+  offeredFare: number;
+  seats: number;
+  passengerGender: Gender;
+  paymentMethod?: 'cash' | 'wallet';
+  days: CommuteDay[];
+  time: string; // HH:MM
+  active?: boolean;
 }
 
 export interface CommuteScheduleInput {

@@ -2,6 +2,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,7 @@ import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
-import { api } from '../../src/api/client';
+import { api, type CommuteDay } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { useAuth } from '../../src/auth/AuthContext';
@@ -139,6 +140,13 @@ export default function Booking() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCarDropdown, setShowCarDropdown] = useState(false);
+
+  // Scheduled (frequent) rides — auto-booked by the backend at the set time.
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [schedDays, setSchedDays] = useState<CommuteDay[]>(['mon', 'tue', 'wed', 'thu', 'fri']);
+  const [schedHour, setSchedHour] = useState(8);
+  const [schedMin, setSchedMin] = useState(30);
+  const [schedSaving, setSchedSaving] = useState(false);
 
   const bounds = fareBounds(rideType);
 
@@ -278,6 +286,56 @@ export default function Booking() {
       setError(e instanceof FirebaseError ? e.message : 'Could not start pool ride.');
     } finally {
       setPoolLoading(false);
+    }
+  }
+
+  function toggleSchedDay(day: CommuteDay) {
+    setSchedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+  }
+
+  async function saveSchedule() {
+    if (!dropoff.trim()) {
+      Alert.alert('Destination needed', 'Pick your destination first, then schedule the ride.');
+      return;
+    }
+    if (!coords) {
+      Alert.alert('Location needed', 'Enable location access so we know your pickup point.');
+      requestLocation();
+      return;
+    }
+    if (schedDays.length === 0) {
+      Alert.alert('Pick days', 'Choose at least one day for this ride.');
+      return;
+    }
+    setSchedSaving(true);
+    try {
+      const time = `${String(schedHour).padStart(2, '0')}:${String(schedMin).padStart(2, '0')}`;
+      const pickupAddress = pickup.trim() || currentAddress || 'Current location';
+      const destCoords = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
+      await api.upsertScheduledRide({
+        pickup:  { lat: coords.lat, lng: coords.lng, address: pickupAddress },
+        dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
+        rideType,
+        offeredFare: fare,
+        seats,
+        passengerGender: gender,
+        paymentMethod,
+        days: schedDays,
+        time,
+      });
+      setScheduleOpen(false);
+      Alert.alert(
+        'Ride scheduled 🗓️',
+        `We'll request this ride automatically at ${time} on your selected days — no need to book it manually.`,
+        [
+          { text: 'View my schedules', onPress: () => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0]) },
+          { text: 'Done' },
+        ],
+      );
+    } catch (e) {
+      Alert.alert('Could not schedule', e instanceof FirebaseError ? e.message : 'Please try again.');
+    } finally {
+      setSchedSaving(false);
     }
   }
 
@@ -650,6 +708,24 @@ export default function Booking() {
             </Pressable>
           ))}
 
+          {/* Schedule this ride (frequent rides) */}
+          <Pressable style={styles.scheduleCard} onPress={() => setScheduleOpen(true)}>
+            <Text style={{ fontSize: 22 }}>🗓️</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.scheduleCardTitle}>Schedule this ride</Text>
+              <Text style={styles.scheduleCardSub}>
+                Ride this route often? We'll request it automatically at your time — no manual booking.
+              </Text>
+            </View>
+            <Text style={styles.scheduleCardChevron}>›</Text>
+          </Pressable>
+          <Pressable
+            style={styles.scheduleManageLink}
+            onPress={() => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0])}
+          >
+            <Text style={styles.scheduleManageText}>View my scheduled rides →</Text>
+          </Pressable>
+
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
             <Text style={styles.taxNoticeText}>Fare doesn't include state entry tax, tolls, or parking fees</Text>
@@ -745,6 +821,73 @@ export default function Booking() {
           </Pressable>
         </View>
       </View>
+
+      {/* Schedule-ride modal */}
+      <Modal visible={scheduleOpen} transparent animationType="slide" onRequestClose={() => setScheduleOpen(false)}>
+        <View style={styles.schedOverlay}>
+          <View style={styles.schedBox}>
+            <Text style={styles.schedTitle}>🗓️ Schedule this ride</Text>
+            <Text style={styles.schedSub}>
+              {`${(pickup.trim() || currentAddress || 'Current location')} → ${dropoff.trim() || 'Destination'}`}
+            </Text>
+            <Text style={styles.schedSub}>
+              {RIDE_TYPE_LABELS[rideType]} · PKR {fare} · {paymentMethod === 'cash' ? 'Cash' : 'Wallet'}
+            </Text>
+
+            <Text style={styles.schedLabel}>REPEAT ON</Text>
+            <View style={styles.schedDaysRow}>
+              {([['mon', 'M'], ['tue', 'T'], ['wed', 'W'], ['thu', 'T'], ['fri', 'F'], ['sat', 'S'], ['sun', 'S']] as [CommuteDay, string][]).map(([day, letter], i) => {
+                const on = schedDays.includes(day);
+                return (
+                  <Pressable
+                    key={`${day}-${i}`}
+                    style={[styles.schedDayChip, on && styles.schedDayChipOn]}
+                    onPress={() => toggleSchedDay(day)}
+                  >
+                    <Text style={[styles.schedDayText, on && styles.schedDayTextOn]}>{letter}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.schedLabel}>PICKUP TIME</Text>
+            <View style={styles.schedTimeRow}>
+              <View style={styles.schedTimeStepper}>
+                <Pressable style={styles.schedTimeBtn} onPress={() => setSchedHour(h => (h + 23) % 24)}>
+                  <Text style={styles.schedTimeBtnText}>−</Text>
+                </Pressable>
+                <Text style={styles.schedTimeVal}>{String(schedHour).padStart(2, '0')}</Text>
+                <Pressable style={styles.schedTimeBtn} onPress={() => setSchedHour(h => (h + 1) % 24)}>
+                  <Text style={styles.schedTimeBtnText}>+</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.schedTimeColon}>:</Text>
+              <View style={styles.schedTimeStepper}>
+                <Pressable style={styles.schedTimeBtn} onPress={() => setSchedMin(m => (m + 45) % 60)}>
+                  <Text style={styles.schedTimeBtnText}>−</Text>
+                </Pressable>
+                <Text style={styles.schedTimeVal}>{String(schedMin).padStart(2, '0')}</Text>
+                <Pressable style={styles.schedTimeBtn} onPress={() => setSchedMin(m => (m + 15) % 60)}>
+                  <Text style={styles.schedTimeBtnText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.schedActions}>
+              <Pressable style={styles.schedCancelBtn} onPress={() => setScheduleOpen(false)}>
+                <Text style={styles.schedCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.schedSaveBtn, schedSaving && { opacity: 0.6 }]}
+                onPress={saveSchedule}
+                disabled={schedSaving}
+              >
+                <Text style={styles.schedSaveText}>{schedSaving ? 'Saving…' : 'Save schedule'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -754,6 +897,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
+  // Schedule-ride card + modal
+  scheduleCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 10 },
+  scheduleCardTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  scheduleCardSub: { fontSize: 11, color: colors.muted, marginTop: 2, lineHeight: 15 },
+  scheduleCardChevron: { fontSize: 20, color: colors.muted },
+  scheduleManageLink: { alignItems: 'center', paddingVertical: 8 },
+  scheduleManageText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+
+  schedOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  schedBox: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 10 },
+  schedTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+  schedSub: { fontSize: 12, color: colors.muted },
+  schedLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6, marginTop: 8 },
+  schedDaysRow: { flexDirection: 'row', gap: 8 },
+  schedDayChip: { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  schedDayChipOn: { borderColor: colors.primary, backgroundColor: `${colors.primary}20` },
+  schedDayText: { fontSize: 13, fontWeight: '800', color: colors.muted },
+  schedDayTextOn: { color: colors.primary },
+  schedTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  schedTimeStepper: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 6 },
+  schedTimeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  schedTimeBtnText: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  schedTimeVal: { fontSize: 20, fontWeight: '900', color: colors.text, minWidth: 34, textAlign: 'center' },
+  schedTimeColon: { fontSize: 20, fontWeight: '900', color: colors.text },
+  schedActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  schedCancelBtn: { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  schedCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
+  schedSaveBtn: { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  schedSaveText: { fontSize: 14, fontWeight: '900', color: '#000' },
   container: {
     padding: 18,
     gap: 14,

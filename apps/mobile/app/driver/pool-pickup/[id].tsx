@@ -41,6 +41,7 @@ interface PoolRide {
   status:               string;
   pickup:               { address: string; lat: number; lng: number };
   dropoff:              { address: string; lat: number; lng: number };
+  dropoffRadius?:       number;
   perSeatFare:          number;
   takenSeats:           number;
   maxSeats:             number;
@@ -334,12 +335,20 @@ export default function PoolPickup() {
 
   // ── Phase 3: All boarded — en route to destination ───────────────────────
   if (ride.status === 'in_progress') {
+    const dropRadius = ride.dropoffRadius ?? 1000;
     return (
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.title}>En route to destination</Text>
           <View style={styles.route}>
             <Text style={styles.routeText} numberOfLines={1}>🏁 {ride.dropoff?.address ?? 'Destination'}</Text>
+          </View>
+
+          <View style={styles.dropZoneHint}>
+            <Text style={styles.dropZoneHintText}>
+              📍 Drop zone rule: drop every passenger and end the ride within {dropRadius}m of the
+              destination — you cannot complete it after leaving that zone.
+            </Text>
           </View>
 
           <Text style={styles.sectionLabel}>Passengers on board</Text>
@@ -360,7 +369,12 @@ export default function PoolPickup() {
             disabled={busy}
             onPress={() =>
               run(async () => {
-                await api.completePoolRide({ rideId: rideId! });
+                await api.completePoolRide({
+                  rideId: rideId!,
+                  // GPS position lets the backend verify we're still inside the
+                  // drop zone; omitted when no fix is available.
+                  ...(coords ? { driverLat: coords.lat, driverLng: coords.lng } : {}),
+                });
                 router.replace('/driver/home');
               })
             }
@@ -418,6 +432,15 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.primary,
   },
   startHintText: { fontSize: 13, color: colors.muted, lineHeight: 18 },
+
+  dropZoneHint: {
+    backgroundColor: '#f59e0b18',
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
+  },
+  dropZoneHintText: { fontSize: 13, color: '#f59e0b', lineHeight: 18, fontWeight: '600' },
 
   progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progressTitle:  { fontSize: 18, fontWeight: '900', color: colors.text },

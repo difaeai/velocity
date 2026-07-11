@@ -132,6 +132,7 @@ export default function TravelMateSetup() {
           console.warn('Photo upload failed:', uploadErr);
         }
       }
+      // merge: keeps fields this screen doesn't edit (travelPrefs) intact.
       await setDoc(doc(db, 'travelMateProfiles', user.uid), {
         uid: user.uid,
         displayName: displayName.trim(),
@@ -147,7 +148,7 @@ export default function TravelMateSetup() {
         location: coords ?? savedLocation ?? null,
         searchRadiusKm,
         lastActive: serverTimestamp(),
-      });
+      }, { merge: true });
       router.replace('/passenger/travel-mate');
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not save. Try again.');
