@@ -10,7 +10,7 @@
  *
  * Gated on having a Travel Mate profile — otherwise shows a create-profile CTA.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -23,7 +23,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as ExpoLinking from 'expo-linking';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -70,15 +70,29 @@ export default function TravelMateHome() {
       snap => {
         setHasProfile(snap.exists());
         setMyName((snap.data()?.displayName as string) ?? '');
-        setHasTravelPrefs(snap.exists() ? !!snap.data()?.travelPrefs : null);
+        // "Has travel prefs" means at least ONE saved location (home or
+        // travel-to) — an empty travelPrefs object doesn't count.
+        const prefs = snap.data()?.travelPrefs as
+          | { homeLocations?: unknown[]; travelToLocations?: unknown[] }
+          | undefined;
+        const locationCount =
+          (prefs?.homeLocations?.length ?? 0) + (prefs?.travelToLocations?.length ?? 0);
+        setHasTravelPrefs(snap.exists() ? locationCount > 0 : null);
       },
       () => setHasProfile(false),
     );
   }, [user?.uid]);
 
-  // Right after the profile exists but travel locations were never set up,
-  // prompt for them — the pins tell partners (and riders) where this user
-  // usually starts rides from and travels to.
+  // Re-arm the prompt every time the user opens the TravelMate hub: as long
+  // as the profile exists with NO saved location at all, they are asked to
+  // set at least one on every visit. "Maybe later" only mutes it until the
+  // next time the screen regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      setTravelPrefsDismissed(false);
+    }, []),
+  );
+
   const showTravelPrefsDialog =
     hasProfile === true && hasTravelPrefs === false && !travelPrefsDismissed;
 
@@ -371,6 +385,9 @@ export default function TravelMateHome() {
             <Text style={s.dialogText}>
               This helps other TravelMate users guess your routes and find you as a partner —
               and helps riders see where you usually go.
+            </Text>
+            <Text style={[s.dialogText, s.dialogBold]}>
+              Please set at least one location — we'll keep reminding you here until you do.
             </Text>
             <Pressable
               style={s.dialogPrimaryBtn}
