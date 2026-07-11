@@ -46,6 +46,7 @@ import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TMComment, type TMCommunity, type TMPost } from '../../../../src/api/client';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../../src/hooks/travelMateCommunity';
 import { timeAgo, joinedLabel } from '../../../../src/lib/timeAgo';
+import { areaSummary } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
 import { PostCard } from '../feed';
 
@@ -491,16 +492,17 @@ export default function FeedProfile() {
 
       {profile.bio ? <Text style={s.bio}>{profile.bio}</Text> : null}
 
-      {(homeLocs.length > 0 || travelLocs.length > 0) && (
+      {/* Coarse AREA names only — never street/house level */}
+      {(areaSummary(homeLocs) || areaSummary(travelLocs)) && (
         <View style={s.routesWrap}>
-          {homeLocs.length > 0 && (
+          {areaSummary(homeLocs) && (
             <Text style={s.routeLine} numberOfLines={1}>
-              📍 From: {homeLocs.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
+              📍 From: {areaSummary(homeLocs)}
             </Text>
           )}
-          {travelLocs.length > 0 && (
+          {areaSummary(travelLocs) && (
             <Text style={s.routeLine} numberOfLines={1}>
-              🧭 To: {travelLocs.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
+              🧭 To: {areaSummary(travelLocs)}
             </Text>
           )}
         </View>
