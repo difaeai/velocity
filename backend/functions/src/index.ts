@@ -84,6 +84,26 @@ export { createTravelMateGroup, joinTravelMateGroup, settleTravelMateSplit } fro
 // Phase 5 — shareable ride links + group chat + private DMs
 export { shareTravelMateRide, getSharedTravelMateRide, bookSharedTravelMateRide } from './travelMate/shareRide';
 export { sendTravelMateGroupMessage, openTravelMateDirectChat, previewTravelMateGroup } from './travelMate/groupChat';
+// Phase 6 — community feed: posts, city communities, follows, DMs, blocks
+export {
+  createTravelMatePost,
+  deleteTravelMatePost,
+  likeTravelMatePost,
+  commentTravelMatePost,
+  deleteTravelMateComment,
+  createTravelMateCommunity,
+  joinTravelMateCommunity,
+  leaveTravelMateCommunity,
+  openTravelMateFeedChat,
+  blockTravelMateUser,
+  unblockTravelMateUser,
+} from './travelMate/community';
+// Phase 6 — admin moderation of the community feed
+export {
+  adminUpdateTravelMatePost,
+  adminUpsertTravelMateCommunity,
+  adminDeleteTravelMateCommunity,
+} from './travelMate/adminCommunity';
 
 // Pool ride requests — InDrive-style passenger-initiated negotiation (Task 1 + Task 2)
 export {

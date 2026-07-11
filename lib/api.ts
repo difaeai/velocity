@@ -105,4 +105,25 @@ export const adminApi = {
     { targetUid: string; reason?: string },
     { ok: boolean }
   >('adminSuspendTravelMateProfile'),
+
+  // ── Travel Mate community feed admin (full CRUD) ──────────────────────────
+  adminUpdateTravelMatePost: callable<
+    { postId: string; text: string },
+    { updated: boolean }
+  >('adminUpdateTravelMatePost'),
+  // deleteTravelMatePost / deleteTravelMateComment honour the admin claim
+  // server-side, so the dashboard calls the same CFs users do.
+  deleteTravelMatePost: callable<{ postId: string }, { deleted: boolean }>('deleteTravelMatePost'),
+  deleteTravelMateComment: callable<
+    { postId: string; commentId: string },
+    { deleted: boolean }
+  >('deleteTravelMateComment'),
+  adminUpsertTravelMateCommunity: callable<
+    { communityId?: string; name: string; city: string; description?: string },
+    { communityId: string; created: boolean }
+  >('adminUpsertTravelMateCommunity'),
+  adminDeleteTravelMateCommunity: callable<
+    { communityId: string },
+    { deleted: boolean; postsDetached: number }
+  >('adminDeleteTravelMateCommunity'),
 };

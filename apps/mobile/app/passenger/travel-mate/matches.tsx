@@ -14,6 +14,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
 
 const { width } = Dimensions.get('window');
@@ -41,6 +42,7 @@ function timeAgo(seconds: number): string {
 export default function TravelMateMatches() {
   const { user } = useAuth();
   const router = useRouter();
+  const blocked = useBlockedSet();
   const [matches, setMatches] = useState<TravelMatch[]>([]);
 
   useEffect(() => {
@@ -54,8 +56,9 @@ export default function TravelMateMatches() {
   const activeMatches = useMemo(
     () => [...matches]
       .filter(m => m.status === 'active')
+      .filter(m => !m.users.some(u => u !== user?.uid && blocked.has(u)))
       .sort((a, b) => (b.lastMessageAt?.seconds ?? b.matchedAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? a.matchedAt?.seconds ?? 0)),
-    [matches],
+    [matches, blocked, user?.uid],
   );
 
   return (

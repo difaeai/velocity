@@ -37,6 +37,15 @@ export default function TravelMateLayout() {
         }}
       />
       <Tabs.Screen
+        name="feed"
+        options={{
+          title: 'Feed',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 20 }}>{focused ? '🌍' : '🌎'}</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="matches"
         options={{
           title: 'Matches',
@@ -74,6 +83,13 @@ export default function TravelMateLayout() {
       <Tabs.Screen name="group-invite" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="shared-ride" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="mate" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      {/* Community feed — push-navigated full-screen */}
+      <Tabs.Screen name="post" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="community" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="communities" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="feed-search" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="feed-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="blocked-users" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

@@ -55,6 +55,25 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // TravelMate community feed images — uploaded via the createTravelMatePost
+    // Cloud Function (Admin SDK bypasses rules); readable by signed-in users
+    // so feed cards render.
+    match /travelMateFeedMedia/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // TravelMate community feed videos — too large for the base64 callable
+    // path, so the owner uploads directly from the app (capped at 50 MB,
+    // video/* only). createTravelMatePost then verifies the path prefix
+    // belongs to the caller before attaching it to a post.
+    match /travelMateFeedVideos/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId)
+                   && underSize(50)
+                   && request.resource.contentType.matches('video/.*');
+    }
+
     // Everything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;

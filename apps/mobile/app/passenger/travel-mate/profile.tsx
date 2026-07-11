@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ExpoLinking from 'expo-linking';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, getDoc, query, where } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -39,6 +39,7 @@ export default function TravelMateProfile() {
   const router = useRouter();
   const [profile, setProfile] = useState<TMProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{ followers: number; following: number; posts: number } | null>(null);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -48,6 +49,19 @@ export default function TravelMateProfile() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    // Community stats (best-effort — counts render as they arrive)
+    Promise.all([
+      getCountFromServer(query(collection(db, 'travelMateFollows'), where('followedId', '==', user.uid))),
+      getCountFromServer(query(collection(db, 'travelMateFollows'), where('followerId', '==', user.uid))),
+      getCountFromServer(query(collection(db, 'travelMatePosts'), where('authorId', '==', user.uid))),
+    ])
+      .then(([f, g, p]) => setStats({
+        followers: f.data().count,
+        following: g.data().count,
+        posts: p.data().count,
+      }))
+      .catch(() => {});
   }, [user?.uid]);
 
   function shareProfile() {
@@ -131,6 +145,27 @@ export default function TravelMateProfile() {
           <Text style={s.statusText}>{profile.active ? 'Visible to others' : 'Hidden — paused'}</Text>
         </View>
 
+        {/* Community stats — one profile powers rides, discovery and the feed */}
+        <Pressable
+          style={s.statsCard}
+          onPress={() => user && router.push(`/passenger/travel-mate/feed-profile/${user.uid}` as Parameters<typeof router.push>[0])}
+        >
+          <View style={s.statCol}>
+            <Text style={s.statNum}>{stats?.followers ?? '–'}</Text>
+            <Text style={s.statLabel}>Followers</Text>
+          </View>
+          <View style={s.statDividerV} />
+          <View style={s.statCol}>
+            <Text style={s.statNum}>{stats?.following ?? '–'}</Text>
+            <Text style={s.statLabel}>Following</Text>
+          </View>
+          <View style={s.statDividerV} />
+          <View style={s.statCol}>
+            <Text style={s.statNum}>{stats?.posts ?? '–'}</Text>
+            <Text style={s.statLabel}>Posts</Text>
+          </View>
+        </Pressable>
+
         {profile.bio ? (
           <View style={s.card}>
             <Text style={s.cardLabel}>About</Text>
@@ -164,6 +199,20 @@ export default function TravelMateProfile() {
 
         <Pressable style={s.shareBtnGhost} onPress={shareProfile}>
           <Text style={s.shareBtnGhostText}>📤 Share my profile</Text>
+        </Pressable>
+
+        <Pressable
+          style={s.shareBtnGhost}
+          onPress={() => user && router.push(`/passenger/travel-mate/feed-profile/${user.uid}` as Parameters<typeof router.push>[0])}
+        >
+          <Text style={s.shareBtnGhostText}>🌍 My community profile</Text>
+        </Pressable>
+
+        <Pressable
+          style={s.shareBtnGhost}
+          onPress={() => router.push('/passenger/travel-mate/blocked-users' as Parameters<typeof router.push>[0])}
+        >
+          <Text style={s.shareBtnGhostText}>🚫 Blocked users</Text>
         </Pressable>
 
         <View style={{ height: 24 }} />
@@ -211,6 +260,12 @@ const s = StyleSheet.create({
   dotGreen:  { backgroundColor: '#4ade80' },
   dotGrey:   { backgroundColor: colors.muted },
   statusText:{ fontSize: 13, color: colors.muted, fontWeight: '600' },
+
+  statsCard:   { width: '100%', flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingVertical: 14 },
+  statCol:     { flex: 1, alignItems: 'center', gap: 2 },
+  statNum:     { fontSize: 18, fontWeight: '900', color: colors.text },
+  statLabel:   { fontSize: 11, color: colors.muted, fontWeight: '700' },
+  statDividerV:{ width: 1, backgroundColor: colors.border },
 
   card:      { width: '100%', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 4 },
   cardLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.6 },

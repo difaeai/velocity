@@ -30,6 +30,7 @@ import {
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
 
 const { width, height } = Dimensions.get('window');
@@ -163,9 +164,15 @@ function SwipeCard({
             ))}
           </View>
         )}
+        {/* FROM / TO — helps decide whether their routes match yours */}
+        {(card.travelPrefs?.homeLocations?.length ?? 0) > 0 && (
+          <Text style={s.cardTravelsTo} numberOfLines={1}>
+            📍 From: {card.travelPrefs!.homeLocations!.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
+          </Text>
+        )}
         {(card.travelPrefs?.travelToLocations?.length ?? 0) > 0 && (
           <Text style={s.cardTravelsTo} numberOfLines={1}>
-            🧭 Travels to {card.travelPrefs!.travelToLocations!.map(p => p.label).slice(0, 2).join(' · ')}
+            🧭 To: {card.travelPrefs!.travelToLocations!.map(p => p.label.split(',')[0]).slice(0, 2).join(' · ')}
           </Text>
         )}
       </View>
@@ -177,6 +184,7 @@ function SwipeCard({
 export default function TravelMateDiscover() {
   const router = useRouter();
   const { user } = useAuth();
+  const blocked = useBlockedSet();
 
   const [myProfile, setMyProfile]   = useState<TMProfile | null>(null);
   const [cards, setCards]           = useState<TMProfile[]>([]);
@@ -201,7 +209,8 @@ export default function TravelMateDiscover() {
         limit(60),
       ));
 
-      const excludeSet = new Set([me.uid, ...excludeUids]);
+      // Blocked users never appear in the deck.
+      const excludeSet = new Set([me.uid, ...excludeUids, ...blocked]);
       let profiles = snap.docs
         .map(d => ({ uid: d.id, ...d.data() }) as TMProfile)
         .filter(p => !excludeSet.has(p.uid))
@@ -222,7 +231,7 @@ export default function TravelMateDiscover() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [blocked]);
 
   // On every focus: re-read profile (catches returning from setup with new profile)
   // then load the feed. Cancellation flag prevents state updates after unmount.

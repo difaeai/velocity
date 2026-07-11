@@ -17,6 +17,8 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
+import { assertNotBlocked } from './community';
+
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
@@ -58,6 +60,8 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
   if (match.status && match.status !== 'active') {
     throw new HttpsError('failed-precondition', 'This match is closed.');
   }
+  // A block in either direction silently closes the channel.
+  await assertNotBlocked(uid, otherUser(match.users, uid));
 
   const msgRef = matchRef.collection('messages').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
