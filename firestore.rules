@@ -278,18 +278,80 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // Owner writes own profile directly from the setup screen — but only the
       // fields that screen edits. Rating / moderation fields stay server-only.
+      // displayNameLower powers people search; createdAt is the "joined" date.
       allow create: if isOwner(userId)
                     && request.resource.data.keys().hasOnly(
-                         ['uid', 'displayName', 'age', 'gender', 'genderPref', 'bio',
-                          'interests', 'photoURL', 'active', 'lastActive',
+                         ['uid', 'displayName', 'displayNameLower', 'age', 'gender',
+                          'genderPref', 'bio',
+                          'interests', 'photoURL', 'active', 'lastActive', 'createdAt',
                           'location', 'searchRadiusKm',
                           'travelPrefs', 'travelPrefsUpdatedAt']);
       allow update: if isOwner(userId)
-                    && onlyChanges(['displayName', 'age', 'gender', 'genderPref', 'bio',
-                                    'interests', 'photoURL', 'active', 'lastActive',
+                    && onlyChanges(['displayName', 'displayNameLower', 'age', 'gender',
+                                    'genderPref', 'bio',
+                                    'interests', 'photoURL', 'active', 'lastActive', 'createdAt',
                                     'location', 'searchRadiusKm',
                                     'travelPrefs', 'travelPrefsUpdatedAt']);
       allow delete: if false;
+    }
+
+    // ----- travelMatePosts/{postId} ----------------------------------------
+    // Community feed posts. Created/liked/commented/deleted ONLY via the
+    // community CFs (server keeps the like/comment counters authoritative and
+    // handles media upload). Any signed-in user may read the feed.
+    match /travelMatePosts/{postId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Post likes + comments live in subcollections of travelMatePosts.
+    // Matched with path=** so both direct reads and collection-group queries
+    // (profile "Comments" / "Likes" tabs) work. Only the community CFs write.
+    // NOTE: these names are only used under travelMatePosts today — keep new
+    // collections from being named `comments`/`likes` unless they may be public.
+    match /{path=**}/comments/{commentId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /{path=**}/likes/{likeId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- travelMateFollows/{followerId_followedId} ------------------------
+    // Public follow graph for the community feed. The doc ID MUST encode the
+    // real follower (same trick as swipes) so nobody can forge a follow from
+    // someone else. Reads are open to signed-in users: follower/following
+    // counts and lists are public social data.
+    match /travelMateFollows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.followerId == uid()
+                    && request.resource.data.followedId is string
+                    && request.resource.data.followedId != uid()
+                    && followId == uid() + '_' + request.resource.data.followedId;
+      allow delete: if isSignedIn() && resource.data.followerId == uid();
+      allow update: if false;
+    }
+
+    // ----- travelMateBlocks/{blockerId_blockedId} ---------------------------
+    // Written only by the blockTravelMateUser / unblockTravelMateUser CFs
+    // (blocking also severs follows and closes any open chat server-side).
+    // PRIVATE: only the blocker (and admins) may read their own block list —
+    // the blocked user must never learn they were blocked.
+    match /travelMateBlocks/{blockId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.blockerId == uid());
+      allow write: if false;
+    }
+
+    // ----- travelMateCommunities/{communityId} ------------------------------
+    // City-based community groups. Every community is pinned to a city so
+    // members always see where it belongs. Create/join/leave go through the
+    // community CFs (membership counters are server-authoritative). Browsable
+    // by any signed-in user.
+    match /travelMateCommunities/{communityId} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // ----- travelMateSwipes/{swipeId} ----------------------------------------

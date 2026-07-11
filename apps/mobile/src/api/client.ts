@@ -188,6 +188,52 @@ export const api = {
     TravelMateGroupPreview
   >('previewTravelMateGroup'),
 
+  // ── Travel Mate Phase 6 — community feed ──────────────────────────────────
+  createTravelMatePost: callable<
+    { text: string; imageBase64?: string; videoPath?: string; communityId?: string },
+    { postId: string; mediaURL: string | null; mediaType: 'image' | 'video' | null }
+  >('createTravelMatePost'),
+  deleteTravelMatePost: callable<{ postId: string }, { deleted: boolean }>('deleteTravelMatePost'),
+  likeTravelMatePost: callable<
+    { postId: string },
+    { liked: boolean; likeCount: number }
+  >('likeTravelMatePost'),
+  commentTravelMatePost: callable<
+    { postId: string; text: string },
+    { commentId: string }
+  >('commentTravelMatePost'),
+  deleteTravelMateComment: callable<
+    { postId: string; commentId: string },
+    { deleted: boolean }
+  >('deleteTravelMateComment'),
+  createTravelMateCommunity: callable<
+    { name: string; city: string; description?: string },
+    { communityId: string }
+  >('createTravelMateCommunity'),
+  joinTravelMateCommunity: callable<
+    { communityId: string },
+    { joined: boolean; alreadyMember: boolean }
+  >('joinTravelMateCommunity'),
+  leaveTravelMateCommunity: callable<{ communityId: string }, { left: boolean }>('leaveTravelMateCommunity'),
+  openTravelMateFeedChat: callable<
+    { targetUid: string },
+    { matchId: string; created: boolean }
+  >('openTravelMateFeedChat'),
+  blockTravelMateUser: callable<{ targetUid: string }, { blocked: boolean }>('blockTravelMateUser'),
+  unblockTravelMateUser: callable<{ targetUid: string }, { unblocked: boolean }>('unblockTravelMateUser'),
+  adminUpdateTravelMatePost: callable<
+    { postId: string; text: string },
+    { updated: boolean }
+  >('adminUpdateTravelMatePost'),
+  adminUpsertTravelMateCommunity: callable<
+    { communityId?: string; name: string; city: string; description?: string },
+    { communityId: string; created: boolean }
+  >('adminUpsertTravelMateCommunity'),
+  adminDeleteTravelMateCommunity: callable<
+    { communityId: string },
+    { deleted: boolean; postsDetached: number }
+  >('adminDeleteTravelMateCommunity'),
+
   // ── Pool ride requests — InDrive-style negotiation (Task 1) ───────────────
   createPoolRideRequest: callable<
     {
@@ -468,6 +514,47 @@ export interface TravelMateGroupPreview {
   alreadyMember: boolean;
   canJoin: boolean;
   reason: 'member' | 'no_profile' | 'not_partner' | 'ok';
+}
+
+// ── Travel Mate community feed types ─────────────────────────────────────────
+
+export interface TMPost {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorPhotoURL: string | null;
+  text: string;
+  mediaType: 'image' | 'video' | null;
+  mediaURL: string | null;
+  communityId: string | null;
+  communityName: string | null;
+  communityCity: string | null;
+  likeCount: number;
+  commentCount: number;
+  createdAt?: { seconds: number };
+}
+
+export interface TMComment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorName: string;
+  authorPhotoURL: string | null;
+  text: string;
+  createdAt?: { seconds: number };
+}
+
+export interface TMCommunity {
+  id: string;
+  name: string;
+  city: string;
+  description?: string;
+  createdBy: string;
+  creatorName?: string;
+  members: string[];
+  memberCount: number;
+  createdAt?: { seconds: number };
+  lastPostAt?: { seconds: number } | null;
 }
 
 export interface UpsertTravelMateInput {

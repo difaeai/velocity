@@ -55,23 +55,43 @@ export default function TravelMateSetup() {
   const [active, setActive]       = useState(true);
   const [loading, setLoading]     = useState(false);
   const [prefilling, setPrefilling] = useState(true);
+  const [isNewProfile, setIsNewProfile] = useState(true);
 
+  // ONE unified profile: the TravelMate profile pre-fills from the main
+  // account (name / age / gender / photo collected at sign-up) and, on save,
+  // syncs those shared fields back so rides, discovery and the community all
+  // read the same identity.
   useEffect(() => {
     if (!user) { setPrefilling(false); return; }
-    getDoc(doc(db, 'travelMateProfiles', user.uid))
-      .then(snap => {
-        if (!snap.exists()) return;
-        const d = snap.data();
-        setDisplayName(d.displayName ?? '');
-        setAge(d.age ? String(d.age) : '');
-        setGender(d.gender ?? 'male');
-        setGenderPref(d.genderPref ?? 'any');
-        setBio(d.bio ?? '');
-        setInterests(d.interests ?? []);
-        setActive(d.active !== false);
-        setSearchRadiusKm(typeof d.searchRadiusKm === 'number' ? d.searchRadiusKm : null);
-        setSavedLocation(d.location ?? null);
-        if (d.photoURL) setPhotoURL(d.photoURL);
+    Promise.all([
+      getDoc(doc(db, 'travelMateProfiles', user.uid)),
+      getDoc(doc(db, 'users', user.uid)).catch(() => null),
+    ])
+      .then(([snap, userSnap]) => {
+        if (snap.exists()) {
+          setIsNewProfile(false);
+          const d = snap.data();
+          setDisplayName(d.displayName ?? '');
+          setAge(d.age ? String(d.age) : '');
+          setGender(d.gender ?? 'male');
+          setGenderPref(d.genderPref ?? 'any');
+          setBio(d.bio ?? '');
+          setInterests(d.interests ?? []);
+          setActive(d.active !== false);
+          setSearchRadiusKm(typeof d.searchRadiusKm === 'number' ? d.searchRadiusKm : null);
+          setSavedLocation(d.location ?? null);
+          if (d.photoURL) setPhotoURL(d.photoURL);
+          return;
+        }
+        // First-time setup → seed from the main account profile.
+        const u = userSnap?.exists() ? userSnap.data() : null;
+        if (u) {
+          if (typeof u.name === 'string' && u.name) setDisplayName(u.name);
+          else if (typeof u.displayName === 'string' && u.displayName) setDisplayName(u.displayName);
+          if (typeof u.age === 'number' && u.age >= 18 && u.age <= 99) setAge(String(u.age));
+          if (u.gender === 'male' || u.gender === 'female') setGender(u.gender);
+          if (typeof u.photoURL === 'string' && u.photoURL) setPhotoURL(u.photoURL);
+        }
       })
       .catch(() => {})
       .finally(() => setPrefilling(false));
@@ -136,6 +156,8 @@ export default function TravelMateSetup() {
       await setDoc(doc(db, 'travelMateProfiles', user.uid), {
         uid: user.uid,
         displayName: displayName.trim(),
+        // Lower-cased copy powers people search in the community feed.
+        displayNameLower: displayName.trim().toLowerCase(),
         age: ageNum,
         gender,
         genderPref,
@@ -148,7 +170,21 @@ export default function TravelMateSetup() {
         location: coords ?? savedLocation ?? null,
         searchRadiusKm,
         lastActive: serverTimestamp(),
+        // "Joined" date shown on the community profile — set once.
+        ...(isNewProfile ? { createdAt: serverTimestamp() } : {}),
       }, { merge: true });
+
+      // Keep the main account profile in sync — one identity everywhere
+      // (rides, TravelMate discovery, community feed).
+      await setDoc(doc(db, 'users', user.uid), {
+        name: displayName.trim(),
+        displayName: displayName.trim(),
+        age: ageNum,
+        gender,
+        ...(finalPhotoURL ? { photoURL: finalPhotoURL } : {}),
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch(() => { /* non-blocking: TM profile already saved */ });
+
       router.replace('/passenger/travel-mate');
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not save. Try again.');

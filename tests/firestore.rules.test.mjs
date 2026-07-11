@@ -12,7 +12,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':');
 
@@ -128,4 +128,96 @@ test('payouts & payment intents are owner/admin-read, server-write only', async 
 test('rate-limit counters are not client-accessible', async () => {
   await assertFails(getDoc(doc(passenger, 'rateLimits/x')));
   await assertFails(setDoc(doc(driver, 'rateLimits/y'), { count: 0 }));
+});
+
+// ── TravelMate community feed ────────────────────────────────────────────────
+
+test('community posts are readable by signed-in users, never client-writable', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'travelMatePosts/post1'), {
+      authorId: 'author1', authorName: 'A', text: 'hello', likeCount: 0, commentCount: 0,
+    });
+    await setDoc(doc(ctx.firestore(), 'travelMatePosts/post1/comments/c1'), {
+      postId: 'post1', authorId: 'author1', text: 'first',
+    });
+    await setDoc(doc(ctx.firestore(), 'travelMatePosts/post1/likes/liker1'), {
+      uid: 'liker1', postId: 'post1',
+    });
+  });
+  await assertSucceeds(getDoc(doc(passenger, 'travelMatePosts/post1')));
+  await assertFails(getDoc(doc(anon, 'travelMatePosts/post1')));
+  await assertFails(setDoc(doc(passenger, 'travelMatePosts/hax'), { authorId: 'passenger1', text: 'x' }));
+  await assertFails(updateDoc(doc(passenger, 'travelMatePosts/post1'), { likeCount: 999 }));
+  // Comments + likes readable, but only the CFs write them (counters stay honest).
+  await assertSucceeds(getDoc(doc(passenger, 'travelMatePosts/post1/comments/c1')));
+  await assertFails(setDoc(doc(passenger, 'travelMatePosts/post1/comments/c2'), { authorId: 'passenger1', text: 'x' }));
+  await assertSucceeds(getDoc(doc(passenger, 'travelMatePosts/post1/likes/liker1')));
+  await assertFails(setDoc(doc(passenger, 'travelMatePosts/post1/likes/passenger1'), { uid: 'passenger1' }));
+});
+
+test('follows: ID must encode the real follower; no forged follows', async () => {
+  // Legit: passenger1 follows author1 with the correctly-encoded doc ID.
+  await assertSucceeds(setDoc(doc(passenger, 'travelMateFollows/passenger1_author1'), {
+    followerId: 'passenger1', followedId: 'author1',
+  }));
+  // Forged follower ID or mismatched doc ID → denied.
+  await assertFails(setDoc(doc(passenger, 'travelMateFollows/driver1_author1'), {
+    followerId: 'driver1', followedId: 'author1',
+  }));
+  await assertFails(setDoc(doc(passenger, 'travelMateFollows/passenger1_other'), {
+    followerId: 'passenger1', followedId: 'author1',
+  }));
+  // Self-follow → denied.
+  await assertFails(setDoc(doc(passenger, 'travelMateFollows/passenger1_passenger1'), {
+    followerId: 'passenger1', followedId: 'passenger1',
+  }));
+  // Unfollow own edge OK; deleting someone else's follow → denied.
+  await assertSucceeds(deleteDoc(doc(passenger, 'travelMateFollows/passenger1_author1')));
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'travelMateFollows/driver1_author1'), {
+      followerId: 'driver1', followedId: 'author1',
+    });
+  });
+  await assertFails(deleteDoc(doc(passenger, 'travelMateFollows/driver1_author1')));
+});
+
+test('communities are readable by signed-in users, writes go through CFs', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'travelMateCommunities/comm1'), {
+      name: 'Lahore Travellers', city: 'Lahore', members: ['author1'], memberCount: 1,
+    });
+  });
+  await assertSucceeds(getDoc(doc(passenger, 'travelMateCommunities/comm1')));
+  await assertFails(setDoc(doc(passenger, 'travelMateCommunities/hax'), { name: 'x', city: 'y' }));
+  await assertFails(updateDoc(doc(passenger, 'travelMateCommunities/comm1'), { memberCount: 999 }));
+});
+
+test('block list is private to the blocker (and admins) and CF-write-only', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'travelMateBlocks/passenger1_author1'), {
+      blockerId: 'passenger1', blockedId: 'author1', blockedName: 'A',
+    });
+  });
+  await assertSucceeds(getDoc(doc(passenger, 'travelMateBlocks/passenger1_author1')));
+  await assertSucceeds(getDoc(doc(admin, 'travelMateBlocks/passenger1_author1')));
+  // The blocked user (or anyone else) must never learn about the block.
+  const author = testEnv.authenticatedContext('author1', { role: 'passenger' }).firestore();
+  await assertFails(getDoc(doc(author, 'travelMateBlocks/passenger1_author1')));
+  // Blocks are written only by the block/unblock CFs.
+  await assertFails(setDoc(doc(passenger, 'travelMateBlocks/passenger1_driver1'), {
+    blockerId: 'passenger1', blockedId: 'driver1',
+  }));
+  await assertFails(deleteDoc(doc(passenger, 'travelMateBlocks/passenger1_author1')));
+});
+
+test('travelMate profile owner may set community fields, others may not write', async () => {
+  await assertSucceeds(setDoc(doc(passenger, 'travelMateProfiles/passenger1'), {
+    uid: 'passenger1', displayName: 'P', displayNameLower: 'p',
+    age: 25, gender: 'male', genderPref: 'any', bio: '', interests: [],
+    photoURL: null, active: true, lastActive: new Date(), createdAt: new Date(),
+    location: null, searchRadiusKm: null,
+  }));
+  await assertFails(updateDoc(doc(driver, 'travelMateProfiles/passenger1'), { displayName: 'hax' }));
+  // Server-only fields can't be smuggled in.
+  await assertFails(updateDoc(doc(passenger, 'travelMateProfiles/passenger1'), { suspended: false }));
 });

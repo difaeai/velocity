@@ -2,17 +2,20 @@
 
 /**
  * Admin — Travel Mate management.
- * Three tabs: Plans | Subscriptions | Settings.
+ * Tabs: Subscriptions | Plans | Community | Moderation | Settings.
  *
  * Plans:         Create / toggle-active / soft-delete subscription plans.
  * Subscriptions: Queue of pending + active + rejected + expired requests.
  *                Approve (debits wallet, grants daily likes) or Reject.
+ * Community:     Full CRUD over the community feed — edit/delete posts,
+ *                delete comments, create/edit/delete city communities.
  * Settings:      Edit config/travelMateSettings in place.
  */
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -73,7 +76,41 @@ interface TmSettings {
   enforceMutualGender: boolean;
 }
 
-type Tab = 'plans' | 'subscriptions' | 'settings' | 'moderation';
+interface FeedPost {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  mediaType: 'image' | 'video' | null;
+  mediaURL: string | null;
+  communityId: string | null;
+  communityName: string | null;
+  communityCity: string | null;
+  likeCount: number;
+  commentCount: number;
+  editedByAdmin?: boolean;
+  createdAt?: { seconds: number };
+}
+
+interface FeedComment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt?: { seconds: number };
+}
+
+interface FeedCommunity {
+  id: string;
+  name: string;
+  city: string;
+  description?: string;
+  creatorName?: string;
+  memberCount: number;
+  createdAt?: { seconds: number };
+}
+
+type Tab = 'plans' | 'subscriptions' | 'settings' | 'moderation' | 'community';
 type SubFilter = 'pending' | 'active' | 'rejected' | 'expired';
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -147,10 +184,11 @@ export default function TravelMatePage() {
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-        {(['subscriptions', 'plans', 'moderation', 'settings'] as Tab[]).map(t => (
+        {(['subscriptions', 'plans', 'community', 'moderation', 'settings'] as Tab[]).map(t => (
           <Button key={t} variant={tab === t ? 'primary' : 'ghost'} onClick={() => setTab(t)}>
             {t === 'subscriptions' ? '🧾 Subscriptions'
               : t === 'plans' ? '📋 Plans'
+              : t === 'community' ? '🌍 Community'
               : t === 'moderation' ? `🚩 Moderation${reports.length ? ` (${reports.length})` : ''}`
               : '⚙️ Settings'}
           </Button>
@@ -175,6 +213,310 @@ export default function TravelMatePage() {
       )}
       {tab === 'settings' && <SettingsTab settings={settings} />}
       {tab === 'moderation' && <ModerationTab reports={reports} busy={busy} call={call} />}
+      {tab === 'community' && <CommunityTab busy={busy} call={call} />}
+    </div>
+  );
+}
+
+// ── Community tab — full CRUD over the feed ───────────────────────────────────
+
+function CommunityTab({
+  busy,
+  call,
+}: {
+  busy: string | null;
+  call: <T>(fn: () => Promise<T>, id: string) => Promise<T | null>;
+}) {
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [communities, setCommunities] = useState<FeedCommunity[]>([]);
+  const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [comments, setComments] = useState<FeedComment[]>([]);
+  const [editPost, setEditPost] = useState<FeedPost | null>(null);
+  const [communityModal, setCommunityModal] = useState<{ community: FeedCommunity | null } | null>(null);
+
+  // Latest posts (live)
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'travelMatePosts'), orderBy('createdAt', 'desc'), limit(100)),
+      snap => setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedPost)),
+    );
+  }, []);
+
+  // Communities (live)
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'travelMateCommunities'), orderBy('city', 'asc'), orderBy('memberCount', 'desc')),
+      snap => setCommunities(snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedCommunity)),
+    );
+  }, []);
+
+  // Comments of the expanded post (live)
+  useEffect(() => {
+    if (!expandedPost) { setComments([]); return; }
+    return onSnapshot(
+      query(collection(db, 'travelMatePosts', expandedPost, 'comments'), orderBy('createdAt', 'asc')),
+      snap => setComments(snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedComment)),
+    );
+  }, [expandedPost]);
+
+  async function deletePost(p: FeedPost) {
+    if (!confirm(`Delete this post by ${p.authorName}? This removes it (and its likes/comments) for everyone.`)) return;
+    await call(() => adminApi.deleteTravelMatePost({ postId: p.id }), p.id);
+  }
+
+  async function deleteComment(postId: string, c: FeedComment) {
+    if (!confirm(`Delete this comment by ${c.authorName}?`)) return;
+    await call(() => adminApi.deleteTravelMateComment({ postId, commentId: c.id }), c.id);
+  }
+
+  async function deleteCommunity(c: FeedCommunity) {
+    if (!confirm(`Delete "${c.name}" (${c.city})? Its posts stay in the general feed without the group tag.`)) return;
+    await call(() => adminApi.adminDeleteTravelMateCommunity({ communityId: c.id }), c.id);
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      {/* Communities CRUD */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 900, color: colors.text }}>City communities ({communities.length})</h2>
+          <Button variant="primary" onClick={() => setCommunityModal({ community: null })}>+ New community</Button>
+        </div>
+        <Card>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${colors.border}`, color: colors.muted }}>
+                  <th style={th}>Name</th>
+                  <th style={th}>City</th>
+                  <th style={th}>Members</th>
+                  <th style={th}>Created by</th>
+                  <th style={th}>Created</th>
+                  <th style={th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {communities.length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: colors.muted }}>No communities yet.</td></tr>
+                )}
+                {communities.map(c => (
+                  <tr key={c.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                    <td style={td}><strong>{c.name}</strong>{c.description ? <div style={{ color: colors.muted, fontSize: 11 }}>{c.description}</div> : null}</td>
+                    <td style={td}>📍 {c.city}</td>
+                    <td style={td}>{c.memberCount}</td>
+                    <td style={td}>{c.creatorName ?? '—'}</td>
+                    <td style={td}>{c.createdAt ? fmtDate(c.createdAt.seconds) : '—'}</td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Button variant="ghost" disabled={busy === c.id} onClick={() => setCommunityModal({ community: c })}>Edit</Button>
+                        <Button variant="danger" disabled={busy === c.id} onClick={() => deleteCommunity(c)}>{busy === c.id ? '…' : 'Delete'}</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      {/* Posts CRUD */}
+      <div>
+        <h2 style={{ fontSize: 16, fontWeight: 900, color: colors.text, marginBottom: 10 }}>
+          Latest posts ({posts.length})
+        </h2>
+        <Card>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${colors.border}`, color: colors.muted }}>
+                  <th style={th}>Author</th>
+                  <th style={th}>Post</th>
+                  <th style={th}>Group</th>
+                  <th style={th}>Engagement</th>
+                  <th style={th}>Posted</th>
+                  <th style={th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {posts.length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: colors.muted }}>No posts yet.</td></tr>
+                )}
+                {posts.map(p => (
+                  <React.Fragment key={p.id}>
+                    <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                      <td style={td}><strong>{p.authorName}</strong><div style={{ color: colors.muted, fontSize: 10 }}><code>{p.authorId.slice(0, 10)}…</code></div></td>
+                      <td style={{ ...td, maxWidth: 320 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {p.text || <em style={{ color: colors.muted }}>(no text)</em>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, fontSize: 11, marginTop: 2 }}>
+                          {p.mediaType === 'image' && p.mediaURL && <a href={p.mediaURL} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary }}>📷 image</a>}
+                          {p.mediaType === 'video' && p.mediaURL && <a href={p.mediaURL} target="_blank" rel="noopener noreferrer" style={{ color: colors.primary }}>🎬 video</a>}
+                          {p.editedByAdmin && <span style={{ color: '#f59e0b' }}>edited by admin</span>}
+                        </div>
+                      </td>
+                      <td style={td}>{p.communityName ? `${p.communityName} · ${p.communityCity}` : '—'}</td>
+                      <td style={td}>❤️ {p.likeCount} · 💬 {p.commentCount}</td>
+                      <td style={td}>{p.createdAt ? fmtDate(p.createdAt.seconds) : '—'}</td>
+                      <td style={td}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <Button variant="ghost" disabled={busy === p.id} onClick={() => setEditPost(p)}>Edit</Button>
+                          <Button variant="secondary" disabled={busy === p.id} onClick={() => setExpandedPost(expandedPost === p.id ? null : p.id)}>
+                            {expandedPost === p.id ? 'Hide' : 'Comments'}
+                          </Button>
+                          <Button variant="danger" disabled={busy === p.id} onClick={() => deletePost(p)}>{busy === p.id ? '…' : 'Delete'}</Button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedPost === p.id && (
+                      <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <td colSpan={6} style={{ ...td, backgroundColor: `${colors.primary}08` }}>
+                          {comments.length === 0 ? (
+                            <span style={{ color: colors.muted }}>No comments on this post.</span>
+                          ) : (
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              {comments.map(c => (
+                                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <strong style={{ minWidth: 120 }}>{c.authorName}</strong>
+                                  <span style={{ flex: 1 }}>{c.text}</span>
+                                  <span style={{ color: colors.muted, fontSize: 11 }}>{c.createdAt ? fmtDate(c.createdAt.seconds) : ''}</span>
+                                  <Button variant="danger" disabled={busy === c.id} onClick={() => deleteComment(p.id, c)}>Delete</Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      {editPost && <PostEditModal post={editPost} onClose={() => setEditPost(null)} call={call} />}
+      {communityModal && (
+        <CommunityModal
+          community={communityModal.community}
+          onClose={() => setCommunityModal(null)}
+          call={call}
+        />
+      )}
+    </div>
+  );
+}
+
+function PostEditModal({
+  post,
+  onClose,
+  call,
+}: {
+  post: FeedPost;
+  onClose: () => void;
+  call: <T>(fn: () => Promise<T>, id: string) => Promise<T | null>;
+}) {
+  const [text, setText] = useState(post.text);
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    setLoading(true);
+    try {
+      await call(() => adminApi.adminUpdateTravelMatePost({ postId: post.id, text: text.trim() }), post.id);
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: '#00000088', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+      <Card style={{ width: 480, maxWidth: '90%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 900, color: colors.text }}>Edit post — {post.authorName}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: colors.muted }}>✕</button>
+        </div>
+        <Field label="Post text (moderation edit — marked as edited by admin)">
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            rows={5}
+            maxLength={2000}
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </Field>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <Button variant="primary" disabled={loading} onClick={submit}>{loading ? '…' : 'Save'}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function CommunityModal({
+  community,
+  onClose,
+  call,
+}: {
+  community: FeedCommunity | null;
+  onClose: () => void;
+  call: <T>(fn: () => Promise<T>, id: string) => Promise<T | null>;
+}) {
+  const [name, setName] = useState(community?.name ?? '');
+  const [city, setCity] = useState(community?.city ?? '');
+  const [description, setDescription] = useState(community?.description ?? '');
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (name.trim().length < 3 || city.trim().length < 2) {
+      alert('A community needs a name (3+ chars) and a city.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await call(
+        () => adminApi.adminUpsertTravelMateCommunity({
+          communityId: community?.id,
+          name: name.trim(),
+          city: city.trim(),
+          description: description.trim() || undefined,
+        }),
+        community?.id ?? 'create-community',
+      );
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: '#00000088', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+      <Card style={{ width: 420, maxWidth: '90%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 900, color: colors.text }}>
+            {community ? 'Edit community' : 'New community'}
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: colors.muted }}>✕</button>
+        </div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <Field label="Name">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Lahore Travellers" style={inputStyle} maxLength={48} />
+          </Field>
+          <Field label="City (required — shown to every member)">
+            <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Lahore" style={inputStyle} maxLength={48} />
+          </Field>
+          <Field label="Description (optional)">
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} maxLength={300} style={{ ...inputStyle, resize: 'vertical' }} />
+          </Field>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <Button variant="primary" disabled={loading} onClick={submit}>{loading ? '…' : community ? 'Save' : 'Create'}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </Card>
     </div>
   );
 }

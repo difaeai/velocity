@@ -217,6 +217,19 @@ export default function TravelMateHome() {
           </View>
         </Pressable>
 
+        {/* Community feed */}
+        <Pressable
+          style={s.communityCard}
+          onPress={() => router.push('/passenger/travel-mate/feed' as Parameters<typeof router.push>[0])}
+        >
+          <Text style={s.shareIcon}>🌍</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.shareTitle}>Community Feed</Text>
+            <Text style={s.shareSub}>Share experiences, find people, join city groups, follow and chat</Text>
+          </View>
+          <Text style={s.chevron}>›</Text>
+        </Pressable>
+
         {/* Quick actions grid */}
         <View style={s.grid}>
           <ActionTile
@@ -473,6 +486,9 @@ const s = StyleSheet.create({
   tileEmoji: { fontSize: 26, marginBottom: 4 },
   tileLabel: { fontSize: 15, fontWeight: '800', color: colors.text },
   tileSub:   { fontSize: 12, color: colors.muted },
+
+  // Community feed
+  communityCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: `${PINK}18`, borderRadius: 16, borderWidth: 1.5, borderColor: `${PINK}55`, padding: 16 },
 
   // Share a ride
   shareCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },

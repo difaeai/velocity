@@ -13,6 +13,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
 
 type MatchStatus = 'active' | 'unmatched';
@@ -37,6 +38,7 @@ function timeAgo(seconds: number): string {
 export default function TravelMateChats() {
   const { user } = useAuth();
   const router = useRouter();
+  const blocked = useBlockedSet();
   const [matches, setMatches] = useState<TravelMatch[]>([]);
 
   useEffect(() => {
@@ -47,12 +49,13 @@ export default function TravelMateChats() {
     );
   }, [user?.uid]);
 
-  // Only show active matches — sorted newest message first
+  // Only show active matches with people you haven't blocked — newest first
   const chatList = useMemo(
     () => [...matches]
       .filter(m => m.status === 'active')
+      .filter(m => !m.users.some(u => u !== user?.uid && blocked.has(u)))
       .sort((a, b) => (b.lastMessageAt?.seconds ?? b.matchedAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? a.matchedAt?.seconds ?? 0)),
-    [matches],
+    [matches, blocked, user?.uid],
   );
 
   return (
