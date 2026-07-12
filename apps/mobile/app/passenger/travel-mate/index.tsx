@@ -268,19 +268,6 @@ export default function TravelMateHome() {
           </View>
         </Pressable>
 
-        {/* Community feed */}
-        <Pressable
-          style={s.communityCard}
-          onPress={() => router.push('/passenger/travel-mate/feed' as Parameters<typeof router.push>[0])}
-        >
-          <Text style={s.shareIcon}>🌍</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.shareTitle}>Community Feed</Text>
-            <Text style={s.shareSub}>Share experiences, find people, join city groups, follow and chat</Text>
-          </View>
-          <Text style={s.chevron}>›</Text>
-        </Pressable>
-
         {/* Quick actions grid */}
         <View style={s.grid}>
           <ActionTile

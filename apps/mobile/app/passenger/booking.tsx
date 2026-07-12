@@ -1865,8 +1865,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   findDriverButton: {
-    flex: 1,
-    height: 48,
+    // NOTE: no `flex: 1` here — this button is a standalone child of the
+    // column footer, and flex:1 (flexBasis:0) collapses it to zero height,
+    // making the primary "Find Driver / Start Pool Ride" CTA invisible.
+    alignSelf: 'stretch',
+    height: 52,
     borderRadius: 14,
     backgroundColor: '#ccff00',
     alignItems: 'center',

@@ -1,7 +1,13 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../../src/config';
+import {
+  ChatsIcon,
+  FeedIcon,
+  HomeIcon,
+  MatchesIcon,
+  ProfileIcon,
+} from '../../../src/ui/TabBarIcons';
 
 export default function TravelMateLayout() {
   const insets = useSafeAreaInsets();
@@ -22,52 +28,43 @@ export default function TravelMateLayout() {
           paddingBottom: bottomInset,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
+        tabBarIconStyle: { marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '🏠' : '🏡'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => <HomeIcon color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="feed"
         options={{
           title: 'Feed',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '🌍' : '🌎'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => <FeedIcon color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="matches"
         options={{
           title: 'Matches',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '❤️' : '🩶'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => <MatchesIcon color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="chats"
         options={{
           title: 'Chats',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '💬' : '🗨️'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => <ChatsIcon color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '🧑' : '👤'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => <ProfileIcon color={color} focused={focused} />,
         }}
       />
       {/* Not tabs — push-navigated full-screen */}
