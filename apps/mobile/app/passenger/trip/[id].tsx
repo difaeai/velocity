@@ -192,6 +192,9 @@ export default function TripScreen() {
 
   const goHome = () => router.replace('/passenger/home');
   const pendingBids = bids.filter((b) => b.status === 'pending');
+  // Pool joiners ride along but only the host picks the driver, raises the
+  // fare or cancels — the backend rejects anyone else, so hide those controls.
+  const isHost = trip.passengerId === user?.uid;
 
   if (trip.status === 'requested') {
     const formatTime = (seconds: number) => {
@@ -300,13 +303,17 @@ export default function TripScreen() {
                       </View>
                       <Text style={styles.bidFarePKR}>{b.fare} PKR</Text>
                     </View>
-                    <Pressable
-                      style={styles.acceptBidBtn}
-                      disabled={busy}
-                      onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
-                    >
-                      <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
-                    </Pressable>
+                    {isHost ? (
+                      <Pressable
+                        style={styles.acceptBidBtn}
+                        disabled={busy}
+                        onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
+                      >
+                        <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.joinerNote}>The pool host picks the driver</Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -321,11 +328,15 @@ export default function TripScreen() {
                     <Text style={styles.poolShareTitle}>Invite riders — everyone pays less</Text>
                     <Text style={styles.poolShareCodeTxt}>Invite code: {trip.shareCode}</Text>
                   </View>
-                  <Pressable style={styles.poolVisChip} onPress={togglePoolVisibility} disabled={busy}>
+                  <Pressable
+                    style={styles.poolVisChip}
+                    onPress={togglePoolVisibility}
+                    disabled={busy || !isHost}
+                  >
                     <Text style={styles.poolVisChipTxt}>
                       {trip.poolVisibility === 'private' ? '🔒 Private' : '🌍 Public'}
                     </Text>
-                    <Text style={styles.poolVisChipSub}>tap to switch</Text>
+                    {isHost && <Text style={styles.poolVisChipSub}>tap to switch</Text>}
                   </Pressable>
                 </View>
                 <Pressable
@@ -356,6 +367,7 @@ export default function TripScreen() {
             </View>
 
             {/* Raise the offer to attract drivers (backend only accepts raises) */}
+            {isHost && (
             <View style={styles.raiseCard}>
               <View style={[styles.fareAdjusterRow, { paddingHorizontal: 0 }]}>
                 <Pressable
@@ -391,6 +403,7 @@ export default function TripScreen() {
                 </Text>
               </View>
             </View>
+            )}
 
             {/* Non-pool rides keep the Travel Mate share entry */}
             {!trip.pool && (
@@ -403,14 +416,20 @@ export default function TripScreen() {
             )}
           </ScrollView>
 
-          {/* Cancel Request Button */}
-          <Pressable
-            style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
-            disabled={busy}
-          >
-            <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
-          </Pressable>
+          {/* Cancel Request Button (host only — the backend rejects others) */}
+          {isHost ? (
+            <Pressable
+              style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
+              disabled={busy}
+            >
+              <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.joinerFooterNote}>
+              You've joined this pool — you'll ride along once the host picks a driver.
+            </Text>
+          )}
         </View>
       </View>
     );
@@ -502,7 +521,7 @@ export default function TripScreen() {
               disabled={busy}
               onPress={() => run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))}
             />
-            {trip.status !== 'in_progress' && (
+            {trip.status !== 'in_progress' && isHost && (
               <PrimaryButton
                 variant="secondary"
                 label="Cancel trip"
@@ -1014,6 +1033,23 @@ const styles = StyleSheet.create({
   },
   poolShareBtnTxt: { color: '#000', fontSize: 14, fontWeight: '900' },
   poolVisHint:     { color: '#8a8c8c', fontSize: 10, lineHeight: 14 },
+
+  joinerNote: {
+    color: '#8a8c8c',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 6,
+  },
+  joinerFooterNote: {
+    color: '#8a8c8c',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    lineHeight: 17,
+  },
 
   // Raise-fare card
   raiseCard: {
