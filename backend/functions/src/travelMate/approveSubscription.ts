@@ -1,5 +1,5 @@
 /**
- * Velocity – Travel Mate – approve / reject Subscription (callable, v2, admin-only)
+ * Velocity – Travel Partner – approve / reject Subscription (callable, v2, admin-only)
  * ----------------------------------------------------------------------------
  * approveTravelMateSubscription is the money + quota handshake. In ONE
  * transaction it:

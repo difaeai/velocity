@@ -1,5 +1,5 @@
 /**
- * Travel Mate — post detail + comments.
+ * Travel Partner — post detail + comments.
  *
  * Deep-link target for shared posts:
  *   velocity://passenger/travel-mate/post/{postId}
@@ -44,7 +44,6 @@ import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../../src/lib/timeAgo';
 import { colors } from '../../../../src/config';
 
-const PINK = '#E8637A';
 
 /** Minimal dark page hosting a native <video> element. */
 function videoHtml(url: string): string {
@@ -119,7 +118,7 @@ export default function PostDetail() {
     } catch (e: unknown) {
       setLiked(was);
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your TravelMate profile first.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first.');
       }
     }
   }
@@ -133,7 +132,7 @@ export default function PostDetail() {
       setCommentText('');
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your TravelMate profile first.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first.');
       } else if (e instanceof FirebaseError && e.code === 'functions/permission-denied') {
         Alert.alert('Unavailable', 'You cannot comment on this post.');
       } else {
@@ -162,7 +161,7 @@ export default function PostDetail() {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message:
-        `${post.authorName} on Velocity TravelMate:\n\n` +
+        `${post.authorName} on Velocity Travel Partner:\n\n` +
         `${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}` +
         `See the post: ${link}`,
     }).catch(() => {});
@@ -219,7 +218,7 @@ export default function PostDetail() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={PINK} /></View>
+        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -283,7 +282,7 @@ export default function PostDetail() {
               <View style={s.postActions}>
                 <Pressable style={s.actionGroup} onPress={toggleLike} hitSlop={8}>
                   <Text style={s.actionIcon}>{liked ? '❤️' : '🤍'}</Text>
-                  <Text style={[s.actionCount, liked && { color: PINK }]}>
+                  <Text style={[s.actionCount, liked && { color: colors.primary }]}>
                     {post.likeCount} {post.likeCount === 1 ? 'Like' : 'Likes'}
                   </Text>
                 </Pressable>
@@ -373,7 +372,7 @@ const s = StyleSheet.create({
   postAvatar: { width: 44, height: 44, borderRadius: 22 },
   avatarFallback: { backgroundColor: colors.glassChip, alignItems: 'center', justifyContent: 'center' },
   postAuthor: { fontSize: 15, fontWeight: '800', color: colors.text },
-  postMeta:   { fontSize: 11, color: PINK, marginTop: 1, fontWeight: '700' },
+  postMeta:   { fontSize: 11, color: colors.primary, marginTop: 1, fontWeight: '700' },
   postText:   { fontSize: 15, color: colors.text, lineHeight: 22 },
   postImage:  { width: '100%', height: 280, borderRadius: 14, backgroundColor: colors.glassChip },
   videoBox:   { width: '100%', height: 240, borderRadius: 14, overflow: 'hidden', backgroundColor: '#000' },
@@ -397,6 +396,6 @@ const s = StyleSheet.create({
 
   composerRow:   { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
   composerInput: { flex: 1, minHeight: 42, maxHeight: 110, borderRadius: 21, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, fontSize: 14, paddingHorizontal: 16, paddingVertical: 10 },
-  sendBtn:       { width: 42, height: 42, borderRadius: 21, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
-  sendIcon:      { color: '#fff', fontSize: 17, fontWeight: '900' },
+  sendBtn:       { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  sendIcon:      { color: '#000', fontSize: 17, fontWeight: '900' },
 });

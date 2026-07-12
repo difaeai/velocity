@@ -1,12 +1,12 @@
 /**
- * Travel Mate — travel locations editor.
+ * Travel Partner — travel locations editor.
  *
  * Where the user usually STARTS rides from ("home" pins — not necessarily
  * their house: the pin is wherever they are when they book, e.g. a coffee
  * shop) and where they usually TRAVEL TO. Both lists take multiple places.
  *
  * These pins are saved on travelMateProfiles/{uid}.travelPrefs and shown to
- * other TravelMate users so potential partners (and riders) can see where the
+ * other Travel Partner users so potential partners (and riders) can see where the
  * user usually travels — none of them are permanent addresses.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -31,7 +31,6 @@ import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 const MAX_LOCATIONS = 5;
 
 // Places API (New) requires session tokens to be UUID v4
@@ -158,7 +157,7 @@ export default function TravelLocations() {
       );
       Alert.alert(
         'Saved ✓',
-        'Your travel locations are set. Other TravelMate users can now see where you usually travel and find you as a partner.',
+        'Your travel locations are set. Other Travel Partner users can now see where you usually travel and find you as a partner.',
         [{ text: 'Done', onPress: () => router.back() }],
       );
     } catch (e: unknown) {
@@ -189,7 +188,7 @@ export default function TravelLocations() {
             <Text style={s.title}>My travel locations</Text>
           </View>
           <Text style={s.subtitle}>
-            These pins help other TravelMate users guess your routes and find you as a
+            These pins help other Travel Partner users guess your routes and find you as a
             partner — and help riders see where you usually go. They're not permanent:
             update them any time.
           </Text>
@@ -315,8 +314,8 @@ const s = StyleSheet.create({
   locLabel:  { flex: 1, fontSize: 13, fontWeight: '700', color: colors.text },
   locRemove: { fontSize: 14, color: colors.muted, fontWeight: '900' },
 
-  pinBtn:     { borderRadius: 10, borderWidth: 1.5, borderColor: `${PINK}55`, backgroundColor: `${PINK}14`, paddingVertical: 10, alignItems: 'center' },
-  pinBtnText: { fontSize: 13, fontWeight: '800', color: PINK },
+  pinBtn:     { borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.primary}55`, backgroundColor: `${colors.primary}14`, paddingVertical: 10, alignItems: 'center' },
+  pinBtnText: { fontSize: 13, fontWeight: '800', color: colors.primary },
 
   input: { height: 46, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 14, color: colors.text, backgroundColor: colors.background },
 
@@ -325,8 +324,8 @@ const s = StyleSheet.create({
   predictionMain: { fontSize: 13, fontWeight: '700', color: colors.text },
   predictionSub:  { fontSize: 11, color: colors.muted },
 
-  saveBtn:     { height: 54, borderRadius: 16, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  saveBtnText: { fontSize: 16, fontWeight: '900', color: '#fff' },
+  saveBtn:     { height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  saveBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
   skipBtn:     { alignItems: 'center', paddingVertical: 8 },
   skipBtnText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 });

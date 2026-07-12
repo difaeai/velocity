@@ -1,14 +1,14 @@
 /**
- * Travel Mate — Home hub.
+ * Travel Partner — Home hub.
  *
- * The landing screen for Travel Mate. Surfaces every action in one place:
+ * The landing screen for Travel Partner. Surfaces every action in one place:
  *   - Find travel partners  → swipe deck (discover)
  *   - Create a group / Join a group (invite code)
  *   - Matches / Chats
  *   - Share a ride link (book a ride, then invite partners to split it)
  *   - My groups (live list)
  *
- * Gated on having a Travel Mate profile — otherwise shows a create-profile CTA.
+ * Gated on having a Travel Partner profile — otherwise shows a create-profile CTA.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -33,7 +33,6 @@ import { api } from '../../../src/api/client';
 import { appLink } from '../../../src/share/links';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 
 interface Group {
   id: string;
@@ -86,7 +85,7 @@ export default function TravelMateHome() {
     );
   }, [user?.uid]);
 
-  // Re-arm the prompt every time the user opens the TravelMate hub: as long
+  // Re-arm the prompt every time the user opens the Travel Partner hub: as long
   // as the profile exists with NO saved location at all, they are asked to
   // set at least one on every visit. "Maybe later" only mutes it until the
   // next time the screen regains focus.
@@ -104,7 +103,7 @@ export default function TravelMateHome() {
     if (!hasProfile) {
       Alert.alert(
         'No profile yet',
-        'Create your TravelMate profile first, then share your link with other riders.',
+        'Create your Travel Partner profile first, then share your link with other riders.',
         [
           { text: 'Not now', style: 'cancel' },
           { text: 'Create profile', onPress: () => router.push('/passenger/travel-mate/setup') },
@@ -115,9 +114,9 @@ export default function TravelMateHome() {
     const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
-        `👋 I'm ${myName ? `${myName} ` : ''}on Velocity TravelMate.\n\n` +
+        `👋 I'm ${myName ? `${myName} ` : ''}on Velocity Travel Partner.\n\n` +
         `Check out my profile and match with me to share rides:\n${link}`,
-      title: 'Share my TravelMate profile',
+      title: 'Share my Travel Partner profile',
     }).catch(() => {});
   }
 
@@ -155,9 +154,9 @@ export default function TravelMateHome() {
               const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
               Share.share({
                 message:
-                  `Join my Travel Mate commute group on Velocity!\n\n${link}\n\n` +
-                  `Or open the app → TravelMate → "Join a group" and paste this invite code:\n${groupId}`,
-                title: 'Join my Travel Mate group',
+                  `Join my Travel Partner commute group on Velocity!\n\n${link}\n\n` +
+                  `Or open the app → Travel Partner → "Join a group" and paste this invite code:\n${groupId}`,
+                title: 'Join my Travel Partner group',
               }).catch(() => {});
             },
           },
@@ -166,7 +165,7 @@ export default function TravelMateHome() {
       );
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your Travel Mate profile first, then create a group.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first, then create a group.');
       } else {
         Alert.alert('Could not create group', e instanceof Error ? e.message : 'Please try again.');
       }
@@ -211,7 +210,7 @@ export default function TravelMateHome() {
     } catch { /* query unavailable — fall through to the explainer */ }
     Alert.alert(
       'Share a ride link',
-      'Ride links come from a booked ride:\n\n1. Book a ride as usual.\n2. On the trip screen, tap "🤝 Share ride link with Travel Mates".\n3. Matched partners open your link, join the same ride, and you split the fare.',
+      'Ride links come from a booked ride:\n\n1. Book a ride as usual.\n2. On the trip screen, tap "🤝 Share ride link with Travel Partners".\n3. Matched partners open your link, join the same ride, and you split the fare.',
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Book a ride', onPress: () => router.push('/passenger/booking') },
@@ -225,7 +224,7 @@ export default function TravelMateHome() {
       <Pressable onPress={() => router.push('/passenger/home')} style={s.backBtn}>
         <Text style={s.backBtnText}>← Book Ride</Text>
       </Pressable>
-      <Text style={s.screenTitle}>TravelMate</Text>
+      <Text style={s.screenTitle}>Travel Partner</Text>
       <Pressable onPress={() => router.push('/passenger/travel-mate/setup')} style={s.gearBtn}>
         <Text style={s.gearText}>⚙️</Text>
       </Pressable>
@@ -239,7 +238,7 @@ export default function TravelMateHome() {
         <TopBar />
         <View style={s.gateBox}>
           <Text style={s.gateEmoji}>💛</Text>
-          <Text style={s.gateTitle}>Welcome to TravelMate</Text>
+          <Text style={s.gateTitle}>Welcome to Travel Partner</Text>
           <Text style={s.gateSub}>
             Find travel partners heading your way, form commute groups, and split the fare.
             Set up your profile to get started.
@@ -448,7 +447,7 @@ export default function TravelMateHome() {
               You can save more than one of each.
             </Text>
             <Text style={s.dialogText}>
-              This helps other TravelMate users guess your routes and find you as a partner —
+              This helps other Travel Partner users guess your routes and find you as a partner —
               and helps riders see where you usually go.
             </Text>
             <Text style={[s.dialogText, s.dialogBold]}>
@@ -525,11 +524,11 @@ const s = StyleSheet.create({
   scroll: { padding: 16, gap: 14 },
 
   // Hero
-  hero:        { flexDirection: 'row', alignItems: 'center', borderRadius: 20, padding: 20, backgroundColor: PINK, gap: 14 },
-  heroKicker:  { fontSize: 11, fontWeight: '900', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.2 },
-  heroTitle:   { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 4 },
-  heroSub:     { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 4, lineHeight: 18 },
-  heroIconWrap:{ width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  hero:        { flexDirection: 'row', alignItems: 'center', borderRadius: 20, padding: 20, backgroundColor: colors.primary, gap: 14 },
+  heroKicker:  { fontSize: 11, fontWeight: '900', color: 'rgba(0,0,0,0.65)', letterSpacing: 1.2 },
+  heroTitle:   { fontSize: 22, fontWeight: '900', color: '#000', marginTop: 4 },
+  heroSub:     { fontSize: 13, color: 'rgba(0,0,0,0.75)', marginTop: 4, lineHeight: 18 },
+  heroIconWrap:{ width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0,0,0,0.12)', alignItems: 'center', justifyContent: 'center' },
   heroIcon:    { fontSize: 30 },
 
   // Quick actions grid
@@ -540,7 +539,7 @@ const s = StyleSheet.create({
   tileSub:   { fontSize: 12, color: colors.muted },
 
   // Community feed
-  communityCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: `${PINK}18`, borderRadius: 16, borderWidth: 1.5, borderColor: `${PINK}55`, padding: 16 },
+  communityCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: `${colors.primary}18`, borderRadius: 16, borderWidth: 1.5, borderColor: `${colors.primary}55`, padding: 16 },
 
   // Share a ride
   shareCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },
@@ -555,7 +554,7 @@ const s = StyleSheet.create({
 
   // Group rows
   groupRow:  { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 14 },
-  groupIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${PINK}22`, alignItems: 'center', justifyContent: 'center' },
+  groupIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center' },
   groupName: { fontSize: 15, fontWeight: '800', color: colors.text },
   groupSub:  { fontSize: 12, color: colors.muted, marginTop: 2 },
   chevron:   { fontSize: 22, color: colors.muted },
@@ -565,8 +564,8 @@ const s = StyleSheet.create({
   emptyGroupsEmoji:{ fontSize: 30 },
   emptyGroupsTitle:{ fontSize: 15, fontWeight: '900', color: colors.text },
   emptyGroupsSub:  { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 },
-  emptyGroupsBtn:  { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: PINK },
-  emptyGroupsBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  emptyGroupsBtn:  { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
+  emptyGroupsBtnText: { fontSize: 14, fontWeight: '800', color: '#000' },
 
   // Profile shortcut
   profileRow:  { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: 6 },
@@ -578,8 +577,8 @@ const s = StyleSheet.create({
   gateEmoji: { fontSize: 60 },
   gateTitle: { fontSize: 24, fontWeight: '900', color: colors.text, textAlign: 'center' },
   gateSub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 21 },
-  gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  gateBtnText: { fontSize: 16, fontWeight: '900', color: '#fff' },
+  gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  gateBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
 
   // Travel-locations dialog
   dialogOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center', padding: 28 },
@@ -588,8 +587,8 @@ const s = StyleSheet.create({
   dialogTitle:      { fontSize: 19, fontWeight: '900', color: colors.text, textAlign: 'center' },
   dialogText:       { fontSize: 13, color: colors.muted, lineHeight: 19, textAlign: 'center' },
   dialogBold:       { fontWeight: '900', color: colors.text },
-  dialogPrimaryBtn: { width: '100%', height: 50, borderRadius: 14, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  dialogPrimaryText:{ fontSize: 15, fontWeight: '900', color: '#fff' },
+  dialogPrimaryBtn: { width: '100%', height: 50, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  dialogPrimaryText:{ fontSize: 15, fontWeight: '900', color: '#000' },
   dialogSkipBtn:    { paddingVertical: 6 },
   dialogSkipText:   { fontSize: 13, fontWeight: '700', color: colors.muted },
 
@@ -602,6 +601,6 @@ const s = StyleSheet.create({
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 4 },
   cancelBtn:    { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   cancelBtnText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
-  confirmBtn:   { flex: 1, height: 46, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
-  confirmBtnText:{ fontSize: 14, fontWeight: '800', color: '#fff' },
+  confirmBtn:   { flex: 1, height: 46, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  confirmBtnText:{ fontSize: 14, fontWeight: '800', color: '#000' },
 });

@@ -1,7 +1,7 @@
 /**
- * Velocity — Travel Mate — Community feed (callable, v2)
+ * Velocity — Travel Partner — Community feed (callable, v2)
  * ----------------------------------------------------------------------------
- * The social layer of TravelMate: a public feed where riders post text,
+ * The social layer of Travel Partner: a public feed where riders post text,
  * photos and short videos, follow each other, and gather in city-pinned
  * community groups.
  *
@@ -64,12 +64,12 @@ async function pushTo(uid: string, title: string, body: string, data: Record<str
 
 interface ProfileInfo { displayName: string; photoURL: string | null }
 
-/** Loads the caller's TravelMate profile or throws — every community action
- *  requires the unified TravelMate profile to exist first. */
+/** Loads the caller's Travel Partner profile or throws — every community action
+ *  requires the unified Travel Partner profile to exist first. */
 async function requireProfile(uid: string): Promise<ProfileInfo> {
   const snap = await db.doc(`travelMateProfiles/${uid}`).get();
   if (!snap.exists) {
-    throw new HttpsError('failed-precondition', 'Set up your TravelMate profile first.');
+    throw new HttpsError('failed-precondition', 'Set up your Travel Partner profile first.');
   }
   const d = snap.data()!;
   return { displayName: (d.displayName as string) ?? 'Member', photoURL: (d.photoURL as string) ?? null };
@@ -484,12 +484,12 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
     return { matchId: matchRef.id, created: false };
   }
 
-  // Both sides must hold a TravelMate profile — messaging is a community
+  // Both sides must hold a Travel Partner profile — messaging is a community
   // feature, and requireProfile keeps ride-only accounts out of DMs.
   const me = await requireProfile(uid);
   const targetSnap = await db.doc(`travelMateProfiles/${targetUid}`).get();
   if (!targetSnap.exists) {
-    throw new HttpsError('failed-precondition', 'This user is not on TravelMate yet.');
+    throw new HttpsError('failed-precondition', 'This user is not on Travel Partner yet.');
   }
   const target = targetSnap.data()!;
 
@@ -509,7 +509,7 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
     lastMessageAt: null,
   });
 
-  await pushTo(targetUid, 'New message request 💬', `${me.displayName} wants to chat with you on TravelMate.`, {
+  await pushTo(targetUid, 'New message request 💬', `${me.displayName} wants to chat with you on Travel Partner.`, {
     type: 'travelMate.feedChat', matchId: matchRef.id,
   });
 

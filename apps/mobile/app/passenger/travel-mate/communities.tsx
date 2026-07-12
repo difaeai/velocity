@@ -1,8 +1,8 @@
 /**
- * Travel Mate — city community groups directory.
+ * Travel Partner — city community groups directory.
  *
  * Every community is pinned to a city, and the list is grouped by city so
- * everyone can always see where a group belongs. Anyone with a TravelMate
+ * everyone can always see where a group belongs. Anyone with a Travel Partner
  * profile can create a group — but they MUST pick the city first.
  */
 import { useCallback, useMemo, useState } from 'react';
@@ -29,7 +29,6 @@ import { api, type TMCommunity } from '../../../src/api/client';
 import { PAKISTAN_CITIES } from '../../../src/domain/intercityTypes';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 
 export default function TravelMateCommunities() {
   const { user } = useAuth();
@@ -110,7 +109,7 @@ export default function TravelMateCommunities() {
       router.push(`/passenger/travel-mate/community/${communityId}` as Parameters<typeof router.push>[0]);
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your TravelMate profile first, then create a group.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first, then create a group.');
       } else if (e instanceof FirebaseError && e.code === 'functions/already-exists') {
         Alert.alert('Already exists', e.message);
       } else {
@@ -147,7 +146,7 @@ export default function TravelMateCommunities() {
       </View>
 
       {loading ? (
-        <View style={s.centerBox}><ActivityIndicator size="large" color={PINK} /></View>
+        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
       ) : sections.length === 0 ? (
         <View style={s.centerBox}>
           <Text style={{ fontSize: 44 }}>🏙️</Text>
@@ -280,8 +279,8 @@ const s = StyleSheet.create({
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   backText:{ color: colors.text, fontSize: 18, fontWeight: '700' },
   title:   { fontSize: 18, fontWeight: '900', color: colors.text },
-  newBtn:  { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, backgroundColor: PINK },
-  newBtnText: { fontSize: 13, fontWeight: '900', color: '#fff' },
+  newBtn:  { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.primary },
+  newBtnText: { fontSize: 13, fontWeight: '900', color: '#000' },
 
   searchWrap:  { paddingHorizontal: 16, paddingBottom: 10 },
   searchInput: { height: 44, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: 14, fontSize: 14 },
@@ -289,20 +288,20 @@ const s = StyleSheet.create({
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle:{ fontSize: 19, fontWeight: '900', color: colors.text },
   emptySub:  { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
-  createBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: PINK },
-  createBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  createBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary },
+  createBtnText: { fontSize: 14, fontWeight: '900', color: '#000' },
 
   listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 },
-  sectionCity: { fontSize: 14, fontWeight: '900', color: PINK },
+  sectionCity: { fontSize: 14, fontWeight: '900', color: colors.primary },
   sectionCount:{ fontSize: 11, color: colors.muted, fontWeight: '700' },
 
   commRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 12, marginBottom: 8 },
-  commIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: `${PINK}22`, alignItems: 'center', justifyContent: 'center' },
+  commIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center' },
   commName: { fontSize: 15, fontWeight: '800', color: colors.text },
   commSub:  { fontSize: 12, color: colors.muted, marginTop: 2 },
-  memberBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, backgroundColor: `${PINK}22`, borderWidth: 1, borderColor: `${PINK}55` },
-  memberBadgeText: { fontSize: 11, fontWeight: '800', color: PINK },
+  memberBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, backgroundColor: `${colors.primary}22`, borderWidth: 1, borderColor: `${colors.primary}55` },
+  memberBadgeText: { fontSize: 11, fontWeight: '800', color: colors.primary },
   chevron:  { fontSize: 20, color: colors.muted },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
@@ -313,8 +312,8 @@ const s = StyleSheet.create({
   input:        { height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, fontSize: 14, color: colors.text, backgroundColor: colors.background },
   multiline:    { height: 70, paddingTop: 12, textAlignVertical: 'top' },
 
-  cityPickedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 46, borderRadius: 12, borderWidth: 1.5, borderColor: PINK, backgroundColor: `${PINK}18`, paddingHorizontal: 14 },
-  cityPicked:    { fontSize: 14, fontWeight: '800', color: PINK },
+  cityPickedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 46, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: `${colors.primary}18`, paddingHorizontal: 14 },
+  cityPicked:    { fontSize: 14, fontWeight: '800', color: colors.primary },
   cityChange:    { fontSize: 12, fontWeight: '800', color: colors.muted },
   cityList:      { maxHeight: 150, marginTop: 6 },
   cityOption:    { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -323,6 +322,6 @@ const s = StyleSheet.create({
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
   cancelBtn:    { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   cancelBtnText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
-  confirmBtn:   { flex: 1, height: 48, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
-  confirmBtnText:{ fontSize: 14, fontWeight: '900', color: '#fff' },
+  confirmBtn:   { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  confirmBtnText:{ fontSize: 14, fontWeight: '900', color: '#000' },
 });

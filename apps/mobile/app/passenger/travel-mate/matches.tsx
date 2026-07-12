@@ -103,7 +103,7 @@ export default function TravelMateMatches() {
                 )}
                 {/* Gradient overlay */}
                 <View style={s.tileOverlay}>
-                  <Text style={s.tileName} numberOfLines={1}>{other?.displayName ?? 'Travel Mate'}</Text>
+                  <Text style={s.tileName} numberOfLines={1}>{other?.displayName ?? 'Travel Partner'}</Text>
                   {ts && <Text style={s.tileTime}>{hasChat ? '💬 ' : '❤️ '}{timeAgo(ts.seconds)}</Text>}
                 </View>
                 {/* Unread indicator */}
@@ -142,7 +142,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   tilePhoto:            { width: '100%', height: '100%', resizeMode: 'cover' },
-  tilePhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: '#2a2c2c', alignItems: 'center', justifyContent: 'center' },
+  tilePhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   tileOverlay: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
@@ -154,6 +154,6 @@ const s = StyleSheet.create({
   tileName: { fontSize: 14, fontWeight: '900', color: '#fff' },
   tileTime: { fontSize: 11, color: 'rgba(255,255,255,0.75)' },
 
-  newBadge:     { position: 'absolute', top: 10, right: 10, backgroundColor: '#E8637A', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
-  newBadgeText: { fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  newBadge:     { position: 'absolute', top: 10, right: 10, backgroundColor: colors.primary, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
+  newBadgeText: { fontSize: 10, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
 });

@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-na
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import type { Coords } from '../hooks/location';
+import { useRoute } from '../hooks/directions';
 
 export interface MapPoint {
   lat: number;
@@ -72,21 +73,30 @@ export function LiveMap({
 
   const hasRoute = !!(pickup && dropoff);
 
-  // Route mode: frame both endpoints whenever they change.
+  // Real road-following route (Google Directions). Null while loading or when
+  // Directions is unavailable — we fall back to the straight geodesic line.
+  const routeCoords = useRoute(pickup, dropoff);
+
+  // Route mode: frame the whole trip. Prefer the real route's bounds so bends
+  // in the road stay on-screen; fall back to the two endpoints otherwise.
   useEffect(() => {
     if (!hasRoute || !mapRef.current) return;
+    const coordsToFit =
+      routeCoords && routeCoords.length > 1
+        ? routeCoords
+        : [
+            { latitude: pickup!.lat, longitude: pickup!.lng },
+            { latitude: dropoff!.lat, longitude: dropoff!.lng },
+          ];
     const fit = () =>
-      mapRef.current?.fitToCoordinates(
-        [
-          { latitude: pickup!.lat, longitude: pickup!.lng },
-          { latitude: dropoff!.lat, longitude: dropoff!.lng },
-        ],
-        { edgePadding: { top: 120, right: 70, bottom: 120, left: 70 }, animated: true },
-      );
+      mapRef.current?.fitToCoordinates(coordsToFit, {
+        edgePadding: { top: 120, right: 70, bottom: 120, left: 70 },
+        animated: true,
+      });
     // Give the MapView a beat to lay out before fitting on first render.
     const t = setTimeout(fit, 350);
     return () => clearTimeout(t);
-  }, [hasRoute, pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng]);
+  }, [hasRoute, pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng, routeCoords]);
 
   // Follow mode: re-centre whenever GPS updates significantly (>30m) or on first fix.
   useEffect(() => {
@@ -124,17 +134,31 @@ export function LiveMap({
             : DEFAULT_REGION
       }
     >
-      {hasRoute && (
-        <Polyline
-          coordinates={[
-            { latitude: pickup!.lat, longitude: pickup!.lng },
-            { latitude: dropoff!.lat, longitude: dropoff!.lng },
-          ]}
-          strokeColor="#ccff00"
-          strokeWidth={3.5}
-          geodesic
-        />
-      )}
+      {hasRoute && (() => {
+        const line =
+          routeCoords && routeCoords.length > 1
+            ? routeCoords
+            : [
+                { latitude: pickup!.lat, longitude: pickup!.lng },
+                { latitude: dropoff!.lat, longitude: dropoff!.lng },
+              ];
+        const routed = !!(routeCoords && routeCoords.length > 1);
+        return (
+          <>
+            {/* Dark casing under the route so the lime line reads on the map */}
+            <Polyline coordinates={line} strokeColor="#0a0e12" strokeWidth={7} />
+            <Polyline
+              coordinates={line}
+              strokeColor="#ccff00"
+              strokeWidth={4}
+              // Only straighten with a geodesic when we don't have real roads.
+              geodesic={!routed}
+              lineCap="round"
+              lineJoin="round"
+            />
+          </>
+        );
+      })()}
 
       {pickup && (
         <Marker

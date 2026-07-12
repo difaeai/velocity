@@ -13,9 +13,10 @@
       "bundleIdentifier": "com.velocityridzpk.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos to upload driver verification documents.",
-        "NSCameraUsageDescription": "Velocity needs camera access to capture verification documents.",
-        "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides and enable live trip tracking."
+        "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
+        "NSCameraUsageDescription": "Velocity needs camera access so you can take and share a photo in chat and capture verification documents.",
+        "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
+        "NSContactsUsageDescription": "Velocity lets you pick a contact to share their number in chat."
       }
     },
     "android": {
@@ -49,13 +50,20 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Velocity needs access to your photos to upload driver verification documents."
+          "photosPermission": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
+          "cameraPermission": "Velocity needs camera access so you can take and share a photo in chat."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Velocity uses your location to set your pickup point and match nearby rides."
+          "locationWhenInUsePermission": "Velocity uses your location to set your pickup point, match nearby rides, and share your location in chat."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Velocity lets you pick a contact to share their number in chat."
         }
       ],
       [

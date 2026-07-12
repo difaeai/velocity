@@ -1,12 +1,12 @@
 /**
- * Travel Mate — shared ride link screen (deep-link target).
+ * Travel Partner — shared ride link screen (deep-link target).
  *
  * velocity://passenger/travel-mate/shared-ride/{shareId}
  *
  * Resolves the link via getSharedTravelMateRide and renders one of:
  *  - eligible          → ride card + "Book this ride" (bookSharedTravelMateRide)
  *  - already joined    → ride card + confirmation state
- *  - no_profile        → locked: "Travel Mates only" + CTA to set up a profile
+ *  - no_profile        → locked: "Travel Partners only" + CTA to set up a profile
  *  - not_partner       → locked: must match with the sharer first + CTA to Discover
  *
  * Regular users can never book from the link — the Cloud Function enforces the
@@ -101,7 +101,7 @@ export default function SharedRideScreen() {
             <View style={s.sharerRow}>
               <View style={s.avatar}><Text style={{ fontSize: 22 }}>👤</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={s.sharerName}>{ride.sharerInfo?.displayName ?? 'Travel Mate'}</Text>
+                <Text style={s.sharerName}>{ride.sharerInfo?.displayName ?? 'Travel Partner'}</Text>
                 <Text style={s.sharerSub}>shared this ride with their travel partners</Text>
               </View>
             </View>
@@ -149,13 +149,13 @@ export default function SharedRideScreen() {
           ) : result && !result.eligible && result.reason === 'no_profile' ? (
             <Card>
               <Text style={s.lockEmoji}>🔒</Text>
-              <Text style={s.lockTitle}>Travel Mates only</Text>
+              <Text style={s.lockTitle}>Travel Partners only</Text>
               <Text style={s.lockSub}>
-                This ride link only works for Travel Mates. Set up your Travel Mate profile,
+                This ride link only works for Travel Partners. Set up your Travel Partner profile,
                 find {ride.sharerInfo?.displayName ?? 'the sharer'} and match with them — then you can book this ride.
               </Text>
               <PrimaryButton
-                label="Become a Travel Mate"
+                label="Become a Travel Partner"
                 onPress={() => router.replace('/passenger/travel-mate/setup' as Parameters<typeof router.replace>[0])}
               />
             </Card>
@@ -165,7 +165,7 @@ export default function SharedRideScreen() {
               <Text style={s.lockTitle}>Travel partners only</Text>
               <Text style={s.lockSub}>
                 Only {ride.sharerInfo?.displayName ?? 'the sharer'}{"'s"} travel partners can book this ride.
-                Find them in Travel Mate Discover and match with them first.
+                Find them in Travel Partner Discover and match with them first.
               </Text>
               <PrimaryButton
                 label="Find your travel partner"

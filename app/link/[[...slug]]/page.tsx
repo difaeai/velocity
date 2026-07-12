@@ -94,7 +94,7 @@ export default function AppLinkPage() {
             <div style={st.codeHint}>
               {isPoolInvite
                 ? 'In the app: Book a ride → Pool → “Have an invite code?” → paste this code.'
-                : 'In the app: TravelMate → “Join a group” → paste this code.'}
+                : 'In the app: Travel Partner → “Join a group” → paste this code.'}
             </div>
           </div>
         )}

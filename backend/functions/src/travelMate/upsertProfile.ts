@@ -1,7 +1,7 @@
 /**
- * Velocity – Travel Mate – upsertTravelMateProfile (callable, v2)
+ * Velocity – Travel Partner – upsertTravelMateProfile (callable, v2)
  * ----------------------------------------------------------------------------
- * Creates / updates the user's INDEPENDENT Travel Mate profile.
+ * Creates / updates the user's INDEPENDENT Travel Partner profile.
  *
  * Identity-wall guarantees:
  *  - Writes ONLY to travelMateProfiles/{uid}. Never writes users/{uid}.
@@ -9,7 +9,7 @@
  *    reuse their ride photo (copyRidePhoto:true). That read is one-time and
  *    read-only; the photo is COPIED into travelMate/{uid}/ as a brand-new,
  *    physically independent file – never a live link. Changing/deleting the
- *    ride photo later can never affect the Travel Mate avatar, and vice versa.
+ *    ride photo later can never affect the Travel Partner avatar, and vice versa.
  *  - displayName is whatever the client sends (the client can prefill it from
  *    the ride name itself – no server read needed for the name).
  *  - ratingAvg / ratingCount are server-managed and can never be set by the client.

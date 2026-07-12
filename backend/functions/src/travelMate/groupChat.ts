@@ -1,5 +1,5 @@
 /**
- * Velocity — Travel Mate — Phase 5 group chat + private DMs (callable, v2)
+ * Velocity — Travel Partner — Phase 5 group chat + private DMs (callable, v2)
  * ----------------------------------------------------------------------------
  * sendTravelMateGroupMessage — append a message to the group's joint chat,
  *                              bump lastMessageAt, push FCM to other members.

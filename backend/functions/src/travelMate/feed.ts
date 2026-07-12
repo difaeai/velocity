@@ -1,5 +1,5 @@
 /**
- * Velocity – Travel Mate – getTravelMateFeed (callable, v2)
+ * Velocity – Travel Partner – getTravelMateFeed (callable, v2)
  * ----------------------------------------------------------------------------
  * Serves the swipe deck. Because security rules forbid clients from reading
  * other users' travelMateProfiles directly, ALL candidate data comes through
@@ -56,7 +56,7 @@ export const getTravelMateFeed = onCall({ region: REGION }, async (req: Callable
   // 1) My profile (need gender/pref, destination geo, depart time, days).
   const meSnap = await db.doc(`travelMateProfiles/${uid}`).get();
   if (!meSnap.exists) {
-    throw new HttpsError('failed-precondition', 'Set up your Travel Mate profile first.');
+    throw new HttpsError('failed-precondition', 'Set up your Travel Partner profile first.');
   }
   const me = meSnap.data()!;
   if (!me.destination?.lat || !me.destination?.lng) {

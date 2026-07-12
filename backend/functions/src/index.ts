@@ -75,7 +75,7 @@ export {
   adminSetSettlementAccounts,
 } from './payments';
 
-// Travel Mate — commute-partner matching (identity-walled from ride data)
+// Travel Partner — commute-partner matching (identity-walled from ride data)
 export { getTravelMateFeed } from './travelMate/feed';
 export { upsertTravelMateProfile } from './travelMate/upsertProfile';
 export { travelMateSwipe } from './travelMate/swipe';
@@ -84,7 +84,7 @@ export { approveTravelMateSubscription, rejectTravelMateSubscription } from './t
 export { adminCreateTravelMatePlan, adminUpdateTravelMatePlan, adminDeleteTravelMatePlan } from './travelMate/plans';
 export { expireTravelMateSubscriptions } from './travelMate/expireSubscriptions';
 // Phase 3 — social
-export { sendTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from './travelMate/social';
+export { sendTravelMateMessage, reactToTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from './travelMate/social';
 // Phase 3 — admin moderation
 export { adminSuspendTravelMateProfile } from './travelMate/moderation';
 // Phase 4 — groups + fare split

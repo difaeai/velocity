@@ -1,5 +1,5 @@
 /**
- * Shared hooks for the TravelMate community feed.
+ * Shared hooks for the Travel Partner community feed.
  *
  * useBlockedSet   — live set of UIDs the current user has blocked. Every
  *                   community surface (feed, comments, search, discover,
@@ -7,7 +7,7 @@
  *                   is never seen again.
  * useFollowingSet — live set of UIDs the current user follows (drives the
  *                   Follow/Following button state and the Following feed).
- * useMyTMProfile  — live TravelMate profile of the signed-in user (null =
+ * useMyTMProfile  — live Travel Partner profile of the signed-in user (null =
  *                   no profile yet, undefined = still loading).
  */
 import { useEffect, useState } from 'react';

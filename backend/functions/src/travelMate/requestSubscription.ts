@@ -1,5 +1,5 @@
 /**
- * Velocity – Travel Mate – requestTravelMateSubscription (callable, v2)
+ * Velocity – Travel Partner – requestTravelMateSubscription (callable, v2)
  * ----------------------------------------------------------------------------
  * A user requests a subscription to an active plan. Creates a PENDING
  * travelMateSubscriptions doc. It does NOT grant likes — that only happens on
@@ -38,11 +38,11 @@ export const requestTravelMateSubscription = onCall(
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
     const uid = req.auth.uid;
 
-    // Subscriptions are "Coming Soon" — Travel Mate is free for everyone right
+    // Subscriptions are "Coming Soon" — Travel Partner is free for everyone right
     // now, so we don't take subscription requests. The flow stays wired up.
     const flagsSnap = await db.doc('config/featureFlags').get();
     if (flagsSnap.data()?.travelMateSubscriptionsEnabled !== true) {
-      throw new HttpsError('failed-precondition', 'Travel Mate is free for everyone right now — no subscription needed.');
+      throw new HttpsError('failed-precondition', 'Travel Partner is free for everyone right now — no subscription needed.');
     }
 
     const parsed = Input.safeParse(req.data);

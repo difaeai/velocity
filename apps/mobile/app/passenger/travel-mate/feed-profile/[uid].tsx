@@ -1,5 +1,5 @@
 /**
- * Travel Mate — community profile (own and others').
+ * Travel Partner — community profile (own and others').
  *
  * Header: avatar, name, follower/following counts (tappable lists), country +
  * joined date, bio, usual FROM/TO travel locations.
@@ -50,7 +50,6 @@ import { areaSummary } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
 import { PostCard } from '../feed';
 
-const PINK = '#E8637A';
 
 interface TravelPoint { lat: number; lng: number; label: string }
 
@@ -195,7 +194,7 @@ export default function FeedProfile() {
   async function toggleFollow() {
     if (!user || !profile) return;
     if (!myProfile) {
-      Alert.alert('Profile needed', 'Set up your TravelMate profile first.');
+      Alert.alert('Profile needed', 'Set up your Travel Partner profile first.');
       return;
     }
     const followRef = doc(db, 'travelMateFollows', `${user.uid}_${profile.uid}`);
@@ -316,8 +315,8 @@ export default function FeedProfile() {
     const link = appLink(`/passenger/travel-mate/feed-profile/${profile.uid}`);
     Share.share({
       message: isOwn
-        ? `👋 I'm ${profile.displayName} on Velocity TravelMate. Follow me and see my posts:\n${link}`
-        : `Check out ${profile.displayName} on Velocity TravelMate:\n${link}`,
+        ? `👋 I'm ${profile.displayName} on Velocity Travel Partner. Follow me and see my posts:\n${link}`
+        : `Check out ${profile.displayName} on Velocity Travel Partner:\n${link}`,
     }).catch(() => {});
   }
 
@@ -365,7 +364,7 @@ export default function FeedProfile() {
   function sharePost(post: TMPost) {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
-      message: `${post.authorName} on Velocity TravelMate:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
+      message: `${post.authorName} on Velocity Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
     }).catch(() => {});
   }
 
@@ -422,7 +421,7 @@ export default function FeedProfile() {
         <View style={s.centerBox}>
           <Text style={{ fontSize: 44 }}>👤</Text>
           <Text style={s.emptyTitle}>Profile not found</Text>
-          <Text style={s.emptySub}>This person has not set up a TravelMate profile.</Text>
+          <Text style={s.emptySub}>This person has not set up a Travel Partner profile.</Text>
         </View>
       </SafeAreaView>
     );
@@ -432,7 +431,7 @@ export default function FeedProfile() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={PINK} /></View>
+        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -553,7 +552,7 @@ export default function FeedProfile() {
   const emptyTab = (
     <View style={s.emptyTab}>
       {tabLoading ? (
-        <ActivityIndicator color={PINK} />
+        <ActivityIndicator color={colors.primary} />
       ) : (
         <Text style={s.emptySub}>
           {tab === 'posts' && (isOwn ? 'You have not posted yet. Share your first travel experience!' : 'No posts yet.')}
@@ -677,7 +676,7 @@ export default function FeedProfile() {
               </Pressable>
             </View>
             {listLoading ? (
-              <ActivityIndicator color={PINK} style={{ marginVertical: 24 }} />
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
             ) : listRows.length === 0 ? (
               <Text style={[s.emptySub, { paddingVertical: 24, textAlign: 'center' }]}>
                 {listMode === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}
@@ -722,14 +721,14 @@ const s = StyleSheet.create({
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
   emptyTitle:{ fontSize: 19, fontWeight: '900', color: colors.text, textAlign: 'center' },
   emptySub:  { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
-  unblockBtn: { marginTop: 10, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12, backgroundColor: PINK },
-  unblockBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  unblockBtn: { marginTop: 10, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary },
+  unblockBtnText: { fontSize: 14, fontWeight: '900', color: '#000' },
 
   listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 8 },
 
   headerWrap:  { gap: 12, paddingTop: 4 },
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatar:      { width: 84, height: 84, borderRadius: 42, borderWidth: 2.5, borderColor: PINK },
+  avatar:      { width: 84, height: 84, borderRadius: 42, borderWidth: 2.5, borderColor: colors.primary },
   avatarFallback: { backgroundColor: colors.glassChip, alignItems: 'center', justifyContent: 'center' },
   name:        { fontSize: 22, fontWeight: '900', color: colors.text },
   statsRow:    { flexDirection: 'row', gap: 18 },
@@ -745,16 +744,16 @@ const s = StyleSheet.create({
   routeLine:  { fontSize: 12.5, color: colors.text, fontWeight: '700' },
 
   actionsRow:     { flexDirection: 'row', gap: 10 },
-  primaryAction:  { flex: 1, height: 44, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
-  primaryActionText: { fontSize: 14, fontWeight: '900', color: '#fff' },
-  followingAction: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: PINK },
-  followingActionText: { color: PINK },
+  primaryAction:  { flex: 1, height: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  primaryActionText: { fontSize: 14, fontWeight: '900', color: '#000' },
+  followingAction: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary },
+  followingActionText: { color: colors.primary },
   secondaryAction:{ flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   secondaryActionText: { fontSize: 14, fontWeight: '800', color: colors.text },
 
   tabsRow:  { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, marginTop: 4 },
   tabBtn:   { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
-  tabBtnActive: { borderBottomColor: PINK },
+  tabBtnActive: { borderBottomColor: colors.primary },
   tabText:  { fontSize: 13.5, fontWeight: '800', color: colors.muted },
   tabTextActive: { color: colors.text },
 
@@ -765,7 +764,7 @@ const s = StyleSheet.create({
   commentMeta: { fontSize: 11.5, color: colors.muted },
 
   groupRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 12 },
-  groupIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: `${PINK}22`, alignItems: 'center', justifyContent: 'center' },
+  groupIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: `${colors.primary}22`, alignItems: 'center', justifyContent: 'center' },
   groupName: { fontSize: 14.5, fontWeight: '800', color: colors.text },
   groupMeta: { fontSize: 12, color: colors.muted, marginTop: 2 },
 

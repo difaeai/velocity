@@ -74,6 +74,16 @@ service firebase.storage {
                    && request.resource.contentType.matches('video/.*');
     }
 
+    // TravelMate chat attachments — photos and documents shared in 1:1 / group
+    // chats. The owner uploads directly from the app (capped at 25 MB); the
+    // sendTravelMateMessage Cloud Function then verifies the URL belongs to our
+    // bucket before attaching it to a message. Readable by signed-in users so
+    // the other party can open the attachment.
+    match /travelMateChat/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) && underSize(25);
+    }
+
     // Everything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;

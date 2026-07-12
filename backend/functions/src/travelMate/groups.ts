@@ -1,5 +1,5 @@
 /**
- * Velocity — Travel Mate — Phase 4 groups + fare split (callable, v2)
+ * Velocity — Travel Partner — Phase 4 groups + fare split (callable, v2)
  * ----------------------------------------------------------------------------
  * createTravelMateGroup — a matched user starts a 2–4 person commute group.
  * joinTravelMateGroup    — a user joins a group they're matched into.

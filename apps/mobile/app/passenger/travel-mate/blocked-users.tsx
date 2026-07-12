@@ -1,5 +1,5 @@
 /**
- * Travel Mate — blocked users manager.
+ * Travel Partner — blocked users manager.
  *
  * Lists everyone the signed-in user has blocked (live), with one-tap unblock.
  * Blocked people never appear in the feed, comments, search, discover, chats
@@ -25,7 +25,6 @@ import { api } from '../../../src/api/client';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 
 interface BlockRow {
   id: string;
@@ -142,6 +141,6 @@ const s = StyleSheet.create({
   avatarFallback: { backgroundColor: colors.glassChip, alignItems: 'center', justifyContent: 'center' },
   name:    { fontSize: 15, fontWeight: '800', color: colors.text },
   meta:    { fontSize: 12, color: colors.muted, marginTop: 2 },
-  unblockBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99, borderWidth: 1.5, borderColor: PINK },
-  unblockText:{ fontSize: 13, fontWeight: '900', color: PINK },
+  unblockBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99, borderWidth: 1.5, borderColor: colors.primary },
+  unblockText:{ fontSize: 13, fontWeight: '900', color: colors.primary },
 });
