@@ -29,6 +29,20 @@ export const MAX_BID_FACTOR = 3.0;
 /** Maximum passengers that can share a pooled ride. */
 export const MAX_SEATS = 4;
 
+/**
+ * Pool rides — per-seat fare as a share of the solo fare, by total riders.
+ * 2 riders → each pays 60% · 3 → 40% · 4 → 35%. Every rider saves versus
+ * riding alone while the driver's gross grows with each extra stop
+ * (perSeat × riders). Mirrors POOL_TIERS on the mobile booking screen.
+ */
+export const MAX_POOL_RIDERS = 4;
+const POOL_SEAT_PCT: Record<number, number> = { 1: 1, 2: 0.6, 3: 0.4, 4: 0.35 };
+
+export function poolPerSeatFare(soloFare: number, riders: number): number {
+  const n = Math.min(Math.max(Math.trunc(riders) || 1, 1), MAX_POOL_RIDERS);
+  return Math.ceil(soloFare * (POOL_SEAT_PCT[n] ?? 1));
+}
+
 export interface FareBounds {
   base: number;
   min: number;

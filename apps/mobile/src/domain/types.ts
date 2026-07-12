@@ -75,7 +75,11 @@ export interface Bid {
   fare: number;
   status: string;
   driverInfo: DriverPublicInfo;
+  /** Where the driver was when they made the offer (shown on the map). */
+  driverLocation?: { lat: number; lng: number } | null;
 }
+
+export type PoolVisibility = 'public' | 'private';
 
 export interface Trip {
   id: string;
@@ -88,6 +92,12 @@ export interface Trip {
   seats: number;
   passengerGender: Gender;
   pool?: boolean;
+  /** Pool rides only — share-link invite code + rider roster. */
+  poolVisibility?: PoolVisibility;
+  shareCode?: string;
+  poolMembers?: string[];
+  poolPerSeatFare?: number;
+  maxPoolRiders?: number;
   pickup: GeoPoint;
   dropoff: GeoPoint;
   driverInfo?: DriverPublicInfo;

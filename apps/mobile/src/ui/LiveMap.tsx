@@ -1,8 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import type { Coords } from '../hooks/location';
+
+export interface MapPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface DriverPin {
+  id: string;
+  lat: number;
+  lng: number;
+}
 
 // Default map centre (Karachi) — shown instantly before GPS responds.
 const DEFAULT_REGION = {
@@ -12,25 +23,46 @@ const DEFAULT_REGION = {
   longitudeDelta: 0.05,
 };
 
+// Modern graphite-dark style: near-black canvas, softly lifted roads, no POI
+// clutter — labels kept quiet so pins and the route line carry the screen.
 const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c34' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8a8c8c' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1d2c34' }] },
-  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6f9ba5' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1b3c34' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2b3d45' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9aa6ab' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3a4a52' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#2b3d45' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1a20' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4e6d78' }] },
+  { elementType: 'geometry', stylers: [{ color: '#0e1216' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#6f7a85' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0e1216' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: '#101d16' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e252c' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#87919b' }] },
+  { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#242d35' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2d3843' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0e12' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3e5561' }] },
 ];
 
+/**
+ * Live Google map.
+ *
+ * - `coords` only (home screens): follows the user's GPS position.
+ * - `pickup` + `dropoff`: draws pin/flag markers with a route line and frames
+ *   the whole route (booking + trip screens).
+ * - `drivers`: live driver positions rendered as car chips.
+ */
 export function LiveMap({
   coords,
+  pickup,
+  dropoff,
+  drivers,
   style,
 }: {
   coords: Coords | null;
+  pickup?: MapPoint | null;
+  dropoff?: MapPoint | null;
+  drivers?: DriverPin[];
   style?: StyleProp<ViewStyle>;
 }) {
   const mapRef   = useRef<MapView>(null);
@@ -38,9 +70,27 @@ export function LiveMap({
   const lastLat  = useRef<number | null>(null);
   const lastLng  = useRef<number | null>(null);
 
-  // Re-centre whenever GPS updates significantly (>30m delta) or on first fix.
+  const hasRoute = !!(pickup && dropoff);
+
+  // Route mode: frame both endpoints whenever they change.
   useEffect(() => {
-    if (!coords || !mapRef.current) return;
+    if (!hasRoute || !mapRef.current) return;
+    const fit = () =>
+      mapRef.current?.fitToCoordinates(
+        [
+          { latitude: pickup!.lat, longitude: pickup!.lng },
+          { latitude: dropoff!.lat, longitude: dropoff!.lng },
+        ],
+        { edgePadding: { top: 120, right: 70, bottom: 120, left: 70 }, animated: true },
+      );
+    // Give the MapView a beat to lay out before fitting on first render.
+    const t = setTimeout(fit, 350);
+    return () => clearTimeout(t);
+  }, [hasRoute, pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng]);
+
+  // Follow mode: re-centre whenever GPS updates significantly (>30m) or on first fix.
+  useEffect(() => {
+    if (hasRoute || !coords || !mapRef.current) return;
     const moved =
       lastLat.current === null ||
       Math.abs(coords.lat - lastLat.current) > 0.0003 ||
@@ -54,7 +104,7 @@ export function LiveMap({
         600,
       );
     }
-  }, [coords]);
+  }, [coords, hasRoute]);
 
   return (
     <MapView
@@ -66,13 +116,134 @@ export function LiveMap({
       showsMyLocationButton={false}
       showsCompass={false}
       toolbarEnabled={false}
-      initialRegion={DEFAULT_REGION}
+      initialRegion={
+        pickup
+          ? { latitude: pickup.lat, longitude: pickup.lng, latitudeDelta: 0.03, longitudeDelta: 0.03 }
+          : coords
+            ? { latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }
+            : DEFAULT_REGION
+      }
     >
-      {coords && (
-        <Marker coordinate={{ latitude: coords.lat, longitude: coords.lng }} />
+      {hasRoute && (
+        <Polyline
+          coordinates={[
+            { latitude: pickup!.lat, longitude: pickup!.lng },
+            { latitude: dropoff!.lat, longitude: dropoff!.lng },
+          ]}
+          strokeColor="#ccff00"
+          strokeWidth={3.5}
+          geodesic
+        />
+      )}
+
+      {pickup && (
+        <Marker
+          coordinate={{ latitude: pickup.lat, longitude: pickup.lng }}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+        >
+          <View style={styles.pickupOuter}>
+            <View style={styles.pickupInner} />
+          </View>
+        </Marker>
+      )}
+
+      {dropoff && (
+        <Marker
+          coordinate={{ latitude: dropoff.lat, longitude: dropoff.lng }}
+          anchor={{ x: 0.5, y: 1 }}
+          tracksViewChanges={false}
+        >
+          <View style={styles.dropoffPin}>
+            <View style={styles.dropoffHead}>
+              <View style={styles.dropoffDot} />
+            </View>
+            <View style={styles.dropoffStem} />
+          </View>
+        </Marker>
+      )}
+
+      {drivers?.map((d) => (
+        <Marker
+          key={d.id}
+          coordinate={{ latitude: d.lat, longitude: d.lng }}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+        >
+          <View style={styles.driverChip}>
+            <Text style={styles.driverChipEmoji}>🚗</Text>
+          </View>
+        </Marker>
+      ))}
+
+      {/* Bare GPS marker only when not showing a route (route mode draws its own pins). */}
+      {!hasRoute && coords && (
+        <Marker
+          coordinate={{ latitude: coords.lat, longitude: coords.lng }}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+        >
+          <View style={styles.pickupOuter}>
+            <View style={styles.pickupInner} />
+          </View>
+        </Marker>
       )}
     </MapView>
   );
 }
 
-const styles = StyleSheet.create({});
+const styles = StyleSheet.create({
+  // Pickup: lime dot in a soft halo — reads "you are here".
+  pickupOuter: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(204,255,0,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickupInner: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: '#ccff00',
+    borderWidth: 2.5,
+    borderColor: '#0e1216',
+  },
+
+  // Dropoff: classic destination pin, white head on a slim stem.
+  dropoffPin: { alignItems: 'center' },
+  dropoffHead: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+  },
+  dropoffDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0e1216',
+  },
+  dropoffStem: {
+    width: 2.5,
+    height: 10,
+    backgroundColor: '#ffffff',
+  },
+
+  driverChip: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#10131a',
+    borderWidth: 1.5,
+    borderColor: '#ccff00',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+  },
+  driverChipEmoji: { fontSize: 15 },
+});

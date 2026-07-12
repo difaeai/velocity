@@ -36,6 +36,14 @@ export {
   completeTrip,
 } from './trips';
 
+// Pool ride share links (invite codes, public/private visibility, joining)
+export {
+  getPoolTripByCode,
+  joinPoolTrip,
+  setPoolVisibility,
+  getNearbyPublicPoolTrips,
+} from './trips/poolShare';
+
 // Ratings (post-trip)
 export { submitRating } from './ratings';
 

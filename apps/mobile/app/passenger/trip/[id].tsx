@@ -1,5 +1,20 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  LayoutAnimation,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  UIManager,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { appLink } from '../../../src/share/links';
@@ -32,8 +47,13 @@ const STATUS_LABEL: Record<TripStatus, string> = {
 
 const BUBBLE_COLORS = ['#3b82f6', '#ef4444', '#10b981'];
 
+// Older Android architectures need LayoutAnimation switched on explicitly.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export default function TripScreen() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; shareNow?: string }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router  = useRouter();
   const { user } = useAuth();
@@ -41,10 +61,10 @@ export default function TripScreen() {
   const [busy,         setBusy]        = useState(false);
   const [timeLeft,     setTimeLeft]     = useState(54);
   const [adjustedFare, setAdjustedFare] = useState(0);
-  const [autoAccept,   setAutoAccept]   = useState(false);
   const [showRating,   setShowRating]   = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
   const [reportOpen,   setReportOpen]   = useState(false);
+  const sharePromptShown = useRef(false);
 
   // Initialize adjustedFare when trip loads
   useEffect(() => {
@@ -65,6 +85,22 @@ export default function TripScreen() {
     return () => clearInterval(timer);
   }, [trip?.status]);
 
+  // Driver offers pop in with a spring instead of just appearing.
+  useEffect(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, [bids.length]);
+
+  // Pool rides land here from booking with ?shareNow=1 — open the invite
+  // share sheet once so the host can bring riders in right away.
+  useEffect(() => {
+    if (sharePromptShown.current) return;
+    if (params.shareNow === '1' && trip?.pool && trip.shareCode) {
+      sharePromptShown.current = true;
+      sharePoolInvite();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.pool, trip?.shareCode]);
+
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     try {
@@ -80,6 +116,29 @@ export default function TripScreen() {
     if (!tripId) return;
     await api.submitRating({ tripId, stars, comment: comment || undefined, targetRole: 'driver' });
     setShowRating(false);
+  }
+
+  // Pool invite: anyone with the link can join (the backend enforces seats,
+  // status and visibility). Private rides are reachable only through this link.
+  async function sharePoolInvite() {
+    if (!trip?.shareCode) return;
+    const link = appLink(`/passenger/pool-join/${trip.shareCode}`);
+    try {
+      await Share.share({
+        message:
+          `🔀 Join my pool ride on Velocity!\n\n` +
+          `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
+          `We split the fare — everyone pays less as more riders join.\n` +
+          `Invite code: ${trip.shareCode}\n\nTap to join:\n${link}`,
+        title: 'Invite riders to your pool',
+      });
+    } catch { /* user dismissed the share sheet */ }
+  }
+
+  function togglePoolVisibility() {
+    if (!trip) return;
+    const next = trip.poolVisibility === 'private' ? 'public' : 'private';
+    run(() => api.setPoolVisibility({ tripId: trip.id, visibility: next }));
   }
 
   // Travel Mate ride link: only travel partners (matched mates / group members)
@@ -141,28 +200,41 @@ export default function TripScreen() {
       return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
+    const poolRiders = trip.poolMembers?.length ?? 1;
+    const driverPins = pendingBids
+      .filter((b) => b.driverLocation)
+      .map((b) => ({ id: b.id, lat: b.driverLocation!.lat, lng: b.driverLocation!.lng }));
+
     return (
       <View style={styles.safeDark}>
-        {/* 1. Full Screen Live Map */}
+        {/* 1. Full-screen live map — real route + drivers who sent offers */}
         <View style={styles.mapContainerFull}>
-          <LiveMap coords={trip.pickup ? { lat: trip.pickup.lat, lng: trip.pickup.lng } : null} />
+          <LiveMap
+            coords={trip.pickup ? { lat: trip.pickup.lat, lng: trip.pickup.lng } : null}
+            pickup={trip.pickup ? { lat: trip.pickup.lat, lng: trip.pickup.lng } : null}
+            dropoff={trip.dropoff ? { lat: trip.dropoff.lat, lng: trip.dropoff.lng } : null}
+            drivers={driverPins}
+          />
         </View>
 
-        {/* 2. Top floating counter: real driver offers on this request */}
+        {/* 2. Top floating status */}
         <SafeAreaView style={styles.floatingTopArea} pointerEvents="box-none">
           {trip.pool && (
             <View style={styles.poolRideBanner}>
-              <Text style={styles.poolRideBannerText}>🔀 Pool Ride · Fare drops as riders join</Text>
+              <Text style={styles.poolRideBannerText}>
+                🔀 Pool · {poolRiders}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
+              </Text>
             </View>
           )}
           <View style={styles.viewersBanner}>
-            <Text style={styles.viewersText}>
-              {pendingBids.length > 0
-                ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} sent an offer`
-                : trip.pool
-                ? 'Searching for pool drivers nearby…'
-                : 'Searching for nearby drivers…'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.viewersText}>
+                {pendingBids.length > 0
+                  ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} offered — pick below`
+                  : 'Contacting nearby drivers…'}
+              </Text>
+            </View>
             {pendingBids.length > 0 ? (
               <View style={styles.avatarBubbles}>
                 {pendingBids.slice(0, 3).map((b, i) => (
@@ -191,112 +263,32 @@ export default function TripScreen() {
           </View>
         </SafeAreaView>
 
-        {/* 3. Bottom Slide-up Bidding Sheet */}
+        {/* 3. Bottom sheet — offers first, everything else below */}
         <View style={styles.bottomBiddingSheet}>
           <View style={styles.dragIndicator} />
 
-          {/* Priority banner with countdown */}
           <View style={styles.priorityBanner}>
-            <Text style={styles.priorityText}>Good fare. Your request gets priority</Text>
+            <Text style={styles.priorityText}>
+              {pendingBids.length > 0 ? 'Driver offers' : 'Finding you a driver…'}
+            </Text>
             <Text style={styles.countdownText}>{formatTime(timeLeft)}</Text>
           </View>
-
-          {/* Progress bar line */}
           <View style={styles.progressBarBg}>
             <View style={[styles.progressBarFill, { width: `${(timeLeft / 60) * 100}%` }]} />
           </View>
 
-          {/* Suggested fare note */}
-          {(() => {
-            const km = (trip.pickup?.lat && trip.pickup?.lng && trip.dropoff?.lat && trip.dropoff?.lng)
-              ? (() => {
-                  const R = 6371, toRad = (d: number) => d * Math.PI / 180;
-                  const dLat = toRad(trip.dropoff.lat - trip.pickup.lat);
-                  const dLng = toRad(trip.dropoff.lng - trip.pickup.lng);
-                  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(trip.pickup.lat))*Math.cos(toRad(trip.dropoff.lat))*Math.sin(dLng/2)**2;
-                  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                })()
-              : null;
-            const suggested = km ? Math.max(150, Math.round(80 + km * 40)) : null;
-            if (!suggested) return null;
-            return (
-              <Pressable
-                onPress={() => setAdjustedFare(suggested)}
-                style={{ alignSelf: 'center', marginBottom: 4 }}
-              >
-                <Text style={{ color: '#ccff00', fontSize: 12, fontWeight: '700' }}>
-                  💡 Suggested fare: PKR {suggested} (tap to use)
-                </Text>
-              </Pressable>
-            );
-          })()}
-
-          {/* Stepper adjuster for fare */}
-          <View style={styles.fareAdjusterRow}>
-            <Pressable
-              style={styles.adjustBtn}
-              onPress={() => setAdjustedFare((f) => Math.max(50, f - 5))}
-            >
-              <Text style={styles.adjustBtnText}>− 5</Text>
-            </Pressable>
-
-            <Text style={styles.biddingFareValue}>PKR {adjustedFare}</Text>
-
-            <Pressable
-              style={styles.adjustBtn}
-              onPress={() => setAdjustedFare((f) => f + 5)}
-            >
-              <Text style={styles.adjustBtnText}>+ 5</Text>
-            </Pressable>
-          </View>
-
-          {/* Update fare button */}
-          <Pressable
-            style={[styles.raiseFareBtn, adjustedFare === trip.offeredFare && styles.raiseFareBtnDisabled]}
-            disabled={adjustedFare === trip.offeredFare || busy}
-            onPress={() => run(() => api.raiseTripFare({ tripId: trip.id, fare: adjustedFare }))}
-          >
-            <Text style={[styles.raiseFareBtnText, adjustedFare === trip.offeredFare && { color: '#8a8c8c' }]}>
-              {adjustedFare < trip.offeredFare ? 'Lower fare' : 'Raise fare'}
-            </Text>
-          </Pressable>
-
-          {/* Auto-accept offer toggle */}
-          <View style={styles.toggleRowBidding}>
-            <Text style={styles.toggleLabelBidding}>Auto-accept an offer of PKR {adjustedFare} up to 5 min away</Text>
-            <Pressable
-              onPress={() => setAutoAccept((v) => !v)}
-              style={[styles.toggleSwitchBidding, autoAccept && { backgroundColor: colors.primary }]}
-            >
-              <View style={[styles.toggleKnobBidding, autoAccept && styles.toggleKnobOn]} />
-            </Pressable>
-          </View>
-
-          {/* Cash Payment Badge */}
-          <View style={styles.cashBadgeRow}>
-            <Text style={{ fontSize: 16 }}>💵</Text>
-            <Text style={styles.cashBadgeText}>PKR {adjustedFare} Cash</Text>
-          </View>
-
-          {/* Scrollable route & bids details */}
           <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
-            {/* Route Details Card */}
-            <View style={styles.routePillCard}>
-              <View style={styles.routePillPoint}>
-                <Text style={styles.routeDotBlue}>👤</Text>
-                <Text style={styles.routePillText} numberOfLines={1}>{trip.pickup?.address || 'Pickup'}</Text>
+            {/* Driver offers pop in here as they arrive */}
+            {pendingBids.length === 0 ? (
+              <View style={styles.waitingBox}>
+                <Text style={styles.waitingEmoji}>📡</Text>
+                <Text style={styles.waitingTitle}>Your request is live</Text>
+                <Text style={styles.waitingSub}>
+                  Nearby drivers can see your offer of PKR {trip.offeredFare}. Their offers will pop up right here.
+                </Text>
               </View>
-              <View style={styles.routePillDivider} />
-              <View style={styles.routePillPoint}>
-                <Text style={styles.routeDotGreen}>🏁</Text>
-                <Text style={styles.routePillText} numberOfLines={1}>{trip.dropoff?.address || 'Drop-off'}</Text>
-              </View>
-            </View>
-
-            {/* List of active bids if any */}
-            {pendingBids.length > 0 && (
+            ) : (
               <View style={styles.driverBidsSection}>
-                <Text style={styles.driverBidsTitle}>Active Driver Offers</Text>
                 {pendingBids.map((b) => (
                   <View key={b.id} style={styles.driverBidCard}>
                     <View style={styles.bidMetaRow}>
@@ -319,15 +311,97 @@ export default function TripScreen() {
                 ))}
               </View>
             )}
-          </ScrollView>
 
-          {/* Share ride link with travel partners */}
-          <Pressable
-            style={({ pressed }) => [styles.travelMateShareBtn, pressed && { opacity: 0.85 }]}
-            onPress={shareWithTravelMates}
-          >
-            <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Mates</Text>
-          </Pressable>
+            {/* Pool: invite riders + visibility */}
+            {trip.pool && trip.shareCode ? (
+              <View style={styles.poolShareCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>🔗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.poolShareTitle}>Invite riders — everyone pays less</Text>
+                    <Text style={styles.poolShareCodeTxt}>Invite code: {trip.shareCode}</Text>
+                  </View>
+                  <Pressable style={styles.poolVisChip} onPress={togglePoolVisibility} disabled={busy}>
+                    <Text style={styles.poolVisChipTxt}>
+                      {trip.poolVisibility === 'private' ? '🔒 Private' : '🌍 Public'}
+                    </Text>
+                    <Text style={styles.poolVisChipSub}>tap to switch</Text>
+                  </Pressable>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.poolShareBtn, pressed && { opacity: 0.85 }]}
+                  onPress={sharePoolInvite}
+                >
+                  <Text style={styles.poolShareBtnTxt}>📤 Share invite link</Text>
+                </Pressable>
+                <Text style={styles.poolVisHint}>
+                  {trip.poolVisibility === 'private'
+                    ? 'Private: only people with your link can see and join this ride.'
+                    : 'Public: riders nearby can also discover and join this ride.'}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Route */}
+            <View style={styles.routePillCard}>
+              <View style={styles.routePillPoint}>
+                <Text style={styles.routeDotBlue}>👤</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.pickup?.address || 'Pickup'}</Text>
+              </View>
+              <View style={styles.routePillDivider} />
+              <View style={styles.routePillPoint}>
+                <Text style={styles.routeDotGreen}>🏁</Text>
+                <Text style={styles.routePillText} numberOfLines={1}>{trip.dropoff?.address || 'Drop-off'}</Text>
+              </View>
+            </View>
+
+            {/* Raise the offer to attract drivers (backend only accepts raises) */}
+            <View style={styles.raiseCard}>
+              <View style={[styles.fareAdjusterRow, { paddingHorizontal: 0 }]}>
+                <Pressable
+                  style={styles.adjustBtn}
+                  onPress={() => setAdjustedFare((f) => Math.max(trip.offeredFare, f - 25))}
+                >
+                  <Text style={styles.adjustBtnText}>− 25</Text>
+                </Pressable>
+                <Text style={styles.biddingFareValue}>PKR {adjustedFare}</Text>
+                <Pressable style={styles.adjustBtn} onPress={() => setAdjustedFare((f) => f + 25)}>
+                  <Text style={styles.adjustBtnText}>+ 25</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                style={[
+                  styles.raiseFareBtn,
+                  { marginHorizontal: 0 },
+                  adjustedFare <= trip.offeredFare && styles.raiseFareBtnDisabled,
+                ]}
+                disabled={adjustedFare <= trip.offeredFare || busy}
+                onPress={() => run(() => api.raiseTripFare({ tripId: trip.id, fare: adjustedFare }))}
+              >
+                <Text style={[styles.raiseFareBtnText, adjustedFare <= trip.offeredFare && { color: '#8a8c8c' }]}>
+                  Raise fare to attract drivers
+                </Text>
+              </Pressable>
+              <View style={styles.cashBadgeRow}>
+                <Text style={{ fontSize: 16 }}>💵</Text>
+                <Text style={styles.cashBadgeText}>
+                  {trip.pool
+                    ? `PKR ${trip.poolPerSeatFare ?? trip.offeredFare} per rider · cash`
+                    : `PKR ${trip.offeredFare} cash`}
+                </Text>
+              </View>
+            </View>
+
+            {/* Non-pool rides keep the Travel Mate share entry */}
+            {!trip.pool && (
+              <Pressable
+                style={({ pressed }) => [styles.travelMateShareBtn, pressed && { opacity: 0.85 }]}
+                onPress={shareWithTravelMates}
+              >
+                <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Mates</Text>
+              </Pressable>
+            )}
+          </ScrollView>
 
           {/* Cancel Request Button */}
           <Pressable
@@ -884,47 +958,72 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
-  toggleRowBidding: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginTop: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-  },
-  toggleLabelBidding: {
-    color: '#8a8c8c',
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-    paddingRight: 10,
-  },
-  toggleSwitchBidding: {
-    width: 38,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.glassStrong,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleKnobBidding: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#8a8c8c',
-  },
-  toggleKnobOn: {
-    backgroundColor: '#000',
-    alignSelf: 'flex-end',
-  },
   cashBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 20,
+    justifyContent: 'center',
     marginTop: 12,
     gap: 10,
+  },
+
+  // Waiting-for-offers empty state
+  waitingBox: {
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.glassChip,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    marginBottom: 12,
+  },
+  waitingEmoji: { fontSize: 30 },
+  waitingTitle: { color: '#ffffff', fontSize: 15, fontWeight: '900' },
+  waitingSub:   { color: '#8a8c8c', fontSize: 12, textAlign: 'center', lineHeight: 17 },
+
+  // Pool invite card
+  poolShareCard: {
+    backgroundColor: colors.glassLime,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: `${colors.primary}60`,
+    padding: 14,
+    gap: 12,
+    marginBottom: 12,
+  },
+  poolShareTitle:   { color: '#ffffff', fontSize: 13, fontWeight: '900' },
+  poolShareCodeTxt: { color: colors.primary, fontSize: 12, fontWeight: '800', marginTop: 2, letterSpacing: 1 },
+  poolVisChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(16,18,17,0.7)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  poolVisChipTxt: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+  poolVisChipSub: { color: '#8a8c8c', fontSize: 8, fontWeight: '700', marginTop: 1 },
+  poolShareBtn: {
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolShareBtnTxt: { color: '#000', fontSize: 14, fontWeight: '900' },
+  poolVisHint:     { color: '#8a8c8c', fontSize: 10, lineHeight: 14 },
+
+  // Raise-fare card
+  raiseCard: {
+    backgroundColor: colors.glassChip,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    padding: 14,
+    marginTop: 12,
+    gap: 4,
   },
   cashBadgeText: {
     color: '#ffffff',

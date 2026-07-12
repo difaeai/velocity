@@ -16,19 +16,20 @@ import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
-import { api, type CommuteDay } from '../../src/api/client';
+import { api, type CommuteDay, type NearbyPublicPool } from '../../src/api/client';
 import { colors } from '../../src/config';
-import { comingSoon } from '../../src/ui/components';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
+import { LiveMap } from '../../src/ui/LiveMap';
 import {
   BASE_FARES,
   RIDE_TYPE_LABELS,
   fareBounds,
   type Gender,
+  type PoolVisibility,
   type RideType,
 } from '../../src/domain/types';
 import {
@@ -66,8 +67,6 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
     Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.asin(Math.sqrt(h));
 }
-
-const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -124,17 +123,21 @@ export default function Booking() {
     }).catch(() => {});
   }, []);
 
-  // Details state
+  // Details state — one explicit booking mode; Solo and Pool can never be
+  // "selected" at the same time, and one CTA reflects the active mode.
+  const [mode, setMode] = useState<'solo' | 'pool'>('solo');
   const [rideType, setRideType] = useState<RideType>('mini');
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
   const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
-  const [poolFare, setPoolFare] = useState<number>(poolFareFor(BASE_FARES.mini, 3));
-  const [poolLoading, setPoolLoading] = useState(false);
-  const [seats, setSeats] = useState(1);
-  const [gender, setGender] = useState<Gender>('unspecified');
-  const [pool, setPool] = useState(false);
+  const [seats] = useState(1);
+  const [gender] = useState<Gender>('unspecified');
   const [autoAccept, setAutoAccept] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
+  // Pool rides: public → nearby riders can discover and join; private → only
+  // people with the share link can join.
+  const [poolVisibility, setPoolVisibility] = useState<PoolVisibility>('public');
+  const [nearbyPools, setNearbyPools] = useState<NearbyPublicPool[]>([]);
+  const [joinCode, setJoinCode] = useState('');
   // Wallet ride payments depend on wallet top-ups, which are "Coming Soon" for
   // launch — until then rides are cash-only.
   const { walletTopupEnabled } = useFeatureFlags();
@@ -142,7 +145,6 @@ export default function Booking() {
   const [showPromo, setShowPromo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCarDropdown, setShowCarDropdown] = useState(false);
 
   // Scheduled (frequent) rides — auto-booked by the backend at the set time.
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -175,19 +177,34 @@ export default function Booking() {
     if (prefillAnchor == null || userEditedFare.current) return;
     setFare(prefillAnchor);
     setFareText(String(prefillAnchor));
-    setPoolFare(poolFareFor(prefillAnchor, 3));
   }, [prefillAnchor]);
 
-  function selectRide(rt: RideType) {
-    setRideType(rt);
+  // Engine-anchored price for a ride type (falls back to the static base fare).
+  function priceFor(rt: RideType): number {
     const est = fareConfig && distKm
       ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rt], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
       : null;
-    const base = est ? anchorFare(est) : BASE_FARES[rt];
+    return est ? anchorFare(est) : BASE_FARES[rt];
+  }
+
+  function selectRide(rt: RideType) {
+    setRideType(rt);
+    const base = priceFor(rt);
     setFare(base);
     setFareText(String(base));
-    setPoolFare(poolFareFor(base, 3));
   }
+
+  // Public pools near the rider — shown in Pool mode so they can hop onto an
+  // existing pool instead of starting their own.
+  useEffect(() => {
+    if (mode !== 'pool' || !coords) return;
+    let alive = true;
+    api.getNearbyPublicPoolTrips({ lat: coords.lat, lng: coords.lng, radiusKm: 5 })
+      .then((r) => { if (alive) setNearbyPools(r.pools); })
+      .catch(() => { /* discovery is best-effort */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   function bumpFare(delta: number) {
     userEditedFare.current = true;
@@ -226,7 +243,7 @@ export default function Booking() {
     setStage('details');
   }
 
-  async function findDriver() {
+  async function submitRide() {
     setError(null);
     if (!dropoff.trim()) {
       setError('Enter your destination first.');
@@ -238,8 +255,18 @@ export default function Booking() {
       requestLocation();
       return;
     }
+    // Clamp the offer into the allowed band before it reaches the backend, in
+    // case the fare field is still focused and never got its onBlur clamp.
+    const min = engineEst?.minAcceptableBid ?? bounds.min;
+    const max = engineEst?.suggestedMaxBid  ?? bounds.max;
+    const safeFare = Math.min(max, Math.max(min, fare));
+    if (safeFare !== fare) {
+      setFare(safeFare);
+      setFareText(String(safeFare));
+    }
     setLoading(true);
     try {
+      const isPool = mode === 'pool';
       const pickupAddress = pickup.trim() || currentAddress || 'Current location';
       // The backend stores coordinates but matches by the public request feed,
       // not distance, and there is no geocoder yet — so the destination carries
@@ -247,48 +274,27 @@ export default function Booking() {
       const destCoords = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
       const res = await api.createTrip({
         rideType,
-        offeredFare: fare,
-        seats,
+        // Pool rides offer the FULL solo fare too — the per-seat discount only
+        // materialises as riders actually join (never send a discounted fare,
+        // it would fall below the fare-engine floor and be rejected).
+        offeredFare: safeFare,
+        seats: isPool ? 1 : seats,
         passengerGender: gender,
-        pool,
+        pool: isPool,
+        poolVisibility: isPool ? poolVisibility : undefined,
         paymentMethod,
         preferFemaleDriver: false,
         promoCode: promoCode.trim() || undefined,
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
         dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
       });
-      router.replace(`/passenger/trip/${res.tripId}`);
+      // Straight to the Uber-style finding-driver map. Pool rides open the
+      // share sheet once so the host can invite riders immediately.
+      router.replace(`/passenger/trip/${res.tripId}${isPool ? '?shareNow=1' : ''}` as Parameters<typeof router.replace>[0]);
     } catch (e) {
-      const code = e instanceof FirebaseError ? e.message : 'Could not create the ride.';
-      setError(code);
+      setError(e instanceof FirebaseError ? e.message : 'Could not create the ride.');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function startPoolRide() {
-    setError(null);
-    if (!coords) { requestLocation(); return; }
-    setPoolLoading(true);
-    try {
-      const pickupAddress = pickup.trim() || currentAddress || 'Current location';
-      const destCoords    = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
-      const res = await api.createTrip({
-        rideType,
-        offeredFare: poolFare,
-        seats: 1,
-        passengerGender: gender,
-        pool: true,
-        paymentMethod,
-        preferFemaleDriver: false,
-        pickup:  { lat: coords.lat,        lng: coords.lng,        address: pickupAddress },
-        dropoff: { lat: destCoords.lat,     lng: destCoords.lng,    address: dropoff.trim() },
-      });
-      router.replace(`/passenger/trip/${res.tripId}`);
-    } catch (e) {
-      setError(e instanceof FirebaseError ? e.message : 'Could not start pool ride.');
-    } finally {
-      setPoolLoading(false);
     }
   }
 
@@ -483,23 +489,16 @@ export default function Booking() {
     );
   }
 
-  // STAGE 2: RIDE TYPE SELECTION — Pool first, then solo
+  // STAGE 2: RIDE TYPE SELECTION — one explicit Solo / Pool mode
   const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
+  const fareMin = engineEst?.minAcceptableBid ?? bounds.min;
+  const fareMax = engineEst?.suggestedMaxBid  ?? bounds.max;
 
   return (
     <View style={styles.safe}>
-      {/* Abstract map background */}
+      {/* Real live map showing the actual pickup → destination route */}
       <View style={styles.mapContainer}>
-        <View style={[styles.road, { top: 140, left: -50, width: '120%', transform: [{ rotate: '-15deg' }] }]} />
-        <View style={[styles.road, { top: 280, left: -50, width: '120%', transform: [{ rotate: '25deg' }] }]} />
-        <View style={[styles.road, { top: 480, left: -50, width: '120%', transform: [{ rotate: '-5deg' }] }]} />
-        <View style={styles.routeLineGraphic} />
-        <View style={[styles.mapPinPoint, { top: 150, left: 130 }]}>
-          <Text style={styles.pinPointEmoji}>👤</Text>
-        </View>
-        <View style={[styles.mapPinPoint, { top: 290, left: 240 }]}>
-          <Text style={styles.pinPointEmoji}>🏁</Text>
-        </View>
+        <LiveMap coords={coords} pickup={coords} dropoff={dropoffCoords} />
       </View>
 
       {/* Top: route summary */}
@@ -530,162 +529,43 @@ export default function Booking() {
       <View style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
         <View style={styles.dragIndicator} />
 
+        {/* Solo ⟷ Pool — one explicit choice; the single CTA below follows it */}
+        <View style={styles.modeToggleRow}>
+          <Pressable
+            style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]}
+            onPress={() => setMode('solo')}
+          >
+            <Text style={[styles.modeBtnTitle, mode === 'solo' && styles.modeBtnTitleActive]}>🚗 Solo</Text>
+            <Text style={styles.modeBtnSub}>The car is yours</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeBtn, mode === 'pool' && styles.modeBtnActive]}
+            onPress={() => {
+              setMode('pool');
+              if (rideType === 'bike') selectRide('mini'); // bikes have one seat — nothing to pool
+            }}
+          >
+            <Text style={[styles.modeBtnTitle, mode === 'pool' && styles.modeBtnTitleActive]}>🔀 Pool</Text>
+            <Text style={[styles.modeBtnSub, mode === 'pool' && { color: colors.primary }]}>
+              Share & save up to {maxSavePct}%
+            </Text>
+          </Pressable>
+        </View>
+
         <ScrollView
           style={styles.alternativeList}
           contentContainerStyle={{ paddingBottom: 12 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ═══════════════════════════════════════════════
-              GREEN POOL CARD — top, primary
-              Contains: fare adjuster → car dropdown → gender → savings → CTA
-          ═══════════════════════════════════════════════ */}
-          <View style={styles.poolPrimaryCard}>
-            {/* Header */}
-            <View style={styles.poolPrimaryTopRow}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <Text style={styles.poolPrimaryTitle}>Pool Ride</Text>
-                  <View style={styles.poolPrimaryBadge}>
-                    <Text style={styles.poolPrimaryBadgeText}>SAVE UP TO {maxSavePct}%</Text>
-                  </View>
-                </View>
-                <Text style={styles.poolPrimarySub}>Your fare drops as more riders join</Text>
-              </View>
-              <Text style={{ fontSize: 26 }}>🔀</Text>
-            </View>
-
-            {/* Fare engine hint — recommended, floor, max from Firestore config */}
-            {engineEst ? (
-              <View style={styles.fareHintRow}>
-                <Text style={styles.fareHintText}>
-                  {distKm ? `~${distKm.toFixed(1)} km · ` : ''}
-                  Rec PKR {engineEst.recommendedFare}
-                  {' · '}Floor PKR {engineEst.minAcceptableBid}
-                  {engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}
-                </Text>
-              </View>
-            ) : fareConfig && (
-              <View style={styles.fareHintRow}>
-                <Text style={styles.fareHintText}>
-                  PKR {fareConfig.categories[RIDE_TO_CAT[rideType]]?.perKm}/km · Set dropoff for estimate
-                </Text>
-              </View>
-            )}
-
-            {/* 1. Fare adjuster */}
-            <View style={styles.soloFareStepper}>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-                <Text style={styles.stepperText}>−</Text>
-              </Pressable>
-              <View style={{ alignItems: 'center', flex: 1 }}>
-                <View style={styles.fareInputRow}>
-                  <Text style={styles.fareInputPrefix}>PKR</Text>
-                  <TextInput
-                    value={fareText}
-                    onChangeText={(t) => setFareText(t.replace(/[^0-9]/g, ''))}
-                    onBlur={commitFareText}
-                    keyboardType="number-pad"
-                    style={styles.fareInput}
-                    selectTextOnFocus
-                    returnKeyType="done"
-                    onSubmitEditing={commitFareText}
-                  />
-                </View>
-                <Text style={styles.stepperLabel}>tap to edit · or use − +</Text>
-              </View>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-                <Text style={styles.stepperText}>+</Text>
-              </Pressable>
-            </View>
-
-            {/* 2. Car type dropdown */}
-            <Pressable
-              style={styles.carDropdownBtn}
-              onPress={() => setShowCarDropdown(v => !v)}
-            >
-              <Text style={styles.carDropdownEmoji}>
-                {rideType === 'bike' ? '🏍️' : rideType === 'comfort' ? '🚙' : '🚗'}
-              </Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.carDropdownName}>{RIDE_TYPE_LABELS[rideType]}</Text>
-                <Text style={styles.carDropdownRange}>PKR {bounds.min}–{bounds.max}</Text>
-              </View>
-              <Text style={styles.carDropdownArrow}>{showCarDropdown ? '▲' : '▼'}</Text>
-            </Pressable>
-
-            {showCarDropdown && (
-              <View style={styles.carDropdownMenu}>
-                {RIDE_TYPES.filter(rt => rt !== rideType).map(rt => (
-                  <Pressable
-                    key={rt}
-                    style={styles.carDropdownItem}
-                    onPress={() => { selectRide(rt); setShowCarDropdown(false); }}
-                  >
-                    <Text style={styles.carDropdownItemEmoji}>
-                      {rt === 'bike' ? '🏍️' : rt === 'comfort' ? '🚙' : '🚗'}
-                    </Text>
-                    <Text style={styles.carDropdownItemName}>{RIDE_TYPE_LABELS[rt]}</Text>
-                    <Text style={styles.carDropdownItemPrice}>PKR {BASE_FARES[rt]}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
-            {/* 3. Savings breakdown */}
-            <View style={styles.poolTierTable}>
-              <View style={styles.poolTierRow}>
-                <View style={styles.poolTierLeft}>
-                  <Text style={styles.poolTierRiders}>👤  Just you</Text>
-                </View>
-                <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
-                <Text style={styles.poolTierSavingNone}>—</Text>
-              </View>
-              {POOL_TIERS.map((tier, i) => {
-                const tierFare = poolFareFor(fare, tier.extra);
-                const savePct  = Math.round((1 - tier.pct) * 100);
-                return (
-                  <View key={tier.extra} style={styles.poolTierRow}>
-                    <View style={styles.poolTierLeft}>
-                      <Text style={styles.poolTierRiders}>{tier.label}</Text>
-                    </View>
-                    <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
-                    <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
-                      <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
-                        -{savePct}%
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
-            {/* 5. Pool CTA */}
-            <Pressable
-              style={[styles.poolFindBtn, poolLoading && { opacity: 0.7 }]}
-              onPress={startPoolRide}
-              disabled={poolLoading}
-            >
-              <Text style={styles.poolFindBtnText}>
-                {poolLoading ? 'Finding riders…' : 'Start Pool Ride →'}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* ═══════════════════════════════════════════════
-              SOLO VEHICLES — below the green box
-          ═══════════════════════════════════════════════ */}
-          <View style={styles.orDivider}>
-            <View style={styles.orDividerLine} />
-            <Text style={styles.orDividerText}>OR BOOK SOLO</Text>
-            <View style={styles.orDividerLine} />
-          </View>
-
+          {/* Vehicle type (bikes can't be pooled) */}
           {([
             { key: 'mini'    as RideType, label: 'Mini',     desc: 'Lower fares, no AC',       icon: '🚗', seats: 4 },
             { key: 'bike'    as RideType, label: 'Moto',     desc: 'No traffic, lower prices', icon: '🏍️', seats: 1 },
             { key: 'ac'      as RideType, label: 'Ride A/C', desc: 'Cars with AC',             icon: '❄️', seats: 4 },
             { key: 'comfort' as RideType, label: 'Premium',  desc: 'Sedans with AC',           icon: '⭐', seats: 4 },
-          ] as const).map((rt) => (
+          ] as const)
+            .filter((rt) => mode === 'solo' || rt.seats > 1)
+            .map((rt) => (
             <Pressable
               key={rt.key}
               style={[styles.categoryRow, rideType === rt.key && styles.categoryRowActive]}
@@ -704,30 +584,170 @@ export default function Booking() {
               </View>
               <View style={{ alignItems: 'flex-end', gap: 2 }}>
                 <Text style={[styles.categoryFareSmall, rideType === rt.key && { color: colors.primary, fontWeight: '900' }]}>
-                  PKR {BASE_FARES[rt.key]}
+                  PKR {priceFor(rt.key)}
                 </Text>
                 {rideType === rt.key && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>selected ✓</Text>}
               </View>
             </Pressable>
           ))}
 
-          {/* Schedule this ride (frequent rides) */}
-          <Pressable style={styles.scheduleCard} onPress={() => setScheduleOpen(true)}>
-            <Text style={{ fontSize: 22 }}>🗓️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.scheduleCardTitle}>Schedule this ride</Text>
-              <Text style={styles.scheduleCardSub}>
-                Ride this route often? We'll request it automatically at your time — no manual booking.
-              </Text>
+          {/* Your fare offer */}
+          <View style={styles.fareCard}>
+            <View style={styles.soloFareStepper}>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+                <Text style={styles.stepperText}>−</Text>
+              </Pressable>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <View style={styles.fareInputRow}>
+                  <Text style={styles.fareInputPrefix}>PKR</Text>
+                  <TextInput
+                    value={fareText}
+                    onChangeText={(t) => setFareText(t.replace(/[^0-9]/g, ''))}
+                    onBlur={commitFareText}
+                    keyboardType="number-pad"
+                    style={styles.fareInput}
+                    selectTextOnFocus
+                    returnKeyType="done"
+                    onSubmitEditing={commitFareText}
+                  />
+                </View>
+                <Text style={styles.stepperLabel}>your offer · tap to edit or use − +</Text>
+              </View>
+              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+                <Text style={styles.stepperText}>+</Text>
+              </Pressable>
             </View>
-            <Text style={styles.scheduleCardChevron}>›</Text>
-          </Pressable>
-          <Pressable
-            style={styles.scheduleManageLink}
-            onPress={() => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0])}
-          >
-            <Text style={styles.scheduleManageText}>View my scheduled rides →</Text>
-          </Pressable>
+            <Text style={styles.fareRangeHint}>
+              {engineEst
+                ? `${distKm ? `~${distKm.toFixed(1)} km · ` : ''}Recommended PKR ${engineEst.recommendedFare} · Allowed PKR ${fareMin}–${fareMax}${engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}`
+                : `Allowed range PKR ${fareMin}–${fareMax}`}
+            </Text>
+          </View>
+
+          {mode === 'pool' && (
+            <>
+              {/* Everyone's fare drops as riders join — you always offer the solo fare */}
+              <Text style={styles.sectionLabel}>FARE PER RIDER AS PEOPLE JOIN</Text>
+              <View style={styles.poolTierTable}>
+                <View style={styles.poolTierRow}>
+                  <View style={styles.poolTierLeft}>
+                    <Text style={styles.poolTierRiders}>👤  Just you</Text>
+                  </View>
+                  <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
+                  <Text style={styles.poolTierSavingNone}>—</Text>
+                </View>
+                {POOL_TIERS.map((tier, i) => {
+                  const tierFare = poolFareFor(fare, tier.extra);
+                  const savePct  = Math.round((1 - tier.pct) * 100);
+                  return (
+                    <View key={tier.extra} style={styles.poolTierRow}>
+                      <View style={styles.poolTierLeft}>
+                        <Text style={styles.poolTierRiders}>{tier.label}</Text>
+                      </View>
+                      <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
+                      <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
+                        <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
+                          -{savePct}%
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Who can join */}
+              <Text style={styles.sectionLabel}>WHO CAN JOIN YOUR POOL</Text>
+              <View style={styles.visRow}>
+                <Pressable
+                  style={[styles.visOpt, poolVisibility === 'public' && styles.visOptActive]}
+                  onPress={() => setPoolVisibility('public')}
+                >
+                  <Text style={styles.visOptIcon}>🌍</Text>
+                  <Text style={[styles.visOptTitle, poolVisibility === 'public' && { color: colors.primary }]}>Public</Text>
+                  <Text style={styles.visOptSub}>Riders nearby can see & join</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.visOpt, poolVisibility === 'private' && styles.visOptActive]}
+                  onPress={() => setPoolVisibility('private')}
+                >
+                  <Text style={styles.visOptIcon}>🔒</Text>
+                  <Text style={[styles.visOptTitle, poolVisibility === 'private' && { color: colors.primary }]}>Private</Text>
+                  <Text style={styles.visOptSub}>Only people with your link</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.poolShareHint}>
+                You get an invite link right after booking — share it on WhatsApp so friends can join and everyone pays less.
+              </Text>
+
+              {/* Manual code entry — mirrors the code shown on the link page */}
+              <View style={styles.poolCodeRow}>
+                <TextInput
+                  value={joinCode}
+                  onChangeText={(t) => setJoinCode(t.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  placeholder="Have an invite code?"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="characters"
+                  style={styles.poolCodeInput}
+                  maxLength={12}
+                />
+                <Pressable
+                  style={[styles.poolCodeGoBtn, !joinCode.trim() && { opacity: 0.4 }]}
+                  disabled={!joinCode.trim()}
+                  onPress={() => router.push(`/passenger/pool-join/${joinCode.trim()}` as Parameters<typeof router.push>[0])}
+                >
+                  <Text style={styles.poolCodeGoTxt}>Open</Text>
+                </Pressable>
+              </View>
+
+              {/* Join an existing pool instead */}
+              {nearbyPools.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>OR JOIN A POOL NEARBY</Text>
+                  {nearbyPools.slice(0, 3).map((p) => (
+                    <Pressable
+                      key={p.code}
+                      style={styles.nearbyPoolRow}
+                      onPress={() => router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])}
+                    >
+                      <Text style={{ fontSize: 20 }}>🔀</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.nearbyPoolDest} numberOfLines={1}>{p.dropoffAddress}</Text>
+                        <Text style={styles.nearbyPoolMeta}>
+                          {p.distanceKm} km away · {p.riders} rider{p.riders > 1 ? 's' : ''} · {p.seatsLeft} seat{p.seatsLeft > 1 ? 's' : ''} left
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.nearbyPoolFare}>PKR {p.perSeatFareIfYouJoin}</Text>
+                        <Text style={styles.nearbyPoolJoin}>Join →</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+
+          {mode === 'solo' && (
+            <>
+              {/* Schedule this ride (frequent rides) */}
+              <Pressable style={styles.scheduleCard} onPress={() => setScheduleOpen(true)}>
+                <Text style={{ fontSize: 22 }}>🗓️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.scheduleCardTitle}>Schedule this ride</Text>
+                  <Text style={styles.scheduleCardSub}>
+                    Ride this route often? We'll request it automatically at your time — no manual booking.
+                  </Text>
+                </View>
+                <Text style={styles.scheduleCardChevron}>›</Text>
+              </Pressable>
+              <Pressable
+                style={styles.scheduleManageLink}
+                onPress={() => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0])}
+              >
+                <Text style={styles.scheduleManageText}>View my scheduled rides →</Text>
+              </Pressable>
+            </>
+          )}
 
           <View style={styles.taxNoticeBanner}>
             <Text style={styles.taxNoticeIcon}>ⓘ</Text>
@@ -768,15 +788,17 @@ export default function Booking() {
           </View>
 
           <View style={styles.optionTogglesRow}>
-            <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
-              <Text style={styles.optionToggleIcon}>⚡</Text>
-              <Text style={[styles.optionToggleLabel, autoAccept && { color: colors.primary }]}>
-                Auto-accept offer of PKR {fare}
-              </Text>
-              <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
-                <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
-              </View>
-            </Pressable>
+            {mode === 'solo' && (
+              <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
+                <Text style={styles.optionToggleIcon}>⚡</Text>
+                <Text style={[styles.optionToggleLabel, autoAccept && { color: colors.primary }]}>
+                  Auto-accept offer of PKR {fare}
+                </Text>
+                <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
+                  <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
+                </View>
+              </Pressable>
+            )}
             <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
               <Text style={styles.optionToggleIcon}>🎟️</Text>
               <Text style={[styles.optionToggleLabel, promoCode && { color: colors.primary }]}>
@@ -813,15 +835,22 @@ export default function Booking() {
 
           <Pressable
             style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
-            onPress={findDriver}
+            onPress={submitRide}
             disabled={loading}
           >
             <Text style={styles.findDriverButtonText}>
               {loading
-                ? 'Booking...'
-                : `Find Solo Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
+                ? 'Booking…'
+                : mode === 'pool'
+                  ? `Start Pool Ride · PKR ${fare}`
+                  : `Find Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
             </Text>
           </Pressable>
+          {mode === 'pool' && !loading ? (
+            <Text style={styles.poolCtaCaption}>
+              PKR {fare} riding alone · drops to PKR {poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3)} each with a full car
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -1160,30 +1189,121 @@ const styles = StyleSheet.create({
     bottom: '48%', // Show map on the upper half
     backgroundColor: '#151b22',
   },
-  road: {
-    position: 'absolute',
-    height: 4,
-    backgroundColor: '#262f3c',
+  // ── Solo / Pool mode toggle ─────────────────────────────────────────────────
+  modeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    padding: 5,
   },
-  routeLineGraphic: {
-    position: 'absolute',
-    top: 220,
-    left: 140,
-    width: 110,
-    height: 3,
-    backgroundColor: '#ffffff',
-    transform: [{ rotate: '45deg' }],
+  modeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingVertical: 9,
+    gap: 1,
   },
-  mapPinPoint: {
-    position: 'absolute',
-    backgroundColor: 'rgba(16,18,17,0.94)',
-    padding: 6,
-    borderRadius: 20,
+  modeBtnActive: {
+    backgroundColor: colors.glassLime,
     borderWidth: 1.5,
-    borderColor: '#ffffff',
+    borderColor: colors.primary,
   },
-  pinPointEmoji: {
-    fontSize: 16,
+  modeBtnTitle:       { fontSize: 15, fontWeight: '900', color: '#8a8c8c' },
+  modeBtnTitleActive: { color: colors.primary },
+  modeBtnSub:         { fontSize: 10, fontWeight: '700', color: '#6b7280' },
+
+  // ── Fare offer card ─────────────────────────────────────────────────────────
+  fareCard: { marginTop: 10, gap: 6 },
+  fareRangeHint: {
+    color: '#8cc840',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#8a8c8c',
+    letterSpacing: 0.8,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+
+  // ── Pool visibility (public / private) ──────────────────────────────────────
+  visRow: { flexDirection: 'row', gap: 8 },
+  visOpt: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.glassStrong,
+    padding: 12,
+    gap: 2,
+  },
+  visOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  visOptIcon:   { fontSize: 18 },
+  visOptTitle:  { fontSize: 13, fontWeight: '900', color: colors.text },
+  visOptSub:    { fontSize: 10, color: colors.muted, fontWeight: '600', lineHeight: 14 },
+  poolShareHint: {
+    fontSize: 11,
+    color: '#6b7280',
+    lineHeight: 16,
+    marginTop: 8,
+  },
+  poolCodeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  poolCodeInput: {
+    flex: 1,
+    height: 42,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    paddingHorizontal: 12,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  poolCodeGoBtn: {
+    height: 42,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolCodeGoTxt: { fontSize: 13, fontWeight: '900', color: colors.primary },
+
+  // ── Nearby public pools ─────────────────────────────────────────────────────
+  nearbyPoolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    padding: 12,
+    marginBottom: 8,
+  },
+  nearbyPoolDest: { fontSize: 13, fontWeight: '800', color: colors.text },
+  nearbyPoolMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  nearbyPoolFare: { fontSize: 14, fontWeight: '900', color: colors.primary },
+  nearbyPoolJoin: { fontSize: 10, fontWeight: '800', color: colors.primary, marginTop: 2 },
+
+  poolCtaCaption: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8cc840',
+    textAlign: 'center',
   },
   floatingHeaderArea: {
     position: 'absolute',

@@ -8,6 +8,7 @@
  */
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
+import { randomInt } from 'crypto';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
@@ -18,14 +19,16 @@ import { sendToUser, sendToUsers } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { DriverPublicInfo, TripStatus } from '../domain/types';
 import {
+  MAX_POOL_RIDERS,
   MAX_SEATS,
   computeSettlement,
   fareBounds,
+  poolPerSeatFare,
 } from '../domain/fares';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 
-const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
+export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
   'matched',
   'arriving',
@@ -92,6 +95,10 @@ const createTripSchema = z.object({
   seats: z.number().int().min(1).max(MAX_SEATS),
   passengerGender: z.enum(['male', 'female', 'unspecified']),
   pool: z.boolean().optional(),
+  // Pool rides only. public → nearby riders can discover and join; private →
+  // joinable only through the share link. Nullish because the mobile SDK
+  // encodes absent optionals as null on the wire.
+  poolVisibility: z.enum(['public', 'private']).nullish(),
   paymentMethod: z.enum(['cash', 'wallet']).default('cash'),
   preferFemaleDriver: z.boolean().optional(),
   promoCode: z.string().max(32).optional(),
@@ -109,10 +116,16 @@ export const createTrip = onCall(async (req) => {
   }
   const data = parsed.data;
 
+  // Pool trips offer the full solo fare too — the per-seat discount only
+  // materialises as riders actually join — so the same bounds apply.
   const { min: fareMin, max: fareMax } = await offeredFareBounds(data.rideType, data.pickup, data.dropoff);
   if (data.offeredFare < fareMin || data.offeredFare > fareMax) {
     invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
+
+  const isPool = data.pool ?? false;
+  const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
+  const shareCode = isPool ? generateShareCode() : null;
 
   const tripRef = db.collection('trips').doc();
   const userRef = db.doc(`users/${ctx.uid}`);
@@ -169,7 +182,16 @@ export const createTrip = onCall(async (req) => {
       offeredFare: finalFare,
       fare: null,
       seats: data.seats,
-      pool: data.pool ?? false,
+      pool: isPool,
+      ...(isPool
+        ? {
+            poolVisibility,
+            shareCode,
+            poolMembers: [ctx.uid],
+            poolPerSeatFare: finalFare, // just the host so far → full fare
+            maxPoolRiders: MAX_POOL_RIDERS,
+          }
+        : {}),
       paymentMethod: data.paymentMethod,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
       promoCode: data.promoCode ?? null,
@@ -188,7 +210,10 @@ export const createTrip = onCall(async (req) => {
       offeredFare: finalFare,
       seats: data.seats,
       passengerGender: data.passengerGender,
-      pool: data.pool ?? false,
+      pool: isPool,
+      ...(isPool
+        ? { poolVisibility, shareCode, poolRiders: 1, poolPerSeatFare: finalFare }
+        : {}),
       paymentMethod: data.paymentMethod,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
       pickup: data.pickup,
@@ -196,6 +221,13 @@ export const createTrip = onCall(async (req) => {
       pickupGeohash,
       createdAt: FieldValue.serverTimestamp(),
     });
+    // Share-code → trip lookup used by the pool invite link / join flow.
+    if (isPool && shareCode) {
+      tx.set(db.doc(`poolShareCodes/${shareCode}`), {
+        tripId: tripRef.id,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   logger.info('Trip created', { tripId: tripRef.id, passenger: ctx.uid });
@@ -208,10 +240,18 @@ export const createTrip = onCall(async (req) => {
     data.rideType,
   ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
 
-  return { ok: true, tripId: tripRef.id };
+  return { ok: true, tripId: tripRef.id, shareCode };
 });
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+// Unambiguous alphabet (no 0/O/1/I/L) — codes get read out loud and retyped.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function generateShareCode(len = 8): string {
+  let out = '';
+  for (let i = 0; i < len; i += 1) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  return out;
+}
+
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const toRad = (d: number) => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
@@ -314,6 +354,9 @@ export const placeBid = onCall(async (req) => {
     fare,
     status: 'pending',
     driverInfo,
+    // Snapshot of the driver's position so the passenger's map can show the
+    // offering drivers around them, Uber-style.
+    driverLocation: (driverSnap.get('lastLocation') as { lat: number; lng: number } | undefined) ?? null,
     createdAt: FieldValue.serverTimestamp(),
   });
 
@@ -373,8 +416,25 @@ export const raiseTripFare = onCall(async (req) => {
     if (fare < raiseBounds.min || fare > raiseBounds.max) {
       invalid('Fare is outside the allowed range.');
     }
-    tx.set(tripRef, { offeredFare: fare, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(db.doc(`openRequests/${tripId}`), { offeredFare: fare }, { merge: true });
+    // Pool rides: the per-seat figure follows the (raised) solo fare.
+    const members = (snap.get('poolMembers') as string[] | undefined) ?? [];
+    const perSeat = snap.get('pool') === true
+      ? poolPerSeatFare(fare, Math.max(1, members.length))
+      : null;
+    tx.set(
+      tripRef,
+      {
+        offeredFare: fare,
+        ...(perSeat !== null ? { poolPerSeatFare: perSeat } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    tx.set(
+      db.doc(`openRequests/${tripId}`),
+      { offeredFare: fare, ...(perSeat !== null ? { poolPerSeatFare: perSeat } : {}) },
+      { merge: true },
+    );
   });
 
   logger.info('Trip fare raised', { tripId, by: ctx.uid, fare });
@@ -455,6 +515,11 @@ export const acceptBid = onCall(async (req) => {
       (driverDocSnap.get('phoneNumber')  as string | null) ??
       null;
 
+    // Pool rides: the per-seat figure now follows the driver-locked fare.
+    const poolMembers = (tripSnap.get('poolMembers') as string[] | undefined) ?? [];
+    const poolPerSeat = tripSnap.get('pool') === true
+      ? poolPerSeatFare(fare, Math.max(1, poolMembers.length))
+      : null;
     tx.set(
       tripRef,
       {
@@ -462,6 +527,7 @@ export const acceptBid = onCall(async (req) => {
         driverId: driverInfo.driverId,
         driverInfo,
         fare,
+        ...(poolPerSeat !== null ? { poolPerSeatFare: poolPerSeat } : {}),
         walletHold,
         passengerPhone,
         driverPhone,
@@ -591,6 +657,11 @@ export const cancelTrip = onCall(async (req) => {
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
+    for (const member of (snap.get('poolMembers') as string[] | undefined) ?? []) {
+      if (member !== passengerId) {
+        tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
+      }
+    }
     tx.delete(db.doc(`openRequests/${tripId}`));
   });
 
@@ -643,12 +714,23 @@ export const completeTrip = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'Trip is not in progress.');
     }
 
-    const grossFare     = snap.get('fare') as number;
-    const seats         = (snap.get('seats') as number) ?? 1;
+    const lockedFare    = snap.get('fare') as number;
     const passengerId   = snap.get('passengerId') as string;
     const franchiseId   = driverSnap.get('franchiseId') as string | null | undefined;
     const paymentMethod = (snap.get('paymentMethod') as string | undefined) ?? 'cash';
-    const s             = computeSettlement(grossFare, seats, commissionRate);
+
+    // Pool cash trips: every rider pays the tier per-seat fare in cash, so the
+    // driver's gross is perSeat × riders (the split promised in the app).
+    // Wallet holds only ever cover the host's fare, so wallet pools settle solo.
+    const poolMembers = (snap.get('poolMembers') as string[] | undefined) ?? [];
+    const isPool      = snap.get('pool') === true;
+    let grossFare = lockedFare;
+    let seats     = (snap.get('seats') as number) ?? 1;
+    if (isPool && paymentMethod === 'cash' && poolMembers.length > 1) {
+      seats     = poolMembers.length;
+      grossFare = poolPerSeatFare(lockedFare, seats) * seats;
+    }
+    const s = computeSettlement(grossFare, seats, commissionRate);
 
     // 5% of gross fare goes to the franchise, capped at the commission actually
     // taken so a low admin-set rate can never make Velocity's net negative.
@@ -775,6 +857,13 @@ export const completeTrip = onCall(async (req) => {
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
+    // Pool riders who joined via a share link track the trip through
+    // activeTripId too — release all of them.
+    for (const member of poolMembers) {
+      if (member !== passengerId) {
+        tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
+      }
+    }
 
     // Credit franchise revenue.
     if (franchiseId && franchiseCut > 0) {
@@ -804,6 +893,11 @@ export const completeTrip = onCall(async (req) => {
   const completedFare = completedSnap.get('fare') as number | undefined;
   if (completedPassengerId) {
     await sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId });
+  }
+  const completedCoRiders = ((completedSnap.get('poolMembers') as string[] | undefined) ?? [])
+    .filter((m) => m !== completedPassengerId);
+  if (completedCoRiders.length > 0) {
+    await sendToUsers(completedCoRiders, '✅ Pool trip complete!', `You've arrived. Your share: PKR ${settlement.passengerShare}.`, { tripId });
   }
   await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
   if (settlement.commissionLocked) {

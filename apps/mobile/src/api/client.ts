@@ -7,7 +7,7 @@
  */
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
-import type { Gender, GeoPoint, RideType } from '../domain/types';
+import type { Gender, GeoPoint, PoolVisibility, RideType, TripStatus } from '../domain/types';
 
 /**
  * The Firebase callable serializer encodes `undefined` object values as
@@ -65,6 +65,8 @@ export interface CreateTripInput {
   seats: number;
   passengerGender: Gender;
   pool?: boolean;
+  /** Pool rides only: public → discoverable nearby, private → link-only. */
+  poolVisibility?: PoolVisibility;
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
   promoCode?: string;
@@ -72,12 +74,55 @@ export interface CreateTripInput {
   dropoff: GeoPoint;
 }
 
+export interface PoolTripByCode {
+  code: string;
+  status: TripStatus;
+  pickupAddress: string;
+  dropoffAddress: string;
+  rideType: RideType;
+  visibility: PoolVisibility;
+  hostName: string;
+  riders: number;
+  maxRiders: number;
+  seatsLeft: number;
+  perSeatFareNow: number;
+  perSeatFareIfYouJoin: number;
+  joinable: boolean;
+  alreadyJoined: boolean;
+  tripId: string | null;
+}
+
+export interface NearbyPublicPool {
+  code: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  rideType: RideType;
+  riders: number;
+  seatsLeft: number;
+  perSeatFareIfYouJoin: number;
+  distanceKm: number;
+}
+
 export const api = {
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',
   ),
-  createTrip: callable<CreateTripInput, { ok: boolean; tripId: string }>('createTrip'),
+  createTrip: callable<CreateTripInput, { ok: boolean; tripId: string; shareCode: string | null }>('createTrip'),
+  // Pool share links — invite codes on booking-flow pool trips
+  getPoolTripByCode: callable<{ code: string }, PoolTripByCode>('getPoolTripByCode'),
+  joinPoolTrip: callable<
+    { code: string },
+    { ok: boolean; tripId: string; riders: number; perSeatFare: number; alreadyJoined: boolean }
+  >('joinPoolTrip'),
+  setPoolVisibility: callable<
+    { tripId: string; visibility: PoolVisibility },
+    { ok: boolean; visibility: PoolVisibility }
+  >('setPoolVisibility'),
+  getNearbyPublicPoolTrips: callable<
+    { lat: number; lng: number; radiusKm?: number },
+    { pools: NearbyPublicPool[] }
+  >('getNearbyPublicPoolTrips'),
   placeBid: callable<{ tripId: string; fare: number }, { ok: boolean; bidId: string }>('placeBid'),
   raiseTripFare: callable<{ tripId: string; fare: number }, { ok: boolean; offeredFare: number }>(
     'raiseTripFare',
