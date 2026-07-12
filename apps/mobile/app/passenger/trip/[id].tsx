@@ -122,11 +122,13 @@ export default function TripScreen() {
   // status and visibility). Private rides are reachable only through this link.
   async function sharePoolInvite() {
     if (!trip?.shareCode) return;
+    // Name the host so riders see who invited them, not a generic app name.
+    const hostName = user?.displayName?.trim() || 'A friend';
     const link = appLink(`/passenger/pool-join/${trip.shareCode}`);
     try {
       await Share.share({
         message:
-          `🔀 Join my pool ride on Velocity!\n\n` +
+          `🔀 ${hostName} invited you to share their Velocity ride!\n\n` +
           `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
           `We split the fare — everyone pays less as more riders join.\n` +
           `Invite code: ${trip.shareCode}\n\nTap to join:\n${link}`,
@@ -141,7 +143,7 @@ export default function TripScreen() {
     run(() => api.setPoolVisibility({ tripId: trip.id, visibility: next }));
   }
 
-  // Travel Mate ride link: only travel partners (matched mates / group members)
+  // Travel Partner ride link: only travel partners (matched mates / group members)
   // can book the same ride from this link — the backend enforces the gate.
   async function shareWithTravelMates() {
     if (!trip || !user) return;
@@ -158,19 +160,20 @@ export default function TripScreen() {
 
       const { shareId } = await api.shareTravelMateRide({ tripId: trip.id, groupId });
       const link = appLink(`/passenger/travel-mate/shared-ride/${shareId}`);
+      const myName = user.displayName?.trim() || 'A friend';
       await Share.share({
         message:
-          `🚗 Ride with me on Velocity!\n\n` +
+          `🚗 ${myName} wants to ride together on Velocity!\n\n` +
           `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
           `Travel partners can book the same ride here:\n${link}`,
-        title: 'Share ride with Travel Mates',
+        title: 'Share ride with Travel Partners',
       });
     } catch (e: unknown) {
       const reason = (e as { details?: { reason?: string } })?.details?.reason;
       if (e instanceof FirebaseError && reason === 'no_profile') {
         Alert.alert(
-          'Travel Mates only',
-          'Ride links are a Travel Mate feature. Set up your Travel Mate profile to share rides with travel partners.',
+          'Travel Partners only',
+          'Ride links are a Travel Partner feature. Set up your Travel Partner profile to share rides with travel partners.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'Set up', onPress: () => router.push('/passenger/travel-mate/setup' as Parameters<typeof router.push>[0]) },
@@ -405,13 +408,13 @@ export default function TripScreen() {
             </View>
             )}
 
-            {/* Non-pool rides keep the Travel Mate share entry */}
+            {/* Non-pool rides keep the Travel Partner share entry */}
             {!trip.pool && (
               <Pressable
                 style={({ pressed }) => [styles.travelMateShareBtn, pressed && { opacity: 0.85 }]}
                 onPress={shareWithTravelMates}
               >
-                <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Mates</Text>
+                <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Partners</Text>
               </Pressable>
             )}
           </ScrollView>
@@ -506,9 +509,9 @@ export default function TripScreen() {
               <Text style={styles.whatsappBtnText}>📤 Share trip via WhatsApp</Text>
             </Pressable>
 
-            {/* Travel Mate ride link — partners can book onto this ride */}
+            {/* Travel Partner ride link — partners can book onto this ride */}
             <Pressable style={styles.travelMateShareBtn} onPress={shareWithTravelMates}>
-              <Text style={styles.travelMateShareBtnText}>🤝 Share ride link with Travel Mates</Text>
+              <Text style={styles.travelMateShareBtnText}>🤝 Share ride link with Travel Partners</Text>
             </Pressable>
           </Card>
         )}

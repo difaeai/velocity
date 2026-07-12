@@ -202,7 +202,7 @@ export default function PassengerHome() {
           </View>
         )}
 
-        {/* ── Travel Mate card ── */}
+        {/* ── Travel Partner card ── */}
         <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
 
         <View style={{ height: 20 }} />
@@ -286,7 +286,7 @@ export default function PassengerHome() {
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
                     <Text style={styles.menuItemIcon}>🤝</Text>
-                    <Text style={styles.menuItemText}>Travel Mate</Text>
+                    <Text style={styles.menuItemText}>Travel Partner</Text>
                   </Pressable>
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>
                     <Text style={styles.menuItemIcon}>💬</Text>

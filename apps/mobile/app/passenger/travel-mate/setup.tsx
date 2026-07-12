@@ -57,7 +57,7 @@ export default function TravelMateSetup() {
   const [prefilling, setPrefilling] = useState(true);
   const [isNewProfile, setIsNewProfile] = useState(true);
 
-  // ONE unified profile: the TravelMate profile pre-fills from the main
+  // ONE unified profile: the Travel Partner profile pre-fills from the main
   // account (name / age / gender / photo collected at sign-up) and, on save,
   // syncs those shared fields back so rides, discovery and the community all
   // read the same identity.
@@ -175,7 +175,7 @@ export default function TravelMateSetup() {
       }, { merge: true });
 
       // Keep the main account profile in sync — one identity everywhere
-      // (rides, TravelMate discovery, community feed).
+      // (rides, Travel Partner discovery, community feed).
       await setDoc(doc(db, 'users', user.uid), {
         name: displayName.trim(),
         displayName: displayName.trim(),
@@ -212,7 +212,7 @@ export default function TravelMateSetup() {
             <Pressable onPress={() => router.back()} style={s.backBtn}>
               <Text style={s.backText}>←</Text>
             </Pressable>
-            <Text style={s.title}>Your Travel Mate profile</Text>
+            <Text style={s.title}>Your Travel Partner profile</Text>
           </View>
           <Text style={s.subtitle}>Only visible to people you match with.</Text>
 

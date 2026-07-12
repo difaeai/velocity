@@ -1,5 +1,5 @@
 /**
- * Velocity — Travel Mate — Admin community moderation (callable, v2)
+ * Velocity — Travel Partner — Admin community moderation (callable, v2)
  * ----------------------------------------------------------------------------
  * Full admin CRUD over the community feed, complementing the user-facing CFs
  * (deleteTravelMatePost / deleteTravelMateComment already honour the admin

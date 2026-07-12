@@ -1,5 +1,5 @@
 /**
- * Travel Mate — community group page.
+ * Travel Partner — community group page.
  *
  * Header shows the group's name, the CITY it belongs to (always visible),
  * member count and description. Members can post into the group; everyone
@@ -41,7 +41,6 @@ import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../../src/config';
 import { PostCard } from '../feed';
 
-const PINK = '#E8637A';
 const PAGE_SIZE = 25;
 
 export default function CommunityPage() {
@@ -147,7 +146,7 @@ export default function CommunityPage() {
     const link = appLink(`/passenger/travel-mate/community/${community.id}`);
     Share.share({
       message:
-        `Join "${community.name}" — a Velocity TravelMate community in ${community.city}.\n\n${link}`,
+        `Join "${community.name}" — a Velocity Travel Partner community in ${community.city}.\n\n${link}`,
     }).catch(() => {});
   }
 
@@ -179,7 +178,7 @@ export default function CommunityPage() {
   function sharePost(post: TMPost) {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
-      message: `${post.authorName} on Velocity TravelMate:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
+      message: `${post.authorName} on Velocity Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
     }).catch(() => {});
   }
 
@@ -228,7 +227,7 @@ export default function CommunityPage() {
     return (
       <SafeAreaView style={s.safe}>
         {TopBar}
-        <View style={s.centerBox}><ActivityIndicator size="large" color={PINK} /></View>
+        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -240,7 +239,7 @@ export default function CommunityPage() {
         data={visiblePosts}
         keyExtractor={p => p.id}
         contentContainerStyle={s.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PINK} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         onEndReached={() => { if (!endReached && !loadingPosts) loadPosts(false); }}
         onEndReachedThreshold={0.4}
         ListHeaderComponent={
@@ -269,7 +268,7 @@ export default function CommunityPage() {
         }
         ListEmptyComponent={
           loadingPosts ? (
-            <ActivityIndicator color={PINK} style={{ marginTop: 32 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
           ) : (
             <View style={s.emptyPosts}>
               <Text style={{ fontSize: 36 }}>📝</Text>
@@ -313,13 +312,13 @@ const s = StyleSheet.create({
   listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 8 },
 
   header:    { gap: 8, paddingTop: 4 },
-  cityBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 99, backgroundColor: `${PINK}22`, borderWidth: 1, borderColor: `${PINK}55` },
-  cityBadgeText: { fontSize: 12, fontWeight: '900', color: PINK },
+  cityBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 99, backgroundColor: `${colors.primary}22`, borderWidth: 1, borderColor: `${colors.primary}55` },
+  cityBadgeText: { fontSize: 12, fontWeight: '900', color: colors.primary },
   commName:  { fontSize: 24, fontWeight: '900', color: colors.text },
   commDesc:  { fontSize: 13.5, color: colors.muted, lineHeight: 19 },
   commMeta:  { fontSize: 12, color: colors.muted },
-  joinBtn:   { height: 46, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  joinBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  joinBtn:   { height: 46, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  joinBtnText: { fontSize: 14, fontWeight: '900', color: '#000' },
   leaveBtn:  { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.border },
   leaveBtnText: { color: colors.muted },
   divider:   { height: 1, backgroundColor: colors.border, marginTop: 10 },

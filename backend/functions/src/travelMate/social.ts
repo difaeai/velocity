@@ -1,5 +1,5 @@
 /**
- * Velocity — Travel Mate — Phase 3 social functions (callable, v2)
+ * Velocity — Travel Partner — Phase 3 social functions (callable, v2)
  * ----------------------------------------------------------------------------
  * sendTravelMateMessage — append a chat message, bump lastMessageAt, push FCM.
  * unmatchTravelMate      — close a match (members can't do this via rules).
@@ -40,17 +40,78 @@ function otherUser(users: string[], me: string): string {
 }
 
 // ---------------------------------------------------------------------------
-const MsgInput = z.object({
-  matchId: z.string().min(1).max(256),
-  text: z.string().trim().min(1).max(2000),
+// Chat messages can carry a text body and/or one attachment: a photo, a shared
+// GPS location, a phone contact, or an arbitrary file/document. Attachment
+// URLs must point at our own Firebase Storage bucket (the app uploads there
+// under travelMateChat/{uid}/...), so a message can't smuggle an arbitrary
+// external link.
+const AttachmentPayload = z.object({
+  url: z.string().url().max(2048),
+  name: z.string().trim().max(240).nullish(),
+  size: z.number().nonnegative().max(50 * 1024 * 1024).nullish(),
+  mime: z.string().max(160).nullish(),
+  width: z.number().positive().max(20000).nullish(),
+  height: z.number().positive().max(20000).nullish(),
 });
+const LocationPayload = z.object({
+  lat: z.number().gte(-90).lte(90),
+  lng: z.number().gte(-180).lte(180),
+  label: z.string().trim().max(240).nullish(),
+});
+const ContactPayload = z.object({
+  name: z.string().trim().min(1).max(160),
+  phone: z.string().trim().min(1).max(60),
+});
+
+const MsgInput = z
+  .object({
+    matchId: z.string().min(1).max(256),
+    text: z.string().trim().max(2000).nullish(),
+    type: z.enum(['text', 'image', 'location', 'contact', 'file']).nullish(),
+    image: AttachmentPayload.nullish(),
+    file: AttachmentPayload.nullish(),
+    location: LocationPayload.nullish(),
+    contact: ContactPayload.nullish(),
+  })
+  .refine(
+    (d) => Boolean((d.text && d.text.length > 0) || d.image || d.file || d.location || d.contact),
+    { message: 'Message is empty.' },
+  );
+
+function isOwnStorageUrl(url: string): boolean {
+  return (
+    url.startsWith('https://firebasestorage.googleapis.com/') ||
+    url.startsWith('https://storage.googleapis.com/')
+  );
+}
+
+function previewFor(type: string, text?: string | null): string {
+  switch (type) {
+    case 'image':    return '📷 Photo';
+    case 'location': return '📍 Location';
+    case 'contact':  return '👤 Contact';
+    case 'file':     return '📎 File';
+    default:         return (text ?? '').slice(0, 100);
+  }
+}
 
 export const sendTravelMateMessage = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const parsed = MsgInput.safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid message.');
-  const { matchId, text } = parsed.data;
+  const { matchId, text, image, file, location, contact } = parsed.data;
+
+  // Reject attachment URLs that don't live in our own Storage bucket.
+  for (const att of [image, file]) {
+    if (att && !isOwnStorageUrl(att.url)) {
+      throw new HttpsError('invalid-argument', 'Attachment must be uploaded to Velocity storage.');
+    }
+  }
+
+  // Derive the message type from the payload so a stale/omitted `type` can't lie.
+  const type: 'text' | 'image' | 'location' | 'contact' | 'file' =
+    image ? 'image' : location ? 'location' : contact ? 'contact' : file ? 'file' : 'text';
 
   const matchRef = db.doc(`travelMateMatches/${matchId}`);
   const matchSnap = await matchRef.get();
@@ -63,19 +124,65 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
   // A block in either direction silently closes the channel.
   await assertNotBlocked(uid, otherUser(match.users, uid));
 
+  const trimmed = (text ?? '').trim();
   const msgRef = matchRef.collection('messages').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const msgDoc: Record<string, unknown> = { senderId: uid, type, createdAt: now };
+  if (trimmed) msgDoc.text = trimmed;
+  if (image) msgDoc.image = image;
+  if (file) msgDoc.file = file;
+  if (location) msgDoc.location = location;
+  if (contact) msgDoc.contact = contact;
+
+  const preview = previewFor(type, trimmed);
   const batch = db.batch();
-  batch.set(msgRef, { senderId: uid, text, createdAt: now });
+  batch.set(msgRef, msgDoc);
   // lastMessage is the preview line on the chats/matches list screens.
-  batch.update(matchRef, { lastMessage: text.slice(0, 100), lastMessageAt: now });
+  batch.update(matchRef, { lastMessage: preview.slice(0, 100), lastMessageAt: now });
   await batch.commit();
 
   const recipient = otherUser(match.users, uid);
   const senderName = match.userInfo?.[uid]?.displayName || 'Your travel mate';
-  await pushTo(recipient, senderName, text, { type: 'travelMate.message', matchId });
+  await pushTo(recipient, senderName, preview, { type: 'travelMate.message', matchId });
 
   return { messageId: msgRef.id };
+});
+
+// ---------------------------------------------------------------------------
+// React to a chat message with a single emoji (WhatsApp-style). Reactions are
+// stored as a map keyed by the reacting user's uid, so each user contributes at
+// most one reaction and toggling the same emoji clears it. Messages are
+// Cloud-Function-write-only, so reactions must come through here too.
+const ReactInput = z.object({
+  matchId: z.string().min(1).max(256),
+  messageId: z.string().min(1).max(128),
+  emoji: z.string().trim().max(16).nullish(), // null / empty clears the reaction
+});
+
+export const reactToTravelMateMessage = onCall({ region: REGION }, async (req: CallableRequest) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+  const parsed = ReactInput.safeParse(req.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid reaction.');
+  const { matchId, messageId, emoji } = parsed.data;
+
+  const matchRef = db.doc(`travelMateMatches/${matchId}`);
+  const matchSnap = await matchRef.get();
+  if (!matchSnap.exists) throw new HttpsError('not-found', 'Match not found.');
+  const match = matchSnap.data()!;
+  if (!match.users.includes(uid)) throw new HttpsError('permission-denied', 'Not your match.');
+  if (match.status && match.status !== 'active') {
+    throw new HttpsError('failed-precondition', 'This match is closed.');
+  }
+
+  const msgRef = matchRef.collection('messages').doc(messageId);
+  const field = `reactions.${uid}`;
+  const clear = !emoji;
+  await msgRef.update({
+    [field]: clear ? admin.firestore.FieldValue.delete() : emoji,
+  });
+  return { ok: true, cleared: clear };
 });
 
 // ---------------------------------------------------------------------------

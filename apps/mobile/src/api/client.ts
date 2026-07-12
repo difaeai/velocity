@@ -103,6 +103,29 @@ export interface NearbyPublicPool {
   distanceKm: number;
 }
 
+/** One chat attachment — a photo or a document uploaded to Velocity storage. */
+export interface ChatAttachment {
+  url: string;
+  name?: string | null;
+  size?: number | null;
+  mime?: string | null;
+  width?: number | null;
+  height?: number | null;
+}
+
+/**
+ * A Travel Partner chat message can carry text and/or exactly one attachment:
+ * a photo, a shared GPS location, a phone contact, or a file/document.
+ */
+export interface TravelMateMessageInput {
+  matchId: string;
+  text?: string;
+  image?: ChatAttachment;
+  file?: ChatAttachment;
+  location?: { lat: number; lng: number; label?: string | null };
+  contact?: { name: string; phone: string };
+}
+
 export const api = {
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
@@ -182,7 +205,7 @@ export const api = {
   >('completePoolRide'),
   registerFcmToken: callable<{ token: string; platform?: 'ios' | 'android' | 'web' }, { ok: boolean }>('registerFcmToken'),
 
-  // ── Travel Mate ──────────────────────────────────────────────────────────────
+  // ── Travel Partner ──────────────────────────────────────────────────────────────
   requestTravelMateSubscription: callable<
     { planId: string; paymentMethod: 'wallet' | 'easypaisa' | 'jazzcash' | 'bank'; paymentProofURL?: string },
     { subscriptionId: string; status: string }
@@ -197,11 +220,14 @@ export const api = {
     { matched: boolean; matchId?: string; remaining?: number; tier?: 'free' | 'subscribed'; direction?: 'pass' }
   >('travelMateSwipe'),
 
-  // ── Travel Mate Phase 3 — social ─────────────────────────────────────────
-  sendTravelMateMessage: callable<
-    { matchId: string; text: string },
-    { messageId: string }
-  >('sendTravelMateMessage'),
+  // ── Travel Partner Phase 3 — social ─────────────────────────────────────────
+  sendTravelMateMessage: callable<TravelMateMessageInput, { messageId: string }>(
+    'sendTravelMateMessage',
+  ),
+  reactToTravelMateMessage: callable<
+    { matchId: string; messageId: string; emoji: string | null },
+    { ok: boolean; cleared: boolean }
+  >('reactToTravelMateMessage'),
   unmatchTravelMate: callable<
     { matchId: string },
     { status: string }
@@ -211,7 +237,7 @@ export const api = {
     { reportId: string; status: string }
   >('reportTravelMateUser'),
 
-  // ── Travel Mate Phase 4 — groups ─────────────────────────────────────────
+  // ── Travel Partner Phase 4 — groups ─────────────────────────────────────────
   createTravelMateGroup: callable<
     { name?: string; destinationName?: string; schedule?: { days: TravelMateDay[]; departTime: string } },
     { groupId: string }
@@ -225,7 +251,7 @@ export const api = {
     { settled: boolean; fare: number; share: number; riders: number; collected: number; bookerNetCost: number }
   >('settleTravelMateSplit'),
 
-  // ── Travel Mate Phase 5 — ride links + group chat + private DMs ──────────
+  // ── Travel Partner Phase 5 — ride links + group chat + private DMs ──────────
   shareTravelMateRide: callable<
     { tripId: string; groupId?: string },
     { shareId: string; reused: boolean }
@@ -251,7 +277,7 @@ export const api = {
     TravelMateGroupPreview
   >('previewTravelMateGroup'),
 
-  // ── Travel Mate Phase 6 — community feed ──────────────────────────────────
+  // ── Travel Partner Phase 6 — community feed ──────────────────────────────────
   createTravelMatePost: callable<
     { text: string; imageBase64?: string; videoPath?: string; communityId?: string },
     { postId: string; mediaURL: string | null; mediaType: 'image' | 'video' | null }
@@ -528,7 +554,7 @@ export interface CommuteDemandSlot {
   genderBreakdown: { male: number; female: number; any: number };
 }
 
-// ── Travel Mate types ─────────────────────────────────────────────────────────
+// ── Travel Partner types ─────────────────────────────────────────────────────────
 
 export type TravelMateDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
@@ -579,7 +605,7 @@ export interface TravelMateGroupPreview {
   reason: 'member' | 'no_profile' | 'not_partner' | 'ok';
 }
 
-// ── Travel Mate community feed types ─────────────────────────────────────────
+// ── Travel Partner community feed types ─────────────────────────────────────────
 
 export interface TMPost {
   id: string;

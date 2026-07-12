@@ -1,5 +1,5 @@
 /**
- * Travel Mate — admin plan management callables.
+ * Travel Partner — admin plan management callables.
  * Plans live in travelMatePlans/{planId}.
  * Soft-delete only: plans are never hard-deleted so existing sub docs that
  * reference them by planId remain readable.

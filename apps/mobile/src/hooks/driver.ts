@@ -198,9 +198,9 @@ export function useCommissionStatus(profile: DriverProfile | null): CommissionSt
 export interface FeatureFlags {
   /** Gateway wallet top-ups. Off = "Coming Soon". */
   walletTopupEnabled: boolean;
-  /** Paid Travel Mate subscriptions. Off = "Coming Soon". */
+  /** Paid Travel Partner subscriptions. Off = "Coming Soon". */
   travelMateSubscriptionsEnabled: boolean;
-  /** Travel Mate likes unlimited for everyone. */
+  /** Travel Partner likes unlimited for everyone. */
   travelMateFree: boolean;
 }
 

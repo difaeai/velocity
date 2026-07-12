@@ -1,5 +1,5 @@
 /**
- * Velocity – Travel Mate – travelMateSwipe (callable, v2)
+ * Velocity – Travel Partner – travelMateSwipe (callable, v2)
  * ----------------------------------------------------------------------------
  * The single source of truth for the like paywall. A right-swipe ("like")
  * consumes quota; a left-swipe ("pass") is free. All quota math runs inside ONE
@@ -98,7 +98,7 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
   const configuredFreeSwipes: number = settingsSnap.exists
     ? (settingsSnap.data()!.freeMonthlySwipes ?? 4) : 4;
 
-  // Launch posture: Travel Mate is free for everyone (config/featureFlags
+  // Launch posture: Travel Partner is free for everyone (config/featureFlags
   // travelMateFree, default on) — grant a very high free allowance so the like
   // paywall never triggers. The subscription/quota machinery stays intact for
   // when we flip it back on.

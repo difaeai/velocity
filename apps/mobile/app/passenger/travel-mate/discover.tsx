@@ -493,7 +493,7 @@ const s = StyleSheet.create({
   // Cards
   card:               { position: 'absolute', width: CARD_W, height: CARD_H, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.surface, elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   cardPhoto:          { width: '100%', height: '100%', resizeMode: 'cover' },
-  cardPhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: '#2a2c2c', alignItems: 'center', justifyContent: 'center' },
+  cardPhotoPlaceholder: { width: '100%', height: '100%', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   cardAvatarEmoji:    { fontSize: 80 },
   cardOverlay:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.65)', padding: 20, paddingBottom: 22, gap: 6 },
   activeBadge:        { alignSelf: 'flex-start', backgroundColor: colors.primary, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 2 },
@@ -506,7 +506,7 @@ const s = StyleSheet.create({
   cardTravelsTo:      { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.92)', marginTop: 4 },
 
   hintBadge: { position: 'absolute', top: 24, zIndex: 20, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 2 },
-  hintLike:  { right: 16, borderColor: '#4ade80', backgroundColor: '#4ade8030' },
+  hintLike:  { right: 16, borderColor: colors.primary, backgroundColor: `${colors.primary}30` },
   hintPass:  { left: 16, borderColor: colors.danger, backgroundColor: `${colors.danger}30` },
   hintText:  { fontSize: 18, fontWeight: '900', color: '#fff' },
 

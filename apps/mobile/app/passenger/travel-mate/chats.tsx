@@ -98,7 +98,7 @@ export default function TravelMateChats() {
                   <View style={[s.dot, hasChat ? s.dotActive : s.dotNew]} />
                 </View>
                 <View style={s.chatInfo}>
-                  <Text style={s.chatName}>{other?.displayName ?? 'Travel Mate'}</Text>
+                  <Text style={s.chatName}>{other?.displayName ?? 'Travel Partner'}</Text>
                   <Text style={s.chatPreview} numberOfLines={1}>
                     {hasChat
                       ? (match.lastMessage ?? 'Tap to continue chatting…')
@@ -134,8 +134,8 @@ const s = StyleSheet.create({
   avatar:     { width: 54, height: 54, borderRadius: 27 },
   avatarFallback: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   dot:        { position: 'absolute', bottom: 1, right: 1, width: 13, height: 13, borderRadius: 7, borderWidth: 2, borderColor: colors.background },
-  dotActive:  { backgroundColor: '#4ade80' },
-  dotNew:     { backgroundColor: '#E8637A' },
+  dotActive:  { backgroundColor: colors.primary },
+  dotNew:     { backgroundColor: colors.primary },
 
   chatInfo:    { flex: 1, gap: 3 },
   chatName:    { fontSize: 15, fontWeight: '800', color: colors.text },

@@ -1,5 +1,5 @@
 /**
- * Travel Mate — find people.
+ * Travel Partner — find people.
  *
  * Prefix search over travelMateProfiles.displayNameLower (set on profile
  * save). Results show avatar, name, bio, a Follow/Following toggle, and tap
@@ -37,7 +37,6 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 
 interface PersonRow {
   uid: string;
@@ -92,7 +91,7 @@ export default function FeedSearch() {
   async function toggleFollow(person: PersonRow) {
     if (!user) return;
     if (!myProfile) {
-      Alert.alert('Profile needed', 'Set up your TravelMate profile first.', [
+      Alert.alert('Profile needed', 'Set up your Travel Partner profile first.', [
         { text: 'Not now', style: 'cancel' },
         { text: 'Create profile', onPress: () => router.push('/passenger/travel-mate/setup') },
       ]);
@@ -139,7 +138,7 @@ export default function FeedSearch() {
         />
       </View>
 
-      {searching && <ActivityIndicator color={PINK} style={{ marginTop: 24 }} />}
+      {searching && <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />}
 
       {!searching && term.trim().length < 2 && (
         <View style={s.hintBox}>
@@ -156,7 +155,7 @@ export default function FeedSearch() {
         <View style={s.hintBox}>
           <Text style={{ fontSize: 44 }}>🤷</Text>
           <Text style={s.hintTitle}>No one found</Text>
-          <Text style={s.hintSub}>Nobody on TravelMate matches “{term.trim()}” yet.</Text>
+          <Text style={s.hintSub}>Nobody on Travel Partner matches “{term.trim()}” yet.</Text>
         </View>
       )}
 
@@ -216,8 +215,8 @@ const s = StyleSheet.create({
   personName:{ fontSize: 15, fontWeight: '800', color: colors.text },
   personBio: { fontSize: 12, color: colors.muted, marginTop: 2 },
 
-  followBtn:     { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, backgroundColor: PINK },
-  followBtnText: { fontSize: 13, fontWeight: '900', color: '#fff' },
+  followBtn:     { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.primary },
+  followBtnText: { fontSize: 13, fontWeight: '900', color: '#000' },
   followingBtn:  { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.border },
   followingBtnText: { color: colors.muted },
 });

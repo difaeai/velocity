@@ -1,5 +1,5 @@
 /**
- * Travel Mate — subscription screen.
+ * Travel Partner — subscription screen.
  *
  * Shows available plans + the user's current subscription status.
  * Wallet payment is fully supported (charged at admin approval, not here).
@@ -170,7 +170,7 @@ export default function TravelMateSubscription() {
             Our team will review your request and activate your subscription shortly.
             {payMethod === 'wallet' ? ' Payment will only be charged on approval.' : ' Please ensure your payment proof is correct.'}
           </Text>
-          <PrimaryButton label="Back to Travel Mate" onPress={() => router.replace('/passenger/travel-mate')} />
+          <PrimaryButton label="Back to Travel Partner" onPress={() => router.replace('/passenger/travel-mate')} />
         </View>
       </SafeAreaView>
     );
@@ -212,13 +212,13 @@ export default function TravelMateSubscription() {
         )}
 
         {!travelMateSubscriptionsEnabled ? (
-          /* Launch posture: Travel Mate is free for everyone. */
+          /* Launch posture: Travel Partner is free for everyone. */
           <>
             <Card style={{ borderColor: colors.primary }}>
               <Text style={s.sectionLabel}>FREE FOR EVERYONE</Text>
               <Text style={s.freeTierText}>Unlimited likes 🎉</Text>
               <Text style={s.freeTierSub}>
-                Travel Mate is completely free right now — like as many travel companions as you want.
+                Travel Partner is completely free right now — like as many travel companions as you want.
               </Text>
             </Card>
             <Card>

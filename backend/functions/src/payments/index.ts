@@ -464,7 +464,7 @@ const settlementSchema = z.object({
 
 /**
  * Admin sets the platform's receiving accounts (your Easypaisa / JazzCash /
- * bank). Shown to users for manual transfers (e.g. Travel Mate receipts) and
+ * bank). Shown to users for manual transfers (e.g. Travel Partner receipts) and
  * to admins as the source accounts for driver payouts. Gateway settlement is
  * separate — that is configured with the gateway itself via secrets.
  */

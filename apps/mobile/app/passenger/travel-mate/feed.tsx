@@ -1,5 +1,5 @@
 /**
- * Travel Mate — Community Feed.
+ * Travel Partner — Community Feed.
  *
  * One page for the whole community: riders post text / photos / videos and
  * their travel experiences, discover people, follow them and message them.
@@ -9,7 +9,7 @@
  * Feed filters: "For you" (everyone) and "Following" (people you follow).
  * Blocked users are filtered out of everything.
  *
- * Gated on having a TravelMate profile — the same single profile that powers
+ * Gated on having a Travel Partner profile — the same single profile that powers
  * ride booking, partner discovery and this community.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -56,7 +56,6 @@ import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hoo
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
 const PAGE_SIZE = 25;
 
 type FeedFilter = 'forYou' | 'following';
@@ -117,7 +116,7 @@ export function PostCard({
       <View style={s.postActions}>
         <Pressable style={s.actionGroup} onPress={onLike} hitSlop={8}>
           <Text style={s.actionIcon}>{liked ? '❤️' : '🤍'}</Text>
-          <Text style={[s.actionCount, liked && { color: PINK }]}>
+          <Text style={[s.actionCount, liked && { color: colors.primary }]}>
             {post.likeCount} {post.likeCount === 1 ? 'Like' : 'Likes'}
           </Text>
         </Pressable>
@@ -303,7 +302,7 @@ export default function TravelMateFeed() {
         p.id === post.id ? { ...p, likeCount: Math.max(0, p.likeCount + (wasLiked ? 1 : -1)) } : p,
       ));
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your TravelMate profile first.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first.');
       }
     }
   }
@@ -312,7 +311,7 @@ export default function TravelMateFeed() {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message:
-        `${post.authorName} on Velocity TravelMate:\n\n` +
+        `${post.authorName} on Velocity Travel Partner:\n\n` +
         `${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}` +
         `See the post: ${link}`,
     }).catch(() => {});
@@ -426,7 +425,7 @@ export default function TravelMateFeed() {
       await loadPage(true);
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
-        Alert.alert('Profile needed', 'Set up your TravelMate profile first.');
+        Alert.alert('Profile needed', 'Set up your Travel Partner profile first.');
       } else {
         Alert.alert('Could not post', e instanceof Error ? e.message : 'Please try again.');
       }
@@ -441,7 +440,7 @@ export default function TravelMateFeed() {
     [communities, myUid],
   );
 
-  // ── Gate: needs a TravelMate profile ──────────────────────────────────────
+  // ── Gate: needs a Travel Partner profile ──────────────────────────────────────
   if (myProfile === null) {
     return (
       <SafeAreaView style={s.safe}>
@@ -453,7 +452,7 @@ export default function TravelMateFeed() {
           <Text style={s.gateTitle}>Join the community</Text>
           <Text style={s.gateSub}>
             Share your travel experiences, find people heading your way, follow them and
-            chat — all with the same TravelMate profile you use for rides.
+            chat — all with the same Travel Partner profile you use for rides.
           </Text>
           <Pressable style={s.gateBtn} onPress={() => router.push('/passenger/travel-mate/setup')}>
             <Text style={s.gateBtnText}>Create my profile</Text>
@@ -511,13 +510,13 @@ export default function TravelMateFeed() {
       </View>
 
       {loading ? (
-        <View style={s.centerBox}><ActivityIndicator size="large" color={PINK} /></View>
+        <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
       ) : (
         <FlatList
           data={visiblePosts}
           keyExtractor={p => p.id}
           contentContainerStyle={s.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PINK} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.4}
           ListHeaderComponent={
@@ -561,7 +560,7 @@ export default function TravelMateFeed() {
             </View>
           }
           ListFooterComponent={
-            loadingMore ? <ActivityIndicator color={PINK} style={{ marginVertical: 16 }} /> : <View style={{ height: 90 }} />
+            loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} /> : <View style={{ height: 90 }} />
           }
           renderItem={({ item }) => (
             <PostCard
@@ -687,9 +686,9 @@ const s = StyleSheet.create({
 
   chipsRow:  { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
   chip:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface },
-  chipActive:{ borderColor: PINK, backgroundColor: `${PINK}22` },
+  chipActive:{ borderColor: colors.primary, backgroundColor: `${colors.primary}22` },
   chipText:  { fontSize: 13, fontWeight: '800', color: colors.muted },
-  chipTextActive: { color: PINK },
+  chipTextActive: { color: colors.primary },
 
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 8 },
@@ -698,10 +697,10 @@ const s = StyleSheet.create({
   railWrap:  { marginBottom: 4 },
   railHead:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   railTitle: { fontSize: 13, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, textTransform: 'uppercase' },
-  railAction:{ fontSize: 13, fontWeight: '800', color: PINK },
+  railAction:{ fontSize: 13, fontWeight: '800', color: colors.primary },
   rail:      { gap: 10, paddingRight: 8 },
   commCard:  { width: 150, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, padding: 12, gap: 4 },
-  commCity:  { fontSize: 11, fontWeight: '900', color: PINK },
+  commCity:  { fontSize: 11, fontWeight: '900', color: colors.primary },
   commName:  { fontSize: 14, fontWeight: '800', color: colors.text, lineHeight: 18 },
   commMembers: { fontSize: 11, color: colors.muted },
 
@@ -712,7 +711,7 @@ const s = StyleSheet.create({
   postAvatar: { width: 42, height: 42, borderRadius: 21 },
   avatarFallback: { backgroundColor: colors.glassChip, alignItems: 'center', justifyContent: 'center' },
   postAuthor: { fontSize: 15, fontWeight: '800', color: colors.text },
-  postMeta:   { fontSize: 11, color: PINK, marginTop: 1, fontWeight: '700' },
+  postMeta:   { fontSize: 11, color: colors.primary, marginTop: 1, fontWeight: '700' },
   postMenuBtn: { padding: 4 },
   postMenuText:{ fontSize: 14 },
   postText:   { fontSize: 14.5, color: colors.text, lineHeight: 21 },
@@ -734,12 +733,12 @@ const s = StyleSheet.create({
   gateEmoji: { fontSize: 60 },
   gateTitle: { fontSize: 24, fontWeight: '900', color: colors.text, textAlign: 'center' },
   gateSub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 21 },
-  gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  gateBtnText: { fontSize: 16, fontWeight: '900', color: '#fff' },
+  gateBtn:   { width: '100%', height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  gateBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
 
   // FAB
-  fab:     { position: 'absolute', right: 20, bottom: 24, width: 60, height: 60, borderRadius: 30, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  fabIcon: { fontSize: 30, color: '#fff', fontWeight: '900', marginTop: -2 },
+  fab:     { position: 'absolute', right: 20, bottom: 24, width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  fabIcon: { fontSize: 30, color: '#000', fontWeight: '900', marginTop: -2 },
 
   // Composer
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
@@ -747,8 +746,8 @@ const s = StyleSheet.create({
   composeHead:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   composeCancel:{ fontSize: 14, fontWeight: '700', color: colors.muted },
   composeTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
-  composeSubmit:{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 99, backgroundColor: PINK },
-  composeSubmitText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  composeSubmit:{ paddingHorizontal: 18, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.primary },
+  composeSubmitText: { fontSize: 14, fontWeight: '900', color: '#000' },
   composeInput: { minHeight: 110, maxHeight: 200, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, color: colors.text, fontSize: 15, padding: 14, textAlignVertical: 'top' },
 
   attachWrap:    { position: 'relative', alignSelf: 'flex-start' },
@@ -760,9 +759,9 @@ const s = StyleSheet.create({
 
   composeCommRow: { gap: 8 },
   commPill:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background },
-  commPillActive: { borderColor: PINK, backgroundColor: `${PINK}22` },
+  commPillActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}22` },
   commPillText:   { fontSize: 12.5, fontWeight: '700', color: colors.muted },
-  commPillTextActive: { color: PINK },
+  commPillTextActive: { color: colors.primary },
 
   composeToolbar: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingBottom: Platform.OS === 'ios' ? 14 : 4 },
   toolBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },

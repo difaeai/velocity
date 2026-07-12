@@ -1,7 +1,7 @@
 /**
- * Velocity — Travel Mate — Phase 5 shareable ride links (callable, v2)
+ * Velocity — Travel Partner — Phase 5 shareable ride links (callable, v2)
  * ----------------------------------------------------------------------------
- * shareTravelMateRide     — a passenger with a Travel Mate profile turns one of
+ * shareTravelMateRide     — a passenger with a Travel Partner profile turns one of
  *                           their trips into a shareable ride. Optionally tied
  *                           to a commute group, in which case a ride card is
  *                           posted into the group chat so every member sees it.
@@ -9,7 +9,7 @@
  *                           caller is eligible to book (travel partner of the
  *                           sharer or fellow group member).
  * bookSharedTravelMateRide — join the shared ride as a co-rider. Regular users
- *                           (no Travel Mate profile) and non-partners are
+ *                           (no Travel Partner profile) and non-partners are
  *                           rejected with a reason the app can act on.
  *
  * Identity wall: reads the sharer's own trip once to snapshot the route; all
@@ -45,10 +45,10 @@ interface MemberInfo { displayName: string; photoURL: string | null }
 async function requireProfile(uid: string): Promise<MemberInfo> {
   const snap = await db.doc(`travelMateProfiles/${uid}`).get();
   if (!snap.exists) {
-    throw new HttpsError('failed-precondition', 'Travel Mate profile required.', { reason: 'no_profile' });
+    throw new HttpsError('failed-precondition', 'Travel Partner profile required.', { reason: 'no_profile' });
   }
   const p = snap.data()!;
-  return { displayName: p.displayName ?? 'Travel Mate', photoURL: p.photoURL ?? null };
+  return { displayName: p.displayName ?? 'Travel Partner', photoURL: p.photoURL ?? null };
 }
 
 // ---------------------------------------------------------------------------
@@ -213,13 +213,13 @@ export const bookSharedTravelMateRide = onCall({ region: REGION }, async (req: C
     if (eligibility.reason === 'no_profile') {
       throw new HttpsError(
         'failed-precondition',
-        'This ride link is for Travel Mates only. Set up your Travel Mate profile and match with the sharer to book.',
+        'This ride link is for Travel Partners only. Set up your Travel Partner profile and match with the sharer to book.',
         { reason: 'no_profile' },
       );
     }
     throw new HttpsError(
       'permission-denied',
-      `Only ${pre.sharerInfo?.displayName ?? 'the sharer'}'s travel partners can book this ride. Find them in Travel Mate and match first.`,
+      `Only ${pre.sharerInfo?.displayName ?? 'the sharer'}'s travel partners can book this ride. Find them in Travel Partner and match first.`,
       { reason: 'not_partner' },
     );
   }

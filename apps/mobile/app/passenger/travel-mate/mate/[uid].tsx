@@ -1,9 +1,9 @@
 /**
- * Travel Mate — public profile link screen (deep-link target).
+ * Travel Partner — public profile link screen (deep-link target).
  *
  * velocity://passenger/travel-mate/mate/{uid}
  *
- * Lets anyone with the link view a Travel Mate profile as a visitor:
+ * Lets anyone with the link view a Travel Partner profile as a visitor:
  *  - visitor has a profile      → profile card + CTA to find them in Discover
  *  - visitor has no profile     → profile card + CTA to create a profile first
  *  - own link                   → profile card + shortcut to My Profile
@@ -93,7 +93,7 @@ export default function TravelMateVisitorProfile() {
         >
           <Text style={s.backText}>←</Text>
         </Pressable>
-        <Text style={s.title}>TravelMate profile</Text>
+        <Text style={s.title}>Travel Partner profile</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -109,7 +109,7 @@ export default function TravelMateVisitorProfile() {
             This profile link is invalid, or the profile no longer exists.
           </Text>
           <PrimaryButton
-            label="Explore TravelMate"
+            label="Explore Travel Partner"
             onPress={() => router.replace('/passenger/travel-mate' as Parameters<typeof router.replace>[0])}
           />
         </View>
@@ -132,7 +132,7 @@ export default function TravelMateVisitorProfile() {
           <View style={s.statusRow}>
             <View style={[s.statusDot, profile.active ? s.dotGreen : s.dotGrey]} />
             <Text style={s.statusText}>
-              {profile.active ? 'Active on TravelMate' : 'Not currently active'}
+              {profile.active ? 'Active on Travel Partner' : 'Not currently active'}
             </Text>
           </View>
 
@@ -204,7 +204,7 @@ export default function TravelMateVisitorProfile() {
               <Text style={s.ctaTitle}>{"You're browsing as a visitor"}</Text>
               <Text style={s.ctaSub}>
                 Want to match and ride with {profile.displayName}? Create your own
-                TravelMate profile first — it only takes a minute.
+                Travel Partner profile first — it only takes a minute.
               </Text>
               <PrimaryButton
                 label="Create my profile"
@@ -250,7 +250,7 @@ const s = StyleSheet.create({
 
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  dotGreen:  { backgroundColor: '#4ade80' },
+  dotGreen:  { backgroundColor: colors.primary },
   dotGrey:   { backgroundColor: colors.muted },
   statusText:{ fontSize: 13, color: colors.muted, fontWeight: '600' },
 

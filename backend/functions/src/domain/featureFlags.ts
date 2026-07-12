@@ -1,13 +1,13 @@
 /**
  * Feature flags — startup gating for paid features.
  *
- * The wallet top-up economy and Travel Mate subscriptions are fully built but
+ * The wallet top-up economy and Travel Partner subscriptions are fully built but
  * switched off for launch ("Coming Soon"): we grab users first, monetise later.
  * Flags live in `config/featureFlags` (admin-editable from the dashboard) and
  * are read live by the app, so flipping one re-enables the feature app-wide
  * with no deploy.
  *
- * Defaults are the launch posture: top-ups + subscriptions OFF, Travel Mate
+ * Defaults are the launch posture: top-ups + subscriptions OFF, Travel Partner
  * free for everyone.
  */
 import type { DocumentData } from 'firebase-admin/firestore';
@@ -17,9 +17,9 @@ import { db } from '../lib/firebase';
 export interface FeatureFlags {
   /** Gateway wallet top-ups (JazzCash/Easypaisa). Off = "Coming Soon". */
   walletTopupEnabled: boolean;
-  /** Paid Travel Mate subscription plans. Off = "Coming Soon". */
+  /** Paid Travel Partner subscription plans. Off = "Coming Soon". */
   travelMateSubscriptionsEnabled: boolean;
-  /** When true, Travel Mate likes are unlimited for everyone (no paywall). */
+  /** When true, Travel Partner likes are unlimited for everyone (no paywall). */
   travelMateFree: boolean;
 }
 
@@ -34,7 +34,7 @@ function coerce(data: DocumentData | undefined): FeatureFlags {
   return {
     walletTopupEnabled: data.walletTopupEnabled === true,
     travelMateSubscriptionsEnabled: data.travelMateSubscriptionsEnabled === true,
-    // Default true when unset so a missing doc still frees Travel Mate.
+    // Default true when unset so a missing doc still frees Travel Partner.
     travelMateFree: data.travelMateFree !== false,
   };
 }

@@ -1,5 +1,5 @@
 /**
- * Travel Mate — daily subscription expiry job.
+ * Travel Partner — daily subscription expiry job.
  *
  * Runs at midnight Asia/Karachi (00:00 PKT = 19:00 UTC previous day).
  * Finds every travelMateSubscriptions doc with status:'active' and endAt <= now,

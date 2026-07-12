@@ -1,5 +1,5 @@
 /**
- * Travel Mate — group screen.
+ * Travel Partner — group screen.
  *
  * Shows group members, shared destination + schedule.
  * "Book a ride" → navigates to passenger home for a normal trip booking.
@@ -150,10 +150,17 @@ export default function TravelMateGroup() {
   }
 
   function shareInvite() {
+    // Personalise the invite with the sharer's real name so the recipient knows
+    // who is inviting them — not a generic "Velocity" / admin identity. Prefer
+    // the name stored on the group (what other members see), then the account
+    // display name.
+    const myName =
+      (user && group?.memberInfo[user.uid]?.displayName) || user?.displayName || 'A travel partner';
+    const groupLabel = group?.name ? ` "${group.name}"` : '';
     const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
     Share.share({
-      message: `Join my Travel Mate commute group on Velocity!\n\n${link}\n\nOr open the app → TravelMate → "Join a group" and paste this invite code:\n${groupId}`,
-      title: 'Join my Travel Mate group',
+      message: `${myName} invited you to join their Travel Partner commute group${groupLabel} on Velocity!\n\n${link}\n\nOr open the app → Travel Partner → "Join a group" and paste this invite code:\n${groupId}`,
+      title: `${myName} invited you on Velocity`,
     }).catch(() => Alert.alert('Share failed', `Copy this invite code manually:\n\n${groupId}`));
   }
 

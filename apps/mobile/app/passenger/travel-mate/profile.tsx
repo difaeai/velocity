@@ -69,7 +69,7 @@ export default function TravelMateProfile() {
     if (!profile) {
       Alert.alert(
         'No profile yet',
-        'Create your TravelMate profile first, then share your link with other riders.',
+        'Create your Travel Partner profile first, then share your link with other riders.',
         [
           { text: 'Not now', style: 'cancel' },
           { text: 'Create profile', onPress: () => router.push('/passenger/travel-mate/setup') },
@@ -80,9 +80,9 @@ export default function TravelMateProfile() {
     const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
-        `👋 I'm ${profile.displayName} on Velocity TravelMate.\n\n` +
+        `👋 I'm ${profile.displayName} on Velocity Travel Partner.\n\n` +
         `Check out my profile and match with me to share rides:\n${link}`,
-      title: 'Share my TravelMate profile',
+      title: 'Share my Travel Partner profile',
     }).catch(() => {});
   }
 
@@ -102,7 +102,7 @@ export default function TravelMateProfile() {
         <View style={s.centered}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>👤</Text>
           <Text style={s.emptyTitle}>No profile yet</Text>
-          <Text style={s.emptySub}>Create your TravelMate profile to start matching with other riders.</Text>
+          <Text style={s.emptySub}>Create your Travel Partner profile to start matching with other riders.</Text>
           <Pressable style={s.editBtn} onPress={() => router.push('/passenger/travel-mate/setup')}>
             <Text style={s.editBtnText}>Create profile</Text>
           </Pressable>
@@ -257,7 +257,7 @@ const s = StyleSheet.create({
 
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  dotGreen:  { backgroundColor: '#4ade80' },
+  dotGreen:  { backgroundColor: colors.primary },
   dotGrey:   { backgroundColor: colors.muted },
   statusText:{ fontSize: 13, color: colors.muted, fontWeight: '600' },
 

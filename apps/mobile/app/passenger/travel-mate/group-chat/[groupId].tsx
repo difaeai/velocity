@@ -1,5 +1,5 @@
 /**
- * Travel Mate — joint group chat.
+ * Travel Partner — joint group chat.
  *
  * All group members chat together in travelMateGroups/{groupId}/messages.
  * Sending goes through sendTravelMateGroupMessage (CF → FCM push to members),
@@ -306,7 +306,7 @@ const s = StyleSheet.create({
   textInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, color: colors.text, fontSize: 15, borderWidth: 1, borderColor: colors.border, maxHeight: 100 },
   sendBtn:   { backgroundColor: colors.primary, borderRadius: 22, paddingHorizontal: 18, paddingVertical: 10 },
   sendBtnOff:{ opacity: 0.4 },
-  sendText:  { color: '#fff', fontWeight: '800', fontSize: 14 },
+  sendText:  { color: '#000', fontWeight: '800', fontSize: 14 },
 
   modalOverlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', padding: 32 },

@@ -1,5 +1,5 @@
 /**
- * Travel Mate — admin moderation actions.
+ * Travel Partner — admin moderation actions.
  * adminSuspendTravelMateProfile — sets travelMateProfiles/{uid}.active = false,
  *   records the action in auditLogs.
  */

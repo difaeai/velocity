@@ -77,7 +77,7 @@ export function TravelMateCard({ onPress }: { onPress: () => void }) {
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.title}>Travel Mate</Text>
+        <Text style={styles.title}>Travel Partner</Text>
         <Text style={styles.sub}>People near you are heading your way. Swipe, match, ride together.</Text>
       </View>
 
@@ -132,8 +132,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  onlinePulse: { position: 'absolute', width: 14, height: 14, borderRadius: 7, backgroundColor: '#22c55e' },
-  onlineDot:   { width: 9, height: 9, borderRadius: 5, backgroundColor: '#22c55e', borderWidth: 1.5, borderColor: '#1e1a00' },
+  onlinePulse: { position: 'absolute', width: 14, height: 14, borderRadius: 7, backgroundColor: colors.primary },
+  onlineDot:   { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary, borderWidth: 1.5, borderColor: '#1e1a00' },
 
   body:  { flex: 1, gap: 4 },
   title: { fontSize: 16, fontWeight: '900', color: colors.primary },

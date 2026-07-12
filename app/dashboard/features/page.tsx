@@ -29,13 +29,13 @@ const ROWS: { key: keyof Flags; title: string; on: string; off: string }[] = [
   },
   {
     key: 'travelMateSubscriptionsEnabled',
-    title: 'Travel Mate paid subscriptions',
+    title: 'Travel Partner paid subscriptions',
     on: 'Live — users can buy subscription plans for extra likes.',
     off: 'Coming Soon — the subscription screen shows "Coming soon".',
   },
   {
     key: 'travelMateFree',
-    title: 'Travel Mate free for everyone',
+    title: 'Travel Partner free for everyone',
     on: 'On — likes are unlimited for all users (no paywall).',
     off: 'Off — the normal free-tier limit and subscriptions apply.',
   },

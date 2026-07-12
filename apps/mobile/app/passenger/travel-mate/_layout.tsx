@@ -3,8 +3,6 @@ import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../../src/config';
 
-const PINK = '#E8637A';
-
 export default function TravelMateLayout() {
   const insets = useSafeAreaInsets();
   // Always keep the bar clear of the system navigation bar / gesture area,
@@ -15,7 +13,7 @@ export default function TravelMateLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PINK,
+        tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle: {
           backgroundColor: colors.surface,

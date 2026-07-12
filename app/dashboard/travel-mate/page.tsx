@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Admin — Travel Mate management.
+ * Admin — Travel Partner management.
  * Tabs: Subscriptions | Plans | Community | Moderation | Settings.
  *
  * Plans:         Create / toggle-active / soft-delete subscription plans.
@@ -179,7 +179,7 @@ export default function TravelMatePage() {
   return (
     <div style={{ maxWidth: 1060, padding: 24 }}>
       <h1 style={{ fontSize: 24, fontWeight: 900, color: colors.text, marginBottom: 20 }}>
-        Travel Mate
+        Travel Partner
       </h1>
 
       {/* Tab bar */}
@@ -848,7 +848,7 @@ function SettingsTab({ settings }: { settings: TmSettings }) {
 
   return (
     <Card style={{ maxWidth: 480 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 900, color: colors.text, marginBottom: 16 }}>Global Travel Mate settings</h2>
+      <h2 style={{ fontSize: 16, fontWeight: 900, color: colors.text, marginBottom: 16 }}>Global Travel Partner settings</h2>
       <div style={{ display: 'grid', gap: 14 }}>
         <Field label="Free monthly likes (per user)">
           <input type="number" value={form.freeMonthlySwipes} onChange={num('freeMonthlySwipes')} style={inputStyle} />
