@@ -6,12 +6,17 @@ import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-na
 
 import { colors } from '../config';
 import type { Coords } from '../hooks/location';
+import type { DriverPin, MapPoint } from './LiveMap';
+
+export type { DriverPin, MapPoint };
 
 export function LiveMap({
-  coords,
   style,
 }: {
   coords: Coords | null;
+  pickup?: MapPoint | null;
+  dropoff?: MapPoint | null;
+  drivers?: DriverPin[];
   style?: StyleProp<ViewStyle>;
 }) {
   return (

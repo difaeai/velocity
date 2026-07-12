@@ -92,7 +92,11 @@ service cloud.firestore {
     match /trips/{tripId} {
       allow read: if isAdmin()
                   || (isSignedIn() && resource.data.passengerId == uid())
-                  || (isSignedIn() && resource.data.driverId == uid());
+                  || (isSignedIn() && resource.data.driverId == uid())
+                  // Pool riders who joined via a share link track the trip live.
+                  || (isSignedIn()
+                      && 'poolMembers' in resource.data
+                      && uid() in resource.data.poolMembers);
       allow write: if false;
 
       // Bids placed by drivers (created server-side via placeBid). The passenger

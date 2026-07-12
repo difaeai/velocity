@@ -46,6 +46,10 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'trips/trip1'), {
     passengerId: 'passenger1', driverId: 'driver1', status: 'requested',
   });
+  await setDoc(doc(db, 'trips/poolTrip1'), {
+    passengerId: 'passenger1', driverId: null, status: 'requested',
+    pool: true, poolMembers: ['passenger1', 'joiner1'],
+  });
   await setDoc(doc(db, 'wallets/passenger1'), { uid: 'passenger1', balance: 0 });
   await setDoc(doc(db, 'openRequests/trip1'), { tripId: 'trip1', rideType: 'ac', offeredFare: 500 });
   await setDoc(doc(db, 'payouts/payout1'), { driverId: 'driver1', amount: 500, status: 'pending' });
@@ -92,6 +96,16 @@ test('participants can read their trip; outsiders cannot', async () => {
   await assertSucceeds(getDoc(doc(driver, 'trips/trip1')));
   const outsider = testEnv.authenticatedContext('rando', { role: 'passenger' }).firestore();
   await assertFails(getDoc(doc(outsider, 'trips/trip1')));
+});
+
+test('pool members who joined via a share link can read the trip; outsiders cannot', async () => {
+  const joiner = testEnv.authenticatedContext('joiner1', { role: 'passenger' }).firestore();
+  await assertSucceeds(getDoc(doc(joiner, 'trips/poolTrip1')));
+  await assertSucceeds(getDoc(doc(passenger, 'trips/poolTrip1')));
+  const outsider = testEnv.authenticatedContext('rando2', { role: 'passenger' }).firestore();
+  await assertFails(getDoc(doc(outsider, 'trips/poolTrip1')));
+  // Membership grants read only — writes stay server-authoritative.
+  await assertFails(updateDoc(doc(joiner, 'trips/poolTrip1'), { poolMembers: ['joiner1'] }));
 });
 
 test('driver may toggle presence but not self-verify', async () => {

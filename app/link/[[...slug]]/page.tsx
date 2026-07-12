@@ -32,7 +32,9 @@ export default function AppLinkPage() {
     `S.browser_fallback_url=${encodeURIComponent(PLAY_URL)};end`;
 
   // Invite links end in a code the user can also paste manually in the app.
-  const inviteCode = path.includes('group-invite/') ? path.split('/').pop() ?? null : null;
+  const isPoolInvite = path.includes('pool-join/');
+  const inviteCode =
+    path.includes('group-invite/') || isPoolInvite ? path.split('/').pop() ?? null : null;
 
   function openApp() {
     const isAndroid = /android/i.test(navigator.userAgent);
@@ -84,13 +86,15 @@ export default function AppLinkPage() {
 
         {inviteCode && (
           <div style={st.codeBox}>
-            <div style={st.codeLabel}>GROUP INVITE CODE</div>
+            <div style={st.codeLabel}>{isPoolInvite ? 'POOL INVITE CODE' : 'GROUP INVITE CODE'}</div>
             <div style={st.codeValue}>{inviteCode}</div>
             <button style={st.copyBtn} onClick={copyCode}>
               {copied ? 'Copied ✓' : 'Copy code'}
             </button>
             <div style={st.codeHint}>
-              In the app: TravelMate → “Join a group” → paste this code.
+              {isPoolInvite
+                ? 'In the app: Book a ride → Pool → “Have an invite code?” → paste this code.'
+                : 'In the app: TravelMate → “Join a group” → paste this code.'}
             </div>
           </div>
         )}
