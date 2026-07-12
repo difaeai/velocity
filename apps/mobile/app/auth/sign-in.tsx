@@ -3,6 +3,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -165,7 +166,13 @@ export default function SignIn() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.container}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Brand — centered at the top, same lime mark as the splash screen */}
           <View style={styles.brandBlock}>
             <LogoMark size={72} color={colors.primary} spin />
@@ -264,7 +271,7 @@ export default function SignIn() {
               </View>
             </>
           )}
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -273,7 +280,9 @@ export default function SignIn() {
 const styles = StyleSheet.create({
   safe:      { flex: 1, backgroundColor: colors.background },
   flex:      { flex: 1 },
-  container: { flex: 1, padding: 28, justifyContent: 'center', gap: 14 },
+  // flexGrow (not flex) so the ScrollView content fills the screen and stays
+  // vertically centred, but can scroll up above the keyboard when it opens.
+  container: { flexGrow: 1, padding: 28, justifyContent: 'center', gap: 14 },
 
   brandBlock: { alignItems: 'center', gap: 12, marginBottom: 16 },
   brand:      { fontSize: 26, fontWeight: '900', color: colors.text, letterSpacing: 4 },
