@@ -22,6 +22,9 @@ export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver,
 // Commission settlement (manual bank transfer + AI-verified screenshot)
 export { submitCommissionSettlement, adminReviewCommissionSettlement } from './drivers/commissionSettlement';
 
+// Cancellation-fee settlement — same proof flow, open to passengers and drivers
+export { submitCancellationFeeSettlement } from './payments/cancellationFees';
+
 // Franchise management
 export { adminCreateFranchise, adminAssignFranchise } from './franchises';
 

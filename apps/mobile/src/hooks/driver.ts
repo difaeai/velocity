@@ -308,6 +308,99 @@ export function useWalletBalance(uid?: string): number {
   return balance;
 }
 
+export interface CancellationSettings {
+  /** Fraction of the fare a passenger pays for cancelling a confirmed ride. */
+  passengerFeeRate: number;
+  /** Fraction of the fare a driver pays for cancelling a ride they accepted. */
+  driverFeeRate: number;
+  /** Outstanding debt (PKR) at which the account can no longer book or bid. */
+  outstandingLimit: number;
+}
+
+/**
+ * Live admin-set cancellation rules (dashboard → Cancellation fees). Streams so
+ * the fee the app warns about is always the one the backend will actually charge.
+ * Defaults mirror DEFAULT_CANCELLATION on the backend.
+ */
+export function useCancellationSettings(): CancellationSettings {
+  const [settings, setSettings] = useState<CancellationSettings>({
+    passengerFeeRate: 0.05,
+    driverFeeRate: 0.08,
+    outstandingLimit: 300,
+  });
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, 'config', 'cancellationSettings'),
+      (s) => {
+        if (!s.exists()) return;
+        const rate = (v: unknown, fallback: number) =>
+          typeof v === 'number' && v >= 0 && v <= 0.5 ? v : fallback;
+        const limit = s.get('outstandingLimit') as number | undefined;
+        setSettings({
+          passengerFeeRate: rate(s.get('passengerFeeRate'), 0.05),
+          driverFeeRate: rate(s.get('driverFeeRate'), 0.08),
+          outstandingLimit: typeof limit === 'number' && limit >= 0 ? limit : 300,
+        });
+      },
+      () => undefined,
+    );
+  }, []);
+  return settings;
+}
+
+export interface OutstandingStatus {
+  /** Unpaid cancellation fees owed to Velocity, in PKR. */
+  amount: number;
+  /** True once the debt is big enough to stop the account booking or bidding. */
+  blocked: boolean;
+  limit: number;
+}
+
+/** What this user owes Velocity in cancellation fees, and whether it blocks them. */
+export function useOutstanding(uid?: string): OutstandingStatus {
+  const { outstandingLimit } = useCancellationSettings();
+  const [amount, setAmount] = useState(0);
+  useEffect(() => {
+    if (!uid) { setAmount(0); return; }
+    return onSnapshot(
+      doc(db, 'wallets', uid),
+      (s) => {
+        const value = s.data()?.outstanding as number | undefined;
+        setAmount(typeof value === 'number' && value > 0 ? Math.round(value) : 0);
+      },
+      () => setAmount(0),
+    );
+  }, [uid]);
+  return {
+    amount,
+    blocked: outstandingLimit > 0 && amount >= outstandingLimit,
+    limit: outstandingLimit,
+  };
+}
+
+/** The user's most recent cancellation-fee settlement attempt (for status UI). */
+export function useLatestFeeSettlement(uid?: string): CommissionSettlement | null {
+  const [row, setRow] = useState<CommissionSettlement | null>(null);
+  useEffect(() => {
+    if (!uid) { setRow(null); return; }
+    // Equality-only query (no composite index needed); newest picked client-side.
+    return onSnapshot(
+      query(
+        collection(db, 'commissionSettlements'),
+        where('userId', '==', uid),
+        where('kind', '==', 'cancellation_fee'),
+      ),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CommissionSettlement);
+        docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+        setRow(docs[0] ?? null);
+      },
+      () => setRow(null),
+    );
+  }, [uid]);
+  return row;
+}
+
 export interface WalletTxn {
   id: string;
   type: string;

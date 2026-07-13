@@ -243,10 +243,13 @@ service cloud.firestore {
     }
 
     // ----- commissionSettlements/{id} -------------------------------------
-    // Manual commission settlements (bank transfer + AI-verified screenshot).
-    // Written only by the backend; the owning driver and admins may read.
+    // Manual settlements (bank transfer + AI-verified screenshot): driver
+    // commission cycles AND cancellation fees owed by passengers or drivers.
+    // Written only by the backend; the payer and admins may read.
     match /commissionSettlements/{settlementId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == uid());
+      allow read: if isAdmin()
+                  || (isSignedIn() && resource.data.driverId == uid())
+                  || (isSignedIn() && resource.data.userId == uid());
       allow write: if false;
     }
 

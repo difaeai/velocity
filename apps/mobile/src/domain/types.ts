@@ -110,4 +110,22 @@ export interface Trip {
   passengerRated?: boolean;
   driverRated?: boolean;
   arrivedAt?: { seconds: number; nanoseconds: number } | null;
+  // Cancellation (set by cancelTrip)
+  cancelledBy?: string;
+  cancelledByRole?: 'passenger' | 'driver';
+  cancelReason?: string | null;
+  /** Null when the trip was cancelled before a driver accepted — those are free. */
+  cancellationFee?: CancellationFee | null;
+}
+
+/** What a cancellation cost the person who walked away. All values in PKR. */
+export interface CancellationFee {
+  amount: number;
+  /** Fraction of the locked fare the fee was charged at (e.g. 0.05). */
+  rate: number;
+  role: 'passenger' | 'driver';
+  /** Part of the fee the wallet balance covered right away. */
+  paidFromWallet: number;
+  /** Part left owing to Velocity. */
+  outstanding: number;
 }

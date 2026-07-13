@@ -18,7 +18,11 @@ interface AiVerdict {
 }
 interface Settlement {
   id: string;
-  driverId: string;
+  /** Absent on settlements written before cancellation fees existed. */
+  kind?: 'commission' | 'cancellation_fee';
+  /** Present on every settlement; `driverId` only on commission ones. */
+  userId?: string;
+  driverId?: string;
   amountDue?: number;
   method?: string | null;
   proofPath?: string;
@@ -63,7 +67,7 @@ export default function SettlementsPage() {
     try {
       let reason: string | undefined;
       if (!approve) {
-        reason = window.prompt('Reason for rejection (shown to the driver):') ?? undefined;
+        reason = window.prompt('Reason for rejection (shown to the payer):') ?? undefined;
       }
       await adminApi.adminReviewCommissionSettlement({ settlementId: id, approve, reason });
     } catch (e) {
@@ -75,10 +79,11 @@ export default function SettlementsPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Commission settlements</h1>
-      <p style={{ color: colors.muted, marginBottom: 24 }}>
-        Payments the AI couldn&apos;t auto-approve. Check the screenshot against the amount due and
-        Velocity&apos;s account, then approve to unlock the driver or reject to ask for a new receipt.
+      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Settlements</h1>
+      <p style={{ color: colors.muted, marginBottom: 24, maxWidth: 720 }}>
+        Payments the AI couldn&apos;t auto-approve — driver commission cycles and unpaid cancellation
+        fees alike. Check the screenshot against the amount due and Velocity&apos;s account, then
+        approve to clear the debt or reject to ask for a new receipt.
       </p>
 
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
@@ -89,6 +94,8 @@ export default function SettlementsPage() {
         <div style={{ display: 'grid', gap: 16, maxWidth: 720 }}>
           {rows.map((r) => {
             const v = r.aiVerdict;
+            const isFee = r.kind === 'cancellation_fee';
+            const payer = r.userId ?? r.driverId ?? 'unknown';
             return (
               <Card key={r.id}>
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -108,11 +115,28 @@ export default function SettlementsPage() {
                   )}
 
                   <div style={{ flex: 1, minWidth: 240 }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: colors.text }}>
-                      PKR {(r.amountDue ?? 0).toLocaleString()} due
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: colors.text }}>
+                        PKR {(r.amountDue ?? 0).toLocaleString()} due
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          padding: '3px 8px',
+                          borderRadius: 999,
+                          color: isFee ? colors.danger : colors.primary,
+                          background: `${isFee ? colors.danger : colors.primary}1A`,
+                          border: `1px solid ${isFee ? colors.danger : colors.primary}40`,
+                        }}
+                      >
+                        {isFee ? '🚫 Cancellation fee' : '📋 Commission'}
+                      </span>
                     </div>
                     <div style={{ fontSize: 12, color: colors.muted, marginBottom: 10 }}>
-                      Driver {r.driverId.slice(0, 8)}… · via {r.method ?? 'unknown'}
+                      {isFee ? 'User' : 'Driver'} {payer.slice(0, 8)}… · via {r.method ?? 'unknown'}
                     </div>
 
                     <div style={{ background: colors.bg, borderRadius: 10, padding: 12, border: `1px solid ${colors.border}`, marginBottom: 12 }}>
@@ -134,7 +158,7 @@ export default function SettlementsPage() {
 
                     <div style={{ display: 'flex', gap: 10 }}>
                       <Button onClick={() => review(r.id, true)} disabled={busy === r.id}>
-                        {busy === r.id ? 'Working…' : 'Approve & unlock'}
+                        {busy === r.id ? 'Working…' : isFee ? 'Approve & clear fees' : 'Approve & unlock'}
                       </Button>
                       <Button variant="secondary" onClick={() => review(r.id, false)} disabled={busy === r.id}>
                         Reject

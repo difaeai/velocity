@@ -28,13 +28,15 @@ import {
   commissionDue,
 } from '../domain/commission';
 import {
+  decideProofOutcome,
   proofAIConfigured,
   verifyPaymentProof,
-  type ProofVerdict,
+  type SettlementStatus,
   type VelocityAccounts,
 } from '../lib/paymentProofAI';
+import { applyCancellationFeeSettlement } from '../payments/cancellationFees';
 
-export type SettlementStatus = 'verifying' | 'approved' | 'rejected' | 'pending_review';
+export type { SettlementStatus };
 
 /**
  * Atomically apply an approved settlement: settle the whole cycle from the
@@ -113,30 +115,6 @@ async function applyManualSettlement(params: {
   logger.info('Manual commission settled', { driverId, settlementId, amountDue, verifiedBy });
 }
 
-/** Decide the outcome from the AI verdict under the "safe" auto-unlock policy. */
-function decideOutcome(
-  verdict: ProofVerdict | null,
-  amountDue: number,
-): { status: Exclude<SettlementStatus, 'verifying'>; reason: string | null } {
-  if (!verdict) {
-    // No AI (unconfigured) or the check failed — never guess, send to a human.
-    return { status: 'pending_review', reason: null };
-  }
-  if (!verdict.genuine) {
-    return {
-      status: 'rejected',
-      reason: verdict.reasoning || 'The screenshot could not be verified as a genuine payment. Please upload a clear, unedited receipt.',
-    };
-  }
-  const amountOk = verdict.amountDetected !== null && verdict.amountDetected >= amountDue;
-  if (verdict.confidence === 'high' && amountOk && verdict.recipientMatch) {
-    return { status: 'approved', reason: null };
-  }
-  // Genuine but not confidently correct (amount unclear, recipient unclear, or
-  // lower confidence) → let an admin make the final call.
-  return { status: 'pending_review', reason: verdict.reasoning || null };
-}
-
 const submitSchema = z.object({
   proofPath: z.string().min(1).max(512),
   method: z.enum(['easypaisa', 'jazzcash', 'bank']).optional(),
@@ -179,7 +157,9 @@ export const submitCommissionSettlement = onCall(async (req) => {
   const settlementRef = db.collection('commissionSettlements').doc();
   await settlementRef.set({
     id: settlementRef.id,
+    kind: 'commission',
     driverId: ctx.uid,
+    userId: ctx.uid,
     amountDue,
     cycleGrossFare: (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0,
     cycleCashFare: cycleCashFare(driverSnap),
@@ -192,7 +172,7 @@ export const submitCommissionSettlement = onCall(async (req) => {
   });
 
   const verdict = await verifyPaymentProof({ proofPath, amountDue, accounts });
-  const outcome = decideOutcome(verdict, amountDue);
+  const outcome = decideProofOutcome(verdict, amountDue);
 
   if (outcome.status === 'approved') {
     await applyManualSettlement({
@@ -243,7 +223,11 @@ const reviewSchema = z.object({
   reason: z.string().max(300).optional(),
 });
 
-/** Admin approves or rejects a settlement that was queued for manual review. */
+/**
+ * Admin approves or rejects a settlement that was queued for manual review.
+ * Handles both kinds that land in the queue: a driver's commission cycle and a
+ * passenger's or driver's unpaid cancellation fees.
+ */
 export const adminReviewCommissionSettlement = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = reviewSchema.safeParse(req.data);
@@ -256,9 +240,53 @@ export const adminReviewCommissionSettlement = onCall(async (req) => {
   const status = snap.get('status') as SettlementStatus;
   if (status === 'approved') return { ok: true, status };
 
+  // Settlements written before cancellation fees existed carry no `kind`.
+  const kind = (snap.get('kind') as string | undefined) ?? 'commission';
   const driverId = snap.get('driverId') as string;
   const amountDue = (snap.get('amountDue') as number | undefined) ?? 0;
   const method = (snap.get('method') as string | null | undefined) ?? null;
+
+  if (kind === 'cancellation_fee') {
+    const userId = snap.get('userId') as string;
+    if (approve) {
+      await applyCancellationFeeSettlement({
+        userId,
+        settlementId,
+        amountDue,
+        method,
+        verifiedBy: admin.uid,
+      });
+      await sendToUser(
+        userId,
+        '✅ Cancellation fees cleared',
+        `Your payment of PKR ${amountDue} was approved. Your account is back to normal.`,
+      );
+    } else {
+      await settlementRef.set(
+        {
+          status: 'rejected' as SettlementStatus,
+          rejectionReason: reason ?? 'Your payment could not be verified. Please upload a valid receipt.',
+          reviewedBy: admin.uid,
+          reviewedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      await sendToUser(
+        userId,
+        '❌ Payment rejected',
+        reason ?? 'Your payment could not be verified. Please upload a valid receipt to clear your cancellation fees.',
+      );
+    }
+    await db.collection('auditLogs').add({
+      action: approve ? 'cancellationFee.settlement.approved' : 'cancellationFee.settlement.rejected',
+      settlementId,
+      userId,
+      by: admin.uid,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { ok: true, status: approve ? 'approved' : 'rejected' };
+  }
 
   if (approve) {
     await applyManualSettlement({ driverId, settlementId, amountDue, method, verifiedBy: admin.uid });

@@ -68,6 +68,33 @@ status `pending_review` for an admin to approve/reject
 (`adminReviewCommissionSettlement`, dashboard → Settlements). AI-approve and
 admin-approve share the same money transaction (`applyManualSettlement`).
 
+**Cancellation fees:** cancelling a trip nobody has taken yet (`requested`) is
+free — the passenger is only withdrawing an offer. Once a driver has accepted
+(`matched` / `arriving` / `arrived`), whoever walks away owes Velocity a share of
+the **locked fare**: **5% from a passenger, 8% from a driver** (admin-set in
+`config/cancellationSettings`, dashboard → Cancellation fees). `in_progress`
+trips still cannot be cancelled by anyone. `cancelTrip` charges the fee inside
+the same transaction that cancels the trip: it comes out of the canceller's
+**wallet balance first** (a cancelling passenger's released `walletHold` counts
+toward that), and only the shortfall becomes **`wallets/{uid}.outstanding`** — a
+debt to Velocity that passengers and drivers alike can carry. Balance is never
+driven negative. The whole fee is ledgered (`platformLedger`,
+`cancellation_fee`, with `collected` vs `outstanding` split) plus the
+`system/counters.cancellationFees*` counters.
+
+Small debts don't get in the way; once `outstanding` reaches
+`outstandingLimit` (default 300 PKR) the account is **blocked** —
+`createTrip` rejects the passenger and `placeBid` rejects the driver. They clear
+it the same way locked drivers clear commission: transfer to Velocity's account
+and upload a screenshot. `submitCancellationFeeSettlement` runs the identical
+AI check (`decideProofOutcome`, the one auto-approve policy shared with
+commission) and either clears the debt outright or files a
+`commissionSettlements` doc with `kind: 'cancellation_fee'` into the **same**
+admin review queue (dashboard → Settlements). AI-approve and admin-approve share
+one money transaction (`applyCancellationFeeSettlement`), which clears only
+`amountDue` — a fee charged *after* the transfer was sent survives it rather than
+being silently forgiven.
+
 **Travel Mate subscriptions:** wallet payments are debited at admin approval
 (never held in escrow); manual Easypaisa/JazzCash/bank payments are sent
 directly to the platform accounts shown in the app (from
@@ -88,18 +115,26 @@ account and calls `markPayoutPaid`.
 | `requestPayout` | driver | Reserve balance and queue a cash-out to Easypaisa/JazzCash/bank. |
 | `markPayoutPaid` | admin | Mark a payout disbursed. |
 | `payCommission` | driver | Pay the cash-ride commission cycle from the wallet. |
+| `submitCancellationFeeSettlement` | any user | Clear unpaid cancellation fees with a payment screenshot. |
 
 ## Platform books
 
 - `platformLedger/{id}` — one append-only entry per realized platform revenue
-  event (`ride_commission` wallet/cash, `travelmate_subscription`). Admin-read
-  only; written exclusively inside the money transactions above.
+  event (`ride_commission` wallet/cash, `cancellation_fee`,
+  `cancellation_fee_settled`, `travelmate_subscription`). Admin-read only;
+  written exclusively inside the money transactions above.
 - `system/counters` — running totals (`walletCommissionCollected`,
-  `cashCommissionCollected`, `travelMateRevenue`, plus the existing trip
-  totals) for the dashboard.
+  `cashCommissionCollected`, `cancellationFeesCharged`,
+  `cancellationFeesCollected`, `cancellationFeesOutstanding`,
+  `travelMateRevenue`, plus the existing trip totals) for the dashboard.
+- `wallets/{uid}.outstanding` — unpaid cancellation fees this user owes
+  Velocity. Server-written only; drives the booking/bidding block.
 - `config/settlementAccounts` — the platform's receiving accounts
   (`easypaisaNumber`, `jazzcashNumber`, `bankName`, `bankIban`, `accountTitle`),
   maintained by admins; the app shows the right one for manual transfers.
+- `config/cancellationSettings` — `passengerFeeRate`, `driverFeeRate`,
+  `outstandingLimit`. Admin-set from the dashboard; the app streams them so the
+  fee it warns about is always the one the backend will charge.
 
 ## Providers
 
