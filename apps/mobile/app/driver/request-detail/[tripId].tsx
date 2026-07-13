@@ -1,17 +1,19 @@
 /**
- * Driver — Request Detail Screen
+ * Driver — Ride request.
  *
- * Shows full ride details for a passenger request:
- *  - Pickup → dropoff route
- *  - Passenger's proposed fare
- *  - Auto-suggested fare (distance-based)
- *  - Fare adjuster: ±10 quick tap or custom amount
- *  - Submit → placeBid with chosen fare
- *  - Cancel → back to incoming requests
+ * The job laid out over the map: both legs with their ETAs, who is hailing,
+ * where they are going, and what they will pay.
+ *
+ * Fare model (unchanged, and the same one the passenger app expects):
+ *   • "Accept for PKR X"  → a bid at exactly the fare the passenger offered.
+ *   • "Offer your fare"   → a bid above it.
+ * Either way the passenger sees every driver who responded and picks one —
+ * accepting does not silently lock the ride to this driver.
  */
 import { useState } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,280 +23,504 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 
-import { api } from '../../../src/api/client';
-import { useOpenRequests } from '../../../src/hooks/driver';
-import { useDriverProfile } from '../../../src/hooks/driver';
+import { api, type ReportReason } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useDriverProfile, useOpenRequests } from '../../../src/hooks/driver';
+import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
-import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
-import { PrimaryButton } from '../../../src/ui/components';
+import { formatDistance } from '../../../src/lib/geo';
+import { timeAgo } from '../../../src/lib/timeAgo';
+import { RIDE_TYPE_LABELS } from '../../../src/domain/types';
+import { RequestRouteMap } from '../../../src/ui/RequestRouteMap';
+import { ReportRequestModal } from '../../../src/ui/ReportRequestModal';
+import { DriverDrawer } from '../../../src/ui/DriverDrawer';
 
-// ── Fare helpers ─────────────────────────────────────────────────────────────
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLng = (lng2 - lng1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function autoFare(lat1?: number, lng1?: number, lat2?: number, lng2?: number): number {
-  if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
-  const km = haversineKm(lat1, lng1, lat2, lng2);
-  return Math.max(150, Math.round(80 + km * 40));
-}
-
-// ── Screen ────────────────────────────────────────────────────────────────────
+/** Quick "offer your fare" steps above the passenger's price. */
+const OFFER_STEPS = [0.10, 0.18, 0.26];
 
 export default function RequestDetailScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
-  const uid = user?.uid;
-  const profile = useDriverProfile(uid);
+  const { user, signOut } = useAuth();
+  const profile = useDriverProfile(user?.uid);
+  const { coords } = useCurrentLocation();
 
-  // Reuse the openRequests hook — find the specific request by tripId
-  const allRequests = useOpenRequests(true, undefined, undefined);
-  const request = allRequests.find((r) => r.tripId === tripId);
+  const requests = useOpenRequests(true, coords?.lat, coords?.lng);
+  const request = requests.find((r) => r.tripId === tripId);
 
-  const [driverFare, setDriverFare] = useState<number | null>(null);
+  const [selectedFare, setSelectedFare] = useState<number | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
   const [customInput, setCustomInput] = useState('');
-  const [showCustom, setShowCustom]   = useState(false);
   const [busy, setBusy] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  const passengerFare = request?.offeredFare ?? 0;
-  const suggested     = autoFare(
-    request?.pickup?.lat, request?.pickup?.lng,
-    request?.dropoff?.lat, request?.dropoff?.lng,
-  );
-  const activeFare = driverFare ?? passengerFare;
+  const offeredFare = request?.offeredFare ?? 0;
+  const fare = selectedFare ?? offeredFare;
+  const isCounterOffer = fare > offeredFare;
 
-  async function submit() {
-    if (!tripId) return;
-    if (activeFare < passengerFare) {
-      Alert.alert('Fare too low', 'Your fare cannot be less than the passenger\'s proposed fare.');
-      return;
-    }
+  const offers = OFFER_STEPS.map((step) => Math.round(offeredFare * (1 + step)));
+
+  async function sendOffer() {
+    if (!tripId || !request) return;
     setBusy(true);
     try {
-      await api.placeBid({ tripId, fare: activeFare });
-      Alert.alert('Offer sent!', `Your fare of PKR ${activeFare} has been sent to the passenger.`, [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      await api.placeBid({ tripId, fare });
+      Alert.alert(
+        isCounterOffer ? 'Offer sent' : 'Accepted',
+        isCounterOffer
+          ? `Your fare of PKR ${fare.toLocaleString()} was sent to the passenger.`
+          : `You accepted PKR ${fare.toLocaleString()}. The passenger will confirm shortly.`,
+        [{ text: 'OK', onPress: () => router.back() }],
+      );
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to send offer.');
+      Alert.alert('Could not send', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
   }
 
+  async function submitReport(reasons: ReportReason[], description: string) {
+    if (!tripId) return;
+    setReporting(true);
+    setReportError(null);
+    try {
+      await api.reportOpenRequest({ tripId, reasons, ...(description ? { description } : {}) });
+      setReportOpen(false);
+      Alert.alert('Report sent', 'Thank you. Our team will review this request.', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : 'Could not send the report. Please try again.');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  function applyCustomFare() {
+    const val = parseInt(customInput, 10);
+    if (Number.isNaN(val) || val < offeredFare) {
+      Alert.alert('Invalid fare', `Your fare cannot be below the passenger's PKR ${offeredFare.toLocaleString()}.`);
+      return;
+    }
+    setSelectedFare(val);
+    setCustomInput('');
+    setCustomOpen(false);
+  }
+
+  // The request is gone the moment another driver is picked, or the passenger
+  // cancels — the feed doc is deleted, so say so instead of showing a husk.
   if (!request) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <Text style={styles.muted}>Request no longer available.</Text>
-          <PrimaryButton label="← Back" variant="secondary" onPress={() => router.back()} />
+        <View style={styles.gone}>
+          <Text style={styles.goneIcon}>🚗💨</Text>
+          <Text style={styles.goneTitle}>Request no longer available</Text>
+          <Text style={styles.goneBody}>It was taken by another driver or cancelled by the passenger.</Text>
+          <Pressable style={styles.closeBtn} onPress={() => router.back()}>
+            <Text style={styles.closeTxt}>Close</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
+  const hasRoute =
+    request.pickup?.lat !== undefined && request.pickup?.lng !== undefined &&
+    request.dropoff?.lat !== undefined && request.dropoff?.lng !== undefined;
+
+  const name = request.passengerName?.trim() || 'Passenger';
+  const rating = request.passengerRating ?? 5;
+  const ratingCount = request.passengerRatingCount ?? 0;
+  const online = profile?.online ?? false;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>Ride Request</Text>
-        <View style={{ width: 40 }} />
+    <View style={styles.root}>
+      {/* ── Map ── */}
+      <View style={styles.map}>
+        {hasRoute ? (
+          <RequestRouteMap
+            pickup={{ lat: request.pickup!.lat!, lng: request.pickup!.lng! }}
+            dropoff={{ lat: request.dropoff!.lat!, lng: request.dropoff!.lng! }}
+            driver={coords ? { lat: coords.lat, lng: coords.lng } : null}
+          />
+        ) : (
+          <View style={styles.noMap}>
+            <Text style={styles.noMapTxt}>Route unavailable for this request</Text>
+          </View>
+        )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      {/* ── Floating header ── */}
+      <SafeAreaView style={styles.headerSafe} edges={['top']} pointerEvents="box-none">
+        <View style={styles.header} pointerEvents="box-none">
+          <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12} style={styles.headerBtn}>
+            <Svg width={26} height={26} viewBox="0 0 24 24">
+              <Path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" fill={colors.text} />
+            </Svg>
+          </Pressable>
 
-        {/* Route map */}
-        <MapPlaceholder
-          pickup={request.pickup?.address}
-          dropoff={request.dropoff?.address}
-          pickupCoord={request.pickup?.lat && request.pickup?.lng
-            ? { lat: request.pickup.lat, lng: request.pickup.lng } : undefined}
-          dropoffCoord={request.dropoff?.lat && request.dropoff?.lng
-            ? { lat: request.dropoff.lat, lng: request.dropoff.lng } : undefined}
-        />
-
-        {/* Route pill */}
-        <View style={styles.routeCard}>
-          <View style={styles.routeRow}>
-            <View style={[styles.routeDot, { backgroundColor: '#3b82f6' }]} />
-            <Text style={styles.routeAddr} numberOfLines={2}>{request.pickup?.address ?? 'Pickup'}</Text>
-          </View>
-          <View style={styles.routeLine} />
-          <View style={styles.routeRow}>
-            <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
-            <Text style={styles.routeAddr} numberOfLines={2}>{request.dropoff?.address ?? 'Drop-off'}</Text>
-          </View>
-        </View>
-
-        {/* Fare comparison */}
-        <View style={styles.fareRow}>
-          <View style={styles.fareBox}>
-            <Text style={styles.fareBoxLabel}>Passenger Fare</Text>
-            <Text style={styles.fareBoxAmt}>{passengerFare}</Text>
-            <Text style={styles.fareBoxPkr}>PKR</Text>
-          </View>
-          <View style={styles.fareArrow}><Text style={styles.fareArrowTxt}>→</Text></View>
-          <View style={[styles.fareBox, styles.fareBoxSuggested]}>
-            <Text style={styles.fareBoxLabel}>Suggested Fare</Text>
-            <Text style={[styles.fareBoxAmt, { color: colors.primary }]}>{suggested}</Text>
-            <Text style={[styles.fareBoxPkr, { color: colors.primary }]}>PKR</Text>
-          </View>
-        </View>
-        <Text style={styles.suggestedNote}>
-          Suggested fare is auto-calculated based on route distance.
-        </Text>
-
-        {/* Ride badges */}
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}><Text style={styles.badgeText}>{request.seats} seat(s)</Text></View>
-          {request.paymentMethod === 'cash' && (
-            <View style={styles.badge}><Text style={styles.badgeText}>💵 Cash</Text></View>
-          )}
-          {request.preferFemaleDriver && (
-            <View style={[styles.badge, { borderColor: '#ff69b450' }]}>
-              <Text style={[styles.badgeText, { color: '#ff69b4' }]}>👩 Female driver preferred</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Your fare adjuster */}
-        <Text style={styles.sectionLabel}>Your Fare</Text>
-        <View style={styles.adjusterCard}>
-          <Text style={styles.adjusterFare}>PKR {activeFare}</Text>
-
-          <View style={styles.adjusterBtns}>
-            <Pressable
-              style={[styles.adjBtn, activeFare <= passengerFare && styles.adjBtnDisabled]}
-              disabled={activeFare <= passengerFare}
-              onPress={() => setDriverFare(Math.max(passengerFare, activeFare - 10))}
-            >
-              <Text style={styles.adjBtnTxt}>− 10</Text>
-            </Pressable>
-            <Pressable
-              style={styles.adjBtn}
-              onPress={() => setDriverFare(activeFare + 10)}
-            >
-              <Text style={styles.adjBtnTxt}>+ 10</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.adjBtn, { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}50` }]}
-              onPress={() => setDriverFare(suggested)}
-            >
-              <Text style={[styles.adjBtnTxt, { color: colors.primary }]}>Use suggested</Text>
-            </Pressable>
+          <View style={[styles.statusPill, online ? styles.statusOn : styles.statusOff]}>
+            <Text style={styles.statusTxt}>{online ? 'Online' : 'Offline'}</Text>
           </View>
 
-          {/* Custom amount */}
-          {!showCustom ? (
-            <Pressable onPress={() => setShowCustom(true)}>
-              <Text style={styles.customLink}>Enter custom amount →</Text>
-            </Pressable>
-          ) : (
-            <View style={styles.customRow}>
-              <TextInput
-                style={styles.customInput}
-                keyboardType="number-pad"
-                placeholder="e.g. 450"
-                placeholderTextColor={colors.muted}
-                value={customInput}
-                onChangeText={setCustomInput}
+          <Pressable onPress={() => router.push('/passenger/settings')} hitSlop={12} style={styles.headerBtn}>
+            <Svg width={24} height={24} viewBox="0 0 24 24">
+              <Path
+                d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"
+                fill={colors.text}
               />
-              <Pressable
-                style={styles.customApplyBtn}
-                onPress={() => {
-                  const val = parseInt(customInput, 10);
-                  if (!isNaN(val) && val >= passengerFare) {
-                    setDriverFare(val);
-                    setShowCustom(false);
-                    setCustomInput('');
-                  } else {
-                    Alert.alert('Invalid', `Amount must be at least PKR ${passengerFare}.`);
-                  }
-                }}
-              >
-                <Text style={styles.customApplyTxt}>Apply</Text>
-              </Pressable>
-            </View>
-          )}
+            </Svg>
+          </Pressable>
         </View>
 
-        {/* Actions */}
-        <PrimaryButton
-          label={busy ? 'Sending…' : `Submit PKR ${activeFare}`}
-          disabled={busy}
-          onPress={submit}
-        />
-        <PrimaryButton
-          variant="secondary"
-          label="Cancel — back to requests"
-          disabled={busy}
-          onPress={() => router.back()}
-        />
-      </ScrollView>
-    </SafeAreaView>
+        <Text style={styles.title}>Ride request</Text>
+
+        {/* Overflow — report the request from here too. */}
+        <Pressable
+          style={styles.moreBtn}
+          onPress={() =>
+            Alert.alert('Ride request', undefined, [
+              { text: 'Report this request', style: 'destructive', onPress: () => { setReportError(null); setReportOpen(true); } },
+              { text: 'Cancel', style: 'cancel' },
+            ])
+          }
+        >
+          <Text style={styles.moreTxt}>•••</Text>
+        </Pressable>
+      </SafeAreaView>
+
+      {/* ── Request sheet ── */}
+      <SafeAreaView style={styles.sheetSafe} edges={['bottom']}>
+        <ScrollView
+          style={styles.sheet}
+          contentContainerStyle={styles.sheetBody}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Passenger + fare */}
+          <View style={styles.topRow}>
+            <View style={styles.who}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarTxt}>{name.charAt(0).toUpperCase()}</Text>
+              </View>
+              <Text style={styles.whoName} numberOfLines={1}>{name}</Text>
+              <View style={styles.ratingRow}>
+                <Text style={styles.star}>★</Text>
+                <Text style={styles.rating}>
+                  {rating.toFixed(2)}
+                  <Text style={styles.ratingCount}> ({ratingCount})</Text>
+                </Text>
+              </View>
+              <Text style={styles.ago}>{request.createdAt ? timeAgo(request.createdAt.seconds) : ''}</Text>
+            </View>
+
+            <View style={styles.fareCol}>
+              {request.distanceM !== undefined && (
+                <Text style={styles.distance}>~{formatDistance(request.distanceM)}</Text>
+              )}
+              <Text style={styles.fare}>PKR{offeredFare.toLocaleString()}</Text>
+
+              <View style={styles.stopRow}>
+                <View style={styles.stopA}><Text style={styles.stopATxt}>A</Text></View>
+                <Text style={styles.stopAddr} numberOfLines={2}>{request.pickup?.address ?? 'Pickup'}</Text>
+              </View>
+              <View style={styles.stopRow}>
+                <View style={styles.stopB}><Text style={styles.stopBTxt}>B</Text></View>
+                <Text style={styles.stopAddr} numberOfLines={2}>{request.dropoff?.address ?? 'Drop-off'}</Text>
+              </View>
+
+              <View style={styles.chips}>
+                <View style={[styles.chip, styles.chipPay]}>
+                  <Text style={styles.chipPayTxt}>
+                    {request.paymentMethod === 'wallet' ? 'Wallet' : 'Cash'}
+                  </Text>
+                </View>
+                <View style={[styles.chip, styles.chipCat]}>
+                  <Text style={styles.chipCatTxt}>{RIDE_TYPE_LABELS[request.rideType]}</Text>
+                </View>
+                {request.seats > 1 && (
+                  <View style={[styles.chip, styles.chipCat]}>
+                    <Text style={styles.chipCatTxt}>{request.seats} seats</Text>
+                  </View>
+                )}
+                {request.preferFemaleDriver && (
+                  <View style={[styles.chip, { backgroundColor: '#ff69b41f' }]}>
+                    <Text style={[styles.chipCatTxt, { color: '#ff8ac6' }]}>Female driver</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* Accept / offer */}
+          <Pressable
+            style={[styles.accept, busy && { opacity: 0.6 }]}
+            disabled={busy}
+            onPress={sendOffer}
+          >
+            <Text style={styles.acceptTxt}>
+              {busy
+                ? 'Sending…'
+                : isCounterOffer
+                  ? `Offer PKR${fare.toLocaleString()}`
+                  : `Accept for PKR${fare.toLocaleString()}`}
+            </Text>
+          </Pressable>
+
+          <Text style={styles.offerLabel}>Offer your fare</Text>
+          <View style={styles.offerRow}>
+            {offers.map((amount) => (
+              <Pressable
+                key={amount}
+                style={[styles.offerChip, fare === amount && styles.offerChipOn]}
+                onPress={() => setSelectedFare(amount)}
+              >
+                <Text style={[styles.offerChipTxt, fare === amount && styles.offerChipTxtOn]}>
+                  PKR{amount.toLocaleString()}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable style={styles.pencilBtn} onPress={() => setCustomOpen(true)}>
+              <Svg width={20} height={20} viewBox="0 0 24 24">
+                <Path
+                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                  fill={colors.text}
+                />
+              </Svg>
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.closeBtn} onPress={() => router.back()}>
+            <Text style={styles.closeTxt}>Close</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+
+      {/* Custom fare */}
+      <Modal visible={customOpen} transparent animationType="fade" onRequestClose={() => setCustomOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCustomOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Your fare</Text>
+            <Text style={styles.modalSub}>
+              At least PKR {offeredFare.toLocaleString()} — the passenger&apos;s offer.
+            </Text>
+            <TextInput
+              value={customInput}
+              onChangeText={setCustomInput}
+              keyboardType="number-pad"
+              autoFocus
+              placeholder={String(offeredFare)}
+              placeholderTextColor={colors.muted}
+              style={styles.modalInput}
+              onSubmitEditing={applyCustomFare}
+            />
+            <Pressable style={styles.modalApply} onPress={applyCustomFare}>
+              <Text style={styles.modalApplyTxt}>Set fare</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <ReportRequestModal
+        visible={reportOpen}
+        submitting={reporting}
+        error={reportError}
+        onClose={() => { setReportOpen(false); setReportError(null); }}
+        onSubmit={submitReport}
+      />
+
+      <DriverDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        driverName={profile?.fullName ?? user?.displayName ?? ''}
+        driverEmail={user?.email ?? ''}
+        online={online}
+        tripsCount={profile?.tripsCount ?? 0}
+        rating={profile?.rating ?? 5}
+        onSignOut={signOut}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:      { flex: 1, backgroundColor: colors.background },
-  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 },
-  header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  backBtn:   { width: 40 },
-  backArrow: { fontSize: 24, color: colors.text },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  container: { padding: 16, gap: 14 },
-  muted:     { fontSize: 13, color: colors.muted },
+  root: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.background },
+  map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  noMap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0e1216' },
+  noMapTxt: { color: colors.muted, fontSize: 13, fontWeight: '600' },
 
-  routeCard: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 6 },
-  routeRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  routeDot:  { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  routeLine: { height: 18, width: 2, backgroundColor: colors.border, marginLeft: 4 },
-  routeAddr: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text, lineHeight: 18 },
-
-  fareRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  fareBox:    { flex: 1, alignItems: 'center', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 2 },
-  fareBoxSuggested: { borderColor: `${colors.primary}50`, backgroundColor: `${colors.primary}08` },
-  fareBoxLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
-  fareBoxAmt:   { fontSize: 26, fontWeight: '900', color: colors.text },
-  fareBoxPkr:   { fontSize: 10, fontWeight: '700', color: colors.muted },
-  fareArrow:    { alignItems: 'center' },
-  fareArrowTxt: { fontSize: 20, color: colors.muted },
-  suggestedNote: { fontSize: 11, color: colors.muted, textAlign: 'center' },
-
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  badge:    { backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeText: { fontSize: 12, fontWeight: '700', color: colors.muted },
-
-  sectionLabel: { fontSize: 13, fontWeight: '800', color: colors.text },
-  adjusterCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 14, alignItems: 'center' },
-  adjusterFare: { fontSize: 36, fontWeight: '900', color: colors.text },
-  adjusterBtns: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
-  adjBtn: { backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10 },
-  adjBtnDisabled: { opacity: 0.35 },
-  adjBtnTxt: { fontSize: 13, fontWeight: '800', color: colors.text },
-
-  customLink: { fontSize: 12, color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
-  customRow:  { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  customInput: {
-    flex: 1, backgroundColor: colors.background, borderRadius: 10, borderWidth: 1,
-    borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8,
-    fontSize: 14, fontWeight: '700', color: colors.text,
+  // ── Floating header ──
+  headerSafe: { position: 'absolute', top: 0, left: 0, right: 0 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  customApplyBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
-  customApplyTxt: { fontSize: 13, fontWeight: '800', color: '#000' },
+  headerBtn: { padding: 4 },
+  statusPill: { borderRadius: 20, paddingHorizontal: 34, paddingVertical: 9 },
+  statusOn: { backgroundColor: colors.primary },
+  statusOff: { backgroundColor: '#ff8a8a' },
+  statusTxt: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  title: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: colors.text,
+    textAlign: 'center',
+    marginTop: 6,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 8,
+  },
+  moreBtn: {
+    position: 'absolute',
+    right: 14,
+    top: 58,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#1f7a45',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreTxt: { fontSize: 15, fontWeight: '900', color: '#fff', letterSpacing: 1 },
+
+  // ── Sheet ──
+  sheetSafe: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '62%' },
+  sheet: {
+    backgroundColor: '#1b1e1d',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  sheetBody: { padding: 16, gap: 14 },
+
+  topRow: { flexDirection: 'row', gap: 12 },
+  who: { width: 66, alignItems: 'center', gap: 2 },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.glassStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 3,
+  },
+  avatarTxt: { fontSize: 20, fontWeight: '800', color: colors.text },
+  whoName: { fontSize: 12, color: colors.muted, fontWeight: '600', textAlign: 'center' },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  star: { fontSize: 11, color: '#f5a623' },
+  rating: { fontSize: 11, fontWeight: '700', color: colors.text },
+  ratingCount: { fontSize: 11, fontWeight: '500', color: colors.muted },
+  ago: { fontSize: 11, color: colors.muted },
+
+  fareCol: { flex: 1, gap: 4 },
+  distance: { fontSize: 14, color: colors.muted, fontWeight: '600' },
+  fare: { fontSize: 30, fontWeight: '900', color: colors.text, marginBottom: 4 },
+
+  stopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  stopA: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  stopATxt: { fontSize: 11, fontWeight: '900', color: '#000' },
+  stopB: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  stopBTxt: { fontSize: 11, fontWeight: '900', color: '#04210f' },
+  stopAddr: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text, lineHeight: 21 },
+
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  chip: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  chipPay: { backgroundColor: colors.primary },
+  chipPayTxt: { fontSize: 14, fontWeight: '800', color: '#000' },
+  chipCat: { backgroundColor: '#5aa9f8' },
+  chipCatTxt: { fontSize: 14, fontWeight: '800', color: '#04203f' },
+
+  accept: {
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  acceptTxt: { fontSize: 20, fontWeight: '800', color: '#000' },
+
+  offerLabel: { fontSize: 16, fontWeight: '600', color: colors.muted, textAlign: 'center' },
+  offerRow: { flexDirection: 'row', gap: 10 },
+  offerChip: {
+    flex: 1,
+    height: 62,
+    borderRadius: 14,
+    backgroundColor: '#2b2f2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offerChipOn: { backgroundColor: colors.primary },
+  offerChipTxt: { fontSize: 16, fontWeight: '700', color: colors.text },
+  offerChipTxtOn: { color: '#000', fontWeight: '800' },
+  pencilBtn: {
+    width: 62,
+    height: 62,
+    borderRadius: 14,
+    backgroundColor: '#2b2f2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  closeBtn: {
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: '#2b2f2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeTxt: { fontSize: 19, fontWeight: '700', color: colors.text },
+
+  // ── Request gone ──
+  gone: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, gap: 12 },
+  goneIcon: { fontSize: 44 },
+  goneTitle: { fontSize: 19, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  goneBody: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20, marginBottom: 10 },
+
+  // ── Custom fare modal ──
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#1b1e1d',
+    borderRadius: 20,
+    padding: 20,
+    gap: 12,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
+  modalSub: { fontSize: 13, color: colors.muted },
+  modalInput: {
+    height: 60,
+    borderRadius: 14,
+    backgroundColor: '#2b2f2e',
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  modalApply: {
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalApplyTxt: { fontSize: 17, fontWeight: '900', color: '#000' },
 });
