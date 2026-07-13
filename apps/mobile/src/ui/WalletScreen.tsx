@@ -8,11 +8,13 @@ import { api } from '../api/client';
 import {
   useCommissionStatus,
   useDriverProfile,
+  useOutstanding,
   useWalletBalance,
   useWalletTransactions,
 } from '../hooks/driver';
 import { colors } from '../config';
 import { Card, PrimaryButton } from './components';
+import { OutstandingFees } from './OutstandingFees';
 
 const TXN_LABEL: Record<string, string> = {
   topup: 'Top-up',
@@ -22,6 +24,8 @@ const TXN_LABEL: Record<string, string> = {
   ride_hold: 'Ride payment',
   ride_hold_refund: 'Ride refund',
   commission_payment: 'Commission paid',
+  cancellation_fee: 'Cancellation fee',
+  cancellation_fee_paid: 'Cancellation fees cleared',
   debit: 'Subscription',
 };
 
@@ -56,6 +60,8 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   // Commission cycle — only meaningful for drivers.
   const driverProfile = useDriverProfile(role === 'driver' ? uid : undefined);
   const commission = useCommissionStatus(driverProfile);
+  // Unpaid cancellation fees — both roles can owe these.
+  const outstanding = useOutstanding(uid);
 
   // Which gateways the backend has configured. `comingSoon` = top-ups are off
   // for launch (feature flag); we show a Coming Soon card instead of the form.
@@ -142,7 +148,17 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
         <Card style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Balance</Text>
           <Text style={styles.balance}>{balance} PKR</Text>
+          {outstanding.amount > 0 ? (
+            <Text style={styles.balanceOwed}>
+              −{outstanding.amount.toLocaleString()} PKR outstanding to Velocity
+            </Text>
+          ) : null}
         </Card>
+
+        {/* Cancellation fees owed to Velocity — passengers and drivers alike */}
+        {outstanding.amount > 0 ? (
+          <OutstandingFees status={outstanding} uid={uid} role={role} />
+        ) : null}
 
         {/* Commission cycle — drivers settle Velocity's cut from the wallet */}
         {role === 'driver' && commission.cycleGrossFare > 0 ? (
@@ -308,6 +324,7 @@ const styles = StyleSheet.create({
   balanceCard: { backgroundColor: colors.primary },
   balanceLabel: { color: '#cdebd9', fontSize: 13, fontWeight: '700' },
   balance: { color: '#fff', fontSize: 34, fontWeight: '900', marginTop: 4 },
+  balanceOwed: { color: '#ffdada', fontSize: 12, fontWeight: '800', marginTop: 6 },
   label: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 6 },
   input: {
     height: 48,

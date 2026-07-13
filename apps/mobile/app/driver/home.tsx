@@ -27,14 +27,17 @@ import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
 import { api, type ReportReason } from '../../src/api/client';
 import {
+  useCancellationSettings,
   useCommissionStatus,
   useDriverActiveTrip,
   useDriverPoolRides,
   useDriverProfile,
   useOpenRequests,
+  useOutstanding,
   type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
+import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
 import { PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
@@ -75,6 +78,9 @@ export default function DriverHome() {
   const liveRequests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
   const commission = useCommissionStatus(profile);
   const commissionLocked = commission.locked;
+  // Unpaid cancellation fees — past the limit, the backend rejects new bids.
+  const outstanding = useOutstanding(uid);
+  const cancellation = useCancellationSettings();
 
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -281,7 +287,51 @@ export default function DriverHome() {
       Alert.alert('Account locked', `Settle ${commission.due.toLocaleString()} PKR commission to accept rides.`);
       return;
     }
+    if (outstanding.blocked) {
+      Alert.alert(
+        'Cancellation fees due',
+        `Pay ${outstanding.amount.toLocaleString()} PKR in cancellation fees to start accepting rides again. Open your wallet to settle.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open wallet', onPress: () => router.push('/driver/wallet') },
+        ],
+      );
+      return;
+    }
     router.push(`/driver/request-detail/${tripId}` as Parameters<typeof router.push>[0]);
+  }
+
+  /**
+   * Dropping a ride the driver already accepted leaves a passenger stranded, so
+   * it costs a share of the agreed fare. State the number before charging it.
+   */
+  function confirmCancelTrip(trip: Trip) {
+    const fare = trip.fare ?? trip.offeredFare;
+    const fee = Math.round(fare * cancellation.driverFeeRate);
+    Alert.alert(
+      `Cancel this ride? It costs PKR ${fee}`,
+      `You accepted this ride at PKR ${fare} and the passenger is waiting for you. Cancelling now `
+        + `charges a ${Math.round(cancellation.driverFeeRate * 100)}% fee — PKR ${fee}.\n\n`
+        + 'It comes out of your wallet balance, and anything left over is owed to Velocity before you can accept rides again.',
+      [
+        { text: 'Keep the ride', style: 'cancel' },
+        {
+          text: `Cancel & pay PKR ${fee}`,
+          style: 'destructive',
+          onPress: () => run(async () => {
+            const res = await api.cancelTrip({ tripId: trip.id });
+            if (res.outstanding > 0) {
+              Alert.alert(
+                'Ride cancelled',
+                `PKR ${res.outstanding} is now outstanding to Velocity. Settle it from your wallet to keep accepting rides.`,
+              );
+            } else if (res.fee > 0) {
+              Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
+            }
+          }),
+        },
+      ],
+    );
   }
 
   return (
@@ -381,11 +431,39 @@ export default function DriverHome() {
               disabled={busy}
               onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))}
             />
+
+            {/* Backing out of an accepted ride — costs a fee, so it sits below
+                the SOS button and never reads as a routine action. Once the trip
+                is in progress it can't be cancelled at all. */}
+            {activeTrip.status !== 'in_progress' && (
+              <>
+                <PrimaryButton
+                  variant="secondary"
+                  label="Cancel ride"
+                  disabled={busy}
+                  onPress={() => confirmCancelTrip(activeTrip)}
+                />
+                <Text style={styles.cancelFeeNote}>
+                  The passenger is waiting. Cancelling costs a{' '}
+                  {Math.round(cancellation.driverFeeRate * 100)}% fee — PKR{' '}
+                  {Math.round((activeTrip.fare ?? activeTrip.offeredFare) * cancellation.driverFeeRate)}.
+                </Text>
+              </>
+            )}
           </View>
         </ScrollView>
       ) : commissionLocked ? (
         <ScrollView contentContainerStyle={styles.scroll}>
           <CommissionLock status={commission} uid={uid} requests={visible} />
+          <PrimaryButton
+            variant="secondary"
+            label="💳 Open wallet"
+            onPress={() => router.push('/driver/wallet')}
+          />
+        </ScrollView>
+      ) : outstanding.blocked ? (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <OutstandingFees status={outstanding} uid={uid} role="driver" />
           <PrimaryButton
             variant="secondary"
             label="💳 Open wallet"
@@ -679,6 +757,13 @@ const styles = StyleSheet.create({
   },
   tripTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   tripFare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
+  cancelFeeNote: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: 2,
+  },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   contactBtn: {
     flex: 1,

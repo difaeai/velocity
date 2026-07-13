@@ -25,6 +25,7 @@ import { db } from '../../../src/firebase';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
+import { useCancellationSettings } from '../../../src/hooks/driver';
 import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
@@ -58,6 +59,7 @@ export default function TripScreen() {
   const router  = useRouter();
   const { user } = useAuth();
   const { trip, bids, loading } = useTrip(tripId);
+  const cancellation = useCancellationSettings();
   const [busy,         setBusy]        = useState(false);
   const [timeLeft,     setTimeLeft]     = useState(54);
   const [adjustedFare, setAdjustedFare] = useState(0);
@@ -116,6 +118,59 @@ export default function TripScreen() {
     if (!tripId) return;
     await api.submitRating({ tripId, stars, comment: comment || undefined, targetRole: 'driver' });
     setShowRating(false);
+  }
+
+  /**
+   * Cancelling while we're still finding a driver is free. Once a driver has
+   * accepted and is on their way it costs a share of the agreed fare — say so
+   * plainly before charging it, and never on the back of a mis-tap.
+   */
+  function confirmCancel() {
+    if (!trip) return;
+
+    const freeToCancel = trip.status === 'requested';
+    if (freeToCancel) {
+      Alert.alert(
+        'Cancel request?',
+        'No driver has accepted yet, so this is free. We\'ll stop looking for drivers.',
+        [
+          { text: 'Keep looking', style: 'cancel' },
+          {
+            text: 'Cancel request',
+            style: 'destructive',
+            onPress: () => run(() => api.cancelTrip({ tripId: trip.id })),
+          },
+        ],
+      );
+      return;
+    }
+
+    const fare = trip.fare ?? trip.offeredFare;
+    const fee = Math.round(fare * cancellation.passengerFeeRate);
+    Alert.alert(
+      `Cancel this ride? It costs PKR ${fee}`,
+      `Your driver accepted this ride at PKR ${fare} and is on the way. Cancelling now charges a `
+        + `${Math.round(cancellation.passengerFeeRate * 100)}% fee — PKR ${fee}.\n\n`
+        + 'It comes out of your wallet balance, and anything left over is owed to Velocity before you can book again.',
+      [
+        { text: 'Keep my ride', style: 'cancel' },
+        {
+          text: `Cancel & pay PKR ${fee}`,
+          style: 'destructive',
+          onPress: () => run(async () => {
+            const res = await api.cancelTrip({ tripId: trip.id });
+            if (res.outstanding > 0) {
+              Alert.alert(
+                'Ride cancelled',
+                `PKR ${res.outstanding} is now outstanding to Velocity. Settle it from your wallet to keep booking rides.`,
+              );
+            } else if (res.fee > 0) {
+              Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
+            }
+          }),
+        },
+      ],
+    );
   }
 
   // Pool invite: anyone with the link can join (the backend enforces seats,
@@ -419,14 +474,16 @@ export default function TripScreen() {
             )}
           </ScrollView>
 
-          {/* Cancel Request Button (host only — the backend rejects others) */}
+          {/* Cancel Request Button (host only — the backend rejects others).
+              Free at this stage: no driver has committed to the ride yet. */}
           {isHost ? (
             <Pressable
               style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
+              onPress={confirmCancel}
               disabled={busy}
             >
               <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
+              <Text style={styles.cancelRequestBtnSub}>Free — no driver has accepted yet</Text>
             </Pressable>
           ) : (
             <Text style={styles.joinerFooterNote}>
@@ -525,12 +582,19 @@ export default function TripScreen() {
               onPress={() => run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))}
             />
             {trip.status !== 'in_progress' && isHost && (
-              <PrimaryButton
-                variant="secondary"
-                label="Cancel trip"
-                disabled={busy}
-                onPress={() => run(() => api.cancelTrip({ tripId: trip.id }))}
-              />
+              <>
+                <PrimaryButton
+                  variant="secondary"
+                  label="Cancel trip"
+                  disabled={busy}
+                  onPress={confirmCancel}
+                />
+                <Text style={styles.cancelFeeNote}>
+                  Your driver is on the way. Cancelling now costs a{' '}
+                  {Math.round(cancellation.passengerFeeRate * 100)}% fee — PKR{' '}
+                  {Math.round((trip.fare ?? trip.offeredFare) * cancellation.passengerFeeRate)}.
+                </Text>
+              </>
             )}
           </>
         )}
@@ -1158,7 +1222,8 @@ const styles = StyleSheet.create({
   cancelRequestBtn: {
     marginHorizontal: 20,
     marginBottom: 20,
-    height: 48,
+    minHeight: 48,
+    paddingVertical: 8,
     borderRadius: 14,
     backgroundColor: colors.glassChip,
     borderWidth: 1,
@@ -1170,5 +1235,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  cancelRequestBtnSub: {
+    color: '#8a8c8c',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  cancelFeeNote: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: -4,
   },
 });

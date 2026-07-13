@@ -107,15 +107,22 @@ export async function verifyPaymentProof(params: {
   proofPath: string;
   amountDue: number;
   accounts: VelocityAccounts;
+  /**
+   * What the payer owes, in one clause — e.g. "a commission on the cash fares
+   * they collected" or "cancellation fees for rides they cancelled after a
+   * driver had accepted". Shapes the prompt; defaults to the commission case.
+   */
+  debtDescription?: string;
 }): Promise<ProofVerdict | null> {
   if (!proofAIConfigured()) return null;
   const image = await loadImage(params.proofPath);
   if (!image) return null;
 
+  const debt = params.debtDescription ?? 'a commission on the cash fares they collected';
   const client = new Anthropic();
-  const prompt = `You are a fraud-review assistant for a Pakistani ride-hailing platform ("Velocity"). A driver owes Velocity a commission and must pay it by transferring money to one of Velocity's official accounts, then uploading a screenshot of that payment as proof. Your job is to inspect the screenshot.
+  const prompt = `You are a fraud-review assistant for a Pakistani ride-hailing platform ("Velocity"). A user owes Velocity ${debt} and must pay it by transferring money to one of Velocity's official accounts, then uploading a screenshot of that payment as proof. Your job is to inspect the screenshot.
 
-Amount the driver must have paid: at least PKR ${params.amountDue}.
+Amount the user must have paid: at least PKR ${params.amountDue}.
 
 Velocity's official receiving accounts (the recipient in the screenshot should match one of these):
 ${accountsSummary(params.accounts)}
@@ -124,6 +131,8 @@ Assess the screenshot on three points:
 1. genuine — Is this a real, unedited payment confirmation from a payment app (JazzCash, Easypaisa, a bank app, or a bank transfer receipt)? Look for signs of tampering, photo-editing, mismatched fonts, altered numbers, screenshots of screenshots, or a reused/old receipt. Be strict: if it looks manipulated, fake, or is not a payment receipt at all, genuine=false.
 2. amountDetected — The transferred amount in PKR shown on the receipt (a number), or null if you cannot read it.
 3. recipientMatch — Does the recipient account/number/title shown match one of Velocity's accounts above? true/false. If no accounts are configured, or you cannot tell, use false.
+
+Assume nothing from context — judge only what the screenshot itself shows.
 
 Respond with ONLY a JSON object, no other text:
 {"genuine": boolean, "amountDetected": number|null, "recipientMatch": boolean, "confidence": "high"|"medium"|"low", "reasoning": "one or two sentences"}`;
@@ -165,4 +174,38 @@ Respond with ONLY a JSON object, no other text:
     logger.error('Anthropic verification call failed', { proofPath: params.proofPath, e });
     return null;
   }
+}
+
+export type SettlementStatus = 'verifying' | 'approved' | 'rejected' | 'pending_review';
+
+/**
+ * Turn an AI verdict into an outcome under the "safe" auto-approve policy,
+ * shared by every kind of settlement (commission cycles and cancellation fees).
+ *
+ * Only a clearly-genuine receipt, for at least the amount due, sent to one of
+ * Velocity's accounts, at high confidence, settles automatically. A convincing
+ * fake is rejected outright. Everything in between — including "no AI verdict at
+ * all" — goes to a human rather than being guessed at in either direction.
+ */
+export function decideProofOutcome(
+  verdict: ProofVerdict | null,
+  amountDue: number,
+): { status: Exclude<SettlementStatus, 'verifying'>; reason: string | null } {
+  if (!verdict) {
+    // No AI (unconfigured) or the check failed — never guess, send to a human.
+    return { status: 'pending_review', reason: null };
+  }
+  if (!verdict.genuine) {
+    return {
+      status: 'rejected',
+      reason: verdict.reasoning || 'The screenshot could not be verified as a genuine payment. Please upload a clear, unedited receipt.',
+    };
+  }
+  const amountOk = verdict.amountDetected !== null && verdict.amountDetected >= amountDue;
+  if (verdict.confidence === 'high' && amountOk && verdict.recipientMatch) {
+    return { status: 'approved', reason: null };
+  }
+  // Genuine but not confidently correct (amount unclear, recipient unclear, or
+  // lower confidence) → let an admin make the final call.
+  return { status: 'pending_review', reason: verdict.reasoning || null };
 }

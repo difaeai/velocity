@@ -56,7 +56,9 @@ admin      → granted by another admin (bootstrap the first one manually, see S
 ```
 requested ──acceptBid──▶ matched ──▶ arriving ──▶ arrived ──▶ in_progress ──▶ completed
     │                       │            │            │
-    └───────────── cancelTrip (passenger or driver) ─┘     completeTrip → settlement
+    │                       └──── cancelTrip ────────┘        completeTrip → settlement
+    │                          (5% passenger · 8% driver)
+    └── cancelTrip (free — no driver has committed yet)
 ```
 
 Every transition is a callable function that validates **who** the caller is and
@@ -64,6 +66,12 @@ whether the **(from → to)** edge is legal. `completeTrip` is the only place a
 settlement (gross, 10% commission, driver payout, passenger share) is computed,
 and it updates the driver wallet, the ledger and the platform counters in a
 single Firestore transaction.
+
+`in_progress` is the point of no return: nobody can cancel a trip that has
+started. Before it, cancelling is free while the trip is still `requested` and
+costs a share of the locked fare once a driver has accepted — charged to the
+canceller's wallet, with the shortfall carried as `outstanding`. See
+[PAYMENTS.md](PAYMENTS.md).
 
 ## Backend functions
 
@@ -77,7 +85,7 @@ single Firestore transaction.
 | `placeBid` | approved+online driver | Bid on an open request. |
 | `acceptBid` | passenger | Lock fare, assign driver. |
 | `updateTripStatus` | assigned driver | Advance arriving → arrived → in_progress. |
-| `cancelTrip` | participant | Cancel a not-yet-started trip. |
+| `cancelTrip` | participant | Cancel a not-yet-started trip; charges the cancellation fee once a driver has accepted. |
 | `completeTrip` | assigned driver | Settle money, finish trip. |
 | `raiseSafetyEvent` | participant | SOS / route-deviation alert. |
 | `resolveSafetyEvent` | admin | Close an alert. |

@@ -14,6 +14,7 @@ export default defineConfig({
       'src/poolRides/__tests__/**/*.test.ts',
       'src/commute/__tests__/**/*.test.ts',
       'src/drivers/__tests__/**/*.test.ts',
+      'src/payments/__tests__/**/*.test.ts',
       'src/scheduledRides/__tests__/**/*.test.ts',
       'src/trips/__tests__/**/*.test.ts',
     ],

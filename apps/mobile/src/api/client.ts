@@ -177,7 +177,12 @@ export const api = {
     { tripId: string; to: 'arriving' | 'arrived' | 'in_progress' },
     { ok: boolean; status: string }
   >('updateTripStatus'),
-  cancelTrip: callable<{ tripId: string; reason?: string }, { ok: boolean }>('cancelTrip'),
+  cancelTrip: callable<
+    { tripId: string; reason?: string },
+    // `fee` is 0 when the trip was still searching for a driver. Otherwise it is
+    // split into what the wallet balance covered and what is now owed.
+    { ok: boolean; fee: number; paidFromWallet: number; outstanding: number }
+  >('cancelTrip'),
   completeTrip: callable<{ tripId: string }, { ok: boolean }>('completeTrip'),
   raiseSafetyEvent: callable<
     { tripId: string; kind?: 'sos' | 'route_deviation'; note?: string },
@@ -201,6 +206,10 @@ export const api = {
     { proofPath: string; method?: 'easypaisa' | 'jazzcash' | 'bank' },
     { ok: boolean; settlementId: string; status: 'approved' | 'rejected' | 'pending_review'; amountDue: number; reason: string | null }
   >('submitCommissionSettlement'),
+  submitCancellationFeeSettlement: callable<
+    { proofPath: string; method?: 'easypaisa' | 'jazzcash' | 'bank' },
+    { ok: boolean; settlementId: string; status: 'approved' | 'rejected' | 'pending_review'; amountDue: number; reason: string | null }
+  >('submitCancellationFeeSettlement'),
   adminReviewCommissionSettlement: callable<
     { settlementId: string; approve: boolean; reason?: string },
     { ok: boolean; status: string }

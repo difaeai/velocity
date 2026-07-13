@@ -26,6 +26,12 @@ import {
   poolPerSeatFare,
 } from '../domain/fares';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import {
+  assertOutstandingClear,
+  cancellationFee,
+  getCancellationSettings,
+  splitFeeAgainstBalance,
+} from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
@@ -126,12 +132,16 @@ export const createTrip = onCall(async (req) => {
   const isPool = data.pool ?? false;
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;
+  const cancellationSettings = await getCancellationSettings();
 
   const tripRef = db.collection('trips').doc();
   const userRef = db.doc(`users/${ctx.uid}`);
 
   await db.runTransaction(async (tx) => {
-    const userSnap = await tx.get(userRef);
+    const [userSnap, walletSnap] = await Promise.all([
+      tx.get(userRef),
+      tx.get(db.doc(`wallets/${ctx.uid}`)),
+    ]);
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     if (activeTripId) {
       const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
@@ -140,13 +150,12 @@ export const createTrip = onCall(async (req) => {
       }
     }
 
+    // Unpaid cancellation fees past the limit block new bookings until settled.
+    assertOutstandingClear(walletSnap, cancellationSettings, 'passenger');
+
     // Wallet trips: the fare is held at bid-acceptance, but reject requests the
     // passenger can already not afford so drivers don't bid on dead trips.
-    let walletBalance = 0;
-    if (data.paymentMethod === 'wallet') {
-      const walletSnap = await tx.get(db.doc(`wallets/${ctx.uid}`));
-      walletBalance = (walletSnap.get('balance') as number) ?? 0;
-    }
+    const walletBalance = (walletSnap.get('balance') as number | undefined) ?? 0;
 
     // Validate promo code if provided
     let promoDiscount = 0;
@@ -314,7 +323,12 @@ export const placeBid = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid tripId and fare.');
   const { tripId, fare } = parsed.data;
 
-  const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
+  const [driverSnap, driverWalletSnap, commissionSettings, cancellationSettings] = await Promise.all([
+    db.doc(`drivers/${ctx.uid}`).get(),
+    db.doc(`wallets/${ctx.uid}`).get(),
+    getCommissionSettings(),
+    getCancellationSettings(),
+  ]);
   if (driverSnap.get('verificationStatus') !== 'approved') {
     throw new HttpsError('permission-denied', 'Driver is not approved.');
   }
@@ -322,7 +336,9 @@ export const placeBid = onCall(async (req) => {
     throw new HttpsError('failed-precondition', 'Go online before bidding.');
   }
   // Locked drivers must settle their commission cycle before taking new work.
-  assertCommissionClear(driverSnap, await getCommissionSettings());
+  assertCommissionClear(driverSnap, commissionSettings);
+  // As must drivers who racked up unpaid cancellation fees.
+  assertOutstandingClear(driverWalletSnap, cancellationSettings, 'driver');
 
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');
@@ -612,19 +628,39 @@ const cancelSchema = z.object({
   reason: z.string().max(300).optional(),
 });
 
-/** Either participant cancels a trip that has not yet started. */
+/**
+ * Either participant cancels a trip that has not yet started.
+ *
+ * Free while the trip is still `requested` — nobody has committed to it. Once a
+ * driver has accepted (matched / arriving / arrived) the canceller owes Velocity
+ * a fee on the locked fare: 5% from a passenger, 8% from a driver. The fee comes
+ * out of their wallet balance where there is one, and whatever is left becomes
+ * `outstanding` on their wallet — a debt that blocks new rides once it reaches
+ * the configured limit. See domain/cancellation.
+ */
 export const cancelTrip = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = cancelSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId, reason } = parsed.data;
 
+  // Admin-configured rates; read outside the transaction (config is not part of
+  // the atomic set and a transactional read of it would only add contention).
+  const settings = await getCancellationSettings();
+
   const tripRef = db.doc(`trips/${tripId}`);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(tripRef);
+  const cancellerWalletRef = db.doc(`wallets/${ctx.uid}`);
+
+  const outcome = await db.runTransaction(async (tx) => {
+    // ── Reads (all of them, before any write — Firestore requires this) ──
+    const [snap, cancellerWalletSnap] = await Promise.all([
+      tx.get(tripRef),
+      tx.get(cancellerWalletRef),
+    ]);
+
     if (!snap.exists) invalid('Trip not found.');
-    const passengerId = snap.get('passengerId');
-    const driverId = snap.get('driverId');
+    const passengerId = snap.get('passengerId') as string;
+    const driverId = snap.get('driverId') as string | null;
     if (ctx.uid !== passengerId && ctx.uid !== driverId) {
       throw new HttpsError('permission-denied', 'Not your trip.');
     }
@@ -633,16 +669,28 @@ export const cancelTrip = onCall(async (req) => {
       throw new HttpsError('failed-precondition', `Cannot cancel a ${status} trip.`);
     }
 
+    const cancelledByRole: 'passenger' | 'driver' = ctx.uid === driverId ? 'driver' : 'passenger';
+    // The fare locked in at acceptBid is what both sides agreed to. Before a bid
+    // is accepted there is no `fare` — but those statuses are free anyway.
+    const lockedFare = (snap.get('fare') as number | null) ?? (snap.get('offeredFare') as number) ?? 0;
+    const { amount: fee, rate } = cancellationFee({
+      status,
+      cancelledByRole,
+      fare: lockedFare,
+      settings,
+    });
+
+    // ── Writes ──
     // Release any wallet hold back to the passenger in the same transaction.
     const walletHold = (snap.get('walletHold') as number) ?? 0;
     if (walletHold > 0) {
-      const walletRef = db.doc(`wallets/${passengerId}`);
+      const passengerWalletRef = db.doc(`wallets/${passengerId}`);
       tx.set(
-        walletRef,
+        passengerWalletRef,
         { balance: FieldValue.increment(walletHold), updatedAt: FieldValue.serverTimestamp() },
         { merge: true },
       );
-      tx.set(walletRef.collection('transactions').doc(), {
+      tx.set(passengerWalletRef.collection('transactions').doc(), {
         type: 'ride_hold_refund',
         amount: walletHold,
         tripId,
@@ -650,12 +698,76 @@ export const cancelTrip = onCall(async (req) => {
       });
     }
 
+    // Charge the fee to whoever walked away. A cancelling passenger gets their
+    // hold back above, so that money is available to pay the fee out of.
+    let paidFromWallet = 0;
+    let addedToOutstanding = 0;
+    if (fee > 0) {
+      const balance = (cancellerWalletSnap.get('balance') as number | undefined) ?? 0;
+      const available = balance + (cancelledByRole === 'passenger' ? walletHold : 0);
+      ({ paidFromWallet, addedToOutstanding } = splitFeeAgainstBalance(fee, available));
+
+      tx.set(
+        cancellerWalletRef,
+        {
+          ...(paidFromWallet > 0 ? { balance: FieldValue.increment(-paidFromWallet) } : {}),
+          ...(addedToOutstanding > 0 ? { outstanding: FieldValue.increment(addedToOutstanding) } : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(cancellerWalletRef.collection('transactions').doc(), {
+        type: 'cancellation_fee',
+        // Only the part actually taken from the balance moves money here; the
+        // rest is a debt, tracked on `outstanding` and shown separately.
+        amount: -paidFromWallet,
+        fee,
+        outstanding: addedToOutstanding,
+        role: cancelledByRole,
+        tripId,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      // Velocity's books: the whole fee is revenue owed to us, but only the part
+      // paid from the wallet is money we already hold.
+      tx.set(db.collection('platformLedger').doc(), {
+        type: 'cancellation_fee',
+        tripId,
+        userId: ctx.uid,
+        role: cancelledByRole,
+        passengerId,
+        driverId: driverId ?? null,
+        amount: fee,
+        rate,
+        fare: lockedFare,
+        collected: paidFromWallet,
+        outstanding: addedToOutstanding,
+        cancelledAt: status,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(
+        db.doc('system/counters'),
+        {
+          cancellationFeesCharged: FieldValue.increment(fee),
+          cancellationFeesCollected: FieldValue.increment(paidFromWallet),
+          cancellationFeesOutstanding: FieldValue.increment(addedToOutstanding),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+
     tx.set(
       tripRef,
       {
         status: 'cancelled' as TripStatus,
         cancelledBy: ctx.uid,
+        cancelledByRole,
+        cancelledFrom: status,
         cancelReason: reason ?? null,
+        cancellationFee: fee > 0
+          ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, outstanding: addedToOutstanding }
+          : null,
         walletHold: 0,
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -668,22 +780,47 @@ export const cancelTrip = onCall(async (req) => {
       }
     }
     tx.delete(db.doc(`openRequests/${tripId}`));
+
+    return {
+      passengerId,
+      driverId,
+      cancelledByRole,
+      fee,
+      rate,
+      fare: lockedFare,
+      paidFromWallet,
+      addedToOutstanding,
+    };
   });
 
-  // Read trip outside transaction to get both parties for push
-  const cancelSnap = await db.doc(`trips/${tripId}`).get();
-  const cancelPassengerId = cancelSnap.get('passengerId') as string | undefined;
-  const cancelDriverId    = cancelSnap.get('driverId')   as string | undefined;
-  const cancelledByDriver = ctx.uid === cancelDriverId;
+  const { passengerId, driverId, cancelledByRole, fee, paidFromWallet, addedToOutstanding } = outcome;
 
-  if (cancelPassengerId && cancelledByDriver) {
-    await sendToUser(cancelPassengerId, '❌ Driver cancelled', 'Your driver cancelled the trip. Please request another.', { tripId });
-  } else if (cancelDriverId && !cancelledByDriver) {
-    await sendToUser(cancelDriverId, '❌ Trip cancelled', 'The passenger cancelled the trip.', { tripId });
+  // Tell the wronged party what happened, and the canceller what it cost them.
+  if (cancelledByRole === 'driver') {
+    await sendToUser(passengerId, '❌ Driver cancelled', 'Your driver cancelled the trip. Please request another.', { tripId });
+  } else if (driverId) {
+    await sendToUser(driverId, '❌ Trip cancelled', 'The passenger cancelled the trip.', { tripId });
+  }
+  if (fee > 0) {
+    await sendToUser(
+      ctx.uid,
+      '⚠️ Cancellation fee',
+      addedToOutstanding > 0
+        ? `PKR ${fee} was charged for cancelling after the ride was confirmed. PKR ${addedToOutstanding} is now outstanding to Velocity — settle it from your wallet.`
+        : `PKR ${fee} was charged to your wallet for cancelling after the ride was confirmed.`,
+      { tripId },
+    );
   }
 
-  logger.info('Trip cancelled', { tripId, by: ctx.uid });
-  return { ok: true };
+  logger.info('Trip cancelled', {
+    tripId,
+    by: ctx.uid,
+    role: cancelledByRole,
+    fee,
+    paidFromWallet,
+    addedToOutstanding,
+  });
+  return { ok: true, fee, paidFromWallet, outstanding: addedToOutstanding };
 });
 
 const completeSchema = z.object({ tripId: z.string().min(1).max(128) });

@@ -20,6 +20,7 @@ const NAV = [
   { href: '/dashboard/travel-mate',    label: '🤝 Travel Partner' },
   { href: '/dashboard/safety',         label: '🆘 Safety desk' },
   { href: '/dashboard/commission',     label: '📋 Commission' },
+  { href: '/dashboard/cancellations',  label: '🚫 Cancellation fees' },
   { href: '/dashboard/settlements',    label: '🧾 Settlements' },
   { href: '/dashboard/features',       label: '🚦 Feature flags' },
 ];
