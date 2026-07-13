@@ -34,6 +34,15 @@ export async function uploadSettlementProof(uid: string, uri: string): Promise<U
   return upload(path, uri);
 }
 
+/**
+ * Passenger CNIC photo — the identity gate in front of the courier flow. Lives
+ * under `cnic/{uid}/` (readable only by the owner and admins, per storage.rules).
+ */
+export async function uploadCnicDoc(uid: string, side: 'front' | 'back', uri: string): Promise<UploadResult> {
+  const path = `cnic/${uid}/${side}-${Date.now()}`;
+  return upload(path, uri);
+}
+
 async function upload(path: string, uri: string): Promise<UploadResult> {
   const storageRef = ref(storage, path);
   const blob = await uriToBlob(uri);

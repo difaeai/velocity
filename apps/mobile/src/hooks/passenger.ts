@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import type { CnicVerification } from '../api/client';
 import type { Trip } from '../domain/types';
 
 /**
@@ -64,4 +65,26 @@ export function useRecentDestinations(uid?: string): RecentDestination[] {
     }
     return out;
   }, [trips]);
+}
+
+/**
+ * Live CNIC verification status for the signed-in passenger.
+ *
+ * `undefined` while loading, `null` when they have never submitted. Couriers are
+ * gated on `status === 'verified'`; every other flow ignores this. The field is
+ * server-written (see backend users/cnic.ts) — the client only reads it.
+ */
+export function useCnicVerification(uid?: string): CnicVerification | null | undefined {
+  const [record, setRecord] = useState<CnicVerification | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!uid) { setRecord(null); return; }
+    return onSnapshot(
+      doc(db, 'users', uid),
+      (snap) => setRecord((snap.data()?.cnicVerification as CnicVerification) ?? null),
+      () => setRecord(null),
+    );
+  }, [uid]);
+
+  return record;
 }

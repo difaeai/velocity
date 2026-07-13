@@ -188,7 +188,21 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
       targetName = tgt.displayName || 'Someone';
 
       // ---- WRITES ----
-      if (!matchSnap.exists) {
+      if (matchSnap.exists) {
+        // A thread already exists — they DM'd each other from the feed or a
+        // group before either swiped. A mutual right-swipe outranks a pending
+        // request: promote it to a real match so it stops asking to be accepted
+        // and starts counting as a Match. Threads someone closed (unmatched /
+        // declined / blocked) stay closed — a like must not reopen them.
+        const existing = matchSnap.data()!;
+        if ((existing.status ?? 'active') === 'active' && existing.requestStatus !== 'accepted') {
+          tx.update(db.doc(`travelMateMatches/${matchId}`), {
+            origin: 'swipe',
+            requestStatus: 'accepted',
+            acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } else {
         tx.set(db.doc(`travelMateMatches/${matchId}`), {
           users: [uid, targetUid].sort(),
           userInfo: {
@@ -196,7 +210,18 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
             [targetUid]: { displayName: targetName, photoURL: tgt.photoURL ?? null },
           },
           status: 'active',
+          // A real match: both people swiped right on each other. This is the
+          // ONLY way a thread becomes a Match — a DM opened from the feed or a
+          // group is a message *request* until the recipient accepts it (see
+          // openTravelMateFeedChat / openTravelMateDirectChat).
+          origin: 'swipe',
+          requestStatus: 'accepted',
+          requestFrom: null,
+          requestTo: null,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          // The chats/matches lists sort on matchedAt; swipe matches used to set
+          // only createdAt, so they sorted as if they had no timestamp.
+          matchedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastMessageAt: null,
         });
       }

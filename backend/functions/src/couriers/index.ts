@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth, invalid } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
+import { requireCnicVerified } from '../users/cnic';
 
 const packageTypeEnum  = z.enum(['document', 'parcel', 'box']);
 const courierStatusEnum = z.enum(['pending', 'accepted', 'picked_up', 'delivered', 'cancelled']);
@@ -34,6 +35,11 @@ export const createCourierOrder = onCall(async (req) => {
   const { uid } = requireAuth(req);
   const input   = createOrderSchema.safeParse(req.data);
   if (!input.success) invalid(input.error.message);
+
+  // Couriers hand goods between strangers, so the sender must be a verified
+  // person — an admin-approved CNIC. Ordinary rides carry no such requirement.
+  // The client gates this too, but the server is the one that decides.
+  await requireCnicVerified(uid);
 
   const orderRef = db.collection('courierOrders').doc();
   await orderRef.set({

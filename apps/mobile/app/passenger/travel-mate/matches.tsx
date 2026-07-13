@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+/**
+ * Travel Partner — matches.
+ *
+ * A match is a mutual right-swipe and nothing else. Conversations that started
+ * from the feed or a group belong in Chats, not here, even after they're
+ * accepted — messaging someone has never been the same thing as matching with
+ * them. useTravelMateThreads owns that distinction.
+ */
 import {
   Dimensions,
   FlatList,
@@ -10,26 +17,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
-import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
+import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
 
 const { width } = Dimensions.get('window');
 const TILE = (width - 48) / 2;
-
-type MatchStatus = 'active' | 'unmatched';
-interface TravelMatch {
-  id: string;
-  users: string[];
-  userInfo: Record<string, { displayName: string; photoURL: string | null }>;
-  status: MatchStatus;
-  lastMessage?: string | null;
-  lastMessageAt?: { seconds: number } | null;
-  matchedAt?: { seconds: number };
-}
 
 function timeAgo(seconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - seconds);
@@ -42,24 +36,7 @@ function timeAgo(seconds: number): string {
 export default function TravelMateMatches() {
   const { user } = useAuth();
   const router = useRouter();
-  const blocked = useBlockedSet();
-  const [matches, setMatches] = useState<TravelMatch[]>([]);
-
-  useEffect(() => {
-    if (!user) return;
-    return onSnapshot(
-      query(collection(db, 'travelMateMatches'), where('users', 'array-contains', user.uid)),
-      snap => setMatches(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TravelMatch)),
-    );
-  }, [user?.uid]);
-
-  const activeMatches = useMemo(
-    () => [...matches]
-      .filter(m => m.status === 'active')
-      .filter(m => !m.users.some(u => u !== user?.uid && blocked.has(u)))
-      .sort((a, b) => (b.lastMessageAt?.seconds ?? b.matchedAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? a.matchedAt?.seconds ?? 0)),
-    [matches, blocked, user?.uid],
-  );
+  const { matches: activeMatches } = useTravelMateThreads();
 
   return (
     <SafeAreaView style={s.safe}>

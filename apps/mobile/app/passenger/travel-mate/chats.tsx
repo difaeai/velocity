@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+/**
+ * Travel Partner — chats list.
+ *
+ * Shows conversations you can actually talk in: mutual-swipe matches, plus
+ * message requests that were accepted. A request you sent that hasn't been
+ * accepted yet is NOT here — there's nothing to continue until they answer.
+ * Requests sent *to* you live behind the header row at the top of this list.
+ */
 import {
   FlatList,
   Image,
@@ -9,23 +16,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
-import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
+import { useTravelMateThreads, type TravelThread } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
-
-type MatchStatus = 'active' | 'unmatched';
-interface TravelMatch {
-  id: string;
-  users: string[];
-  userInfo: Record<string, { displayName: string; photoURL: string | null }>;
-  status: MatchStatus;
-  lastMessage?: string | null;
-  lastMessageAt?: { seconds: number } | null;
-  matchedAt?: { seconds: number };
-}
 
 function timeAgo(seconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - seconds);
@@ -35,27 +29,35 @@ function timeAgo(seconds: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+/** Display name of whoever sent a request, for the single-request preview line. */
+function firstRequesterName(thread: TravelThread | undefined): string | undefined {
+  if (!thread?.requestFrom) return undefined;
+  return thread.userInfo?.[thread.requestFrom]?.displayName;
+}
+
 export default function TravelMateChats() {
   const { user } = useAuth();
   const router = useRouter();
-  const blocked = useBlockedSet();
-  const [matches, setMatches] = useState<TravelMatch[]>([]);
+  const { chats, requests } = useTravelMateThreads();
 
-  useEffect(() => {
-    if (!user) return;
-    return onSnapshot(
-      query(collection(db, 'travelMateMatches'), where('users', 'array-contains', user.uid)),
-      snap => setMatches(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TravelMatch)),
-    );
-  }, [user?.uid]);
-
-  // Only show active matches with people you haven't blocked — newest first
-  const chatList = useMemo(
-    () => [...matches]
-      .filter(m => m.status === 'active')
-      .filter(m => !m.users.some(u => u !== user?.uid && blocked.has(u)))
-      .sort((a, b) => (b.lastMessageAt?.seconds ?? b.matchedAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? a.matchedAt?.seconds ?? 0)),
-    [matches, blocked, user?.uid],
+  const requestsRow = requests.length > 0 && (
+    <Pressable
+      style={s.requestsRow}
+      onPress={() => router.push('/passenger/travel-mate/message-requests')}
+    >
+      <View style={s.requestsIcon}><Text style={{ fontSize: 18 }}>✉️</Text></View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.requestsTitle}>Message requests</Text>
+        <Text style={s.requestsSub} numberOfLines={1}>
+          {requests.length === 1
+            ? `${firstRequesterName(requests[0]) ?? 'Someone'} wants to chat`
+            : `${requests.length} people want to chat`}
+        </Text>
+      </View>
+      <View style={s.requestsBadge}>
+        <Text style={s.requestsBadgeText}>{requests.length}</Text>
+      </View>
+    </Pressable>
   );
 
   return (
@@ -68,16 +70,22 @@ export default function TravelMateChats() {
         <View style={{ width: 80 }} />
       </View>
 
-      {chatList.length === 0 ? (
-        <View style={s.emptyBox}>
-          <Text style={s.emptyEmoji}>💬</Text>
-          <Text style={s.emptyTitle}>No conversations yet</Text>
-          <Text style={s.emptySub}>Once you match with someone, your chats will appear here.</Text>
-        </View>
+      {chats.length === 0 ? (
+        <>
+          {requestsRow}
+          <View style={s.emptyBox}>
+            <Text style={s.emptyEmoji}>💬</Text>
+            <Text style={s.emptyTitle}>No conversations yet</Text>
+            <Text style={s.emptySub}>
+              Match with someone by both swiping right, or accept a message request — your chats will appear here.
+            </Text>
+          </View>
+        </>
       ) : (
         <FlatList
-          data={chatList}
+          data={chats}
           keyExtractor={m => m.id}
+          ListHeaderComponent={requestsRow || null}
           ItemSeparatorComponent={() => <View style={s.divider} />}
           renderItem={({ item: match }) => {
             const otherId = match.users.find(u => u !== user?.uid) ?? '';
@@ -128,6 +136,39 @@ const s = StyleSheet.create({
   emptySub:  { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 22 },
 
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 84 },
+
+  // Message requests — the Instagram-style inbox row above the conversations.
+  requestsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  requestsIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestsTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  requestsSub:   { fontSize: 13, color: colors.muted, marginTop: 3 },
+  requestsBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestsBadgeText: { fontSize: 12, fontWeight: '900', color: '#000' },
 
   chatRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
   avatarWrap: { position: 'relative' },

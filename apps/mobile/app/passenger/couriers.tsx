@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -13,6 +14,8 @@ import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
 import { api } from '../../src/api/client';
+import { useAuth } from '../../src/auth/AuthContext';
+import { useCnicVerification } from '../../src/hooks/passenger';
 
 type PackageSize = 'document' | 'parcel' | 'box';
 
@@ -26,6 +29,8 @@ const PACKAGE_TYPES: {
 
 export default function CouriersScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const verification = useCnicVerification(user?.uid);
   const [stage, setStage] = useState<'route' | 'details'>('route');
   const [pickup,  setPickup]  = useState('');
   const [dropoff, setDropoff] = useState('');
@@ -69,6 +74,68 @@ export default function CouriersScreen() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // ── GATE: couriers require a verified CNIC ───────────────────────────────────
+  // Enforced server-side by createCourierOrder; this is here so the user finds
+  // out before filling in an address and a recipient rather than after.
+  if (verification === undefined) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.gateCentre}><ActivityIndicator color={colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  if (verification?.status !== 'verified') {
+    const pending  = verification?.status === 'pending';
+    const rejected = verification?.status === 'rejected';
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Send a Package</Text>
+          <Pressable
+            style={styles.closeBtn}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
+          >
+            <Text style={styles.closeTxt}>✕</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.gateWrap}>
+          <View style={styles.gateBadge}>
+            <Text style={styles.gateBadgeTxt}>{pending ? '🕒' : '🪪'}</Text>
+          </View>
+          <Text style={styles.gateTitle}>
+            {pending ? 'CNIC under review' : 'Verify your CNIC first'}
+          </Text>
+          <Text style={styles.gateBody}>
+            {pending
+              ? "We're checking your CNIC now. You'll get a notification the moment it's approved — then couriers unlock."
+              : rejected
+                ? `Your last submission was rejected. ${verification?.rejectionReason ?? 'Please submit clearer photos.'}`
+                : 'Couriers carry real goods between people who have never met, so we verify every sender and recipient. It only takes a minute, and normal rides never need it.'}
+          </Text>
+
+          {!pending && (
+            <Pressable
+              style={styles.gateBtn}
+              onPress={() => router.push('/passenger/verify-cnic')}
+            >
+              <Text style={styles.gateBtnTxt}>
+                {rejected ? 'Submit again' : 'Verify CNIC'}
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
+          >
+            <Text style={styles.gateSkip}>Not now</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // ── STAGE 1: Route ───────────────────────────────────────────────────────────
@@ -272,6 +339,45 @@ export default function CouriersScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+
+  /* ── CNIC gate ── */
+  gateCentre: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  gateWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 14,
+  },
+  gateBadge: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gateBadgeTxt: { fontSize: 38 },
+  gateTitle: { fontSize: 22, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  gateBody: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 8,
+  },
+  gateBtn: {
+    alignSelf: 'stretch',
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gateBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
+  gateSkip: { fontSize: 13, fontWeight: '700', color: colors.muted, paddingVertical: 10 },
 
   header: {
     flexDirection: 'row',

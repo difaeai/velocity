@@ -71,6 +71,18 @@ service cloud.firestore {
       }
     }
 
+    // ----- cnicVerifications/{uid} -----------------------------------------
+    // The admin review queue for passenger CNIC verification (the identity gate
+    // in front of couriers). Written only by the submitCnicVerification /
+    // adminReviewCnicVerification functions; the owner may read their own
+    // submission back, admins read the whole queue. The authoritative copy the
+    // app gates on lives on users/{uid}.cnicVerification, which is outside the
+    // owner-writable whitelist above — so status is server-only either way.
+    match /cnicVerifications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
     // ----- drivers/{uid} ---------------------------------------------------
     // Driver operational doc. Verification, rating, earnings and commission are
     // server-only. The driver may update ONLY presence/location fields so GPS

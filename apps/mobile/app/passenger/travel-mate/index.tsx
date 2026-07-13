@@ -29,6 +29,7 @@ import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
 import { api } from '../../../src/api/client';
 import { appLink } from '../../../src/share/links';
 import { colors } from '../../../src/config';
@@ -45,6 +46,7 @@ interface Group {
 export default function TravelMateHome() {
   const { user } = useAuth();
   const router = useRouter();
+  const pendingRequests = useTravelMateThreads().requests.length;
   // Edge-to-edge Android draws behind the system navigation bar — bottom
   // sheets must pad past it or their last row is hidden behind the OS bar.
   const insets = useSafeAreaInsets();
@@ -285,13 +287,17 @@ export default function TravelMateHome() {
           <ActionTile
             emoji="❤️"
             label="Matches"
-            sub="People you matched"
+            sub="You both swiped right"
             onPress={() => router.push('/passenger/travel-mate/matches')}
           />
           <ActionTile
             emoji="💬"
             label="Chats"
-            sub="Your conversations"
+            sub={
+              pendingRequests > 0
+                ? `${pendingRequests} message request${pendingRequests === 1 ? '' : 's'}`
+                : 'Your conversations'
+            }
             onPress={() => router.push('/passenger/travel-mate/chats')}
           />
         </View>

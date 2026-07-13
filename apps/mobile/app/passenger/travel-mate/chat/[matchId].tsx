@@ -75,7 +75,12 @@ interface Message {
 interface TravelMatch {
   users: string[];
   userInfo: Record<string, { displayName: string; photoURL: string | null }>;
-  status: 'active' | 'unmatched';
+  status: 'active' | 'unmatched' | 'declined';
+  /** Absent on threads created before message requests existed = accepted. */
+  requestStatus?: 'pending' | 'accepted' | 'declined';
+  requestFrom?: string | null;
+  requestTo?: string | null;
+  requestSent?: boolean;
 }
 
 export default function TravelMateChat() {
@@ -88,6 +93,7 @@ export default function TravelMateChat() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [answering, setAnswering] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [reactionTarget, setReactionTarget] = useState<Message | null>(null);
@@ -99,7 +105,19 @@ export default function TravelMateChat() {
 
   const otherId = match?.users.find(u => u !== user?.uid) ?? '';
   const otherInfo = match?.userInfo[otherId];
-  const closed = match?.status === 'unmatched';
+  const closed = match?.status !== undefined && match.status !== 'active';
+
+  // ── Message-request state ──────────────────────────────────────────────────
+  // A thread with someone you haven't matched with is a *request*: the sender
+  // gets one opening message, then the composer locks until the recipient
+  // accepts. The recipient sees Accept / Delete instead of a composer.
+  const pending = match?.requestStatus === 'pending';
+  const iSentRequest = pending && match?.requestFrom === user?.uid;
+  const iAmAsked = pending && match?.requestTo === user?.uid;
+  // Trust the server's flag, but also treat a message already on screen as sent
+  // so the composer locks the instant the first one lands.
+  const openerSent = !!match?.requestSent || messages.some(m => m.senderId === match?.requestFrom);
+  const composerLocked = closed || (iSentRequest && openerSent) || iAmAsked;
 
   // Subscribe to match doc
   useEffect(() => {
@@ -124,14 +142,14 @@ export default function TravelMateChat() {
 
   async function send() {
     const trimmed = text.trim();
-    if (!trimmed || sending || closed || !user) return;
+    if (!trimmed || sending || composerLocked || !user) return;
     setSending(true);
     setText('');
     setEmojiOpen(false);
     try {
       // The messages subcollection is CF-write-only (security rules), so all
-      // sends go through sendTravelMateMessage — it also pushes FCM and bumps
-      // the lastMessage preview on the match doc.
+      // sends go through sendTravelMateMessage — it also pushes FCM, bumps the
+      // lastMessage preview, and enforces the one-message request limit.
       await api.sendTravelMateMessage({ matchId, text: trimmed });
     } catch {
       setText(trimmed); // restore the draft so the user can retry
@@ -140,11 +158,48 @@ export default function TravelMateChat() {
     }
   }
 
+  // ── Answering a message request (recipient only) ───────────────────────────
+  async function acceptRequest() {
+    setAnswering(true);
+    try {
+      await api.acceptTravelMateMessageRequest({ matchId });
+    } catch (e: unknown) {
+      Alert.alert('Could not accept', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setAnswering(false);
+    }
+  }
+
+  function declineRequest() {
+    Alert.alert(
+      'Delete request?',
+      `The message from ${otherInfo?.displayName ?? 'this person'} will be deleted and they won't be able to message you again.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setAnswering(true);
+            try {
+              await api.declineTravelMateMessageRequest({ matchId });
+              router.back();
+            } catch (e: unknown) {
+              Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+            } finally {
+              setAnswering(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   // Send a non-text message (photo, file, location, contact). Uploads first
   // when the payload carries a local file.
   const sendAttachment = useCallback(
     async (build: () => Promise<Omit<TravelMateMessageInput, 'matchId'> | null>) => {
-      if (!user || closed || sending || uploading) return;
+      if (!user || composerLocked || sending || uploading) return;
       setAttachOpen(false);
       setUploading(true);
       try {
@@ -162,7 +217,7 @@ export default function TravelMateChat() {
         setSending(false);
       }
     },
-    [user, closed, sending, uploading, matchId],
+    [user, composerLocked, sending, uploading, matchId],
   );
 
   const onCamera = () =>
@@ -348,8 +403,51 @@ export default function TravelMateChat() {
           }}
         />
 
-        {!closed && (
+        {/* The recipient of a request answers it instead of replying. */}
+        {iAmAsked && (
+          <View style={s.requestBar}>
+            <Text style={s.requestBarText}>
+              {otherInfo?.displayName ?? 'This person'} isn&apos;t matched with you. Accept to reply —
+              they can&apos;t send anything else until you do.
+            </Text>
+            <View style={s.requestBarBtns}>
+              <Pressable
+                style={[s.requestDeleteBtn, answering && { opacity: 0.5 }]}
+                onPress={declineRequest}
+                disabled={answering}
+              >
+                <Text style={s.requestDeleteText}>Delete</Text>
+              </Pressable>
+              <Pressable
+                style={[s.requestAcceptBtn, answering && { opacity: 0.5 }]}
+                onPress={acceptRequest}
+                disabled={answering}
+              >
+                <Text style={s.requestAcceptText}>{answering ? '…' : 'Accept'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* The sender has used their one opening message and now waits. */}
+        {iSentRequest && openerSent && !closed && (
+          <View style={s.waitingBar}>
+            <Text style={s.waitingText}>
+              ⏳ Message request sent. You can send another once{' '}
+              {otherInfo?.displayName ?? 'they'} accepts.
+            </Text>
+          </View>
+        )}
+
+        {!composerLocked && (
           <>
+            {iSentRequest && (
+              <View style={s.requestHintBar}>
+                <Text style={s.requestHintText}>
+                  You aren&apos;t matched yet — this first message is a request.
+                </Text>
+              </View>
+            )}
             <View style={s.inputRow}>
               <Pressable
                 style={s.iconBtn}
@@ -618,6 +716,45 @@ const s = StyleSheet.create({
   reactionChipMine: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   reactionEmoji:    { fontSize: 13 },
   reactionCount:    { fontSize: 11, fontWeight: '800', color: colors.muted },
+
+  // Message requests: the recipient's Accept / Delete bar, the sender's
+  // "waiting" notice, and the hint above the one message they're allowed.
+  requestBar: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 16,
+    gap: 12,
+  },
+  requestBarText: { fontSize: 13, color: colors.muted, lineHeight: 19, textAlign: 'center' },
+  requestBarBtns: { flexDirection: 'row', gap: 10 },
+  requestDeleteBtn: {
+    flex: 1, height: 46, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestDeleteText: { fontSize: 14, fontWeight: '800', color: colors.muted },
+  requestAcceptBtn: {
+    flex: 1, height: 46, borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestAcceptText: { fontSize: 14, fontWeight: '900', color: '#000' },
+
+  waitingBar: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  waitingText: { fontSize: 13, color: colors.muted, lineHeight: 19, textAlign: 'center' },
+
+  requestHintBar: {
+    backgroundColor: colors.glassLime,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  requestHintText: { fontSize: 11, fontWeight: '700', color: colors.primary, textAlign: 'center' },
 
   inputRow:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
   iconBtn:     { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },

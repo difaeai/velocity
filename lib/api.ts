@@ -80,6 +80,12 @@ export const adminApi = {
     { ok: boolean; status: string }
   >('adminReviewCommissionSettlement'),
 
+  /** Passenger CNIC verification — the identity gate in front of couriers. */
+  adminReviewCnicVerification: callable<
+    { uid: string; approve: boolean; reason?: string },
+    { ok: boolean; status: 'verified' | 'rejected' }
+  >('adminReviewCnicVerification'),
+
   // ── Travel Mate admin ─────────────────────────────────────────────────────
   approveTravelMateSubscription: callable<
     { subscriptionId: string },
