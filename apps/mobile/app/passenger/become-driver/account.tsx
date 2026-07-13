@@ -3,17 +3,19 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
- * Driver account gate. After choosing "Driver" on the intro screen the user
- * decides whether they are signing up (→ phone login → registration) or already
- * have a driver account (→ straight to the driver rides dashboard).
+ * Driver account gate — reached only when NOBODY is signed in (a fresh install,
+ * for example). A signed-in passenger never lands here: they already have an
+ * account, so `useDriverEntry` sends them straight to the registration steps.
+ *
+ * Both choices verify the phone by OTP because there is no session to trust.
+ * The login screen then routes on the driver record it finds: registration for
+ * a new applicant, the status screen while pending, driver home once approved.
  */
 export default function DriverAccountChoice() {
   const router = useRouter();
 
-  // New driver: authenticate by phone/OTP, then fill in the registration.
   const goSignup = () => router.push('/passenger/become-driver/login');
-  // Existing driver: jump to their rides booking dashboard.
-  const goExisting = () => router.replace('/driver/home');
+  const goExisting = () => router.push('/passenger/become-driver/login');
 
   return (
     <SafeAreaView style={styles.safe}>

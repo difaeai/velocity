@@ -18,6 +18,7 @@ import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
@@ -31,6 +32,7 @@ export default function PassengerHome() {
   const { user, role, signOut } = useAuth();
   const router = useRouter();
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
+  const driverEntry = useDriverEntry();
   const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [poolFromPrice, setPoolFromPrice] = useState<number | null>(null);
@@ -76,10 +78,10 @@ export default function PassengerHome() {
   };
   const goDriverMode = () => {
     setDrawerOpen(false);
-    // Active drivers jump straight to their dashboard; everyone else re-verifies
-    // by OTP on the driver login, which then routes them to registration (first
-    // time) or the driver home (already registered).
-    router.push(role === 'driver' ? '/driver/home' : '/passenger/become-driver/login');
+    // Already signed in — becoming a driver never re-asks for a number/OTP.
+    // useDriverEntry decides: registration steps, application status, or the
+    // driver home if an admin has already approved them.
+    driverEntry.go();
   };
 
   return (

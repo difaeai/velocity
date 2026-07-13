@@ -11,12 +11,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
+import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { colors } from '../../src/config';
 import { Card, comingSoon } from '../../src/ui/components';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const driverEntry = useDriverEntry();
 
   const openSettings = () => router.push('/passenger/settings');
   const openActivity = () => router.push('/passenger/activity');
@@ -156,7 +158,8 @@ export default function ProfileScreen() {
         {/* Earn as a driver banner */}
         <Pressable
           style={styles.driverBanner}
-          onPress={() => router.push('/passenger/become-driver/login')}
+          disabled={driverEntry.busy}
+          onPress={driverEntry.go}
         >
           <View style={styles.bannerLeft}>
             <View style={styles.starBadgeCircle}>

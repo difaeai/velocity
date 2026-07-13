@@ -47,7 +47,15 @@ export const submitRating = onCall(async (req) => {
 
   const targetUid = targetRole === 'driver' ? driverId : passengerId;
 
+  // Rolling average lives on drivers/{uid} for a driver and on users/{uid} for
+  // a passenger — the open-requests feed copies the passenger's from there, so
+  // drivers can see the rating of whoever is hailing them.
+  const targetRef = targetRole === 'driver' ? db.doc(`drivers/${targetUid}`) : db.doc(`users/${targetUid}`);
+
   await db.runTransaction(async (tx) => {
+    // Firestore requires every read in a transaction to precede every write.
+    const targetSnap = await tx.get(targetRef);
+
     const ratingRef = db.collection('ratings').doc(`${tripId}_${targetRole}`);
     tx.set(ratingRef, {
       tripId,
@@ -62,25 +70,20 @@ export const submitRating = onCall(async (req) => {
     // Mark trip so neither side can double-rate
     tx.set(tripRef, { [alreadyField]: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
-    // Update driver's rolling average (passenger ratings aren't aggregated yet)
-    if (targetRole === 'driver') {
-      const driverRef  = db.doc(`drivers/${targetUid}`);
-      const driverSnap = await tx.get(driverRef);
-      if (driverSnap.exists) {
-        const prevRating: number = driverSnap.get('rating')      ?? 5.0;
-        const prevCount:  number = driverSnap.get('ratingCount') ?? 0;
-        const newCount  = prevCount + 1;
-        const newRating = (prevRating * prevCount + stars) / newCount;
-        tx.set(
-          driverRef,
-          {
-            rating:      Math.round(newRating * 10) / 10,
-            ratingCount: newCount,
-            updatedAt:   FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-      }
+    if (targetSnap.exists) {
+      const prevRating: number = targetSnap.get('rating')      ?? 5.0;
+      const prevCount:  number = targetSnap.get('ratingCount') ?? 0;
+      const newCount  = prevCount + 1;
+      const newRating = (prevRating * prevCount + stars) / newCount;
+      tx.set(
+        targetRef,
+        {
+          rating:      Math.round(newRating * 10) / 10,
+          ratingCount: newCount,
+          updatedAt:   FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
     }
   });
 

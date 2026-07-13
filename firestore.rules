@@ -510,6 +510,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- requestReports/{reportId} -------------------------------------------
+    // A driver flagging a fake / abusive open request (reportOpenRequest CF).
+    // The reporting driver may read their own report back; admins read all.
+    // The reported passenger must NOT be able to read it — reports are not
+    // disputes and are never disclosed to the person being reported.
+    match /requestReports/{reportId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.reportedBy == uid());
+      allow write: if false;
+    }
+
     // ----- franchises/{franchiseId} ---------------------------------------------
     // Created via adminCreateFranchise CF. Dashboard-only visibility.
     match /franchises/{franchiseId} {

@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Svg, { Path } from 'react-native-svg';
 
 // `expo-location` is native-only; never evaluate it on web (same pattern as
 // src/hooks/location.ts). navigator.geolocation does NOT exist in React
@@ -14,25 +25,27 @@ const ExpoLocation =
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
-import { api } from '../../src/api/client';
-import type { CommuteDemandSlot } from '../../src/api/client';
+import { api, type ReportReason } from '../../src/api/client';
 import {
   useCommissionStatus,
   useDriverActiveTrip,
   useDriverPoolRides,
   useDriverProfile,
   useOpenRequests,
-  useWalletBalance,
+  type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
 import { colors } from '../../src/config';
-import { Badge, Card, PrimaryButton } from '../../src/ui/components';
+import { PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
 import { RatingModal } from '../../src/ui/RatingModal';
 import { ChatModal } from '../../src/ui/ChatModal';
 import { DriverDrawer } from '../../src/ui/DriverDrawer';
-import { DemandHeatmap } from '../../src/ui/DemandHeatmap';
 import { ArrivalCountdown } from '../../src/ui/ArrivalCountdown';
+import { RadarScan } from '../../src/ui/RadarScan';
+import { RequestCard } from '../../src/ui/RequestCard';
+import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
+import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -42,47 +55,51 @@ const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' |
   in_progress: { label: 'Complete trip' },
 };
 
+/** How long the radar sweeps after the driver goes online, before the feed opens. */
+const SCAN_MS = 3500;
+
+/** Skipped/hidden request ids, persisted for an hour so they don't come back. */
+const SKIP_KEY = 'driver_skipped_requests';
+const SKIP_TTL = 60 * 60 * 1000;
+
 export default function DriverHome() {
   const { user, signOut } = useAuth();
   const uid = user?.uid;
   const router = useRouter();
-  const profile    = useDriverProfile(uid);
+  const profile = useDriverProfile(uid);
   const activeTrip = useDriverActiveTrip(uid);
-  const poolRides  = useDriverPoolRides(uid);
-  const online  = profile?.online ?? false;
+  const poolRides = useDriverPoolRides(uid);
+  const online = profile?.online ?? false;
+
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const requests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
-  const balance  = useWalletBalance(uid);
-  const [busy, setBusy] = useState(false);
-
-  // Pool pickup/drop radius preference (metres) — stored on the driver doc and
-  // used as the default zones when posting a new pool route.
-  const poolPickupRadiusM  = (profile as { poolPickupRadiusM?: number }  | null)?.poolPickupRadiusM  ?? 400;
-  const poolDropoffRadiusM = (profile as { poolDropoffRadiusM?: number } | null)?.poolDropoffRadiusM ?? 300;
-  function saveRadius(field: 'poolPickupRadiusM' | 'poolDropoffRadiusM', value: number) {
-    if (!uid) return;
-    const v = Math.min(2000, Math.max(100, value));
-    setDoc(doc(db, 'drivers', uid), { [field]: v }, { merge: true }).catch(() => {});
-  }
-
-  // Commission settle status — live driver cycle + admin-set rate/threshold.
+  const liveRequests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
   const commission = useCommissionStatus(profile);
+  const commissionLocked = commission.locked;
 
-  // Rating state: shown after driver completes a trip
-  const [ratingTrip, setRatingTrip]   = useState<Trip | null>(null);
-  const prevTripRef                   = useRef<Trip | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [ratingTrip, setRatingTrip] = useState<Trip | null>(null);
+  const prevTripRef = useRef<Trip | null>(null);
 
-  // Chat state
-  const [chatOpen, setChatOpen]       = useState(false);
+  // ── Radar → feed ─────────────────────────────────────────────────────────
+  // The sweep runs for a few seconds after the driver taps "Go online", so the
+  // app visibly looks for work before the list appears. It is keyed off the tap
+  // (not off `online`) so returning to this tab with the feed already loaded
+  // drops the driver straight back into the list.
+  const [scanning, setScanning] = useState(false);
+  useEffect(() => {
+    if (!scanning) return;
+    const t = setTimeout(() => setScanning(false), SCAN_MS);
+    return () => clearTimeout(t);
+  }, [scanning]);
+  // Going offline (or picking up a trip) cancels an in-flight sweep.
+  useEffect(() => {
+    if (!online || activeTrip) setScanning(false);
+  }, [online, activeTrip]);
 
-  // Drawer state
-  const [drawerOpen, setDrawerOpen]   = useState(false);
-
-  // Skipped request IDs — persisted in AsyncStorage with 1-hour TTL
-  const SKIP_KEY = 'driver_skipped_requests';
-  const SKIP_TTL = 60 * 60 * 1000; // 1 hour
-
-  const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  // ── Hidden requests ──────────────────────────────────────────────────────
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     AsyncStorage.getItem(SKIP_KEY).then((raw) => {
@@ -91,42 +108,100 @@ export default function DriverHome() {
         const entries: { id: string; at: number }[] = JSON.parse(raw);
         const now = Date.now();
         const valid = entries.filter((e) => now - e.at < SKIP_TTL);
-        setSkippedIds(new Set(valid.map((e) => e.id)));
-        if (valid.length !== entries.length)
-          AsyncStorage.setItem(SKIP_KEY, JSON.stringify(valid));
+        setHiddenIds(new Set(valid.map((e) => e.id)));
+        if (valid.length !== entries.length) AsyncStorage.setItem(SKIP_KEY, JSON.stringify(valid));
       } catch { /* corrupted data — start fresh */ }
     });
   }, []);
 
-  const skipRequest = (tripId: string) => {
-    setSkippedIds((prev) => {
-      const next = new Set([...prev, tripId]);
-      AsyncStorage.getItem(SKIP_KEY).then((raw) => {
-        const existing: { id: string; at: number }[] = raw ? JSON.parse(raw) : [];
-        const updated = [...existing.filter((e) => e.id !== tripId), { id: tripId, at: Date.now() }];
-        AsyncStorage.setItem(SKIP_KEY, JSON.stringify(updated));
-      });
-      return next;
-    });
-  };
-
-  // Live preview for commute demand section
-  const [commuteDemandPreview, setCommuteDemandPreview] = useState<CommuteDemandSlot[]>([]);
-
-  const loadPreviews = useCallback(async (lat: number, lng: number) => {
-    try {
-      const res = await api.getCommuteDemand({ lat, lng, radiusKm: 10 });
-      setCommuteDemandPreview((res as { demand: CommuteDemandSlot[] }).demand.slice(0, 3));
-    } catch { /* silent */ }
+  const hideRequest = useCallback((tripId: string) => {
+    setHiddenIds((prev) => new Set([...prev, tripId]));
+    AsyncStorage.getItem(SKIP_KEY).then((raw) => {
+      const existing: { id: string; at: number }[] = raw ? JSON.parse(raw) : [];
+      const updated = [...existing.filter((e) => e.id !== tripId), { id: tripId, at: Date.now() }];
+      AsyncStorage.setItem(SKIP_KEY, JSON.stringify(updated));
+    }).catch(() => {});
   }, []);
 
-  // Register FCM push token
+  const visible = useMemo(
+    () => liveRequests.filter((r) => !hiddenIds.has(r.tripId)),
+    [liveRequests, hiddenIds],
+  );
+
+  // ── "Show new requests" ──────────────────────────────────────────────────
+  // The rendered list is a frozen snapshot. Requests arriving while the driver
+  // reads the feed do NOT reflow it under their thumb — they queue up behind a
+  // pill, and the driver decides when to pull them in.
+  const [shown, setShown] = useState<OpenRequest[]>([]);
+  const listRef = useRef<FlatList<OpenRequest>>(null);
+
+  useEffect(() => {
+    setShown((prev) => {
+      // Nothing on screen yet (first load, or everything got taken/hidden) →
+      // adopt the live feed immediately; there is no scroll position to protect.
+      if (prev.length === 0) return visible;
+
+      const live = new Map(visible.map((r) => [r.tripId, r]));
+      // Drop requests another driver has taken, and refresh the ones still open
+      // (the passenger may have raised the fare while we were looking at it).
+      return prev.flatMap((r) => {
+        const fresh = live.get(r.tripId);
+        return fresh ? [fresh] : [];
+      });
+    });
+  }, [visible]);
+
+  const shownIds = useMemo(() => new Set(shown.map((r) => r.tripId)), [shown]);
+  const pendingCount = useMemo(
+    () => visible.filter((r) => !shownIds.has(r.tripId)).length,
+    [visible, shownIds],
+  );
+
+  const showNewRequests = useCallback(() => {
+    setShown(visible);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [visible]);
+
+  // ── Swipe actions + report ───────────────────────────────────────────────
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reportTripId, setReportTripId] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  async function submitReport(reasons: ReportReason[], description: string) {
+    if (!reportTripId) return;
+    setReporting(true);
+    setReportError(null);
+    try {
+      const res = await api.reportOpenRequest({
+        tripId: reportTripId,
+        reasons,
+        ...(description ? { description } : {}),
+      });
+      // Reporting also takes it out of this driver's feed — they have said their
+      // piece and should not have to look at it again.
+      hideRequest(reportTripId);
+      setReportTripId(null);
+      Alert.alert(
+        res.alreadyReported ? 'Already reported' : 'Report sent',
+        res.alreadyReported
+          ? 'You have already reported this request. Our team is reviewing it.'
+          : 'Thank you. Our team will review this request.',
+      );
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : 'Could not send the report. Please try again.');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  // ── Push + location ──────────────────────────────────────────────────────
   useEffect(() => {
     if (user) registerForPushNotifications().catch(() => {});
   }, [user?.uid]);
 
-  // Location tracking for geohash proximity filtering + the passenger-facing
-  // live driver marker (drivers/{uid}.lastLocation).
+  // Location powers the geohash proximity filter, the distance shown on each
+  // request, and the passenger-facing live driver marker.
   useEffect(() => {
     let watchId: ReturnType<typeof setInterval> | undefined;
     if (online) {
@@ -141,21 +216,16 @@ export default function DriverHome() {
       };
       const updateLocation = () => {
         if (ExpoLocation) {
-          // Native: navigator.geolocation does not exist in React Native.
           ExpoLocation.requestForegroundPermissionsAsync()
             .then(({ status }) => {
               if (status !== 'granted') return null;
-              return ExpoLocation.getCurrentPositionAsync({
-                accuracy: ExpoLocation.Accuracy.Balanced,
-              });
+              return ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
             })
-            .then((pos) => {
-              if (pos) publish(pos.coords.latitude, pos.coords.longitude);
-            })
+            .then((pos) => { if (pos) publish(pos.coords.latitude, pos.coords.longitude); })
             .catch(() => {});
         } else if (typeof navigator !== 'undefined' && navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            pos => publish(pos.coords.latitude, pos.coords.longitude),
+            (pos) => publish(pos.coords.latitude, pos.coords.longitude),
             () => {},
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
           );
@@ -163,21 +233,13 @@ export default function DriverHome() {
       };
       updateLocation();
       watchId = setInterval(updateLocation, 30000);
-      // Load pool previews once we have location
-      if (driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
     }
     return () => { if (watchId) clearInterval(watchId); };
   }, [online, uid]);
 
-  // Reload pool previews whenever location updates
-  useEffect(() => {
-    if (online && driverCoords) loadPreviews(driverCoords.lat, driverCoords.lng);
-  }, [online, driverCoords, loadPreviews]);
-
-  // When active trip disappears (driver completed it), capture it for rating
+  // Trip just ended → offer the driver a chance to rate the passenger.
   useEffect(() => {
     if (prevTripRef.current && !activeTrip) {
-      // Trip just ended — offer driver a chance to rate the passenger
       if (prevTripRef.current.status === 'in_progress' && !prevTripRef.current.driverRated) {
         setRatingTrip(prevTripRef.current);
       }
@@ -185,11 +247,14 @@ export default function DriverHome() {
     prevTripRef.current = activeTrip;
   }, [activeTrip]);
 
-  const commissionLocked = commission.locked;
-
   async function handleRate(stars: number, comment: string) {
     if (!ratingTrip) return;
-    await api.submitRating({ tripId: ratingTrip.id, stars, comment: comment || undefined, targetRole: 'passenger' });
+    await api.submitRating({
+      tripId: ratingTrip.id,
+      stars,
+      comment: comment || undefined,
+      targetRole: 'passenger',
+    });
     setRatingTrip(null);
   }
 
@@ -204,104 +269,72 @@ export default function DriverHome() {
     }
   }
 
-  function toggleOnline() {
-    if (!uid) return;
-    run(() =>
-      setDoc(doc(db, 'drivers', uid), { online: !online, lastSeenAt: serverTimestamp() }, { merge: true }),
-    );
+  function setOnline(next: boolean) {
+    if (!uid || next === online) return;
+    // Sweep the radar on the way online — never on the way offline.
+    if (next) setScanning(true);
+    run(() => setDoc(doc(db, 'drivers', uid), { online: next, lastSeenAt: serverTimestamp() }, { merge: true }));
+  }
+
+  function openRequest(tripId: string) {
+    if (commissionLocked) {
+      Alert.alert('Account locked', `Settle ${commission.due.toLocaleString()} PKR commission to accept rides.`);
+      return;
+    }
+    router.push(`/driver/request-detail/${tripId}` as Parameters<typeof router.push>[0]);
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.headerRow}>
-          <Pressable onPress={() => setDrawerOpen(true)} style={styles.menuBtn} hitSlop={12}>
-            <Text style={styles.menuIcon}>☰</Text>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      {/* ── Header: menu · online toggle · settings ── */}
+      <View style={styles.header}>
+        <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12} style={styles.headerBtn}>
+          <Svg width={26} height={26} viewBox="0 0 24 24">
+            <Path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" fill={colors.text} />
+          </Svg>
+        </Pressable>
+
+        <View style={styles.toggle}>
+          <Pressable
+            style={[styles.toggleHalf, !online && styles.toggleOffActive]}
+            disabled={busy}
+            onPress={() => setOnline(false)}
+          >
+            <Text style={[styles.toggleTxt, !online && styles.toggleOffTxt]}>Offline</Text>
           </Pressable>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.hello}>Driver</Text>
-            <Text style={styles.email}>{profile?.fullName || user?.email || 'Driver'}</Text>
-          </View>
-          <Badge label={online ? 'Online' : 'Offline'} color={online ? colors.primary : colors.muted} />
+          <Pressable
+            style={[styles.toggleHalf, online && styles.toggleOnActive]}
+            disabled={busy}
+            onPress={() => setOnline(true)}
+          >
+            <Text style={[styles.toggleTxt, online && styles.toggleOnTxt]}>Online</Text>
+          </Pressable>
         </View>
 
-        <PrimaryButton
-          label={online ? 'Go offline' : 'Go online'}
-          variant={online ? 'danger' : 'primary'}
-          disabled={busy}
-          onPress={toggleOnline}
-        />
-
-        {/* Commission settle takeover — the app pauses here until the driver
-            settles the cycle's commission with Velocity. An in-progress trip
-            can still be finished first. */}
-        {commissionLocked && !activeTrip && (
-          <>
-            <CommissionLock
-              status={commission}
-              uid={uid}
-              requests={requests.filter((r) => !skippedIds.has(r.tripId))}
+        <Pressable onPress={() => router.push('/passenger/settings')} hitSlop={12} style={styles.headerBtn}>
+          <Svg width={24} height={24} viewBox="0 0 24 24">
+            <Path
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"
+              fill={colors.text}
             />
-            <PrimaryButton
-              variant="secondary"
-              label="💳 Open wallet"
-              onPress={() => router.push('/driver/wallet')}
-            />
-          </>
-        )}
-        {commissionLocked && activeTrip && (
-          <View style={styles.lockBanner}>
-            <Text style={styles.lockTitle}>🔒 Commission due — {commission.due.toLocaleString()} PKR</Text>
-            <Text style={styles.lockBody}>
-              Finish your current trip, then settle with Velocity to keep receiving rides.
-            </Text>
-          </View>
-        )}
+          </Svg>
+        </Pressable>
+      </View>
 
-        {/* Pool pickup & drop radius — default zones for new pool routes */}
-        {!commissionLocked && (
-        <View style={styles.radiusHomeCard}>
-          <Text style={styles.radiusHomeTitle}>🧭 Pool pickup & drop radius</Text>
-          <Text style={styles.radiusHomeSub}>
-            Passengers within these zones of your route can join your pool rides
-          </Text>
-          {([
-            { label: 'Pickup zone',  field: 'poolPickupRadiusM' as const,  value: poolPickupRadiusM },
-            { label: 'Drop zone',    field: 'poolDropoffRadiusM' as const, value: poolDropoffRadiusM },
-          ]).map((row) => (
-            <View key={row.field} style={styles.radiusHomeRow}>
-              <Text style={styles.radiusHomeLabel}>{row.label}</Text>
-              <View style={styles.radiusHomeStepper}>
-                <Pressable style={styles.radiusHomeBtn} onPress={() => saveRadius(row.field, row.value - 100)} hitSlop={6}>
-                  <Text style={styles.radiusHomeBtnTxt}>−</Text>
-                </Pressable>
-                <Text style={styles.radiusHomeValue}>{row.value}m</Text>
-                <Pressable style={styles.radiusHomeBtn} onPress={() => saveRadius(row.field, row.value + 100)} hitSlop={6}>
-                  <Text style={styles.radiusHomeBtnTxt}>+</Text>
-                </Pressable>
-              </View>
+      {/* ── Body ── */}
+      {activeTrip ? (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          {commissionLocked && (
+            <View style={styles.lockBanner}>
+              <Text style={styles.lockTitle}>🔒 Commission due — {commission.due.toLocaleString()} PKR</Text>
+              <Text style={styles.lockBody}>
+                Finish your current trip, then settle with Velocity to keep receiving rides.
+              </Text>
             </View>
-          ))}
-        </View>
-        )}
+          )}
 
-        {/* Cycle earnings progress */}
-        {!commissionLocked && commission.cycleGrossFare > 0 && (
-          <View style={styles.cycleBar}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={styles.cycleLabel}>Cycle earnings · commission so far {commission.due.toLocaleString()} PKR</Text>
-              <Text style={styles.cycleLabel}>{commission.cycleGrossFare.toLocaleString()} / {commission.threshold.toLocaleString()} PKR</Text>
-            </View>
-            <View style={styles.cycleTrack}>
-              <View style={[styles.cycleFill, { width: `${Math.min((commission.cycleGrossFare / commission.threshold) * 100, 100)}%` }]} />
-            </View>
-          </View>
-        )}
-
-        {/* ── 1. Active trip (always first when present) ── */}
-        {activeTrip && (
-          <Card>
-            <Text style={styles.cardTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
+          <View style={styles.tripCard}>
+            <Text style={styles.tripTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
             {activeTrip.status === 'arrived' && (
               <ArrivalCountdown arrivedAt={activeTrip.arrivedAt} role="driver" />
             )}
@@ -312,14 +345,20 @@ export default function DriverHome() {
               pickupCoord={activeTrip.pickup}
               dropoffCoord={activeTrip.dropoff}
             />
-            <Text style={styles.fare}>Fare: {activeTrip.fare} PKR</Text>
+            <Text style={styles.tripFare}>Fare: {activeTrip.fare} PKR</Text>
             <View style={styles.contactRow}>
               {activeTrip.passengerPhone ? (
-                <Pressable style={styles.contactBtn} onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}>
+                <Pressable
+                  style={styles.contactBtn}
+                  onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}
+                >
                   <Text style={styles.contactBtnText}>📞 Call passenger</Text>
                 </Pressable>
               ) : null}
-              <Pressable style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]} onPress={() => setChatOpen(true)}>
+              <Pressable
+                style={[styles.contactBtn, { backgroundColor: `${colors.primary}18` }]}
+                onPress={() => setChatOpen(true)}
+              >
                 <Text style={styles.contactBtnText}>💬 Message</Text>
               </Pressable>
             </View>
@@ -332,232 +371,92 @@ export default function DriverHome() {
                   disabled={busy}
                   onPress={() => run(() => next.to
                     ? api.updateTripStatus({ tripId: activeTrip.id, to: next.to })
-                    : api.completeTrip({ tripId: activeTrip.id })
-                  )}
+                    : api.completeTrip({ tripId: activeTrip.id }))}
                 />
               );
             })()}
-            <PrimaryButton variant="danger" label="🆘 SOS" disabled={busy}
-              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))} />
-          </Card>
-        )}
-
-        {!commissionLocked && (<>
-        {/* ── 2. Incoming Requests ── */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Incoming Requests</Text>
-              <Text style={styles.poolSubtitle}>
-                {online ? 'Passengers near you — open to view & negotiate fare' : 'Go online to receive requests'}
-              </Text>
-            </View>
-            {online && requests.filter((r) => !skippedIds.has(r.tripId)).length > 0 && (
-              <Pressable
-                style={styles.offerBtn}
-                onPress={() => router.push('/driver/all-requests' as Parameters<typeof router.push>[0])}
-              >
-                <Text style={styles.offerBtnText}>See all →</Text>
-              </Pressable>
+            <PrimaryButton
+              variant="danger"
+              label="🆘 SOS"
+              disabled={busy}
+              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))}
+            />
+          </View>
+        </ScrollView>
+      ) : commissionLocked ? (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <CommissionLock status={commission} uid={uid} requests={visible} />
+          <PrimaryButton
+            variant="secondary"
+            label="💳 Open wallet"
+            onPress={() => router.push('/driver/wallet')}
+          />
+        </ScrollView>
+      ) : !online ? (
+        <View style={styles.flex}>
+          <RadarScan
+            scanning={false}
+            title="You're offline"
+            subtitle="Go online to start receiving ride requests from passengers near you."
+          />
+        </View>
+      ) : scanning || shown.length === 0 ? (
+        <View style={styles.flex}>
+          <RadarScan
+            scanning
+            title="Searching for orders nearby..."
+            subtitle={
+              scanning
+                ? undefined
+                : 'No open requests around you right now. Stay online — new ones appear here automatically.'
+            }
+          />
+          {/* A request landing during the sweep is still announced. */}
+          {!scanning && pendingCount > 0 && (
+            <NewRequestsPill count={pendingCount} onPress={showNewRequests} floating={false} />
+          )}
+        </View>
+      ) : (
+        <View style={styles.flex}>
+          <FlatList
+            ref={listRef}
+            data={shown}
+            keyExtractor={(r) => r.tripId}
+            contentContainerStyle={{ paddingBottom: DRIVER_TAB_BAR_HEIGHT }}
+            ListHeaderComponent={
+              poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null
+            }
+            renderItem={({ item }) => (
+              <RequestCard
+                request={item}
+                expanded={expandedId === item.tripId}
+                locked={commissionLocked}
+                onToggleActions={() =>
+                  setExpandedId((cur) => (cur === item.tripId ? null : item.tripId))
+                }
+                onOpen={() => openRequest(item.tripId)}
+                onComplain={() => {
+                  setExpandedId(null);
+                  setReportError(null);
+                  setReportTripId(item.tripId);
+                }}
+                onHide={() => {
+                  setExpandedId(null);
+                  hideRequest(item.tripId);
+                }}
+                onChooseOnMap={() => {
+                  setExpandedId(null);
+                  openRequest(item.tripId);
+                }}
+              />
             )}
-          </View>
-
-          {!online ? (
-            <View style={styles.emptyPreview}>
-              <Text style={styles.emptyPreviewIcon}>📵</Text>
-              <Text style={styles.emptyPreviewText}>You are offline. Go online to receive ride requests.</Text>
-            </View>
-          ) : requests.filter((r) => !skippedIds.has(r.tripId)).length === 0 ? (
-            <View style={styles.emptyPreview}>
-              <Text style={styles.emptyPreviewIcon}>🔍</Text>
-              <Text style={styles.emptyPreviewText}>No open requests nearby. Stay online…</Text>
-            </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {requests.filter((r) => !skippedIds.has(r.tripId)).slice(0, 2).map((r) => (
-                <View key={r.id} style={styles.previewCard}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
-                      <Text style={styles.previewRoute} numberOfLines={1}>
-                        {r.pickup?.address ?? 'Pickup'} → {r.dropoff?.address ?? 'Drop-off'}
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                      <Text style={styles.previewMeta}>{RIDE_TYPE_LABELS[r.rideType]} · {r.seats} seat(s)</Text>
-                      {r.paymentMethod === 'cash' && <Text style={styles.previewMeta}>· 💵 Cash</Text>}
-                      {r.preferFemaleDriver && <Text style={[styles.previewMeta, { color: '#ff69b4' }]}>· 👩 Female pref</Text>}
-                    </View>
-                  </View>
-                  <View style={styles.requestedFareBadge}>
-                    <Text style={styles.requestedFareAmt}>{r.offeredFare}</Text>
-                    <Text style={styles.requestedFarePkr}>PKR</Text>
-                  </View>
-                  <View style={{ gap: 6 }}>
-                    <Pressable
-                      style={styles.openReqBtn}
-                      disabled={busy || commissionLocked}
-                      onPress={() => {
-                        if (commissionLocked) { Alert.alert('Account Locked', `Pay ${commission.due} PKR commission to accept rides.`); return; }
-                        router.push(`/driver/request-detail/${r.tripId}` as Parameters<typeof router.push>[0]);
-                      }}
-                    >
-                      <Text style={styles.openReqBtnTxt}>{commissionLocked ? '🔒' : 'Open'}</Text>
-                    </Pressable>
-                    <Pressable style={styles.skipReqBtn} onPress={() => skipRequest(r.tripId)}>
-                      <Text style={styles.skipReqBtnTxt}>Skip</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-              {requests.filter((r) => !skippedIds.has(r.tripId)).length > 2 && (
-                <Pressable
-                  style={styles.seeAllBtn}
-                  onPress={() => router.push('/driver/all-requests' as Parameters<typeof router.push>[0])}
-                >
-                  <Text style={styles.seeAllBtnTxt}>
-                    See all {requests.filter((r) => !skippedIds.has(r.tripId)).length} requests →
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          )}
+          />
+          {pendingCount > 0 && <NewRequestsPill count={pendingCount} onPress={showNewRequests} floating />}
         </View>
+      )}
 
-        {/* ── 3. Demand Map ── */}
-        {online && <DemandHeatmap />}
+      <DriverTabBar active="requests" />
 
-        {/* ── 4. Commute Map ── */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Commute Map</Text>
-              <Text style={styles.poolSubtitle}>Today's anonymised commuter demand near you</Text>
-            </View>
-            <Pressable
-              style={styles.offerBtn}
-              onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
-            >
-              <Text style={styles.offerBtnText}>View all →</Text>
-            </Pressable>
-          </View>
-
-          {commuteDemandPreview.length === 0 ? (
-            <View style={styles.emptyPreview}>
-              <Text style={styles.emptyPreviewIcon}>📊</Text>
-              <Text style={styles.emptyPreviewText}>No commute demand data in your area today</Text>
-            </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {commuteDemandPreview.map((slot) => {
-                const parts = slot.time.split(':');
-                const h = parseInt(parts[0] ?? '0', 10);
-                const m = parts[1] ?? '00';
-                const ampm = h >= 12 ? 'PM' : 'AM';
-                const h12 = h % 12 || 12;
-                return (
-                  <Pressable
-                    key={`${slot.time}::${slot.destinationAreaName}`}
-                    style={styles.previewCard}
-                    onPress={() => router.push('/driver/commute-demand' as Parameters<typeof router.push>[0])}
-                  >
-                    <View style={styles.commuteTimeBox}>
-                      <Text style={styles.commuteTimeNum}>{h12}:{m}</Text>
-                      <Text style={styles.commuteTimeAmpm}>{ampm}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.previewRoute} numberOfLines={1}>→ {slot.destinationAreaName}</Text>
-                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                        {slot.genderBreakdown.male > 0 && (
-                          <View style={[styles.genderChip, { borderColor: '#4fc3f7' }]}>
-                            <Text style={[styles.genderChipTxt, { color: '#4fc3f7' }]}>♂ {slot.genderBreakdown.male}</Text>
-                          </View>
-                        )}
-                        {slot.genderBreakdown.female > 0 && (
-                          <View style={[styles.genderChip, { borderColor: '#ff69b4' }]}>
-                            <Text style={[styles.genderChipTxt, { color: '#ff69b4' }]}>♀ {slot.genderBreakdown.female}</Text>
-                          </View>
-                        )}
-                        {slot.genderBreakdown.any > 0 && (
-                          <View style={[styles.genderChip, { borderColor: colors.muted }]}>
-                            <Text style={[styles.genderChipTxt, { color: colors.muted }]}>👥 {slot.genderBreakdown.any}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                    <View style={styles.fareBadge}>
-                      <Text style={styles.fareBadgeAmt}>{slot.count}</Text>
-                      <Text style={styles.fareBadgePkr}>rider{slot.count !== 1 ? 's' : ''}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-              <Text style={styles.previewFooter}>Anonymised — area names and rounded times only</Text>
-            </View>
-          )}
-        </View>
-
-        {/* ── 5. Offer a Pool Route ── */}
-        <View style={styles.poolSection}>
-          <View style={styles.poolHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.poolTitle}>Offer a Pool Route</Text>
-              <Text style={styles.poolSubtitle}>Earn more by sharing your own route</Text>
-            </View>
-            <Pressable style={styles.offerBtn} onPress={() => router.push('/driver/pool-ride-offer')}>
-              <Text style={styles.offerBtnText}>+ New route</Text>
-            </Pressable>
-          </View>
-          {poolRides.length > 0 ? (
-            <View style={{ gap: 10 }}>
-              {poolRides.map((pr) => (
-                <View key={pr.id} style={{ gap: 8 }}>
-                  <Pressable style={styles.poolRideCard} onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.poolRideRoute} numberOfLines={1}>
-                        {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
-                      </Text>
-                      <Text style={styles.poolRideMeta}>{pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat</Text>
-                    </View>
-                    <View style={styles.poolRideStatusBadge}>
-                      <Text style={styles.poolRideStatusText}>
-                        {pr.status === 'open' ? '🟡 Open'
-                          : pr.status === 'collecting' ? '🟢 Collecting'
-                          : pr.status === 'full' ? '🔵 Full'
-                          : pr.status === 'boarding' ? '🚗 Boarding'
-                          : pr.status === 'in_progress' ? '🏁 En route'
-                          : pr.status}
-                      </Text>
-                    </View>
-                  </Pressable>
-                  {['open', 'collecting'].includes(pr.status) && (
-                    <PoolBatchRequests rideId={pr.id} />
-                  )}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.poolDesc}>
-              Post your own route and fill empty seats along the way.{'\n'}
-              Example: 1200 PKR solo → 400 PKR × 4 passengers = 1600 PKR
-            </Text>
-          )}
-        </View>
-
-        {/* ── 6. Earnings ── */}
-        <Card>
-          <Text style={styles.cardTitle}>Earnings</Text>
-          <Text style={styles.earnings}>{balance} PKR</Text>
-          <Text style={styles.muted}>{profile?.tripsCount ?? 0} trips · {profile?.rating ?? 5}★</Text>
-          <View style={{ marginTop: 10 }}>
-            <PrimaryButton variant="secondary" label="💳 Wallet & payouts" onPress={() => router.push('/driver/wallet')} />
-          </View>
-        </Card>
-        </>)}
-
-        <PrimaryButton variant="danger" label="Sign out" onPress={signOut} />
-      </ScrollView>
-
-      {/* Post-trip: rate the passenger */}
       <RatingModal
         visible={ratingTrip !== null}
         targetLabel="Rate your passenger"
@@ -566,7 +465,14 @@ export default function DriverHome() {
         onSkip={() => setRatingTrip(null)}
       />
 
-      {/* In-ride chat with passenger */}
+      <ReportRequestModal
+        visible={reportTripId !== null}
+        submitting={reporting}
+        error={reportError}
+        onClose={() => { setReportTripId(null); setReportError(null); }}
+        onSubmit={submitReport}
+      />
+
       {activeTrip && (
         <ChatModal
           visible={chatOpen}
@@ -578,7 +484,6 @@ export default function DriverHome() {
         />
       )}
 
-      {/* Side drawer */}
       <DriverDrawer
         visible={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -590,6 +495,63 @@ export default function DriverHome() {
         onSignOut={signOut}
       />
     </SafeAreaView>
+  );
+}
+
+/** Floating "new requests arrived" pill — the feed only reflows when tapped. */
+function NewRequestsPill({
+  count,
+  onPress,
+  floating,
+}: {
+  count: number;
+  onPress: () => void;
+  floating: boolean;
+}) {
+  return (
+    <View style={[styles.pillWrap, floating && styles.pillFloating]} pointerEvents="box-none">
+      <Pressable style={styles.pill} onPress={onPress}>
+        <Text style={styles.pillTxt}>
+          ↑  Show new request{count === 1 ? '' : 's'}
+          {count > 1 ? `  (${count})` : ''}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/** The driver's own posted pool routes, above the incoming feed. */
+function PoolRoutesHeader({ rides }: { rides: ReturnType<typeof useDriverPoolRides> }) {
+  const router = useRouter();
+  return (
+    <View style={styles.poolHeader}>
+      <Text style={styles.poolHeaderTitle}>Your pool routes</Text>
+      {rides.map((pr) => (
+        <View key={pr.id} style={{ gap: 8 }}>
+          <Pressable style={styles.poolRideCard} onPress={() => router.push(`/driver/pool-pickup/${pr.id}`)}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.poolRideRoute} numberOfLines={1}>
+                {pr.pickup?.address ?? 'Pickup'} → {pr.dropoff?.address ?? 'Dropoff'}
+              </Text>
+              <Text style={styles.poolRideMeta}>
+                {pr.takenSeats}/{pr.maxSeats} seats · {pr.perSeatFare} PKR/seat
+              </Text>
+            </View>
+            <View style={styles.poolRideStatusBadge}>
+              <Text style={styles.poolRideStatusText}>
+                {pr.status === 'open' ? '🟡 Open'
+                  : pr.status === 'collecting' ? '🟢 Collecting'
+                  : pr.status === 'full' ? '🔵 Full'
+                  : pr.status === 'boarding' ? '🚗 Boarding'
+                  : pr.status === 'in_progress' ? '🏁 En route'
+                  : pr.status}
+              </Text>
+            </View>
+          </Pressable>
+          {['open', 'collecting'].includes(pr.status) && <PoolBatchRequests rideId={pr.id} />}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -661,146 +623,62 @@ function PoolBatchRequests({ rideId }: { rideId: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  container: { padding: 18, gap: 14 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  menuBtn:   { padding: 4 },
-  menuIcon:  { fontSize: 26, color: colors.text, fontWeight: '700' },
-  hello: { fontSize: 15, color: colors.muted },
-  email: { fontSize: 18, fontWeight: '900', color: colors.text },
-  section: { fontSize: 14, fontWeight: '800', color: colors.text },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
-  muted: { fontSize: 13, color: colors.muted },
-  fare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
-  reqRow: { flexDirection: 'row', alignItems: 'center' },
-  bidRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  earnings: { fontSize: 28, fontWeight: '900', color: colors.primary, marginVertical: 4 },
-  poolSection: {
+  flex: { flex: 1 },
+  scroll: { padding: 18, gap: 14, paddingBottom: DRIVER_TAB_BAR_HEIGHT + 18 },
+
+  // ── Header ──
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  headerBtn: { padding: 4 },
+  toggle: {
+    flex: 1,
+    maxWidth: 260,
+    flexDirection: 'row',
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.glassStrong,
+    padding: 3,
+  },
+  toggleHalf: { flex: 1, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  toggleOffActive: { backgroundColor: '#ff8a8a' },
+  toggleOnActive: { backgroundColor: colors.primary },
+  toggleTxt: { fontSize: 15, fontWeight: '600', color: colors.muted },
+  toggleOffTxt: { color: '#1a1a1a', fontWeight: '700' },
+  toggleOnTxt: { color: '#1a1a1a', fontWeight: '700' },
+
+  // ── "Show new requests" pill ──
+  pillWrap: { alignItems: 'center', paddingVertical: 10 },
+  pillFloating: { position: 'absolute', top: 8, left: 0, right: 0, paddingVertical: 0 },
+  pill: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    // Lifts the pill off the list rows behind it.
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  pillTxt: { fontSize: 15, fontWeight: '700', color: '#111' },
+
+  // ── Active trip ──
+  tripCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    gap: 10,
   },
-  poolHeader:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  poolTitle:     { fontSize: 16, fontWeight: '800', color: colors.text },
-  poolSubtitle:  { fontSize: 12, color: colors.muted, marginTop: 2 },
-  offerBtn: {
-    backgroundColor: `${colors.primary}20`,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: `${colors.primary}60`,
-  },
-  offerBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  poolDesc: { fontSize: 12, color: colors.muted, lineHeight: 18, marginTop: 4 },
-  poolRideCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    gap: 10,
-  },
-  poolRideRoute: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 3 },
-  poolRideMeta:  { fontSize: 11, color: colors.muted },
-  poolRideStatusBadge: {
-    backgroundColor: colors.card,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
-
-  batchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.glassLime,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.primary + '50',
-    padding: 12,
-  },
-  batchTitle: { fontSize: 13, fontWeight: '800', color: colors.primary },
-  batchSub:   { fontSize: 11, color: colors.muted, marginTop: 2 },
-  batchBtn: {
-    height: 40,
-    paddingHorizontal: 14,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  batchBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
-
-  radiusHomeCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    gap: 10,
-  },
-  radiusHomeTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
-  radiusHomeSub:   { fontSize: 11, color: colors.muted, lineHeight: 16, marginTop: -4 },
-  radiusHomeRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  radiusHomeLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
-  radiusHomeStepper: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  radiusHomeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radiusHomeBtnTxt: { fontSize: 18, fontWeight: '900', color: colors.primary, lineHeight: 20 },
-  radiusHomeValue:  { fontSize: 14, fontWeight: '800', color: colors.text, minWidth: 56, textAlign: 'center' },
-
-  // Live preview cards inside pool sections
-  emptyPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4 },
-  emptyPreviewIcon: { fontSize: 22 },
-  emptyPreviewText: { fontSize: 12, color: colors.muted, flex: 1 },
-  previewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 11,
-  },
-  previewRoute: { fontSize: 13, fontWeight: '700', color: colors.text },
-  previewMeta:  { fontSize: 11, color: colors.muted, marginTop: 2 },
-  previewFooter: { fontSize: 10, color: colors.muted, textAlign: 'center' as const, marginTop: 2 },
-  genderDot: { width: 8, height: 8, borderRadius: 4 },
-  fareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}18`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
-  fareBadgeAmt: { fontSize: 16, fontWeight: '900', color: colors.primary },
-  fareBadgePkr: { fontSize: 9, fontWeight: '700', color: colors.primary },
-  commuteTimeBox: { alignItems: 'center', backgroundColor: '#1a2e0a', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
-  commuteTimeNum: { fontSize: 15, fontWeight: '900', color: colors.primary },
-  commuteTimeAmpm: { fontSize: 9, fontWeight: '700', color: colors.primary },
-  genderChip: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2 },
-  genderChipTxt: { fontSize: 10, fontWeight: '700' },
-
-  requestedFareBadge: { alignItems: 'center', backgroundColor: `${colors.primary}15`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${colors.primary}40` },
-  requestedFareAmt:   { fontSize: 18, fontWeight: '900', color: colors.primary },
-  requestedFarePkr:   { fontSize: 9, fontWeight: '700', color: colors.primary },
-  openReqBtn:  { backgroundColor: colors.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center' },
-  openReqBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
-  skipReqBtn:  { backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center' },
-  skipReqBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.muted },
-  seeAllBtn:   { backgroundColor: `${colors.primary}12`, borderRadius: 10, borderWidth: 1, borderColor: `${colors.primary}40`, paddingVertical: 10, alignItems: 'center' },
-  seeAllBtnTxt: { fontSize: 13, fontWeight: '800', color: colors.primary },
-  badge: { backgroundColor: `${colors.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
+  tripTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
+  tripFare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   contactBtn: {
     flex: 1,
@@ -812,7 +690,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   contactBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  // Commission lock banner
+
   lockBanner: {
     backgroundColor: '#2a0a0a',
     borderRadius: 16,
@@ -820,42 +698,48 @@ const styles = StyleSheet.create({
     borderColor: colors.danger,
     padding: 16,
     gap: 8,
-    alignItems: 'center' as const,
+    alignItems: 'center',
   },
-  lockIcon: { fontSize: 28 },
-  lockTitle: { fontSize: 16, fontWeight: '900', color: colors.danger, textAlign: 'center' as const },
-  lockBody: { fontSize: 13, color: '#ffaaaa', textAlign: 'center' as const, lineHeight: 20 },
-  lockAmt: { fontWeight: '900', color: '#ff6666' },
-  lockSub: { fontSize: 11, color: colors.muted, textAlign: 'center' as const },
-  lockPayBtn: {
-    marginTop: 6,
-    backgroundColor: colors.danger,
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    alignSelf: 'stretch' as const,
-    alignItems: 'center' as const,
-  },
-  lockPayBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  lockTitle: { fontSize: 16, fontWeight: '900', color: colors.danger, textAlign: 'center' },
+  lockBody: { fontSize: 13, color: '#ffaaaa', textAlign: 'center', lineHeight: 20 },
 
-  // Cycle earnings progress bar
-  cycleBar: {
+  // ── Pool routes header ──
+  poolHeader: { padding: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  poolHeaderTitle: { fontSize: 13, fontWeight: '800', color: colors.muted, textTransform: 'uppercase' },
+  poolRideCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 12,
+    gap: 10,
   },
-  cycleLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
-  cycleTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-    overflow: 'hidden' as const,
+  poolRideRoute: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 3 },
+  poolRideMeta: { fontSize: 11, color: colors.muted },
+  poolRideStatusBadge: { backgroundColor: colors.card, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  poolRideStatusText: { fontSize: 11, fontWeight: '700', color: colors.text },
+
+  batchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.glassLime,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: `${colors.primary}50`,
+    padding: 12,
   },
-  cycleFill: {
-    height: 6,
-    borderRadius: 3,
+  batchTitle: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  batchSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  batchBtn: {
+    height: 40,
+    paddingHorizontal: 14,
     backgroundColor: colors.primary,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  batchBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
 });
