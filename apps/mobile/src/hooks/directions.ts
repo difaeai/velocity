@@ -1,12 +1,22 @@
 /**
  * Road-following route between two points.
  *
- * The map used to draw a straight geodesic line from pickup to drop-off, which
- * doesn't reflect the real streets the driver takes. This hook asks the Google
- * Directions API for the driving route and decodes its overview polyline into
- * the list of coordinates the map draws. If Directions is unavailable (offline,
- * API disabled, no route found) it returns null and the caller falls back to
- * the straight line — the map is never left blank.
+ * The map draws a straight geodesic line from pickup to drop-off unless we can
+ * get the real streets, so this hook asks Google for the driving route and
+ * decodes its polyline into the coordinates the map draws.
+ *
+ * We call the **Routes API** (routes.googleapis.com/directions/v2:computeRoutes),
+ * not the legacy Directions API. `velocity-fe379` is a post-2025 Cloud project,
+ * and Google no longer lets those projects enable any legacy Maps API — the old
+ * endpoint answers every request with REQUEST_DENIED ("You're calling a legacy
+ * API"), which is why the line used to stay straight. The legacy call is kept
+ * only as a fallback for the (unlikely) case that a future project has
+ * Directions enabled but not Routes.
+ *
+ * The Routes API must be enabled on the project AND allowed on the API key's
+ * API restriction list, otherwise it answers API_KEY_SERVICE_BLOCKED. When the
+ * route can't be fetched (offline, blocked key, no route) this returns null and
+ * the caller falls back to the straight line — the map is never left blank.
  */
 import { useEffect, useState } from 'react';
 import { GOOGLE_MAPS_API_KEY } from '../config';
@@ -21,7 +31,8 @@ export interface MapPoint {
   lng: number;
 }
 
-const DIRECTIONS_URL = 'https://maps.googleapis.com/maps/api/directions/json';
+const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+const LEGACY_DIRECTIONS_URL = 'https://maps.googleapis.com/maps/api/directions/json';
 
 /**
  * Decode an encoded polyline (Google's algorithm) into lat/lng points.
@@ -61,40 +72,92 @@ export function decodePolyline(encoded: string): LatLng[] {
 }
 
 /**
- * A route with the numbers the driver actually needs on screen. Directions
- * already returns the leg's duration and distance alongside the polyline — the
- * ETA badges come free with the request we were making anyway.
+ * A route with the numbers the driver actually needs on screen. The routing
+ * call already returns the leg's duration and distance alongside the polyline —
+ * the ETA badges come free with the request we were making anyway.
  */
 export interface RouteInfo {
   coords: LatLng[];
-  /** Driving time in seconds, per Google's live traffic-free estimate. */
+  /** Driving time in seconds, per Google's live traffic-aware estimate. */
   durationSec: number;
   /** Route length in metres (road distance, not straight-line). */
   distanceM: number;
 }
 
+/** Routes API v2. `duration` comes back as a protobuf string like "914s". */
+async function fetchViaRoutesApi(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
+  const res = await fetch(ROUTES_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+      // Field mask is mandatory — asking for everything is rejected on this API.
+      'X-Goog-FieldMask':
+        'routes.polyline.encodedPolyline,routes.duration,routes.distanceMeters',
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+      destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
+      travelMode: 'DRIVE',
+      routingPreference: 'TRAFFIC_AWARE',
+      polylineQuality: 'HIGH_QUALITY',
+      regionCode: 'PK',
+      languageCode: 'en',
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    console.error('[Routes API]', data?.error?.status ?? res.status, data?.error?.message ?? '');
+    return null;
+  }
+
+  const route = data?.routes?.[0];
+  const encoded: string | undefined = route?.polyline?.encodedPolyline;
+  if (!encoded) return null;
+  const coords = decodePolyline(encoded);
+  if (coords.length < 2) return null;
+
+  return {
+    coords,
+    durationSec: parseInt(String(route.duration ?? '0'), 10) || 0,
+    distanceM: route.distanceMeters ?? 0,
+  };
+}
+
+/** Legacy Directions API — only reachable on projects that still have it enabled. */
+async function fetchViaLegacyDirections(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
+  const url =
+    `${LEGACY_DIRECTIONS_URL}?origin=${origin.lat},${origin.lng}` +
+    `&destination=${dest.lat},${dest.lng}` +
+    `&mode=driving&region=pk&key=${GOOGLE_MAPS_API_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const route = data?.routes?.[0];
+  const encoded: string | undefined = route?.overview_polyline?.points;
+  if (data?.status !== 'OK' || !encoded) return null;
+  const coords = decodePolyline(encoded);
+  if (coords.length < 2) return null;
+
+  // Sum the legs — there are no waypoints here, so this is normally just one.
+  const legs: { duration?: { value?: number }; distance?: { value?: number } }[] = route.legs ?? [];
+  return {
+    coords,
+    durationSec: legs.reduce((s, l) => s + (l.duration?.value ?? 0), 0),
+    distanceM: legs.reduce((s, l) => s + (l.distance?.value ?? 0), 0),
+  };
+}
+
 /** Fetch the driving route between two points with its ETA, or null on failure. */
 export async function fetchRouteInfo(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
   try {
-    const url =
-      `${DIRECTIONS_URL}?origin=${origin.lat},${origin.lng}` +
-      `&destination=${dest.lat},${dest.lng}` +
-      `&mode=driving&region=pk&key=${GOOGLE_MAPS_API_KEY}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const route = data?.routes?.[0];
-    const encoded: string | undefined = route?.overview_polyline?.points;
-    if (data?.status !== 'OK' || !encoded) return null;
-    const coords = decodePolyline(encoded);
-    if (coords.length < 2) return null;
-
-    // Sum the legs — there are no waypoints here, so this is normally just one.
-    const legs: { duration?: { value?: number }; distance?: { value?: number } }[] = route.legs ?? [];
-    return {
-      coords,
-      durationSec: legs.reduce((s, l) => s + (l.duration?.value ?? 0), 0),
-      distanceM: legs.reduce((s, l) => s + (l.distance?.value ?? 0), 0),
-    };
+    const routed = await fetchViaRoutesApi(origin, dest);
+    if (routed) return routed;
+  } catch {
+    /* fall through to the legacy endpoint */
+  }
+  try {
+    return await fetchViaLegacyDirections(origin, dest);
   } catch {
     return null;
   }

@@ -49,6 +49,14 @@ service firebase.storage {
       allow write: if isOwner(userId) && isImage() && underSize(15);
     }
 
+    // Passenger CNIC photos — the identity gate in front of the courier flow.
+    // Same posture as driver KYC: the owner uploads, only the owner and admins
+    // can read them back. Never world-readable.
+    match /cnic/{userId}/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) && isImage() && underSize(15);
+    }
+
     // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
     // Admin SDK bypasses rules so only a read rule is needed here.
     match /avatars/{fileName} {

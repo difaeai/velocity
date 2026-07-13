@@ -504,15 +504,22 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
     },
     status: 'active',
     origin: 'feed',
+    // Messaging someone you haven't matched with is a REQUEST, not a match. The
+    // sender gets exactly one message; it lands in the recipient's message
+    // requests inbox, and the thread only becomes a real conversation once they
+    // accept it. Only a mutual right-swipe creates a match (see swipe.ts).
+    requestStatus: 'pending',
+    requestFrom: uid,
+    requestTo: targetUid,
+    requestSent: false,
     matchedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastMessage: null,
     lastMessageAt: null,
   });
 
-  await pushTo(targetUid, 'New message request 💬', `${me.displayName} wants to chat with you on Travel Partner.`, {
-    type: 'travelMate.feedChat', matchId: matchRef.id,
-  });
-
+  // No push yet — an opened-but-empty request isn't worth a notification. The
+  // recipient is pinged when the first message actually arrives (see
+  // sendTravelMateMessage).
   return { matchId: matchRef.id, created: true };
 });
 

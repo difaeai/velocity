@@ -89,8 +89,15 @@ export { requestTravelMateSubscription } from './travelMate/requestSubscription'
 export { approveTravelMateSubscription, rejectTravelMateSubscription } from './travelMate/approveSubscription';
 export { adminCreateTravelMatePlan, adminUpdateTravelMatePlan, adminDeleteTravelMatePlan } from './travelMate/plans';
 export { expireTravelMateSubscriptions } from './travelMate/expireSubscriptions';
-// Phase 3 — social
-export { sendTravelMateMessage, reactToTravelMateMessage, unmatchTravelMate, reportTravelMateUser } from './travelMate/social';
+// Phase 3 — social (+ Instagram-style message requests)
+export {
+  sendTravelMateMessage,
+  reactToTravelMateMessage,
+  unmatchTravelMate,
+  reportTravelMateUser,
+  acceptTravelMateMessageRequest,
+  declineTravelMateMessageRequest,
+} from './travelMate/social';
 // Phase 3 — admin moderation
 export { adminSuspendTravelMateProfile } from './travelMate/moderation';
 // Phase 4 — groups + fare split
@@ -150,8 +157,11 @@ export {
   seedIntercityTrips,
 } from './intercity';
 
-// Courier delivery — same-city parcel delivery
+// Courier delivery — same-city parcel delivery (requires a verified CNIC)
 export { createCourierOrder, cancelCourierOrder, adminUpdateCourierStatus } from './couriers';
+
+// Passenger CNIC verification — the identity gate in front of couriers
+export { submitCnicVerification, adminReviewCnicVerification } from './users/cnic';
 
 // Freight / business delivery
 export { createFreightRequest, cancelFreightRequest, acceptFreightQuote, adminUpdateFreightStatus } from './freight';

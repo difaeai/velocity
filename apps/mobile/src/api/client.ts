@@ -265,6 +265,16 @@ export const api = {
     { matchId: string },
     { status: string }
   >('unmatchTravelMate'),
+  // Message requests — a first message from someone you haven't matched with
+  // waits in the recipient's inbox until they answer it.
+  acceptTravelMateMessageRequest: callable<
+    { matchId: string },
+    { accepted: boolean }
+  >('acceptTravelMateMessageRequest'),
+  declineTravelMateMessageRequest: callable<
+    { matchId: string },
+    { declined: boolean }
+  >('declineTravelMateMessageRequest'),
   reportTravelMateUser: callable<
     { reportedUid: string; matchId?: string; reason: string },
     { reportId: string; status: string }
@@ -484,6 +494,16 @@ export const api = {
   >('adminCancelIntercityTrip'),
   seedIntercityTrips: callable<Record<string, never>, { ok: boolean; seeded: number }>('seedIntercityTrips'),
 
+  // ── CNIC verification — required before any courier order ─────────────────
+  submitCnicVerification: callable<
+    { cnicNumber: string; fullName: string; frontUrl: string; backUrl: string },
+    { ok: boolean; status: CnicStatus }
+  >('submitCnicVerification'),
+  adminReviewCnicVerification: callable<
+    { uid: string; approve: boolean; reason?: string },
+    { ok: boolean; status: CnicStatus }
+  >('adminReviewCnicVerification'),
+
   // ── Courier delivery ──────────────────────────────────────────────────────
   createCourierOrder: callable<
     { pickup: string; dropoff: string; packageType: 'document' | 'parcel' | 'box'; offeredFare: number; recipientName: string; recipientPhone: string; instructions?: string },
@@ -513,6 +533,24 @@ export const api = {
     { ok: boolean; sent: number }
   >('adminSendPushNotification'),
 };
+
+// ── CNIC verification ────────────────────────────────────────────────────────
+
+/**
+ * Where a passenger stands with identity verification. Only `verified` opens
+ * the courier flow; ordinary rides never look at this.
+ * `undefined` (no record at all) = never submitted.
+ */
+export type CnicStatus = 'pending' | 'verified' | 'rejected';
+
+export interface CnicVerification {
+  status: CnicStatus;
+  cnicNumber?: string;
+  fullName?: string;
+  rejectionReason?: string | null;
+  submittedAt?: { seconds: number };
+  reviewedAt?: { seconds: number } | null;
+}
 
 // ── Pool ride request / nearby ride types ────────────────────────────────────
 

@@ -122,6 +122,13 @@ export const openTravelMateDirectChat = onCall({ region: REGION }, async (req: C
     status: 'active',
     origin: 'group',
     groupId,
+    // Sharing a group opens the door to *ask*, not to chat: this is a message
+    // request the other member must accept, exactly like a DM from the feed.
+    // Only a mutual right-swipe creates a match (see swipe.ts).
+    requestStatus: 'pending',
+    requestFrom: uid,
+    requestTo: targetUid,
+    requestSent: false,
     matchedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastMessageAt: null,
   });

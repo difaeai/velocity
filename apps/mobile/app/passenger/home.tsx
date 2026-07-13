@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import {
   Alert,
   Dimensions,
@@ -24,7 +24,15 @@ import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
-import { CarIllustration, MotoIllustration } from '../../src/ui/VehicleIllustrations';
+import {
+  CityRideIcon,
+  ClockIcon,
+  CourierIcon,
+  FreightIcon,
+  IntercityIcon,
+  SearchIcon,
+  type ServiceIconProps,
+} from '../../src/ui/ServiceIcons';
 
 const { width } = Dimensions.get('window');
 
@@ -128,81 +136,66 @@ export default function PassengerHome() {
       >
         <View style={styles.dragIndicator} />
 
-        {/* ── Service category grid (inDrive style) ── */}
-        <View style={styles.serviceGrid}>
-          {/* Left: big City Rides card */}
-          <Pressable
-            style={styles.cityRidesCard}
-            onPress={() => router.push('/passenger/booking')}
-          >
-            <Text style={styles.cityRidesTitle}>City Rides</Text>
-            <View style={styles.cityRidesIllustration}>
-              <CarIllustration width={100} height={52} />
-              <MotoIllustration width={64} height={52} />
-            </View>
-          </Pressable>
-
-          {/* Right: stacked smaller cards */}
-          <View style={styles.serviceRightCol}>
-            <Pressable
-              style={styles.serviceCardLg}
-              onPress={() => router.push('/passenger/city-to-city')}
-            >
-              <Text style={styles.serviceCardTitle}>City to City</Text>
-              <Text style={styles.serviceCardIcon}>🚗💼</Text>
-            </Pressable>
-
-            <View style={styles.serviceBottomRow}>
-              <Pressable
-                style={styles.serviceCardSm}
-                onPress={() => router.push('/passenger/couriers')}
-              >
-                <Text style={styles.serviceCardTitle}>Couriers</Text>
-                <Text style={styles.serviceCardIconSm}>📦</Text>
-              </Pressable>
-              <Pressable
-                style={styles.serviceCardSm}
-                onPress={() => router.push('/passenger/business-delivery')}
-              >
-                <Text style={styles.serviceCardTitle}>Freight</Text>
-                <Text style={styles.serviceCardIconSm}>🚛</Text>
-              </Pressable>
-            </View>
+        {/* ── Where to? — the primary action, so it leads the sheet ── */}
+        <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
+          <View style={styles.searchHeroIcon}>
+            <SearchIcon size={20} color="#0b0d0c" />
           </View>
-        </View>
-
-        {/* ── Main search / booking bar ── */}
-        <Pressable
-          style={styles.searchBar}
-          onPress={() => router.push('/passenger/booking')}
-        >
-          <Text style={styles.searchBarIcon}>🔍</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.searchBarTitle}>Where to &amp; for how much?</Text>
+            <Text style={styles.searchHeroTitle}>Where to?</Text>
+            <Text style={styles.searchHeroSub}>Name your fare · drivers bid · pay cash</Text>
           </View>
-          <Text style={styles.searchBarArrow}>→</Text>
+          <Text style={styles.searchHeroArrow}>→</Text>
         </Pressable>
 
-        {/* Recent destinations */}
+        {/* Recent destinations — tap to rebook the same drop-off */}
         {recents.length > 0 && (
           <View style={styles.historyList}>
-            {recents.slice(0, 3).map((r) => (
+            {recents.slice(0, 2).map((r) => (
               <Pressable
                 key={r.address}
                 style={styles.historyItem}
                 onPress={() => router.push('/passenger/booking')}
               >
                 <View style={styles.historyIconCircle}>
-                  <Text style={styles.historyIcon}>🕒</Text>
+                  <ClockIcon size={15} color={colors.muted} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
-                  <Text style={styles.historyAddress} numberOfLines={1}>{r.address}</Text>
-                </View>
+                <Text style={styles.historyName} numberOfLines={1}>{r.address}</Text>
+                <Text style={styles.historyGo}>→</Text>
               </Pressable>
             ))}
           </View>
         )}
+
+        {/* ── Services ── */}
+        <Text style={styles.sectionLabel}>Services</Text>
+        <View style={styles.serviceGrid}>
+          <ServiceTile
+            title="City Rides"
+            sub={poolFromPrice ? `Pool from PKR ${poolFromPrice}/seat` : 'Car & bike, in your city'}
+            Icon={CityRideIcon}
+            featured
+            onPress={() => router.push('/passenger/booking')}
+          />
+          <ServiceTile
+            title="City to City"
+            sub="Intercity seats"
+            Icon={IntercityIcon}
+            onPress={() => router.push('/passenger/city-to-city')}
+          />
+          <ServiceTile
+            title="Couriers"
+            sub="Send a parcel"
+            Icon={CourierIcon}
+            onPress={() => router.push('/passenger/couriers')}
+          />
+          <ServiceTile
+            title="Freight"
+            sub="Bulk & business"
+            Icon={FreightIcon}
+            onPress={() => router.push('/passenger/business-delivery')}
+          />
+        </View>
 
         {/* ── Travel Partner card ── */}
         <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
@@ -336,6 +329,43 @@ export default function PassengerHome() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+/**
+ * One service in the home grid. All four tiles are the same size — the old
+ * layout gave City Rides a double-width card and squeezed the rest, which is
+ * what made the grid look lopsided. The lead service is marked by a lime tint
+ * instead, so the hierarchy reads without breaking the geometry.
+ */
+function ServiceTile({
+  title,
+  sub,
+  Icon,
+  featured = false,
+  onPress,
+}: {
+  title: string;
+  sub: string;
+  Icon: (props: ServiceIconProps) => ReactElement;
+  featured?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.serviceTile,
+        featured && styles.serviceTileFeatured,
+        pressed && styles.serviceTilePressed,
+      ]}
+      onPress={onPress}
+    >
+      <View style={[styles.serviceIconWrap, featured && styles.serviceIconWrapFeatured]}>
+        <Icon size={26} color={featured ? colors.primary : '#ffffff'} />
+      </View>
+      <Text style={styles.serviceTitle}>{title}</Text>
+      <Text style={styles.serviceSub} numberOfLines={1}>{sub}</Text>
+    </Pressable>
   );
 }
 
@@ -478,26 +508,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '55%',
-    backgroundColor: 'rgba(13,15,14,0.92)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    height: '58%',
+    backgroundColor: 'rgba(11,13,12,0.96)',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   bottomSheetContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
-    paddingTop: 10,
-    gap: 14,
+    paddingTop: 8,
+    gap: 12,
   },
   dragIndicator: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.glassStrong,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignSelf: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   sheetTitle: {
     fontSize: 18,
@@ -507,154 +537,156 @@ const styles = StyleSheet.create({
   },
   pickupPillFloating: {
     position: 'absolute',
-    left: 80,
-    right: 116,
-    top: 4,
-    backgroundColor: 'rgba(18,21,20,0.78)',
+    left: 74,
+    right: 74,
+    top: 2,
+    backgroundColor: 'rgba(16,19,18,0.88)',
     borderRadius: 99,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(255,255,255,0.14)',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingLeft: 16,
+    paddingRight: 12,
+    paddingVertical: 8,
     justifyContent: 'space-between',
     elevation: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
   pickupMeta: {
     flex: 1,
   },
   pickupPillTitle: {
     fontSize: 9,
-    color: '#8a8c8c',
-    fontWeight: '700',
+    color: colors.primary,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   pickupPillValue: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#ffffff',
+    marginTop: 1,
   },
   pickupArrow: {
-    fontSize: 10,
-    color: '#8a8c8c',
-    marginLeft: 6,
-  },
-  /* ── Service card grid ── */
-  serviceGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    height: 160,
-  },
-  cityRidesCard: {
-    flex: 0.9,
-    backgroundColor: colors.glassLime,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
-    padding: 14,
-    overflow: 'hidden',
-    justifyContent: 'space-between',
-  },
-  cityRidesTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
-  cityRidesIllustration: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'flex-end',
-    gap: 6,
-    marginBottom: -2,
-  },
-  serviceRightCol: {
-    flex: 1,
-    gap: 10,
-  },
-  serviceCardLg: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-  serviceBottomRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  serviceCardSm: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  serviceCardTitle: {
-    fontSize: 12,
+    fontSize: 13,
+    color: colors.primary,
+    marginLeft: 8,
     fontWeight: '800',
-    color: '#ffffff',
   },
-  serviceCardIcon:   { fontSize: 22, textAlign: 'right' },
-  serviceCardIconSm: { fontSize: 18, textAlign: 'right' },
-
-  /* ── Search bar ── */
-  searchBar: {
-    backgroundColor: colors.glassChip,
-    borderRadius: 18,
+  /* ── "Where to?" hero — the sheet's primary action ── */
+  searchHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
-  searchBarIcon:  { fontSize: 18, color: '#8a8c8c' },
-  searchBarTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
-  searchBarArrow: { fontSize: 16, color: '#8a8c8c' },
-
-  /* ── Recent destinations ── */
-  historyList: {
-    marginTop: 4,
-    gap: 0,
-  },
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface,
-    gap: 12,
-  },
-  historyIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.glassChip,
+  searchHeroIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  historyIcon: {
-    fontSize: 16,
+  searchHeroTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: -0.2,
+  },
+  searchHeroSub: {
+    fontSize: 12,
+    color: '#8f9694',
+    marginTop: 2,
+  },
+  searchHeroArrow: {
+    fontSize: 17,
+    color: colors.primary,
+    fontWeight: '800',
+  },
+
+  /* ── Recent destinations ── */
+  historyList: { gap: 2 },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    gap: 12,
+  },
+  historyIconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   historyName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d8dcda',
+  },
+  historyGo: { fontSize: 13, color: '#5f6664' },
+
+  /* ── Services ── */
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7d8482',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  serviceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  serviceTile: {
+    // Two per row: half the sheet's content width, minus half the 10px gutter.
+    width: (width - 40 - 10) / 2,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    padding: 14,
+    gap: 2,
+  },
+  serviceTileFeatured: {
+    backgroundColor: 'rgba(204,255,0,0.08)',
+    borderColor: 'rgba(204,255,0,0.30)',
+  },
+  serviceTilePressed: { opacity: 0.65 },
+  serviceIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  serviceIconWrapFeatured: { backgroundColor: 'rgba(204,255,0,0.12)' },
+  serviceTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#ffffff',
   },
-  historyAddress: {
+  serviceSub: {
     fontSize: 11,
-    color: '#8a8c8c',
-    marginTop: 1,
+    color: '#8f9694',
   },
   drawerOverlay: {
     flex: 1,
