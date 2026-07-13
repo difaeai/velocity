@@ -60,8 +60,21 @@ export function decodePolyline(encoded: string): LatLng[] {
   return points;
 }
 
-/** Fetch the driving route polyline between two points, or null on failure. */
-export async function fetchRoute(origin: MapPoint, dest: MapPoint): Promise<LatLng[] | null> {
+/**
+ * A route with the numbers the driver actually needs on screen. Directions
+ * already returns the leg's duration and distance alongside the polyline — the
+ * ETA badges come free with the request we were making anyway.
+ */
+export interface RouteInfo {
+  coords: LatLng[];
+  /** Driving time in seconds, per Google's live traffic-free estimate. */
+  durationSec: number;
+  /** Route length in metres (road distance, not straight-line). */
+  distanceM: number;
+}
+
+/** Fetch the driving route between two points with its ETA, or null on failure. */
+export async function fetchRouteInfo(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
   try {
     const url =
       `${DIRECTIONS_URL}?origin=${origin.lat},${origin.lng}` +
@@ -69,13 +82,28 @@ export async function fetchRoute(origin: MapPoint, dest: MapPoint): Promise<LatL
       `&mode=driving&region=pk&key=${GOOGLE_MAPS_API_KEY}`;
     const res = await fetch(url);
     const data = await res.json();
-    const encoded: string | undefined = data?.routes?.[0]?.overview_polyline?.points;
+    const route = data?.routes?.[0];
+    const encoded: string | undefined = route?.overview_polyline?.points;
     if (data?.status !== 'OK' || !encoded) return null;
-    const pts = decodePolyline(encoded);
-    return pts.length > 1 ? pts : null;
+    const coords = decodePolyline(encoded);
+    if (coords.length < 2) return null;
+
+    // Sum the legs — there are no waypoints here, so this is normally just one.
+    const legs: { duration?: { value?: number }; distance?: { value?: number } }[] = route.legs ?? [];
+    return {
+      coords,
+      durationSec: legs.reduce((s, l) => s + (l.duration?.value ?? 0), 0),
+      distanceM: legs.reduce((s, l) => s + (l.distance?.value ?? 0), 0),
+    };
   } catch {
     return null;
   }
+}
+
+/** Fetch the driving route polyline between two points, or null on failure. */
+export async function fetchRoute(origin: MapPoint, dest: MapPoint): Promise<LatLng[] | null> {
+  const info = await fetchRouteInfo(origin, dest);
+  return info?.coords ?? null;
 }
 
 /**
@@ -84,7 +112,15 @@ export async function fetchRoute(origin: MapPoint, dest: MapPoint): Promise<LatL
  * Re-fetches only when the endpoints actually change.
  */
 export function useRoute(pickup?: MapPoint | null, dropoff?: MapPoint | null): LatLng[] | null {
-  const [route, setRoute] = useState<LatLng[] | null>(null);
+  return useRouteInfo(pickup, dropoff)?.coords ?? null;
+}
+
+/**
+ * As `useRoute`, but also gives back the leg's ETA and road distance — what the
+ * driver's request screen puts in the badges over the map.
+ */
+export function useRouteInfo(pickup?: MapPoint | null, dropoff?: MapPoint | null): RouteInfo | null {
+  const [route, setRoute] = useState<RouteInfo | null>(null);
 
   const key =
     pickup && dropoff
@@ -98,8 +134,8 @@ export function useRoute(pickup?: MapPoint | null, dropoff?: MapPoint | null): L
     }
     let alive = true;
     setRoute(null);
-    fetchRoute(pickup, dropoff).then((pts) => {
-      if (alive) setRoute(pts);
+    fetchRouteInfo(pickup, dropoff).then((info) => {
+      if (alive) setRoute(info);
     });
     return () => {
       alive = false;
