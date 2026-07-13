@@ -203,6 +203,8 @@ export const createTrip = onCall(async (req) => {
     });
     tx.set(userRef, { activeTripId: tripRef.id }, { merge: true });
     // Public-safe feed that approved online drivers can read to discover work.
+    // Carries the passenger's display name and rating (never their uid, phone
+    // or photo) so the driver's request list can show who is hailing them.
     const pickupGeohash = encodeGeohash(data.pickup.lat, data.pickup.lng, 6);
     tx.set(db.doc(`openRequests/${tripRef.id}`), {
       tripId: tripRef.id,
@@ -210,6 +212,9 @@ export const createTrip = onCall(async (req) => {
       offeredFare: finalFare,
       seats: data.seats,
       passengerGender: data.passengerGender,
+      passengerName: (userSnap.get('name') as string | undefined) ?? 'Passenger',
+      passengerRating: (userSnap.get('rating') as number | undefined) ?? 5,
+      passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
       pool: isPool,
       ...(isPool
         ? { poolVisibility, shareCode, poolRiders: 1, poolPerSeatFare: finalFare }

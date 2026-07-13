@@ -2,6 +2,8 @@ import { useRouter } from 'expo-router';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useDriverEntry } from '../../../src/hooks/useDriverEntry';
+
 function Benefit({ icon, text }: { icon: string; text: string }) {
   return (
     <View style={styles.benefit}>
@@ -11,9 +13,19 @@ function Benefit({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-function RoleCard({ emoji, label, onPress }: { emoji: string; label: string; onPress: () => void }) {
+function RoleCard({
+  emoji,
+  label,
+  onPress,
+  disabled,
+}: {
+  emoji: string;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <Pressable style={styles.roleCard} onPress={onPress}>
+    <Pressable style={[styles.roleCard, disabled && { opacity: 0.6 }]} onPress={onPress} disabled={disabled}>
       <Text style={styles.roleEmoji}>{emoji}</Text>
       <Text style={styles.roleLabel}>{label}</Text>
       <Text style={styles.roleChevron}>›</Text>
@@ -23,7 +35,10 @@ function RoleCard({ emoji, label, onPress }: { emoji: string; label: string; onP
 
 export default function DriverIntro() {
   const router = useRouter();
-  const goDriver = () => router.push('/passenger/become-driver/account');
+  const driverEntry = useDriverEntry();
+  // A signed-in passenger goes straight to the registration steps — no second
+  // number/OTP. Only a signed-out user is routed to the login gate.
+  const goDriver = () => driverEntry.go();
   const goPassenger = () => router.replace('/passenger/home');
 
   const goCourier = () =>
@@ -52,7 +67,7 @@ export default function DriverIntro() {
           <Benefit icon="％" text="Low service payments" />
         </View>
 
-        <RoleCard emoji="🚗" label="Driver" onPress={goDriver} />
+        <RoleCard emoji="🚗" label="Driver" onPress={goDriver} disabled={driverEntry.busy} />
         <RoleCard emoji="📦" label="Courier" onPress={goCourier} />
 
         <View style={styles.spacer} />

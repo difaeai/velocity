@@ -36,6 +36,9 @@ export {
   completeTrip,
 } from './trips';
 
+// Driver reports a fake / abusive request from the open-requests feed
+export { reportOpenRequest } from './trips/reports';
+
 // Pool ride share links (invite codes, public/private visibility, joining)
 export {
   getPoolTripByCode,

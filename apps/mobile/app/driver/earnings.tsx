@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../src/auth/AuthContext';
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 
 type Period = 'today' | 'week' | 'month' | 'all';
 
@@ -161,6 +162,8 @@ export default function DriverEarnings() {
           </View>
         ))}
       </ScrollView>
+
+      <DriverTabBar active="performance" />
     </SafeAreaView>
   );
 }
@@ -246,7 +249,7 @@ const styles = StyleSheet.create({
   periodBtnText: { fontSize: 12, fontWeight: '700', color: colors.muted },
   periodBtnTextActive: { color: colors.primary },
 
-  content:   { padding: 16, gap: 16 },
+  content:   { padding: 16, gap: 16, paddingBottom: DRIVER_TAB_BAR_HEIGHT + 16 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   statCard:  { width: '47%', backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 4 },
   statValue: { fontSize: 20, fontWeight: '900', color: colors.text },

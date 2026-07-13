@@ -126,6 +126,26 @@ export interface TravelMateMessageInput {
   contact?: { name: string; phone: string };
 }
 
+/** Reasons a driver can flag an open ride request with. Mirrors the backend enum. */
+export type ReportReason =
+  | 'sexual_content'
+  | 'advertisement'
+  | 'drugs'
+  | 'suspicious_activity'
+  | 'too_low_price'
+  | 'too_long_distance'
+  | 'other';
+
+export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  sexual_content:      'Sexual content',
+  advertisement:       'Advertisement',
+  drugs:               'Drugs',
+  suspicious_activity: 'Suspicious activity',
+  too_low_price:       'Too low price',
+  too_long_distance:   'Too long distance',
+  other:               'Other',
+};
+
 export const api = {
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
@@ -193,6 +213,10 @@ export const api = {
     { tripId: string; category: 'fare' | 'behaviour' | 'safety' | 'lost_item' | 'other'; description: string },
     { ok: boolean; disputeId: string }
   >('createDispute'),
+  reportOpenRequest: callable<
+    { tripId: string; reasons: ReportReason[]; description?: string },
+    { ok: boolean; reportId: string; alreadyReported: boolean }
+  >('reportOpenRequest'),
   startPoolBoarding: callable<
     { rideId: string; driverLat: number; driverLng: number },
     { ok: boolean; pickupOrder: string[] }

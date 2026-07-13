@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import { distanceMeters } from '../lib/geo';
 import type { RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
@@ -36,10 +37,20 @@ export interface OpenRequest {
   offeredFare: number;
   seats: number;
   passengerGender: string;
+  /** Display name only — the feed never exposes the passenger's uid or phone. */
+  passengerName?: string;
+  passengerRating?: number;
+  passengerRatingCount?: number;
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
   pickup?: { address?: string; lat?: number; lng?: number };
   dropoff?: { address?: string; lat?: number; lng?: number };
+  createdAt?: { seconds: number };
+  /**
+   * Metres from the driver to the pickup point, computed on the client from the
+   * driver's live coordinates. Undefined until the driver's location is known.
+   */
+  distanceM?: number;
 }
 
 const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
@@ -79,12 +90,24 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
     const q = query(collection(db, 'openRequests'), limit(100));
     return onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as OpenRequest & { pickupGeohash?: string });
-      if (driverLat !== undefined && driverLng !== undefined) {
-        const nearby = new Set(nearbyGeohashes(driverLat, driverLng, 6));
-        setRows(all.filter(r => !r.pickupGeohash || nearby.has(r.pickupGeohash)));
-      } else {
+      if (driverLat === undefined || driverLng === undefined) {
         setRows(all);
+        return;
       }
+      const nearby = new Set(nearbyGeohashes(driverLat, driverLng, 6));
+      const withDistance = all
+        .filter((r) => !r.pickupGeohash || nearby.has(r.pickupGeohash))
+        .map((r) => ({
+          ...r,
+          distanceM:
+            r.pickup?.lat !== undefined && r.pickup?.lng !== undefined
+              ? distanceMeters(driverLat, driverLng, r.pickup.lat, r.pickup.lng)
+              : undefined,
+        }));
+      // Nearest first — a request with no pickup coords sorts last rather than
+      // jumping to the top of the list.
+      withDistance.sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
+      setRows(withDistance);
     });
   }, [enabled, driverLat, driverLng]);
   return rows;
