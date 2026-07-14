@@ -103,6 +103,50 @@ export interface NearbyPublicPool {
   distanceKm: number;
 }
 
+/**
+ * A pool request sitting on the driver's route that they are cleared to take:
+ * seats, gender rules, the corridor and the fare gate have all already passed on
+ * the server. Tapping accept cannot be refused for a reason the card did not show.
+ */
+export interface EnRouteMatch {
+  tripId: string;
+  passengerName: string;
+  passengerGender: Gender;
+  passengerRating: number;
+  rideType: RideType;
+  seats: number;
+  pickup: GeoPoint;
+  dropoff: GeoPoint;
+  /** What this rider pays — already cut for sharing the road. */
+  fare: number;
+  /** What they'd have paid alone, so the driver can see the deal they're giving. */
+  soloFare: number;
+  offeredFare: number;
+  /** What the whole car is worth with them aboard, and what that adds. */
+  driverGrossAfter: number;
+  driverGrossBefore: number;
+  earnExtra: number;
+  /** Everyone already in the car — and what taking this rider does to their fare. */
+  ridersAfter: { uid: string; name: string; fareNow: number; fareAfter: number }[];
+  /** Metres off the route, there and back, to collect and drop this one rider. */
+  detourM: number;
+  pickupOffsetM: number;
+  dropToDestM: number;
+  alongM: number;
+}
+
+/** A co-rider as the people in the car are allowed to see them. */
+export interface PoolRiderView {
+  uid: string;
+  name: string;
+  gender: Gender;
+  pickupAddress: string | null;
+  dropoffAddress: string | null;
+  kind: 'host' | 'share' | 'enroute';
+  /** Your own fare. Null for everybody else's — that is theirs, not yours. */
+  fare: number | null;
+}
+
 /** One chat attachment — a photo or a document uploaded to Velocity storage. */
 export interface ChatAttachment {
   url: string;
@@ -166,6 +210,43 @@ export const api = {
     { lat: number; lng: number; radiusKm?: number },
     { pools: NearbyPublicPool[] }
   >('getNearbyPublicPoolTrips'),
+  // ── En-route pickups: riders on the driver's way ──────────────────────────
+  // The polyline is the road route from the driver's own map (useRoute). The
+  // backend re-derives the corridor's endpoints from Firestore and refuses any
+  // polyline that does not actually connect them, so this is geometry the server
+  // checks — not a corridor the client gets to choose.
+  setDriverRoute: callable<
+    { origin: GeoPoint; destination: GeoPoint; polyline: string },
+    { ok: boolean; routeLengthM: number; corridorRadiusM: number; destRadiusM: number }
+  >('setDriverRoute'),
+  endDriverRoute: callable<Record<string, never>, { ok: boolean }>('endDriverRoute'),
+  getEnRouteMatches: callable<
+    { polyline: string; driverLat?: number; driverLng?: number },
+    {
+      matches: EnRouteMatch[];
+      seatsLeft: number;
+      corridorRadiusM?: number;
+      destRadiusM?: number;
+      mode?: 'trip' | 'driver_route';
+      walletTrip?: boolean;
+    }
+  >('getEnRouteMatches'),
+  acceptEnRouteRider: callable<
+    { tripId: string; polyline: string; driverLat?: number; driverLng?: number },
+    {
+      ok: boolean;
+      carrierTripId: string;
+      riderName: string;
+      fare: number;
+      driverGross: number;
+      earnExtra: number;
+    }
+  >('acceptEnRouteRider'),
+  getPoolRiders: callable<
+    { tripId: string },
+    { riders: PoolRiderView[]; yourFare: number | null; driverGross: number | null }
+  >('getPoolRiders'),
+
   placeBid: callable<{ tripId: string; fare: number }, { ok: boolean; bidId: string }>('placeBid'),
   raiseTripFare: callable<{ tripId: string; fare: number }, { ok: boolean; offeredFare: number }>(
     'raiseTripFare',

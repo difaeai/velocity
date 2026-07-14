@@ -42,6 +42,15 @@ export {
 // Driver reports a fake / abusive request from the open-requests feed
 export { reportOpenRequest } from './trips/reports';
 
+// En-route pickups — riders on the driver's way, and driver-declared routes
+export {
+  setDriverRoute,
+  endDriverRoute,
+  getEnRouteMatches,
+  acceptEnRouteRider,
+  getPoolRiders,
+} from './trips/enRoute';
+
 // Pool ride share links (invite codes, public/private visibility, joining)
 export {
   getPoolTripByCode,

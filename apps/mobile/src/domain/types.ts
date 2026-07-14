@@ -16,7 +16,13 @@ export type TripStatus =
   | 'arrived'
   | 'in_progress'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  /**
+   * This pool request was picked up by a driver along their route, so the rider
+   * now travels on that driver's trip instead. `mergedIntoTripId` points there,
+   * and their activeTripId already follows it — this document is just history.
+   */
+  | 'merged';
 
 export interface GeoPoint {
   lat: number;
@@ -81,6 +87,23 @@ export interface Bid {
 
 export type PoolVisibility = 'public' | 'private';
 
+/** One person in a shared car, and the slice of the road they are paying for. */
+export interface PoolRider {
+  uid: string;
+  name: string;
+  gender: Gender;
+  seats: number;
+  pickup: GeoPoint;
+  dropoff: GeoPoint;
+  /** What they pay. Riders who boarded at different points pay different amounts. */
+  fare: number;
+  /** What they would have paid riding alone — the ceiling on the above. */
+  soloFare: number;
+  billableKm: number;
+  /** 'host' booked it · 'share' joined by link · 'enroute' picked up on the way. */
+  kind: 'host' | 'share' | 'enroute';
+}
+
 export interface Trip {
   id: string;
   status: TripStatus;
@@ -91,6 +114,7 @@ export interface Trip {
   fare: number | null;
   seats: number;
   passengerGender: Gender;
+  paymentMethod?: 'cash' | 'wallet';
   pool?: boolean;
   /** Pool rides only — share-link invite code + rider roster. */
   poolVisibility?: PoolVisibility;
@@ -98,6 +122,26 @@ export interface Trip {
   poolMembers?: string[];
   poolPerSeatFare?: number;
   maxPoolRiders?: number;
+  /**
+   * Riders picked up along the driver's route each rode a different piece of it,
+   * so they each have their own fare — see the leg-split in the backend's
+   * lib/enRouteFare. When this is present it, not `poolPerSeatFare`, is what
+   * everyone actually owes.
+   */
+  poolRiders?: PoolRider[];
+  poolFares?: Record<string, number>;
+  /** The corridor the driver is running, once en-route pickups are in play. */
+  enRoute?: {
+    active: boolean;
+    source: 'trip' | 'driver_route';
+    origin: GeoPoint;
+    destination: GeoPoint;
+    polyline: string;
+    corridorRadiusM: number;
+    destRadiusM: number;
+  };
+  /** Set on a request that was absorbed into somebody else's trip. */
+  mergedIntoTripId?: string;
   pickup: GeoPoint;
   dropoff: GeoPoint;
   driverInfo?: DriverPublicInfo;
