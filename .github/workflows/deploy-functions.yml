@@ -38,30 +38,37 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
-      # Backend secrets, as KEY=value lines in the PAYMENTS_GATEWAY_ENV repository
-      # secret. Despite the name it now carries everything the functions need at
-      # runtime: the payment gateways, ANTHROPIC_API_KEY, and GOOGLE_MAPS_SERVER_KEY.
-      # See backend/functions/.env.example for the full list and what each does.
+      # Backend runtime config, assembled into the .env file the Firebase CLI
+      # deploys as function environment variables.
       #
-      # All of it is optional — every consumer degrades rather than breaks. No
-      # gateway keys → wallet runs on the mock provider. No Maps key → en-route
-      # pickups fall back to the (validated) client polyline.
+      # PAYMENTS_GATEWAY_ENV is a BLOCK of KEY=value lines (gateways + Anthropic).
+      # GOOGLE_MAPS_SERVER_KEY is its own secret, holding just the key, so it can
+      # be rotated on its own without anyone having to reconstruct — and risk
+      # clobbering — a block of credentials they cannot read back out of GitHub.
+      #
+      # Both are optional and every consumer degrades rather than breaks: no
+      # gateway keys → the wallet runs on the mock provider; no Maps key →
+      # en-route pickups fall back to the (validated) client polyline.
       - name: Inject backend secrets
         working-directory: backend/functions
         env:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
+          GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
         run: |
+          : > .env.velocity-fe379
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
-            printf '%s\n' "$PAYMENTS_GATEWAY_ENV" > .env.velocity-fe379
-            echo "Backend secrets injected ($(grep -c '=' .env.velocity-fe379) vars)."
-            # Say which optional integrations came out live, without printing values.
-            grep -q '^GOOGLE_MAPS_SERVER_KEY=.\+' .env.velocity-fe379 \
-              && echo "  · Routes API: server-side routing ENABLED" \
-              || echo "  · Routes API: no key — en-route falls back to the client polyline"
+            printf '%s\n' "$PAYMENTS_GATEWAY_ENV" >> .env.velocity-fe379
           else
-            echo "PAYMENTS_GATEWAY_ENV secret not set — payments stay in mock mode,"
-            echo "and en-route pickups fall back to the client polyline."
+            echo "· payments: no gateway credentials — wallet stays in mock mode"
           fi
+          if [ -n "$GOOGLE_MAPS_SERVER_KEY" ]; then
+            # Appended separately, so it wins even if the block also carries one.
+            printf 'GOOGLE_MAPS_SERVER_KEY=%s\n' "$GOOGLE_MAPS_SERVER_KEY" >> .env.velocity-fe379
+            echo "· routes: server-side routing ENABLED"
+          else
+            echo "· routes: no key — en-route falls back to the client polyline"
+          fi
+          echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 
       - name: Deploy Firestore indexes
         continue-on-error: true
