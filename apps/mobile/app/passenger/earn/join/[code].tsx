@@ -40,6 +40,11 @@ export default function JoinFleet() {
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
 
+  // A link with no code in it is knowable during render — deriving it beats
+  // setting state from an effect, which costs an extra render and trips the
+  // set-state-in-effect rule for no benefit.
+  const problem = error ?? (code ? null : 'That referral link is missing a code.');
+
   useEffect(() => {
     if (!code) return;
     api
@@ -74,12 +79,12 @@ export default function JoinFleet() {
     }
   }
 
-  if (error) {
+  if (problem) {
     return (
       <SafeAreaView style={s.safe} edges={['bottom']}>
         <View style={s.center}>
           <Text style={s.emoji}>🤷</Text>
-          <Text style={s.title}>{error}</Text>
+          <Text style={s.title}>{problem}</Text>
           <PrimaryButton label="Continue to Velocity" onPress={() => router.replace('/passenger/home')} />
         </View>
       </SafeAreaView>

@@ -14,6 +14,7 @@ import { colors } from '../../../src/config';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import {
   DashboardSkeleton,
+  ErrorState,
   FleetSplitBar,
   SectionTitle,
   Segmented,
@@ -31,7 +32,7 @@ const WINDOWS: { key: Window; label: string }[] = [
 ];
 
 export default function Revenue() {
-  const { data, loading, reload } = usePartnerDashboard();
+  const { data, loading, error, reload } = usePartnerDashboard();
   const [window, setWindow] = useState<Window>('lifetime');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -44,7 +45,13 @@ export default function Revenue() {
       </SafeAreaView>
     );
   }
-  if (!data) return null;
+  if (error || !data) {
+    return (
+      <SafeAreaView style={s.safe} edges={['bottom']}>
+        <ErrorState message={error ?? 'Could not load your revenue.'} onRetry={reload} />
+      </SafeAreaView>
+    );
+  }
 
   const { revenue, rides, overview } = data;
 
