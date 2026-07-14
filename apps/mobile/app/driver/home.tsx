@@ -425,6 +425,26 @@ export default function DriverHome() {
                 />
               );
             })()}
+            {/* Riders on the way. Only on a cash pool with a seat still free —
+                a solo booker never shares their car, and a wallet trip holds only
+                the host's fare so there is no money to pay for an extra rider. */}
+            {activeTrip.pool === true
+              && (activeTrip.paymentMethod ?? 'cash') === 'cash'
+              && (activeTrip.poolMembers?.length ?? 1) < (activeTrip.maxPoolRiders ?? 4)
+              && activeTrip.status !== 'in_progress' && (
+              <Pressable
+                style={styles.enRouteCta}
+                onPress={() => router.push('/driver/en-route')}
+              >
+                <Text style={styles.enRouteCtaTitle}>🔀 Pick up riders on your way</Text>
+                <Text style={styles.enRouteCtaBody}>
+                  {(activeTrip.maxPoolRiders ?? 4) - (activeTrip.poolMembers?.length ?? 1)} seat
+                  {(activeTrip.maxPoolRiders ?? 4) - (activeTrip.poolMembers?.length ?? 1) === 1 ? '' : 's'} free ·
+                  {' '}earn more without leaving your route
+                </Text>
+              </Pressable>
+            )}
+
             <PrimaryButton
               variant="danger"
               label="🆘 SOS"
@@ -502,7 +522,17 @@ export default function DriverHome() {
             keyExtractor={(r) => r.tripId}
             contentContainerStyle={{ paddingBottom: DRIVER_TAB_BAR_HEIGHT }}
             ListHeaderComponent={
-              poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null
+              <>
+                {/* Not carrying anyone, but going somewhere anyway. Say where, and
+                    pool riders standing on that road show up here. */}
+                <Pressable style={styles.routeCta} onPress={() => router.push('/driver/en-route')}>
+                  <Text style={styles.routeCtaTitle}>🏠 Heading somewhere? Earn on the way</Text>
+                  <Text style={styles.routeCtaBody}>
+                    Set your route and we'll show you pool riders standing on it.
+                  </Text>
+                </Pressable>
+                {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
+              </>
             }
             renderItem={({ item }) => (
               <RequestCard
@@ -755,6 +785,27 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: 16,
   },
+  enRouteCta: {
+    backgroundColor: `${colors.primary}14`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}55`,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+  },
+  enRouteCtaTitle: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  enRouteCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  routeCta: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 14,
+    margin: 16,
+    marginBottom: 4,
+  },
+  routeCtaTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  routeCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
   tripTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   tripFare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
   cancelFeeNote: {

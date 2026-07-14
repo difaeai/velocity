@@ -82,6 +82,16 @@ export interface RouteInfo {
   durationSec: number;
   /** Route length in metres (road distance, not straight-line). */
   distanceM: number;
+  /**
+   * The route still encoded, exactly as Google returned it.
+   *
+   * En-route matching happens on the backend, which has no Maps key of its own —
+   * so the driver's app posts this string up and the server decodes it there to
+   * work out who is on the way. It re-derives the corridor's endpoints from
+   * Firestore and rejects any polyline that does not actually connect them, so
+   * handing it over does not let a driver choose their own corridor.
+   */
+  encoded: string;
 }
 
 /** Routes API v2. `duration` comes back as a protobuf string like "914s". */
@@ -122,6 +132,7 @@ async function fetchViaRoutesApi(origin: MapPoint, dest: MapPoint): Promise<Rout
     coords,
     durationSec: parseInt(String(route.duration ?? '0'), 10) || 0,
     distanceM: route.distanceMeters ?? 0,
+    encoded,
   };
 }
 
@@ -145,6 +156,7 @@ async function fetchViaLegacyDirections(origin: MapPoint, dest: MapPoint): Promi
     coords,
     durationSec: legs.reduce((s, l) => s + (l.duration?.value ?? 0), 0),
     distanceM: legs.reduce((s, l) => s + (l.distance?.value ?? 0), 0),
+    encoded,
   };
 }
 

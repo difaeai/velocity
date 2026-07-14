@@ -34,6 +34,7 @@ import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
 import { LiveMap } from '../../../src/ui/LiveMap';
 import { RatingModal } from '../../../src/ui/RatingModal';
 import { ChatModal } from '../../../src/ui/ChatModal';
+import { PoolRidersCard } from '../../../src/ui/PoolRidersCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -44,6 +45,7 @@ const STATUS_LABEL: Record<TripStatus, string> = {
   in_progress: 'On the way to your destination',
   completed:   'Trip complete',
   cancelled:   'Trip cancelled',
+  merged:      'You joined a shared ride',
 };
 
 const BUBBLE_COLORS = ['#3b82f6', '#ef4444', '#10b981'];
@@ -573,6 +575,18 @@ export default function TripScreen() {
           </Card>
         )}
 
+        {/* Who else is in the car. Appears the moment the driver picks somebody
+            up along the route — the passenger hears it from us, not from the
+            back seat. */}
+        {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status)
+          && (trip.poolRiders?.length ?? 0) > 1 && (
+          <PoolRidersCard
+            riders={trip.poolRiders!}
+            youUid={user?.uid}
+            driverPhone={trip.driverPhone}
+          />
+        )}
+
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && (
           <>
             <PrimaryButton
@@ -623,6 +637,27 @@ export default function TripScreen() {
             <Pressable style={styles.reportLink} onPress={() => setReportOpen(true)}>
               <Text style={styles.reportLinkTxt}>⚠️  Report an issue with this trip</Text>
             </Pressable>
+          </Card>
+        )}
+
+        {/* A driver going the same way picked this request up onto their pool, so
+            the ride now lives on their trip. This document is only the stub left
+            behind — send the rider to the ride they are actually on. */}
+        {trip.status === 'merged' && (
+          <Card>
+            <Text style={styles.cardTitle}>You're on a shared ride</Text>
+            <Text style={styles.muted}>
+              A driver heading your way picked you up onto their pool. Your ride is tracked there.
+            </Text>
+            <View style={{ height: 10 }} />
+            <PrimaryButton
+              label="Open my ride"
+              onPress={() =>
+                trip.mergedIntoTripId
+                  ? router.replace(`/passenger/trip/${trip.mergedIntoTripId}`)
+                  : goHome()
+              }
+            />
           </Card>
         )}
       </ScrollView>

@@ -861,16 +861,30 @@ export const completeTrip = onCall(async (req) => {
     const franchiseId   = driverSnap.get('franchiseId') as string | null | undefined;
     const paymentMethod = (snap.get('paymentMethod') as string | undefined) ?? 'cash';
 
-    // Pool cash trips: every rider pays the tier per-seat fare in cash, so the
-    // driver's gross is perSeat × riders (the split promised in the app).
-    // Wallet holds only ever cover the host's fare, so wallet pools settle solo.
+    // Pool cash trips: every rider pays in cash, so the driver's gross is the sum
+    // of what the riders actually owe. Wallet holds only ever cover the host's
+    // fare, so wallet pools settle solo (and en-route pickups are cash-only).
+    //
+    // Two ways a pool can be priced, in precedence order:
+    //   1. poolDriverGross — a trip that carried en-route riders. Each rider has
+    //      their own fare from the leg-split (trips/enRoute), because they each
+    //      rode a different piece of the road. This is already the sum of them.
+    //   2. the flat 60/40/35% tier — an ordinary destination pool, where everyone
+    //      travelled the same route and pays the same share.
     const poolMembers = (snap.get('poolMembers') as string[] | undefined) ?? [];
     const isPool      = snap.get('pool') === true;
+    const poolFares   = (snap.get('poolFares') as Record<string, number> | undefined) ?? null;
+    const poolDriverGross = snap.get('poolDriverGross') as number | undefined;
     let grossFare = lockedFare;
     let seats     = (snap.get('seats') as number) ?? 1;
-    if (isPool && paymentMethod === 'cash' && poolMembers.length > 1) {
-      seats     = poolMembers.length;
-      grossFare = poolPerSeatFare(lockedFare, seats) * seats;
+    if (isPool && paymentMethod === 'cash') {
+      if (typeof poolDriverGross === 'number' && poolDriverGross > 0) {
+        seats     = Math.max(1, poolMembers.length);
+        grossFare = poolDriverGross;
+      } else if (poolMembers.length > 1) {
+        seats     = poolMembers.length;
+        grossFare = poolPerSeatFare(lockedFare, seats) * seats;
+      }
     }
     const s = computeSettlement(grossFare, seats, commissionRate);
 
@@ -889,7 +903,17 @@ export const completeTrip = onCall(async (req) => {
       tripRef,
       {
         status: 'completed' as TripStatus,
-        settlement: { ...s, franchiseCut, velocityNet, paymentMethod },
+        // `passengerShare` is the even split and means nothing on an en-route
+        // pool, where riders rode different distances — `poolFares` is the real
+        // receipt, so carry it into the settlement rather than leaving each rider
+        // to be told an average they never paid.
+        settlement: {
+          ...s,
+          ...(poolFares ? { poolFares } : {}),
+          franchiseCut,
+          velocityNet,
+          paymentMethod,
+        },
         walletHold: 0,
         walletSettled: paymentMethod === 'wallet',
         completedAt: FieldValue.serverTimestamp(),
@@ -1039,7 +1063,23 @@ export const completeTrip = onCall(async (req) => {
   const completedCoRiders = ((completedSnap.get('poolMembers') as string[] | undefined) ?? [])
     .filter((m) => m !== completedPassengerId);
   if (completedCoRiders.length > 0) {
-    await sendToUsers(completedCoRiders, '✅ Pool trip complete!', `You've arrived. Your share: PKR ${settlement.passengerShare}.`, { tripId });
+    const completedPoolFares = completedSnap.get('poolFares') as Record<string, number> | undefined;
+    if (completedPoolFares) {
+      // Riders who boarded at different points owe different amounts — telling
+      // them all the same average would be telling most of them a wrong number.
+      await Promise.all(
+        completedCoRiders.map((uid) =>
+          sendToUser(
+            uid,
+            '✅ Pool trip complete!',
+            `You've arrived. Your fare: PKR ${completedPoolFares[uid] ?? settlement.passengerShare}.`,
+            { tripId },
+          ),
+        ),
+      );
+    } else {
+      await sendToUsers(completedCoRiders, '✅ Pool trip complete!', `You've arrived. Your share: PKR ${settlement.passengerShare}.`, { tripId });
+    }
   }
   await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
   if (settlement.commissionLocked) {

@@ -137,6 +137,28 @@ service cloud.firestore {
                       && request.resource.data.text.size() <= 500;
         allow update, delete: if false;
       }
+
+      // Who was picked up along the way, and when. Everyone in the car may read
+      // it — knowing exactly who got in is the point of the feature, not a
+      // detail of it. Written only by acceptEnRouteRider (Admin SDK).
+      match /enRouteLog/{entryId} {
+        allow read: if isAdmin()
+                    || (isSignedIn()
+                        && uid() in get(/databases/$(database)/documents/trips/$(tripId)).data.poolMembers)
+                    || (isSignedIn()
+                        && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+        allow write: if false;
+      }
+    }
+
+    // ----- driverRoutes/{driverId} -----------------------------------------
+    // A driver's declared route ("I'm heading home") — the corridor that
+    // getEnRouteMatches searches for riders on their way. Only the driver
+    // themselves reads it; only the backend writes it, so a driver cannot widen
+    // their own corridor to sweep up rides that are not on their route.
+    match /driverRoutes/{driverId} {
+      allow read: if isAdmin() || (isSignedIn() && driverId == uid());
+      allow write: if false;
     }
 
     // ----- poolRides/{rideId} ----------------------------------------------

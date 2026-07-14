@@ -30,7 +30,14 @@ export type DriverVerificationStatus =
  * Trip lifecycle. Transitions are enforced server-side only (see trips module):
  *
  *   requested ─► matched ─► arriving ─► arrived ─► in_progress ─► completed
- *        └──────────────────── cancelled ◄───────────────────┘
+ *        │  └───────────────── cancelled ◄───────────────────┘
+ *        └─► merged
+ *
+ * `merged` is the end of the line for a pool request that a driver picked up
+ * along their route: the rider now travels on somebody else's trip (the carrier),
+ * so their own request stops being a trip in its own right and points at it via
+ * `mergedIntoTripId`. It is terminal, it is not active, and it never settles —
+ * the carrier trip pays out for everyone. See trips/enRoute.
  */
 export type TripStatus =
   | 'requested'
@@ -39,7 +46,8 @@ export type TripStatus =
   | 'arrived'
   | 'in_progress'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'merged';
 
 export type BidStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
 

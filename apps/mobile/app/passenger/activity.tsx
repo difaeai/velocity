@@ -15,6 +15,9 @@ const STATUS_META: Record<TripStatus, { label: string; color: string }> = {
   in_progress: { label: 'In progress', color: '#ccff00' },
   completed: { label: 'Completed', color: '#10b981' },
   cancelled: { label: 'Cancelled', color: '#ef4444' },
+  // Picked up onto a driver's pool along their route — the ride carries on over
+  // on their trip, so this entry is history, not a live ride.
+  merged: { label: 'Moved to shared ride', color: '#ccff00' },
 };
 
 const ACTIVE = new Set<TripStatus>(['requested', 'matched', 'arriving', 'arrived', 'in_progress']);
