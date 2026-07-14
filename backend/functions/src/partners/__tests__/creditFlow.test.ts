@@ -60,22 +60,33 @@ async function seedApprovedDriver(uid = DRIVER) {
   });
 }
 
-async function seedPartner(uid: string, fleetId: string, type: 'driver' | 'passenger') {
-  await db().doc(`partners/${uid}`).set({
-    uid,
-    fullName: 'Fleet Owner',
-    status: 'active',
-    level: 'bronze',
-    lifetimeEarnings: 0,
-    completedRides: 0,
-    flaggedRides: 0,
-  });
+async function seedPartner(
+  uid: string,
+  fleetId: string,
+  type: 'driver' | 'passenger',
+  tier: 'free' | 'pro' = 'free',
+) {
+  await db().doc(`partners/${uid}`).set(
+    {
+      uid,
+      tier,
+      referralCode: uid === PARTNER ? '48213' : '59324',
+      fullName: 'Fleet Owner',
+      status: 'active',
+      level: 'bronze',
+      lifetimeEarnings: 0,
+      completedRides: 0,
+      flaggedRides: 0,
+      [type === 'driver' ? 'driverFleetId' : 'passengerFleetId']: fleetId,
+    },
+    { merge: true },
+  );
   await db().doc(`partner_wallets/${uid}`).set({ uid, balance: 0, pending: 0, withdrawn: 0, lifetimeEarnings: 0 });
   await db().doc(`partner_fleets/${fleetId}`).set({
     id: fleetId,
     partnerId: uid,
     type,
-    code: type === 'driver' ? 'VLD-TEST01' : 'VLP-TEST01',
+    code: '48213',
     members: 1,
     completedRides: 0,
     lifetimeEarnings: 0,
@@ -133,24 +144,25 @@ beforeEach(async () => {
   await seedApprovedDriver();
 });
 
-describe('a driver recruited by a partner completes a ride', () => {
+describe('a driver recruited by a FREE partner completes a ride', () => {
   beforeEach(async () => {
-    await seedPartner(PARTNER, 'fleet-d', 'driver');
+    await seedPartner(PARTNER, 'fleet-d', 'driver', 'free');
     await bindReferral(DRIVER, PARTNER, 'fleet-d', 'driver');
   });
 
-  it('pays the fleet owner 1% of the platform commission, not of the fare', async () => {
+  it('pays 0.5% of the platform commission, not of the fare', async () => {
     const { tripId, settlement } = await runRide();
 
     // Default commission is 10% of a 1000 PKR fare = 100 PKR to the platform.
     expect(settlement.commission).toBe(100);
-    // 1% of that 100 is 1 PKR. 1% of the FARE would have been 10 — the bug this
-    // whole feature is designed not to have.
+    // 0.5% of that 100 is 0.5, which rounds to 1 PKR. 0.5% of the FARE would
+    // have been 5 — the bug this whole feature is designed not to have.
     expect(settlement.driverFleetCut).toBe(1);
-    expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.01));
+    expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.005));
 
     const txn = await db().doc(`partner_transactions/${tripId}_${PARTNER}`).get();
     expect(txn.exists).toBe(true);
+    expect(txn.get('tier')).toBe('free');
     expect(txn.get('fleetCommission')).toBe(1);
     expect(txn.get('platformCommission')).toBe(100);
     expect(txn.get('rideFare')).toBe(FARE);
@@ -187,6 +199,30 @@ describe('a driver recruited by a partner completes a ride', () => {
     const partner = await db().doc(`partners/${PARTNER}`).get();
     expect(partner.get('completedRides')).toBe(1);
     expect(partner.get('lifetimeEarnings')).toBe(1);
+  });
+});
+
+describe('a driver recruited by a PRO partner completes the same ride', () => {
+  it('pays 2% of the platform commission — four times the free tier', async () => {
+    await seedPartner(PARTNER, 'fleet-d', 'driver', 'pro');
+    await bindReferral(DRIVER, PARTNER, 'fleet-d', 'driver');
+
+    const { tripId, settlement } = await runRide();
+
+    // Same ride, same Rs 100 commission — the tier on the partner doc is the
+    // only thing that differs, and it is read at settlement.
+    expect(settlement.commission).toBe(100);
+    expect(settlement.driverFleetCut).toBe(2);
+    // Still nowhere near 2% of the FARE (Rs 20).
+    expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.02));
+    expect(settlement.velocityNet).toBe(98);
+
+    const txn = await db().doc(`partner_transactions/${tripId}_${PARTNER}`).get();
+    expect(txn.get('tier')).toBe('pro');
+    expect(txn.get('fleetCommission')).toBe(2);
+
+    const w = await partnerWallet(PARTNER);
+    expect(w.pending).toBe(2);
   });
 });
 

@@ -29,12 +29,16 @@ import { db } from '@/lib/firebase';
 import { adminApi } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card, StatCard, Badge } from '@/components/ui';
+import { FranchisesPanel } from '@/components/FranchisesPanel';
 
-type Tab = 'applications' | 'partners' | 'withdrawals' | 'fraud' | 'settings';
+type Tab = 'applications' | 'partners' | 'withdrawals' | 'fraud' | 'franchises' | 'settings';
+
+type Tier = 'free' | 'pro';
 
 interface Application {
   id: string;
   uid: string;
+  tier?: Tier;
   fullName?: string;
   mobile?: string;
   city?: string;
@@ -42,12 +46,20 @@ interface Application {
   cnicFrontUrl?: string;
   cnicBackUrl?: string;
   photoURL?: string | null;
+  /** Pro only — the registration-fee receipt. */
+  paymentProofUrl?: string | null;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  quotedFee?: number;
+  quotedFeeCurrency?: string;
   status: string;
   submittedAt?: { seconds: number };
 }
 
 interface Partner {
   id: string;
+  tier?: Tier;
+  referralCode?: string;
   fullName?: string;
   city?: string;
   mobile?: string;
@@ -87,6 +99,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'partners', label: 'Partners' },
   { key: 'withdrawals', label: 'Withdrawals' },
   { key: 'fraud', label: 'Fraud monitor' },
+  { key: 'franchises', label: 'Franchises (legacy)' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -99,7 +112,13 @@ function pkr(n?: number): string {
 }
 
 export default function PartnersPage() {
-  const [tab, setTab] = useState<Tab>('applications');
+  // /dashboard/franchises redirects here with ?tab=franchises, so an old
+  // bookmark still lands on the franchise list rather than the application queue.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === 'undefined') return 'applications';
+    const q = new URLSearchParams(window.location.search).get('tab');
+    return TABS.some((t) => t.key === q) ? (q as Tab) : 'applications';
+  });
   const [apps, setApps] = useState<Application[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
@@ -152,10 +171,12 @@ export default function PartnersPage() {
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div>
-        <h1 style={{ margin: 0, color: colors.text }}>💸 Earn with Velocity</h1>
+        <h1 style={{ margin: 0, color: colors.text }}>🏢 Partner Program</h1>
         <p style={{ color: colors.muted, marginTop: 6, fontSize: 14 }}>
-          Partners earn a share of Velocity&apos;s platform commission on genuine completed rides
-          run by the drivers and passengers they recruited. Never a share of the fare.
+          Partners earn a share of Velocity&apos;s <strong>platform commission</strong> on genuine
+          completed rides run by the drivers and passengers they recruited — never a share of the
+          fare. Free earns 0.5% on both fleets; Pro pays a one-off fee and earns 2% (driver) and
+          1.3% (passenger).
         </p>
       </div>
 
@@ -201,6 +222,8 @@ export default function PartnersPage() {
         <Withdrawals rows={withdrawals} busy={busy} run={run} />
       ) : tab === 'fraud' ? (
         <FraudMonitor rows={fraud} busy={busy} run={run} />
+      ) : tab === 'franchises' ? (
+        <FranchisesPanel />
       ) : (
         <Settings />
       )}
@@ -217,7 +240,9 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      {apps.map((a) => (
+      {apps.map((a) => {
+        const isPro = a.tier === 'pro';
+        return (
         <Card key={a.id}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 260px' }}>
@@ -232,28 +257,75 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
                   <div style={{ color: colors.text, fontWeight: 800 }}>{a.fullName ?? a.uid}</div>
                   <div style={{ color: colors.muted, fontSize: 12 }}>{a.mobile} · {a.city}</div>
                 </div>
+                <Badge
+                  label={isPro ? 'PRO' : 'FREE'}
+                  color={isPro ? colors.primary : colors.muted}
+                />
               </div>
 
               <Row label="CNIC" value={a.cnicNumber ?? '—'} />
               <Row label="Submitted" value={when(a.submittedAt)} />
-              <Row label="Status" value={a.status} />
+              {isPro ? (
+                <>
+                  <Row
+                    label="Fee quoted"
+                    value={`${a.quotedFeeCurrency === 'USD' ? '$' : ''}${a.quotedFee ?? 0}${a.quotedFeeCurrency && a.quotedFeeCurrency !== 'USD' ? ` ${a.quotedFeeCurrency}` : ''}`}
+                  />
+                  <Row label="Paid via" value={a.paymentMethod ?? '—'} />
+                  <Row label="Txn ref" value={a.paymentReference || '—'} />
+                </>
+              ) : null}
             </div>
 
             <div style={{ display: 'flex', gap: 10, flex: '1 1 300px' }}>
               <DocImage url={a.cnicFrontUrl} label="CNIC front" />
               <DocImage url={a.cnicBackUrl} label="CNIC back" />
+              {/* The receipt is the WHOLE point of the Pro gate — nothing in the
+                  backend can tell a real transfer from a doctored screenshot, so
+                  this image is the check. Open it before approving Pro. */}
+              {isPro ? <DocImage url={a.paymentProofUrl ?? undefined} label="Payment receipt" /> : null}
             </div>
           </div>
+
+          {isPro ? (
+            <p style={{ color: colors.warn, fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+              ⚠️ Check the receipt against your account before approving as Pro. Approving as Free
+              instead lets them in at 0.5% without the fee.
+            </p>
+          ) : null}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
             <Button
               disabled={busy === a.uid}
               onClick={() =>
-                run(a.uid, () => adminApi.adminReviewPartnerApplication({ uid: a.uid, decision: 'approve' }))
+                run(a.uid, () =>
+                  adminApi.adminReviewPartnerApplication({
+                    uid: a.uid,
+                    decision: 'approve',
+                    tier: a.tier ?? 'free',
+                  }),
+                )
               }
             >
-              Approve
+              Approve as {isPro ? 'Pro' : 'Free'}
             </Button>
+            {isPro ? (
+              <Button
+                variant="ghost"
+                disabled={busy === a.uid}
+                onClick={() =>
+                  run(a.uid, () =>
+                    adminApi.adminReviewPartnerApplication({
+                      uid: a.uid,
+                      decision: 'approve',
+                      tier: 'free',
+                    }),
+                  )
+                }
+              >
+                Approve as Free (no fee received)
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               disabled={busy === a.uid}
@@ -282,7 +354,8 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
             </Button>
           </div>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -298,6 +371,8 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
           <thead>
             <tr style={{ color: colors.muted, textAlign: 'left' }}>
               <th style={th}>Partner</th>
+              <th style={th}>Tier</th>
+              <th style={th}>Code</th>
               <th style={th}>Level</th>
               <th style={th}>Drivers</th>
               <th style={th}>Passengers</th>
@@ -314,6 +389,15 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
                 <td style={td}>
                   <div style={{ color: colors.text, fontWeight: 700 }}>{p.fullName ?? p.id}</div>
                   <div style={{ color: colors.muted, fontSize: 11 }}>{p.city} · {p.mobile}</div>
+                </td>
+                <td style={td}>
+                  <Badge
+                    label={p.tier === 'pro' ? 'PRO' : 'FREE'}
+                    color={p.tier === 'pro' ? colors.primary : colors.muted}
+                  />
+                </td>
+                <td style={{ ...td, fontWeight: 800, letterSpacing: 1 }}>
+                  {p.referralCode ?? '—'}
                 </td>
                 <td style={td}>{p.level ?? 'bronze'}</td>
                 <td style={td}>{p.totalDrivers ?? 0}</td>
@@ -487,13 +571,28 @@ function FraudMonitor({ rows, busy, run }: { rows: FraudLog[]; busy: string | nu
 }
 
 /**
- * The rates. Every one of them is a fraction of the PLATFORM COMMISSION, and the
- * labels say so — an admin who reads "1%" as "1% of the fare" would be giving
- * away roughly ten times what they meant to.
+ * The rates, the fee and the accounts.
+ *
+ * Every rate is a fraction of the PLATFORM COMMISSION, and the labels say so —
+ * an admin who reads "2%" as "2% of the fare" would be handing out roughly ten
+ * times what they meant to.
+ *
+ * The three account numbers are the ONLY place a Pro applicant learns where to
+ * send their fee. Left blank, the apply screen tells the applicant the program
+ * is not set up yet — which is the honest failure, and far better than showing
+ * them a stale account that swallows their money.
  */
 function Settings() {
-  const [driverRate, setDriverRate] = useState('1');
-  const [passengerRate, setPassengerRate] = useState('1');
+  const [freeDriver, setFreeDriver] = useState('0.5');
+  const [freePassenger, setFreePassenger] = useState('0.5');
+  const [proDriver, setProDriver] = useState('2');
+  const [proPassenger, setProPassenger] = useState('1.3');
+  const [proFee, setProFee] = useState('175');
+  const [proFeeCurrency, setProFeeCurrency] = useState('USD');
+  const [bankName, setBankName] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
+  const [easypaisa, setEasypaisa] = useState('');
+  const [jazzcash, setJazzcash] = useState('');
   const [minWithdrawal, setMinWithdrawal] = useState('500');
   const [holdHours, setHoldHours] = useState('72');
   const [saving, setSaving] = useState(false);
@@ -504,8 +603,18 @@ function Settings() {
     return onSnapshot(doc(db, 'config', 'partnerSettings'), (snap) => {
       const d = snap.data();
       if (!d) return;
-      if (typeof d.driverFleetRate === 'number') setDriverRate(String(d.driverFleetRate * 100));
-      if (typeof d.passengerFleetRate === 'number') setPassengerRate(String(d.passengerFleetRate * 100));
+      const asPct = (v: unknown, fallback: string) =>
+        typeof v === 'number' ? String(v * 100) : fallback;
+      setFreeDriver(asPct(d.free?.driverFleetRate, '0.5'));
+      setFreePassenger(asPct(d.free?.passengerFleetRate, '0.5'));
+      setProDriver(asPct(d.pro?.driverFleetRate, '2'));
+      setProPassenger(asPct(d.pro?.passengerFleetRate, '1.3'));
+      if (typeof d.proFee === 'number') setProFee(String(d.proFee));
+      if (typeof d.proFeeCurrency === 'string') setProFeeCurrency(d.proFeeCurrency);
+      setBankName(d.payment?.bankName ?? '');
+      setBankAccount(d.payment?.bankAccount ?? '');
+      setEasypaisa(d.payment?.easypaisaAccount ?? '');
+      setJazzcash(d.payment?.jazzcashAccount ?? '');
       if (typeof d.minWithdrawal === 'number') setMinWithdrawal(String(d.minWithdrawal));
       if (typeof d.holdHours === 'number') setHoldHours(String(d.holdHours));
     });
@@ -516,16 +625,25 @@ function Settings() {
     setError(null);
     setSaved(false);
     try {
-      const driver = Number(driverRate) / 100;
-      const passenger = Number(passengerRate) / 100;
-      if (!(driver >= 0 && driver <= 50) || !(passenger >= 0 && passenger <= 50)) {
-        throw new Error('Rates must be between 0% and 50% of the platform commission.');
+      const [fd, fp, pd, pp] = [freeDriver, freePassenger, proDriver, proPassenger].map(
+        (r) => Number(r) / 100,
+      );
+      if ([fd, fp, pd, pp].some((r) => !(r >= 0 && r <= 0.5))) {
+        throw new Error('Every rate must be between 0% and 50% of the platform commission.');
       }
       await setDoc(
         doc(db, 'config', 'partnerSettings'),
         {
-          driverFleetRate: driver,
-          passengerFleetRate: passenger,
+          free: { driverFleetRate: fd, passengerFleetRate: fp },
+          pro: { driverFleetRate: pd, passengerFleetRate: pp },
+          proFee: Number(proFee),
+          proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'USD',
+          payment: {
+            bankName: bankName.trim() || null,
+            bankAccount: bankAccount.trim() || null,
+            easypaisaAccount: easypaisa.trim() || null,
+            jazzcashAccount: jazzcash.trim() || null,
+          },
           minWithdrawal: Number(minWithdrawal),
           holdHours: Number(holdHours),
           updatedAt: new Date(),
@@ -540,51 +658,72 @@ function Settings() {
     }
   }
 
+  const noAccounts = !bankAccount.trim() && !easypaisa.trim() && !jazzcash.trim();
+
   return (
-    <Card>
-      <h3 style={{ margin: '0 0 4px', color: colors.text }}>Commission &amp; payouts</h3>
-      <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
-        On a Rs 1,000 ride with a 10% platform commission (Rs 100), a 1% driver-fleet rate pays the
-        partner <strong>Rs 1</strong> — 1% of the commission, not of the fare. Velocity&apos;s net is
-        never allowed to go negative: the franchise cut is taken first, then the fleets, and a fleet
-        is simply paid less if the commission runs out.
-      </p>
+    <div style={{ display: 'grid', gap: 16 }}>
+      <Card>
+        <h3 style={{ margin: '0 0 4px', color: colors.text }}>Tier rates</h3>
+        <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
+          On a Rs 1,000 ride with a 10% platform commission (Rs 100), a 2% driver-fleet rate pays the
+          partner <strong>Rs 2</strong> — 2% of the commission, not of the fare. Velocity&apos;s net
+          can never go negative: the franchise cut is taken first, then the fleets, and a fleet is
+          simply paid less if the commission runs out.
+        </p>
 
-      <div style={{ display: 'grid', gap: 14, maxWidth: 460, marginTop: 16 }}>
-        <FieldRow
-          label="Driver fleet rate"
-          suffix="% of platform commission"
-          value={driverRate}
-          onChange={setDriverRate}
-        />
-        <FieldRow
-          label="Passenger fleet rate"
-          suffix="% of platform commission"
-          value={passengerRate}
-          onChange={setPassengerRate}
-        />
-        <FieldRow
-          label="Minimum withdrawal"
-          suffix="PKR"
-          value={minWithdrawal}
-          onChange={setMinWithdrawal}
-        />
-        <FieldRow
-          label="Fraud-hold window"
-          suffix="hours before earnings can be withdrawn"
-          value={holdHours}
-          onChange={setHoldHours}
-        />
+        <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 16 }}>
+          <strong style={{ color: colors.text, fontSize: 13 }}>Free Partner</strong>
+          <FieldRow label="Driver fleet" suffix="% of platform commission" value={freeDriver} onChange={setFreeDriver} />
+          <FieldRow label="Passenger fleet" suffix="% of platform commission" value={freePassenger} onChange={setFreePassenger} />
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <strong style={{ color: colors.text, fontSize: 13, marginTop: 10 }}>Pro Partner</strong>
+          <FieldRow label="Driver fleet" suffix="% of platform commission" value={proDriver} onChange={setProDriver} />
+          <FieldRow label="Passenger fleet" suffix="% of platform commission" value={proPassenger} onChange={setProPassenger} />
+          <FieldRow label="Registration fee" suffix={proFeeCurrency} value={proFee} onChange={setProFee} />
+          <FieldRow label="Fee currency" suffix="e.g. USD or PKR" value={proFeeCurrency} onChange={setProFeeCurrency} />
+        </div>
+      </Card>
+
+      <Card>
+        <h3 style={{ margin: '0 0 4px', color: colors.text }}>Where Pro applicants pay</h3>
+        <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
+          Shown on the Pro application screen. Applicants copy one of these, pay, and upload a
+          receipt for you to check.
+        </p>
+        {noAccounts ? (
+          <p style={{ color: colors.warn, fontSize: 13, fontWeight: 700, margin: '8px 0 0' }}>
+            ⚠️ No accounts set — Pro applicants currently have nowhere to send the fee.
+          </p>
+        ) : null}
+        <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 14 }}>
+          <FieldRow label="Bank name" suffix="" value={bankName} onChange={setBankName} wide />
+          <FieldRow label="Bank account / IBAN" suffix="" value={bankAccount} onChange={setBankAccount} wide />
+          <FieldRow label="Easypaisa account" suffix="" value={easypaisa} onChange={setEasypaisa} wide />
+          <FieldRow label="JazzCash account" suffix="" value={jazzcash} onChange={setJazzcash} wide />
+        </div>
+      </Card>
+
+      <Card>
+        <h3 style={{ margin: '0 0 4px', color: colors.text }}>Payouts</h3>
+        <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 12 }}>
+          <FieldRow label="Minimum withdrawal" suffix="PKR" value={minWithdrawal} onChange={setMinWithdrawal} />
+          <FieldRow
+            label="Fraud-hold window"
+            suffix="hours before earnings can be withdrawn"
+            value={holdHours}
+            onChange={setHoldHours}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 18 }}>
           <Button onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save settings'}
+            {saving ? 'Saving…' : 'Save all settings'}
           </Button>
           {saved ? <span style={{ color: colors.primary, fontSize: 13, fontWeight: 700 }}>Saved ✓</span> : null}
           {error ? <span style={{ color: colors.danger, fontSize: 13 }}>{error}</span> : null}
         </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -593,11 +732,14 @@ function FieldRow({
   suffix,
   value,
   onChange,
+  wide,
 }: {
   label: string;
   suffix: string;
   value: string;
   onChange: (v: string) => void;
+  /** Account numbers need room; a rate needs four characters. */
+  wide?: boolean;
 }) {
   return (
     <label style={{ display: 'grid', gap: 6 }}>
@@ -606,9 +748,9 @@ function FieldRow({
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          inputMode="decimal"
+          inputMode={wide ? 'text' : 'decimal'}
           style={{
-            width: 100,
+            width: wide ? 320 : 100,
             padding: '10px 12px',
             borderRadius: 10,
             border: `1px solid ${colors.border}`,
@@ -617,7 +759,7 @@ function FieldRow({
             fontSize: 14,
           }}
         />
-        <span style={{ color: colors.muted, fontSize: 12 }}>{suffix}</span>
+        {suffix ? <span style={{ color: colors.muted, fontSize: 12 }}>{suffix}</span> : null}
       </span>
     </label>
   );

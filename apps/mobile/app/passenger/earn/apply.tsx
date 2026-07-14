@@ -1,17 +1,22 @@
 /**
  * Earn with Velocity — the partner application.
  *
- * Phone verification is a real gate, not a formality. The backend refuses any
- * application whose mobile number is not already on the caller's Firebase Auth
- * record, and a number only lands there once Firebase has verified an SMS code
- * for it. Most users signed in by phone and are therefore already verified — for
- * them this screen shows the number and moves on. Anyone else links a phone here
- * with a real OTP round-trip.
+ * Two tiers. Free asks for a CNIC and a verified mobile, nothing more. Pro asks
+ * for the same plus proof that the registration fee was paid, because Pro earns
+ * roughly four times what free earns and the fee is the only thing between "a
+ * partner" and "anyone who would like the higher rate".
+ *
+ * The Pro accounts and the fee come from the backend rather than being baked in,
+ * so an admin can change a bank account without shipping a new build — and so
+ * real account numbers never sit in the repo.
+ *
+ * Phone verification is a real gate, not a formality: the backend refuses any
+ * application whose mobile is not already on the caller's Firebase Auth record,
+ * and a number only lands there once Firebase verified an SMS code for it.
  */
 import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -22,17 +27,20 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 
 import { api } from '../../../src/api/client';
+import type { PartnerTier, PartnerTiers, WithdrawalMethod } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { auth, firebaseConfig } from '../../../src/firebase';
-import { uploadCnicDoc } from '../../../src/lib/uploadDoc';
+import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
+import { Skeleton } from '../../../src/ui/partner';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -44,10 +52,15 @@ function formatCnic(raw: string): string {
   return `${d.slice(0, 5)}-${d.slice(5, 12)}-${d.slice(12)}`;
 }
 
+const pct = (rate: number) => `${(rate * 100).toFixed(rate * 100 % 1 === 0 ? 0 : 1)}%`;
+
 export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
+
+  const [tiers, setTiers] = useState<PartnerTiers | null>(null);
+  const [tier, setTier] = useState<PartnerTier>('free');
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState('');
@@ -56,6 +69,11 @@ export default function PartnerApply() {
   const [back, setBack] = useState<string | null>(null);
   const [terms, setTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Pro only.
+  const [proof, setProof] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState<WithdrawalMethod>('easypaisa');
+  const [payRef, setPayRef] = useState('');
 
   // Already-verified users never see the OTP step.
   const verifiedPhone = user?.phoneNumber ?? null;
@@ -67,6 +85,15 @@ export default function PartnerApply() {
 
   const phone = verifiedPhone ?? linkedPhone;
 
+  useEffect(() => {
+    api
+      .getPartnerTiers({})
+      .then(setTiers)
+      .catch(() => setTiers(null));
+  }, []);
+
+  const isPro = tier === 'pro';
+
   const valid = useMemo(
     () =>
       fullName.trim().length >= 2 &&
@@ -75,8 +102,10 @@ export default function PartnerApply() {
       !!front &&
       !!back &&
       !!phone &&
-      terms,
-    [fullName, city, cnic, front, back, phone, terms],
+      terms &&
+      // The one extra thing Pro asks for.
+      (!isPro || !!proof),
+    [fullName, city, cnic, front, back, phone, terms, isPro, proof],
   );
 
   async function sendOtp() {
@@ -128,18 +157,27 @@ export default function PartnerApply() {
     try {
       // Upload first: a submission whose documents failed to upload would sit in
       // the admin queue with broken images and get rejected for no reason.
-      const [frontUp, backUp] = await Promise.all([
+      const [frontUp, backUp, proofUp] = await Promise.all([
         uploadCnicDoc(user.uid, 'front', front!),
         uploadCnicDoc(user.uid, 'back', back!),
+        isPro && proof ? uploadPartnerPaymentProof(user.uid, proof) : Promise.resolve(null),
       ]);
 
       await api.submitPartnerApplication({
+        tier,
         fullName: fullName.trim(),
         mobile: phone,
         cnicNumber: cnic,
         cnicFrontUrl: frontUp.url,
         cnicBackUrl: backUp.url,
         city: city.trim(),
+        ...(isPro && proofUp
+          ? {
+              paymentProofUrl: proofUp.url,
+              paymentMethod: payMethod,
+              ...(payRef.trim() ? { paymentReference: payRef.trim() } : {}),
+            }
+          : {}),
         acceptedTerms: true,
       });
 
@@ -164,12 +202,39 @@ export default function PartnerApply() {
       />
 
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={s.intro}>
-          Fleet owners handle other people's earnings, so we verify every partner by CNIC before
-          approving them.
+        <Text style={s.label}>Choose your tier</Text>
+        {tiers ? (
+          <View style={{ gap: 10 }}>
+            <TierCard
+              active={tier === 'free'}
+              onPress={() => setTier('free')}
+              name="Free Partner"
+              price="No fee"
+              driver={pct(tiers.free.driverFleetRate)}
+              passenger={pct(tiers.free.passengerFleetRate)}
+              note="CNIC and mobile number only."
+            />
+            <TierCard
+              active={tier === 'pro'}
+              onPress={() => setTier('pro')}
+              name="Pro Partner"
+              price={`${tiers.proFeeCurrency === 'USD' ? '$' : ''}${tiers.proFee}${tiers.proFeeCurrency !== 'USD' ? ` ${tiers.proFeeCurrency}` : ''} one-off`}
+              driver={pct(tiers.pro.driverFleetRate)}
+              passenger={pct(tiers.pro.passengerFleetRate)}
+              note="Pay the registration fee and upload the receipt."
+              highlight
+            />
+          </View>
+        ) : (
+          <Skeleton height={190} radius={16} />
+        )}
+
+        <Text style={s.rateNote}>
+          Rates are a share of Velocity&apos;s commission on each completed ride — not of the fare.
+          You never take money from your drivers or riders.
         </Text>
 
-        <Label>Full name</Label>
+        <Text style={s.label}>Full name</Text>
         <TextInput
           style={s.input}
           value={fullName}
@@ -178,7 +243,7 @@ export default function PartnerApply() {
           placeholderTextColor={colors.muted}
         />
 
-        <Label>Mobile number</Label>
+        <Text style={s.label}>Mobile number</Text>
         {phone ? (
           <View style={s.verifiedRow}>
             <Text style={s.verifiedText}>✅ {phone}</Text>
@@ -202,7 +267,7 @@ export default function PartnerApply() {
             <View style={s.phoneRow}>
               <Text style={s.phonePrefix}>+92</Text>
               <TextInput
-                style={[s.input, { flex: 1, marginBottom: 0 }]}
+                style={[s.input, { flex: 1 }]}
                 value={phoneDigits}
                 onChangeText={setPhoneDigits}
                 placeholder="3001234567"
@@ -215,7 +280,7 @@ export default function PartnerApply() {
           </View>
         )}
 
-        <Label>CNIC number</Label>
+        <Text style={s.label}>CNIC number</Text>
         <TextInput
           style={s.input}
           value={cnic}
@@ -225,7 +290,7 @@ export default function PartnerApply() {
           keyboardType="number-pad"
         />
 
-        <Label>City</Label>
+        <Text style={s.label}>City</Text>
         <TextInput
           style={s.input}
           value={city}
@@ -234,11 +299,65 @@ export default function PartnerApply() {
           placeholderTextColor={colors.muted}
         />
 
-        <Label>CNIC photos</Label>
+        <Text style={s.label}>CNIC photos</Text>
         <View style={s.uploadRow}>
           <UploadTile label="Front side" uri={front} onPick={() => pickPhoto(setFront)} />
           <UploadTile label="Back side" uri={back} onPick={() => pickPhoto(setBack)} />
         </View>
+
+        {/* ── Pro: pay the fee, then prove it ── */}
+        {isPro && tiers ? (
+          <>
+            <Text style={s.label}>Pay the registration fee</Text>
+            <View style={s.payCard}>
+              <Text style={s.payFee}>
+                {tiers.proFeeCurrency === 'USD' ? '$' : ''}
+                {tiers.proFee}
+                {tiers.proFeeCurrency !== 'USD' ? ` ${tiers.proFeeCurrency}` : ''}
+              </Text>
+              <Text style={s.payHint}>Send it to any one of these, then upload the screenshot.</Text>
+
+              <Account
+                label="Bank transfer"
+                sub={tiers.payment.bankName}
+                value={tiers.payment.bankAccount}
+              />
+              <Account label="Easypaisa" value={tiers.payment.easypaisaAccount} />
+              <Account label="JazzCash" value={tiers.payment.jazzcashAccount} />
+            </View>
+
+            <Text style={s.label}>Which account did you pay into?</Text>
+            <View style={s.methods}>
+              {(
+                [
+                  { key: 'bank', label: '🏦 Bank' },
+                  { key: 'easypaisa', label: '📱 Easypaisa' },
+                  { key: 'jazzcash', label: '📲 JazzCash' },
+                ] as { key: WithdrawalMethod; label: string }[]
+              ).map((m) => (
+                <Pressable
+                  key={m.key}
+                  style={[s.method, payMethod === m.key && s.methodOn]}
+                  onPress={() => setPayMethod(m.key)}
+                >
+                  <Text style={[s.methodLabel, payMethod === m.key && s.methodLabelOn]}>{m.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={s.label}>Transaction ID (optional)</Text>
+            <TextInput
+              style={s.input}
+              value={payRef}
+              onChangeText={setPayRef}
+              placeholder="Helps us find your payment faster"
+              placeholderTextColor={colors.muted}
+            />
+
+            <Text style={s.label}>Payment screenshot</Text>
+            <UploadTile label="Payment receipt" uri={proof} onPick={() => pickPhoto(setProof)} wide />
+          </>
+        ) : null}
 
         <Pressable style={s.termsRow} onPress={() => setTerms((t) => !t)}>
           <View style={[s.checkbox, terms && s.checkboxOn]}>
@@ -247,35 +366,118 @@ export default function PartnerApply() {
           <Text style={s.termsText}>
             I accept the Partner Program terms. I understand I earn only from genuine completed
             rides, and that fake, cancelled or scam rides pay nothing.
+            {isPro ? ' I understand the registration fee is non-refundable once approved.' : ''}
           </Text>
         </Pressable>
 
         <PrimaryButton
-          label="Submit application"
+          label={isPro ? 'Submit Pro application' : 'Submit application'}
           onPress={submit}
           loading={submitting}
           disabled={!valid}
         />
-        {!phone ? (
-          <Text style={s.blocker}>Verify your mobile number to submit.</Text>
+        {!phone ? <Text style={s.blocker}>Verify your mobile number to submit.</Text> : null}
+        {isPro && !proof ? (
+          <Text style={s.blocker}>Upload your payment screenshot to submit.</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <Text style={s.label}>{children}</Text>;
+function TierCard({
+  active,
+  onPress,
+  name,
+  price,
+  driver,
+  passenger,
+  note,
+  highlight,
+}: {
+  active: boolean;
+  onPress: () => void;
+  name: string;
+  price: string;
+  driver: string;
+  passenger: string;
+  note: string;
+  highlight?: boolean;
+}) {
+  return (
+    <Pressable style={[s.tier, active && s.tierOn]} onPress={onPress}>
+      <View style={s.tierTop}>
+        <View style={[s.radio, active && s.radioOn]}>{active ? <View style={s.radioDot} /> : null}</View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.tierName}>
+            {name} {highlight ? '⭐' : ''}
+          </Text>
+          <Text style={s.tierPrice}>{price}</Text>
+        </View>
+      </View>
+      <View style={s.tierRates}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.tierRateVal}>{driver}</Text>
+          <Text style={s.tierRateLbl}>Driver fleet</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.tierRateVal}>{passenger}</Text>
+          <Text style={s.tierRateLbl}>Passenger fleet</Text>
+        </View>
+      </View>
+      <Text style={s.tierNote}>{note}</Text>
+    </Pressable>
+  );
 }
 
-function UploadTile({ label, uri, onPick }: { label: string; uri: string | null; onPick: () => void }) {
+/** An account number is useless if it cannot be copied — it gets mistyped. */
+function Account({ label, sub, value }: { label: string; sub?: string | null; value: string | null }) {
+  if (!value) {
+    return (
+      <View style={s.account}>
+        <Text style={s.accountLabel}>{label}</Text>
+        <Text style={s.accountMissing}>Not set up yet — contact support</Text>
+      </View>
+    );
+  }
   return (
-    <Pressable style={s.upload} onPress={onPick}>
+    <Pressable
+      style={s.account}
+      onPress={async () => {
+        await Clipboard.setStringAsync(value);
+        Alert.alert('Copied', `${label} account number copied.`);
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={s.accountLabel}>
+          {label}
+          {sub ? ` · ${sub}` : ''}
+        </Text>
+        <Text style={s.accountValue}>{value}</Text>
+      </View>
+      <Text style={s.accountCopy}>Copy</Text>
+    </Pressable>
+  );
+}
+
+function UploadTile({
+  label,
+  uri,
+  onPick,
+  wide,
+}: {
+  label: string;
+  uri: string | null;
+  onPick: () => void;
+  wide?: boolean;
+}) {
+  return (
+    <Pressable style={[s.upload, wide && { width: '100%' as const, height: 170 }]} onPress={onPick}>
       {uri ? (
         <Image source={{ uri }} style={s.uploadImg} resizeMode="cover" />
       ) : (
         <>
-          <Text style={s.uploadIcon}>🪪</Text>
+          <Text style={s.uploadIcon}>{wide ? '🧾' : '🪪'}</Text>
           <Text style={s.uploadLabel}>{label}</Text>
           <Text style={s.uploadHint}>Tap to upload</Text>
         </>
@@ -286,11 +488,9 @@ function UploadTile({ label, uri, onPick }: { label: string; uri: string | null;
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: 20, gap: 8, paddingBottom: 44 },
+  scroll: { padding: 20, paddingBottom: 44 },
 
-  intro: { color: colors.muted, fontSize: 13, lineHeight: 20, marginBottom: 8 },
-
-  label: { color: colors.text, fontSize: 13, fontWeight: '800', marginTop: 12, marginBottom: 6 },
+  label: { color: colors.text, fontSize: 13, fontWeight: '800', marginTop: 18, marginBottom: 8 },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -301,6 +501,36 @@ const s = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
   },
+
+  tier: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
+  },
+  tierOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  tierTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: colors.primary },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  tierName: { color: colors.text, fontSize: 16, fontWeight: '900' },
+  tierPrice: { color: colors.muted, fontSize: 12, marginTop: 2, fontWeight: '700' },
+  tierRates: { flexDirection: 'row', gap: 12 },
+  tierRateVal: { color: colors.primary, fontSize: 20, fontWeight: '900' },
+  tierRateLbl: { color: colors.muted, fontSize: 11 },
+  tierNote: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+
+  rateNote: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 },
 
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   phonePrefix: {
@@ -348,7 +578,44 @@ const s = StyleSheet.create({
   uploadLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
   uploadHint: { color: colors.muted, fontSize: 11 },
 
-  termsRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: 18, marginBottom: 14 },
+  payCard: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+  },
+  payFee: { color: colors.text, fontSize: 28, fontWeight: '900' },
+  payHint: { color: colors.muted, fontSize: 12, marginBottom: 4 },
+  account: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.glassChip,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  accountLabel: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+  accountValue: { color: colors.text, fontSize: 15, fontWeight: '800', marginTop: 2 },
+  accountMissing: { color: colors.danger, fontSize: 12, marginTop: 2 },
+  accountCopy: { color: colors.primary, fontSize: 12, fontWeight: '800' },
+
+  methods: { flexDirection: 'row', gap: 8 },
+  method: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  methodOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  methodLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  methodLabelOn: { color: colors.text },
+
+  termsRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: 22, marginBottom: 14 },
   checkbox: {
     width: 22,
     height: 22,

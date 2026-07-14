@@ -129,6 +129,8 @@ export function DriverDrawer({
           <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
           <NavItem icon="💳" label="Wallet & Payouts"       onPress={() => go('/driver/wallet')} />
           <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
+          {/* Where a driver recruited by a Velocity partner enters their code. */}
+          <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code')} />
         </View>
 
         <View style={styles.divider} />

@@ -182,10 +182,11 @@ export { adminSendPushNotification } from './users';
 export {
   submitPartnerApplication,
   adminReviewPartnerApplication,
-  createPartnerFleet,
+  getPartnerTiers,
   previewPartnerFleet,
   claimPartnerReferral,
   adminReassignReferral,
+  getMyReferral,
   maturePartnerEarnings,
   adminMarkRideStatus,
   requestPartnerWithdrawal,

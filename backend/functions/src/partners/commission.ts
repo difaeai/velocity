@@ -21,20 +21,24 @@
 import type { Transaction } from 'firebase-admin/firestore';
 
 import { db, FieldValue } from '../lib/firebase';
-import { getPartnerSettings, splitCommission } from './config';
+import { getPartnerSettings, ratesForTier, splitCommission } from './config';
 import { assessRide } from './fraud';
 import type { FraudAssessment } from './fraud';
-import type { PartnerRideStatus, PartnerTxnStatus } from './types';
+import type { PartnerRideStatus, PartnerTier, PartnerTxnStatus } from './types';
 
 interface ReferralEdge {
   uid: string;
   partnerId: string;
   fleetId: string;
+  /** Free and Pro earn different rates. Read at settlement, so an upgrade
+   * changes what the NEXT ride pays and never re-prices settled ones. */
+  tier: PartnerTier;
 }
 
 export interface PartnerCreditPlan {
   driverEdge: ReferralEdge | null;
   passengerEdge: ReferralEdge | null;
+  /** Already resolved for THIS edge's tier — the split does no tier lookup. */
   driverFleetRate: number;
   passengerFleetRate: number;
   holdHours: number;
@@ -59,7 +63,12 @@ async function loadEdge(path: string): Promise<ReferralEdge | null> {
   // rather than crediting into an account that is not allowed to be paid.
   const partner = await db.doc(`partners/${partnerId}`).get();
   if (!partner.exists || partner.get('status') !== 'active') return null;
-  return { uid: snap.get('uid') as string, partnerId, fleetId: snap.get('fleetId') as string };
+  return {
+    uid: snap.get('uid') as string,
+    partnerId,
+    fleetId: snap.get('fleetId') as string,
+    tier: ((partner.get('tier') as PartnerTier | undefined) ?? 'free'),
+  };
 }
 
 export interface PrepareArgs {
@@ -94,11 +103,16 @@ export async function preparePartnerCredit(args: PrepareArgs): Promise<PartnerCr
       completedAt: new Date(),
     });
 
+    // Each side is priced by ITS OWN partner's tier — a Pro driver-fleet owner
+    // and a free passenger-fleet owner can both be paid on the same ride, at
+    // different rates.
     return {
       driverEdge,
       passengerEdge,
-      driverFleetRate: settings.driverFleetRate,
-      passengerFleetRate: settings.passengerFleetRate,
+      driverFleetRate: driverEdge ? ratesForTier(settings, driverEdge.tier).driverFleetRate : 0,
+      passengerFleetRate: passengerEdge
+        ? ratesForTier(settings, passengerEdge.tier).passengerFleetRate
+        : 0,
       holdHours: settings.holdHours,
       assessment,
     };
@@ -214,6 +228,9 @@ function creditFleet(
     partnerId: edge.partnerId,
     fleetId: edge.fleetId,
     fleetType: p.role,
+    // The tier this row was priced at. A partner who later upgrades can still
+    // see why an old ride paid what it paid.
+    tier: edge.tier,
     tripId: args.tripId,
     memberUid: p.memberUid,
     counterpartyUid: p.counterparty,

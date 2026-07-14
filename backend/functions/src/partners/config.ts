@@ -7,11 +7,19 @@
  * commission is Velocity's revenue, and a partner cut is Velocity choosing to
  * share its own revenue with whoever brought that driver or passenger in.
  *
- * So on a 1000 PKR ride with a 10% platform commission (= 100 PKR), a 1%
- * partner rate pays the partner 1 PKR — 1% of 100, NOT 1% of 1000. Everything
+ * So on a 1000 PKR ride with a 10% platform commission (= 100 PKR), a 2% Pro
+ * driver rate pays the partner 2 PKR — 2% of 100, NOT 2% of 1000. Everything
  * downstream of `partnerCut()` depends on being handed the commission, and the
  * caller is the only one who can get that wrong, so trips/index.ts passes
  * `settlement.commission` and nothing else.
+ *
+ * TIERS
+ * -----
+ * Free partners earn 0.5% on both fleets. Pro partners pay a one-off
+ * registration fee and earn 2% on their driver fleet and 1.3% on their
+ * passenger fleet. The tier is stamped on the partner document at approval and
+ * read at settlement, so upgrading a partner changes what their NEXT ride pays
+ * and never retroactively re-prices rides already settled.
  *
  * Velocity's own net is what survives after the franchise cut and both partner
  * cuts, and it is never allowed to go negative: `splitCommission()` pays out in
@@ -19,12 +27,28 @@
  * ----------------------------------------------------------------------------
  */
 import { db } from '../lib/firebase';
+import type { PartnerTier } from './types';
+
+export interface TierRates {
+  /** Fraction of PLATFORM COMMISSION paid to a driver's fleet owner. */
+  driverFleetRate: number;
+  /** Fraction of PLATFORM COMMISSION paid to a passenger's fleet owner. */
+  passengerFleetRate: number;
+}
 
 export interface PartnerSettings {
-  /** Fraction of PLATFORM COMMISSION paid to a driver's fleet owner. Default 1%. */
-  driverFleetRate: number;
-  /** Fraction of PLATFORM COMMISSION paid to a passenger's fleet owner. Default 1%. */
-  passengerFleetRate: number;
+  free: TierRates;
+  pro: TierRates;
+  /** One-off Pro registration fee, in `proFeeCurrency`. */
+  proFee: number;
+  proFeeCurrency: string;
+  /** Where a Pro applicant sends the fee. Admin-set; shown on the apply screen. */
+  payment: {
+    bankName: string | null;
+    bankAccount: string | null;
+    easypaisaAccount: string | null;
+    jazzcashAccount: string | null;
+  };
   /** Smallest withdrawal a partner may request, in PKR. */
   minWithdrawal: number;
   /**
@@ -33,16 +57,21 @@ export interface PartnerSettings {
    * is clawed back for free, because the money never became spendable.
    */
   holdHours: number;
-  /** Referral codes only bind to accounts younger than this. See referrals.ts. */
-  claimWindowHours: number;
 }
 
 export const DEFAULT_PARTNER_SETTINGS: PartnerSettings = {
-  driverFleetRate: 0.01,
-  passengerFleetRate: 0.01,
+  free: { driverFleetRate: 0.005, passengerFleetRate: 0.005 },
+  pro: { driverFleetRate: 0.02, passengerFleetRate: 0.013 },
+  proFee: 175,
+  proFeeCurrency: 'USD',
+  payment: {
+    bankName: null,
+    bankAccount: null,
+    easypaisaAccount: null,
+    jazzcashAccount: null,
+  },
   minWithdrawal: 500,
   holdHours: 72,
-  claimWindowHours: 72,
 };
 
 /** Clamp a rate into a sane band so a fat-fingered admin can't hand out 100%. */
@@ -50,26 +79,47 @@ function rate(value: unknown, fallback: number): number {
   return typeof value === 'number' && value >= 0 && value <= 0.5 ? value : fallback;
 }
 
+function str(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
 /** Admin-configurable, from the dashboard Partner Program page. */
 export async function getPartnerSettings(): Promise<PartnerSettings> {
   const snap = await db.doc('config/partnerSettings').get();
   const d = DEFAULT_PARTNER_SETTINGS;
+
   const minWithdrawal = snap.get('minWithdrawal') as unknown;
   const holdHours = snap.get('holdHours') as unknown;
-  const claimWindowHours = snap.get('claimWindowHours') as unknown;
+  const proFee = snap.get('proFee') as unknown;
+  const payment = (snap.get('payment') as Record<string, unknown> | undefined) ?? {};
 
   return {
-    driverFleetRate: rate(snap.get('driverFleetRate'), d.driverFleetRate),
-    passengerFleetRate: rate(snap.get('passengerFleetRate'), d.passengerFleetRate),
+    free: {
+      driverFleetRate: rate(snap.get('free.driverFleetRate'), d.free.driverFleetRate),
+      passengerFleetRate: rate(snap.get('free.passengerFleetRate'), d.free.passengerFleetRate),
+    },
+    pro: {
+      driverFleetRate: rate(snap.get('pro.driverFleetRate'), d.pro.driverFleetRate),
+      passengerFleetRate: rate(snap.get('pro.passengerFleetRate'), d.pro.passengerFleetRate),
+    },
+    proFee: typeof proFee === 'number' && proFee >= 0 ? proFee : d.proFee,
+    proFeeCurrency: str(snap.get('proFeeCurrency')) ?? d.proFeeCurrency,
+    payment: {
+      bankName: str(payment.bankName),
+      bankAccount: str(payment.bankAccount),
+      easypaisaAccount: str(payment.easypaisaAccount),
+      jazzcashAccount: str(payment.jazzcashAccount),
+    },
     minWithdrawal:
       typeof minWithdrawal === 'number' && minWithdrawal >= 100 ? minWithdrawal : d.minWithdrawal,
     holdHours:
       typeof holdHours === 'number' && holdHours >= 0 && holdHours <= 720 ? holdHours : d.holdHours,
-    claimWindowHours:
-      typeof claimWindowHours === 'number' && claimWindowHours > 0 && claimWindowHours <= 8760
-        ? claimWindowHours
-        : d.claimWindowHours,
   };
+}
+
+/** The rates a given tier earns. */
+export function ratesForTier(settings: PartnerSettings, tier: PartnerTier): TierRates {
+  return tier === 'pro' ? settings.pro : settings.free;
 }
 
 /**

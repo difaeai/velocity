@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { partnerCut, splitCommission, DEFAULT_PARTNER_SETTINGS } from '../config';
+import { partnerCut, ratesForTier, splitCommission, DEFAULT_PARTNER_SETTINGS } from '../config';
 import { computeLevel } from '../types';
 import type { PartnerStats } from '../types';
 
@@ -101,9 +101,66 @@ describe('splitCommission', () => {
     expect(s.velocityNet).toBe(0);
   });
 
-  it('ships with 1% defaults on both fleets', () => {
-    expect(DEFAULT_PARTNER_SETTINGS.driverFleetRate).toBe(0.01);
-    expect(DEFAULT_PARTNER_SETTINGS.passengerFleetRate).toBe(0.01);
+});
+
+describe('tiers', () => {
+  const s = DEFAULT_PARTNER_SETTINGS;
+
+  it('ships free at 0.5% on both fleets', () => {
+    expect(s.free.driverFleetRate).toBe(0.005);
+    expect(s.free.passengerFleetRate).toBe(0.005);
+  });
+
+  it('ships Pro at 2% driver / 1.3% passenger behind a $175 fee', () => {
+    expect(s.pro.driverFleetRate).toBe(0.02);
+    expect(s.pro.passengerFleetRate).toBe(0.013);
+    expect(s.proFee).toBe(175);
+    expect(s.proFeeCurrency).toBe('USD');
+  });
+
+  it('every tier rate is still a slice of the COMMISSION, not the fare', () => {
+    // Rs 1,000 ride, 10% platform commission = Rs 100.
+    const commission = 100;
+    expect(partnerCut(commission, s.free.driverFleetRate)).toBe(1); // 0.5% of 100 → 0.5, rounds to 1
+    expect(partnerCut(commission, s.pro.driverFleetRate)).toBe(2); // 2% of 100
+    expect(partnerCut(commission, s.pro.passengerFleetRate)).toBe(1); // 1.3% of 100 → 1.3, rounds to 1
+
+    // The fare-based numbers — what this must never pay — are an order of
+    // magnitude bigger.
+    expect(partnerCut(1000, s.pro.driverFleetRate)).toBe(20);
+    expect(partnerCut(commission, s.pro.driverFleetRate)).not.toBe(20);
+  });
+
+  it('prices a Pro driver fleet above a free one on the same ride', () => {
+    const pro = splitCommission({
+      platformCommission: 1000,
+      franchiseCut: 0,
+      driverFleetRate: ratesForTier(s, 'pro').driverFleetRate,
+      passengerFleetRate: null,
+    });
+    const free = splitCommission({
+      platformCommission: 1000,
+      franchiseCut: 0,
+      driverFleetRate: ratesForTier(s, 'free').driverFleetRate,
+      passengerFleetRate: null,
+    });
+    expect(pro.driverFleetCut).toBe(20);
+    expect(free.driverFleetCut).toBe(5);
+    expect(pro.velocityNet).toBe(980);
+    expect(free.velocityNet).toBe(995);
+  });
+
+  it('pays each side at its own partner’s tier on the same ride', () => {
+    // A Pro partner recruited the driver; a free partner recruited the rider.
+    const split = splitCommission({
+      platformCommission: 1000,
+      franchiseCut: 0,
+      driverFleetRate: ratesForTier(s, 'pro').driverFleetRate,
+      passengerFleetRate: ratesForTier(s, 'free').passengerFleetRate,
+    });
+    expect(split.driverFleetCut).toBe(20); // 2%
+    expect(split.passengerFleetCut).toBe(5); // 0.5%
+    expect(split.velocityNet).toBe(975);
   });
 });
 

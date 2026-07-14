@@ -1,135 +1,118 @@
 /**
- * Partner Program — fleets and their referral codes.
+ * Partner Program — the referral code and the two fleets.
  *
- * A partner may run one driver fleet and one passenger fleet. Each owns a short
- * human-typeable code (VLD-7K3P9Q / VLP-…) that is the ONLY thing a recruit ever
- * has to carry — the share link and the QR both just wrap the same code, so a
- * code read off a poster and a code tapped from WhatsApp bind identically.
+ * A partner has ONE code, five digits, minted when an admin approves them. Both
+ * of their fleets carry it, and which fleet a recruit lands in is decided by who
+ * the recruit is, not by which code they typed: a driver redeeming 48213 joins
+ * that partner's driver fleet, a passenger redeeming the same 48213 joins their
+ * passenger fleet.
  *
- * Codes live in their own `partner_fleets` collection keyed by a generated id,
- * with the code indexed. Lookup is by `where('code','==',…)` and the code is
- * unique because minting retries on collision inside a transaction.
+ * One code rather than two is a deliberate simplification of what a partner has
+ * to explain out loud. "Use my code, 48213" works on a poster, over a phone
+ * call, and in a WhatsApp forward. Two codes means a partner eventually gives
+ * somebody the wrong one, and the recruit lands in a fleet that earns nothing
+ * for them because they are the wrong type for it.
+ *
+ * Both fleets are created at approval, not on demand — an approved partner who
+ * has to press "create fleet" before their code works is a partner whose first
+ * ten recruits bounced.
  */
 import { onCall } from 'firebase-functions/v2/https';
-import { logger } from 'firebase-functions';
 import { z } from 'zod';
+import type { Transaction } from 'firebase-admin/firestore';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
-import { requirePartner } from './applications';
+import { invalid } from '../lib/guards';
 import type { FleetType } from './types';
-
-const createSchema = z.object({
-  type: z.enum(['driver', 'passenger']),
-  /** Optional display name, e.g. "Lahore Riders". */
-  name: z.string().trim().min(2).max(60).optional(),
-});
-
-/**
- * Unambiguous alphabet: no O/0, no I/1/L. A code gets read aloud, written on a
- * poster, and re-typed by someone who is not looking closely — every character
- * that has a lookalike is a support ticket.
- */
-const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-
-function randomCode(type: FleetType): string {
-  let body = '';
-  for (let i = 0; i < 6; i++) {
-    body += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
-  return `${type === 'driver' ? 'VLD' : 'VLP'}-${body}`;
-}
 
 /** Normalizes whatever the user typed or pasted into the canonical code form. */
 export function normalizeCode(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\s+/g, '');
+  return raw.trim().replace(/\D/g, '');
 }
 
-/** Mint a code that no other fleet holds. Collisions are rare; retries are cheap. */
-async function mintUniqueCode(type: FleetType): Promise<string> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const code = randomCode(type);
+/**
+ * A five-digit code no other partner holds.
+ *
+ * 90,000 codes is small enough that collisions are real once the program has a
+ * few thousand partners, so this checks and retries rather than trusting
+ * randomness. Handing back a duplicate would silently merge two partners'
+ * recruits into one fleet, which is unrecoverable once rides start settling.
+ */
+export async function mintPartnerCode(): Promise<string> {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const code = String(Math.floor(10000 + Math.random() * 90000));
     const clash = await db
-      .collection('partner_fleets')
-      .where('code', '==', code)
+      .collection('partners')
+      .where('referralCode', '==', code)
       .limit(1)
       .get();
     if (clash.empty) return code;
   }
-  // 30^6 codes per prefix — eight straight collisions means something is wrong
-  // upstream, and silently handing back a duplicate would cross two partners'
-  // recruits into one fleet.
   throw new Error('Could not mint a unique referral code.');
 }
 
-export const createPartnerFleet = onCall(async (req) => {
-  const { uid } = requireAuth(req);
-  const partnerSnap = await requirePartner(uid);
-
-  const parsed = createSchema.safeParse(req.data);
-  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid fleet.');
-  const { type, name } = parsed.data;
-
-  const field = type === 'driver' ? 'driverFleetId' : 'passengerFleetId';
-  if (partnerSnap.get(field)) {
-    invalid(`You already have a ${type} fleet.`);
-  }
-
-  const code = await mintUniqueCode(type);
-  const fleetRef = db.collection('partner_fleets').doc();
+/**
+ * Create a partner's driver and passenger fleets, both carrying their code.
+ * Called from the approval transaction, so it takes the batch/transaction.
+ */
+export function createFleetsForPartner(
+  tx: Transaction,
+  args: { partnerId: string; code: string; fullName: string },
+): { driverFleetId: string; passengerFleetId: string } {
   const now = FieldValue.serverTimestamp();
+  const driverRef = db.collection('partner_fleets').doc();
+  const passengerRef = db.collection('partner_fleets').doc();
 
-  await db.runTransaction(async (tx) => {
-    // Re-read inside the transaction: two taps on "Create fleet" would otherwise
-    // both pass the check above and mint two fleets of the same type.
-    const fresh = await tx.get(db.doc(`partners/${uid}`));
-    if (fresh.get(field)) invalid(`You already have a ${type} fleet.`);
+  const base = {
+    partnerId: args.partnerId,
+    code: args.code,
+    members: 0,
+    completedRides: 0,
+    lifetimeEarnings: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-    tx.set(fleetRef, {
-      id: fleetRef.id,
-      partnerId: uid,
-      type,
-      name: name ?? (type === 'driver' ? 'My Driver Fleet' : 'My Passenger Fleet'),
-      code,
-      members: 0,
-      completedRides: 0,
-      lifetimeEarnings: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    tx.set(db.doc(`partners/${uid}`), { [field]: fleetRef.id, updatedAt: now }, { merge: true });
+  tx.set(driverRef, {
+    ...base,
+    id: driverRef.id,
+    type: 'driver' as FleetType,
+    name: `${args.fullName} — Driver Fleet`,
+  });
+  tx.set(passengerRef, {
+    ...base,
+    id: passengerRef.id,
+    type: 'passenger' as FleetType,
+    name: `${args.fullName} — Passenger Fleet`,
   });
 
-  logger.info('Partner fleet created', { uid, type, fleetId: fleetRef.id });
-  return { ok: true, fleetId: fleetRef.id, code, type };
-});
+  return { driverFleetId: driverRef.id, passengerFleetId: passengerRef.id };
+}
 
-const previewSchema = z.object({ code: z.string().trim().min(4).max(20) });
+const previewSchema = z.object({ code: z.string().trim().min(4).max(10) });
 
 /**
- * Public: what a recruit sees before they sign up — who invited them and to
- * what. Deliberately returns no partner PII beyond a display name.
+ * Public: what a recruit sees before they redeem a code — who invited them.
+ * Deliberately returns no partner PII beyond a display name.
  */
 export const previewPartnerFleet = onCall(async (req) => {
   const parsed = previewSchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid referral code.');
   const code = normalizeCode(parsed.data.code);
 
-  const snap = await db.collection('partner_fleets').where('code', '==', code).limit(1).get();
+  const snap = await db.collection('partners').where('referralCode', '==', code).limit(1).get();
   if (snap.empty) invalid('That referral code does not exist.');
 
-  const fleet = snap.docs[0];
-  const partner = await db.doc(`partners/${fleet.get('partnerId')}`).get();
-  if (!partner.exists || partner.get('status') !== 'active') {
+  const partner = snap.docs[0];
+  if (partner.get('status') !== 'active') {
     invalid('That referral code is no longer active.');
   }
 
   return {
     ok: true,
     code,
-    type: fleet.get('type') as FleetType,
-    fleetName: fleet.get('name') as string,
     partnerName: (partner.get('fullName') as string) ?? 'A Velocity partner',
     partnerLevel: (partner.get('level') as string) ?? 'bronze',
+    partnerTier: (partner.get('tier') as string) ?? 'free',
   };
 });

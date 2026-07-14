@@ -616,21 +616,19 @@ export const api = {
   >('adminSendPushNotification'),
 
   // ── Earn with Velocity — the Partner Program ──────────────────────────────
+  getPartnerTiers: callable<Record<string, never>, PartnerTiers>('getPartnerTiers'),
   submitPartnerApplication: callable<PartnerApplicationInput, { ok: boolean; status: 'pending' }>(
     'submitPartnerApplication',
   ),
-  createPartnerFleet: callable<
-    { type: FleetType; name?: string },
-    { ok: boolean; fleetId: string; code: string; type: FleetType }
-  >('createPartnerFleet'),
   previewPartnerFleet: callable<
     { code: string },
-    { ok: boolean; code: string; type: FleetType; fleetName: string; partnerName: string; partnerLevel: PartnerLevel }
+    { ok: boolean; code: string; partnerName: string; partnerLevel: PartnerLevel; partnerTier: PartnerTier }
   >('previewPartnerFleet'),
   claimPartnerReferral: callable<
     { code: string; deviceId?: string },
     { ok: boolean; type: FleetType; fleetId: string; partnerName: string | null }
   >('claimPartnerReferral'),
+  getMyReferral: callable<Record<string, never>, MyReferral>('getMyReferral'),
   getPartnerDashboard: callable<Record<string, never>, PartnerDashboard>('getPartnerDashboard'),
   getPartnerFleetMembers: callable<
     { type: FleetType; limit?: number },
@@ -656,17 +654,53 @@ export const api = {
 
 export type FleetType = 'driver' | 'passenger';
 export type PartnerLevel = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+export type PartnerTier = 'free' | 'pro';
 export type WithdrawalMethod = 'easypaisa' | 'jazzcash' | 'bank';
 export type PartnerRideStatus = 'completed' | 'cancelled' | 'scam' | 'fraud';
 export type PartnerTxnStatus = 'pending' | 'available' | 'reversed';
 
+export interface TierRates {
+  driverFleetRate: number;
+  passengerFleetRate: number;
+}
+
+/** The tier menu + where a Pro applicant sends the fee. Admin-configurable. */
+export interface PartnerTiers {
+  ok: boolean;
+  free: TierRates;
+  pro: TierRates;
+  proFee: number;
+  proFeeCurrency: string;
+  payment: {
+    bankName: string | null;
+    bankAccount: string | null;
+    easypaisaAccount: string | null;
+    jazzcashAccount: string | null;
+  };
+}
+
+export interface MyReferral {
+  ok: boolean;
+  bound: boolean;
+  type: FleetType;
+  code?: string;
+  partnerName?: string;
+  completedRides?: number;
+  boundAt?: number | null;
+}
+
 export interface PartnerApplicationInput {
+  tier: PartnerTier;
   fullName: string;
   mobile: string;
   cnicNumber: string;
   cnicFrontUrl: string;
   cnicBackUrl: string;
   city: string;
+  /** Pro only — a screenshot of the registration-fee transfer. */
+  paymentProofUrl?: string;
+  paymentMethod?: WithdrawalMethod;
+  paymentReference?: string;
   acceptedTerms: true;
 }
 
@@ -721,6 +755,9 @@ export interface PartnerDashboard {
     fullName: string;
     city: string;
     status: 'active' | 'suspended';
+    tier: PartnerTier;
+    /** The one 5-digit code both fleets share. */
+    referralCode: string | null;
     level: PartnerLevel;
     nextLevel: {
       level: PartnerLevel;

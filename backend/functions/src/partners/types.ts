@@ -8,6 +8,14 @@
 
 export type PartnerApplicationStatus = 'pending' | 'approved' | 'rejected' | 'resubmit';
 
+/**
+ * `free` costs nothing and earns the base rate on both fleets. `pro` costs a
+ * one-off registration fee and earns considerably more — so a Pro application
+ * must carry proof that the fee was actually paid, and an admin eyeballs that
+ * screenshot before approving. See partners/config.ts for the rates.
+ */
+export type PartnerTier = 'free' | 'pro';
+
 /** `suspended` partners keep their history and stop earning. */
 export type PartnerStatus = 'active' | 'suspended';
 
