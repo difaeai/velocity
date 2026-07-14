@@ -52,7 +52,8 @@
     "typecheck": "tsc --noEmit",
     "export": "expo export -p ios -p android",
     "postinstall": "patch-package && node scripts/postinstall.js",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "keystore:debug": "node scripts/generate-debug-keystore.mjs"
   },
   "overrides": {
     "react-dom": "19.2.3"
