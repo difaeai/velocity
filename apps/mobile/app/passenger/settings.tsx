@@ -56,6 +56,9 @@ export default function Settings() {
           <Row icon="📧" label="Email" value={user?.email ?? '—'} />
           <View style={styles.divider} />
           <Row icon="🎫" label="Account type" value={role ?? 'passenger'} />
+          <View style={styles.divider} />
+          {/* Where a passenger recruited by a Velocity partner enters their code. */}
+          <Row icon="🎁" label="Referral code" onPress={() => router.push('/referral-code')} />
         </View>
 
         <Text style={styles.sectionLabel}>PREFERENCES</Text>

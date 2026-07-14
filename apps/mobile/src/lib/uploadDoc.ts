@@ -43,6 +43,16 @@ export async function uploadCnicDoc(uid: string, side: 'front' | 'back', uri: st
   return upload(path, uri);
 }
 
+/**
+ * Pro Partner registration-fee receipt. Lives under `partners/{uid}/` — readable
+ * only by the applicant and the admin who reviews it, since it carries their
+ * bank details.
+ */
+export async function uploadPartnerPaymentProof(uid: string, uri: string): Promise<UploadResult> {
+  const path = `partners/${uid}/payment-${Date.now()}`;
+  return upload(path, uri);
+}
+
 async function upload(path: string, uri: string): Promise<UploadResult> {
   const storageRef = ref(storage, path);
   const blob = await uriToBlob(uri);

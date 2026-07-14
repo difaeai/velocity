@@ -135,6 +135,9 @@ export const getPartnerDashboard = onCall(async (req) => {
       fullName: partner.get('fullName'),
       city: partner.get('city'),
       status: partner.get('status'),
+      tier: (partner.get('tier') as string) ?? 'free',
+      // The one code both fleets share — what the partner actually shares.
+      referralCode: (partner.get('referralCode') as string) ?? null,
       level,
       nextLevel: next
         ? {

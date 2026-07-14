@@ -135,8 +135,15 @@ export const adminApi = {
 
   // ── Earn with Velocity — the Partner Program ──────────────────────────────
   adminReviewPartnerApplication: callable<
-    { uid: string; decision: 'approve' | 'reject' | 'resubmit'; reason?: string },
-    { ok: boolean; status: string }
+    {
+      uid: string;
+      decision: 'approve' | 'reject' | 'resubmit';
+      reason?: string;
+      /** Approve onto a tier — lets an admin let a Pro applicant in as Free when
+       * the registration fee never actually landed. */
+      tier?: 'free' | 'pro';
+    },
+    { ok: boolean; status: string; code: string | null }
   >('adminReviewPartnerApplication'),
   adminReviewWithdrawal: callable<
     { requestId: string; decision: 'approve' | 'reject' | 'paid'; reason?: string },

@@ -1,15 +1,29 @@
 /**
  * Partner Program — binding a recruit to a fleet.
  * ----------------------------------------------------------------------------
+ * A recruit types one five-digit code. Which fleet they land in is decided by
+ * who THEY are, not by what they typed: a driver joins the partner's driver
+ * fleet, a passenger joins their passenger fleet. So the same code on the same
+ * poster works for both audiences, and a partner can never hand somebody "the
+ * wrong code".
+ *
  * This is the load-bearing integrity point of the whole program. Everything
  * downstream (commission, levels, revenue) trusts that a referral edge means a
  * real person was really recruited, so every cheap way to manufacture one is
  * refused here rather than unwound later:
  *
- *   self-referral      the fleet owner claiming their own code
+ *   self-referral      the fleet owner redeeming their own code
  *   duplicate accounts the same CNIC / phone / device signing up again
- *   late binding       an existing user retro-attaching to a fleet
+ *   retro-crediting    an established rider attaching to a fleet after the fact
  *   device farming     one handset minting recruit after recruit
+ *
+ * The retro-crediting guard is why a code binds only to an account with NO
+ * completed rides. A user who has been riding for a month was not recruited by
+ * anybody — paying a partner for them would be paying for a customer Velocity
+ * already had. It is deliberately NOT an account-age window: a driver may sign
+ * up today, wait a week for their licence to be approved, and only then be told
+ * about their fleet owner's code. They have driven nobody, so they may still
+ * bind.
  *
  * A referral is permanent once bound: only an admin can move or delete the edge
  * (`adminReassignReferral`). That permanence is why the guards run BEFORE the
@@ -24,13 +38,12 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth, invalid } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
-import { getPartnerSettings } from './config';
 import { normalizeCode } from './fleets';
 import { logFraud } from './fraud';
 import type { FleetType } from './types';
 
 const claimSchema = z.object({
-  code: z.string().trim().min(4).max(20),
+  code: z.string().trim().min(4).max(10),
   /** Stable per-install id from the client. Used only to catch device farming. */
   deviceId: z.string().trim().min(8).max(200).optional(),
 });
@@ -43,30 +56,62 @@ export function referralPath(type: FleetType, uid: string): string {
 }
 
 /**
- * Claim a referral code. Called once, right after the recruit's first sign-in —
- * the app stashes a code from a deep link or a manual entry and plays it here as
- * soon as an account exists.
+ * Has this user already earned money for Velocity? If so nobody recruited them
+ * and a partner cannot claim credit for them now.
+ */
+async function hasCompletedRides(uid: string, type: FleetType): Promise<boolean> {
+  const field = type === 'driver' ? 'driverId' : 'passengerId';
+  const snap = await db
+    .collection('trips')
+    .where(field, '==', uid)
+    .where('status', '==', 'completed')
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
+/**
+ * Redeem a referral code. Called from the passenger's settings screen or the
+ * driver's drawer, whenever the recruit gets around to it.
  */
 export const claimPartnerReferral = onCall(async (req) => {
-  const { uid } = requireAuth(req);
+  const ctx = requireAuth(req);
+  const { uid, role } = ctx;
   const parsed = claimSchema.safeParse(req.data);
-  if (!parsed.success) invalid('Invalid referral code.');
+  if (!parsed.success) invalid('Enter the 5-digit referral code.');
   const code = normalizeCode(parsed.data.code);
   const deviceId = parsed.data.deviceId ?? null;
 
-  const settings = await getPartnerSettings();
+  // The recruit's own role picks the fleet. Everything else follows from this.
+  //
+  // Note that one person can end up in BOTH of a partner's fleets, and that is
+  // correct rather than a leak. Every Velocity driver starts life as a passenger
+  // (see the become-driver flow), so somebody who redeems a code on day one binds
+  // their PASSENGER edge; if they later get approved to drive and redeem the same
+  // code from the driver drawer, they bind their DRIVER edge too. The edges live
+  // in separate collections keyed by uid, so the "already linked" guard below only
+  // ever blocks a second edge OF THE SAME TYPE. The partner recruited both the
+  // rider and the driver — they are paid for both.
+  const type: FleetType = role === 'driver' ? 'driver' : 'passenger';
 
-  const fleetQuery = await db
-    .collection('partner_fleets')
-    .where('code', '==', code)
+  const partnerQuery = await db
+    .collection('partners')
+    .where('referralCode', '==', code)
     .limit(1)
     .get();
-  if (fleetQuery.empty) invalid('That referral code does not exist.');
+  if (partnerQuery.empty) invalid('That referral code does not exist.');
 
-  const fleet = fleetQuery.docs[0];
-  const fleetId = fleet.id;
-  const type = fleet.get('type') as FleetType;
-  const partnerId = fleet.get('partnerId') as string;
+  const partnerSnap = partnerQuery.docs[0];
+  const partnerId = partnerSnap.id;
+
+  if (partnerSnap.get('status') !== 'active') {
+    invalid('That referral code is no longer active.');
+  }
+
+  const fleetId = partnerSnap.get(
+    type === 'driver' ? 'driverFleetId' : 'passengerFleetId',
+  ) as string | undefined;
+  if (!fleetId) invalid('That partner has no fleet for you to join yet.');
 
   // ── Guard: self-referral ────────────────────────────────────────────────
   if (partnerId === uid) {
@@ -74,14 +119,9 @@ export const claimPartnerReferral = onCall(async (req) => {
       kind: 'self_referral',
       partnerId,
       subjectUid: uid,
-      detail: 'Partner tried to claim their own fleet code.',
+      detail: 'Partner tried to redeem their own referral code.',
     });
     invalid('You cannot use your own referral code.');
-  }
-
-  const partnerSnap = await db.doc(`partners/${partnerId}`).get();
-  if (!partnerSnap.exists || partnerSnap.get('status') !== 'active') {
-    invalid('That referral code is no longer active.');
   }
 
   const userRef = db.doc(`users/${uid}`);
@@ -109,14 +149,13 @@ export const claimPartnerReferral = onCall(async (req) => {
     invalid('You cannot use your own referral code.');
   }
 
-  // ── Guard: the referral window ──────────────────────────────────────────
-  // "Referral only works during first registration." A user who has been riding
-  // for weeks was not recruited by anybody, so a code they enter now would be
-  // paying a partner for a customer Velocity already had.
-  const createdAt = userSnap.get('createdAt') as FirebaseFirestore.Timestamp | undefined;
-  const ageHours = createdAt ? (Date.now() - createdAt.toMillis()) / 3_600_000 : 0;
-  if (ageHours > settings.claimWindowHours) {
-    invalid('Referral codes only work on a brand-new account.');
+  // ── Guard: no retro-crediting an established user ───────────────────────
+  if (await hasCompletedRides(uid, type)) {
+    invalid(
+      type === 'driver'
+        ? 'Referral codes only work before your first completed ride.'
+        : 'Referral codes only work before your first completed trip.',
+    );
   }
 
   // ── Guard: device farming ───────────────────────────────────────────────
@@ -137,18 +176,13 @@ export const claimPartnerReferral = onCall(async (req) => {
     }
     // The fleet owner's own handset enrolling "recruits" is device-assisted
     // self-referral — the accounts differ, the person does not.
-    const ownerDevice = await db
-      .collection('partner_referral_devices')
-      .where('deviceId', '==', deviceId)
-      .where('uid', '==', partnerId)
-      .limit(1)
-      .get();
-    if (!ownerDevice.empty) {
+    const ownerDevice = priorClaims.docs.some((d) => d.get('uid') === partnerId);
+    if (ownerDevice) {
       await logFraud({
         kind: 'device_abuse',
         partnerId,
         subjectUid: uid,
-        detail: 'Recruit signed up on the fleet owner’s own device.',
+        detail: 'Recruit redeemed the code on the fleet owner’s own device.',
       });
       invalid('You cannot use your own referral code.');
     }
@@ -213,7 +247,12 @@ export const claimPartnerReferral = onCall(async (req) => {
   );
 
   logger.info('Partner referral bound', { uid, partnerId, fleetId, type });
-  return { ok: true, type, fleetId, partnerName: partnerSnap.get('fullName') ?? null };
+  return {
+    ok: true,
+    type,
+    fleetId,
+    partnerName: (partnerSnap.get('fullName') as string) ?? null,
+  };
 });
 
 const reassignSchema = z.object({
@@ -321,4 +360,25 @@ export const adminReassignReferral = onCall(async (req) => {
 
   logger.info('Referral reassigned', { actor: admin.uid, uid, type, fleetId });
   return { ok: true };
+});
+
+/** What fleet am I in, if any? Drives the referral-code screens in the app. */
+export const getMyReferral = onCall(async (req) => {
+  const { uid, role } = requireAuth(req);
+  const type: FleetType = role === 'driver' ? 'driver' : 'passenger';
+
+  const snap = await db.doc(referralPath(type, uid)).get();
+  if (!snap.exists) return { ok: true, bound: false, type };
+
+  const partner = await db.doc(`partners/${snap.get('partnerId')}`).get();
+  return {
+    ok: true,
+    bound: true,
+    type,
+    code: snap.get('code') as string,
+    partnerName: (partner.get('fullName') as string) ?? 'Your fleet owner',
+    completedRides: (snap.get('completedRides') as number) ?? 0,
+    boundAt:
+      (snap.get('boundAt') as FirebaseFirestore.Timestamp | null)?.toMillis() ?? null,
+  };
 });

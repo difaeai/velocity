@@ -67,8 +67,8 @@ export default function PartnerDashboard() {
     );
   }
 
-  const { partner, fleets, wallet, overview, revenue, series } = data;
-  const noFleets = !fleets.driver && !fleets.passenger;
+  const { partner, wallet, overview, revenue, series } = data;
+  const noMembers = overview.totalDrivers + overview.totalPassengers === 0;
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -82,7 +82,9 @@ export default function PartnerDashboard() {
             <Text style={s.back}>←</Text>
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={s.hello}>Earn with Velocity</Text>
+            <Text style={s.hello}>
+              Earn with Velocity · {partner.tier === 'pro' ? 'Pro Partner' : 'Free Partner'}
+            </Text>
             <Text style={s.name} numberOfLines={1}>{partner.fullName}</Text>
           </View>
           <LevelBadge level={partner.level} size="sm" />
@@ -110,12 +112,15 @@ export default function PartnerDashboard() {
           </Pressable>
         </View>
 
-        {noFleets ? (
+        {/* The code is the product. A partner with no recruits yet should see it
+            before anything else — it is the only thing standing between them and
+            their first rupee. */}
+        {partner.referralCode && noMembers ? (
           <Pressable style={s.cta} onPress={() => router.push('/passenger/earn/referral')}>
-            <Text style={s.ctaTitle}>Create your first fleet →</Text>
+            <Text style={s.ctaTitle}>Your code is {partner.referralCode} →</Text>
             <Text style={s.ctaBody}>
-              You are approved, but you have no fleet yet. Create one to get a referral code and
-              start recruiting.
+              Share it. A driver who enters it joins your driver fleet; a passenger who enters it
+              joins your passenger fleet. You earn on every genuine ride they complete.
             </Text>
           </Pressable>
         ) : null}
@@ -163,25 +168,21 @@ export default function PartnerDashboard() {
           <FleetCard
             emoji="🚗"
             title="Driver Fleet"
-            fleet={fleets.driver}
+            code={partner.referralCode}
             members={overview.totalDrivers}
             earnings={revenue.driver.lifetime}
             onPress={() =>
-              fleets.driver
-                ? router.push({ pathname: '/passenger/earn/fleet', params: { type: 'driver' } })
-                : router.push('/passenger/earn/referral')
+              router.push({ pathname: '/passenger/earn/fleet', params: { type: 'driver' } })
             }
           />
           <FleetCard
             emoji="👤"
             title="Passenger Fleet"
-            fleet={fleets.passenger}
+            code={partner.referralCode}
             members={overview.totalPassengers}
             earnings={revenue.passenger.lifetime}
             onPress={() =>
-              fleets.passenger
-                ? router.push({ pathname: '/passenger/earn/fleet', params: { type: 'passenger' } })
-                : router.push('/passenger/earn/referral')
+              router.push({ pathname: '/passenger/earn/fleet', params: { type: 'passenger' } })
             }
           />
         </View>
@@ -213,14 +214,15 @@ export default function PartnerDashboard() {
 function FleetCard({
   emoji,
   title,
-  fleet,
+  code,
   members,
   earnings,
   onPress,
 }: {
   emoji: string;
   title: string;
-  fleet: { code: string; members: number } | null;
+  /** The partner's single code — both fleets share it. */
+  code: string | null;
   members: number;
   earnings: number;
   onPress: () => void;
@@ -230,21 +232,15 @@ function FleetCard({
       <Text style={s.fleetEmoji}>{emoji}</Text>
       <View style={{ flex: 1 }}>
         <Text style={s.fleetTitle}>{title}</Text>
-        {fleet ? (
-          <Text style={s.fleetMeta}>
-            {members} member{members === 1 ? '' : 's'} · {formatPKR(earnings)} lifetime
-          </Text>
-        ) : (
-          <Text style={s.fleetMeta}>Not created yet — tap to create</Text>
-        )}
+        <Text style={s.fleetMeta}>
+          {members} member{members === 1 ? '' : 's'} · {formatPKR(earnings)} lifetime
+        </Text>
       </View>
-      {fleet ? (
+      {code ? (
         <View style={s.codeChip}>
-          <Text style={s.codeChipText}>{fleet.code}</Text>
+          <Text style={s.codeChipText}>{code}</Text>
         </View>
-      ) : (
-        <Text style={s.fleetArrow}>＋</Text>
-      )}
+      ) : null}
     </Pressable>
   );
 }

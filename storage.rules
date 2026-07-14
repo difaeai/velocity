@@ -57,6 +57,15 @@ service firebase.storage {
       allow write: if isOwner(userId) && isImage() && underSize(15);
     }
 
+    // Pro Partner registration-fee receipts. The applicant uploads a screenshot
+    // of the transfer; only they and the admin reviewing the application can
+    // read it back. It carries their bank/wallet details, so it is never
+    // world-readable — same posture as CNIC and driver KYC.
+    match /partners/{userId}/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) && isImage() && underSize(15);
+    }
+
     // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
     // Admin SDK bypasses rules so only a read rule is needed here.
     match /avatars/{fileName} {

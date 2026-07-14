@@ -6,10 +6,20 @@
  * that the dashboard and every earning path key off. `requirePartner()` is the
  * single gate — if there is no approved partner doc, there is no program.
  *
- * Phone verification is not taken on trust from the client. The submitted
- * number must already be on the caller's Firebase Auth record, and a number
- * only lands there when Firebase itself verified an OTP for it. A client that
- * skips the OTP screen and posts the form anyway is rejected by the backend.
+ * TIERS
+ * -----
+ * A free application needs a CNIC and a verified mobile, nothing else. A Pro
+ * application additionally needs proof that the registration fee was paid — a
+ * screenshot of the transfer — because Pro earns roughly four times what free
+ * earns and the fee is the only thing standing between "a partner" and "anyone
+ * who wants the higher rate". The screenshot is checked by a human at approval:
+ * the backend cannot tell a real receipt from a Photoshopped one, and pretending
+ * otherwise would just be theatre.
+ *
+ * Phone verification, by contrast, IS enforced by the backend. The submitted
+ * number must already be on the caller's Firebase Auth record, and a number only
+ * lands there when Firebase itself verified an OTP for it. A client that skips
+ * the OTP screen and posts the form anyway is rejected.
  * ----------------------------------------------------------------------------
  */
 import { onCall } from 'firebase-functions/v2/https';
@@ -19,27 +29,47 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth, invalid } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
-import type { PartnerApplicationStatus } from './types';
+import { getPartnerSettings } from './config';
+import { createFleetsForPartner, mintPartnerCode } from './fleets';
+import type { PartnerApplicationStatus, PartnerTier } from './types';
 
 /** 13 digits, hyphenated — the format printed on the card. Matches users/cnic. */
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
-const submitSchema = z.object({
-  fullName: z.string().trim().min(2).max(100),
-  mobile: z.string().trim().min(10).max(20),
-  cnicNumber: z.string().trim().regex(CNIC_RE, 'CNIC must look like 12345-1234567-1'),
-  cnicFrontUrl: z.string().url().max(2048),
-  cnicBackUrl: z.string().url().max(2048),
-  city: z.string().trim().min(2).max(80),
-  acceptedTerms: z.literal(true, {
-    errorMap: () => ({ message: 'You must accept the Partner Program terms.' }),
-  }),
-});
+const submitSchema = z
+  .object({
+    tier: z.enum(['free', 'pro']),
+    fullName: z.string().trim().min(2).max(100),
+    mobile: z.string().trim().min(10).max(20),
+    cnicNumber: z.string().trim().regex(CNIC_RE, 'CNIC must look like 12345-1234567-1'),
+    cnicFrontUrl: z.string().url().max(2048),
+    cnicBackUrl: z.string().url().max(2048),
+    city: z.string().trim().min(2).max(80),
+    /** Pro only: screenshot of the registration-fee transfer. */
+    paymentProofUrl: z.string().url().max(2048).optional(),
+    /** Pro only: which rail they paid on, so the admin knows where to look. */
+    paymentMethod: z.enum(['bank', 'easypaisa', 'jazzcash']).optional(),
+    paymentReference: z.string().trim().max(120).optional(),
+    acceptedTerms: z.literal(true, {
+      errorMap: () => ({ message: 'You must accept the Partner Program terms.' }),
+    }),
+  })
+  .refine((d) => d.tier !== 'pro' || !!d.paymentProofUrl, {
+    message: 'Upload a screenshot of your Pro registration payment.',
+    path: ['paymentProofUrl'],
+  })
+  .refine((d) => d.tier !== 'pro' || !!d.paymentMethod, {
+    message: 'Tell us which account you paid into.',
+    path: ['paymentMethod'],
+  });
 
 const reviewSchema = z.object({
   uid: z.string().min(1).max(128),
   decision: z.enum(['approve', 'reject', 'resubmit']),
   reason: z.string().trim().max(500).optional(),
+  /** An admin may approve a Pro applicant down to free (e.g. the payment never
+   * landed) rather than bouncing them out of the program entirely. */
+  tier: z.enum(['free', 'pro']).optional(),
 });
 
 /** Documents must live in our own bucket — never a URL the client made up. */
@@ -77,14 +107,32 @@ export async function requirePartner(uid: string) {
   return snap;
 }
 
+/**
+ * Public: the fee and the accounts to pay it into. The apply screen reads this
+ * so the numbers can be changed by an admin without shipping a new app.
+ */
+export const getPartnerTiers = onCall(async () => {
+  const s = await getPartnerSettings();
+  return {
+    ok: true,
+    free: s.free,
+    pro: s.pro,
+    proFee: s.proFee,
+    proFeeCurrency: s.proFeeCurrency,
+    payment: s.payment,
+  };
+});
+
 export const submitPartnerApplication = onCall(async (req) => {
   const { uid } = requireAuth(req);
-  const parsed = submitSchema.safeParse(req.data);
-  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid application.');
-  const data = parsed.data;
+  const input = submitSchema.safeParse(req.data);
+  if (!input.success) invalid(input.error.issues[0]?.message ?? 'Invalid application.');
+  const data = input.data;
 
-  for (const url of [data.cnicFrontUrl, data.cnicBackUrl]) {
-    if (!isOwnStorageUrl(url)) invalid('CNIC photos must be uploaded to Velocity storage.');
+  const docs = [data.cnicFrontUrl, data.cnicBackUrl];
+  if (data.paymentProofUrl) docs.push(data.paymentProofUrl);
+  for (const url of docs) {
+    if (!isOwnStorageUrl(url)) invalid('Documents must be uploaded to Velocity storage.');
   }
 
   // Already a partner? Nothing to apply for.
@@ -122,10 +170,12 @@ export const submitPartnerApplication = onCall(async (req) => {
     invalid('This CNIC is already used by another partner application.');
   }
 
+  const settings = await getPartnerSettings();
   const userSnap = await db.doc(`users/${uid}`).get();
 
   await appRef.set({
     uid,
+    tier: data.tier as PartnerTier,
     fullName: data.fullName,
     mobile: claimed,
     cnicNumber: data.cnicNumber,
@@ -133,6 +183,14 @@ export const submitPartnerApplication = onCall(async (req) => {
     cnicBackUrl: data.cnicBackUrl,
     city: data.city,
     photoURL: userSnap.get('photoURL') ?? null,
+    // Pro only. The fee is snapshotted as it stood when they paid, so an admin
+    // reviewing next week compares the screenshot against the price the
+    // applicant was actually shown, not against a rate that changed since.
+    paymentProofUrl: data.paymentProofUrl ?? null,
+    paymentMethod: data.paymentMethod ?? null,
+    paymentReference: data.paymentReference ?? null,
+    quotedFee: data.tier === 'pro' ? settings.proFee : 0,
+    quotedFeeCurrency: settings.proFeeCurrency,
     acceptedTerms: true,
     status: 'pending' as PartnerApplicationStatus,
     // A resubmission is a fresh queue entry, so clear the old verdict.
@@ -143,7 +201,7 @@ export const submitPartnerApplication = onCall(async (req) => {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  logger.info('Partner application submitted', { uid, city: data.city });
+  logger.info('Partner application submitted', { uid, tier: data.tier, city: data.city });
   return { ok: true, status: 'pending' as PartnerApplicationStatus };
 });
 
@@ -164,67 +222,84 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
 
   const status: PartnerApplicationStatus =
     decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'resubmit';
-  const now = FieldValue.serverTimestamp();
 
-  const batch = db.batch();
-  batch.update(appRef, {
-    status,
-    rejectionReason: decision === 'approve' ? null : reason,
-    reviewedAt: now,
-    reviewedBy: admin.uid,
-    updatedAt: now,
-  });
+  // Approving mints the code, so it happens BEFORE the transaction — minting
+  // queries for collisions, and Firestore forbids reading after writing.
+  const tier: PartnerTier =
+    parsed.data.tier ?? ((snap.get('tier') as PartnerTier | undefined) ?? 'free');
+  const code = decision === 'approve' ? await mintPartnerCode() : null;
 
-  if (decision === 'approve') {
-    // Approval mints the partner and their wallet together. A partner without a
-    // wallet would take a commission credit and drop it on the floor.
-    batch.set(db.doc(`partners/${uid}`), {
-      uid,
-      fullName: snap.get('fullName'),
-      mobile: snap.get('mobile'),
-      city: snap.get('city'),
-      cnicNumber: snap.get('cnicNumber'),
-      photoURL: snap.get('photoURL') ?? null,
-      status: 'active',
-      level: 'bronze',
-      driverFleetId: null,
-      passengerFleetId: null,
-      totalDrivers: 0,
-      totalPassengers: 0,
-      completedRides: 0,
-      flaggedRides: 0,
-      lifetimeEarnings: 0,
-      approvedAt: now,
-      approvedBy: admin.uid,
-      createdAt: now,
+  await db.runTransaction(async (tx) => {
+    const now = FieldValue.serverTimestamp();
+
+    tx.update(appRef, {
+      status,
+      approvedTier: decision === 'approve' ? tier : null,
+      rejectionReason: decision === 'approve' ? null : reason,
+      reviewedAt: now,
+      reviewedBy: admin.uid,
       updatedAt: now,
     });
-    batch.set(db.doc(`partner_wallets/${uid}`), {
-      uid,
-      balance: 0,
-      pending: 0,
-      withdrawn: 0,
-      lifetimeEarnings: 0,
-      currency: 'PKR',
+
+    if (decision === 'approve' && code) {
+      const fullName = (snap.get('fullName') as string) ?? 'Velocity Partner';
+
+      // Both fleets exist the moment the partner does. An approved partner who
+      // still has to press "create fleet" before their code resolves is a
+      // partner whose first recruits bounce off a dead code.
+      const fleets = createFleetsForPartner(tx, { partnerId: uid, code, fullName });
+
+      tx.set(db.doc(`partners/${uid}`), {
+        uid,
+        tier,
+        referralCode: code,
+        fullName,
+        mobile: snap.get('mobile'),
+        city: snap.get('city'),
+        cnicNumber: snap.get('cnicNumber'),
+        photoURL: snap.get('photoURL') ?? null,
+        status: 'active',
+        level: 'bronze',
+        driverFleetId: fleets.driverFleetId,
+        passengerFleetId: fleets.passengerFleetId,
+        totalDrivers: 0,
+        totalPassengers: 0,
+        completedRides: 0,
+        flaggedRides: 0,
+        lifetimeEarnings: 0,
+        approvedAt: now,
+        approvedBy: admin.uid,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // A partner without a wallet would take a commission credit and drop it.
+      tx.set(db.doc(`partner_wallets/${uid}`), {
+        uid,
+        balance: 0,
+        pending: 0,
+        withdrawn: 0,
+        lifetimeEarnings: 0,
+        currency: 'PKR',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    tx.set(db.collection('auditLogs').doc(), {
+      type: `partner.application.${status}`,
+      actor: admin.uid,
+      targetUid: uid,
+      tier: decision === 'approve' ? tier : null,
+      reason: reason ?? null,
       createdAt: now,
-      updatedAt: now,
     });
-  }
-
-  batch.set(db.collection('auditLogs').doc(), {
-    type: `partner.application.${status}`,
-    actor: admin.uid,
-    targetUid: uid,
-    reason: reason ?? null,
-    createdAt: now,
   });
-
-  await batch.commit();
 
   const copy: Record<PartnerApplicationStatus, { title: string; body: string }> = {
     approved: {
       title: 'You are a Velocity Partner 🎉',
-      body: 'Your application is approved. Open Earn with Velocity to create your fleets and start earning.',
+      body: `Approved on the ${tier === 'pro' ? 'Pro' : 'Free'} tier. Your referral code is ${code}. Share it to start building your fleets.`,
     },
     rejected: {
       title: 'Partner application rejected',
@@ -232,12 +307,12 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
     },
     resubmit: {
       title: 'Partner application — documents needed',
-      body: reason ?? 'Please resubmit clearer CNIC photos.',
+      body: reason ?? 'Please resubmit clearer documents.',
     },
     pending: { title: '', body: '' },
   };
   await notifyUser(uid, copy[status].title, copy[status].body, 'ride', { partnerStatus: status });
 
-  logger.info('Partner application reviewed', { actor: admin.uid, uid, status });
-  return { ok: true, status };
+  logger.info('Partner application reviewed', { actor: admin.uid, uid, status, tier });
+  return { ok: true, status, code };
 });
