@@ -642,6 +642,92 @@ service cloud.firestore {
       }
     }
 
+    // ===== Earn with Velocity — the Partner Program ==========================
+    //
+    // Every document below is money, or decides who gets money. NOTHING here is
+    // client-writable: a partner who could edit their own wallet, referral edge
+    // or transaction row could pay themselves. All writes go through the
+    // partners/* callables, which is the only place the rules trust.
+    //
+    // Reads are scoped to the owner: a partner sees their own program and no
+    // one else's, and a recruit can see the edge that binds them (so the app can
+    // tell them who invited them) but not the fleet's earnings.
+
+    // ----- partner_applications/{uid} --------------------------------------
+    // The CNIC review queue. The applicant reads their own status (and the
+    // rejection reason, so they know what to fix); admins read the queue.
+    match /partner_applications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- partners/{uid} ---------------------------------------------------
+    // The approved partner. `level`, `status` and every lifetime counter are
+    // derived server-side — a self-promoted Diamond badge would be worth exactly
+    // as much as the client's honesty.
+    match /partners/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- partner_fleets/{fleetId} -----------------------------------------
+    // Readable by any signed-in user: a recruit scanning a QR needs to resolve
+    // the code to a fleet before they have any relationship to it. Nothing
+    // sensitive lives here — a code, a name, and counters the owner already sees.
+    match /partner_fleets/{fleetId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- driver_referrals / passenger_referrals ---------------------------
+    // The permanent recruit → fleet edge. The recruit may read their own (to see
+    // who invited them); the owning partner reads their roster through the
+    // getPartnerFleetMembers callable, not directly, so one partner can never
+    // enumerate another's members by querying the collection.
+    match /driver_referrals/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+    match /passenger_referrals/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- partner_wallets/{uid} --------------------------------------------
+    match /partner_wallets/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- partner_transactions/{txnId} -------------------------------------
+    // The immutable commission receipt. Read-only to the partner it belongs to,
+    // never writable by anyone but the settlement transaction.
+    match /partner_transactions/{txnId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.partnerId == uid());
+      allow write: if false;
+    }
+
+    // ----- withdraw_requests/{requestId} ------------------------------------
+    // Created by requestPartnerWithdrawal (which debits the balance in the same
+    // transaction), decided by adminReviewWithdrawal. A client-created request
+    // would be a withdrawal that never debited anything.
+    match /withdraw_requests/{requestId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.partnerId == uid());
+      allow write: if false;
+    }
+
+    // ----- partner fraud + device ledgers -----------------------------------
+    // Admin-only. A partner who could read the fraud log would learn exactly
+    // which of their tricks were detected and which were not.
+    match /partner_fraud_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /partner_referral_devices/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

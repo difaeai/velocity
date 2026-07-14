@@ -11,8 +11,9 @@ import { logger } from 'firebase-functions';
 import { randomInt } from 'crypto';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
+import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import { rateLimit } from '../lib/ratelimit';
 import { encodeGeohash } from '../lib/geohash';
 import { sendToUser, sendToUsers } from '../lib/fcm';
@@ -843,6 +844,21 @@ export const completeTrip = onCall(async (req) => {
   const commissionSettings = await getCommissionSettings();
   const commissionRate = commissionSettings.rate;
 
+  // Partner Program: whoever recruited this driver or this passenger earns a
+  // slice of Velocity's commission on the ride — but only if the ride is
+  // genuine. Both the referral lookup and the fraud check run queries, and
+  // Firestore forbids reading after writing inside a transaction, so the plan is
+  // assembled here and only the writes happen under `tx` below.
+  const preTrip = await tripRef.get();
+  const partnerPlan = await preparePartnerCredit({
+    tripId,
+    driverId: ctx.uid,
+    passengerId: preTrip.get('passengerId') as string,
+    pickup: (preTrip.get('pickup') as { lat: number; lng: number } | undefined) ?? null,
+    dropoff: (preTrip.get('dropoff') as { lat: number; lng: number } | undefined) ?? null,
+    startedAt: (preTrip.get('startedAt') as Timestamp | undefined)?.toDate() ?? null,
+  });
+
   const settlement = await db.runTransaction(async (tx) => {
     const [snap, driverSnap] = await Promise.all([
       tx.get(tripRef),
@@ -891,7 +907,22 @@ export const completeTrip = onCall(async (req) => {
     // 5% of gross fare goes to the franchise, capped at the commission actually
     // taken so a low admin-set rate can never make Velocity's net negative.
     const franchiseCut = franchiseId ? Math.min(Math.round(grossFare * 0.05), s.commission) : 0;
-    const velocityNet  = s.commission - franchiseCut;
+
+    // Fleet owners are paid out of the SAME commission, never out of the fare —
+    // the driver's payout above is already fixed and is not touched by any of
+    // this. `applyPartnerCredit` pays the franchise first, then each fleet, and
+    // hands back what is left, so Velocity's net can reach zero but never go
+    // below it however the admin sets the rates.
+    const partnerCredit = applyPartnerCredit(tx, partnerPlan, {
+      tripId,
+      driverId: ctx.uid,
+      passengerId,
+      grossFare,
+      platformCommission: s.commission,
+      franchiseCut,
+      paymentMethod,
+    });
+    const velocityNet = partnerCredit.velocityNet;
 
     const walletRef   = db.doc(`wallets/${ctx.uid}`);
     const txRef       = walletRef.collection('transactions').doc();
@@ -911,9 +942,15 @@ export const completeTrip = onCall(async (req) => {
           ...s,
           ...(poolFares ? { poolFares } : {}),
           franchiseCut,
+          driverFleetCut: partnerCredit.driverFleetCut,
+          passengerFleetCut: partnerCredit.passengerFleetCut,
           velocityNet,
           paymentMethod,
         },
+        // A ride the fraud engine rejected still completes and still pays the
+        // driver — the passenger really was carried. What it does not do is pay
+        // a partner. The verdict is recorded on the trip so support can see why.
+        partnerRideStatus: partnerCredit.rideStatus,
         walletHold: 0,
         walletSettled: paymentMethod === 'wallet',
         completedAt: FieldValue.serverTimestamp(),
@@ -958,6 +995,8 @@ export const completeTrip = onCall(async (req) => {
         passengerId,
         amount: s.commission,
         franchiseCut,
+        driverFleetCut: partnerCredit.driverFleetCut,
+        passengerFleetCut: partnerCredit.passengerFleetCut,
         velocityNet,
         createdAt: FieldValue.serverTimestamp(),
       });

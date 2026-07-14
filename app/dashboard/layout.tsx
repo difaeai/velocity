@@ -19,6 +19,7 @@ const NAV = [
   { href: '/dashboard/payouts',        label: '💳 Payouts' },
   { href: '/dashboard/live-ops',        label: '🗺️ Live ops map' },
   { href: '/dashboard/travel-mate',    label: '🤝 Travel Partner' },
+  { href: '/dashboard/partners',       label: '💸 Earn with Velocity' },
   { href: '/dashboard/safety',         label: '🆘 Safety desk' },
   { href: '/dashboard/commission',     label: '📋 Commission' },
   { href: '/dashboard/cancellations',  label: '🚫 Cancellation fees' },

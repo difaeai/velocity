@@ -20,6 +20,7 @@ import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useRecentDestinations } from '../../src/hooks/passenger';
+import { claimStashedReferral } from '../../src/hooks/partner';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
@@ -48,6 +49,24 @@ export default function PassengerHome() {
   // Register FCM push token on first load
   useEffect(() => {
     if (user) registerForPushNotifications().catch(() => {});
+  }, [user?.uid]);
+
+  // A referral code can arrive before the account does — someone taps a partner's
+  // WhatsApp link while signed out, and only then registers. The code is parked
+  // at that moment and played here, on the first home render after sign-in, which
+  // is the earliest point at which a user exists for it to bind to.
+  useEffect(() => {
+    if (!user) return;
+    claimStashedReferral()
+      .then((res) => {
+        if (res.ok && res.partnerName) {
+          Alert.alert(
+            'You joined a fleet 🎉',
+            `You're now part of ${res.partnerName}'s Velocity fleet. Your fares are unchanged — they earn from Velocity's side, never from yours.`,
+          );
+        }
+      })
+      .catch(() => {});
   }, [user?.uid]);
 
   // Fetch admin-configured Mini fare to show accurate "From X PKR/seat" on hero card
@@ -283,6 +302,12 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemIcon}>🤝</Text>
                     <Text style={styles.menuItemText}>Travel Partner</Text>
                   </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/earn')}>
+                    <Text style={styles.menuItemIcon}>💸</Text>
+                    <Text style={styles.menuItemText}>Earn with Velocity</Text>
+                  </Pressable>
+
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>
                     <Text style={styles.menuItemIcon}>💬</Text>
                     <Text style={styles.menuItemText}>Matches & Groups</Text>
