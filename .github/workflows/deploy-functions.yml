@@ -38,20 +38,29 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
-      # Payment gateway credentials (JazzCash / Easypaisa). Optional: when the
-      # PAYMENTS_GATEWAY_ENV repository secret is unset, no .env is written and
-      # the wallet keeps running on the mock provider. The secret's content is
-      # KEY=value lines — see backend/functions/.env.example for the keys.
-      - name: Inject payment gateway credentials
+      # Backend secrets, as KEY=value lines in the PAYMENTS_GATEWAY_ENV repository
+      # secret. Despite the name it now carries everything the functions need at
+      # runtime: the payment gateways, ANTHROPIC_API_KEY, and GOOGLE_MAPS_SERVER_KEY.
+      # See backend/functions/.env.example for the full list and what each does.
+      #
+      # All of it is optional — every consumer degrades rather than breaks. No
+      # gateway keys → wallet runs on the mock provider. No Maps key → en-route
+      # pickups fall back to the (validated) client polyline.
+      - name: Inject backend secrets
         working-directory: backend/functions
         env:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
         run: |
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
             printf '%s\n' "$PAYMENTS_GATEWAY_ENV" > .env.velocity-fe379
-            echo "Gateway credentials injected ($(grep -c '=' .env.velocity-fe379) vars)."
+            echo "Backend secrets injected ($(grep -c '=' .env.velocity-fe379) vars)."
+            # Say which optional integrations came out live, without printing values.
+            grep -q '^GOOGLE_MAPS_SERVER_KEY=.\+' .env.velocity-fe379 \
+              && echo "  · Routes API: server-side routing ENABLED" \
+              || echo "  · Routes API: no key — en-route falls back to the client polyline"
           else
-            echo "PAYMENTS_GATEWAY_ENV secret not set — payments stay in mock mode."
+            echo "PAYMENTS_GATEWAY_ENV secret not set — payments stay in mock mode,"
+            echo "and en-route pickups fall back to the client polyline."
           fi
 
       - name: Deploy Firestore indexes

@@ -211,17 +211,18 @@ export const api = {
     { pools: NearbyPublicPool[] }
   >('getNearbyPublicPoolTrips'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
-  // The polyline is the road route from the driver's own map (useRoute). The
-  // backend re-derives the corridor's endpoints from Firestore and refuses any
-  // polyline that does not actually connect them, so this is geometry the server
-  // checks — not a corridor the client gets to choose.
+  // `polyline` is a FALLBACK, and optional. When the backend has its own Maps key
+  // (GOOGLE_MAPS_SERVER_KEY) it fetches the road itself and never looks at ours.
+  // Without one it uses ours — but re-derives the corridor's endpoints from
+  // Firestore and refuses any polyline that does not actually connect them, so
+  // even then the corridor is not a thing the client gets to choose.
   setDriverRoute: callable<
-    { origin: GeoPoint; destination: GeoPoint; polyline: string },
+    { origin: GeoPoint; destination: GeoPoint; polyline?: string },
     { ok: boolean; routeLengthM: number; corridorRadiusM: number; destRadiusM: number }
   >('setDriverRoute'),
   endDriverRoute: callable<Record<string, never>, { ok: boolean }>('endDriverRoute'),
   getEnRouteMatches: callable<
-    { polyline: string; driverLat?: number; driverLng?: number },
+    { polyline?: string; driverLat?: number; driverLng?: number },
     {
       matches: EnRouteMatch[];
       seatsLeft: number;
@@ -232,7 +233,7 @@ export const api = {
     }
   >('getEnRouteMatches'),
   acceptEnRouteRider: callable<
-    { tripId: string; polyline: string; driverLat?: number; driverLng?: number },
+    { tripId: string; polyline?: string; driverLat?: number; driverLng?: number },
     {
       ok: boolean;
       carrierTripId: string;

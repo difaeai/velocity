@@ -56,11 +56,13 @@ import {
   Corridor,
   LatLng,
   POLYLINE_REJECTION_MESSAGE,
+  buildCorridor,
   decodePolyline,
   haversineM,
   projectToCorridor,
   validateRoutePolyline,
 } from '../lib/corridor';
+import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
 import {
   CORRIDOR_REJECTION_MESSAGE,
   CorridorFit,
@@ -137,6 +139,12 @@ interface ResolvedCorridor {
   polyline: string;
   corridor: Corridor;
   settings: EnRouteSettings;
+  /**
+   * True when WE fetched this road from Google, false when it came off the
+   * driver's phone. Recorded on the trip so a fare dispute can always be told
+   * which one it was priced from.
+   */
+  trusted: boolean;
 }
 
 // ── Fare helpers ─────────────────────────────────────────────────────────────
@@ -278,15 +286,27 @@ async function activeCarrierTrip(
 }
 
 /**
- * Work out the driver's corridor and validate the polyline they posted for it.
+ * Work out the driver's corridor: where they are going, and the road they take.
  *
- * The endpoints are never taken from the client: they come from the carrier trip
- * or the declared route already in Firestore, and the polyline has to actually
- * connect them (validateRoutePolyline). A driver cannot widen their own corridor.
+ * The endpoints are NEVER taken from the client. They come from the carrier trip
+ * or the declared route already in Firestore, so a driver cannot widen their own
+ * corridor to sweep up rides that are not on their way.
+ *
+ * The road between those endpoints comes from one of three places, in order:
+ *
+ *   1. A ROUTE WE ALREADY FETCHED. Cached on the trip / driver-route document.
+ *      A driver polling their feed every 20 seconds does not re-buy the same road.
+ *   2. GOOGLE, FROM HERE. When GOOGLE_MAPS_SERVER_KEY is set we fetch it
+ *      ourselves and cache it. The client's polyline is not even looked at.
+ *   3. THE CLIENT'S POLYLINE. Only when there is no server key. Validated against
+ *      the endpoints above before it is trusted an inch (validateRoutePolyline),
+ *      and every fare it produces is still capped at the rider's own solo fare —
+ *      so a doctored one cannot overcharge anyone. This is the fallback, not the
+ *      plan, and it is also what keeps the feature alive through a Maps outage.
  */
 async function resolveCorridor(
   driverId: string,
-  polyline: string,
+  clientPolyline: string | undefined,
   carrier: FirebaseFirestore.DocumentSnapshot | null,
 ): Promise<ResolvedCorridor> {
   const settings = await getEnRouteSettings();
@@ -297,13 +317,17 @@ async function resolveCorridor(
   let source: 'trip' | 'driver_route';
   let origin: LatLng & { address?: string };
   let destination: LatLng & { address?: string };
+  /** Where to write a freshly-fetched route so we only ever buy it once. */
+  let cacheRef: FirebaseFirestore.DocumentReference;
+  let cacheField: string;
+  let cached: string | null = null;
 
   if (carrier) {
     // The corridor of a trip already under way is that trip's own route — unless
     // it was itself started from a declared route, in which case the driver is
     // still ultimately heading home and that longer corridor is the real one.
     const stored = carrier.get('enRoute') as
-      | { origin?: LatLng; destination?: LatLng; source?: string }
+      | { origin?: LatLng; destination?: LatLng; source?: string; polyline?: string; polylineSource?: string }
       | undefined;
     if (stored?.origin && stored?.destination) {
       source = (stored.source as 'trip' | 'driver_route') ?? 'trip';
@@ -314,6 +338,11 @@ async function resolveCorridor(
       origin = carrier.get('pickup') as LatLng & { address?: string };
       destination = carrier.get('dropoff') as LatLng & { address?: string };
     }
+    // Only reuse a cached road that WE fetched. A polyline that came off a client
+    // is never promoted to the cache, so it can never be silently re-trusted.
+    if (stored?.polylineSource === 'server' && stored.polyline) cached = stored.polyline;
+    cacheRef = carrier.ref;
+    cacheField = 'enRoute';
   } else {
     const routeSnap = await db.doc(`driverRoutes/${driverId}`).get();
     if (!routeSnap.exists || routeSnap.get('status') !== 'active') {
@@ -329,15 +358,83 @@ async function resolveCorridor(
     source = 'driver_route';
     origin = routeSnap.get('origin') as LatLng & { address?: string };
     destination = routeSnap.get('destination') as LatLng & { address?: string };
+    if (routeSnap.get('polylineSource') === 'server') {
+      cached = (routeSnap.get('polyline') as string | undefined) ?? null;
+    }
+    cacheRef = routeSnap.ref;
+    cacheField = '';
   }
 
-  const points = decodePolyline(polyline);
-  const check = validateRoutePolyline(points, origin, destination);
+  // ── 1. The road we already bought ──
+  if (cached) {
+    const points = decodePolyline(cached);
+    if (points.length >= 2) {
+      return {
+        source,
+        origin,
+        destination,
+        polyline: cached,
+        corridor: buildCorridor(points),
+        settings,
+        trusted: true,
+      };
+    }
+  }
+
+  // ── 2. Ask Google ourselves ──
+  if (serverRoutingConfigured()) {
+    const fetched = await fetchRouteServerSide(origin, destination);
+    if (fetched) {
+      const payload = {
+        polyline: fetched.polyline,
+        polylineSource: 'server' as const,
+        routeLengthM: Math.round(fetched.corridor.lengthM),
+        routeDurationSec: fetched.durationSec,
+      };
+      // Cache it. Best-effort: a failed write costs one extra Routes call later,
+      // it must never cost the driver their feed.
+      await cacheRef
+        .set(
+          cacheField ? { [cacheField]: payload, updatedAt: FieldValue.serverTimestamp() } : payload,
+          { merge: true },
+        )
+        .catch((e) => logger.warn('enRoute: could not cache the route', e));
+
+      return {
+        source,
+        origin,
+        destination,
+        polyline: fetched.polyline,
+        corridor: fetched.corridor,
+        settings,
+        trusted: true,
+      };
+    }
+    // Google said no (quota, outage, no road between the points). Fall through:
+    // a Maps problem is not a reason nobody can earn today.
+  }
+
+  // ── 3. The client's polyline, trusted only as far as we can throw it ──
+  if (!clientPolyline) {
+    throw new HttpsError(
+      'failed-precondition',
+      'We could not work out your road route. Check your connection and try again.',
+    );
+  }
+  const check = validateRoutePolyline(decodePolyline(clientPolyline), origin, destination);
   if (!check.ok) {
     throw new HttpsError('invalid-argument', POLYLINE_REJECTION_MESSAGE[check.reason]);
   }
 
-  return { source, origin, destination, polyline, corridor: check.corridor, settings };
+  return {
+    source,
+    origin,
+    destination,
+    polyline: clientPolyline,
+    corridor: check.corridor,
+    settings,
+    trusted: false,
+  };
 }
 
 // ── setDriverRoute ───────────────────────────────────────────────────────────
@@ -345,8 +442,12 @@ async function resolveCorridor(
 const setRouteSchema = z.object({
   origin: geoSchema,
   destination: geoSchema,
-  /** Encoded road polyline from the driver's client (Routes API). */
-  polyline: z.string().min(4).max(60_000),
+  /**
+   * Encoded road polyline from the driver's client. Only a fallback: when the
+   * backend has GOOGLE_MAPS_SERVER_KEY it fetches the road itself and never
+   * looks at this.
+   */
+  polyline: z.string().min(4).max(60_000).optional(),
 });
 
 /**
@@ -378,17 +479,47 @@ export const setDriverRoute = onCall(async (req) => {
   assertCommissionClear(driverSnap, commission);
   assertOutstandingClear(walletSnap, cancellation, 'driver');
 
-  const check = validateRoutePolyline(decodePolyline(polyline), origin, destination);
-  if (!check.ok) {
-    throw new HttpsError('invalid-argument', POLYLINE_REJECTION_MESSAGE[check.reason]);
+  // The road, from Google, fetched here. This is the corridor the driver will be
+  // matched on, so it is worth owning: we buy it once, now, and cache it on the
+  // route document rather than re-deriving it on every poll.
+  let corridor: Corridor;
+  let routePolyline: string;
+  let polylineSource: 'server' | 'client';
+
+  const fetched = serverRoutingConfigured()
+    ? await fetchRouteServerSide(origin, destination)
+    : null;
+
+  if (fetched) {
+    corridor = fetched.corridor;
+    routePolyline = fetched.polyline;
+    polylineSource = 'server';
+  } else {
+    // No key, or Google is having a bad day. Fall back to the driver's own map —
+    // checked against the endpoints they gave us before we believe a word of it.
+    if (!polyline) {
+      throw new HttpsError(
+        'failed-precondition',
+        'We could not work out the road to there. Check your connection and try again.',
+      );
+    }
+    const check = validateRoutePolyline(decodePolyline(polyline), origin, destination);
+    if (!check.ok) {
+      throw new HttpsError('invalid-argument', POLYLINE_REJECTION_MESSAGE[check.reason]);
+    }
+    corridor = check.corridor;
+    routePolyline = polyline;
+    polylineSource = 'client';
   }
 
   await db.doc(`driverRoutes/${ctx.uid}`).set({
     driverId: ctx.uid,
     origin,
     destination,
-    polyline,
-    routeLengthM: Math.round(check.corridor.lengthM),
+    polyline: routePolyline,
+    polylineSource,
+    routeLengthM: Math.round(corridor.lengthM),
+    ...(fetched ? { routeDurationSec: fetched.durationSec } : {}),
     vehicleType: (driverSnap.get('vehicleType') as string) ?? 'mini',
     status: 'active',
     expiresAt: new Date(Date.now() + ROUTE_TTL_MS),
@@ -398,11 +529,12 @@ export const setDriverRoute = onCall(async (req) => {
 
   logger.info('Driver route set', {
     driverId: ctx.uid,
-    routeKm: Math.round(check.corridor.lengthM / 1000),
+    routeKm: Math.round(corridor.lengthM / 1000),
+    polylineSource,
   });
   return {
     ok: true,
-    routeLengthM: Math.round(check.corridor.lengthM),
+    routeLengthM: Math.round(corridor.lengthM),
     corridorRadiusM: settings.corridorRadiusM,
     destRadiusM: settings.destRadiusM,
   };
@@ -421,8 +553,12 @@ export const endDriverRoute = onCall(async (req) => {
 // ── getEnRouteMatches ────────────────────────────────────────────────────────
 
 const matchesSchema = z.object({
-  /** The road route, encoded — from the driver's own map. */
-  polyline: z.string().min(4).max(60_000),
+  /**
+   * The road route, encoded, from the driver's own map. Only used when the
+   * backend has no Maps key of its own — with GOOGLE_MAPS_SERVER_KEY set the
+   * server fetches the road itself and this is ignored entirely.
+   */
+  polyline: z.string().min(4).max(60_000).optional(),
   /** Where the driver is now, so riders they have already passed are dropped. */
   driverLat: z.number().min(-90).max(90).optional(),
   driverLng: z.number().min(-180).max(180).optional(),
@@ -634,7 +770,8 @@ function genderGate(
 const acceptSchema = z.object({
   /** The open pool request the driver is taking. */
   tripId: z.string().min(1).max(128),
-  polyline: z.string().min(4).max(60_000),
+  /** Fallback road route. Ignored when the backend has its own Maps key. */
+  polyline: z.string().min(4).max(60_000).optional(),
   driverLat: z.number().min(-90).max(90).optional(),
   driverLng: z.number().min(-180).max(180).optional(),
 });
@@ -844,7 +981,10 @@ export const acceptEnRouteRider = onCall(async (req) => {
       source: resolved.source,
       origin: resolved.origin,
       destination: resolved.destination,
-      polyline,
+      polyline: resolved.polyline,
+      // Which road these fares were computed against, and who supplied it. A
+      // dispute months from now can be answered from the trip document alone.
+      polylineSource: resolved.trusted ? 'server' : 'client',
       routeLengthM: Math.round(corridor.lengthM),
       corridorRadiusM: settings.corridorRadiusM,
       destRadiusM: settings.destRadiusM,

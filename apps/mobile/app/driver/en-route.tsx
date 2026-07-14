@@ -60,8 +60,13 @@ export default function EnRoute() {
   const activeTrip = useDriverActiveTrip(user?.uid);
   const { coords } = useCurrentLocation();
 
-  /** The road route the search runs against, encoded. Null until we have one. */
-  const [polyline, setPolyline] = useState<string | null>(null);
+  /**
+   * The road route, encoded, from OUR map. Only a fallback: when the backend has
+   * its own Maps key it fetches the road itself and ignores this. So a failure to
+   * get it here is not fatal — `routeReady` is what gates the search, not this.
+   */
+  const [polyline, setPolyline] = useState<string | undefined>(undefined);
+  const [routeReady, setRouteReady] = useState(false);
   const [routeLabel, setRouteLabel] = useState<string>('');
   const [matches, setMatches] = useState<EnRouteMatch[]>([]);
   const [seatsLeft, setSeatsLeft] = useState(0);
@@ -77,19 +82,22 @@ export default function EnRoute() {
   useEffect(() => {
     if (!activeTrip?.pickup || !activeTrip?.dropoff) return;
     let alive = true;
+    setRouteLabel(
+      `${activeTrip.pickup.address ?? 'Pickup'} → ${activeTrip.dropoff.address ?? 'Destination'}`,
+    );
+    // Send our polyline up if we can get one, but search either way — the server
+    // can fetch the road itself, and on this path it already knows the endpoints.
     fetchRouteInfo(activeTrip.pickup, activeTrip.dropoff).then((info) => {
-      if (!alive || !info) return;
-      setPolyline(info.encoded);
-      setRouteLabel(
-        `${activeTrip.pickup.address ?? 'Pickup'} → ${activeTrip.dropoff.address ?? 'Destination'}`,
-      );
+      if (!alive) return;
+      setPolyline(info?.encoded);
+      setRouteReady(true);
     });
     return () => { alive = false; };
   }, [activeTrip?.id, activeTrip?.pickup, activeTrip?.dropoff]);
 
   // ── Look for riders ───────────────────────────────────────────────────────
   const search = useCallback(async () => {
-    if (!polyline) return;
+    if (!routeReady) return;
     setLoading(true);
     try {
       const res = await api.getEnRouteMatches({
@@ -105,19 +113,18 @@ export default function EnRoute() {
     } finally {
       setLoading(false);
     }
-  }, [polyline, coords?.lat, coords?.lng]);
+  }, [polyline, routeReady, coords?.lat, coords?.lng]);
 
   useEffect(() => {
-    if (!polyline) return;
+    if (!routeReady) return;
     search();
     const t = setInterval(search, REFRESH_MS);
     return () => clearInterval(t);
-  }, [polyline, search]);
+  }, [routeReady, search]);
 
   // ── Take a rider ──────────────────────────────────────────────────────────
   const accept = useCallback(
     async (m: EnRouteMatch) => {
-      if (!polyline) return;
       setBusyId(m.tripId);
       try {
         const res = await api.acceptEnRouteRider({
@@ -151,13 +158,14 @@ export default function EnRoute() {
   );
 
   // ── No trip and no route yet: ask where they're heading ───────────────────
-  if (!onTrip && !polyline) {
+  if (!onTrip && !routeReady) {
     return (
       <RouteSetter
         coords={coords}
         onReady={(encoded, label) => {
           setPolyline(encoded);
           setRouteLabel(label);
+          setRouteReady(true);
         }}
       />
     );
@@ -351,7 +359,7 @@ function RouteSetter({
   onReady,
 }: {
   coords: { lat: number; lng: number } | null;
-  onReady: (polyline: string, label: string) => void;
+  onReady: (polyline: string | undefined, label: string) => void;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -372,12 +380,13 @@ function RouteSetter({
       const origin: GeoPoint = { lat: coords.lat, lng: coords.lng, address: 'Current location' };
       const destination: GeoPoint = { lat: detail.lat, lng: detail.lng, address: description };
 
-      // The road route — the corridor everything is measured against.
+      // Try to get the road route here, but don't insist: the backend can fetch it
+      // itself, and it only trusts ours when it has no key of its own anyway. If
+      // Maps is unreachable from the phone, the route still gets set.
       const info = await fetchRouteInfo(origin, destination);
-      if (!info) throw new Error('Could not work out the road route. Check your connection.');
 
-      await api.setDriverRoute({ origin, destination, polyline: info.encoded });
-      onReady(info.encoded, `Current location → ${description}`);
+      await api.setDriverRoute({ origin, destination, polyline: info?.encoded });
+      onReady(info?.encoded, `Current location → ${description}`);
     } catch (e) {
       Alert.alert('Could not set your route', (e as Error).message);
     } finally {
