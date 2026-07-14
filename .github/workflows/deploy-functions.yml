@@ -75,4 +75,4 @@ jobs:
         run: firebase deploy --only firestore:indexes --project velocity-fe379 --non-interactive
 
       - name: Deploy Cloud Functions + Firestore rules + Storage rules
-        run: firebase deploy --only functions,firestore:rules,storage --project velocity-fe379 --non-interactive
+        run: firebase deploy --only functions,firestore:rules,storage --project velocity-fe379 --non-interactive --force
