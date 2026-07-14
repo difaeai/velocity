@@ -132,4 +132,26 @@ export const adminApi = {
     { communityId: string },
     { deleted: boolean; postsDetached: number }
   >('adminDeleteTravelMateCommunity'),
+
+  // ── Earn with Velocity — the Partner Program ──────────────────────────────
+  adminReviewPartnerApplication: callable<
+    { uid: string; decision: 'approve' | 'reject' | 'resubmit'; reason?: string },
+    { ok: boolean; status: string }
+  >('adminReviewPartnerApplication'),
+  adminReviewWithdrawal: callable<
+    { requestId: string; decision: 'approve' | 'reject' | 'paid'; reason?: string },
+    { ok: boolean }
+  >('adminReviewWithdrawal'),
+  adminSuspendPartner: callable<
+    { partnerId: string; suspended: boolean; reason?: string },
+    { ok: boolean }
+  >('adminSuspendPartner'),
+  adminMarkRideStatus: callable<
+    { tripId: string; status: 'completed' | 'cancelled' | 'scam' | 'fraud'; reason?: string },
+    { ok: boolean; status: string; rows: number }
+  >('adminMarkRideStatus'),
+  adminReassignReferral: callable<
+    { uid: string; type: 'driver' | 'passenger'; fleetId?: string | null; reason?: string },
+    { ok: boolean }
+  >('adminReassignReferral'),
 };

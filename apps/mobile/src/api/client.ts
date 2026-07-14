@@ -614,7 +614,136 @@ export const api = {
     { title: string; body: string; type?: string; target?: string },
     { ok: boolean; sent: number }
   >('adminSendPushNotification'),
+
+  // ── Earn with Velocity — the Partner Program ──────────────────────────────
+  submitPartnerApplication: callable<PartnerApplicationInput, { ok: boolean; status: 'pending' }>(
+    'submitPartnerApplication',
+  ),
+  createPartnerFleet: callable<
+    { type: FleetType; name?: string },
+    { ok: boolean; fleetId: string; code: string; type: FleetType }
+  >('createPartnerFleet'),
+  previewPartnerFleet: callable<
+    { code: string },
+    { ok: boolean; code: string; type: FleetType; fleetName: string; partnerName: string; partnerLevel: PartnerLevel }
+  >('previewPartnerFleet'),
+  claimPartnerReferral: callable<
+    { code: string; deviceId?: string },
+    { ok: boolean; type: FleetType; fleetId: string; partnerName: string | null }
+  >('claimPartnerReferral'),
+  getPartnerDashboard: callable<Record<string, never>, PartnerDashboard>('getPartnerDashboard'),
+  getPartnerFleetMembers: callable<
+    { type: FleetType; limit?: number },
+    { ok: boolean; members: FleetMember[] }
+  >('getPartnerFleetMembers'),
+  getPartnerMemberRides: callable<
+    { memberUid: string; limit?: number },
+    { ok: boolean; rides: PartnerRide[] }
+  >('getPartnerMemberRides'),
+  requestPartnerWithdrawal: callable<
+    {
+      amount: number;
+      method: WithdrawalMethod;
+      accountName: string;
+      accountNumber: string;
+      bankName?: string;
+    },
+    { ok: boolean; requestId: string }
+  >('requestPartnerWithdrawal'),
 };
+
+// ── Partner Program types ────────────────────────────────────────────────────
+
+export type FleetType = 'driver' | 'passenger';
+export type PartnerLevel = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+export type WithdrawalMethod = 'easypaisa' | 'jazzcash' | 'bank';
+export type PartnerRideStatus = 'completed' | 'cancelled' | 'scam' | 'fraud';
+export type PartnerTxnStatus = 'pending' | 'available' | 'reversed';
+
+export interface PartnerApplicationInput {
+  fullName: string;
+  mobile: string;
+  cnicNumber: string;
+  cnicFrontUrl: string;
+  cnicBackUrl: string;
+  city: string;
+  acceptedTerms: true;
+}
+
+/** Today / week / month / lifetime, the four windows every revenue card shows. */
+export interface RevenueBuckets {
+  today: number;
+  week: number;
+  month: number;
+  lifetime: number;
+}
+
+export interface FleetSummary {
+  id: string;
+  code: string;
+  name: string;
+  members: number;
+}
+
+export interface FleetMember {
+  uid: string;
+  name: string;
+  photoURL: string | null;
+  joinedAt: number | null;
+  lastRideAt: number | null;
+  online: boolean;
+  active: boolean;
+  completedRides: number;
+  flaggedRides: number;
+  totalRideValue: number;
+  platformCommissionGenerated: number;
+  fleetCommissionGenerated: number;
+}
+
+export interface PartnerRide {
+  id: string;
+  tripId: string;
+  date: number | null;
+  pickup: string | null;
+  dropoff: string | null;
+  fare: number;
+  platformCommission: number;
+  fleetCommission: number;
+  rideStatus: PartnerRideStatus;
+  paymentStatus: PartnerTxnStatus;
+  fraudReason: string | null;
+}
+
+export interface PartnerDashboard {
+  ok: boolean;
+  partner: {
+    uid: string;
+    fullName: string;
+    city: string;
+    status: 'active' | 'suspended';
+    level: PartnerLevel;
+    nextLevel: {
+      level: PartnerLevel;
+      minActiveMembers: number;
+      minCompletedRides: number;
+      minEarnings: number;
+    } | null;
+  };
+  fleets: { driver: FleetSummary | null; passenger: FleetSummary | null };
+  wallet: { balance: number; pending: number; withdrawn: number; lifetimeEarnings: number };
+  overview: {
+    totalDrivers: number;
+    totalPassengers: number;
+    completedRides: number;
+    flaggedRides: number;
+    lifetimeEarnings: number;
+    scamRate: number;
+    avgCommissionPerRide: number;
+  };
+  revenue: { combined: RevenueBuckets; driver: RevenueBuckets; passenger: RevenueBuckets };
+  rides: { combined: RevenueBuckets; driver: RevenueBuckets; passenger: RevenueBuckets };
+  series: { date: string; earnings: number; rides: number }[];
+}
 
 // ── CNIC verification ────────────────────────────────────────────────────────
 

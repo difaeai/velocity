@@ -177,3 +177,22 @@ export { createFreightRequest, cancelFreightRequest, acceptFreightQuote, adminUp
 
 // Admin: broadcast push notification
 export { adminSendPushNotification } from './users';
+
+// Earn with Velocity — the Partner Program (fleets, referrals, commission)
+export {
+  submitPartnerApplication,
+  adminReviewPartnerApplication,
+  createPartnerFleet,
+  previewPartnerFleet,
+  claimPartnerReferral,
+  adminReassignReferral,
+  maturePartnerEarnings,
+  adminMarkRideStatus,
+  requestPartnerWithdrawal,
+  adminReviewWithdrawal,
+  adminSuspendPartner,
+  getPartnerDashboard,
+  getPartnerFleetMembers,
+  getPartnerMemberRides,
+  recomputePartnerLevels,
+} from './partners';
