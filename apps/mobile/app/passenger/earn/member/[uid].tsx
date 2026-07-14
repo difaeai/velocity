@@ -21,6 +21,10 @@ export default function MemberRides() {
   const [rides, setRides] = useState<PartnerRide[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Knowable during render, so derive it rather than setting state from an
+  // effect — otherwise a missing route param costs an extra render for nothing.
+  const problem = error ?? (uid ? null : 'No member specified.');
+
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -87,13 +91,13 @@ export default function MemberRides() {
           </View>
         )}
         ListEmptyComponent={
-          rides === null && !error ? (
+          rides === null && !problem ? (
             <View style={{ gap: 10 }}>
               <Skeleton height={120} radius={16} />
               <Skeleton height={120} radius={16} />
             </View>
           ) : (
-            <Text style={s.empty}>{error ?? 'This member has not completed any rides yet.'}</Text>
+            <Text style={s.empty}>{problem ?? 'This member has not completed any rides yet.'}</Text>
           )
         }
       />

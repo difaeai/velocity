@@ -284,6 +284,27 @@ function EmptyChart({ height, message }: { height: number; message: string }) {
   );
 }
 
+// ── Error state ──────────────────────────────────────────────────────────────
+
+/**
+ * What a partner sees when their data will not load.
+ *
+ * Every Earn screen shows this rather than rendering nothing. A blank screen is
+ * indistinguishable from a broken app, and the partner has no way to recover from
+ * it — whereas a sentence and a button lets them retry a dropped request, and
+ * tells them plainly when the reason is that they are not a partner yet.
+ */
+export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <View style={s.errorWrap}>
+      <Text style={s.errorText}>{message}</Text>
+      <Pressable onPress={onRetry} style={s.retry}>
+        <Text style={s.retryText}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 // ── Loading skeletons ────────────────────────────────────────────────────────
 
 export function Skeleton({
@@ -400,6 +421,16 @@ const s = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 3, marginTop: 3 },
   legendLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   legendValue: { color: colors.text, fontSize: 13, fontWeight: '800' },
+
+  errorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 14 },
+  errorText: { color: colors.muted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  retry: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+  },
+  retryText: { color: colors.btnText, fontWeight: '800' },
 
   skeleton: { backgroundColor: colors.glassChip },
 

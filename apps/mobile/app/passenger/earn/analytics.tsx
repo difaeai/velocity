@@ -14,6 +14,7 @@ import { usePartnerDashboard } from '../../../src/hooks/partner';
 import {
   DashboardSkeleton,
   EarningsChart,
+  ErrorState,
   LevelBadge,
   RideBars,
   SectionTitle,
@@ -22,7 +23,7 @@ import {
 } from '../../../src/ui/partner';
 
 export default function Analytics() {
-  const { data, loading, reload } = usePartnerDashboard();
+  const { data, loading, error, reload } = usePartnerDashboard();
   const [refreshing, setRefreshing] = useState(false);
 
   const monthly = useMemo(() => {
@@ -51,7 +52,13 @@ export default function Analytics() {
       </SafeAreaView>
     );
   }
-  if (!data) return null;
+  if (error || !data) {
+    return (
+      <SafeAreaView style={s.safe} edges={['bottom']}>
+        <ErrorState message={error ?? 'Could not load your analytics.'} onRetry={reload} />
+      </SafeAreaView>
+    );
+  }
 
   const { overview, partner, series } = data;
   const next = partner.nextLevel;

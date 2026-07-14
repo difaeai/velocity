@@ -24,10 +24,10 @@ import type { FleetType } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import { appLink } from '../../../src/share/links';
-import { LevelBadge, SectionTitle, Segmented, Skeleton, formatPKR } from '../../../src/ui/partner';
+import { ErrorState, LevelBadge, SectionTitle, Segmented, Skeleton, formatPKR } from '../../../src/ui/partner';
 
 export default function ReferralCentre() {
-  const { data, loading } = usePartnerDashboard();
+  const { data, loading, error, reload } = usePartnerDashboard();
   const [audience, setAudience] = useState<FleetType>('driver');
 
   if (loading && !data) {
@@ -39,7 +39,13 @@ export default function ReferralCentre() {
       </SafeAreaView>
     );
   }
-  if (!data) return null;
+  if (error || !data) {
+    return (
+      <SafeAreaView style={s.safe} edges={['bottom']}>
+        <ErrorState message={error ?? 'Could not load your referral centre.'} onRetry={reload} />
+      </SafeAreaView>
+    );
+  }
 
   const code = data.partner.referralCode;
   if (!code) {

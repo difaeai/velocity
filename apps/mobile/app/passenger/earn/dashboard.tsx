@@ -16,6 +16,7 @@ import type { RevenueBuckets } from '../../../src/api/client';
 import {
   DashboardSkeleton,
   EarningsChart,
+  ErrorState,
   LevelBadge,
   SectionTitle,
   Segmented,
@@ -57,12 +58,7 @@ export default function PartnerDashboard() {
   if (error || !data) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <View style={s.center}>
-          <Text style={s.errorText}>{error ?? 'Could not load your dashboard.'}</Text>
-          <Pressable onPress={reload} style={s.retry}>
-            <Text style={s.retryText}>Try again</Text>
-          </Pressable>
-        </View>
+        <ErrorState message={error ?? 'Could not load your dashboard.'} onRetry={reload} />
       </SafeAreaView>
     );
   }
@@ -257,15 +253,6 @@ function Tile({ emoji, label, onPress }: { emoji: string; label: string; onPress
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, gap: 16, paddingBottom: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 14 },
-  errorText: { color: colors.muted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  retry: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-  },
-  retryText: { color: colors.btnText, fontWeight: '800' },
 
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   back: { color: colors.text, fontSize: 24, fontWeight: '700' },
