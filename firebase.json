@@ -6,6 +6,14 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "hosting": {
+    "site": "velocity-fe379",
+    "public": "docs",
+    "ignore": ["**/*.md", "**/.*"],
+    "rewrites": [
+      { "source": "/", "destination": "/privacy-policy.html" }
+    ]
+  },
   "functions": [
     {
       "source": "backend/functions",

@@ -60,6 +60,7 @@ export default function PartnerApply() {
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
 
   const [tiers, setTiers] = useState<PartnerTiers | null>(null);
+  const [tiersError, setTiersError] = useState(false);
   const [tier, setTier] = useState<PartnerTier>('free');
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
@@ -85,17 +86,24 @@ export default function PartnerApply() {
 
   const phone = verifiedPhone ?? linkedPhone;
 
-  useEffect(() => {
+  // A silent failure here used to leave a skeleton where the tier picker
+  // should be — the user could never see which tier they were applying for.
+  // Fail loudly and offer a retry instead.
+  const loadTiers = () => {
+    setTiersError(false);
     api
       .getPartnerTiers({})
       .then(setTiers)
-      .catch(() => setTiers(null));
-  }, []);
+      .catch(() => setTiersError(true));
+  };
+
+  useEffect(loadTiers, []);
 
   const isPro = tier === 'pro';
 
   const valid = useMemo(
     () =>
+      !!tiers &&
       fullName.trim().length >= 2 &&
       city.trim().length >= 2 &&
       CNIC_RE.test(cnic) &&
@@ -105,7 +113,7 @@ export default function PartnerApply() {
       terms &&
       // The one extra thing Pro asks for.
       (!isPro || !!proof),
-    [fullName, city, cnic, front, back, phone, terms, isPro, proof],
+    [tiers, fullName, city, cnic, front, back, phone, terms, isPro, proof],
   );
 
   async function sendOtp() {
@@ -225,9 +233,30 @@ export default function PartnerApply() {
               highlight
             />
           </View>
+        ) : tiersError ? (
+          <View style={s.tiersErrorCard}>
+            <Text style={s.tiersErrorTitle}>Could not load the partner tiers</Text>
+            <Text style={s.tiersErrorBody}>
+              Check your internet connection and try again. You cannot apply until the tiers load.
+            </Text>
+            <PrimaryButton label="Retry" onPress={loadTiers} variant="secondary" />
+          </View>
         ) : (
           <Skeleton height={190} radius={16} />
         )}
+
+        {tiers ? (
+          <View style={s.selectedBanner}>
+            <Text style={s.selectedBannerText}>
+              You are applying as: <Text style={s.selectedBannerTier}>{isPro ? 'Pro Partner ⭐' : 'Free Partner'}</Text>
+            </Text>
+            <Text style={s.selectedBannerHint}>
+              {isPro
+                ? 'Requires CNIC, a verified mobile number, and the registration fee receipt below.'
+                : 'Requires only your CNIC and a verified mobile number — no payment.'}
+            </Text>
+          </View>
+        ) : null}
 
         <Text style={s.rateNote}>
           Rates are a share of Velocity&apos;s commission on each completed ride — not of the fare.
@@ -414,6 +443,11 @@ function TierCard({
           </Text>
           <Text style={s.tierPrice}>{price}</Text>
         </View>
+        {active ? (
+          <View style={s.selectedPill}>
+            <Text style={s.selectedPillText}>✓ Selected</Text>
+          </View>
+        ) : null}
       </View>
       <View style={s.tierRates}>
         <View style={{ flex: 1 }}>
@@ -531,6 +565,38 @@ const s = StyleSheet.create({
   tierNote: { color: colors.muted, fontSize: 12, lineHeight: 17 },
 
   rateNote: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 12 },
+
+  selectedPill: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  selectedPillText: { color: colors.btnText, fontSize: 11, fontWeight: '900' },
+
+  selectedBanner: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    gap: 4,
+  },
+  selectedBannerText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
+  selectedBannerTier: { color: colors.text, fontSize: 14, fontWeight: '900' },
+  selectedBannerHint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+
+  tiersErrorCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: 16,
+    padding: 16,
+    gap: 10,
+  },
+  tiersErrorTitle: { color: colors.danger, fontSize: 15, fontWeight: '900' },
+  tiersErrorBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
 
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   phonePrefix: {
