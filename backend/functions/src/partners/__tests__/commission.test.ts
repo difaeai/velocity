@@ -111,11 +111,11 @@ describe('tiers', () => {
     expect(s.free.passengerFleetRate).toBe(0.005);
   });
 
-  it('ships Pro at 2% driver / 1.3% passenger behind a $175 fee', () => {
+  it('ships Pro at 2% driver / 1.3% passenger behind a Rs 50,000 fee', () => {
     expect(s.pro.driverFleetRate).toBe(0.02);
     expect(s.pro.passengerFleetRate).toBe(0.013);
-    expect(s.proFee).toBe(175);
-    expect(s.proFeeCurrency).toBe('USD');
+    expect(s.proFee).toBe(50000);
+    expect(s.proFeeCurrency).toBe('PKR');
   });
 
   it('every tier rate is still a slice of the COMMISSION, not the fare', () => {

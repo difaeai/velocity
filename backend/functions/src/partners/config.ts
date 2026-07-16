@@ -62,8 +62,8 @@ export interface PartnerSettings {
 export const DEFAULT_PARTNER_SETTINGS: PartnerSettings = {
   free: { driverFleetRate: 0.005, passengerFleetRate: 0.005 },
   pro: { driverFleetRate: 0.02, passengerFleetRate: 0.013 },
-  proFee: 175,
-  proFeeCurrency: 'USD',
+  proFee: 50000,
+  proFeeCurrency: 'PKR',
   payment: {
     bankName: null,
     bankAccount: null,

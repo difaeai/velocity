@@ -42,6 +42,8 @@ interface Application {
   fullName?: string;
   mobile?: string;
   city?: string;
+  /** Which document the photos show; older applications predate it → CNIC. */
+  idType?: string;
   cnicNumber?: string;
   cnicFrontUrl?: string;
   cnicBackUrl?: string;
@@ -109,6 +111,25 @@ function when(ts?: { seconds: number }): string {
 
 function pkr(n?: number): string {
   return `Rs ${Math.round(n ?? 0).toLocaleString('en-PK')}`;
+}
+
+/** The registration fee in whatever currency the admin configured. */
+function fee(amount: number, currency?: string): string {
+  if (!currency || currency === 'PKR') return pkr(amount);
+  if (currency === 'USD') return `$${amount.toLocaleString('en-US')}`;
+  return `${amount.toLocaleString('en-US')} ${currency}`;
+}
+
+const ID_TYPE_LABELS: Record<string, string> = {
+  cnic: 'CNIC',
+  university_card: 'University card',
+  driving_license: 'Driving licence',
+  passport: 'Passport',
+  other: 'Other ID',
+};
+
+function idTypeLabel(idType?: string): string {
+  return ID_TYPE_LABELS[idType ?? 'cnic'] ?? 'ID';
 }
 
 export default function PartnersPage() {
@@ -263,14 +284,11 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
                 />
               </div>
 
-              <Row label="CNIC" value={a.cnicNumber ?? '—'} />
+              <Row label={idTypeLabel(a.idType)} value={a.cnicNumber ?? '—'} />
               <Row label="Submitted" value={when(a.submittedAt)} />
               {isPro ? (
                 <>
-                  <Row
-                    label="Fee quoted"
-                    value={`${a.quotedFeeCurrency === 'USD' ? '$' : ''}${a.quotedFee ?? 0}${a.quotedFeeCurrency && a.quotedFeeCurrency !== 'USD' ? ` ${a.quotedFeeCurrency}` : ''}`}
-                  />
+                  <Row label="Fee quoted" value={fee(a.quotedFee ?? 0, a.quotedFeeCurrency)} />
                   <Row label="Paid via" value={a.paymentMethod ?? '—'} />
                   <Row label="Txn ref" value={a.paymentReference || '—'} />
                 </>
@@ -278,8 +296,10 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
             </div>
 
             <div style={{ display: 'flex', gap: 10, flex: '1 1 300px' }}>
-              <DocImage url={a.cnicFrontUrl} label="CNIC front" />
-              <DocImage url={a.cnicBackUrl} label="CNIC back" />
+              <DocImage url={a.cnicFrontUrl} label={`${idTypeLabel(a.idType)} front`} />
+              {a.cnicBackUrl ? (
+                <DocImage url={a.cnicBackUrl} label={`${idTypeLabel(a.idType)} back`} />
+              ) : null}
               {/* The receipt is the WHOLE point of the Pro gate — nothing in the
                   backend can tell a real transfer from a doctored screenshot, so
                   this image is the check. Open it before approving Pro. */}
@@ -587,8 +607,8 @@ function Settings() {
   const [freePassenger, setFreePassenger] = useState('0.5');
   const [proDriver, setProDriver] = useState('2');
   const [proPassenger, setProPassenger] = useState('1.3');
-  const [proFee, setProFee] = useState('175');
-  const [proFeeCurrency, setProFeeCurrency] = useState('USD');
+  const [proFee, setProFee] = useState('50000');
+  const [proFeeCurrency, setProFeeCurrency] = useState('PKR');
   const [bankName, setBankName] = useState('');
   const [bankAccount, setBankAccount] = useState('');
   const [easypaisa, setEasypaisa] = useState('');
@@ -637,7 +657,7 @@ function Settings() {
           free: { driverFleetRate: fd, passengerFleetRate: fp },
           pro: { driverFleetRate: pd, passengerFleetRate: pp },
           proFee: Number(proFee),
-          proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'USD',
+          proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'PKR',
           payment: {
             bankName: bankName.trim() || null,
             bankAccount: bankAccount.trim() || null,
@@ -680,7 +700,7 @@ function Settings() {
           <FieldRow label="Driver fleet" suffix="% of platform commission" value={proDriver} onChange={setProDriver} />
           <FieldRow label="Passenger fleet" suffix="% of platform commission" value={proPassenger} onChange={setProPassenger} />
           <FieldRow label="Registration fee" suffix={proFeeCurrency} value={proFee} onChange={setProFee} />
-          <FieldRow label="Fee currency" suffix="e.g. USD or PKR" value={proFeeCurrency} onChange={setProFeeCurrency} />
+          <FieldRow label="Fee currency" suffix="e.g. PKR or USD" value={proFeeCurrency} onChange={setProFeeCurrency} />
         </div>
       </Card>
 
