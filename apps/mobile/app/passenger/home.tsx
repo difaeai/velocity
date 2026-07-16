@@ -25,6 +25,7 @@ import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
+import { EarnCard } from '../../src/ui/EarnCard';
 import {
   CityRideIcon,
   ClockIcon,
@@ -218,6 +219,9 @@ export default function PassengerHome() {
 
         {/* ── Travel Partner card ── */}
         <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
+
+        {/* ── Earn with Velocity card ── */}
+        <EarnCard onPress={() => router.push('/passenger/earn')} />
 
         <View style={{ height: 20 }} />
       </ScrollView>
