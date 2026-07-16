@@ -182,15 +182,21 @@ export const submitPartnerApplication = onCall(async (req) => {
 
   // One ID document, one partner. Two accounts holding the same card is the
   // cheapest way to farm referrals, so it is blocked at the door rather than
-  // unwound later by the fraud engine.
-  const cnicClash = await db
+  // unwound later by the fraud engine. The clash is scoped to the SAME document
+  // type: a passport and a university card that happen to share a number are
+  // different documents, not one document twice. Applications written before
+  // idType existed are all CNICs.
+  const idClash = await db
     .collection('partner_applications')
     .where('cnicNumber', '==', data.cnicNumber)
     .where('status', 'in', ['pending', 'approved'])
-    .limit(1)
+    .limit(10)
     .get();
-  if (!cnicClash.empty && cnicClash.docs[0].id !== uid) {
-    invalid('This CNIC is already used by another partner application.');
+  const clashing = idClash.docs.find(
+    (d) => d.id !== uid && ((d.get('idType') as string | undefined) ?? 'cnic') === data.idType,
+  );
+  if (clashing) {
+    invalid('This ID number is already used by another partner application.');
   }
 
   const settings = await getPartnerSettings();

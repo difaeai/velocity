@@ -203,14 +203,23 @@ export const completePoolRide = onCall(async (req) => {
   // a share of the platform commission, never of the fare. The referral lookups
   // and fraud checks run queries, and Firestore forbids reads after writes in a
   // transaction, so the plan is assembled here and only written under `tx`.
+  // These pre-reads are also the single source of truth for WHO is aboard: the
+  // transaction reuses `pickedUp` below, so the riders who are credited and the
+  // riders who price the gross can never diverge.
   const [preRide, prePassengers, commissionSettings] = await Promise.all([
     rideRef.get(),
     db.collection(`poolRides/${rideId}/passengers`).get(),
     getCommissionSettings(),
   ]);
-  const preRiders = prePassengers.docs
-    .filter((d) => d.get('status') === 'picked_up')
-    .map((d) => d.id);
+  if (!preRide.exists) invalid('Pool ride not found.');
+  // Cheap pre-check so a double-tapped "complete" fails before the partner
+  // lookups run and write fraud logs for a settlement that will abort anyway.
+  // The transactional re-check below stays authoritative.
+  if (preRide.get('status') !== 'in_progress') {
+    throw new HttpsError('failed-precondition', 'Ride is not in progress.');
+  }
+  const pickedUp = prePassengers.docs.filter((d) => d.get('status') === 'picked_up');
+  const preRiders = pickedUp.map((d) => d.id);
   const prePickup  = preRide.get('pickup')  as { lat?: number; lng?: number } | undefined;
   const preDropoff = preRide.get('dropoff') as { lat?: number; lng?: number } | undefined;
   const partnerPlan = preRiders.length
@@ -260,9 +269,11 @@ export const completePoolRide = onCall(async (req) => {
 
     const perSeatFare: number = rideSnap.get('perSeatFare') ?? 0;
 
-    // Mark all picked-up passengers as dropped_off
-    const passSnap = await db.collection(`poolRides/${rideId}/passengers`).get();
-    const pickedUp = passSnap.docs.filter((d) => d.get('status') === 'picked_up');
+    // Mark all picked-up passengers as dropped_off. `pickedUp` comes from the
+    // pre-transaction read — the same snapshot the partner plan and the fares
+    // were built from, so everything in this settlement agrees on who rode.
+    // (The old in-tx re-read was equally non-transactional; it just opened a
+    // window for the two rider sets to differ.)
     const grossFare = perSeatFare * pickedUp.length;
 
     for (const pd of pickedUp) {
@@ -284,8 +295,8 @@ export const completePoolRide = onCall(async (req) => {
 
     // Handle franchise commission if driver belongs to a franchise
     const franchiseId: string | null = driverSnap.get('franchiseId') ?? null;
-    if (franchiseId && grossFare > 0) {
-      const franchiseCut = Math.round(grossFare * 0.05);
+    const franchiseCut = franchiseId && grossFare > 0 ? Math.round(grossFare * 0.05) : 0;
+    if (franchiseId && franchiseCut > 0) {
       tx.set(
         db.doc(`franchises/${franchiseId}`),
         {
@@ -316,7 +327,7 @@ export const completePoolRide = onCall(async (req) => {
         platformCommission: commission,
         // The franchise is senior to the fleets, capped at the commission so
         // partner math can never push Velocity's net below zero.
-        franchiseCut: franchiseId ? Math.min(Math.round(grossFare * 0.05), commission) : 0,
+        franchiseCut: Math.min(franchiseCut, commission),
         paymentMethod: 'cash',
         passengerFare: perSeatFare,
         coRiderFares: Object.fromEntries(preRiders.slice(1).map((uid) => [uid, perSeatFare])),

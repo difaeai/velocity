@@ -8,10 +8,42 @@
  * business earns on the ride.
  */
 import { describe, it, expect } from 'vitest';
+import type { Transaction } from 'firebase-admin/firestore';
 
-import { partnerCut, ratesForTier, splitCommission, DEFAULT_PARTNER_SETTINGS } from '../config';
+import { partnerCut, ratesForTier, DEFAULT_PARTNER_SETTINGS } from '../config';
+import { applyPartnerCredit } from '../commission';
+import type { ApplyArgs, PartnerCreditPlan } from '../commission';
 import { computeLevel } from '../types';
 import type { PartnerStats } from '../types';
+
+/** applyPartnerCredit is write-only, so a no-op tx isolates the pure maths. */
+const stubTx = { set: () => undefined } as unknown as Transaction;
+
+function makePlan(overrides: Partial<PartnerCreditPlan> = {}): PartnerCreditPlan {
+  return {
+    driverEdge: { uid: 'drv', partnerId: 'partner-d', fleetId: 'fleet-d', tier: 'free' },
+    passengerEdge: { uid: 'pax', partnerId: 'partner-p', fleetId: 'fleet-p', tier: 'free' },
+    coRiderEdges: [],
+    driverFleetRate: 0.01,
+    passengerFleetRate: 0.01,
+    holdHours: 72,
+    assessment: { status: 'completed', reason: null, kind: null },
+    ...overrides,
+  };
+}
+
+function makeArgs(overrides: Partial<ApplyArgs> = {}): ApplyArgs {
+  return {
+    tripId: 'trip-1',
+    driverId: 'drv',
+    passengerId: 'pax',
+    grossFare: 10000,
+    platformCommission: 1000,
+    franchiseCut: 0,
+    paymentMethod: 'cash',
+    ...overrides,
+  };
+}
 
 describe('partnerCut', () => {
   it('takes its percentage from the commission, never from the fare', () => {
@@ -33,11 +65,9 @@ describe('partnerCut', () => {
   });
 });
 
-describe('splitCommission', () => {
-  const base = { platformCommission: 1000, franchiseCut: 0 };
-
+describe('applyPartnerCredit — the payout waterfall', () => {
   it('pays both fleets out of the commission and leaves the rest to Velocity', () => {
-    const s = splitCommission({ ...base, driverFleetRate: 0.01, passengerFleetRate: 0.01 });
+    const s = applyPartnerCredit(stubTx, makePlan(), makeArgs());
     expect(s.driverFleetCut).toBe(10);
     expect(s.passengerFleetCut).toBe(10);
     expect(s.velocityNet).toBe(980);
@@ -46,19 +76,14 @@ describe('splitCommission', () => {
   });
 
   it('pays only the side that has a fleet behind it', () => {
-    const s = splitCommission({ ...base, driverFleetRate: 0.01, passengerFleetRate: null });
+    const s = applyPartnerCredit(stubTx, makePlan({ passengerEdge: null }), makeArgs());
     expect(s.driverFleetCut).toBe(10);
     expect(s.passengerFleetCut).toBe(0);
     expect(s.velocityNet).toBe(990);
   });
 
   it('takes the franchise cut before either fleet', () => {
-    const s = splitCommission({
-      platformCommission: 1000,
-      franchiseCut: 300,
-      driverFleetRate: 0.01,
-      passengerFleetRate: 0.01,
-    });
+    const s = applyPartnerCredit(stubTx, makePlan(), makeArgs({ franchiseCut: 300 }));
     expect(s.driverFleetCut).toBe(10);
     expect(s.passengerFleetCut).toBe(10);
     // 1000 − 300 franchise − 10 − 10 = 680
@@ -67,40 +92,75 @@ describe('splitCommission', () => {
 
   it('never drives Velocity negative, however the rates are set', () => {
     // A franchise that has eaten the whole commission leaves nothing to share.
-    const eaten = splitCommission({
-      platformCommission: 100,
-      franchiseCut: 100,
-      driverFleetRate: 0.5,
-      passengerFleetRate: 0.5,
-    });
+    const eaten = applyPartnerCredit(
+      stubTx,
+      makePlan({ driverFleetRate: 0.5, passengerFleetRate: 0.5 }),
+      makeArgs({ grossFare: 1000, platformCommission: 100, franchiseCut: 100 }),
+    );
     expect(eaten.driverFleetCut).toBe(0);
     expect(eaten.passengerFleetCut).toBe(0);
     expect(eaten.velocityNet).toBe(0);
 
     // Max rates on both sides still cannot overspend the pot.
-    const maxed = splitCommission({
-      platformCommission: 100,
-      franchiseCut: 60,
-      driverFleetRate: 0.5,
-      passengerFleetRate: 0.5,
-    });
+    const maxed = applyPartnerCredit(
+      stubTx,
+      makePlan({ driverFleetRate: 0.5, passengerFleetRate: 0.5 }),
+      makeArgs({ grossFare: 1000, platformCommission: 100, franchiseCut: 60 }),
+    );
     expect(maxed.velocityNet).toBeGreaterThanOrEqual(0);
     expect(maxed.driverFleetCut + maxed.passengerFleetCut).toBeLessThanOrEqual(40);
   });
 
   it('pays the driver fleet first when the commission runs out mid-split', () => {
     // 10 PKR left after the franchise; each fleet wants 50% of 100 = 50.
-    const s = splitCommission({
-      platformCommission: 100,
-      franchiseCut: 90,
-      driverFleetRate: 0.5,
-      passengerFleetRate: 0.5,
-    });
+    const s = applyPartnerCredit(
+      stubTx,
+      makePlan({ driverFleetRate: 0.5, passengerFleetRate: 0.5 }),
+      makeArgs({ grossFare: 1000, platformCommission: 100, franchiseCut: 90 }),
+    );
     expect(s.driverFleetCut).toBe(10);
     expect(s.passengerFleetCut).toBe(0);
     expect(s.velocityNet).toBe(0);
   });
 
+  it('prices each pool rider on their own seat share of the commission', () => {
+    // Rs 2,000 gross, Rs 1,000 commission. The primary rode Rs 500 of it, the
+    // co-rider Rs 1,500 — their partners split the commission 25% / 75%.
+    const s = applyPartnerCredit(
+      stubTx,
+      makePlan({
+        coRiderEdges: [
+          {
+            edge: { uid: 'co1', partnerId: 'partner-c', fleetId: 'fleet-c', tier: 'free' },
+            rate: 0.01,
+            flagged: null,
+          },
+        ],
+      }),
+      makeArgs({
+        grossFare: 2000,
+        platformCommission: 1000,
+        passengerFare: 500,
+        coRiderFares: { co1: 1500 },
+      }),
+    );
+    // Driver partner: 1% of the whole 1000. Primary: 1% of 250. Co: 1% of 750.
+    expect(s.driverFleetCut).toBe(10);
+    expect(s.passengerFleetCut).toBe(3 + 8); // round(2.5) + round(7.5)
+    expect(s.velocityNet).toBe(1000 - 10 - 11);
+  });
+
+  it('pays nobody at all on a flagged ride', () => {
+    const s = applyPartnerCredit(
+      stubTx,
+      makePlan({ assessment: { status: 'scam', reason: 'staged', kind: 'collusion' } }),
+      makeArgs({ franchiseCut: 100 }),
+    );
+    expect(s.driverFleetCut).toBe(0);
+    expect(s.passengerFleetCut).toBe(0);
+    expect(s.velocityNet).toBe(900);
+    expect(s.rideStatus).toBe('scam');
+  });
 });
 
 describe('tiers', () => {
@@ -132,18 +192,16 @@ describe('tiers', () => {
   });
 
   it('prices a Pro driver fleet above a free one on the same ride', () => {
-    const pro = splitCommission({
-      platformCommission: 1000,
-      franchiseCut: 0,
-      driverFleetRate: ratesForTier(s, 'pro').driverFleetRate,
-      passengerFleetRate: null,
-    });
-    const free = splitCommission({
-      platformCommission: 1000,
-      franchiseCut: 0,
-      driverFleetRate: ratesForTier(s, 'free').driverFleetRate,
-      passengerFleetRate: null,
-    });
+    const pro = applyPartnerCredit(
+      stubTx,
+      makePlan({ passengerEdge: null, driverFleetRate: ratesForTier(s, 'pro').driverFleetRate }),
+      makeArgs(),
+    );
+    const free = applyPartnerCredit(
+      stubTx,
+      makePlan({ passengerEdge: null, driverFleetRate: ratesForTier(s, 'free').driverFleetRate }),
+      makeArgs(),
+    );
     expect(pro.driverFleetCut).toBe(20);
     expect(free.driverFleetCut).toBe(5);
     expect(pro.velocityNet).toBe(980);
@@ -152,12 +210,14 @@ describe('tiers', () => {
 
   it('pays each side at its own partner’s tier on the same ride', () => {
     // A Pro partner recruited the driver; a free partner recruited the rider.
-    const split = splitCommission({
-      platformCommission: 1000,
-      franchiseCut: 0,
-      driverFleetRate: ratesForTier(s, 'pro').driverFleetRate,
-      passengerFleetRate: ratesForTier(s, 'free').passengerFleetRate,
-    });
+    const split = applyPartnerCredit(
+      stubTx,
+      makePlan({
+        driverFleetRate: ratesForTier(s, 'pro').driverFleetRate,
+        passengerFleetRate: ratesForTier(s, 'free').passengerFleetRate,
+      }),
+      makeArgs(),
+    );
     expect(split.driverFleetCut).toBe(20); // 2%
     expect(split.passengerFleetCut).toBe(5); // 0.5%
     expect(split.velocityNet).toBe(975);
