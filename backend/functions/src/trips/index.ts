@@ -850,10 +850,22 @@ export const completeTrip = onCall(async (req) => {
   // Firestore forbids reading after writing inside a transaction, so the plan is
   // assembled here and only the writes happen under `tx` below.
   const preTrip = await tripRef.get();
+  // Cash pools carry riders beyond the primary passenger, and each may have a
+  // different partner behind them. Wallet pools settle solo (only the host's
+  // fare is held), so co-riders are only credited on cash pools.
+  const prePassengerId = preTrip.get('passengerId') as string;
+  const coRiderIds =
+    preTrip.get('pool') === true &&
+    ((preTrip.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash'
+      ? ((preTrip.get('poolMembers') as string[] | undefined) ?? []).filter(
+          (uid) => uid !== prePassengerId,
+        )
+      : [];
   const partnerPlan = await preparePartnerCredit({
     tripId,
     driverId: ctx.uid,
-    passengerId: preTrip.get('passengerId') as string,
+    passengerId: prePassengerId,
+    coRiderIds,
     pickup: (preTrip.get('pickup') as { lat: number; lng: number } | undefined) ?? null,
     dropoff: (preTrip.get('dropoff') as { lat: number; lng: number } | undefined) ?? null,
     startedAt: (preTrip.get('startedAt') as Timestamp | undefined)?.toDate() ?? null,
@@ -913,6 +925,14 @@ export const completeTrip = onCall(async (req) => {
     // this. `applyPartnerCredit` pays the franchise first, then each fleet, and
     // hands back what is left, so Velocity's net can reach zero but never go
     // below it however the admin sets the rates.
+    // Each rider's own fare, so a passenger-side partner is paid on the
+    // commission their recruit's seat produced — not on the whole car.
+    const perSeat =
+      isPool && paymentMethod === 'cash' && poolMembers.length > 1
+        ? poolPerSeatFare(lockedFare, poolMembers.length)
+        : null;
+    const fareFor = (uid: string): number => poolFares?.[uid] ?? perSeat ?? grossFare;
+
     const partnerCredit = applyPartnerCredit(tx, partnerPlan, {
       tripId,
       driverId: ctx.uid,
@@ -921,6 +941,8 @@ export const completeTrip = onCall(async (req) => {
       platformCommission: s.commission,
       franchiseCut,
       paymentMethod,
+      passengerFare: fareFor(passengerId),
+      coRiderFares: Object.fromEntries(coRiderIds.map((uid) => [uid, fareFor(uid)])),
     });
     const velocityNet = partnerCredit.velocityNet;
 

@@ -160,7 +160,9 @@ describe('a driver recruited by a FREE partner completes a ride', () => {
     expect(settlement.driverFleetCut).toBe(1);
     expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.005));
 
-    const txn = await db().doc(`partner_transactions/${tripId}_${PARTNER}`).get();
+    // Receipts are keyed by trip + member + role, so one partner with edges on
+    // both sides of a ride keeps one row per edge.
+    const txn = await db().doc(`partner_transactions/${tripId}_${DRIVER}_driver`).get();
     expect(txn.exists).toBe(true);
     expect(txn.get('tier')).toBe('free');
     expect(txn.get('fleetCommission')).toBe(1);
@@ -217,7 +219,7 @@ describe('a driver recruited by a PRO partner completes the same ride', () => {
     expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.02));
     expect(settlement.velocityNet).toBe(98);
 
-    const txn = await db().doc(`partner_transactions/${tripId}_${PARTNER}`).get();
+    const txn = await db().doc(`partner_transactions/${tripId}_${DRIVER}_driver`).get();
     expect(txn.get('tier')).toBe('pro');
     expect(txn.get('fleetCommission')).toBe(2);
 
@@ -275,12 +277,20 @@ describe('collusion — one partner owns both sides of the ride', () => {
     expect(w.lifetimeEarnings).toBe(0);
 
     // But the ride is still visible to the partner, marked — not silently gone.
-    const txn = await db().doc(`partner_transactions/${tripId}_${PARTNER}`).get();
-    expect(txn.exists).toBe(true);
-    expect(txn.get('rideStatus')).toBe('scam');
-    expect(txn.get('status')).toBe('reversed');
-    expect(txn.get('fleetCommission')).toBe(0);
-    expect(txn.get('fraudReason')).toBeTruthy();
+    // The partner owns BOTH edges here, so there is one receipt per edge rather
+    // than one overwriting the other.
+    const rows = await db()
+      .collection('partner_transactions')
+      .where('tripId', '==', tripId)
+      .get();
+    expect(rows.size).toBe(2);
+    for (const txn of rows.docs) {
+      expect(txn.get('partnerId')).toBe(PARTNER);
+      expect(txn.get('rideStatus')).toBe('scam');
+      expect(txn.get('status')).toBe('reversed');
+      expect(txn.get('fleetCommission')).toBe(0);
+      expect(txn.get('fraudReason')).toBeTruthy();
+    }
 
     // And it is on the fraud desk.
     const logs = await db()
