@@ -1,10 +1,20 @@
 /**
  * Earn with Velocity — the partner application.
  *
- * Two tiers. Free asks for a CNIC and a verified mobile, nothing more. Pro asks
- * for the same plus proof that the registration fee was paid, because Pro earns
- * roughly four times what free earns and the fee is the only thing between "a
- * partner" and "anyone who would like the higher rate".
+ * Two steps, because the old single scroll buried the tier choice under the
+ * form. Step 1 is only the choice: Free or Pro, with the rates side by side.
+ * Step 2 is the details for whichever tier was picked — so a Free applicant
+ * never scrolls past bank accounts that don't apply to them.
+ *
+ * Two tiers. Free asks for an identity document and a verified mobile, nothing
+ * more. Pro asks for the same plus proof that the registration fee was paid,
+ * because Pro earns roughly four times what free earns and the fee is the only
+ * thing between "a partner" and "anyone who would like the higher rate".
+ *
+ * The ID doesn't have to be a CNIC — a university card, driving licence or
+ * passport also proves who someone is, and students are exactly the people the
+ * program wants recruiting. The strict 13-digit format is only enforced when
+ * the document actually is a CNIC.
  *
  * The Pro accounts and the fee come from the backend rather than being baked in,
  * so an admin can change a bank account without shipping a new build — and so
@@ -33,7 +43,7 @@ import { PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 
 import { api } from '../../../src/api/client';
-import type { PartnerTier, PartnerTiers, WithdrawalMethod } from '../../../src/api/client';
+import type { IdDocType, PartnerTier, PartnerTiers, WithdrawalMethod } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { auth, firebaseConfig } from '../../../src/firebase';
@@ -54,18 +64,37 @@ function formatCnic(raw: string): string {
 
 const pct = (rate: number) => `${(rate * 100).toFixed(rate * 100 % 1 === 0 ? 0 : 1)}%`;
 
+const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+/** "Rs 50,000", "$175", "500 AED" — however the admin configured the fee. */
+function feeLabel(amount: number, currency: string): string {
+  if (currency === 'PKR') return `Rs ${thousands(amount)}`;
+  if (currency === 'USD') return `$${thousands(amount)}`;
+  return `${thousands(amount)} ${currency}`;
+}
+
+const ID_TYPES: { key: IdDocType; label: string }[] = [
+  { key: 'cnic', label: '🪪 CNIC' },
+  { key: 'university_card', label: '🎓 University card' },
+  { key: 'driving_license', label: '🚗 Driving licence' },
+  { key: 'passport', label: '🛂 Passport' },
+  { key: 'other', label: '📇 Other ID' },
+];
+
 export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
 
+  const [step, setStep] = useState<'tier' | 'details'>('tier');
   const [tiers, setTiers] = useState<PartnerTiers | null>(null);
   const [tiersError, setTiersError] = useState(false);
   const [tier, setTier] = useState<PartnerTier>('free');
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState('');
-  const [cnic, setCnic] = useState('');
+  const [idType, setIdType] = useState<IdDocType>('cnic');
+  const [idNumber, setIdNumber] = useState('');
   const [front, setFront] = useState<string | null>(null);
   const [back, setBack] = useState<string | null>(null);
   const [terms, setTerms] = useState(false);
@@ -100,21 +129,30 @@ export default function PartnerApply() {
   useEffect(loadTiers, []);
 
   const isPro = tier === 'pro';
+  const isCnic = idType === 'cnic';
 
   const valid = useMemo(
     () =>
       !!tiers &&
       fullName.trim().length >= 2 &&
       city.trim().length >= 2 &&
-      CNIC_RE.test(cnic) &&
+      (isCnic ? CNIC_RE.test(idNumber) : idNumber.trim().length >= 4) &&
       !!front &&
-      !!back &&
+      // Only a CNIC has a back worth reading; other IDs may be one-sided.
+      (!isCnic || !!back) &&
       !!phone &&
       terms &&
       // The one extra thing Pro asks for.
       (!isPro || !!proof),
-    [tiers, fullName, city, cnic, front, back, phone, terms, isPro, proof],
+    [tiers, fullName, city, isCnic, idNumber, front, back, phone, terms, isPro, proof],
   );
+
+  function pickIdType(next: IdDocType) {
+    setIdType(next);
+    // A number typed for another document won't be CNIC-shaped; reformat what
+    // we can and let validation ask for the rest.
+    if (next === 'cnic') setIdNumber((n) => formatCnic(n));
+  }
 
   async function sendOtp() {
     const digits = phoneDigits.replace(/\D/g, '').replace(/^0/, '');
@@ -167,7 +205,7 @@ export default function PartnerApply() {
       // the admin queue with broken images and get rejected for no reason.
       const [frontUp, backUp, proofUp] = await Promise.all([
         uploadCnicDoc(user.uid, 'front', front!),
-        uploadCnicDoc(user.uid, 'back', back!),
+        back ? uploadCnicDoc(user.uid, 'back', back) : Promise.resolve(null),
         isPro && proof ? uploadPartnerPaymentProof(user.uid, proof) : Promise.resolve(null),
       ]);
 
@@ -175,9 +213,10 @@ export default function PartnerApply() {
         tier,
         fullName: fullName.trim(),
         mobile: phone,
-        cnicNumber: cnic,
+        idType,
+        cnicNumber: isCnic ? idNumber : idNumber.trim(),
         cnicFrontUrl: frontUp.url,
-        cnicBackUrl: backUp.url,
+        ...(backUp ? { cnicBackUrl: backUp.url } : {}),
         city: city.trim(),
         ...(isPro && proofUp
           ? {
@@ -201,6 +240,67 @@ export default function PartnerApply() {
     }
   }
 
+  // ── Step 1: pick a plan ────────────────────────────────────────────────────
+  if (step === 'tier') {
+    return (
+      <SafeAreaView style={s.safe} edges={['bottom']}>
+        <ScrollView contentContainerStyle={s.scroll}>
+          <Text style={s.stepBadge}>Step 1 of 2</Text>
+          <Text style={s.stepTitle}>Choose your plan</Text>
+          <Text style={s.stepSub}>You can start free and upgrade to Pro later.</Text>
+
+          {tiers ? (
+            <View style={{ gap: 10, marginTop: 14 }}>
+              <TierCard
+                active={tier === 'free'}
+                onPress={() => setTier('free')}
+                name="Free Partner"
+                price="No fee"
+                driver={pct(tiers.free.driverFleetRate)}
+                passenger={pct(tiers.free.passengerFleetRate)}
+                note="Just an identity document and your mobile number."
+              />
+              <TierCard
+                active={tier === 'pro'}
+                onPress={() => setTier('pro')}
+                name="Pro Partner"
+                price={`${feeLabel(tiers.proFee, tiers.proFeeCurrency)} one-off`}
+                driver={pct(tiers.pro.driverFleetRate)}
+                passenger={pct(tiers.pro.passengerFleetRate)}
+                note="Pay the registration fee and upload the receipt."
+                highlight
+              />
+            </View>
+          ) : tiersError ? (
+            <View style={s.tiersErrorCard}>
+              <Text style={s.tiersErrorTitle}>Could not load the partner tiers</Text>
+              <Text style={s.tiersErrorBody}>
+                Check your internet connection and try again. You cannot apply until the tiers load.
+              </Text>
+              <PrimaryButton label="Retry" onPress={loadTiers} variant="secondary" />
+            </View>
+          ) : (
+            <Skeleton height={190} radius={16} />
+          )}
+
+          <Text style={s.rateNote}>
+            Rates are a share of Velocity&apos;s commission on each completed ride — not of the fare.
+            You never take money from your drivers or riders.
+          </Text>
+
+          <View style={{ marginTop: 22 }}>
+            <PrimaryButton
+              label={isPro ? 'Continue as Pro Partner' : 'Continue as Free Partner'}
+              onPress={() => setStep('details')}
+              disabled={!tiers}
+            />
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Step 2: the details ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
       <FirebaseRecaptchaVerifierModal
@@ -210,65 +310,30 @@ export default function PartnerApply() {
       />
 
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={s.label}>Choose your tier</Text>
-        {tiers ? (
-          <View style={{ gap: 10 }}>
-            <TierCard
-              active={tier === 'free'}
-              onPress={() => setTier('free')}
-              name="Free Partner"
-              price="No fee"
-              driver={pct(tiers.free.driverFleetRate)}
-              passenger={pct(tiers.free.passengerFleetRate)}
-              note="CNIC and mobile number only."
-            />
-            <TierCard
-              active={tier === 'pro'}
-              onPress={() => setTier('pro')}
-              name="Pro Partner"
-              price={`${tiers.proFeeCurrency === 'USD' ? '$' : ''}${tiers.proFee}${tiers.proFeeCurrency !== 'USD' ? ` ${tiers.proFeeCurrency}` : ''} one-off`}
-              driver={pct(tiers.pro.driverFleetRate)}
-              passenger={pct(tiers.pro.passengerFleetRate)}
-              note="Pay the registration fee and upload the receipt."
-              highlight
-            />
-          </View>
-        ) : tiersError ? (
-          <View style={s.tiersErrorCard}>
-            <Text style={s.tiersErrorTitle}>Could not load the partner tiers</Text>
-            <Text style={s.tiersErrorBody}>
-              Check your internet connection and try again. You cannot apply until the tiers load.
-            </Text>
-            <PrimaryButton label="Retry" onPress={loadTiers} variant="secondary" />
-          </View>
-        ) : (
-          <Skeleton height={190} radius={16} />
-        )}
+        <Text style={s.stepBadge}>Step 2 of 2</Text>
 
-        {tiers ? (
-          <View style={s.selectedBanner}>
+        <View style={s.selectedBanner}>
+          <View style={{ flex: 1, gap: 4 }}>
             <Text style={s.selectedBannerText}>
-              You are applying as: <Text style={s.selectedBannerTier}>{isPro ? 'Pro Partner ⭐' : 'Free Partner'}</Text>
+              Applying as: <Text style={s.selectedBannerTier}>{isPro ? 'Pro Partner ⭐' : 'Free Partner'}</Text>
             </Text>
             <Text style={s.selectedBannerHint}>
               {isPro
-                ? 'Requires CNIC, a verified mobile number, and the registration fee receipt below.'
-                : 'Requires only your CNIC and a verified mobile number — no payment.'}
+                ? 'Requires an identity document, a verified mobile number, and the registration fee receipt below.'
+                : 'Requires only an identity document and a verified mobile number — no payment.'}
             </Text>
           </View>
-        ) : null}
-
-        <Text style={s.rateNote}>
-          Rates are a share of Velocity&apos;s commission on each completed ride — not of the fare.
-          You never take money from your drivers or riders.
-        </Text>
+          <Pressable onPress={() => setStep('tier')} hitSlop={10}>
+            <Text style={s.changePlan}>Change</Text>
+          </Pressable>
+        </View>
 
         <Text style={s.label}>Full name</Text>
         <TextInput
           style={s.input}
           value={fullName}
           onChangeText={setFullName}
-          placeholder="As printed on your CNIC"
+          placeholder="As printed on your ID"
           placeholderTextColor={colors.muted}
         />
 
@@ -309,16 +374,6 @@ export default function PartnerApply() {
           </View>
         )}
 
-        <Text style={s.label}>CNIC number</Text>
-        <TextInput
-          style={s.input}
-          value={cnic}
-          onChangeText={(t) => setCnic(formatCnic(t))}
-          placeholder="12345-1234567-1"
-          placeholderTextColor={colors.muted}
-          keyboardType="number-pad"
-        />
-
         <Text style={s.label}>City</Text>
         <TextInput
           style={s.input}
@@ -328,10 +383,42 @@ export default function PartnerApply() {
           placeholderTextColor={colors.muted}
         />
 
-        <Text style={s.label}>CNIC photos</Text>
+        <Text style={s.label}>Identity document</Text>
+        <Text style={s.idHint}>
+          Any document that proves your identity — CNIC, university card, driving licence or
+          passport.
+        </Text>
+        <View style={s.idTypes}>
+          {ID_TYPES.map((t) => (
+            <Pressable
+              key={t.key}
+              style={[s.idType, idType === t.key && s.idTypeOn]}
+              onPress={() => pickIdType(t.key)}
+            >
+              <Text style={[s.idTypeLabel, idType === t.key && s.idTypeLabelOn]}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={s.label}>{isCnic ? 'CNIC number' : 'ID number'}</Text>
+        <TextInput
+          style={s.input}
+          value={idNumber}
+          onChangeText={(t) => setIdNumber(isCnic ? formatCnic(t) : t)}
+          placeholder={isCnic ? '12345-1234567-1' : 'Number printed on your ID'}
+          placeholderTextColor={colors.muted}
+          keyboardType={isCnic ? 'number-pad' : 'default'}
+          autoCapitalize="characters"
+        />
+
+        <Text style={s.label}>{isCnic ? 'CNIC photos' : 'ID photos'}</Text>
         <View style={s.uploadRow}>
           <UploadTile label="Front side" uri={front} onPick={() => pickPhoto(setFront)} />
-          <UploadTile label="Back side" uri={back} onPick={() => pickPhoto(setBack)} />
+          <UploadTile
+            label={isCnic ? 'Back side' : 'Back side (optional)'}
+            uri={back}
+            onPick={() => pickPhoto(setBack)}
+          />
         </View>
 
         {/* ── Pro: pay the fee, then prove it ── */}
@@ -339,11 +426,7 @@ export default function PartnerApply() {
           <>
             <Text style={s.label}>Pay the registration fee</Text>
             <View style={s.payCard}>
-              <Text style={s.payFee}>
-                {tiers.proFeeCurrency === 'USD' ? '$' : ''}
-                {tiers.proFee}
-                {tiers.proFeeCurrency !== 'USD' ? ` ${tiers.proFeeCurrency}` : ''}
-              </Text>
+              <Text style={s.payFee}>{feeLabel(tiers.proFee, tiers.proFeeCurrency)}</Text>
               <Text style={s.payHint}>Send it to any one of these, then upload the screenshot.</Text>
 
               <Account
@@ -406,6 +489,9 @@ export default function PartnerApply() {
           disabled={!valid}
         />
         {!phone ? <Text style={s.blocker}>Verify your mobile number to submit.</Text> : null}
+        {!front || (isCnic && !back) ? (
+          <Text style={s.blocker}>Upload your ID {isCnic ? 'photos' : 'photo'} to submit.</Text>
+        ) : null}
         {isPro && !proof ? (
           <Text style={s.blocker}>Upload your payment screenshot to submit.</Text>
         ) : null}
@@ -524,6 +610,16 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 20, paddingBottom: 44 },
 
+  stepBadge: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  stepTitle: { color: colors.text, fontSize: 22, fontWeight: '900', marginTop: 6 },
+  stepSub: { color: colors.muted, fontSize: 13, marginTop: 4, lineHeight: 18 },
+
   label: { color: colors.text, fontSize: 13, fontWeight: '800', marginTop: 18, marginBottom: 8 },
   input: {
     backgroundColor: colors.surface,
@@ -575,17 +671,34 @@ const s = StyleSheet.create({
   selectedPillText: { color: colors.btnText, fontSize: 11, fontWeight: '900' },
 
   selectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 14,
     padding: 14,
-    marginTop: 12,
-    gap: 4,
+    marginTop: 10,
   },
   selectedBannerText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   selectedBannerTier: { color: colors.text, fontSize: 14, fontWeight: '900' },
   selectedBannerHint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  changePlan: { color: colors.primary, fontSize: 13, fontWeight: '800' },
+
+  idHint: { color: colors.muted, fontSize: 12, lineHeight: 17, marginBottom: 10 },
+  idTypes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  idType: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  idTypeOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  idTypeLabel: { color: colors.muted, fontSize: 13, fontWeight: '700' },
+  idTypeLabelOn: { color: colors.text },
 
   tiersErrorCard: {
     backgroundColor: colors.surface,
@@ -594,6 +707,7 @@ const s = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     gap: 10,
+    marginTop: 14,
   },
   tiersErrorTitle: { color: colors.danger, fontSize: 15, fontWeight: '900' },
   tiersErrorBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },

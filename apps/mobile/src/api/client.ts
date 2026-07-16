@@ -689,13 +689,19 @@ export interface MyReferral {
   boundAt?: number | null;
 }
 
+/** Which document the applicant's ID photos show. */
+export type IdDocType = 'cnic' | 'university_card' | 'driving_license' | 'passport' | 'other';
+
 export interface PartnerApplicationInput {
   tier: PartnerTier;
   fullName: string;
   mobile: string;
+  idType: IdDocType;
+  /** The number printed on the ID — hyphenated 13 digits when it is a CNIC. */
   cnicNumber: string;
   cnicFrontUrl: string;
-  cnicBackUrl: string;
+  /** Required for a CNIC; other documents may not have a meaningful back. */
+  cnicBackUrl?: string;
   city: string;
   /** Pro only — a screenshot of the registration-fee transfer. */
   paymentProofUrl?: string;

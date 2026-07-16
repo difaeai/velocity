@@ -1,14 +1,16 @@
 /**
  * Partner Program — applications and admin review.
  * ----------------------------------------------------------------------------
- * Nobody self-serves into a fleet owner. They apply with their CNIC, a human
- * looks at the documents, and only an approval mints the `partners/{uid}` doc
+ * Nobody self-serves into a fleet owner. They apply with an identity document
+ * (CNIC, university card, licence, passport), a human looks at the documents,
+ * and only an approval mints the `partners/{uid}` doc
  * that the dashboard and every earning path key off. `requirePartner()` is the
  * single gate — if there is no approved partner doc, there is no program.
  *
  * TIERS
  * -----
- * A free application needs a CNIC and a verified mobile, nothing else. A Pro
+ * A free application needs an identity document and a verified mobile, nothing
+ * else. A Pro
  * application additionally needs proof that the registration fee was paid — a
  * screenshot of the transfer — because Pro earns roughly four times what free
  * earns and the fee is the only thing standing between "a partner" and "anyone
@@ -36,14 +38,26 @@ import type { PartnerApplicationStatus, PartnerTier } from './types';
 /** 13 digits, hyphenated — the format printed on the card. Matches users/cnic. */
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
+/**
+ * Any government or institutional document that proves who the applicant is.
+ * A CNIC is preferred but not everyone carries one — students apply with a
+ * university card. The strict 13-digit format is only enforced when the
+ * document actually is a CNIC; the field names stay `cnic*` because that is
+ * what every existing application document and index already uses.
+ */
+const ID_TYPES = ['cnic', 'university_card', 'driving_license', 'passport', 'other'] as const;
+
 const submitSchema = z
   .object({
     tier: z.enum(['free', 'pro']),
     fullName: z.string().trim().min(2).max(100),
     mobile: z.string().trim().min(10).max(20),
-    cnicNumber: z.string().trim().regex(CNIC_RE, 'CNIC must look like 12345-1234567-1'),
+    /** Which document the photos show. Older clients never send it → CNIC. */
+    idType: z.enum(ID_TYPES).default('cnic'),
+    cnicNumber: z.string().trim().min(4).max(40),
     cnicFrontUrl: z.string().url().max(2048),
-    cnicBackUrl: z.string().url().max(2048),
+    /** The back side only exists to read on a CNIC; optional for other IDs. */
+    cnicBackUrl: z.string().url().max(2048).optional(),
     city: z.string().trim().min(2).max(80),
     /** Pro only: screenshot of the registration-fee transfer. */
     paymentProofUrl: z.string().url().max(2048).optional(),
@@ -61,6 +75,14 @@ const submitSchema = z
   .refine((d) => d.tier !== 'pro' || !!d.paymentMethod, {
     message: 'Tell us which account you paid into.',
     path: ['paymentMethod'],
+  })
+  .refine((d) => d.idType !== 'cnic' || CNIC_RE.test(d.cnicNumber), {
+    message: 'CNIC must look like 12345-1234567-1',
+    path: ['cnicNumber'],
+  })
+  .refine((d) => d.idType !== 'cnic' || !!d.cnicBackUrl, {
+    message: 'Upload both sides of your CNIC.',
+    path: ['cnicBackUrl'],
   });
 
 const reviewSchema = z.object({
@@ -129,7 +151,8 @@ export const submitPartnerApplication = onCall(async (req) => {
   if (!input.success) invalid(input.error.issues[0]?.message ?? 'Invalid application.');
   const data = input.data;
 
-  const docs = [data.cnicFrontUrl, data.cnicBackUrl];
+  const docs = [data.cnicFrontUrl];
+  if (data.cnicBackUrl) docs.push(data.cnicBackUrl);
   if (data.paymentProofUrl) docs.push(data.paymentProofUrl);
   for (const url of docs) {
     if (!isOwnStorageUrl(url)) invalid('Documents must be uploaded to Velocity storage.');
@@ -157,9 +180,9 @@ export const submitPartnerApplication = onCall(async (req) => {
     invalid('Submit the same mobile number you verified with the OTP.');
   }
 
-  // One CNIC, one partner. Two accounts holding the same card is the cheapest
-  // way to farm referrals, so it is blocked at the door rather than unwound
-  // later by the fraud engine.
+  // One ID document, one partner. Two accounts holding the same card is the
+  // cheapest way to farm referrals, so it is blocked at the door rather than
+  // unwound later by the fraud engine.
   const cnicClash = await db
     .collection('partner_applications')
     .where('cnicNumber', '==', data.cnicNumber)
@@ -178,9 +201,10 @@ export const submitPartnerApplication = onCall(async (req) => {
     tier: data.tier as PartnerTier,
     fullName: data.fullName,
     mobile: claimed,
+    idType: data.idType,
     cnicNumber: data.cnicNumber,
     cnicFrontUrl: data.cnicFrontUrl,
-    cnicBackUrl: data.cnicBackUrl,
+    cnicBackUrl: data.cnicBackUrl ?? null,
     city: data.city,
     photoURL: userSnap.get('photoURL') ?? null,
     // Pro only. The fee is snapshotted as it stood when they paid, so an admin
