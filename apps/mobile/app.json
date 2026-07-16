@@ -21,11 +21,6 @@
     },
     "android": {
       "package": "com.velocityridzpk.app",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg"
-        }
-      },
       "adaptiveIcon": {
         "backgroundColor": "#00000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
