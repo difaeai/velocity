@@ -7,6 +7,8 @@ import { requireRole, requireAuth, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { computeSettlement } from '../domain/fares';
+import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import {
   DRIVER_END_RIDE_SLACK_M,
   distanceM,
@@ -197,6 +199,38 @@ export const completePoolRide = onCall(async (req) => {
   const driverRef = db.doc(`drivers/${ctx.uid}`);
   const adminDropRadiusM = await getAdminDropRadiusM();
 
+  // Partner Program: pool rides pay fleet owners exactly like ordinary trips —
+  // a share of the platform commission, never of the fare. The referral lookups
+  // and fraud checks run queries, and Firestore forbids reads after writes in a
+  // transaction, so the plan is assembled here and only written under `tx`.
+  const [preRide, prePassengers, commissionSettings] = await Promise.all([
+    rideRef.get(),
+    db.collection(`poolRides/${rideId}/passengers`).get(),
+    getCommissionSettings(),
+  ]);
+  const preRiders = prePassengers.docs
+    .filter((d) => d.get('status') === 'picked_up')
+    .map((d) => d.id);
+  const prePickup  = preRide.get('pickup')  as { lat?: number; lng?: number } | undefined;
+  const preDropoff = preRide.get('dropoff') as { lat?: number; lng?: number } | undefined;
+  const partnerPlan = preRiders.length
+    ? await preparePartnerCredit({
+        tripId: rideId,
+        driverId: ctx.uid,
+        passengerId: preRiders[0],
+        coRiderIds: preRiders.slice(1),
+        pickup: hasRealCoords(prePickup?.lat, prePickup?.lng)
+          ? { lat: prePickup!.lat!, lng: prePickup!.lng! }
+          : null,
+        dropoff: hasRealCoords(preDropoff?.lat, preDropoff?.lng)
+          ? { lat: preDropoff!.lat!, lng: preDropoff!.lng! }
+          : null,
+        startedAt:
+          (preRide.get('allBoardedAt') as FirebaseFirestore.Timestamp | undefined)?.toDate() ??
+          null,
+      })
+    : null;
+
   await db.runTransaction(async (tx) => {
     // Transactional reads must all happen before the first write.
     const [rideSnap, driverSnap] = await Promise.all([tx.get(rideRef), tx.get(driverRef)]);
@@ -263,11 +297,39 @@ export const completePoolRide = onCall(async (req) => {
       );
     }
 
+    // Partner Program: fleet owners are paid out of the platform commission on
+    // this ride — never out of the fare, so the driver's cash take is untouched.
+    // Every rider aboard is credited to their own recruiter at their own seat's
+    // share of the commission.
+    let partnerRideStatus: string | null = null;
+    if (partnerPlan && grossFare > 0) {
+      const commission = computeSettlement(
+        grossFare,
+        Math.max(1, pickedUp.length),
+        commissionSettings.rate,
+      ).commission;
+      const credit = applyPartnerCredit(tx, partnerPlan, {
+        tripId: rideId,
+        driverId: ctx.uid,
+        passengerId: preRiders[0],
+        grossFare,
+        platformCommission: commission,
+        // The franchise is senior to the fleets, capped at the commission so
+        // partner math can never push Velocity's net below zero.
+        franchiseCut: franchiseId ? Math.min(Math.round(grossFare * 0.05), commission) : 0,
+        paymentMethod: 'cash',
+        passengerFare: perSeatFare,
+        coRiderFares: Object.fromEntries(preRiders.slice(1).map((uid) => [uid, perSeatFare])),
+      });
+      partnerRideStatus = credit.rideStatus;
+    }
+
     tx.set(
       rideRef,
       {
         status:      'completed',
         grossFare,
+        ...(partnerRideStatus ? { partnerRideStatus } : {}),
         completedAt: FieldValue.serverTimestamp(),
         updatedAt:   FieldValue.serverTimestamp(),
       },

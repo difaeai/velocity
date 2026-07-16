@@ -125,12 +125,12 @@ export default function ProfileScreen() {
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
-          <Pressable style={styles.listItem} onPress={() => comingSoon('Discounts')}>
+          <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>
               <View>
-                <Text style={styles.itemTitle}>Discounts</Text>
-                <Text style={styles.itemSubtitle}>Enter promo code</Text>
+                <Text style={styles.itemTitle}>Referral code</Text>
+                <Text style={styles.itemSubtitle}>Enter a partner&apos;s 5-digit code</Text>
               </View>
             </View>
             <Text style={styles.chevron}>➔</Text>
