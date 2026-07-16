@@ -59,6 +59,16 @@ export interface PartnerCreditPlan {
   assessment: FraudAssessment;
 }
 
+/**
+ * The slice of a ride's commission attributable to one rider's fare. The fare
+ * is clamped to the gross so corrupted pool data can skew one rider's share
+ * but never claim more than the whole commission.
+ */
+function commissionShare(commission: number, fare: number, grossFare: number): number {
+  if (!(grossFare > 0)) return 0;
+  return Math.round((commission * Math.min(fare, grossFare)) / grossFare);
+}
+
 /** No referrals on either side — the overwhelmingly common case, and free. */
 const NO_PARTNERS: PartnerCreditPlan = {
   driverEdge: null,
@@ -110,7 +120,7 @@ export async function preparePartnerCredit(args: PrepareArgs): Promise<PartnerCr
     if (!driverEdge && !passengerEdge && coRiderRaw.every((e) => !e)) return NO_PARTNERS;
 
     const settings = await getPartnerSettings();
-    const assessment = await assessRide({
+    let assessment = await assessRide({
       tripId: args.tripId,
       driverId: args.driverId,
       passengerId: args.passengerId,
@@ -121,6 +131,26 @@ export async function preparePartnerCredit(args: PrepareArgs): Promise<PartnerCr
       startedAt: args.startedAt ?? null,
       completedAt: new Date(),
     });
+
+    // assessRide catches the driver's fleet owner riding as the PRIMARY
+    // passenger; a pool lets them take any other seat instead — with or
+    // without a referral edge of their own — and farm the driver-side cut on
+    // a ride they staged. Same fraud, same verdict: the whole ride pays zero.
+    if (
+      assessment.status === 'completed' &&
+      driverEdge &&
+      coRiderIds.includes(driverEdge.partnerId)
+    ) {
+      const reason = 'The fleet owner was a rider on their own driver’s pool ride.';
+      await logFraud({
+        kind: 'collusion',
+        partnerId: driverEdge.partnerId,
+        subjectUid: args.driverId,
+        detail: reason,
+        tripId: args.tripId,
+      });
+      assessment = { status: 'scam', reason, kind: 'collusion' };
+    }
 
     // Co-riders get the same collusion rules as the primary passenger: a partner
     // who owns both the driver and a rider can stage that seat, so it pays zero.
@@ -219,36 +249,11 @@ export function applyPartnerCredit(
   // zero everywhere — the rule lives here and nowhere else.
   let remaining = Math.max(0, commission - Math.max(0, args.franchiseCut));
 
-  // A passenger-side partner earns on the commission attributable to the fare
-  // THEIR recruit paid — on a solo ride that is the whole commission, on a pool
-  // it is their rider's share of it.
-  const commissionFor = (fare: number): number =>
-    args.grossFare > 0 ? Math.round((commission * fare) / args.grossFare) : 0;
+  const maturesAt = new Date(Date.now() + plan.holdHours * 3_600_000);
 
   const driverWanted = genuine && driverEdge ? partnerCut(commission, plan.driverFleetRate) : 0;
   const driverFleetCut = Math.min(remaining, driverWanted);
   remaining -= driverFleetCut;
-
-  const primaryFare = args.passengerFare ?? args.grossFare;
-  const primaryWanted =
-    genuine && passengerEdge
-      ? partnerCut(commissionFor(primaryFare), plan.passengerFleetRate)
-      : 0;
-  const primaryCut = Math.min(remaining, primaryWanted);
-  remaining -= primaryCut;
-
-  const coRiderCuts: { co: CoRiderEdge; cut: number; fare: number }[] = [];
-  for (const co of coRiderEdges) {
-    const fare = args.coRiderFares?.[co.edge.uid] ?? 0;
-    const wanted =
-      genuine && !co.flagged && fare > 0 ? partnerCut(commissionFor(fare), co.rate) : 0;
-    const cut = Math.min(remaining, wanted);
-    remaining -= cut;
-    coRiderCuts.push({ co, cut, fare });
-  }
-
-  const maturesAt = new Date(Date.now() + plan.holdHours * 3_600_000);
-
   if (driverEdge) {
     creditFleet(tx, {
       edge: driverEdge,
@@ -262,6 +267,17 @@ export function applyPartnerCredit(
       role: 'driver',
     });
   }
+
+  // A passenger-side partner earns on the commission attributable to the fare
+  // THEIR recruit paid — on a solo ride that is the whole commission, on a pool
+  // it is their rider's share of it.
+  const primaryFare = args.passengerFare ?? args.grossFare;
+  const primaryWanted =
+    genuine && passengerEdge
+      ? partnerCut(commissionShare(commission, primaryFare, args.grossFare), plan.passengerFleetRate)
+      : 0;
+  const primaryCut = Math.min(remaining, primaryWanted);
+  remaining -= primaryCut;
   if (passengerEdge) {
     creditFleet(tx, {
       edge: passengerEdge,
@@ -275,7 +291,17 @@ export function applyPartnerCredit(
       role: 'passenger',
     });
   }
-  for (const { co, cut, fare } of coRiderCuts) {
+
+  let passengerFleetCut = primaryCut;
+  for (const co of coRiderEdges) {
+    const fare = args.coRiderFares?.[co.edge.uid] ?? 0;
+    const wanted =
+      genuine && !co.flagged && fare > 0
+        ? partnerCut(commissionShare(commission, fare, args.grossFare), co.rate)
+        : 0;
+    const cut = Math.min(remaining, wanted);
+    remaining -= cut;
+    passengerFleetCut += cut;
     creditFleet(tx, {
       edge: co.edge,
       memberUid: co.edge.uid,
@@ -292,9 +318,6 @@ export function applyPartnerCredit(
       role: 'passenger',
     });
   }
-
-  const passengerFleetCut =
-    primaryCut + coRiderCuts.reduce((sum, { cut }) => sum + cut, 0);
 
   return {
     driverFleetCut,
@@ -368,9 +391,7 @@ function creditFleet(
       flaggedRides: FieldValue.increment(genuine ? 0 : 1),
       totalRideValue: FieldValue.increment(genuine ? p.rideFare : 0),
       platformCommissionGenerated: FieldValue.increment(
-        genuine && args.grossFare > 0
-          ? Math.round((args.platformCommission * p.rideFare) / args.grossFare)
-          : 0,
+        genuine ? commissionShare(args.platformCommission, p.rideFare, args.grossFare) : 0,
       ),
       fleetCommissionGenerated: FieldValue.increment(cut),
       lastRideAt: now,

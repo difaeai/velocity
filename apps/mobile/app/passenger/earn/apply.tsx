@@ -50,7 +50,7 @@ import { auth, firebaseConfig } from '../../../src/firebase';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
-import { Skeleton } from '../../../src/ui/partner';
+import { formatPKR, Skeleton } from '../../../src/ui/partner';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -64,13 +64,11 @@ function formatCnic(raw: string): string {
 
 const pct = (rate: number) => `${(rate * 100).toFixed(rate * 100 % 1 === 0 ? 0 : 1)}%`;
 
-const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-
 /** "Rs 50,000", "$175", "500 AED" — however the admin configured the fee. */
 function feeLabel(amount: number, currency: string): string {
-  if (currency === 'PKR') return `Rs ${thousands(amount)}`;
-  if (currency === 'USD') return `$${thousands(amount)}`;
-  return `${thousands(amount)} ${currency}`;
+  if (currency === 'PKR') return formatPKR(amount);
+  const n = Math.round(amount).toLocaleString('en-US');
+  return currency === 'USD' ? `$${n}` : `${n} ${currency}`;
 }
 
 const ID_TYPES: { key: IdDocType; label: string }[] = [
@@ -131,20 +129,24 @@ export default function PartnerApply() {
   const isPro = tier === 'pro';
   const isCnic = idType === 'cnic';
 
+  // Shared between the submit button and the blocker hints below it, so the
+  // button can never enable while a blocker still shows (or vice versa).
+  const idNumberOk = isCnic ? CNIC_RE.test(idNumber) : idNumber.trim().length >= 4;
+  // Only a CNIC has a back worth reading; other IDs may be one-sided.
+  const photosOk = !!front && (!isCnic || !!back);
+
   const valid = useMemo(
     () =>
       !!tiers &&
       fullName.trim().length >= 2 &&
       city.trim().length >= 2 &&
-      (isCnic ? CNIC_RE.test(idNumber) : idNumber.trim().length >= 4) &&
-      !!front &&
-      // Only a CNIC has a back worth reading; other IDs may be one-sided.
-      (!isCnic || !!back) &&
+      idNumberOk &&
+      photosOk &&
       !!phone &&
       terms &&
       // The one extra thing Pro asks for.
       (!isPro || !!proof),
-    [tiers, fullName, city, isCnic, idNumber, front, back, phone, terms, isPro, proof],
+    [tiers, fullName, city, idNumberOk, photosOk, phone, terms, isPro, proof],
   );
 
   function pickIdType(next: IdDocType) {
@@ -489,7 +491,7 @@ export default function PartnerApply() {
           disabled={!valid}
         />
         {!phone ? <Text style={s.blocker}>Verify your mobile number to submit.</Text> : null}
-        {!front || (isCnic && !back) ? (
+        {!photosOk ? (
           <Text style={s.blocker}>Upload your ID {isCnic ? 'photos' : 'photo'} to submit.</Text>
         ) : null}
         {isPro && !proof ? (

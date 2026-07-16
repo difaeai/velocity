@@ -21,9 +21,9 @@
  * read at settlement, so upgrading a partner changes what their NEXT ride pays
  * and never retroactively re-prices rides already settled.
  *
- * Velocity's own net is what survives after the franchise cut and both partner
- * cuts, and it is never allowed to go negative: `splitCommission()` pays out in
- * priority order and stops when the commission is exhausted.
+ * Velocity's own net is what survives after the franchise cut and the partner
+ * cuts, and it is never allowed to go negative: `applyPartnerCredit()` pays out
+ * in priority order and stops when the commission is exhausted.
  * ----------------------------------------------------------------------------
  */
 import { db } from '../lib/firebase';
@@ -132,45 +132,6 @@ export function partnerCut(platformCommission: number, fleetRate: number): numbe
   return Math.round(platformCommission * fleetRate);
 }
 
-export interface CommissionSplit {
-  /** Paid to the driver's fleet owner. */
-  driverFleetCut: number;
-  /** Paid to the passenger's fleet owner. */
-  passengerFleetCut: number;
-  /** What Velocity keeps after the franchise and both partner cuts. */
-  velocityNet: number;
-}
-
-/**
- * Divide the platform commission between the franchise, the two fleet owners
- * and Velocity — paying in priority order and never overspending.
- *
- * The franchise is senior (it is an older, contractual arrangement, and its cut
- * is already computed by the caller), then the driver fleet, then the passenger
- * fleet. If commission runs out mid-way a later party is simply paid less, or
- * nothing. Velocity's net can reach zero but never goes below it.
- */
-export function splitCommission(args: {
-  platformCommission: number;
-  franchiseCut: number;
-  driverFleetRate: number | null;
-  passengerFleetRate: number | null;
-}): CommissionSplit {
-  const { platformCommission, franchiseCut } = args;
-
-  let remaining = Math.max(0, platformCommission - Math.max(0, franchiseCut));
-
-  const driverFleetCut = Math.min(
-    remaining,
-    args.driverFleetRate ? partnerCut(platformCommission, args.driverFleetRate) : 0,
-  );
-  remaining -= driverFleetCut;
-
-  const passengerFleetCut = Math.min(
-    remaining,
-    args.passengerFleetRate ? partnerCut(platformCommission, args.passengerFleetRate) : 0,
-  );
-  remaining -= passengerFleetCut;
-
-  return { driverFleetCut, passengerFleetCut, velocityNet: remaining };
-}
+// The payout waterfall itself — franchise first, then each fleet in priority
+// order, Velocity's net never below zero — lives in applyPartnerCredit
+// (partners/commission.ts), the one place that writes money.

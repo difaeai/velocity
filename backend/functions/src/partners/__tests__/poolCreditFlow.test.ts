@@ -201,6 +201,70 @@ describe('a pool ride with recruited people aboard', () => {
     expect(driverEdge.get('platformCommissionGenerated')).toBe(200);
   });
 
+  it('flags the whole ride when the driver’s own fleet owner takes a seat', async () => {
+    // The partner who recruited the driver climbs into a co-rider seat of their
+    // own driver's pool. That is a staged ride however you slice it — the whole
+    // ride pays zero, exactly as it would if they had been the primary rider.
+    // A fresh ride, because the shared one is already in_progress. The decoy
+    // rider's uid sorts before the owner's, so the owner lands in a CO-RIDER
+    // slot (riders are read in document-id order) — the exact gap under test.
+    const RIDE2 = 'ride-owner-seat';
+    const DECOY = 'aaa-decoy-rider';
+    await db().doc(`users/${DECOY}`).set({ gender: 'male', displayName: 'Decoy', mixedRideOk: false });
+    await db().doc(`users/${DRIVER_PARTNER}`).set({ gender: 'male', displayName: 'Owner', mixedRideOk: false });
+    await db().doc(`poolRides/${RIDE2}`).set({
+      driverId: DRIVER,
+      driverName: 'Ali',
+      genderPref: 'male_only',
+      pickup: F8_MARKAZ,
+      dropoff: BLUE_AREA,
+      pickupRadius: 500,
+      dropoffRadius: 500,
+      maxSeats: 3,
+      takenSeats: 0,
+      maleSeats: 0,
+      femaleSeats: 0,
+      genderComposition: 'male',
+      perSeatFare: PER_SEAT,
+      status: 'open',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    for (const rider of [DECOY, DRIVER_PARTNER]) {
+      await joinPoolRide.run(
+        makeReq(
+          {
+            rideId: RIDE2,
+            pickupLat: F8_MARKAZ.lat,
+            pickupLng: F8_MARKAZ.lng,
+            pickupAddress: F8_MARKAZ.address,
+            dropoffAddress: BLUE_AREA.address,
+          },
+          rider,
+        ),
+      );
+    }
+    await startPoolBoarding.run(driverReq({ rideId: RIDE2, driverLat: F8_MARKAZ.lat, driverLng: F8_MARKAZ.lng }, DRIVER));
+    for (const rider of [DECOY, DRIVER_PARTNER]) {
+      await poolArrivePassenger.run(driverReq({ rideId: RIDE2, passengerId: rider }, DRIVER));
+      await poolPassengerBoarded.run(driverReq({ rideId: RIDE2, passengerId: rider }, DRIVER));
+    }
+    await db().doc(`poolRides/${RIDE2}`).set(
+      { allBoardedAt: admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 60 * 1000) },
+      { merge: true },
+    );
+
+    await completePoolRide.run(driverReq({ rideId: RIDE2 }, DRIVER));
+
+    const ride = await db().doc(`poolRides/${RIDE2}`).get();
+    expect(ride.get('partnerRideStatus')).toBe('scam');
+    expect(await pending(DRIVER_PARTNER)).toBe(0);
+
+    const driverRow = await db().doc(`partner_transactions/${RIDE2}_${DRIVER}_driver`).get();
+    expect(driverRow.exists).toBe(true);
+    expect(driverRow.get('status')).toBe('reversed');
+    expect(driverRow.get('rideStatus')).toBe('scam');
+  });
+
   it('zeroes the seat of a rider who shares the driver’s recruiter — collusion', async () => {
     // Re-point Ahmed's edge at the DRIVER's partner: that partner now owns both
     // the driver and a rider, and can stage that seat at will.
