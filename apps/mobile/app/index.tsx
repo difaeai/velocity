@@ -8,6 +8,7 @@ import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
 import { colors } from '../src/config';
 import { LogoMark } from '../src/ui/LogoMark';
+import { WELCOME_SEEN_KEY } from './welcome';
 
 /** Entry route: sends the user to the right experience based on auth + role. */
 export default function Index() {
@@ -19,6 +20,9 @@ export default function Index() {
   // applicant is sent to the submitted-status screen so they always land back
   // on it until an admin approves them.
   const [driverStatus, setDriverStatus] = useState<string | null>(null);
+  // Whether the signed-out welcome carousel has already been shown on this
+  // device. false → show carousel; true → straight to sign-in.
+  const [welcomeSeen, setWelcomeSeen] = useState(false);
 
   useEffect(() => {
     // 3000ms matches the logo's decelerating 3D spin (2x → 1x → stop).
@@ -30,7 +34,12 @@ export default function Index() {
     if (!user) {
       setProfileComplete(false);
       setDriverStatus(null);
-      setProfileChecked(true);
+      // First launch → welcome carousel; afterwards straight to sign-in.
+      // A read failure just re-shows the carousel (it has a Skip button).
+      AsyncStorage.getItem(WELCOME_SEEN_KEY)
+        .then((v) => setWelcomeSeen(v === '1'))
+        .catch(() => setWelcomeSeen(false))
+        .finally(() => setProfileChecked(true));
       return;
     }
 
@@ -103,7 +112,7 @@ export default function Index() {
     );
   }
 
-  if (!user) return <Redirect href="/auth/sign-in" />;
+  if (!user) return <Redirect href={welcomeSeen ? '/auth/sign-in' : '/welcome'} />;
   // Approved drivers go straight to their dashboard — they never sign in again.
   if (role === 'driver') return <Redirect href="/driver/home" />;
   // A submitted (pending) driver applicant waits on the status screen.
