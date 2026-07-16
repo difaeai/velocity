@@ -6,9 +6,17 @@
  * believing that installs pay, and then watches a hundred recruits earn them
  * nothing, becomes a support ticket and a bad review. So the honest, unglamorous
  * version of the deal is stated on the way in, not buried in the terms.
+ *
+ * The pitch is only for strangers. An applicant already said yes — showing them
+ * the sales page again with their status buried at the bottom made people think
+ * their application vanished. So each stage takes over the whole screen:
+ * pending  → "Waiting for approval" with a progress timeline, every time,
+ *            until an admin decides;
+ * rejected → the admin's reason and a reapply button into the same form;
+ * approved → straight to the dashboard (fleets, performance, revenue).
  */
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
@@ -16,17 +24,91 @@ import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-nativ
 import { colors } from '../../../src/config';
 import { usePartnerStatus } from '../../../src/hooks/partner';
 import { PrimaryButton } from '../../../src/ui/components';
-import { LevelBadge, Skeleton } from '../../../src/ui/partner';
+import { Skeleton } from '../../../src/ui/partner';
 
 export default function EarnLanding() {
   const router = useRouter();
-  const { stage, rejectionReason, level } = usePartnerStatus();
+  const { stage, rejectionReason } = usePartnerStatus();
 
   // An approved partner should never see the sales pitch again — send them
   // straight to the thing they came for.
   useEffect(() => {
     if (stage === 'approved') router.replace('/passenger/earn/dashboard');
   }, [stage, router]);
+
+  if (stage === 'loading' || stage === 'approved') {
+    return (
+      <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+        <View style={{ padding: 20, gap: 14 }}>
+          <Skeleton height={150} radius={20} />
+          <Skeleton height={90} radius={16} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (stage === 'pending') {
+    return (
+      <StatusScreen
+        onBack={() => router.back()}
+        art={<WaitingArt />}
+        title="Waiting for approval"
+        body="Your application has been submitted and is with our review team. You will get a notification the moment it is decided — nothing more is needed from you."
+      >
+        <View style={s.timeline}>
+          <TimelineRow state="done" title="Application submitted" body="Your details and documents are in." />
+          <TimelineRow state="current" title="Under review" body="A human is checking your documents. This usually takes 1–2 working days." />
+          <TimelineRow state="todo" title="Approved" body="Your referral code and both fleets are created automatically." last />
+        </View>
+        <PrimaryButton
+          label="Contact support"
+          variant="secondary"
+          onPress={() => router.push('/passenger/support-chat')}
+        />
+      </StatusScreen>
+    );
+  }
+
+  if (stage === 'rejected' || stage === 'resubmit') {
+    return (
+      <StatusScreen
+        onBack={() => router.back()}
+        art={<Text style={s.statusEmoji}>📄</Text>}
+        title={stage === 'resubmit' ? 'Documents needed' : 'Application not approved'}
+        body={
+          stage === 'resubmit'
+            ? 'Our team could not verify your documents. Upload clearer ones and your application goes straight back into the queue.'
+            : 'Your application was not approved this time. You can fix the problem below and apply again.'
+        }
+      >
+        <View style={s.reasonCard}>
+          <Text style={s.reasonLabel}>Reason from our team</Text>
+          <Text style={s.reasonText}>{rejectionReason ?? 'Your application could not be approved.'}</Text>
+        </View>
+        <PrimaryButton
+          label="Upload documents & reapply"
+          onPress={() => router.push('/passenger/earn/apply')}
+        />
+      </StatusScreen>
+    );
+  }
+
+  if (stage === 'suspended') {
+    return (
+      <StatusScreen
+        onBack={() => router.back()}
+        art={<Text style={s.statusEmoji}>🚫</Text>}
+        title="Account suspended"
+        body="Your partner account is suspended and is not earning. Your history is kept. Contact support to resolve it."
+      >
+        <PrimaryButton
+          label="Contact support"
+          variant="secondary"
+          onPress={() => router.push('/passenger/support-chat')}
+        />
+      </StatusScreen>
+    );
+  }
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
@@ -41,12 +123,6 @@ export default function EarnLanding() {
         <Text style={s.sub}>
           Build your own transportation network and earn from every genuine completed ride.
         </Text>
-
-        {level ? (
-          <View style={{ alignItems: 'center', marginTop: 4 }}>
-            <LevelBadge level={level} />
-          </View>
-        ) : null}
 
         {/* The rule, stated plainly, before they commit. */}
         <View style={s.ruleCard}>
@@ -71,67 +147,119 @@ export default function EarnLanding() {
 
         <View style={s.stepsCard}>
           <Text style={s.ruleTitle}>How it works</Text>
-          <Step n={1} text="Apply on the Free or Pro tier with your CNIC." />
+          <Step n={1} text="Apply on the Free or Pro tier with your CNIC or any identity document." />
           <Step n={2} text="Our team verifies you. Both your fleets are created automatically." />
           <Step n={3} text="Share your 5-digit code — drivers and passengers both use the same one." />
           <Step n={4} text="Earn on every genuine completed ride — and withdraw." />
         </View>
 
-        <StatusPanel stage={stage} reason={rejectionReason} onApply={() => router.push('/passenger/earn/apply')} />
+        <PrimaryButton
+          label="Apply for Partner Program"
+          onPress={() => router.push('/passenger/earn/apply')}
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function StatusPanel({
-  stage,
-  reason,
-  onApply,
+/**
+ * Full-screen status page for anyone who already applied. It replaces the
+ * sales pitch entirely — an applicant's question is "where is my application?",
+ * and the answer should be the first and only thing on screen.
+ */
+function StatusScreen({
+  onBack,
+  art,
+  title,
+  body,
+  children,
 }: {
-  stage: ReturnType<typeof usePartnerStatus>['stage'];
-  reason: string | null;
-  onApply: () => void;
+  onBack: () => void;
+  art: ReactNode;
+  title: string;
+  body: string;
+  children?: ReactNode;
 }) {
-  if (stage === 'loading') return <Skeleton height={52} radius={14} />;
+  return (
+    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <Pressable style={s.back} onPress={onBack} hitSlop={10}>
+          <Text style={s.backText}>←</Text>
+        </Pressable>
 
-  if (stage === 'pending') {
-    return (
-      <View style={s.noticeCard}>
-        <Text style={s.noticeTitle}>⏳ Application under review</Text>
-        <Text style={s.noticeBody}>
-          Your application has been submitted successfully. Our team will review your documents.
-          You will receive a notification once your application is approved.
-        </Text>
-      </View>
-    );
-  }
+        <View style={s.statusArt}>{art}</View>
+        <Text style={s.h1}>{title}</Text>
+        <Text style={s.sub}>{body}</Text>
 
-  if (stage === 'suspended') {
-    return (
-      <View style={[s.noticeCard, { borderColor: colors.danger }]}>
-        <Text style={[s.noticeTitle, { color: colors.danger }]}>Account suspended</Text>
-        <Text style={s.noticeBody}>
-          Your partner account is suspended and is not earning. Contact support to resolve it.
-        </Text>
-      </View>
-    );
-  }
+        {children}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
 
-  if (stage === 'rejected' || stage === 'resubmit') {
-    return (
-      <View style={{ gap: 12 }}>
-        <View style={[s.noticeCard, { borderColor: colors.danger }]}>
-          <Text style={[s.noticeTitle, { color: colors.danger }]}>
-            {stage === 'resubmit' ? 'Documents needed' : 'Application rejected'}
-          </Text>
-          <Text style={s.noticeBody}>{reason ?? 'Your application could not be approved.'}</Text>
+function TimelineRow({
+  state,
+  title,
+  body,
+  last,
+}: {
+  state: 'done' | 'current' | 'todo';
+  title: string;
+  body: string;
+  last?: boolean;
+}) {
+  return (
+    <View style={s.tlRow}>
+      <View style={s.tlRail}>
+        <View
+          style={[
+            s.tlDot,
+            state === 'done' && s.tlDotDone,
+            state === 'current' && s.tlDotCurrent,
+          ]}
+        >
+          {state === 'done' ? <Text style={s.tlCheck}>✓</Text> : null}
+          {state === 'current' ? <View style={s.tlDotInner} /> : null}
         </View>
-        <PrimaryButton label="Fix and resubmit" onPress={onApply} />
+        {!last ? (
+          <View style={[s.tlLine, state === 'done' && { backgroundColor: colors.primary }]} />
+        ) : null}
       </View>
-    );
-  }
+      <View style={{ flex: 1, paddingBottom: last ? 0 : 18 }}>
+        <Text style={[s.tlTitle, state === 'todo' && { color: colors.muted }]}>{title}</Text>
+        <Text style={s.tlBody}>{body}</Text>
+      </View>
+    </View>
+  );
+}
 
-  return <PrimaryButton label="Apply for Partner Program" onPress={onApply} />;
+/** A pulsing hourglass — "we have it, sit tight" in one glance. */
+function WaitingArt() {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(400),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] });
+
+  return (
+    <View style={s.waitWrap}>
+      <Animated.View style={[s.waitRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+      <View style={s.waitCircle}>
+        <Text style={s.statusEmoji}>⏳</Text>
+      </View>
+    </View>
+  );
 }
 
 function Rule({ emoji, title, body }: { emoji: string; title: string; body: string }) {
@@ -273,14 +401,73 @@ const s = StyleSheet.create({
   stepNumText: { color: colors.btnText, fontWeight: '900', fontSize: 13 },
   stepText: { color: colors.muted, fontSize: 13, flex: 1, lineHeight: 19 },
 
-  noticeCard: {
+  /* ── Applicant status screens ── */
+  statusArt: { alignItems: 'center', marginTop: 14, marginBottom: 6 },
+  statusEmoji: { fontSize: 44 },
+
+  waitWrap: { width: 108, height: 108, alignItems: 'center', justifyContent: 'center' },
+  waitRing: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: colors.primary,
+  },
+  waitCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1.5,
+    borderColor: colors.glassLimeBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  timeline: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: 20,
+    padding: 18,
+    paddingBottom: 12,
+    marginTop: 6,
+  },
+  tlRow: { flexDirection: 'row', gap: 14 },
+  tlRail: { width: 26, alignItems: 'center' },
+  tlDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tlDotDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tlDotCurrent: { borderColor: colors.primary },
+  tlDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  tlCheck: { color: colors.btnText, fontSize: 13, fontWeight: '900' },
+  tlLine: { flex: 1, width: 2, backgroundColor: colors.border, marginVertical: 3 },
+  tlTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  tlBody: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+
+  reasonCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
     borderRadius: 16,
     padding: 16,
     gap: 6,
+    marginTop: 6,
   },
-  noticeTitle: { color: colors.text, fontSize: 15, fontWeight: '900' },
-  noticeBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  reasonLabel: {
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  reasonText: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: '600' },
 });
