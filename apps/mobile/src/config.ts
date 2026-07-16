@@ -19,9 +19,15 @@ export const firebaseConfig = {
 /** Cloud Functions region — must match the backend (see backend/functions). */
 export const FUNCTIONS_REGION = 'asia-south1';
 
-/** Google Maps / Places API key (Android key from app.json — same project). */
-export const GOOGLE_MAPS_API_KEY =
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? 'AIzaSyBJlWI4cd7h0aiIEgfeJaIalH0xk93grhg';
+/**
+ * Google Maps / Places API key (client Android key — same Firebase project).
+ *
+ * NOT hardcoded: it is read from the environment (EXPO_PUBLIC_GOOGLE_MAPS_API_KEY)
+ * so the value never lives in source / a public repo. Set it in apps/mobile/.env
+ * for local runs and as an EAS secret for builds. Empty in dev falls back to no
+ * key (maps won't render) rather than shipping a real key in the bundle.
+ */
+export const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
 /**
  * Brand palette — glassmorphism edition.
