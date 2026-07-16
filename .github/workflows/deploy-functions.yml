@@ -9,6 +9,7 @@ on:
       - 'firestore.indexes.json'
       - 'storage.rules'
       - 'firebase.json'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -74,5 +75,5 @@ jobs:
         continue-on-error: true
         run: firebase deploy --only firestore:indexes --project velocity-fe379 --non-interactive
 
-      - name: Deploy Cloud Functions + Firestore rules + Storage rules
-        run: firebase deploy --only functions,firestore:rules,storage --project velocity-fe379 --non-interactive --force
+      - name: Deploy Cloud Functions + Firestore rules + Storage rules + Hosting
+        run: firebase deploy --only functions,firestore:rules,storage,hosting --project velocity-fe379 --non-interactive --force

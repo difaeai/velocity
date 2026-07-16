@@ -195,6 +195,11 @@ export function CommissionLock({
             disabled={available.length === 0}
           />
         )}
+        <Text style={styles.aiNotice}>
+          Your screenshot is checked automatically by an AI system (Anthropic). If it can&apos;t
+          be verified confidently, our team reviews it, and you can contest any decision through
+          support. See our Privacy Policy for details.
+        </Text>
       </View>
 
       {/* ── Blurred incoming rides ── */}
@@ -304,6 +309,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '600', lineHeight: 18 },
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   busyText: { fontSize: 13, color: colors.muted },
+  aiNotice: { fontSize: 11, color: colors.muted, lineHeight: 16 },
 
   blurSection: {
     backgroundColor: colors.surface,

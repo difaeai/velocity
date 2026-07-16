@@ -8,7 +8,13 @@ const { withAndroidManifest } = require('@expo/config-plugins');
  * cannot remove ones a dependency merges in. We add a `tools:node="remove"`
  * directive so the Android manifest merger drops them from the final manifest.
  */
-const PERMISSIONS_TO_REMOVE = ['android.permission.RECORD_AUDIO'];
+// SYSTEM_ALERT_WINDOW ("display over other apps") is only needed by the dev
+// overlay; the debug source-set manifest re-declares it, so release builds ship
+// without this Play-flagged permission.
+const PERMISSIONS_TO_REMOVE = [
+  'android.permission.RECORD_AUDIO',
+  'android.permission.SYSTEM_ALERT_WINDOW',
+];
 
 module.exports = function withRemovePermissions(config) {
   return withAndroidManifest(config, (cfg) => {

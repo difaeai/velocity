@@ -82,7 +82,7 @@
     <p class="lede">This policy explains what information the Velocity Rides mobile app collects,
       why we collect it, and the choices you have over your data.</p>
     <div class="meta">
-      <span><b>Effective:</b> 8 July 2026</span>
+      <span><b>Effective:</b> 16 July 2026</span>
       <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
       <span><b>Contact:</b> <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a></span>
     </div>
@@ -108,6 +108,17 @@
       <li><strong>Driver verification documents</strong> — if you register as a driver, photos
         of identity and vehicle documents you upload for verification, captured with your camera
         or chosen from your photo library.</li>
+      <li><strong>Partner verification documents</strong> — if you apply to the Earn with
+        Velocity partner program, photos of your CNIC and, for paid tiers, a screenshot of your
+        registration-fee payment.</li>
+      <li><strong>Payment screenshots</strong> — when you settle a commission or outstanding fee,
+        the payment-receipt screenshot you upload as proof of transfer. These images may show the
+        amount, the sending account name or number, and the receiving account.</li>
+      <li><strong>Chat and community content</strong> — messages, photos, shared locations, and
+        contact details you choose to send in trip chat, group chats, or direct messages, and
+        posts you publish to the community feed. If you use the in-chat contact-sharing feature,
+        the app accesses your contacts only to let you pick one; your contact list is never
+        uploaded or stored.</li>
     </ul>
     <h3>Information collected automatically</h3>
     <ul>
@@ -131,7 +142,9 @@
           <tr><td><b>Phone number</b></td><td>Account creation &amp; OTP sign-in</td><td>No</td></tr>
           <tr><td><b>Name / profile</b></td><td>Identify you to your matched driver or rider</td><td>Limited, in-trip</td></tr>
           <tr><td><b>Precise location</b></td><td>Pickup, ride matching, live tracking</td><td>Limited, in-trip</td></tr>
-          <tr><td><b>Camera / photos</b></td><td>Driver document verification</td><td>No</td></tr>
+          <tr><td><b>Camera / photos</b></td><td>Driver &amp; partner document verification, sharing photos in chat</td><td>No</td></tr>
+          <tr><td><b>Payment screenshots</b></td><td>Verify commission &amp; fee settlements (AI-assisted, see section 5)</td><td>Service provider (Anthropic)</td></tr>
+          <tr><td><b>Chat &amp; community content</b></td><td>Deliver your messages and posts to their recipients</td><td>With the people you send it to</td></tr>
           <tr><td><b>Push token / device</b></td><td>Trip &amp; account notifications</td><td>Service providers</td></tr>
           <tr><td><b>Trip activity</b></td><td>Operate and improve the service</td><td>No</td></tr>
         </tbody>
@@ -146,6 +159,8 @@
       <li>Match riders and drivers and calculate estimated fares.</li>
       <li>Show live location and trip progress during a ride.</li>
       <li>Send trip updates, account alerts, and service notifications.</li>
+      <li>Verify commission and fee payments, including with the automated (AI) check described
+        in section 5.</li>
       <li>Prevent fraud, enforce our terms, and keep the community safe.</li>
       <li>Diagnose problems and improve app reliability.</li>
     </ul>
@@ -160,22 +175,45 @@
         limited details needed to complete it (such as first name, pickup area, and live location
         during the ride).</li>
       <li><strong>Service providers</strong> — we use trusted providers to run the app, including
-        Google Firebase (notifications and app infrastructure) and Google Maps (mapping and
-        location). They process data only to provide these services to us.</li>
+        Google Firebase (notifications and app infrastructure), Google Maps (mapping and
+        location), and Anthropic (automated payment-screenshot verification, section 5). They
+        process data only to provide these services to us and are not permitted to use it for
+        their own purposes, including training AI models.</li>
       <li><strong>Legal reasons</strong> — we may disclose information if required by law or to
         protect the rights, safety, or property of users and the public.</li>
     </ul>
   </section>
 
   <section>
-    <h2><span class="n">5</span> Data retention</h2>
+    <h2><span class="n">5</span> Automated payment verification (AI)</h2>
+    <p>When you upload a payment screenshot to settle a driver commission or an outstanding
+      cancellation fee, that screenshot is analysed by an AI vision model operated by
+      Anthropic to check that it shows a genuine receipt, for the right amount, sent to a
+      Velocity account. This is disclosed on the upload screen at the moment you submit.</p>
+    <ul>
+      <li><strong>What is shared</strong> — only the screenshot you upload and the amount and
+        account it should match. No other account data, location, or chat content is sent.</li>
+      <li><strong>Limited use</strong> — Anthropic processes the image solely to return a
+        verification result to us. Under our API terms it is not used to train AI models.</li>
+      <li><strong>Human review</strong> — only a clear, confident match is approved
+        automatically. Anything uncertain is decided by a member of our team, and if your
+        payment is declined you can contest the decision by contacting
+        <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a> — a person, not the AI,
+        makes the final call.</li>
+    </ul>
+    <p>If you prefer not to have your screenshot processed this way, contact support and we
+      will verify your payment manually.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span> Data retention</h2>
     <p>We keep your information for as long as your account is active and as needed to provide the
       service, resolve disputes, and meet legal obligations. When data is no longer needed, we
       delete or anonymise it.</p>
   </section>
 
   <section>
-    <h2><span class="n">6</span> Your rights &amp; account deletion</h2>
+    <h2><span class="n">7</span> Your rights &amp; account deletion</h2>
     <p>You can request access to, correction of, or deletion of your personal data at any time.</p>
     <div class="card">
       <p style="margin-top:0"><strong>To delete your account and associated data</strong>, email
@@ -187,37 +225,38 @@
   </section>
 
   <section>
-    <h2><span class="n">7</span> Security</h2>
+    <h2><span class="n">8</span> Security</h2>
     <p>We use reasonable technical and organisational measures to protect your information against
       unauthorised access, loss, or misuse. No method of transmission or storage is completely
       secure, but we work to safeguard your data.</p>
   </section>
 
   <section>
-    <h2><span class="n">8</span> Children</h2>
+    <h2><span class="n">9</span> Children</h2>
     <p>Velocity Rides is intended for users aged 18 and over. We do not knowingly collect personal
       information from children. If you believe a child has provided us data, contact us and we
       will remove it.</p>
   </section>
 
   <section>
-    <h2><span class="n">9</span> Third-party services</h2>
+    <h2><span class="n">10</span> Third-party services</h2>
     <p>Our app relies on third-party services that have their own privacy policies:</p>
     <ul>
       <li>Google Firebase — <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a></li>
       <li>Google Maps — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
+      <li>Anthropic — <a href="https://www.anthropic.com/legal/privacy" rel="noopener">anthropic.com/legal/privacy</a></li>
     </ul>
   </section>
 
   <section>
-    <h2><span class="n">10</span> Changes to this policy</h2>
+    <h2><span class="n">11</span> Changes to this policy</h2>
     <p>We may update this Privacy Policy from time to time. When we do, we will revise the
       “Effective” date above and, where appropriate, notify you in the app. Continued use of the
       app after changes means you accept the updated policy.</p>
   </section>
 
   <section>
-    <h2><span class="n">11</span> Contact us</h2>
+    <h2><span class="n">12</span> Contact us</h2>
     <p>Questions about this policy or your data? Reach us at
       <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a>.</p>
   </section>
