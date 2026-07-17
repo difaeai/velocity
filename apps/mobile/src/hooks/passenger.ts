@@ -43,6 +43,9 @@ export function usePassengerTrips(uid?: string): { trips: Trip[]; loading: boole
 
 export interface RecentDestination {
   address: string;
+  /** Coordinates from the original trip — lets rebooking draw the route instantly. */
+  lat?: number;
+  lng?: number;
 }
 
 /**
@@ -60,7 +63,7 @@ export function useRecentDestinations(uid?: string): RecentDestination[] {
       const address = t.dropoff?.address?.trim();
       if (address && !seen.has(address.toLowerCase())) {
         seen.add(address.toLowerCase());
-        out.push({ address });
+        out.push({ address, lat: t.dropoff?.lat, lng: t.dropoff?.lng });
       }
     }
     return out;
