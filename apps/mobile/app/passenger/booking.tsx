@@ -303,10 +303,15 @@ export default function Booking() {
     setDropoff(address);
     setStage('mode');
     // Recents rebooked from past trips already know their coordinates — the
-    // route draws instantly. Free-typed destinations are geocoded in the
-    // background so the map catches up a moment later.
-    if (typeof dest !== 'string' && dest.lat != null && dest.lng != null) {
-      setDropoffCoords({ lat: dest.lat, lng: dest.lng });
+    // route draws instantly. BUT: trips booked before geocoding existed saved
+    // the rider's own location as the "destination", so coords sitting on top
+    // of the current pickup are that artifact, not a real drop-off — those go
+    // through the geocoder like a free-typed address.
+    const known = typeof dest !== 'string' && dest.lat != null && dest.lng != null
+      ? { lat: dest.lat, lng: dest.lng }
+      : null;
+    if (known && (!coords || haversineKm(coords, known) > 0.25)) {
+      setDropoffCoords(known);
       return;
     }
     setDropoffCoords(null);
