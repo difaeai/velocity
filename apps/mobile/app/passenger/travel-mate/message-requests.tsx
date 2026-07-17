@@ -25,6 +25,7 @@ import { useRouter } from 'expo-router';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useTravelMateThreads, type TravelThread } from '../../../src/hooks/travelMateCommunity';
+import { MailIcon } from '../../../src/ui/TabBarIcons';
 
 function timeAgo(seconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - seconds);
@@ -89,7 +90,9 @@ export default function MessageRequests() {
 
       {requests.length === 0 ? (
         <View style={s.emptyBox}>
-          <Text style={s.emptyEmoji}>✉️</Text>
+          <View style={s.emptyIconWrap}>
+            <MailIcon color={colors.primary} size={40} />
+          </View>
           <Text style={s.emptyTitle}>No message requests</Text>
           <Text style={s.emptySub}>
             When someone you haven&apos;t matched with messages you, it will land here first.
@@ -168,7 +171,12 @@ const s = StyleSheet.create({
   blurb: { fontSize: 12, color: colors.muted, lineHeight: 18, marginBottom: 4 },
 
   emptyBox:  { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
-  emptyEmoji:{ fontSize: 56 },
+  emptyIconWrap: {
+    width: 92, height: 92, borderRadius: 46,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1, borderColor: colors.glassLimeBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
   emptyTitle:{ fontSize: 20, fontWeight: '900', color: colors.text, textAlign: 'center' },
   emptySub:  { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 22 },
 
