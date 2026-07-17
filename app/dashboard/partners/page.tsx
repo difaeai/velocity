@@ -610,8 +610,11 @@ function Settings() {
   const [proFee, setProFee] = useState('50000');
   const [proFeeCurrency, setProFeeCurrency] = useState('PKR');
   const [bankName, setBankName] = useState('');
+  const [bankAccountTitle, setBankAccountTitle] = useState('');
   const [bankAccount, setBankAccount] = useState('');
+  const [easypaisaTitle, setEasypaisaTitle] = useState('');
   const [easypaisa, setEasypaisa] = useState('');
+  const [jazzcashTitle, setJazzcashTitle] = useState('');
   const [jazzcash, setJazzcash] = useState('');
   const [minWithdrawal, setMinWithdrawal] = useState('500');
   const [holdHours, setHoldHours] = useState('72');
@@ -632,8 +635,11 @@ function Settings() {
       if (typeof d.proFee === 'number') setProFee(String(d.proFee));
       if (typeof d.proFeeCurrency === 'string') setProFeeCurrency(d.proFeeCurrency);
       setBankName(d.payment?.bankName ?? '');
+      setBankAccountTitle(d.payment?.bankAccountTitle ?? '');
       setBankAccount(d.payment?.bankAccount ?? '');
+      setEasypaisaTitle(d.payment?.easypaisaTitle ?? '');
       setEasypaisa(d.payment?.easypaisaAccount ?? '');
+      setJazzcashTitle(d.payment?.jazzcashTitle ?? '');
       setJazzcash(d.payment?.jazzcashAccount ?? '');
       if (typeof d.minWithdrawal === 'number') setMinWithdrawal(String(d.minWithdrawal));
       if (typeof d.holdHours === 'number') setHoldHours(String(d.holdHours));
@@ -660,8 +666,11 @@ function Settings() {
           proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'PKR',
           payment: {
             bankName: bankName.trim() || null,
+            bankAccountTitle: bankAccountTitle.trim() || null,
             bankAccount: bankAccount.trim() || null,
+            easypaisaTitle: easypaisaTitle.trim() || null,
             easypaisaAccount: easypaisa.trim() || null,
+            jazzcashTitle: jazzcashTitle.trim() || null,
             jazzcashAccount: jazzcash.trim() || null,
           },
           minWithdrawal: Number(minWithdrawal),
@@ -717,8 +726,11 @@ function Settings() {
         ) : null}
         <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 14 }}>
           <FieldRow label="Bank name" suffix="" value={bankName} onChange={setBankName} wide />
+          <FieldRow label="Bank account title" suffix="account holder's name" value={bankAccountTitle} onChange={setBankAccountTitle} wide />
           <FieldRow label="Bank account / IBAN" suffix="" value={bankAccount} onChange={setBankAccount} wide />
+          <FieldRow label="Easypaisa account title" suffix="account holder's name" value={easypaisaTitle} onChange={setEasypaisaTitle} wide />
           <FieldRow label="Easypaisa account" suffix="" value={easypaisa} onChange={setEasypaisa} wide />
+          <FieldRow label="JazzCash account title" suffix="account holder's name" value={jazzcashTitle} onChange={setJazzcashTitle} wide />
           <FieldRow label="JazzCash account" suffix="" value={jazzcash} onChange={setJazzcash} wide />
         </div>
       </Card>

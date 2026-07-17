@@ -434,10 +434,19 @@ export default function PartnerApply() {
               <Account
                 label="Bank transfer"
                 sub={tiers.payment.bankName}
+                title={tiers.payment.bankAccountTitle}
                 value={tiers.payment.bankAccount}
               />
-              <Account label="Easypaisa" value={tiers.payment.easypaisaAccount} />
-              <Account label="JazzCash" value={tiers.payment.jazzcashAccount} />
+              <Account
+                label="Easypaisa"
+                title={tiers.payment.easypaisaTitle}
+                value={tiers.payment.easypaisaAccount}
+              />
+              <Account
+                label="JazzCash"
+                title={tiers.payment.jazzcashTitle}
+                value={tiers.payment.jazzcashAccount}
+              />
             </View>
 
             <Text style={s.label}>Which account did you pay into?</Text>
@@ -553,7 +562,18 @@ function TierCard({
 }
 
 /** An account number is useless if it cannot be copied — it gets mistyped. */
-function Account({ label, sub, value }: { label: string; sub?: string | null; value: string | null }) {
+function Account({
+  label,
+  sub,
+  title,
+  value,
+}: {
+  label: string;
+  sub?: string | null;
+  /** Account holder's name, so the applicant can verify who they're paying. */
+  title?: string | null;
+  value: string | null;
+}) {
   if (!value) {
     return (
       <View style={s.account}>
@@ -575,6 +595,7 @@ function Account({ label, sub, value }: { label: string; sub?: string | null; va
           {label}
           {sub ? ` · ${sub}` : ''}
         </Text>
+        {title ? <Text style={s.accountTitle}>{title}</Text> : null}
         <Text style={s.accountValue}>{value}</Text>
       </View>
       <Text style={s.accountCopy}>Copy</Text>
@@ -779,6 +800,7 @@ const s = StyleSheet.create({
     gap: 10,
   },
   accountLabel: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+  accountTitle: { color: colors.text, fontSize: 13, fontWeight: '700', marginTop: 2 },
   accountValue: { color: colors.text, fontSize: 15, fontWeight: '800', marginTop: 2 },
   accountMissing: { color: colors.danger, fontSize: 12, marginTop: 2 },
   accountCopy: { color: colors.primary, fontSize: 12, fontWeight: '800' },

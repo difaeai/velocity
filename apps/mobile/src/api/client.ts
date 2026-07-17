@@ -673,8 +673,11 @@ export interface PartnerTiers {
   proFeeCurrency: string;
   payment: {
     bankName: string | null;
+    bankAccountTitle: string | null;
     bankAccount: string | null;
+    easypaisaTitle: string | null;
     easypaisaAccount: string | null;
+    jazzcashTitle: string | null;
     jazzcashAccount: string | null;
   };
 }
