@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useTravelMateThreads, type TravelThread } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
+import { MailIcon } from '../../../src/ui/TabBarIcons';
 
 function timeAgo(seconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - seconds);
@@ -45,7 +46,7 @@ export default function TravelMateChats() {
       style={s.requestsRow}
       onPress={() => router.push('/passenger/travel-mate/message-requests')}
     >
-      <View style={s.requestsIcon}><Text style={{ fontSize: 18 }}>✉️</Text></View>
+      <View style={s.requestsIcon}><MailIcon color={colors.primary} size={20} /></View>
       <View style={{ flex: 1 }}>
         <Text style={s.requestsTitle}>Message requests</Text>
         <Text style={s.requestsSub} numberOfLines={1}>
