@@ -617,31 +617,7 @@ export default function Booking() {
           <Text style={styles.modeHeading}>How do you want to ride?</Text>
           <Text style={styles.modeHeadingSub}>Same route, two ways to go — switch anytime</Text>
 
-          {/* Solo — the whole car */}
-          <Pressable
-            style={({ pressed }) => [styles.modeCard, pressed && styles.modeCardPressed]}
-            onPress={() => { pickMode('solo'); setStage('details'); }}
-          >
-            <View style={styles.modeCardBody}>
-              <View style={styles.modeEyebrowRow}>
-                <SoloIcon size={15} color="#cfd6d2" accent="#cfd6d2" />
-                <Text style={styles.modeEyebrow}>SOLO</Text>
-              </View>
-              <Text style={styles.modeCardTitle}>Ride Solo</Text>
-              <Text style={styles.modeCardSub}>The whole car to yourself — fastest way from A to B.</Text>
-              <View style={styles.modePriceRow}>
-                <Text style={styles.modePrice}>PKR {soloFrom}</Text>
-                <View style={styles.modeChip}>
-                  <Text style={styles.modeChipText}>Fastest pickup</Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.modeCardArt}>
-              <CarIllustration width={112} height={58} />
-            </View>
-          </Pressable>
-
-          {/* Pool — share & save */}
+          {/* Pool — share & save (leads: it's the flagship option) */}
           <Pressable
             style={({ pressed }) => [styles.modeCard, styles.modeCardPool, pressed && styles.modeCardPressed]}
             onPress={() => { pickMode('pool'); setStage('details'); }}
@@ -666,6 +642,30 @@ export default function Booking() {
             </View>
           </Pressable>
 
+          {/* Solo — the whole car */}
+          <Pressable
+            style={({ pressed }) => [styles.modeCard, pressed && styles.modeCardPressed]}
+            onPress={() => { pickMode('solo'); setStage('details'); }}
+          >
+            <View style={styles.modeCardBody}>
+              <View style={styles.modeEyebrowRow}>
+                <SoloIcon size={15} color="#cfd6d2" accent="#cfd6d2" />
+                <Text style={styles.modeEyebrow}>SOLO</Text>
+              </View>
+              <Text style={styles.modeCardTitle}>Ride Solo</Text>
+              <Text style={styles.modeCardSub}>The whole car to yourself — fastest way from A to B.</Text>
+              <View style={styles.modePriceRow}>
+                <Text style={styles.modePrice}>PKR {soloFrom}</Text>
+                <View style={styles.modeChip}>
+                  <Text style={styles.modeChipText}>Fastest pickup</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.modeCardArt}>
+              <CarIllustration width={112} height={58} />
+            </View>
+          </Pressable>
+
           <View style={styles.modeFootRow}>
             <CashIcon size={15} color="#8f9694" accent="#8f9694" />
             <Text style={styles.modeFootText}>Pay cash · drivers bid on your offer · no surge tricks</Text>
@@ -679,17 +679,6 @@ export default function Booking() {
           {/* Compact Solo ⟷ Pool switch — the big choice already happened */}
           <View style={styles.modeToggleRow}>
             <Pressable
-              style={[styles.modePill, mode === 'solo' && styles.modePillActive]}
-              onPress={() => pickMode('solo')}
-            >
-              <SoloIcon
-                size={15}
-                color={mode === 'solo' ? '#0b0d0c' : colors.muted}
-                accent={mode === 'solo' ? '#0b0d0c' : colors.muted}
-              />
-              <Text style={[styles.modePillText, mode === 'solo' && styles.modePillTextActive]}>Solo</Text>
-            </Pressable>
-            <Pressable
               style={[styles.modePill, mode === 'pool' && styles.modePillActive]}
               onPress={() => pickMode('pool')}
             >
@@ -699,6 +688,17 @@ export default function Booking() {
                 accent={mode === 'pool' ? '#0b0d0c' : colors.muted}
               />
               <Text style={[styles.modePillText, mode === 'pool' && styles.modePillTextActive]}>Pool</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modePill, mode === 'solo' && styles.modePillActive]}
+              onPress={() => pickMode('solo')}
+            >
+              <SoloIcon
+                size={15}
+                color={mode === 'solo' ? '#0b0d0c' : colors.muted}
+                accent={mode === 'solo' ? '#0b0d0c' : colors.muted}
+              />
+              <Text style={[styles.modePillText, mode === 'solo' && styles.modePillTextActive]}>Solo</Text>
             </Pressable>
           </View>
           <Text style={styles.modeCaption}>
