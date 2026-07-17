@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 
+import { api } from '../../src/api/client';
+import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
@@ -36,6 +38,29 @@ export default function Settings() {
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
 
+  // Fleet referral state, re-fetched on focus so the row updates right after
+  // the user comes back from applying a code.
+  const [referral, setReferral] = useState<MyReferral | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      api
+        .getMyReferral({})
+        .then((r) => {
+          if (!cancelled) setReferral(r);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+  const referralValue = referral
+    ? referral.bound
+      ? (referral.partnerName ?? referral.code ?? 'Linked')
+      : 'Enter code'
+    : undefined;
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -56,10 +81,24 @@ export default function Settings() {
           <Row icon="📧" label="Email" value={user?.email ?? '—'} />
           <View style={styles.divider} />
           <Row icon="🎫" label="Account type" value={role ?? 'passenger'} />
-          <View style={styles.divider} />
-          {/* Where a passenger recruited by a Velocity partner enters their code. */}
-          <Row icon="🎁" label="Referral code" onPress={() => router.push('/referral-code')} />
         </View>
+
+        {/* Where someone recruited by a Velocity partner enters the fleet
+            owner's code. Its own section so nobody has to hunt for it. */}
+        <Text style={styles.sectionLabel}>PARTNER PROGRAM</Text>
+        <View style={styles.card}>
+          <Row
+            icon="🎁"
+            label="Referral code"
+            value={referralValue}
+            onPress={() => router.push('/referral-code')}
+          />
+        </View>
+        <Text style={styles.hint}>
+          {referral?.bound
+            ? `You're in ${referral.partnerName ?? 'a partner'}'s fleet — your fares never change because of it.`
+            : 'Got a 5-digit code from a Velocity partner? Riders and drivers enter the same code here.'}
+        </Text>
 
         <Text style={styles.sectionLabel}>PREFERENCES</Text>
         <View style={styles.card}>
@@ -125,5 +164,6 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 14, color: colors.muted },
   chevron: { fontSize: 22, color: colors.muted },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 52 },
+  hint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginLeft: 4, marginTop: -2 },
   version: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 20 },
 });

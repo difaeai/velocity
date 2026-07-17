@@ -215,6 +215,10 @@ export default function TravelMateProfile() {
           <Text style={s.shareBtnGhostText}>🚫 Blocked users</Text>
         </Pressable>
 
+        <Pressable style={s.shareBtnGhost} onPress={() => router.push('/referral-code')}>
+          <Text style={s.shareBtnGhostText}>🎁 Partner referral code</Text>
+        </Pressable>
+
         <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
