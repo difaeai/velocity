@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,9 +21,35 @@ import { colors } from '../../src/config';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
-import { useRecentDestinations } from '../../src/hooks/passenger';
-import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
+import { useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
+import {
+  usePlacesAutocomplete,
+  fetchPlaceDetail,
+  geocodeAddress,
+  type PlacePrediction,
+} from '../../src/hooks/places';
 import { LiveMap } from '../../src/ui/LiveMap';
+import { ClockIcon } from '../../src/ui/ServiceIcons';
+import { CarIllustration } from '../../src/ui/VehicleIllustrations';
+import {
+  AcIcon,
+  BoltIcon,
+  CalendarIcon,
+  CashIcon,
+  DestinationPinIcon,
+  GlobeIcon,
+  LinkIcon,
+  LockIcon,
+  MiniIcon,
+  MotoIcon,
+  PickupDotIcon,
+  PoolIcon,
+  PremiumIcon,
+  SoloIcon,
+  TicketIcon,
+  WalletIcon,
+  type RideIconProps,
+} from '../../src/ui/RideIcons';
 import {
   BASE_FARES,
   RIDE_TYPE_LABELS,
@@ -89,6 +115,21 @@ function poolFareFor(soloFare: number, extra: number): number {
   return Math.ceil(soloFare * (tier?.pct ?? 1));
 }
 
+// Vehicle catalogue for the carousel — brand SVG marks, not emoji, so every
+// Android skin renders the same thing.
+const RIDE_OPTIONS: {
+  key: RideType;
+  label: string;
+  desc: string;
+  seats: number;
+  Icon: (props: RideIconProps) => ReactElement;
+}[] = [
+  { key: 'mini',    label: 'Mini',     desc: 'Everyday, no AC',  seats: 4, Icon: MiniIcon },
+  { key: 'bike',    label: 'Moto',     desc: 'Beat the traffic', seats: 1, Icon: MotoIcon },
+  { key: 'ac',      label: 'Ride A/C', desc: 'Cool cars, AC on', seats: 4, Icon: AcIcon },
+  { key: 'comfort', label: 'Premium',  desc: 'Top sedans, AC',   seats: 4, Icon: PremiumIcon },
+];
+
 export default function Booking() {
   const router = useRouter();
   const { user } = useAuth();
@@ -99,11 +140,17 @@ export default function Booking() {
     useCurrentLocation();
   const recents = useRecentDestinations(user?.uid);
 
-  const [stage, setStage] = useState<'route' | 'details'>('route');
+  // Three explicit steps: type the route → pick Solo or Pool → tune the ride.
+  const [stage, setStage] = useState<'route' | 'mode' | 'details'>('route');
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
-  // Resolved coords for the selected dropoff place
+  // Resolved coords for the selected dropoff place — this is what puts the
+  // destination pin + route line on the map, so every selection path below
+  // (autocomplete, recents, free-typed) must eventually fill it.
   const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // A destination pick invalidates any still-running coordinate lookup from a
+  // previous pick, so a slow response can't clobber the newer selection.
+  const destSeq = useRef(0);
   // Places API (New) requires session tokens to be UUID v4
   const sessionTokenRef = useRef(uuidv4());
 
@@ -194,6 +241,11 @@ export default function Booking() {
     setFareText(String(base));
   }
 
+  function pickMode(next: 'solo' | 'pool') {
+    setMode(next);
+    if (next === 'pool' && rideType === 'bike') selectRide('mini'); // bikes have one seat — nothing to pool
+  }
+
   // Public pools near the rider — shown in Pool mode so they can hop onto an
   // existing pool instead of starting their own.
   useEffect(() => {
@@ -228,19 +280,39 @@ export default function Booking() {
   }
 
   async function selectPrediction(pred: PlacePrediction) {
+    const seq = ++destSeq.current;
     setDropoff(pred.fullText);
     setDropoffCoords(null);
-    setStage('details');
-    // Fetch real lat/lng in the background; used when creating the trip
+    setStage('mode');
+    // Fetch real lat/lng in the background; draws the route and prices the trip
     const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
-    if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
     newSession(); // rotate token after detail call closes the billing session
+    if (detail && destSeq.current === seq) {
+      setDropoffCoords({ lat: detail.lat, lng: detail.lng });
+    } else if (!detail && destSeq.current === seq) {
+      // Details call failed (key restriction, network) — geocode the text so
+      // the map still gets a pin and a route instead of silently staying blank.
+      const geo = await geocodeAddress(pred.fullText);
+      if (geo && destSeq.current === seq) setDropoffCoords({ lat: geo.lat, lng: geo.lng });
+    }
   }
 
-  function selectLocation(locName: string) {
-    setDropoff(locName);
+  function selectLocation(dest: RecentDestination | string) {
+    const seq = ++destSeq.current;
+    const address = typeof dest === 'string' ? dest : dest.address;
+    setDropoff(address);
+    setStage('mode');
+    // Recents rebooked from past trips already know their coordinates — the
+    // route draws instantly. Free-typed destinations are geocoded in the
+    // background so the map catches up a moment later.
+    if (typeof dest !== 'string' && dest.lat != null && dest.lng != null) {
+      setDropoffCoords({ lat: dest.lat, lng: dest.lng });
+      return;
+    }
     setDropoffCoords(null);
-    setStage('details');
+    geocodeAddress(address).then((geo) => {
+      if (geo && destSeq.current === seq) setDropoffCoords({ lat: geo.lat, lng: geo.lng });
+    });
   }
 
   async function submitRide() {
@@ -354,12 +426,19 @@ export default function Booking() {
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
     : recents;
 
-  // STAGE 1: ROUTE SELECTOR SCREEN (Image 1 Mockup)
+  const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
+  const fareMin = engineEst?.minAcceptableBid ?? bounds.min;
+  const fareMax = engineEst?.suggestedMaxBid  ?? bounds.max;
+
+  /* ════════════════════ STAGE 1 — ROUTE ENTRY ════════════════════ */
   if (stage === 'route') {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Enter your route</Text>
+          <View>
+            <Text style={styles.headerTitle}>Where to?</Text>
+            <Text style={styles.headerSub}>Set your destination — you name the fare</Text>
+          </View>
           <Pressable
             style={styles.closeBtn}
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
@@ -368,34 +447,39 @@ export default function Booking() {
           </Pressable>
         </View>
 
+        {/* Route rail — pickup dot, dashed leg, destination pin */}
         <View style={styles.routeInputsCard}>
-          {/* Pickup Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputIcon}>👤</Text>
+          <View style={styles.inputRow}>
+            <View style={styles.inputIconWrap}>
+              <PickupDotIcon size={19} color="rgba(255,255,255,0.75)" />
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>From</Text>
+              <Text style={styles.inputLabel}>PICKUP</Text>
               <TextInput
                 value={pickup}
                 onChangeText={setPickup}
-                placeholder="Search pickup location..."
+                placeholder="Search pickup location…"
                 placeholderTextColor={colors.muted}
                 style={styles.textInput}
               />
             </View>
           </View>
 
-          {/* Divider */}
-          <View style={styles.inputDivider} />
+          <View style={styles.railLegRow}>
+            <View style={styles.railLeg} />
+            <View style={styles.inputDivider} />
+          </View>
 
-          {/* Dropoff Input */}
-          <View style={[styles.inputContainer, styles.inputContainerActive]}>
-            <Text style={styles.inputIcon}>🔍</Text>
+          <View style={[styles.inputRow, styles.inputRowActive]}>
+            <View style={styles.inputIconWrap}>
+              <DestinationPinIcon size={19} color={colors.primary} accent={colors.primary} />
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>To</Text>
+              <Text style={[styles.inputLabel, { color: colors.primary }]}>DESTINATION</Text>
               <TextInput
                 value={dropoff}
                 onChangeText={setDropoff}
-                placeholder="Search destination..."
+                placeholder="Search destination…"
                 placeholderTextColor={colors.muted}
                 style={styles.textInput}
                 autoFocus
@@ -406,16 +490,13 @@ export default function Booking() {
                 <Text style={styles.clearTxt}>✕</Text>
               </Pressable>
             )}
-            <View style={styles.mapIconCircle}>
-              <Text style={styles.mapIcon}>🗺️</Text>
-            </View>
           </View>
         </View>
 
         {/* Section header */}
-        <View style={styles.tabsContainer}>
+        <View style={styles.resultsHeaderRow}>
           <Text style={styles.sectionHeader}>
-            {placesLoading ? 'Searching...' : (query && predictions.length > 0 ? 'Suggestions' : 'Recent destinations')}
+            {placesLoading ? 'Searching…' : (query && predictions.length > 0 ? 'Suggestions' : 'Recent destinations')}
           </Text>
           {placesLoading ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} /> : null}
         </View>
@@ -429,12 +510,13 @@ export default function Booking() {
               onPress={() => selectPrediction(pred)}
             >
               <View style={styles.resultIconCircle}>
-                <Text style={styles.resultIcon}>📍</Text>
+                <DestinationPinIcon size={17} color="#c9cfcc" />
               </View>
               <View style={styles.resultMeta}>
                 <Text style={styles.resultName} numberOfLines={1}>{pred.mainText}</Text>
                 <Text style={styles.resultAddress} numberOfLines={1}>{pred.secondaryText}</Text>
               </View>
+              <Text style={styles.resultGo}>→</Text>
             </Pressable>
           ))}
 
@@ -443,26 +525,27 @@ export default function Booking() {
             <Pressable
               key={loc.address}
               style={styles.resultItem}
-              onPress={() => selectLocation(loc.address)}
+              onPress={() => selectLocation(loc)}
             >
               <View style={styles.resultIconCircle}>
-                <Text style={styles.resultIcon}>🕒</Text>
+                <ClockIcon size={16} color="#c9cfcc" />
               </View>
               <View style={styles.resultMeta}>
                 <Text style={styles.resultName} numberOfLines={1}>{loc.address}</Text>
                 <Text style={styles.resultAddress}>Recent destination</Text>
               </View>
+              <Text style={styles.resultGo}>→</Text>
             </Pressable>
           ))}
 
           {/* API error hint */}
           {apiStatus && apiStatus !== 'OK' && apiStatus !== 'ZERO_RESULTS' && query.length > 1 && (
             <View style={styles.emptyResults}>
-              <Text style={[styles.emptyResultsText, { color: '#ef4444' }]}>
+              <Text style={[styles.emptyResultsText, { color: colors.danger }]}>
                 Places API: {apiStatus}
               </Text>
               {apiMessage ? (
-                <Text style={[styles.emptyResultsText, { color: '#ef4444', fontSize: 11, marginTop: 2 }]}>
+                <Text style={[styles.emptyResultsText, { color: colors.danger, fontSize: 11, marginTop: 2 }]}>
                   {apiMessage}
                 </Text>
               ) : null}
@@ -489,34 +572,36 @@ export default function Booking() {
     );
   }
 
-  // STAGE 2: RIDE TYPE SELECTION — one explicit Solo / Pool mode
-  const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
-  const fareMin = engineEst?.minAcceptableBid ?? bounds.min;
-  const fareMax = engineEst?.suggestedMaxBid  ?? bounds.max;
+  /* ════════════════ STAGES 2 & 3 — over the live route map ════════════════ */
+  const soloFrom = priceFor('mini');
+  const poolFrom = poolFareFor(soloFrom, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3);
 
   return (
     <View style={styles.safe}>
-      {/* Real live map showing the actual pickup → destination route */}
+      {/* Real live map: pickup pin + destination pin + road-following route */}
       <View style={styles.mapContainer}>
         <LiveMap coords={coords} pickup={coords} dropoff={dropoffCoords} />
       </View>
 
-      {/* Top: route summary */}
+      {/* Top: back + route summary */}
       <SafeAreaView style={styles.floatingHeaderArea} pointerEvents="box-none">
         <View style={styles.floatingHeaderBar}>
-          <Pressable style={styles.floatingBackBtn} onPress={() => setStage('route')}>
+          <Pressable
+            style={styles.floatingBackBtn}
+            onPress={() => setStage(stage === 'details' ? 'mode' : 'route')}
+          >
             <Text style={styles.floatingBackTxt}>←</Text>
           </Pressable>
           <View style={styles.floatingRouteCard}>
             <View style={styles.floatingRoutePoint}>
-              <Text style={styles.floatingIconBlue}>👤</Text>
+              <PickupDotIcon size={14} color="rgba(255,255,255,0.7)" />
               <Text style={styles.floatingRouteText} numberOfLines={1}>
                 {pickup.trim() || currentAddress || 'Current location'}
               </Text>
             </View>
             <View style={styles.floatingRouteDivider} />
             <View style={styles.floatingRoutePoint}>
-              <Text style={styles.floatingIconGreen}>🏁</Text>
+              <DestinationPinIcon size={14} color={colors.primary} />
               <Text style={styles.floatingRouteText} numberOfLines={1}>
                 {dropoff.trim() || 'Destination'}
               </Text>
@@ -525,340 +610,431 @@ export default function Booking() {
         </View>
       </SafeAreaView>
 
-      {/* Bottom sheet */}
-      <View style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
-        <View style={styles.dragIndicator} />
+      {stage === 'mode' ? (
+        /* ── STAGE 2: PICK YOUR RIDE STYLE ── */
+        <View style={[styles.modeSheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.dragIndicator} />
+          <Text style={styles.modeHeading}>How do you want to ride?</Text>
+          <Text style={styles.modeHeadingSub}>Same route, two ways to go — switch anytime</Text>
 
-        {/* Solo ⟷ Pool — one explicit choice; the single CTA below follows it */}
-        <View style={styles.modeToggleRow}>
+          {/* Solo — the whole car */}
           <Pressable
-            style={[styles.modeBtn, mode === 'solo' && styles.modeBtnActive]}
-            onPress={() => setMode('solo')}
+            style={({ pressed }) => [styles.modeCard, pressed && styles.modeCardPressed]}
+            onPress={() => { pickMode('solo'); setStage('details'); }}
           >
-            <Text style={[styles.modeBtnTitle, mode === 'solo' && styles.modeBtnTitleActive]}>🚗 Solo</Text>
-            <Text style={styles.modeBtnSub}>The car is yours</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modeBtn, mode === 'pool' && styles.modeBtnActive]}
-            onPress={() => {
-              setMode('pool');
-              if (rideType === 'bike') selectRide('mini'); // bikes have one seat — nothing to pool
-            }}
-          >
-            <Text style={[styles.modeBtnTitle, mode === 'pool' && styles.modeBtnTitleActive]}>🔀 Pool</Text>
-            <Text style={[styles.modeBtnSub, mode === 'pool' && { color: colors.primary }]}>
-              Share & save up to {maxSavePct}%
-            </Text>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          style={styles.alternativeList}
-          contentContainerStyle={{ paddingBottom: 12 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Vehicle type (bikes can't be pooled) */}
-          {([
-            { key: 'mini'    as RideType, label: 'Mini',     desc: 'Lower fares, no AC',       icon: '🚗', seats: 4 },
-            { key: 'bike'    as RideType, label: 'Moto',     desc: 'No traffic, lower prices', icon: '🏍️', seats: 1 },
-            { key: 'ac'      as RideType, label: 'Ride A/C', desc: 'Cars with AC',             icon: '❄️', seats: 4 },
-            { key: 'comfort' as RideType, label: 'Premium',  desc: 'Sedans with AC',           icon: '⭐', seats: 4 },
-          ] as const)
-            .filter((rt) => mode === 'solo' || rt.seats > 1)
-            .map((rt) => (
-            <Pressable
-              key={rt.key}
-              style={[styles.categoryRow, rideType === rt.key && styles.categoryRowActive]}
-              onPress={() => selectRide(rt.key)}
-            >
-              <View style={styles.categoryRowLeft}>
-                <Text style={styles.categoryEmojiSmall}>{rt.icon}</Text>
-                <View>
-                  <Text style={[styles.categoryNameSmall, rideType === rt.key && { color: colors.primary }]}>
-                    {rt.label}
-                  </Text>
-                  <Text style={styles.categorySubSmall}>
-                    {rt.seats > 1 ? `${rt.seats} seats · ` : ''}{rt.desc}
-                  </Text>
+            <View style={styles.modeCardBody}>
+              <View style={styles.modeEyebrowRow}>
+                <SoloIcon size={15} color="#cfd6d2" accent="#cfd6d2" />
+                <Text style={styles.modeEyebrow}>SOLO</Text>
+              </View>
+              <Text style={styles.modeCardTitle}>Ride Solo</Text>
+              <Text style={styles.modeCardSub}>The whole car to yourself — fastest way from A to B.</Text>
+              <View style={styles.modePriceRow}>
+                <Text style={styles.modePrice}>PKR {soloFrom}</Text>
+                <View style={styles.modeChip}>
+                  <Text style={styles.modeChipText}>Fastest pickup</Text>
                 </View>
               </View>
-              <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <Text style={[styles.categoryFareSmall, rideType === rt.key && { color: colors.primary, fontWeight: '900' }]}>
-                  PKR {priceFor(rt.key)}
-                </Text>
-                {rideType === rt.key && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>selected ✓</Text>}
-              </View>
-            </Pressable>
-          ))}
-
-          {/* Your fare offer */}
-          <View style={styles.fareCard}>
-            <View style={styles.soloFareStepper}>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
-                <Text style={styles.stepperText}>−</Text>
-              </Pressable>
-              <View style={{ alignItems: 'center', flex: 1 }}>
-                <View style={styles.fareInputRow}>
-                  <Text style={styles.fareInputPrefix}>PKR</Text>
-                  <TextInput
-                    value={fareText}
-                    onChangeText={(t) => setFareText(t.replace(/[^0-9]/g, ''))}
-                    onBlur={commitFareText}
-                    keyboardType="number-pad"
-                    style={styles.fareInput}
-                    selectTextOnFocus
-                    returnKeyType="done"
-                    onSubmitEditing={commitFareText}
-                  />
-                </View>
-                <Text style={styles.stepperLabel}>your offer · tap to edit or use − +</Text>
-              </View>
-              <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
-                <Text style={styles.stepperText}>+</Text>
-              </Pressable>
             </View>
-            <Text style={styles.fareRangeHint}>
-              {engineEst
-                ? `${distKm ? `~${distKm.toFixed(1)} km · ` : ''}Recommended PKR ${engineEst.recommendedFare} · Allowed PKR ${fareMin}–${fareMax}${engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}`
-                : `Allowed range PKR ${fareMin}–${fareMax}`}
-            </Text>
-          </View>
+            <View style={styles.modeCardArt}>
+              <CarIllustration width={112} height={58} />
+            </View>
+          </Pressable>
 
-          {mode === 'pool' && (
-            <>
-              {/* Everyone's fare drops as riders join — you always offer the solo fare */}
-              <Text style={styles.sectionLabel}>FARE PER RIDER AS PEOPLE JOIN</Text>
-              <View style={styles.poolTierTable}>
-                <View style={styles.poolTierRow}>
-                  <View style={styles.poolTierLeft}>
-                    <Text style={styles.poolTierRiders}>👤  Just you</Text>
-                  </View>
-                  <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
-                  <Text style={styles.poolTierSavingNone}>—</Text>
+          {/* Pool — share & save */}
+          <Pressable
+            style={({ pressed }) => [styles.modeCard, styles.modeCardPool, pressed && styles.modeCardPressed]}
+            onPress={() => { pickMode('pool'); setStage('details'); }}
+          >
+            <View style={styles.modeCardBody}>
+              <View style={styles.modeEyebrowRow}>
+                <PoolIcon size={15} color={colors.primary} accent={colors.primary} />
+                <Text style={[styles.modeEyebrow, { color: colors.primary }]}>POOL</Text>
+                <View style={styles.saveBadge}>
+                  <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>
                 </View>
-                {POOL_TIERS.map((tier, i) => {
-                  const tierFare = poolFareFor(fare, tier.extra);
-                  const savePct  = Math.round((1 - tier.pct) * 100);
+              </View>
+              <Text style={styles.modeCardTitle}>Ride Pool</Text>
+              <Text style={styles.modeCardSub}>Invite friends or nearby riders — everyone pays less as seats fill.</Text>
+              <View style={styles.modePriceRow}>
+                <Text style={[styles.modePrice, { color: colors.primary }]}>from PKR {poolFrom}</Text>
+                <Text style={styles.modePriceUnit}>/seat, full car</Text>
+              </View>
+            </View>
+            <View style={styles.modeCardArt}>
+              <PoolBubbles />
+            </View>
+          </Pressable>
+
+          <View style={styles.modeFootRow}>
+            <CashIcon size={15} color="#8f9694" accent="#8f9694" />
+            <Text style={styles.modeFootText}>Pay cash · drivers bid on your offer · no surge tricks</Text>
+          </View>
+        </View>
+      ) : (
+        /* ── STAGE 3: RIDE OPTIONS ── */
+        <View style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
+          <View style={styles.dragIndicator} />
+
+          {/* Compact Solo ⟷ Pool switch — the big choice already happened */}
+          <View style={styles.modeToggleRow}>
+            <Pressable
+              style={[styles.modePill, mode === 'solo' && styles.modePillActive]}
+              onPress={() => pickMode('solo')}
+            >
+              <SoloIcon
+                size={15}
+                color={mode === 'solo' ? '#0b0d0c' : colors.muted}
+                accent={mode === 'solo' ? '#0b0d0c' : colors.muted}
+              />
+              <Text style={[styles.modePillText, mode === 'solo' && styles.modePillTextActive]}>Solo</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modePill, mode === 'pool' && styles.modePillActive]}
+              onPress={() => pickMode('pool')}
+            >
+              <PoolIcon
+                size={15}
+                color={mode === 'pool' ? '#0b0d0c' : colors.muted}
+                accent={mode === 'pool' ? '#0b0d0c' : colors.muted}
+              />
+              <Text style={[styles.modePillText, mode === 'pool' && styles.modePillTextActive]}>Pool</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.modeCaption}>
+            {mode === 'pool'
+              ? `Share your ride & save up to ${maxSavePct}% — invite people right after booking`
+              : 'Private ride — the car is all yours'}
+          </Text>
+
+          <ScrollView
+            style={styles.detailsScroll}
+            contentContainerStyle={{ paddingBottom: 12 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Vehicle carousel (bikes can't be pooled) */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.vehicleRow}
+            >
+              {RIDE_OPTIONS
+                .filter((rt) => mode === 'solo' || rt.seats > 1)
+                .map((rt) => {
+                  const active = rideType === rt.key;
                   return (
-                    <View key={tier.extra} style={styles.poolTierRow}>
-                      <View style={styles.poolTierLeft}>
-                        <Text style={styles.poolTierRiders}>{tier.label}</Text>
+                    <Pressable
+                      key={rt.key}
+                      style={[styles.vehicleCard, active && styles.vehicleCardActive]}
+                      onPress={() => selectRide(rt.key)}
+                    >
+                      <View style={[styles.vehicleIconWrap, active && styles.vehicleIconWrapActive]}>
+                        <rt.Icon size={30} color={active ? colors.primary : '#e6eae8'} />
                       </View>
-                      <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
-                      <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
-                        <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
-                          -{savePct}%
-                        </Text>
-                      </View>
-                    </View>
+                      <Text style={[styles.vehicleName, active && { color: colors.primary }]}>{rt.label}</Text>
+                      <Text style={styles.vehicleDesc} numberOfLines={1}>{rt.desc}</Text>
+                      <Text style={[styles.vehiclePrice, active && { color: colors.primary }]}>
+                        PKR {priceFor(rt.key)}
+                      </Text>
+                      <Text style={styles.vehicleSeats}>{rt.seats > 1 ? `${rt.seats} seats` : '1 seat'}</Text>
+                    </Pressable>
                   );
                 })}
-              </View>
+            </ScrollView>
 
-              {/* Who can join */}
-              <Text style={styles.sectionLabel}>WHO CAN JOIN YOUR POOL</Text>
-              <View style={styles.visRow}>
-                <Pressable
-                  style={[styles.visOpt, poolVisibility === 'public' && styles.visOptActive]}
-                  onPress={() => setPoolVisibility('public')}
-                >
-                  <Text style={styles.visOptIcon}>🌍</Text>
-                  <Text style={[styles.visOptTitle, poolVisibility === 'public' && { color: colors.primary }]}>Public</Text>
-                  <Text style={styles.visOptSub}>Riders nearby can see & join</Text>
+            {/* Your fare offer */}
+            <View style={styles.fareCard}>
+              <Text style={styles.fareEyebrow}>YOUR OFFER</Text>
+              <View style={styles.fareStepperRow}>
+                <Pressable style={styles.stepperCircle} onPress={() => bumpFare(-50)}>
+                  <Text style={styles.stepperText}>−</Text>
                 </Pressable>
-                <Pressable
-                  style={[styles.visOpt, poolVisibility === 'private' && styles.visOptActive]}
-                  onPress={() => setPoolVisibility('private')}
-                >
-                  <Text style={styles.visOptIcon}>🔒</Text>
-                  <Text style={[styles.visOptTitle, poolVisibility === 'private' && { color: colors.primary }]}>Private</Text>
-                  <Text style={styles.visOptSub}>Only people with your link</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.poolShareHint}>
-                You get an invite link right after booking — share it on WhatsApp so friends can join and everyone pays less.
-              </Text>
-
-              {/* Manual code entry — mirrors the code shown on the link page */}
-              <View style={styles.poolCodeRow}>
-                <TextInput
-                  value={joinCode}
-                  onChangeText={(t) => setJoinCode(t.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  placeholder="Have an invite code?"
-                  placeholderTextColor={colors.muted}
-                  autoCapitalize="characters"
-                  style={styles.poolCodeInput}
-                  maxLength={12}
-                />
-                <Pressable
-                  style={[styles.poolCodeGoBtn, !joinCode.trim() && { opacity: 0.4 }]}
-                  disabled={!joinCode.trim()}
-                  onPress={() => router.push(`/passenger/pool-join/${joinCode.trim()}` as Parameters<typeof router.push>[0])}
-                >
-                  <Text style={styles.poolCodeGoTxt}>Open</Text>
-                </Pressable>
-              </View>
-
-              {/* Join an existing pool instead */}
-              {nearbyPools.length > 0 && (
-                <>
-                  <Text style={styles.sectionLabel}>OR JOIN A POOL NEARBY</Text>
-                  {nearbyPools.slice(0, 3).map((p) => (
-                    <Pressable
-                      key={p.code}
-                      style={styles.nearbyPoolRow}
-                      onPress={() => router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])}
-                    >
-                      <Text style={{ fontSize: 20 }}>🔀</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.nearbyPoolDest} numberOfLines={1}>{p.dropoffAddress}</Text>
-                        <Text style={styles.nearbyPoolMeta}>
-                          {p.distanceKm} km away · {p.riders} rider{p.riders > 1 ? 's' : ''} · {p.seatsLeft} seat{p.seatsLeft > 1 ? 's' : ''} left
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.nearbyPoolFare}>PKR {p.perSeatFareIfYouJoin}</Text>
-                        <Text style={styles.nearbyPoolJoin}>Join →</Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                </>
-              )}
-            </>
-          )}
-
-          {mode === 'solo' && (
-            <>
-              {/* Schedule this ride (frequent rides) */}
-              <Pressable style={styles.scheduleCard} onPress={() => setScheduleOpen(true)}>
-                <Text style={{ fontSize: 22 }}>🗓️</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.scheduleCardTitle}>Schedule this ride</Text>
-                  <Text style={styles.scheduleCardSub}>
-                    Ride this route often? We'll request it automatically at your time — no manual booking.
-                  </Text>
+                <View style={{ alignItems: 'center', flex: 1 }}>
+                  <View style={styles.fareInputRow}>
+                    <Text style={styles.fareInputPrefix}>PKR</Text>
+                    <TextInput
+                      value={fareText}
+                      onChangeText={(t) => setFareText(t.replace(/[^0-9]/g, ''))}
+                      onBlur={commitFareText}
+                      keyboardType="number-pad"
+                      style={styles.fareInput}
+                      selectTextOnFocus
+                      returnKeyType="done"
+                      onSubmitEditing={commitFareText}
+                    />
+                  </View>
+                  <Text style={styles.stepperLabel}>drivers see this — tap to edit or use − +</Text>
                 </View>
-                <Text style={styles.scheduleCardChevron}>›</Text>
+                <Pressable style={styles.stepperCircle} onPress={() => bumpFare(50)}>
+                  <Text style={styles.stepperText}>+</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.fareRangeHint}>
+                {engineEst
+                  ? `${distKm ? `~${distKm.toFixed(1)} km · ` : ''}Recommended PKR ${engineEst.recommendedFare} · Allowed PKR ${fareMin}–${fareMax}${engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}`
+                  : `Allowed range PKR ${fareMin}–${fareMax}`}
+              </Text>
+            </View>
+
+            {mode === 'pool' && (
+              <>
+                {/* Everyone's fare drops as riders join — you always offer the solo fare */}
+                <Text style={styles.sectionLabel}>FARE PER RIDER AS PEOPLE JOIN</Text>
+                <View style={styles.poolTierTable}>
+                  <View style={styles.poolTierRow}>
+                    <View style={styles.poolTierLeft}>
+                      <SoloIcon size={15} color={colors.muted} accent={colors.muted} />
+                      <Text style={styles.poolTierRiders}>Just you</Text>
+                    </View>
+                    <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
+                    <Text style={styles.poolTierSavingNone}>—</Text>
+                  </View>
+                  {POOL_TIERS.map((tier, i) => {
+                    const tierFare = poolFareFor(fare, tier.extra);
+                    const savePct  = Math.round((1 - tier.pct) * 100);
+                    return (
+                      <View key={tier.extra} style={[styles.poolTierRow, i === POOL_TIERS.length - 1 && { borderBottomWidth: 0 }]}>
+                        <View style={styles.poolTierLeft}>
+                          <PoolIcon size={15} color={colors.muted} />
+                          <Text style={styles.poolTierRiders}>{tier.label}</Text>
+                        </View>
+                        <Text style={styles.poolTierFare}>PKR {tierFare}</Text>
+                        <View style={[styles.poolTierSavingBadge, i === POOL_TIERS.length - 1 && styles.poolTierSavingBest]}>
+                          <Text style={[styles.poolTierSavingText, i === POOL_TIERS.length - 1 && { color: colors.primary }]}>
+                            -{savePct}%
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {/* Who can join */}
+                <Text style={styles.sectionLabel}>WHO CAN JOIN YOUR POOL</Text>
+                <View style={styles.visRow}>
+                  <Pressable
+                    style={[styles.visOpt, poolVisibility === 'public' && styles.visOptActive]}
+                    onPress={() => setPoolVisibility('public')}
+                  >
+                    <GlobeIcon size={19} color={poolVisibility === 'public' ? colors.primary : '#c9cfcc'} />
+                    <Text style={[styles.visOptTitle, poolVisibility === 'public' && { color: colors.primary }]}>Public</Text>
+                    <Text style={styles.visOptSub}>Riders nearby can see & join</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.visOpt, poolVisibility === 'private' && styles.visOptActive]}
+                    onPress={() => setPoolVisibility('private')}
+                  >
+                    <LockIcon size={19} color={poolVisibility === 'private' ? colors.primary : '#c9cfcc'} />
+                    <Text style={[styles.visOptTitle, poolVisibility === 'private' && { color: colors.primary }]}>Private</Text>
+                    <Text style={styles.visOptSub}>Only people with your link</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.poolShareHint}>
+                  You get an invite link right after booking — share it on WhatsApp so friends can join and everyone pays less.
+                </Text>
+
+                {/* Manual code entry — mirrors the code shown on the link page */}
+                <View style={styles.poolCodeRow}>
+                  <View style={styles.poolCodeInputWrap}>
+                    <LinkIcon size={15} color={colors.muted} accent={colors.muted} />
+                    <TextInput
+                      value={joinCode}
+                      onChangeText={(t) => setJoinCode(t.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                      placeholder="Have an invite code?"
+                      placeholderTextColor={colors.muted}
+                      autoCapitalize="characters"
+                      style={styles.poolCodeInput}
+                      maxLength={12}
+                    />
+                  </View>
+                  <Pressable
+                    style={[styles.poolCodeGoBtn, !joinCode.trim() && { opacity: 0.4 }]}
+                    disabled={!joinCode.trim()}
+                    onPress={() => router.push(`/passenger/pool-join/${joinCode.trim()}` as Parameters<typeof router.push>[0])}
+                  >
+                    <Text style={styles.poolCodeGoTxt}>Open</Text>
+                  </Pressable>
+                </View>
+
+                {/* Join an existing pool instead */}
+                {nearbyPools.length > 0 && (
+                  <>
+                    <Text style={styles.sectionLabel}>OR JOIN A POOL NEARBY</Text>
+                    {nearbyPools.slice(0, 3).map((p) => (
+                      <Pressable
+                        key={p.code}
+                        style={styles.nearbyPoolRow}
+                        onPress={() => router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])}
+                      >
+                        <View style={styles.nearbyPoolIcon}>
+                          <PoolIcon size={18} color={colors.primary} accent={colors.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.nearbyPoolDest} numberOfLines={1}>{p.dropoffAddress}</Text>
+                          <Text style={styles.nearbyPoolMeta}>
+                            {p.distanceKm} km away · {p.riders} rider{p.riders > 1 ? 's' : ''} · {p.seatsLeft} seat{p.seatsLeft > 1 ? 's' : ''} left
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.nearbyPoolFare}>PKR {p.perSeatFareIfYouJoin}</Text>
+                          <Text style={styles.nearbyPoolJoin}>Join →</Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+
+            {mode === 'solo' && (
+              <>
+                {/* Schedule this ride (frequent rides) */}
+                <Pressable style={styles.scheduleCard} onPress={() => setScheduleOpen(true)}>
+                  <View style={styles.scheduleIconWrap}>
+                    <CalendarIcon size={20} color={colors.primary} accent={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scheduleCardTitle}>Schedule this ride</Text>
+                    <Text style={styles.scheduleCardSub}>
+                      Ride this route often? We'll request it automatically at your time — no manual booking.
+                    </Text>
+                  </View>
+                  <Text style={styles.scheduleCardChevron}>›</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.scheduleManageLink}
+                  onPress={() => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0])}
+                >
+                  <Text style={styles.scheduleManageText}>View my scheduled rides →</Text>
+                </Pressable>
+              </>
+            )}
+
+            <Text style={styles.taxNoticeText}>
+              ⓘ Fare doesn't include state entry tax, tolls, or parking fees
+            </Text>
+          </ScrollView>
+
+          {/* Footer: payment + extras + CTA */}
+          <View style={styles.sheetActionsFooter}>
+            <View style={styles.paymentToggleRow}>
+              <Pressable
+                style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
+                onPress={() => setPaymentMethod('cash')}
+              >
+                <CashIcon
+                  size={17}
+                  color={paymentMethod === 'cash' ? colors.primary : colors.muted}
+                  accent={paymentMethod === 'cash' ? colors.primary : colors.muted}
+                />
+                <Text style={[styles.paymentBtnLabel, paymentMethod === 'cash' && styles.paymentBtnLabelActive]}>Cash</Text>
               </Pressable>
               <Pressable
-                style={styles.scheduleManageLink}
-                onPress={() => router.push('/passenger/scheduled-rides' as Parameters<typeof router.push>[0])}
+                style={[
+                  styles.paymentBtn,
+                  paymentMethod === 'wallet' && styles.paymentBtnActive,
+                  !walletTopupEnabled && { opacity: 0.5 },
+                ]}
+                disabled={!walletTopupEnabled}
+                onPress={() => {
+                  if (!walletTopupEnabled) {
+                    Alert.alert('Coming soon', 'Wallet payments are coming soon. Please pay the driver in cash for now.');
+                    return;
+                  }
+                  setPaymentMethod('wallet');
+                }}
               >
-                <Text style={styles.scheduleManageText}>View my scheduled rides →</Text>
-              </Pressable>
-            </>
-          )}
-
-          <View style={styles.taxNoticeBanner}>
-            <Text style={styles.taxNoticeIcon}>ⓘ</Text>
-            <Text style={styles.taxNoticeText}>Fare doesn't include state entry tax, tolls, or parking fees</Text>
-          </View>
-        </ScrollView>
-
-        {/* Footer: solo booking controls */}
-        <View style={styles.sheetActionsFooter}>
-          <View style={styles.paymentToggleRow}>
-            <Pressable
-              style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
-              onPress={() => setPaymentMethod('cash')}
-            >
-              <Text style={styles.paymentBtnIcon}>💵</Text>
-              <Text style={[styles.paymentBtnLabel, paymentMethod === 'cash' && styles.paymentBtnLabelActive]}>Cash</Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.paymentBtn,
-                paymentMethod === 'wallet' && styles.paymentBtnActive,
-                !walletTopupEnabled && { opacity: 0.5 },
-              ]}
-              disabled={!walletTopupEnabled}
-              onPress={() => {
-                if (!walletTopupEnabled) {
-                  Alert.alert('Coming soon', 'Wallet payments are coming soon. Please pay the driver in cash for now.');
-                  return;
-                }
-                setPaymentMethod('wallet');
-              }}
-            >
-              <Text style={styles.paymentBtnIcon}>💳</Text>
-              <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>
-                {walletTopupEnabled ? 'Wallet' : 'Wallet (soon)'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.optionTogglesRow}>
-            {mode === 'solo' && (
-              <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
-                <Text style={styles.optionToggleIcon}>⚡</Text>
-                <Text style={[styles.optionToggleLabel, autoAccept && { color: colors.primary }]}>
-                  Auto-accept offer of PKR {fare}
+                <WalletIcon
+                  size={17}
+                  color={paymentMethod === 'wallet' ? colors.primary : colors.muted}
+                  accent={paymentMethod === 'wallet' ? colors.primary : colors.muted}
+                />
+                <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>
+                  {walletTopupEnabled ? 'Wallet' : 'Wallet (soon)'}
                 </Text>
-                <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
-                  <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
-                </View>
               </Pressable>
+            </View>
+
+            <View style={styles.optionTogglesRow}>
+              {mode === 'solo' && (
+                <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
+                  <BoltIcon size={15} color={autoAccept ? colors.primary : colors.muted} />
+                  <Text style={[styles.optionToggleLabel, autoAccept && { color: colors.primary }]}>
+                    Auto-accept offer of PKR {fare}
+                  </Text>
+                  <View style={[styles.toggleSwitchSmall, autoAccept && { backgroundColor: colors.primary }]}>
+                    <View style={[styles.toggleSwitchKnobSmall, autoAccept && styles.toggleKnobOn]} />
+                  </View>
+                </Pressable>
+              )}
+              <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
+                <TicketIcon
+                  size={15}
+                  color={promoCode ? colors.primary : colors.muted}
+                  accent={promoCode ? colors.primary : colors.muted}
+                />
+                <Text style={[styles.optionToggleLabel, promoCode ? { color: colors.primary } : null]}>
+                  {promoCode || 'Promo code'}
+                </Text>
+              </Pressable>
+            </View>
+
+            {showPromo && (
+              <View style={styles.promoInputRow}>
+                <TextInput
+                  value={promoCode}
+                  onChangeText={t => setPromoCode(t.toUpperCase())}
+                  placeholder="Enter promo code"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="characters"
+                  style={styles.promoInput}
+                />
+                {promoCode ? (
+                  <Pressable onPress={() => setPromoCode('')} style={styles.promoClear}>
+                    <Text style={{ color: colors.muted }}>✕</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             )}
-            <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
-              <Text style={styles.optionToggleIcon}>🎟️</Text>
-              <Text style={[styles.optionToggleLabel, promoCode && { color: colors.primary }]}>
-                {promoCode || 'Promo code'}
+
+            {!coords && locStatus !== 'loading' ? (
+              <Pressable onPress={requestLocation}>
+                <Text style={styles.locHint}>Tap to enable location for your pickup point</Text>
+              </Pressable>
+            ) : null}
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <Pressable
+              style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
+              onPress={submitRide}
+              disabled={loading}
+            >
+              <Text style={styles.findDriverButtonText}>
+                {loading
+                  ? 'Booking…'
+                  : mode === 'pool'
+                    ? `Start Pool Ride · PKR ${fare}`
+                    : `Find Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
               </Text>
             </Pressable>
+            {mode === 'pool' && !loading ? (
+              <Text style={styles.poolCtaCaption}>
+                PKR {fare} riding alone · drops to PKR {poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3)} each with a full car
+              </Text>
+            ) : null}
           </View>
-
-          {showPromo && (
-            <View style={styles.promoInputRow}>
-              <TextInput
-                value={promoCode}
-                onChangeText={t => setPromoCode(t.toUpperCase())}
-                placeholder="Enter promo code"
-                placeholderTextColor={colors.muted}
-                autoCapitalize="characters"
-                style={styles.promoInput}
-              />
-              {promoCode ? (
-                <Pressable onPress={() => setPromoCode('')} style={styles.promoClear}>
-                  <Text style={{ color: colors.muted }}>✕</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          )}
-
-          {!coords && locStatus !== 'loading' ? (
-            <Pressable onPress={requestLocation}>
-              <Text style={styles.locHint}>📍 Tap to enable location for your pickup point</Text>
-            </Pressable>
-          ) : null}
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <Pressable
-            style={({ pressed }) => [styles.findDriverButton, pressed && { opacity: 0.85 }]}
-            onPress={submitRide}
-            disabled={loading}
-          >
-            <Text style={styles.findDriverButtonText}>
-              {loading
-                ? 'Booking…'
-                : mode === 'pool'
-                  ? `Start Pool Ride · PKR ${fare}`
-                  : `Find Driver · PKR ${fare} ${paymentMethod === 'cash' ? 'cash' : 'wallet'}`}
-            </Text>
-          </Pressable>
-          {mode === 'pool' && !loading ? (
-            <Text style={styles.poolCtaCaption}>
-              PKR {fare} riding alone · drops to PKR {poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3)} each with a full car
-            </Text>
-          ) : null}
         </View>
-      </View>
+      )}
 
       {/* Schedule-ride modal */}
       <Modal visible={scheduleOpen} transparent animationType="slide" onRequestClose={() => setScheduleOpen(false)}>
         <View style={styles.schedOverlay}>
           <View style={[styles.schedBox, { paddingBottom: 24 + insets.bottom }]}>
-            <Text style={styles.schedTitle}>🗓️ Schedule this ride</Text>
+            <View style={styles.schedTitleRow}>
+              <CalendarIcon size={20} color={colors.primary} accent={colors.primary} />
+              <Text style={styles.schedTitle}>Schedule this ride</Text>
+            </View>
             <Text style={styles.schedSub}>
               {`${(pickup.trim() || currentAddress || 'Current location')} → ${dropoff.trim() || 'Destination'}`}
             </Text>
@@ -924,22 +1100,960 @@ export default function Booking() {
   );
 }
 
+/**
+ * Overlapping rider bubbles for the Pool card — same visual family as the
+ * home screen's Travel Partner card, but drawn with the brand SVG marks
+ * instead of emoji so it matches the rest of the flow.
+ */
+function PoolBubbles() {
+  return (
+    <View style={styles.poolBubblesWrap}>
+      <View style={[styles.poolBubble, styles.poolBubbleBack]}>
+        <SoloIcon size={17} color="#c9cfcc" accent="#c9cfcc" />
+      </View>
+      <View style={[styles.poolBubble, styles.poolBubbleMid]}>
+        <SoloIcon size={17} color="#c9cfcc" accent="#c9cfcc" />
+      </View>
+      <View style={[styles.poolBubble, styles.poolBubbleFront]}>
+        <SoloIcon size={17} color="#0b0d0c" accent="#0b0d0c" />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.background,
   },
 
-  // Schedule-ride card + modal
-  scheduleCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 10 },
+  /* ════════ Stage 1 — route entry ════════ */
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  headerSub: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 3,
+    fontWeight: '600',
+  },
+  closeBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.glassChip,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeTxt: {
+    fontSize: 16,
+    color: '#c9cfcc',
+  },
+  routeInputsCard: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 6,
+  },
+  inputRowActive: {
+    backgroundColor: 'rgba(204,255,0,0.06)',
+    borderWidth: 1.2,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    marginHorizontal: -10,
+  },
+  inputIconWrap: {
+    width: 22,
+    alignItems: 'center',
+  },
+  inputLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 1,
+  },
+  textInput: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    height: 26,
+    padding: 0,
+  },
+  railLegRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  railLeg: {
+    width: 0,
+    height: 16,
+    marginLeft: 10,
+    borderLeftWidth: 1.6,
+    borderColor: 'rgba(255,255,255,0.28)',
+    borderStyle: 'dashed',
+  },
+  inputDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+    marginLeft: 22,
+  },
+  clearBtn: {
+    padding: 6,
+  },
+  clearTxt: {
+    color: colors.muted,
+    fontSize: 14,
+  },
+  resultsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 6,
+  },
+  sectionHeader: {
+    color: colors.muted,
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  resultsScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+    gap: 12,
+  },
+  resultIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.glassChip,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  resultName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  resultAddress: {
+    fontSize: 12,
+    color: colors.muted,
+  },
+  resultGo: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '800',
+  },
+  emptyResults: {
+    paddingHorizontal: 4,
+    paddingVertical: 20,
+    gap: 14,
+  },
+  emptyResultsText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  useTypedBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  useTypedBtnText: {
+    color: colors.primary,
+    fontWeight: '800',
+    fontSize: 14,
+  },
+
+  /* ════════ Shared map + floating header (stages 2 & 3) ════════ */
+  mapContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: '42%',
+    backgroundColor: '#151b22',
+  },
+  floatingHeaderArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  floatingHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  floatingBackBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(16,19,18,0.88)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingBackTxt: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: 'bold',
+  },
+  floatingRouteCard: {
+    flex: 1,
+    backgroundColor: 'rgba(16,19,18,0.92)',
+    borderRadius: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 6,
+  },
+  floatingRoutePoint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floatingRouteText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  floatingRouteDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    marginLeft: 22,
+  },
+  dragIndicator: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+
+  /* ════════ Stage 2 — Solo / Pool chooser ════════ */
+  modeSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(11,13,12,0.97)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    gap: 12,
+  },
+  modeHeading: {
+    fontSize: 21,
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  modeHeadingSub: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: -8,
+    marginBottom: 2,
+  },
+  modeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+    overflow: 'hidden',
+  },
+  modeCardPool: {
+    backgroundColor: 'rgba(204,255,0,0.07)',
+    borderColor: colors.glassLimeBorder,
+  },
+  modeCardPressed: { opacity: 0.8, transform: [{ scale: 0.985 }] },
+  modeCardBody: { flex: 1, gap: 4 },
+  modeEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#cfd6d2',
+    letterSpacing: 1.4,
+  },
+  saveBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 2,
+  },
+  saveBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#0b0d0c',
+    letterSpacing: 0.6,
+  },
+  modeCardTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: -0.2,
+  },
+  modeCardSub: {
+    fontSize: 11.5,
+    color: colors.muted,
+    lineHeight: 16,
+  },
+  modePriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  modePrice: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  modePriceUnit: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  modeChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+  },
+  modeChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#c9cfcc',
+  },
+  modeCardArt: {
+    width: 116,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolBubblesWrap: {
+    width: 96,
+    height: 62,
+  },
+  poolBubble: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 2,
+    borderColor: '#161d10',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolBubbleBack:  { left: 4,  top: 2 },
+  poolBubbleMid:   { left: 28, top: 18 },
+  poolBubbleFront: { left: 52, top: 4, backgroundColor: colors.primary, zIndex: 2 },
+  modeFootRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 2,
+  },
+  modeFootText: {
+    fontSize: 11,
+    color: '#8f9694',
+    fontWeight: '600',
+  },
+
+  /* ════════ Stage 3 — ride options ════════ */
+  bottomRideSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '58%',
+    backgroundColor: 'rgba(11,13,12,0.97)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingTop: 10,
+  },
+  modeToggleRow: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 4,
+    gap: 4,
+  },
+  modePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 22,
+    paddingVertical: 8,
+  },
+  modePillActive: {
+    backgroundColor: colors.primary,
+  },
+  modePillText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.muted,
+  },
+  modePillTextActive: {
+    color: '#0b0d0c',
+  },
+  modeCaption: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8cc840',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 20,
+  },
+  detailsScroll: {
+    flex: 1,
+  },
+
+  // Vehicle carousel
+  vehicleRow: {
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  vehicleCard: {
+    width: 122,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 2,
+  },
+  vehicleCardActive: {
+    backgroundColor: colors.glassLime,
+    borderColor: colors.primary,
+  },
+  vehicleIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  vehicleIconWrapActive: {
+    backgroundColor: 'rgba(204,255,0,0.12)',
+  },
+  vehicleName: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  vehicleDesc: {
+    fontSize: 9.5,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  vehiclePrice: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#e6eae8',
+    marginTop: 4,
+  },
+  vehicleSeats: {
+    fontSize: 9.5,
+    color: colors.muted,
+    fontWeight: '700',
+  },
+
+  // Fare offer card
+  fareCard: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    backgroundColor: colors.glassLime,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  fareEyebrow: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#8cc840',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+  },
+  fareStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepperCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  fareInputRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  fareInputPrefix: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.muted,
+  },
+  fareInput: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: colors.text,
+    padding: 0,
+    minWidth: 70,
+    textAlign: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(204,255,0,0.4)',
+  },
+  stepperLabel: {
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  fareRangeHint: {
+    color: '#8cc840',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  sectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 1,
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 20,
+  },
+
+  // Pool tier table
+  poolTierTable: {
+    marginHorizontal: 20,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 2,
+  },
+  poolTierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  poolTierLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  poolTierRiders: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#d8dcda',
+  },
+  poolTierFareSolo: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.muted,
+    marginRight: 12,
+  },
+  poolTierFare: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.text,
+    marginRight: 12,
+  },
+  poolTierSavingNone: {
+    fontSize: 12,
+    color: colors.muted,
+    width: 48,
+    textAlign: 'center',
+  },
+  poolTierSavingBadge: {
+    width: 48,
+    borderRadius: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center',
+  },
+  poolTierSavingBest: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+  },
+  poolTierSavingText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#c9cfcc',
+  },
+
+  // Pool visibility
+  visRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 20,
+  },
+  visOpt: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 4,
+  },
+  visOptActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.glassLime,
+  },
+  visOptTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  visOptSub: {
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: '600',
+    lineHeight: 14,
+  },
+  poolShareHint: {
+    fontSize: 11,
+    color: '#6b7280',
+    lineHeight: 16,
+    marginTop: 8,
+    paddingHorizontal: 20,
+  },
+  poolCodeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 20,
+  },
+  poolCodeInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 44,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+  },
+  poolCodeInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+    padding: 0,
+  },
+  poolCodeGoBtn: {
+    height: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  poolCodeGoTxt: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+
+  // Nearby public pools
+  nearbyPoolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 8,
+    marginHorizontal: 20,
+  },
+  nearbyPoolIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.glassLime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nearbyPoolDest: { fontSize: 13, fontWeight: '800', color: colors.text },
+  nearbyPoolMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  nearbyPoolFare: { fontSize: 14, fontWeight: '900', color: colors.primary },
+  nearbyPoolJoin: { fontSize: 10, fontWeight: '800', color: colors.primary, marginTop: 2 },
+
+  // Schedule (solo)
+  scheduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginTop: 12,
+    marginHorizontal: 20,
+  },
+  scheduleIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: colors.glassLime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scheduleCardTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   scheduleCardSub: { fontSize: 11, color: colors.muted, marginTop: 2, lineHeight: 15 },
   scheduleCardChevron: { fontSize: 20, color: colors.muted },
   scheduleManageLink: { alignItems: 'center', paddingVertical: 8 },
   scheduleManageText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 
+  taxNoticeText: {
+    fontSize: 10.5,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 20,
+  },
+
+  // Footer
+  sheetActionsFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 8,
+  },
+  paymentToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  paymentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  paymentBtnActive: {
+    backgroundColor: colors.glassLime,
+    borderColor: colors.primary,
+  },
+  paymentBtnLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.muted,
+  },
+  paymentBtnLabelActive: {
+    color: colors.primary,
+  },
+  optionTogglesRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  optionToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  optionToggleLabel: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  toggleSwitchSmall: {
+    width: 34,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleSwitchKnobSmall: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  toggleKnobOn: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#0b0d0c',
+  },
+  promoInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingHorizontal: 12,
+  },
+  promoInput: {
+    flex: 1,
+    height: 42,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+    padding: 0,
+  },
+  promoClear: {
+    padding: 6,
+  },
+  locHint: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  findDriverButton: {
+    // NOTE: no `flex: 1` here — this button is a standalone child of the
+    // column footer, and flex:1 (flexBasis:0) collapses it to zero height,
+    // making the primary "Find Driver / Start Pool Ride" CTA invisible.
+    alignSelf: 'stretch',
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  findDriverButtonText: {
+    color: '#0b0d0c',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  poolCtaCaption: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8cc840',
+    textAlign: 'center',
+  },
+
+  // Schedule-ride modal
   schedOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  schedBox: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 10 },
+  schedBox: { backgroundColor: '#151816', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 10 },
+  schedTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   schedTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
   schedSub: { fontSize: 12, color: colors.muted },
   schedLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6, marginTop: 8 },
@@ -959,1048 +2073,4 @@ const styles = StyleSheet.create({
   schedCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   schedSaveBtn: { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   schedSaveText: { fontSize: 14, fontWeight: '900', color: '#000' },
-  container: {
-    padding: 18,
-    gap: 14,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  closeBtn: {
-    padding: 6,
-  },
-  closeTxt: {
-    fontSize: 20,
-    color: '#8a8c8c',
-  },
-  routeInputsCard: {
-    backgroundColor: colors.glassChip,
-    margin: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 14,
-    gap: 12,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 4,
-  },
-  inputContainerActive: {
-    borderWidth: 1.5,
-    borderColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  inputIcon: {
-    fontSize: 16,
-    color: '#ccff00',
-  },
-  inputLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#8a8c8c',
-  },
-  textInput: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    height: 24,
-    padding: 0,
-  },
-  inputDivider: {
-    height: 1,
-    backgroundColor: colors.glassStrong,
-    marginLeft: 28,
-  },
-  clearBtn: {
-    padding: 4,
-  },
-  clearTxt: {
-    color: '#8a8c8c',
-    fontSize: 14,
-  },
-  mapIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 6,
-  },
-  mapIcon: {
-    fontSize: 14,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 10,
-  },
-  sectionHeader: {
-    color: '#8a8c8c',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  emptyResults: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    gap: 14,
-  },
-  emptyResultsText: {
-    color: '#8a8c8c',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  useTypedBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.glassChip,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  useTypedBtnText: {
-    color: '#ccff00',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  locHint: {
-    color: '#ccff00',
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: colors.glassChip,
-  },
-  tabActive: {
-    backgroundColor: '#ffffff',
-  },
-  tabText: {
-    color: '#8a8c8c',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  tabTextActive: {
-    color: '#000000',
-  },
-  resultsScroll: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  resultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-    gap: 12,
-  },
-  resultIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.glassChip,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resultIcon: {
-    fontSize: 16,
-  },
-  resultMeta: {
-    flex: 1,
-    gap: 2,
-  },
-  resultName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#2563eb', // Destination highlight
-  },
-  resultAddress: {
-    fontSize: 12,
-    color: '#8a8c8c',
-  },
-  resultRight: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  resultDistance: {
-    fontSize: 11,
-    color: '#8a8c8c',
-    fontWeight: '600',
-  },
-  bookmarkIcon: {
-    fontSize: 14,
-    color: '#8a8c8c',
-  },
-  keyboardSuggestionsBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#2d2d2d',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#3d3d3d',
-  },
-  suggestionItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  suggestionText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  suggestionDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#3d3d3d',
-  },
-
-  // STAGE 2 STYLING (Image 1 & 4 Map + Sheet Layout)
-  mapContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: '48%', // Show map on the upper half
-    backgroundColor: '#151b22',
-  },
-  // ── Solo / Pool mode toggle ─────────────────────────────────────────────────
-  modeToggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 5,
-  },
-  modeBtn: {
-    flex: 1,
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingVertical: 9,
-    gap: 1,
-  },
-  modeBtnActive: {
-    backgroundColor: colors.glassLime,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-  },
-  modeBtnTitle:       { fontSize: 15, fontWeight: '900', color: '#8a8c8c' },
-  modeBtnTitleActive: { color: colors.primary },
-  modeBtnSub:         { fontSize: 10, fontWeight: '700', color: '#6b7280' },
-
-  // ── Fare offer card ─────────────────────────────────────────────────────────
-  fareCard: { marginTop: 10, gap: 6 },
-  fareRangeHint: {
-    color: '#8cc840',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#8a8c8c',
-    letterSpacing: 0.8,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-
-  // ── Pool visibility (public / private) ──────────────────────────────────────
-  visRow: { flexDirection: 'row', gap: 8 },
-  visOpt: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.glassStrong,
-    padding: 12,
-    gap: 2,
-  },
-  visOptActive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  visOptIcon:   { fontSize: 18 },
-  visOptTitle:  { fontSize: 13, fontWeight: '900', color: colors.text },
-  visOptSub:    { fontSize: 10, color: colors.muted, fontWeight: '600', lineHeight: 14 },
-  poolShareHint: {
-    fontSize: 11,
-    color: '#6b7280',
-    lineHeight: 16,
-    marginTop: 8,
-  },
-  poolCodeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  poolCodeInput: {
-    flex: 1,
-    height: 42,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingHorizontal: 12,
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  poolCodeGoBtn: {
-    height: 42,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: colors.glassLime,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  poolCodeGoTxt: { fontSize: 13, fontWeight: '900', color: colors.primary },
-
-  // ── Nearby public pools ─────────────────────────────────────────────────────
-  nearbyPoolRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 12,
-    marginBottom: 8,
-  },
-  nearbyPoolDest: { fontSize: 13, fontWeight: '800', color: colors.text },
-  nearbyPoolMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
-  nearbyPoolFare: { fontSize: 14, fontWeight: '900', color: colors.primary },
-  nearbyPoolJoin: { fontSize: 10, fontWeight: '800', color: colors.primary, marginTop: 2 },
-
-  poolCtaCaption: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8cc840',
-    textAlign: 'center',
-  },
-  floatingHeaderArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  floatingHeaderBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  floatingBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.glassChip,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  floatingBackTxt: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  floatingRouteCard: {
-    flex: 1,
-    backgroundColor: 'rgba(16,18,17,0.94)',
-    borderRadius: 14,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    gap: 6,
-  },
-  floatingRoutePoint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  floatingIconBlue: {
-    color: '#3b82f6',
-    fontSize: 14,
-  },
-  floatingIconGreen: {
-    color: '#ccff00',
-    fontSize: 14,
-  },
-  floatingRouteText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-    flex: 1,
-  },
-  entranceBadge: {
-    backgroundColor: colors.glassStrong,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  entranceText: {
-    color: '#8a8c8c',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  plusIcon: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  floatingRouteDivider: {
-    height: 1,
-    backgroundColor: colors.glassStrong,
-    marginLeft: 22,
-  },
-  bottomRideSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '54%', // Overlay bottom part of screen
-    backgroundColor: colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingTop: 10,
-  },
-  // ── Pool ride primary card ──────────────────────────────────────────────────
-  poolPrimaryCard: {
-    backgroundColor: colors.glassLime,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    padding: 16,
-    gap: 14,
-    marginBottom: 4,
-  },
-  poolPrimaryTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  poolPrimaryTitle:  { fontSize: 20, fontWeight: '900', color: colors.primary },
-  poolPrimaryBadge: {
-    backgroundColor: colors.primary,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  poolPrimaryBadgeText: { color: '#000', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  poolPrimarySub:    { fontSize: 12, color: '#8a8c8c', fontWeight: '600' },
-
-  // Tier breakdown table
-  poolTierTable: {
-    backgroundColor: colors.glassLime,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
-    overflow: 'hidden',
-  },
-  poolTierRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassLimeBorder,
-    gap: 8,
-  },
-  poolTierRowSelected: { backgroundColor: colors.glassLime },
-  poolTierLeft:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  poolTierRidersEmoji: { fontSize: 12 },
-  poolTierRiders:   { fontSize: 13, fontWeight: '700', color: '#8a8c8c' },
-  poolTierFareSolo: { fontSize: 13, fontWeight: '700', color: '#8a8c8c', minWidth: 70, textAlign: 'right' },
-  poolTierFare:     { fontSize: 13, fontWeight: '700', color: '#ffffff', minWidth: 70, textAlign: 'right' },
-  poolTierSavingNone: { fontSize: 11, color: '#555', fontWeight: '700', minWidth: 46, textAlign: 'right' },
-  poolTierSavingBadge: {
-    backgroundColor: colors.glassLime,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    minWidth: 46,
-    alignItems: 'center',
-  },
-  poolTierSavingBest: { backgroundColor: `${colors.primary}20` },
-  poolTierSavingText: { fontSize: 11, fontWeight: '900', color: '#4ade80' },
-
-  // Gender toggle inside pool card
-  genderRow: { flexDirection: 'row', gap: 8 },
-  genderOpt: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.glassLime,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
-    padding: 11,
-  },
-  genderOptActive:  { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  genderOptIcon:    { fontSize: 18 },
-  genderOptTitle:   { fontSize: 12, fontWeight: '700', color: colors.text },
-  genderOptSub:     { fontSize: 10, color: colors.muted, fontWeight: '600', marginTop: 1 },
-
-  poolHint: { fontSize: 10, color: '#555', textAlign: 'center', lineHeight: 15 },
-
-  poolFareAdjRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.glassLime,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
-    padding: 12,
-    gap: 8,
-  },
-  poolFareAdjBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  poolFareAdjBtnText: { fontSize: 20, fontWeight: '900', color: '#000', lineHeight: 24 },
-  poolFareAdjValue:   { fontSize: 22, fontWeight: '900', color: colors.primary },
-  poolFareAdjLabel:   { fontSize: 11, color: '#8a8c8c', fontWeight: '600', marginTop: 2 },
-  poolFindBtn: {
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  poolFindBtnText: { fontSize: 15, fontWeight: '900', color: '#000' },
-
-  // ── OR divider ──────────────────────────────────────────────────────────────
-  orDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 4,
-  },
-  orDividerLine: { flex: 1, height: 1, backgroundColor: colors.glassStrong },
-  orDividerText: { fontSize: 11, fontWeight: '800', color: '#8a8c8c', letterSpacing: 1 },
-
-  // ── Category row active state ───────────────────────────────────────────────
-  categoryRowActive: { borderColor: colors.primary, backgroundColor: '#0e1e08' },
-
-  // ── Unified solo booking card (car selector + fare adjuster) ────────────────
-  soloBookingCard: {
-    backgroundColor: '#141515',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#2a2b2b',
-    padding: 14,
-    gap: 12,
-    marginBottom: 4,
-  },
-  soloBookingLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.muted,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-
-  // ── Car type 2×2 grid (inside soloBookingCard) ───────────────────────────────
-  carGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  carTile: {
-    width: '47.5%',
-    backgroundColor: '#1c1d1d',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: colors.glassStrong,
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    gap: 3,
-  },
-  carTileActive: {
-    borderColor: colors.primary,
-    backgroundColor: '#0e1e08',
-  },
-  carTileEmoji: { fontSize: 26 },
-  carTileName:  { fontSize: 13, fontWeight: '800', color: colors.text },
-  carTilePrice: { fontSize: 11, fontWeight: '700', color: colors.muted },
-
-  // ── Solo fare stepper (inside pool card) ────────────────────────────────────
-  soloFareStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0e1f08',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e3a10',
-    padding: 12,
-    gap: 8,
-  },
-
-  // ── Car type dropdown (inside pool card) ─────────────────────────────────────
-  carDropdownBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#0e1f08',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e3a10',
-    padding: 12,
-  },
-  carDropdownEmoji: { fontSize: 22 },
-  carDropdownName:  { fontSize: 15, fontWeight: '800', color: colors.text },
-  carDropdownRange: { fontSize: 11, color: colors.muted, fontWeight: '600', marginTop: 1 },
-  carDropdownArrow: { fontSize: 12, color: colors.muted, fontWeight: '800' },
-  carDropdownMenu: {
-    backgroundColor: '#0a1505',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e3a10',
-    overflow: 'hidden',
-  },
-  carDropdownItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a2a10',
-  },
-  carDropdownItemEmoji: { fontSize: 20 },
-  carDropdownItemName:  { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
-  carDropdownItemPrice: { fontSize: 13, fontWeight: '800', color: colors.muted },
-
-  activeCategoryBox: {
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-    gap: 12,
-  },
-  activeCategoryMeta: {
-    backgroundColor: colors.glassChip,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    borderRadius: 16,
-    padding: 12,
-  },
-  categoryTitleRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  categoryEmojiBig: {
-    fontSize: 34,
-  },
-  categoryNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  categoryNameBig: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
-  infoIconCircle: {
-    color: '#8a8c8c',
-    fontSize: 12,
-  },
-  editPencil: {
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  categorySubtitleBig: {
-    fontSize: 12,
-    color: '#ffffff',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  categoryDescriptionBig: {
-    fontSize: 11,
-    color: '#8a8c8c',
-    marginTop: 1,
-  },
-  activeFareStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 10,
-  },
-  stepperCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  stepperFareValue: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  stepperLabel: {
-    color: '#8a8c8c',
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  fareHintRow: {
-    backgroundColor: '#0a1505',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-  },
-  fareHintText: {
-    color: '#8cc840',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  fareInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  fareInputPrefix: {
-    color: '#8a8c8c',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  fareInput: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '900',
-    minWidth: 64,
-    textAlign: 'center',
-    padding: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccff0060',
-  },
-  alternativeList: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-  },
-  categoryRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  categoryEmojiSmall: {
-    fontSize: 24,
-  },
-  categoryNameSmall: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  categorySubSmall: {
-    color: '#8a8c8c',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  categoryFareSmall: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  taxNoticeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginVertical: 14,
-    gap: 10,
-  },
-  taxNoticeIcon: {
-    color: '#8a8c8c',
-    fontSize: 14,
-  },
-  taxNoticeText: {
-    color: '#8a8c8c',
-    fontSize: 11,
-    fontWeight: '600',
-    flex: 1,
-  },
-  sheetActionsFooter: {
-    padding: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.glassStrong,
-    backgroundColor: colors.background,
-    gap: 10,
-  },
-
-  // Payment toggle
-  paymentToggleRow:    { flexDirection: 'row', gap: 8 },
-  paymentBtn:          {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5,
-    borderColor: colors.glassStrong, backgroundColor: colors.surface,
-  },
-  paymentBtnActive:    { borderColor: colors.primary, backgroundColor: `${colors.primary}15` },
-  paymentBtnIcon:      { fontSize: 16 },
-  paymentBtnLabel:     { fontSize: 13, fontWeight: '700', color: '#8a8c8c' },
-  paymentBtnLabelActive: { color: colors.primary },
-
-  // Option toggles
-  optionTogglesRow:    { flexDirection: 'row', gap: 8 },
-  optionToggle:        {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1,
-    borderColor: colors.glassStrong, paddingHorizontal: 10, paddingVertical: 8,
-  },
-  optionToggleIcon:    { fontSize: 14 },
-  optionToggleLabel:   { flex: 1, fontSize: 12, fontWeight: '700', color: '#8a8c8c' },
-
-  // Promo input
-  promoInputRow:       {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1,
-    borderColor: colors.primary, paddingHorizontal: 12, height: 40,
-  },
-  promoInput:          { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' },
-  promoClear:          { padding: 4 },
-
-  toggleTextCol: { flex: 1 },
-  autoAcceptLabel: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
-  toggleSwitchSmall: {
-    width: 38,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.glassStrong,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleSwitchKnobSmall: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#8a8c8c',
-  },
-  toggleKnobOn: {
-    backgroundColor: '#000',
-    alignSelf: 'flex-end',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  bottomButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  cashBadgeFooter: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.glassChip,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cashBadgeEmoji: {
-    fontSize: 20,
-  },
-  findDriverButton: {
-    // NOTE: no `flex: 1` here — this button is a standalone child of the
-    // column footer, and flex:1 (flexBasis:0) collapses it to zero height,
-    // making the primary "Find Driver / Start Pool Ride" CTA invisible.
-    alignSelf: 'stretch',
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: '#ccff00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  findDriverButtonText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  filterButtonFooter: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.glassChip,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterButtonIcon: {
-    color: '#ffffff',
-    fontSize: 18,
-  },
-  dragIndicator: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.glassStrong,
-    alignSelf: 'center',
-    marginBottom: 10,
-  },
-
-  // ── Pool incentive banner ──────────────────────────────────────────────────
-  poolBanner: {
-    backgroundColor: colors.glassLime,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#ccff0030',
-    marginVertical: 10,
-    overflow: 'hidden',
-  },
-  poolBannerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassLime,
-  },
-  poolBannerTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#ccff00',
-  },
-  poolSaveBadge: {
-    backgroundColor: '#ccff0020',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccff0040',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  poolSaveBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#ccff00',
-  },
-  poolBannerCols: {
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-    paddingVertical: 12,
-  },
-  poolBannerCol: {
-    flex: 1,
-    paddingHorizontal: 12,
-    gap: 3,
-  },
-  poolBannerDivider: {
-    width: 1,
-    backgroundColor: colors.glassLime,
-  },
-  poolColIcon: { fontSize: 16, marginBottom: 2 },
-  poolColHeading: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  poolFareComparison: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  poolFareBefore: {
-    fontSize: 12,
-    color: '#6b7280',
-    textDecorationLine: 'line-through',
-  },
-  poolFareArrow: {
-    fontSize: 11,
-    color: '#4b5563',
-  },
-  poolFareAfter: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#ccff00',
-  },
-  poolColSub: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 1,
-  },
-  poolColTip: {
-    fontSize: 10,
-    color: '#4b5563',
-    fontStyle: 'italic',
-  },
-  poolBannerCTA: {
-    backgroundColor: '#ccff0015',
-    borderTopWidth: 1,
-    borderTopColor: colors.glassLime,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  poolBannerCTAText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#ccff00',
-  },
 });

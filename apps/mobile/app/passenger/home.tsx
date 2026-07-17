@@ -12,9 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
-import { doc, getDoc } from 'firebase/firestore';
-
-import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
@@ -27,10 +24,8 @@ import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
-  CityRideIcon,
   ClockIcon,
   CourierIcon,
-  FreightIcon,
   IntercityIcon,
   SearchIcon,
   type ServiceIconProps,
@@ -45,7 +40,6 @@ export default function PassengerHome() {
   const driverEntry = useDriverEntry();
   const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [poolFromPrice, setPoolFromPrice] = useState<number | null>(null);
 
   // Register FCM push token on first load
   useEffect(() => {
@@ -69,23 +63,6 @@ export default function PassengerHome() {
       })
       .catch(() => {});
   }, [user?.uid]);
-
-  // Fetch admin-configured Mini fare to show accurate "From X PKR/seat" on hero card
-  useEffect(() => {
-    getDoc(doc(db, 'config', 'rideFares'))
-      .then((snap) => {
-        const data = snap.data();
-        const mini = data?.mini;
-        if (mini?.baseFare && mini?.perKm) {
-          // Example: 5 km average city trip, 4 riders (best pool scenario)
-          const soloFare   = mini.baseFare + mini.perKm * 5;
-          const factor     = (48 + (4 - 1) * (4 + 6)) / 48;
-          const perSeat    = Math.ceil((soloFare * factor) / 4);
-          setPoolFromPrice(perSeat);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const pickupLabel = currentAddress ?? (coords ? 'Current location' : 'Set pickup location');
 
@@ -187,16 +164,10 @@ export default function PassengerHome() {
           </View>
         )}
 
-        {/* ── Services ── */}
+        {/* ── Services — city rides live in "Where to?", so only the two
+             services that are NOT plain city rides get tiles ── */}
         <Text style={styles.sectionLabel}>Services</Text>
         <View style={styles.serviceGrid}>
-          <ServiceTile
-            title="City Rides"
-            sub={poolFromPrice ? `Pool from PKR ${poolFromPrice}/seat` : 'Car & bike, in your city'}
-            Icon={CityRideIcon}
-            featured
-            onPress={() => router.push('/passenger/booking')}
-          />
           <ServiceTile
             title="City to City"
             sub="Intercity seats"
@@ -208,12 +179,6 @@ export default function PassengerHome() {
             sub="Send a parcel"
             Icon={CourierIcon}
             onPress={() => router.push('/passenger/couriers')}
-          />
-          <ServiceTile
-            title="Freight"
-            sub="Bulk & business"
-            Icon={FreightIcon}
-            onPress={() => router.push('/passenger/business-delivery')}
           />
         </View>
 

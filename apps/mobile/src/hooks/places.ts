@@ -104,6 +104,48 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
   return { predictions, loading, apiStatus, apiMessage };
 }
 
+// Places API (New) text search — used as a geocoder for free-typed addresses
+// and old recents that carry no coordinates.
+const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
+
+/**
+ * Resolve a typed address to coordinates via Places Text Search (New).
+ * Returns null on failure — callers fall back to a coordinate-less booking,
+ * exactly as before this helper existed.
+ */
+export async function geocodeAddress(text: string): Promise<PlaceDetail | null> {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const res = await fetch(SEARCH_TEXT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'places.location,places.formattedAddress',
+      },
+      body: JSON.stringify({
+        textQuery: trimmed,
+        regionCode: 'PK',
+        languageCode: 'en',
+        pageSize: 1,
+      }),
+    });
+    const data = await res.json();
+    const place = data?.places?.[0];
+    if (res.ok && place?.location) {
+      return {
+        lat: place.location.latitude,
+        lng: place.location.longitude,
+        address: place.formattedAddress ?? trimmed,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPlaceDetail(placeId: string, sessionToken: string): Promise<PlaceDetail | null> {
   try {
     const res = await fetch(
