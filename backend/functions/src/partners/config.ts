@@ -42,11 +42,17 @@ export interface PartnerSettings {
   /** One-off Pro registration fee, in `proFeeCurrency`. */
   proFee: number;
   proFeeCurrency: string;
-  /** Where a Pro applicant sends the fee. Admin-set; shown on the apply screen. */
+  /** Where a Pro applicant sends the fee. Admin-set; shown on the apply screen.
+   * Each account carries its holder's title too — the wallets are often
+   * registered under different names, and an applicant who sees a name they
+   * don't recognise will (rightly) refuse to send money to it. */
   payment: {
     bankName: string | null;
+    bankAccountTitle: string | null;
     bankAccount: string | null;
+    easypaisaTitle: string | null;
     easypaisaAccount: string | null;
+    jazzcashTitle: string | null;
     jazzcashAccount: string | null;
   };
   /** Smallest withdrawal a partner may request, in PKR. */
@@ -66,8 +72,11 @@ export const DEFAULT_PARTNER_SETTINGS: PartnerSettings = {
   proFeeCurrency: 'PKR',
   payment: {
     bankName: null,
+    bankAccountTitle: null,
     bankAccount: null,
+    easypaisaTitle: null,
     easypaisaAccount: null,
+    jazzcashTitle: null,
     jazzcashAccount: null,
   },
   minWithdrawal: 500,
@@ -106,8 +115,11 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
     proFeeCurrency: str(snap.get('proFeeCurrency')) ?? d.proFeeCurrency,
     payment: {
       bankName: str(payment.bankName),
+      bankAccountTitle: str(payment.bankAccountTitle),
       bankAccount: str(payment.bankAccount),
+      easypaisaTitle: str(payment.easypaisaTitle),
       easypaisaAccount: str(payment.easypaisaAccount),
+      jazzcashTitle: str(payment.jazzcashTitle),
       jazzcashAccount: str(payment.jazzcashAccount),
     },
     minWithdrawal:
