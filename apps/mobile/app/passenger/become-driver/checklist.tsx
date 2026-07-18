@@ -33,7 +33,7 @@ export default function Checklist() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Registration" />
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         {status === 'rejected' ? (
           <View style={styles.declined}>
             <Text style={styles.declinedTitle}>Application not approved</Text>

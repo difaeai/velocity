@@ -1,9 +1,9 @@
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { IdCardArt, OnbButton, StepHeader, SupportNote, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
+import { DateField, IdCardArt, OnbButton, StepHeader, SupportNote, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
 
 export default function VehicleCertificate() {
   const router = useRouter();
@@ -12,21 +12,20 @@ export default function VehicleCertificate() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Certificate of vehicle registration" />
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <UploadCard
           title="Certificate of vehicle registration"
           uri={data.vehicleDoc}
           onPick={() => pickPhoto((uri) => set({ vehicleDoc: uri }))}
           art={<IdCardArt label="VEHICLE" />}
         />
-        <Text style={styles.fieldLabel}>Registration expiry date (YYYY-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
+        <DateField
+          label="Registration expiry date"
+          optional
           value={data.vehicleDocExpiry}
-          onChangeText={t => set({ vehicleDocExpiry: t })}
-          placeholder="e.g. 2026-12-31"
-          placeholderTextColor={oc.sub}
-          keyboardType="numeric"
+          onChange={(v) => set({ vehicleDocExpiry: v })}
+          placeholder="Select a date"
+          minimumDate={new Date()}
         />
         <OnbButton label="Done" onPress={() => router.back()} disabled={!data.vehicleDoc} />
         <SupportNote />
@@ -38,6 +37,4 @@ export default function VehicleCertificate() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: oc.sub },
-  input: { backgroundColor: oc.card, borderRadius: 10, borderWidth: 1, borderColor: oc.fieldBorder, padding: 12, color: oc.text, fontSize: 14 },
 });

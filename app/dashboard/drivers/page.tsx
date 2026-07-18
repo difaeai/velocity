@@ -37,6 +37,7 @@ interface DriverRow {
   cnicBackDocUrl?: string;
   vehicleDocUrl?: string;
   vehiclePhotoDocUrl?: string;
+  extraVehiclePhotoDocUrls?: string[];
   licenseExpiry?: string;
   cnicExpiry?: string;
   vehicleDocExpiry?: string;
@@ -545,7 +546,10 @@ export default function DriversPage() {
                           <DocImage label="CNIC (front)"   url={d.cnicDocUrl}    expiry={d.cnicExpiry} />
                           <DocImage label="CNIC (back)"    url={d.cnicBackDocUrl} />
                           <DocImage label="Vehicle reg."   url={d.vehicleDocUrl} expiry={d.vehicleDocExpiry} />
-                          {d.vehiclePhotoDocUrl && <DocImage label="Vehicle photo" url={d.vehiclePhotoDocUrl} />}
+                          {d.vehiclePhotoDocUrl && <DocImage label="Vehicle (front, plate)" url={d.vehiclePhotoDocUrl} />}
+                          {(d.extraVehiclePhotoDocUrls ?? []).map((url, i) => (
+                            <DocImage key={url} label={`Vehicle photo ${i + 2}`} url={url} />
+                          ))}
                         </div>
                       </Section>
                     )}
