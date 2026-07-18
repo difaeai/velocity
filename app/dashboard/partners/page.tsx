@@ -261,9 +261,58 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
     return <Card><p style={{ color: colors.muted, margin: 0 }}>No applications waiting. 🎉</p></Card>;
   }
 
+  // Pro and Free are different jobs — a Pro review is a payment check against a
+  // receipt, a Free review is only an identity check — so they queue separately.
+  const pro = apps.filter((a) => a.tier === 'pro');
+  const free = apps.filter((a) => a.tier !== 'pro');
+
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <ApplicationSection
+        title={`⭐ Pro applications (${pro.length})`}
+        hint="Paid a plan fee — verify the receipt against your account before approving."
+        apps={pro}
+        empty="No Pro applications waiting."
+        busy={busy}
+        run={run}
+      />
+      <ApplicationSection
+        title={`Free applications (${free.length})`}
+        hint="No payment involved — just check the identity document."
+        apps={free}
+        empty="No Free applications waiting."
+        busy={busy}
+        run={run}
+      />
+    </div>
+  );
+}
+
+function ApplicationSection({
+  title,
+  hint,
+  apps,
+  empty,
+  busy,
+  run,
+}: {
+  title: string;
+  hint: string;
+  apps: Application[];
+  empty: string;
+  busy: string | null;
+  run: Runner;
+}) {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      {apps.map((a) => {
+      <div>
+        <h3 style={{ margin: 0, color: colors.text, fontSize: 16 }}>{title}</h3>
+        <p style={{ margin: '4px 0 0', color: colors.muted, fontSize: 12 }}>{hint}</p>
+      </div>
+      {apps.length === 0 ? (
+        <Card><p style={{ color: colors.muted, margin: 0, fontSize: 13 }}>{empty}</p></Card>
+      ) : (
+        apps.map((a) => {
         const isPro = a.tier === 'pro';
         return (
         <Card key={a.id}>
@@ -381,7 +430,8 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
           </div>
         </Card>
         );
-      })}
+        })
+      )}
     </div>
   );
 }
