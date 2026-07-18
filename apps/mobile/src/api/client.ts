@@ -664,12 +664,16 @@ export interface TierRates {
   passengerFleetRate: number;
 }
 
+/** How long a Pro plan can be bought for, in months. */
+export type ProPlanMonths = 3 | 6 | 12;
+
 /** The tier menu + where a Pro applicant sends the fee. Admin-configurable. */
 export interface PartnerTiers {
   ok: boolean;
   free: TierRates;
   pro: TierRates;
-  proFee: number;
+  /** Pro price per month; the bill is this × the plan length (3, 6 or 12). */
+  proMonthlyFee: number;
   proFeeCurrency: string;
   payment: {
     bankName: string | null;
@@ -710,6 +714,8 @@ export interface PartnerApplicationInput {
   paymentProofUrl?: string;
   paymentMethod?: WithdrawalMethod;
   paymentReference?: string;
+  /** Pro only — plan length bought: 3, 6 or 12 months. */
+  proMonths?: ProPlanMonths;
   acceptedTerms: true;
 }
 

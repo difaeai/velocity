@@ -52,6 +52,8 @@ interface Application {
   paymentProofUrl?: string | null;
   paymentMethod?: string | null;
   paymentReference?: string | null;
+  /** Pro only — plan length bought, in months (3, 6 or 12). */
+  proMonths?: number | null;
   quotedFee?: number;
   quotedFeeCurrency?: string;
   status: string;
@@ -288,7 +290,11 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
               <Row label="Submitted" value={when(a.submittedAt)} />
               {isPro ? (
                 <>
-                  <Row label="Fee quoted" value={fee(a.quotedFee ?? 0, a.quotedFeeCurrency)} />
+                  <Row
+                    label="Plan"
+                    value={a.proMonths ? (a.proMonths === 12 ? '1 year' : `${a.proMonths} months`) : '—'}
+                  />
+                  <Row label="Bill quoted" value={fee(a.quotedFee ?? 0, a.quotedFeeCurrency)} />
                   <Row label="Paid via" value={a.paymentMethod ?? '—'} />
                   <Row label="Txn ref" value={a.paymentReference || '—'} />
                 </>
@@ -607,7 +613,7 @@ function Settings() {
   const [freePassenger, setFreePassenger] = useState('0.5');
   const [proDriver, setProDriver] = useState('2');
   const [proPassenger, setProPassenger] = useState('1.3');
-  const [proFee, setProFee] = useState('50000');
+  const [proMonthlyFee, setProMonthlyFee] = useState('4500');
   const [proFeeCurrency, setProFeeCurrency] = useState('PKR');
   const [bankName, setBankName] = useState('');
   const [bankAccountTitle, setBankAccountTitle] = useState('');
@@ -632,7 +638,7 @@ function Settings() {
       setFreePassenger(asPct(d.free?.passengerFleetRate, '0.5'));
       setProDriver(asPct(d.pro?.driverFleetRate, '2'));
       setProPassenger(asPct(d.pro?.passengerFleetRate, '1.3'));
-      if (typeof d.proFee === 'number') setProFee(String(d.proFee));
+      if (typeof d.proMonthlyFee === 'number') setProMonthlyFee(String(d.proMonthlyFee));
       if (typeof d.proFeeCurrency === 'string') setProFeeCurrency(d.proFeeCurrency);
       setBankName(d.payment?.bankName ?? '');
       setBankAccountTitle(d.payment?.bankAccountTitle ?? '');
@@ -662,7 +668,7 @@ function Settings() {
         {
           free: { driverFleetRate: fd, passengerFleetRate: fp },
           pro: { driverFleetRate: pd, passengerFleetRate: pp },
-          proFee: Number(proFee),
+          proMonthlyFee: Number(proMonthlyFee),
           proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'PKR',
           payment: {
             bankName: bankName.trim() || null,
@@ -708,7 +714,7 @@ function Settings() {
           <strong style={{ color: colors.text, fontSize: 13, marginTop: 10 }}>Pro Partner</strong>
           <FieldRow label="Driver fleet" suffix="% of platform commission" value={proDriver} onChange={setProDriver} />
           <FieldRow label="Passenger fleet" suffix="% of platform commission" value={proPassenger} onChange={setProPassenger} />
-          <FieldRow label="Registration fee" suffix={proFeeCurrency} value={proFee} onChange={setProFee} />
+          <FieldRow label="Monthly fee" suffix={`${proFeeCurrency} / month — billed for 3, 6 or 12 months`} value={proMonthlyFee} onChange={setProMonthlyFee} />
           <FieldRow label="Fee currency" suffix="e.g. PKR or USD" value={proFeeCurrency} onChange={setProFeeCurrency} />
         </div>
       </Card>

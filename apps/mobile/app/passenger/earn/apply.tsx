@@ -43,10 +43,17 @@ import { PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 
 import { api } from '../../../src/api/client';
-import type { IdDocType, PartnerTier, PartnerTiers, WithdrawalMethod } from '../../../src/api/client';
+import type {
+  IdDocType,
+  PartnerTier,
+  PartnerTiers,
+  ProPlanMonths,
+  WithdrawalMethod,
+} from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { auth, firebaseConfig } from '../../../src/firebase';
+import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
@@ -71,6 +78,13 @@ function feeLabel(amount: number, currency: string): string {
   return currency === 'USD' ? `$${n}` : `${n} ${currency}`;
 }
 
+/** The Pro plan is sold by the month, in these blocks. */
+const PRO_PLANS: { months: ProPlanMonths; label: string }[] = [
+  { months: 3, label: '3 months' },
+  { months: 6, label: '6 months' },
+  { months: 12, label: '1 year' },
+];
+
 const ID_TYPES: { key: IdDocType; label: string }[] = [
   { key: 'cnic', label: '🪪 CNIC' },
   { key: 'university_card', label: '🎓 University card' },
@@ -85,9 +99,12 @@ export default function PartnerApply() {
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
 
   const [step, setStep] = useState<'tier' | 'details'>('tier');
-  const [tiers, setTiers] = useState<PartnerTiers | null>(null);
+  // Seeded from the prefetch cache, so the plan chooser paints on the first
+  // frame instead of making the user watch a skeleton while a callable warms up.
+  const [tiers, setTiers] = useState<PartnerTiers | null>(getCachedPartnerTiers);
   const [tiersError, setTiersError] = useState(false);
   const [tier, setTier] = useState<PartnerTier>('free');
+  const [proMonths, setProMonths] = useState<ProPlanMonths>(3);
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState('');
@@ -118,8 +135,7 @@ export default function PartnerApply() {
   // Fail loudly and offer a retry instead.
   const loadTiers = () => {
     setTiersError(false);
-    api
-      .getPartnerTiers({})
+    fetchPartnerTiers()
       .then(setTiers)
       .catch(() => setTiersError(true));
   };
@@ -222,6 +238,7 @@ export default function PartnerApply() {
         city: city.trim(),
         ...(isPro && proofUp
           ? {
+              proMonths,
               paymentProofUrl: proofUp.url,
               paymentMethod: payMethod,
               ...(payRef.trim() ? { paymentReference: payRef.trim() } : {}),
@@ -266,10 +283,10 @@ export default function PartnerApply() {
                 active={tier === 'pro'}
                 onPress={() => setTier('pro')}
                 name="Pro Partner"
-                price={`${feeLabel(tiers.proFee, tiers.proFeeCurrency)} one-off`}
+                price={`${feeLabel(tiers.proMonthlyFee, tiers.proFeeCurrency)} / month`}
                 driver={pct(tiers.pro.driverFleetRate)}
                 passenger={pct(tiers.pro.passengerFleetRate)}
-                note="Pay the registration fee and upload the receipt."
+                note="Buy 3 months, 6 months or a year. Pay the fee and upload the receipt."
                 highlight
               />
             </View>
@@ -321,7 +338,7 @@ export default function PartnerApply() {
             </Text>
             <Text style={s.selectedBannerHint}>
               {isPro
-                ? 'Requires an identity document, a verified mobile number, and the registration fee receipt below.'
+                ? 'Requires an identity document, a verified mobile number, and the receipt for your plan payment below.'
                 : 'Requires only an identity document and a verified mobile number — no payment.'}
             </Text>
           </View>
@@ -423,12 +440,35 @@ export default function PartnerApply() {
           />
         </View>
 
-        {/* ── Pro: pay the fee, then prove it ── */}
+        {/* ── Pro: pick a plan length, pay the bill, then prove it ── */}
         {isPro && tiers ? (
           <>
-            <Text style={s.label}>Pay the registration fee</Text>
+            <Text style={s.label}>Choose your plan duration</Text>
+            <View style={s.plans}>
+              {PRO_PLANS.map((p) => {
+                const on = proMonths === p.months;
+                return (
+                  <Pressable
+                    key={p.months}
+                    style={[s.plan, on && s.planOn]}
+                    onPress={() => setProMonths(p.months)}
+                  >
+                    <Text style={[s.planLabel, on && s.planLabelOn]}>{p.label}</Text>
+                    <Text style={[s.planTotal, on && s.planTotalOn]}>
+                      {feeLabel(tiers.proMonthlyFee * p.months, tiers.proFeeCurrency)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={s.label}>Pay for your plan</Text>
             <View style={s.payCard}>
-              <Text style={s.payFee}>{feeLabel(tiers.proFee, tiers.proFeeCurrency)}</Text>
+              <Text style={s.payFee}>{feeLabel(tiers.proMonthlyFee * proMonths, tiers.proFeeCurrency)}</Text>
+              <Text style={s.payBreakdown}>
+                {proMonths === 12 ? '1 year' : `${proMonths} months`} ×{' '}
+                {feeLabel(tiers.proMonthlyFee, tiers.proFeeCurrency)}/month
+              </Text>
               <Text style={s.payHint}>Send it to any one of these, then upload the screenshot.</Text>
 
               <Account
@@ -489,7 +529,7 @@ export default function PartnerApply() {
           <Text style={s.termsText}>
             I accept the Partner Program terms. I understand I earn only from genuine completed
             rides, and that fake, cancelled or scam rides pay nothing.
-            {isPro ? ' I understand the registration fee is non-refundable once approved.' : ''}
+            {isPro ? ' I understand the plan fee is non-refundable once approved.' : ''}
           </Text>
         </Pressable>
 
@@ -781,6 +821,23 @@ const s = StyleSheet.create({
   uploadLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
   uploadHint: { color: colors.muted, fontSize: 11 },
 
+  plans: { flexDirection: 'row', gap: 8 },
+  plan: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 3,
+  },
+  planOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  planLabel: { color: colors.muted, fontSize: 13, fontWeight: '800' },
+  planLabelOn: { color: colors.text },
+  planTotal: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  planTotalOn: { color: colors.primary },
+
   payCard: {
     backgroundColor: colors.glassLime,
     borderWidth: 1,
@@ -790,6 +847,7 @@ const s = StyleSheet.create({
     gap: 10,
   },
   payFee: { color: colors.text, fontSize: 28, fontWeight: '900' },
+  payBreakdown: { color: colors.text, fontSize: 13, fontWeight: '700' },
   payHint: { color: colors.muted, fontSize: 12, marginBottom: 4 },
   account: {
     flexDirection: 'row',

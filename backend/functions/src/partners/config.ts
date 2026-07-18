@@ -15,11 +15,11 @@
  *
  * TIERS
  * -----
- * Free partners earn 0.5% on both fleets. Pro partners pay a one-off
- * registration fee and earn 2% on their driver fleet and 1.3% on their
- * passenger fleet. The tier is stamped on the partner document at approval and
- * read at settlement, so upgrading a partner changes what their NEXT ride pays
- * and never retroactively re-prices rides already settled.
+ * Free partners earn 0.5% on both fleets. Pro partners buy a plan — a monthly
+ * fee sold in 3, 6 or 12-month blocks — and earn 2% on their driver fleet and
+ * 1.3% on their passenger fleet. The tier is stamped on the partner document at
+ * approval and read at settlement, so upgrading a partner changes what their
+ * NEXT ride pays and never retroactively re-prices rides already settled.
  *
  * Velocity's own net is what survives after the franchise cut and the partner
  * cuts, and it is never allowed to go negative: `applyPartnerCredit()` pays out
@@ -39,8 +39,9 @@ export interface TierRates {
 export interface PartnerSettings {
   free: TierRates;
   pro: TierRates;
-  /** One-off Pro registration fee, in `proFeeCurrency`. */
-  proFee: number;
+  /** Pro plan price PER MONTH, in `proFeeCurrency`. The bill is this times the
+   * plan length the applicant picks (3, 6 or 12 months). */
+  proMonthlyFee: number;
   proFeeCurrency: string;
   /** Where a Pro applicant sends the fee. Admin-set; shown on the apply screen.
    * Each account carries its holder's title too — the wallets are often
@@ -68,7 +69,7 @@ export interface PartnerSettings {
 export const DEFAULT_PARTNER_SETTINGS: PartnerSettings = {
   free: { driverFleetRate: 0.005, passengerFleetRate: 0.005 },
   pro: { driverFleetRate: 0.02, passengerFleetRate: 0.013 },
-  proFee: 50000,
+  proMonthlyFee: 4500,
   proFeeCurrency: 'PKR',
   payment: {
     bankName: null,
@@ -99,7 +100,9 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
 
   const minWithdrawal = snap.get('minWithdrawal') as unknown;
   const holdHours = snap.get('holdHours') as unknown;
-  const proFee = snap.get('proFee') as unknown;
+  // Deliberately a NEW key: any legacy `proFee` in the doc was a one-off
+  // amount, and reading it as a monthly price would multiply it by 12.
+  const proMonthlyFee = snap.get('proMonthlyFee') as unknown;
   const payment = (snap.get('payment') as Record<string, unknown> | undefined) ?? {};
 
   return {
@@ -111,7 +114,8 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
       driverFleetRate: rate(snap.get('pro.driverFleetRate'), d.pro.driverFleetRate),
       passengerFleetRate: rate(snap.get('pro.passengerFleetRate'), d.pro.passengerFleetRate),
     },
-    proFee: typeof proFee === 'number' && proFee >= 0 ? proFee : d.proFee,
+    proMonthlyFee:
+      typeof proMonthlyFee === 'number' && proMonthlyFee >= 0 ? proMonthlyFee : d.proMonthlyFee,
     proFeeCurrency: str(snap.get('proFeeCurrency')) ?? d.proFeeCurrency,
     payment: {
       bankName: str(payment.bankName),
