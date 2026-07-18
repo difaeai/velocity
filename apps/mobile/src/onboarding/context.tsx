@@ -5,7 +5,7 @@ import { uploadDriverDoc } from '../lib/uploadDoc';
 import { api } from '../api/client';
 import type { RideType } from '../domain/types';
 
-export type SectionKey = 'basic' | 'license' | 'cnic' | 'selfie' | 'vehicle';
+export type SectionKey = 'basic' | 'license' | 'cnic' | 'vehicle';
 
 export interface OnboardingData {
   photo: string | null;
@@ -19,7 +19,6 @@ export interface OnboardingData {
   cnicBack: string | null;
   cnicNumber: string;
   cnicExpiry: string;
-  selfie: string | null;
   vehicleType: RideType | null;
   vehicleMake: string;
   color: string;
@@ -41,7 +40,6 @@ const EMPTY: OnboardingData = {
   cnicBack: null,
   cnicNumber: '',
   cnicExpiry: '',
-  selfie: null,
   vehicleType: null,
   vehicleMake: '',
   color: '',
@@ -75,7 +73,6 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     basic: !!data.photo && data.firstName.trim().length > 0 && data.lastName.trim().length > 0,
     license: !!data.licensePhoto,
     cnic: !!data.cnicFront && !!data.cnicBack && CNIC_RE.test(data.cnicNumber),
-    selfie: !!data.selfie,
     vehicle:
       !!data.vehicleType &&
       data.vehicleMake.trim().length > 0 &&
@@ -91,14 +88,13 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     setError(null);
     try {
       const uid = user.uid;
-      const [licenseResult, cnicResult, cnicBackResult, vehicleDocResult, photoResult, selfieResult] =
+      const [licenseResult, cnicResult, cnicBackResult, vehicleDocResult, photoResult] =
         await Promise.all([
           uploadDriverDoc(uid, 'license',    data.licensePhoto!),
           uploadDriverDoc(uid, 'cnic-front', data.cnicFront!),
           uploadDriverDoc(uid, 'cnic-back',  data.cnicBack!),
           uploadDriverDoc(uid, 'vehicle',    data.vehicleDoc!),
           uploadDriverDoc(uid, 'photo',      data.photo!),
-          uploadDriverDoc(uid, 'selfie',     data.selfie!),
         ]);
 
       let vehiclePhotoDocPath: string | undefined;
@@ -125,8 +121,6 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         vehicleDocUrl:      vehicleDocResult.url,
         photoDocPath:       photoResult.path,
         photoDocUrl:        photoResult.url,
-        selfieDocPath:      selfieResult.path,
-        selfieDocUrl:       selfieResult.url,
         vehiclePhotoDocPath,
         vehiclePhotoDocUrl,
         email:              data.email          || undefined,

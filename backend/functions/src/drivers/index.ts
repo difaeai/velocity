@@ -31,8 +31,6 @@ const onboardingSchema = z.object({
   vehicleDocUrl:       z.string().url().max(2000).optional(),
   photoDocPath:        z.string().max(512).optional(),
   photoDocUrl:         z.string().url().max(2000).optional(),
-  selfieDocPath:       z.string().max(512).optional(),
-  selfieDocUrl:        z.string().url().max(2000).optional(),
   vehiclePhotoDocPath: z.string().max(512).optional(),
   vehiclePhotoDocUrl:  z.string().url().max(2000).optional(),
   email:               z.string().email().max(200).optional(),
@@ -270,7 +268,7 @@ export const approveDriver = onCall(async (req) => {
   return { ok: true, verificationStatus: 'approved' };
 });
 
-const SECTION_KEYS = ['basic', 'license', 'cnic', 'selfie', 'vehicle'] as const;
+const SECTION_KEYS = ['basic', 'license', 'cnic', 'vehicle'] as const;
 const rejectSchema = driverIdSchema.extend({
   reason:           z.string().max(500).optional(),
   suspend:          z.boolean().optional(),

@@ -35,7 +35,6 @@ interface DriverRow {
   licenseDocUrl?: string;
   cnicDocUrl?: string;
   cnicBackDocUrl?: string;
-  selfieDocUrl?: string;
   vehicleDocUrl?: string;
   vehiclePhotoDocUrl?: string;
   licenseExpiry?: string;
@@ -68,7 +67,6 @@ const REJECT_SECTIONS = [
   { key: 'basic',   label: 'Basic info' },
   { key: 'license', label: 'Driver licence' },
   { key: 'cnic',    label: 'CNIC' },
-  { key: 'selfie',  label: 'Selfie with ID' },
   { key: 'vehicle', label: 'Vehicle info' },
 ];
 
@@ -543,7 +541,6 @@ export default function DriversPage() {
                       <Section title="Documents &amp; photos">
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                           <DocImage label="Profile photo"  url={d.photoDocUrl} />
-                          <DocImage label="Selfie with ID" url={d.selfieDocUrl} />
                           <DocImage label="Driver licence" url={d.licenseDocUrl} expiry={d.licenseExpiry} />
                           <DocImage label="CNIC (front)"   url={d.cnicDocUrl}    expiry={d.cnicExpiry} />
                           <DocImage label="CNIC (back)"    url={d.cnicBackDocUrl} />
