@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -69,25 +70,46 @@ export function StepHeader({ title }: { title: string }) {
   );
 }
 
-/** Green primary action used across the light onboarding forms. */
+/**
+ * Green primary action used across the light onboarding forms.
+ *
+ * Always pressable: a "disabled" button still responds on the first tap and
+ * explains what's missing (silently dead buttons read as broken and get mashed).
+ * A generous pressRetentionOffset keeps a slightly-moving finger from
+ * cancelling the press, and the keyboard is dismissed before acting so the
+ * layout never shifts mid-tap.
+ */
 export function OnbButton({
   label,
   onPress,
   disabled,
+  disabledHint,
   loading,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /** Shown when the button is tapped while requirements are missing. */
+  disabledHint?: string;
   loading?: boolean;
 }) {
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled || loading}
+      onPress={() => {
+        if (loading) return;
+        Keyboard.dismiss();
+        if (disabled) {
+          Alert.alert('Almost there', disabledHint ?? 'Please complete the required steps above first.');
+          return;
+        }
+        onPress();
+      }}
+      hitSlop={6}
+      pressRetentionOffset={{ top: 24, bottom: 24, left: 24, right: 24 }}
+      android_ripple={{ color: 'rgba(255,255,255,0.25)' }}
       style={({ pressed }) => [
         styles.onbBtn,
-        { backgroundColor: disabled ? oc.disabled : oc.green, opacity: pressed && !disabled ? 0.9 : 1 },
+        { backgroundColor: disabled ? oc.disabled : oc.green, opacity: pressed ? 0.85 : 1 },
       ]}
     >
       {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.onbBtnText}>{label}</Text>}
@@ -291,7 +313,12 @@ export function HubRow({
   first?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.hubRow, !first && styles.hubRowBorder]}>
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+      pressRetentionOffset={{ top: 16, bottom: 16, left: 16, right: 16 }}
+      style={[styles.hubRow, !first && styles.hubRowBorder]}
+    >
       <View style={{ flex: 1 }}>
         <Text style={styles.hubLabel}>{label}</Text>
         {value ? <Text style={styles.hubValue}>{value}</Text> : null}
@@ -369,7 +396,7 @@ const styles = StyleSheet.create({
   headerSideMuted: { color: '#9aa3a0', fontSize: 18, fontWeight: '600' },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
 
-  onbBtn: { height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  onbBtn: { height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, overflow: 'hidden' },
   onbBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
 
   fieldCard: { backgroundColor: oc.card, borderRadius: 16, padding: 16, marginBottom: 12 },
