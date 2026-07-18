@@ -28,6 +28,7 @@ export {
   adminReviewWithdrawal,
   adminSuspendPartner,
 } from './wallet';
+export { adminUpdatePartner, adminDeletePartner } from './manage';
 export {
   getPartnerDashboard,
   getPartnerFleetMembers,

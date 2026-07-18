@@ -192,6 +192,8 @@ export {
   requestPartnerWithdrawal,
   adminReviewWithdrawal,
   adminSuspendPartner,
+  adminUpdatePartner,
+  adminDeletePartner,
   getPartnerDashboard,
   getPartnerFleetMembers,
   getPartnerMemberRides,

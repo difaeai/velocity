@@ -436,11 +436,90 @@ function ApplicationSection({
   );
 }
 
+interface PartnerEditForm {
+  id: string;
+  fullName: string;
+  city: string;
+  mobile: string;
+  tier: Tier;
+}
+
 function Partners({ partners, busy, run }: { partners: Partner[]; busy: string | null; run: Runner }) {
+  const [editing, setEditing] = useState<PartnerEditForm | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  async function saveEdit() {
+    if (!editing) return;
+    if (editing.fullName.trim().length < 2) {
+      setEditError('Full name is required.');
+      return;
+    }
+    setSaving(true);
+    setEditError(null);
+    try {
+      await adminApi.adminUpdatePartner({
+        partnerId: editing.id,
+        fullName: editing.fullName.trim(),
+        city: editing.city.trim() || undefined,
+        mobile: editing.mobile.trim() || undefined,
+        tier: editing.tier,
+      });
+      setEditing(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Failed to save changes.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (partners.length === 0) {
     return <Card><p style={{ color: colors.muted, margin: 0 }}>No partners yet.</p></Card>;
   }
   return (
+    <div style={{ display: 'grid', gap: 14 }}>
+    {editing ? (
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, color: colors.text, fontSize: 15 }}>Edit partner</h3>
+          <button
+            onClick={() => setEditing(null)}
+            style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: colors.muted }}
+          >
+            ✕
+          </button>
+        </div>
+        <div style={{ display: 'grid', gap: 12, maxWidth: 420, marginTop: 12 }}>
+          <FieldRow label="Full name" suffix="also renames both fleets" value={editing.fullName} onChange={(v) => setEditing((f) => f && { ...f, fullName: v })} wide />
+          <FieldRow label="City" suffix="" value={editing.city} onChange={(v) => setEditing((f) => f && { ...f, city: v })} wide />
+          <FieldRow label="Mobile" suffix="" value={editing.mobile} onChange={(v) => setEditing((f) => f && { ...f, mobile: v })} wide />
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: colors.text, fontSize: 13, fontWeight: 700 }}>Tier</span>
+            <select
+              value={editing.tier}
+              onChange={(e) => setEditing((f) => f && { ...f, tier: e.target.value as Tier })}
+              style={{
+                width: 200,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: `1px solid ${colors.border}`,
+                background: colors.surface,
+                color: colors.text,
+                fontSize: 14,
+              }}
+            >
+              <option value="free">Free — 0.5% both fleets</option>
+              <option value="pro">Pro — 2% / 1.3%</option>
+            </select>
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
+          <Button onClick={saveEdit} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
+          <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+          {editError ? <span style={{ color: colors.danger, fontSize: 13 }}>{editError}</span> : null}
+        </div>
+      </Card>
+    ) : null}
     <Card>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
@@ -490,26 +569,63 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
                   />
                 </td>
                 <td style={td}>
-                  <Button
-                    variant={p.status === 'active' ? 'danger' : 'secondary'}
-                    disabled={busy === p.id}
-                    onClick={() => {
-                      const suspending = p.status === 'active';
-                      const reason = suspending
-                        ? window.prompt('Reason for suspension (shown to the partner)') ?? undefined
-                        : undefined;
-                      if (suspending && !reason) return;
-                      return run(p.id, () =>
-                        adminApi.adminSuspendPartner({
-                          partnerId: p.id,
-                          suspended: suspending,
-                          reason,
-                        }),
-                      );
-                    }}
-                  >
-                    {p.status === 'active' ? 'Suspend' : 'Reactivate'}
-                  </Button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Button
+                      variant="ghost"
+                      disabled={busy === p.id}
+                      onClick={() =>
+                        setEditing({
+                          id: p.id,
+                          fullName: p.fullName ?? '',
+                          city: p.city ?? '',
+                          mobile: p.mobile ?? '',
+                          tier: p.tier === 'pro' ? 'pro' : 'free',
+                        })
+                      }
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant={p.status === 'active' ? 'danger' : 'secondary'}
+                      disabled={busy === p.id}
+                      onClick={() => {
+                        const suspending = p.status === 'active';
+                        const reason = suspending
+                          ? window.prompt('Reason for suspension (shown to the partner)') ?? undefined
+                          : undefined;
+                        if (suspending && !reason) return;
+                        return run(p.id, () =>
+                          adminApi.adminSuspendPartner({
+                            partnerId: p.id,
+                            suspended: suspending,
+                            reason,
+                          }),
+                        );
+                      }}
+                    >
+                      {p.status === 'active' ? 'Suspend' : 'Reactivate'}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      disabled={busy === p.id}
+                      onClick={() => {
+                        const sure = window.confirm(
+                          `Permanently delete ${p.fullName ?? p.id}?\n\nTheir fleets, wallet and recruit links are removed, their code ${p.referralCode ?? ''} stops working, and they can apply to the program afresh. This cannot be undone.`,
+                        );
+                        if (!sure) return;
+                        const reason = window.prompt('Reason (optional — shown to the user)');
+                        if (reason === null) return;
+                        return run(p.id, () =>
+                          adminApi.adminDeletePartner({
+                            partnerId: p.id,
+                            reason: reason.trim() || undefined,
+                          }),
+                        );
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -517,6 +633,7 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
         </table>
       </div>
     </Card>
+    </div>
   );
 }
 

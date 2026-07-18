@@ -153,6 +153,20 @@ export const adminApi = {
     { partnerId: string; suspended: boolean; reason?: string },
     { ok: boolean }
   >('adminSuspendPartner'),
+  adminUpdatePartner: callable<
+    {
+      partnerId: string;
+      fullName?: string;
+      city?: string;
+      mobile?: string;
+      tier?: 'free' | 'pro';
+    },
+    { ok: boolean }
+  >('adminUpdatePartner'),
+  adminDeletePartner: callable<
+    { partnerId: string; reason?: string },
+    { ok: boolean; unboundDrivers: number; unboundPassengers: number }
+  >('adminDeletePartner'),
   adminMarkRideStatus: callable<
     { tripId: string; status: 'completed' | 'cancelled' | 'scam' | 'fraud'; reason?: string },
     { ok: boolean; status: string; rows: number }
