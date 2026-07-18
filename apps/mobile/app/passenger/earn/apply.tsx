@@ -28,7 +28,9 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -85,6 +87,22 @@ const PRO_PLANS: { months: ProPlanMonths; label: string }[] = [
   { months: 12, label: '1 year' },
 ];
 
+/** Major cities, roughly by size, so most applicants find theirs near the top. */
+const PK_CITIES = [
+  'Karachi', 'Lahore', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan',
+  'Peshawar', 'Quetta', 'Gujranwala', 'Sialkot', 'Hyderabad', 'Bahawalpur',
+  'Sargodha', 'Sukkur', 'Sheikhupura', 'Larkana', 'Rahim Yar Khan', 'Jhang',
+  'Dera Ghazi Khan', 'Gujrat', 'Sahiwal', 'Wah Cantt', 'Mardan', 'Kasur',
+  'Okara', 'Mingora (Swat)', 'Nawabshah', 'Chiniot', 'Kotri', 'Kamoke',
+  'Hafizabad', 'Kohat', 'Jacobabad', 'Shikarpur', 'Muzaffargarh', 'Khanewal',
+  'Mirpur Khas', 'Abbottabad', 'Mansehra', 'Dera Ismail Khan', 'Charsadda',
+  'Nowshera', 'Bannu', 'Jhelum', 'Chakwal', 'Attock', 'Taxila', 'Mianwali',
+  'Khushab', 'Bhakkar', 'Layyah', 'Vehari', 'Pakpattan', 'Lodhran',
+  'Toba Tek Singh', 'Khairpur', 'Dadu', 'Thatta', 'Badin', 'Khuzdar',
+  'Gwadar', 'Turbat', 'Hub', 'Zhob', 'Chaman', 'Gilgit', 'Skardu',
+  'Muzaffarabad', 'Mirpur (AJK)', 'Kotli', 'Haripur', 'Swabi', 'Murree',
+];
+
 const ID_TYPES: { key: IdDocType; label: string }[] = [
   { key: 'cnic', label: '🪪 CNIC' },
   { key: 'university_card', label: '🎓 University card' },
@@ -108,6 +126,9 @@ export default function PartnerApply() {
 
   const [fullName, setFullName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState('');
+  // 'Other' shows a free-text field for towns the list doesn't carry.
+  const [cityIsOther, setCityIsOther] = useState(false);
+  const [cityPickerOpen, setCityPickerOpen] = useState(false);
   const [idType, setIdType] = useState<IdDocType>('cnic');
   const [idNumber, setIdNumber] = useState('');
   const [front, setFront] = useState<string | null>(null);
@@ -399,12 +420,36 @@ export default function PartnerApply() {
         )}
 
         <Text style={s.label}>City</Text>
-        <TextInput
-          style={s.input}
-          value={city}
-          onChangeText={setCity}
-          placeholder="Lahore"
-          placeholderTextColor={colors.muted}
+        <Pressable style={s.cityField} onPress={() => setCityPickerOpen(true)}>
+          <Text style={city && !cityIsOther ? s.cityValue : s.cityPlaceholder}>
+            {cityIsOther ? 'Other — type it below' : city || 'Select your city'}
+          </Text>
+          <Text style={s.cityChevron}>▾</Text>
+        </Pressable>
+        {cityIsOther ? (
+          <TextInput
+            style={[s.input, { marginTop: 8 }]}
+            value={city}
+            onChangeText={setCity}
+            placeholder="Type your city or town"
+            placeholderTextColor={colors.muted}
+            autoFocus
+          />
+        ) : null}
+        <CityPicker
+          visible={cityPickerOpen}
+          onClose={() => setCityPickerOpen(false)}
+          onPick={(name) => {
+            setCityPickerOpen(false);
+            if (name === null) {
+              // "Other": clear the old choice so validation waits for typing.
+              setCityIsOther(true);
+              setCity('');
+            } else {
+              setCityIsOther(false);
+              setCity(name);
+            }
+          }}
         />
 
         <Text style={s.label}>Identity document</Text>
@@ -674,6 +719,74 @@ function UploadTile({
   );
 }
 
+/**
+ * Searchable city list. `onPick(null)` means "Other" — the caller swaps the
+ * field for free text. The Other row stays visible under every search, because
+ * the moment someone's town isn't found is exactly when they need it.
+ */
+function CityPicker({
+  visible,
+  onClose,
+  onPick,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (city: string | null) => void;
+}) {
+  const [search, setSearch] = useState('');
+
+  const q = search.trim().toLowerCase();
+  const matches = q ? PK_CITIES.filter((c) => c.toLowerCase().includes(q)) : PK_CITIES;
+
+  // A fresh open starts with a fresh search.
+  useEffect(() => {
+    if (visible) setSearch('');
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={s.pickerBackdrop}>
+        <View style={s.pickerSheet}>
+          <View style={s.pickerHeader}>
+            <Text style={s.pickerTitle}>Select your city</Text>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <Text style={s.pickerClose}>✕</Text>
+            </Pressable>
+          </View>
+
+          <TextInput
+            style={s.pickerSearch}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search cities…"
+            placeholderTextColor={colors.muted}
+            autoCorrect={false}
+          />
+
+          <FlatList
+            data={matches}
+            keyExtractor={(c) => c}
+            keyboardShouldPersistTaps="handled"
+            style={{ flexGrow: 0 }}
+            renderItem={({ item }) => (
+              <Pressable style={s.cityRow} onPress={() => onPick(item)}>
+                <Text style={s.cityRowText}>{item}</Text>
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              <Text style={s.cityEmpty}>No match — choose Other below and type it.</Text>
+            }
+          />
+
+          <Pressable style={s.cityOther} onPress={() => onPick(null)}>
+            <Text style={s.cityOtherText}>✍️ Other — my city is not listed</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 20, paddingBottom: 44 },
@@ -898,4 +1011,61 @@ const s = StyleSheet.create({
   termsText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 18 },
 
   blocker: { color: colors.muted, fontSize: 12, textAlign: 'center', marginTop: 10 },
+
+  cityField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  cityValue: { color: colors.text, fontSize: 15 },
+  cityPlaceholder: { color: colors.muted, fontSize: 15 },
+  cityChevron: { color: colors.muted, fontSize: 14 },
+
+  pickerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  pickerSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 18,
+    paddingBottom: 30,
+    maxHeight: '80%',
+  },
+  pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pickerTitle: { color: colors.text, fontSize: 17, fontWeight: '900' },
+  pickerClose: { color: colors.muted, fontSize: 18, fontWeight: '700' },
+  pickerSearch: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    color: colors.text,
+    fontSize: 15,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  cityRow: {
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  cityRowText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  cityEmpty: { color: colors.muted, fontSize: 13, paddingVertical: 16, textAlign: 'center' },
+  cityOther: {
+    marginTop: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  cityOtherText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
 });
