@@ -48,8 +48,6 @@ export interface DriverOnboardingInput {
   vehicleDocUrl?: string;
   photoDocPath?: string;
   photoDocUrl?: string;
-  selfieDocPath?: string;
-  selfieDocUrl?: string;
   vehiclePhotoDocPath?: string;
   vehiclePhotoDocUrl?: string;
   email?: string;

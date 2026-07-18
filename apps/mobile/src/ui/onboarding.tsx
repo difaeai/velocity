@@ -186,21 +186,6 @@ export function IdCardArt({ label = 'ID' }: { label?: string }) {
   );
 }
 
-/** "What not to do" selfie illustration: hat + sunglasses + ID, with a red cross. */
-export function SelfieDontArt() {
-  return (
-    <View style={styles.selfieArt}>
-      <Text style={styles.selfieCross}>✕</Text>
-      <View style={styles.hatCrown} />
-      <View style={styles.hatBrim} />
-      <View style={styles.head}>
-        <View style={styles.glasses} />
-      </View>
-      <View style={styles.idInHand} />
-    </View>
-  );
-}
-
 /** Document upload card: shows the example art or the picked photo + a button. */
 export function UploadCard({
   title,
@@ -222,7 +207,7 @@ export function UploadCard({
   );
 }
 
-/** Round avatar / selfie picker. */
+/** Round avatar picker. */
 export function PhotoCircle({ uri, onPick }: { uri: string | null; onPick: () => void }) {
   return (
     <Pressable onPress={onPick} style={styles.photoCircleWrap}>
@@ -320,14 +305,6 @@ const styles = StyleSheet.create({
   idPhoto: { width: 56, height: 64, borderRadius: 8, backgroundColor: '#c9ddd1' },
   idLine: { height: 9, borderRadius: 5, backgroundColor: '#c9ddd1' },
   idLabel: { position: 'absolute', top: 8, right: 12, fontSize: 10, fontWeight: '900', color: oc.green },
-
-  selfieArt: { height: 150, alignItems: 'center', justifyContent: 'center', marginVertical: 4 },
-  selfieCross: { position: 'absolute', top: 8, left: '34%', fontSize: 30, color: '#e23b3b', fontWeight: '900', zIndex: 2 },
-  hatCrown: { width: 70, height: 26, backgroundColor: '#23272b', borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-  hatBrim: { width: 96, height: 8, backgroundColor: '#23272b', borderRadius: 4, marginTop: -1 },
-  head: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#f0d4ba', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  glasses: { width: 58, height: 16, backgroundColor: '#23272b', borderRadius: 8, marginTop: 8 },
-  idInHand: { position: 'absolute', left: '24%', bottom: 18, width: 44, height: 30, backgroundColor: '#cfe8d6', borderRadius: 5, borderWidth: 1.5, borderColor: oc.green },
 
   photoCircleWrap: { alignItems: 'center', gap: 10 },
   photoCircle: {

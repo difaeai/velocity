@@ -11,7 +11,6 @@ const SECTIONS: { key: SectionKey; label: string; route: string }[] = [
   { key: 'basic', label: 'Basic info', route: '/passenger/become-driver/basic-info' },
   { key: 'license', label: 'Driver licence', route: '/passenger/become-driver/license' },
   { key: 'cnic', label: 'CNIC', route: '/passenger/become-driver/cnic' },
-  { key: 'selfie', label: 'Selfie with ID', route: '/passenger/become-driver/selfie' },
   { key: 'vehicle', label: 'Vehicle info', route: '/passenger/become-driver/vehicle' },
 ];
 
