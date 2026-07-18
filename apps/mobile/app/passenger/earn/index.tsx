@@ -15,7 +15,7 @@
  * rejected → the admin's reason and a reapply button into the same form;
  * approved → straight to the dashboard (fleets, performance, revenue).
  */
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +30,11 @@ import { Skeleton } from '../../../src/ui/partner';
 export default function EarnLanding() {
   const router = useRouter();
   const { stage, rejectionReason } = usePartnerStatus();
+  // Set by the apply screen the moment its submission succeeds. The Firestore
+  // listener needs a round-trip before `stage` flips to 'pending', and that gap
+  // used to flash the sales pitch at someone who had just applied.
+  const { submitted } = useLocalSearchParams<{ submitted?: string }>();
+  const justSubmitted = submitted === '1';
 
   // Warm the tier menu while the user reads the pitch, so tapping "Apply"
   // opens the plan chooser instantly instead of on a skeleton.
@@ -41,7 +46,7 @@ export default function EarnLanding() {
     if (stage === 'approved') router.replace('/passenger/earn/dashboard');
   }, [stage, router]);
 
-  if (stage === 'loading' || stage === 'approved') {
+  if ((stage === 'loading' && !justSubmitted) || stage === 'approved') {
     return (
       <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
         <View style={{ padding: 20, gap: 14 }}>
@@ -52,7 +57,7 @@ export default function EarnLanding() {
     );
   }
 
-  if (stage === 'pending') {
+  if (stage === 'pending' || (justSubmitted && stage !== 'suspended')) {
     return (
       <StatusScreen
         onBack={() => router.back()}

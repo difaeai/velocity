@@ -221,11 +221,11 @@ export default function PartnerApply() {
     try {
       // Upload first: a submission whose documents failed to upload would sit in
       // the admin queue with broken images and get rejected for no reason.
-      const [frontUp, backUp, proofUp] = await Promise.all([
-        uploadCnicDoc(user.uid, 'front', front!),
-        back ? uploadCnicDoc(user.uid, 'back', back) : Promise.resolve(null),
-        isPro && proof ? uploadPartnerPaymentProof(user.uid, proof) : Promise.resolve(null),
-      ]);
+      // One at a time — reading several multi-MB photos into memory at once has
+      // killed the app on low-RAM handsets at exactly this moment.
+      const frontUp = await uploadCnicDoc(user.uid, 'front', front!);
+      const backUp = back ? await uploadCnicDoc(user.uid, 'back', back) : null;
+      const proofUp = isPro && proof ? await uploadPartnerPaymentProof(user.uid, proof) : null;
 
       await api.submitPartnerApplication({
         tier,
@@ -247,11 +247,11 @@ export default function PartnerApply() {
         acceptedTerms: true,
       });
 
-      Alert.alert(
-        'Application submitted',
-        'Your application has been submitted successfully. Our team will review your documents. You will receive a notification once your application is approved.',
-        [{ text: 'Done', onPress: () => router.replace('/passenger/earn') }],
-      );
+      // Straight to the "Waiting for approval" screen — no dialog in between.
+      // The landing's status listener needs a server round-trip to see the new
+      // application, so the route carries a hint that paints the waiting screen
+      // on the very first frame.
+      router.replace({ pathname: '/passenger/earn', params: { submitted: '1' } });
     } catch (e) {
       Alert.alert('Could not submit', e instanceof Error ? e.message : 'Try again.');
     } finally {
@@ -322,11 +322,16 @@ export default function PartnerApply() {
   // ── Step 2: the details ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaRef}
-        firebaseConfig={firebaseConfig}
-        attemptInvisibleVerification
-      />
+      {/* Only mounted while a number still needs verifying. The verifier is a
+          hidden WebView, and keeping one alive under an already-verified form
+          has crashed the app on low-end Android at submit time. */}
+      {!phone ? (
+        <FirebaseRecaptchaVerifierModal
+          ref={recaptchaRef}
+          firebaseConfig={firebaseConfig}
+          attemptInvisibleVerification
+        />
+      ) : null}
 
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <Text style={s.stepBadge}>Step 2 of 2</Text>
