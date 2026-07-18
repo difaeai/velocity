@@ -52,7 +52,12 @@ export default function VehiclePhoto() {
           ) : null}
         </View>
 
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!data.vehiclePhoto} />
+        <OnbButton
+          label="Done"
+          onPress={() => router.back()}
+          disabled={!data.vehiclePhoto}
+          disabledHint="Add the front photo of your vehicle with the number plate clearly visible."
+        />
         <SupportNote />
       </ScrollView>
     </SafeAreaView>

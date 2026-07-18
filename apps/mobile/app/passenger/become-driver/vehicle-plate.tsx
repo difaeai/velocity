@@ -22,7 +22,12 @@ export default function VehiclePlate() {
             placeholder="LEC-4820"
             autoCapitalize="characters"
           />
-          <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
+          <OnbButton
+            label="Done"
+            onPress={() => router.back()}
+            disabled={!valid}
+            disabledHint="Enter your registration plate number."
+          />
         </ScrollView>
       </OnbKeyboardView>
     </SafeAreaView>

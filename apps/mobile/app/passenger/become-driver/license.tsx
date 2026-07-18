@@ -32,7 +32,12 @@ export default function License() {
             Upload a clear photo of your original licence. Only original documents are accepted.
           </Text>
         </View>
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!data.licensePhoto} />
+        <OnbButton
+          label="Done"
+          onPress={() => router.back()}
+          disabled={!data.licensePhoto}
+          disabledHint="Add a photo of the front of your driver's licence."
+        />
       </ScrollView>
     </SafeAreaView>
   );

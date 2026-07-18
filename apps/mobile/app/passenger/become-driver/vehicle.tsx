@@ -43,7 +43,12 @@ export default function Vehicle() {
           />
         </View>
 
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!required} />
+        <OnbButton
+          label="Done"
+          onPress={() => router.back()}
+          disabled={!required}
+          disabledHint="Complete every section: vehicle details, front picture, registration plate and certificate."
+        />
         <SupportNote />
       </ScrollView>
     </SafeAreaView>

@@ -63,6 +63,8 @@ export default function Checklist() {
               <Pressable
                 key={s.key}
                 onPress={() => router.push(s.route)}
+                android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+                pressRetentionOffset={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={[styles.row, i > 0 && styles.rowBorder, rejected && styles.rowRejected]}
               >
                 <View style={{ flex: 1 }}>
@@ -101,6 +103,11 @@ export default function Checklist() {
           onPress={onSubmit}
           loading={submitting}
           disabled={!allComplete || status === 'pending'}
+          disabledHint={
+            status === 'pending'
+              ? 'Your application is already with our team — we will notify you once it is reviewed.'
+              : 'Complete all the sections above first — the incomplete ones are marked with !'
+          }
         />
         <Text style={styles.terms}>By submitting you agree to our Terms &amp; Privacy Policy.</Text>
       </ScrollView>

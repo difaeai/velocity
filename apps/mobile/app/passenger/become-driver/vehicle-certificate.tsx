@@ -27,7 +27,12 @@ export default function VehicleCertificate() {
           placeholder="Select a date"
           minimumDate={new Date()}
         />
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!data.vehicleDoc} />
+        <OnbButton
+          label="Done"
+          onPress={() => router.back()}
+          disabled={!data.vehicleDoc}
+          disabledHint="Add a photo of the certificate of vehicle registration."
+        />
         <SupportNote />
       </ScrollView>
     </SafeAreaView>

@@ -43,7 +43,12 @@ export default function VehicleDetails() {
         />
         <Field label="Colour" value={data.color} onChangeText={(t) => set({ color: t })} placeholder="e.g. White" />
 
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
+        <OnbButton
+          label="Done"
+          onPress={() => router.back()}
+          disabled={!valid}
+          disabledHint="Choose a vehicle type and enter the make and colour."
+        />
       </ScrollView>
       </OnbKeyboardView>
     </SafeAreaView>

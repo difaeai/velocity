@@ -52,7 +52,12 @@ export default function BasicInfo() {
             initialDate={DOB_INITIAL}
           />
 
-          <OnbButton label="Next" onPress={() => router.back()} disabled={!data.photo || !data.firstName.trim() || !data.lastName.trim()} />
+          <OnbButton
+            label="Next"
+            onPress={() => router.back()}
+            disabled={!data.photo || !data.firstName.trim() || !data.lastName.trim()}
+            disabledHint="Add your profile photo and enter your first and last name."
+          />
         </ScrollView>
       </OnbKeyboardView>
     </SafeAreaView>

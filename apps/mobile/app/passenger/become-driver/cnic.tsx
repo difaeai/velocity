@@ -45,7 +45,12 @@ export default function Cnic() {
             keyboardType="number-pad"
             maxLength={15}
           />
-          <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
+          <OnbButton
+            label="Done"
+            onPress={() => router.back()}
+            disabled={!valid}
+            disabledHint="Add both CNIC photos and enter the full 13-digit CNIC number."
+          />
         </ScrollView>
       </OnbKeyboardView>
     </SafeAreaView>

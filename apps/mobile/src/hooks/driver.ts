@@ -17,6 +17,31 @@ export interface DriverProfile {
   cycleGrossFare?: number;
   /** Cash-only portion of the cycle — what the settle amount is computed from. */
   cycleCashFare?: number;
+  // ── Submitted application details — used to re-fill the onboarding forms on
+  //    resubmission so a rejection only costs the driver the rejected sections.
+  cnic?: string;
+  vehicleType?: string;
+  vehicleLabel?: string;
+  plate?: string;
+  email?: string;
+  dob?: string;
+  licenseExpiry?: string;
+  cnicExpiry?: string;
+  vehicleDocExpiry?: string;
+  photoDocPath?: string;
+  photoDocUrl?: string;
+  licenseDocPath?: string;
+  licenseDocUrl?: string;
+  cnicDocPath?: string;
+  cnicDocUrl?: string;
+  cnicBackDocPath?: string;
+  cnicBackDocUrl?: string;
+  vehicleDocPath?: string;
+  vehicleDocUrl?: string;
+  vehiclePhotoDocPath?: string;
+  vehiclePhotoDocUrl?: string;
+  extraVehiclePhotoDocPaths?: string[];
+  extraVehiclePhotoDocUrls?: string[];
 }
 
 export function useDriverProfile(uid?: string): DriverProfile | null {
