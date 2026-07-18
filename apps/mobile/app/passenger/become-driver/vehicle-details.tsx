@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { Field, OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
+import { Field, OnbButton, OnbKeyboardView, StepHeader, oc } from '../../../src/ui/onboarding';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
@@ -16,6 +16,7 @@ export default function VehicleDetails() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Vehicle details" />
+      <OnbKeyboardView>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.typeCard}>
           <Text style={styles.typeLabel}>Vehicle type</Text>
@@ -44,6 +45,7 @@ export default function VehicleDetails() {
 
         <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
       </ScrollView>
+      </OnbKeyboardView>
     </SafeAreaView>
   );
 }

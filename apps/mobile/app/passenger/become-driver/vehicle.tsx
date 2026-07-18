@@ -13,7 +13,7 @@ export default function Vehicle() {
   const pictureDone = !!data.vehiclePhoto;
   const plateDone = data.plate.trim().length > 2;
   const certificateDone = !!data.vehicleDoc;
-  const required = detailsDone && plateDone && certificateDone;
+  const required = detailsDone && pictureDone && plateDone && certificateDone;
 
   const summary = detailsDone ? `${data.vehicleMake}, ${data.color}` : undefined;
   const go = (route: string) => () => router.push(route);
@@ -21,7 +21,7 @@ export default function Vehicle() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Vehicle info" />
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <HubRow
             first

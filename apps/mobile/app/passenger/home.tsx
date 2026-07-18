@@ -309,12 +309,6 @@ export default function PassengerHome() {
                 <Pressable style={styles.driverModeButton} onPress={goDriverMode}>
                   <Text style={styles.driverModeText}>{role === 'driver' ? 'Driver mode' : 'Become a driver'}</Text>
                 </Pressable>
-
-                {/* Social Links */}
-                <View style={styles.socialsRow}>
-                  <Text style={styles.socialIcon}>ⓕ</Text>
-                  <Text style={styles.socialIcon}>📷</Text>
-                </View>
               </View>
             </SafeAreaView>
           </View>
@@ -796,16 +790,6 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 16,
     fontWeight: '900',
-  },
-  socialsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  socialIcon: {
-    color: '#8a8c8c',
-    fontSize: 22,
   },
 });
 

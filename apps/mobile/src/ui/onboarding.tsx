@@ -1,8 +1,11 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 /**
  * Light onboarding palette.
@@ -88,6 +92,137 @@ export function OnbButton({
     >
       {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.onbBtnText}>{label}</Text>}
     </Pressable>
+  );
+}
+
+/**
+ * Keyboard-aware wrapper for the onboarding form screens. Android runs
+ * edge-to-edge on this SDK, which silently disables `adjustResize` — without
+ * explicit padding the keyboard covers the lower fields (DOB, CNIC number).
+ */
+export function OnbKeyboardView({ children }: { children: ReactNode }) {
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      {children}
+    </KeyboardAvoidingView>
+  );
+}
+
+type DateFormat = 'ymd' | 'dmy';
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function formatDate(d: Date, f: DateFormat) {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return f === 'ymd' ? `${y}-${m}-${day}` : `${day}/${m}/${y}`;
+}
+
+function parseDate(v: string, f: DateFormat): Date | null {
+  const m = f === 'ymd' ? v.match(/^(\d{4})-(\d{2})-(\d{2})$/) : v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [y, mo, d] = f === 'ymd' ? [m[1], m[2], m[3]] : [m[3], m[2], m[1]];
+  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Tap-to-pick date field: native dialog on Android, spinner bottom-sheet on
+ * iOS. Stores the value as a string (`ymd` → 2027-06-30, `dmy` → 30/06/2027)
+ * so it drops into the existing free-text onboarding fields unchanged.
+ */
+export function DateField({
+  label,
+  optional,
+  value,
+  onChange,
+  placeholder,
+  format = 'ymd',
+  minimumDate,
+  maximumDate,
+  initialDate,
+}: {
+  label: string;
+  optional?: boolean;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  format?: DateFormat;
+  minimumDate?: Date;
+  maximumDate?: Date;
+  initialDate?: Date;
+}) {
+  const [open, setOpen] = useState(false);
+  const [temp, setTemp] = useState<Date>(new Date());
+
+  const openPicker = () => {
+    setTemp(parseDate(value, format) ?? initialDate ?? new Date());
+    setOpen(true);
+  };
+
+  const onAndroidChange = (event: DateTimePickerEvent, d?: Date) => {
+    setOpen(false);
+    if (event.type === 'set' && d) onChange(formatDate(d, format));
+  };
+
+  return (
+    <View style={styles.fieldCard}>
+      <Text style={styles.fieldLabel}>
+        {label}
+        {optional ? <Text style={styles.optional}>  Optional</Text> : null}
+      </Text>
+      <Pressable onPress={openPicker} style={styles.dateInput}>
+        <Text style={[styles.dateValue, !value && { color: oc.sub }]}>{value || placeholder}</Text>
+        <Text style={styles.dateIcon}>📅</Text>
+      </Pressable>
+
+      {Platform.OS === 'android' && open && (
+        <DateTimePicker
+          value={temp}
+          mode="date"
+          display="default"
+          minimumDate={minimumDate}
+          maximumDate={maximumDate}
+          onChange={onAndroidChange}
+        />
+      )}
+
+      {Platform.OS === 'ios' && (
+        <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+          <View style={styles.sheetOverlay}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHeader}>
+                <Pressable onPress={() => setOpen(false)} hitSlop={8}>
+                  <Text style={styles.sheetCancel}>Cancel</Text>
+                </Pressable>
+                <Text style={styles.sheetTitle}>{label}</Text>
+                <Pressable
+                  onPress={() => {
+                    onChange(formatDate(temp, format));
+                    setOpen(false);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.sheetDone}>Done</Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={temp}
+                mode="date"
+                display="spinner"
+                minimumDate={minimumDate}
+                maximumDate={maximumDate}
+                onChange={(_, d) => d && setTemp(d)}
+                textColor={oc.text}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+    </View>
   );
 }
 
@@ -250,6 +385,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: oc.text,
   },
+
+  dateInput: {
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: oc.fieldBorder,
+    backgroundColor: oc.field,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateValue: { fontSize: 16, color: oc.text },
+  dateIcon: { fontSize: 16 },
+  sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: { backgroundColor: oc.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 24 },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: oc.line,
+  },
+  sheetCancel: { color: oc.sub, fontSize: 15, fontWeight: '600' },
+  sheetTitle: { color: oc.text, fontSize: 16, fontWeight: '800' },
+  sheetDone: { color: oc.green, fontSize: 15, fontWeight: '800' },
 
   bulletRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   bulletDot: { color: oc.text, fontSize: 16, lineHeight: 22 },

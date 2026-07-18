@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
-import { Field, OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
+import { Field, OnbButton, OnbKeyboardView, StepHeader, oc } from '../../../src/ui/onboarding';
 
 export default function VehiclePlate() {
   const router = useRouter();
@@ -13,16 +13,18 @@ export default function VehiclePlate() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <StepHeader title="Registration plate" />
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Field
-          label="Number plate"
-          value={data.plate}
-          onChangeText={(t) => set({ plate: t })}
-          placeholder="LEC-4820"
-          autoCapitalize="characters"
-        />
-        <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
-      </ScrollView>
+      <OnbKeyboardView>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <Field
+            label="Number plate"
+            value={data.plate}
+            onChangeText={(t) => set({ plate: t })}
+            placeholder="LEC-4820"
+            autoCapitalize="characters"
+          />
+          <OnbButton label="Done" onPress={() => router.back()} disabled={!valid} />
+        </ScrollView>
+      </OnbKeyboardView>
     </SafeAreaView>
   );
 }

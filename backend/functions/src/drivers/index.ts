@@ -33,6 +33,8 @@ const onboardingSchema = z.object({
   photoDocUrl:         z.string().url().max(2000).optional(),
   vehiclePhotoDocPath: z.string().max(512).optional(),
   vehiclePhotoDocUrl:  z.string().url().max(2000).optional(),
+  extraVehiclePhotoDocPaths: z.array(z.string().min(1).max(512)).max(6).optional(),
+  extraVehiclePhotoDocUrls:  z.array(z.string().url().max(2000)).max(6).optional(),
   email:               z.string().email().max(200).optional(),
   dob:                 z.string().max(40).optional(),
   licenseExpiry:       z.string().max(20).optional(),

@@ -25,7 +25,10 @@ export interface OnboardingData {
   plate: string;
   vehicleDoc: string | null;
   vehicleDocExpiry: string;
+  /** Required: front of the vehicle with the number plate clearly visible. */
   vehiclePhoto: string | null;
+  /** Optional extra angles of the vehicle. */
+  vehiclePhotos: string[];
 }
 
 const EMPTY: OnboardingData = {
@@ -47,6 +50,7 @@ const EMPTY: OnboardingData = {
   vehicleDoc: null,
   vehicleDocExpiry: '',
   vehiclePhoto: null,
+  vehiclePhotos: [],
 };
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
@@ -78,7 +82,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       data.vehicleMake.trim().length > 0 &&
       data.color.trim().length > 0 &&
       data.plate.trim().length > 2 &&
-      !!data.vehicleDoc,
+      !!data.vehicleDoc &&
+      !!data.vehiclePhoto,
   };
   const allComplete = Object.values(complete).every(Boolean);
 
@@ -88,22 +93,19 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     setError(null);
     try {
       const uid = user.uid;
-      const [licenseResult, cnicResult, cnicBackResult, vehicleDocResult, photoResult] =
+      const [licenseResult, cnicResult, cnicBackResult, vehicleDocResult, photoResult, vehiclePhotoResult] =
         await Promise.all([
-          uploadDriverDoc(uid, 'license',    data.licensePhoto!),
-          uploadDriverDoc(uid, 'cnic-front', data.cnicFront!),
-          uploadDriverDoc(uid, 'cnic-back',  data.cnicBack!),
-          uploadDriverDoc(uid, 'vehicle',    data.vehicleDoc!),
-          uploadDriverDoc(uid, 'photo',      data.photo!),
+          uploadDriverDoc(uid, 'license',       data.licensePhoto!),
+          uploadDriverDoc(uid, 'cnic-front',    data.cnicFront!),
+          uploadDriverDoc(uid, 'cnic-back',     data.cnicBack!),
+          uploadDriverDoc(uid, 'vehicle',       data.vehicleDoc!),
+          uploadDriverDoc(uid, 'photo',         data.photo!),
+          uploadDriverDoc(uid, 'vehicle-photo', data.vehiclePhoto!),
         ]);
 
-      let vehiclePhotoDocPath: string | undefined;
-      let vehiclePhotoDocUrl: string | undefined;
-      if (data.vehiclePhoto) {
-        const r = await uploadDriverDoc(uid, 'vehicle-photo', data.vehiclePhoto);
-        vehiclePhotoDocPath = r.path;
-        vehiclePhotoDocUrl  = r.url;
-      }
+      const extraResults = await Promise.all(
+        data.vehiclePhotos.map((uri, i) => uploadDriverDoc(uid, `vehicle-photo-${i + 1}`, uri)),
+      );
 
       await api.submitDriverOnboarding({
         fullName:           `${data.firstName} ${data.lastName}`.trim(),
@@ -121,8 +123,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         vehicleDocUrl:      vehicleDocResult.url,
         photoDocPath:       photoResult.path,
         photoDocUrl:        photoResult.url,
-        vehiclePhotoDocPath,
-        vehiclePhotoDocUrl,
+        vehiclePhotoDocPath: vehiclePhotoResult.path,
+        vehiclePhotoDocUrl:  vehiclePhotoResult.url,
+        extraVehiclePhotoDocPaths: extraResults.length ? extraResults.map((r) => r.path) : undefined,
+        extraVehiclePhotoDocUrls:  extraResults.length ? extraResults.map((r) => r.url) : undefined,
         email:              data.email          || undefined,
         dob:                data.dob            || undefined,
         licenseExpiry:      data.licenseExpiry  || undefined,
