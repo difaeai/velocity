@@ -117,13 +117,16 @@ export const adminDeletePartner = onCall(async (req) => {
   if (!partnerSnap.exists) invalid('No partner found for this id.');
 
   // Money in flight blocks deletion — settle or reject the withdrawal first.
-  const openWithdrawals = await db
+  // Status is filtered in code: one partner has few withdrawal docs, and the
+  // partnerId+status pair has no composite index.
+  const withdrawals = await db
     .collection('withdraw_requests')
     .where('partnerId', '==', partnerId)
-    .where('status', 'in', ['pending', 'approved'])
-    .limit(1)
     .get();
-  if (!openWithdrawals.empty) {
+  const hasOpen = withdrawals.docs.some((d) =>
+    ['pending', 'approved'].includes(d.get('status') as string),
+  );
+  if (hasOpen) {
     invalid('This partner has an unsettled withdrawal. Pay or reject it before deleting.');
   }
 
