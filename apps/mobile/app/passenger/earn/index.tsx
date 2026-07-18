@@ -23,12 +23,17 @@ import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-nativ
 
 import { colors } from '../../../src/config';
 import { usePartnerStatus } from '../../../src/hooks/partner';
+import { prefetchPartnerTiers } from '../../../src/lib/partnerTiers';
 import { PrimaryButton } from '../../../src/ui/components';
 import { Skeleton } from '../../../src/ui/partner';
 
 export default function EarnLanding() {
   const router = useRouter();
   const { stage, rejectionReason } = usePartnerStatus();
+
+  // Warm the tier menu while the user reads the pitch, so tapping "Apply"
+  // opens the plan chooser instantly instead of on a skeleton.
+  useEffect(prefetchPartnerTiers, []);
 
   // An approved partner should never see the sales pitch again — send them
   // straight to the thing they came for.

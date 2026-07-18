@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Linking,
   Platform,
   Pressable,
@@ -9,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -68,35 +71,18 @@ function SmsIcon({ size = 26 }: { size?: number }) {
   );
 }
 
-function GoogleIcon({ size = 22 }: { size?: number }) {
-  // Simplified multi-color Google "G".
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.2 2.8-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z" fill="#4285F4" />
-      <Path d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.2v3.1C3.2 21.3 7.3 24 12 24z" fill="#34A853" />
-      <Path d="M5.3 14.3c-.2-.7-.4-1.5-.4-2.3s.1-1.6.4-2.3V6.6H1.2C.4 8.2 0 10 0 12s.4 3.8 1.2 5.4l4.1-3.1z" fill="#FBBC05" />
-      <Path d="M12 4.8c1.8 0 3.3.6 4.6 1.8L20 3.1C18 1.2 15.2 0 12 0 7.3 0 3.2 2.7 1.2 6.6l4.1 3.1c.9-2.9 3.6-4.9 6.7-4.9z" fill="#EA4335" />
-    </Svg>
-  );
-}
-
-function FacebookIcon({ size = 22 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={12} fill="#1877F2" />
-      <Path
-        d="M16.5 12.7 L17 9.6 L14 9.6 L14 7.6 C14 6.7 14.4 5.9 15.8 5.9 L17.2 5.9 L17.2 3.2 C17.2 3.2 15.9 3 14.7 3 C12.2 3 10.5 4.5 10.5 7.3 L10.5 9.6 L7.8 9.6 L7.8 12.7 L10.5 12.7 L10.5 20.4 C11 20.5 11.5 20.5 12 20.5 C12.5 20.5 13.5 20.5 14 20.4 L14 12.7 Z"
-        fill="#ffffff"
-      />
-    </Svg>
-  );
-}
-
 /* ──────────────────────────────── Screen ────────────────────────────────── */
+
+// LayoutAnimation needs an explicit opt-in on the old Android architecture;
+// harmless no-op elsewhere.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function SignIn() {
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
   const otpRef       = useRef<TextInput>(null);
+  const scrollRef    = useRef<ScrollView>(null);
 
   const [step, setStep]                 = useState<Step>('enter_phone');
   const [phone, setPhone]               = useState('');
@@ -105,8 +91,26 @@ export default function SignIn() {
   const [sending, setSending]           = useState(false);   // Send / Resend OTP
   const [verifying, setVerifying]       = useState(false);   // Verify OTP
   const [error, setError]               = useState<string | null>(null);
-  // Note shown when the user taps a social button — phone is the only method.
-  const [socialNote, setSocialNote]     = useState<string | null>(null);
+  // True while the soft keyboard is up. The brand block collapses and the
+  // scroll view follows the card, so the input and the Continue button are
+  // never left hiding behind the keypad.
+  const [kbVisible, setKbVisible]       = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKbVisible(true);
+      // After the layout settles, bring the card (input + button) into view.
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    });
+    const hide = Keyboard.addListener(hideEvent, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKbVisible(false);
+    });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Resend cooldown timer
   const [sentAt, setSentAt]                 = useState<number | null>(null);
@@ -133,7 +137,6 @@ export default function SignIn() {
     if (sending) return;
 
     setError(null);
-    setSocialNote(null);
     const digits = stripPhone(phone);
     setPhone(digits);
 
@@ -222,18 +225,21 @@ export default function SignIn() {
 
   const phoneStep = (
     <ScrollView
+      ref={scrollRef}
       style={styles.flex}
       contentContainerStyle={styles.phoneContainer}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.brandBlock}>
-        <BoltIcon />
-        <Text style={styles.brandTitle}>Velocity</Text>
-        <Text style={styles.brandSub}>
-          Experience the next generation of urban mobility in Pakistan.
-        </Text>
+      <View style={[styles.brandBlock, kbVisible && styles.brandBlockCompact]}>
+        <BoltIcon size={kbVisible ? 34 : 56} />
+        <Text style={[styles.brandTitle, kbVisible && styles.brandTitleCompact]}>Velocity</Text>
+        {kbVisible ? null : (
+          <Text style={styles.brandSub}>
+            Experience the next generation of urban mobility in Pakistan.
+          </Text>
+        )}
       </View>
 
       {/* Welcome card */}
@@ -277,31 +283,6 @@ export default function SignIn() {
 
       <View style={styles.flexSpacer} />
 
-      {/* Social buttons — visual only: phone number is the only sign-in method */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>OR CONNECT WITH</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <View style={styles.socialRow}>
-        <Pressable
-          style={styles.socialBtn}
-          onPress={() => setSocialNote('Social sign-in is coming soon — please continue with your mobile number.')}
-        >
-          <GoogleIcon />
-          <Text style={styles.socialText}>Google</Text>
-        </Pressable>
-        <Pressable
-          style={styles.socialBtn}
-          onPress={() => setSocialNote('Social sign-in is coming soon — please continue with your mobile number.')}
-        >
-          <FacebookIcon />
-          <Text style={styles.socialText}>Facebook</Text>
-        </Pressable>
-      </View>
-      {socialNote ? <Text style={styles.socialNote}>{socialNote}</Text> : null}
-
       <Text style={styles.terms}>
         By continuing, you agree to Velocity's <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
         <Text style={styles.termsLink}>Privacy Policy</Text>.
@@ -313,6 +294,7 @@ export default function SignIn() {
 
   const otpStep = (
     <ScrollView
+      ref={scrollRef}
       style={styles.flex}
       contentContainerStyle={styles.otpContainer}
       keyboardShouldPersistTaps="handled"
@@ -427,7 +409,10 @@ const styles = StyleSheet.create({
   phoneContainer: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 28 },
 
   brandBlock: { alignItems: 'center', gap: 10, marginTop: 36, marginBottom: 32 },
+  // Keyboard open: the brand shrinks so the card and button stay on screen.
+  brandBlockCompact: { gap: 4, marginTop: 4, marginBottom: 14 },
   brandTitle: { fontSize: 36, fontWeight: '900', color: '#ffffff' },
+  brandTitleCompact: { fontSize: 24 },
   brandSub: {
     fontSize: 17, lineHeight: 25, color: 'rgba(255,255,255,0.55)',
     textAlign: 'center', paddingHorizontal: 16,
@@ -484,26 +469,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   primaryBtnText: { fontSize: 21, fontWeight: '800', color: '#0a0d08' },
-
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 18 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.14)' },
-  dividerText: { fontSize: 13, fontWeight: '800', letterSpacing: 2, color: 'rgba(255,255,255,0.6)' },
-
-  socialRow: { flexDirection: 'row', gap: 16 },
-  socialBtn: {
-    flex: 1,
-    height: 62,
-    borderRadius: 31,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  socialText: { fontSize: 17, fontWeight: '700', color: '#ffffff' },
-  socialNote: { fontSize: 12.5, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginTop: 10 },
 
   terms: {
     fontSize: 14, lineHeight: 21, color: 'rgba(255,255,255,0.6)',

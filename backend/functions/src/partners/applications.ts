@@ -59,6 +59,8 @@ const submitSchema = z
     /** The back side only exists to read on a CNIC; optional for other IDs. */
     cnicBackUrl: z.string().url().max(2048).optional(),
     city: z.string().trim().min(2).max(80),
+    /** Pro only: how many months of Pro they are buying. */
+    proMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
     /** Pro only: screenshot of the registration-fee transfer. */
     paymentProofUrl: z.string().url().max(2048).optional(),
     /** Pro only: which rail they paid on, so the admin knows where to look. */
@@ -68,8 +70,12 @@ const submitSchema = z
       errorMap: () => ({ message: 'You must accept the Partner Program terms.' }),
     }),
   })
+  .refine((d) => d.tier !== 'pro' || !!d.proMonths, {
+    message: 'Choose a Pro plan: 3 months, 6 months or 1 year.',
+    path: ['proMonths'],
+  })
   .refine((d) => d.tier !== 'pro' || !!d.paymentProofUrl, {
-    message: 'Upload a screenshot of your Pro registration payment.',
+    message: 'Upload a screenshot of your Pro plan payment.',
     path: ['paymentProofUrl'],
   })
   .refine((d) => d.tier !== 'pro' || !!d.paymentMethod, {
@@ -139,7 +145,7 @@ export const getPartnerTiers = onCall(async () => {
     ok: true,
     free: s.free,
     pro: s.pro,
-    proFee: s.proFee,
+    proMonthlyFee: s.proMonthlyFee,
     proFeeCurrency: s.proFeeCurrency,
     payment: s.payment,
   };
@@ -213,13 +219,16 @@ export const submitPartnerApplication = onCall(async (req) => {
     cnicBackUrl: data.cnicBackUrl ?? null,
     city: data.city,
     photoURL: userSnap.get('photoURL') ?? null,
-    // Pro only. The fee is snapshotted as it stood when they paid, so an admin
-    // reviewing next week compares the screenshot against the price the
-    // applicant was actually shown, not against a rate that changed since.
+    // Pro only. The bill is snapshotted as it stood when they paid — months ×
+    // monthly fee — so an admin reviewing next week compares the screenshot
+    // against the price the applicant was actually shown, not against a rate
+    // that changed since.
     paymentProofUrl: data.paymentProofUrl ?? null,
     paymentMethod: data.paymentMethod ?? null,
     paymentReference: data.paymentReference ?? null,
-    quotedFee: data.tier === 'pro' ? settings.proFee : 0,
+    proMonths: data.tier === 'pro' ? (data.proMonths ?? null) : null,
+    quotedMonthlyFee: data.tier === 'pro' ? settings.proMonthlyFee : 0,
+    quotedFee: data.tier === 'pro' ? settings.proMonthlyFee * (data.proMonths ?? 0) : 0,
     quotedFeeCurrency: settings.proFeeCurrency,
     acceptedTerms: true,
     status: 'pending' as PartnerApplicationStatus,
@@ -259,6 +268,18 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
     parsed.data.tier ?? ((snap.get('tier') as PartnerTier | undefined) ?? 'free');
   const code = decision === 'approve' ? await mintPartnerCode() : null;
 
+  // Pro is bought by the month (3, 6 or 12). The clock starts at approval, not
+  // at payment — the applicant shouldn't lose days to the review queue.
+  const proMonths =
+    decision === 'approve' && tier === 'pro'
+      ? ((snap.get('proMonths') as number | undefined) ?? null)
+      : null;
+  let proExpiresAt: Date | null = null;
+  if (proMonths) {
+    proExpiresAt = new Date();
+    proExpiresAt.setMonth(proExpiresAt.getMonth() + proMonths);
+  }
+
   await db.runTransaction(async (tx) => {
     const now = FieldValue.serverTimestamp();
 
@@ -282,6 +303,8 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
       tx.set(db.doc(`partners/${uid}`), {
         uid,
         tier,
+        proMonths,
+        proExpiresAt,
         referralCode: code,
         fullName,
         mobile: snap.get('mobile'),

@@ -171,10 +171,10 @@ describe('tiers', () => {
     expect(s.free.passengerFleetRate).toBe(0.005);
   });
 
-  it('ships Pro at 2% driver / 1.3% passenger behind a Rs 50,000 fee', () => {
+  it('ships Pro at 2% driver / 1.3% passenger for Rs 4,500 a month', () => {
     expect(s.pro.driverFleetRate).toBe(0.02);
     expect(s.pro.passengerFleetRate).toBe(0.013);
-    expect(s.proFee).toBe(50000);
+    expect(s.proMonthlyFee).toBe(4500);
     expect(s.proFeeCurrency).toBe('PKR');
   });
 

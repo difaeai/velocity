@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.velocityridzpk.app",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#00000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
