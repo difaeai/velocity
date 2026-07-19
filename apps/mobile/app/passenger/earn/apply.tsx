@@ -54,6 +54,7 @@ import type {
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { useInterstitial } from '../../../src/ads';
 import { auth, firebaseConfig } from '../../../src/firebase';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
@@ -115,6 +116,9 @@ export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
   const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
+  // Preloaded while the applicant fills the form, so the post-submit handoff
+  // never stalls waiting on an ad fetch.
+  const showAd = useInterstitial('partner-apply-free');
 
   const [step, setStep] = useState<'tier' | 'details'>('tier');
   // Seeded from the prefetch cache, so the plan chooser paints on the first
@@ -267,6 +271,14 @@ export default function PartnerApply() {
           : {}),
         acceptedTerms: true,
       });
+
+      // Free tier only: the application is IN, and the user is now waiting on a
+      // human rather than doing anything. That handoff is the one honest place
+      // for a full-screen ad in this flow — showing it before or during the
+      // submit would interrupt an unfinished task (an AdMob policy risk) and
+      // would put an ad between someone and signing up for our own program.
+      // Pro applicants paid a fee, so they never see it.
+      if (!isPro) await showAd();
 
       // Straight to the "Waiting for approval" screen — no dialog in between.
       // The landing's status listener needs a server round-trip to see the new

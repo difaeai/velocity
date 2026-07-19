@@ -1,6 +1,20 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
+import { View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../../../src/config';
+import { AdBanner } from '../../../src/ads';
+
+/**
+ * Screens within Earn that must stay ad-free.
+ *
+ * `apply` is a document-upload form and `withdraw` moves real money — the two
+ * places where a stray tap costs the user the most and where an ad next to the
+ * submit button reads as untrustworthy. Everything else (landing, dashboard,
+ * revenue, analytics, fleet, referral) is browsing, which is where a banner
+ * belongs.
+ */
+const AD_FREE = ['/passenger/earn/apply', '/passenger/earn/withdraw'];
 
 /**
  * Earn with Velocity — the Partner Program.
@@ -10,6 +24,27 @@ import { colors } from '../../../src/config';
  * fighting a tab bar the landing and application screens have no use for.
  */
 export default function EarnLayout() {
+  const pathname = usePathname();
+  const showAd = !AD_FREE.includes(pathname);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1 }}>
+        <EarnStack />
+      </View>
+      {/* Pinned below the stack, so it sits under the content on every Earn
+          screen instead of being re-added inside each one. The safe-area edge
+          keeps it clear of the Android gesture bar. */}
+      {showAd && (
+        <SafeAreaView edges={['bottom']} style={{ backgroundColor: colors.background }}>
+          <AdBanner />
+        </SafeAreaView>
+      )}
+    </View>
+  );
+}
+
+function EarnStack() {
   return (
     <Stack
       screenOptions={{

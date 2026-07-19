@@ -33,6 +33,7 @@ import { api } from '../../../src/api/client';
 import { appLink } from '../../../src/share/links';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { useInterstitial } from '../../../src/ads';
 
 
 interface Group {
@@ -47,6 +48,9 @@ export default function TravelMateHome() {
   const { user } = useAuth();
   const router = useRouter();
   const pendingRequests = useTravelMateThreads().requests.length;
+  // Preloaded while the user reads the hub, so it is ready the moment they tap
+  // through to the deck rather than making them wait on a fetch.
+  const showAd = useInterstitial('travel-partner-discover');
   // Edge-to-edge Android draws behind the system navigation bar — bottom
   // sheets must pad past it or their last row is hidden behind the OS bar.
   const insets = useSafeAreaInsets();
@@ -99,6 +103,25 @@ export default function TravelMateHome() {
 
   const showTravelPrefsDialog =
     hasProfile === true && hasTravelPrefs === false && !travelPrefsDismissed;
+
+  /**
+   * Opening the swipe deck is where the section's full-screen ad fires.
+   *
+   * Deliberately NOT on opening Travel Partner itself. An interstitial thrown up
+   * the instant a screen mounts is the placement Google's own guidance warns
+   * against — the user asked for the feature and got an ad instead, which is
+   * both the top cause of ad-serving limits and a reason people stop opening
+   * the tab. Here the user has finished with the hub and is moving on to a
+   * self-paced browsing session, which is a genuine break point.
+   *
+   * The ad is shown BEFORE navigating, and never blocks: if none is preloaded,
+   * or the session cap has already fired, `showAd` resolves immediately and the
+   * deck opens exactly as it does today.
+   */
+  async function openDiscover() {
+    await showAd();
+    router.push('/passenger/travel-mate/discover');
+  }
 
   function shareProfile() {
     if (!user) return;
@@ -259,7 +282,7 @@ export default function TravelMateHome() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero — Find travel partners */}
-        <Pressable style={s.hero} onPress={() => router.push('/passenger/travel-mate/discover')}>
+        <Pressable style={s.hero} onPress={openDiscover}>
           <View style={{ flex: 1 }}>
             <Text style={s.heroKicker}>DISCOVER</Text>
             <Text style={s.heroTitle}>Find travel partners</Text>
