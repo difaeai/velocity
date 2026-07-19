@@ -150,14 +150,6 @@ export function DriverDrawer({
           />
           <NavItem icon="🚪" label="Sign out" onPress={() => { onClose(); setTimeout(onSignOut, 220); }} danger />
         </View>
-
-        {/* Branding */}
-        <View style={styles.brand}>
-          <View style={styles.brandBadge}>
-            <Text style={styles.brandV}>V</Text>
-          </View>
-          <Text style={styles.brandName}>Velocity</Text>
-        </View>
       </Animated.View>
     </Modal>
   );
@@ -225,9 +217,4 @@ const styles = StyleSheet.create({
   navLabel:      { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   divider:       { height: 1, backgroundColor: colors.glassChip, marginHorizontal: 20, marginVertical: 4 },
-
-  brand:         { position: 'absolute', bottom: 32, left: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandBadge:    { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  brandV:        { fontSize: 18, fontWeight: '900', color: '#1a1a1a' },
-  brandName:     { fontSize: 18, fontWeight: '900', color: '#fff' },
 });
