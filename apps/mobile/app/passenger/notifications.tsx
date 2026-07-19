@@ -23,6 +23,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 type NotifType = 'ride' | 'promo' | 'system' | 'wallet';
 
@@ -163,7 +164,7 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   header: {
@@ -219,4 +220,4 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, flexShrink: 0 },
   body: { fontSize: 13, color: colors.muted, lineHeight: 18 },
   time: { fontSize: 11, color: `${colors.muted}99`, marginTop: 2 },
-});
+}));

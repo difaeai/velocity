@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { usePartnerStatus } from '../../../src/hooks/partner';
 import { prefetchPartnerTiers } from '../../../src/lib/partnerTiers';
 import { PrimaryButton } from '../../../src/ui/components';
@@ -358,7 +359,7 @@ function GrowthArt() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 20, gap: 16, paddingBottom: 40 },
 
@@ -480,4 +481,4 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   reasonText: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: '600' },
-});
+}));

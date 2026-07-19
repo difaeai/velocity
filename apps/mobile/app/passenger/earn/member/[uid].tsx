@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../../../src/api/client';
 import type { PartnerRide } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { RideStatusPill, Skeleton, formatPKR } from '../../../../src/ui/partner';
 
 export default function MemberRides() {
@@ -114,7 +115,7 @@ function Money({ label, value, accent }: { label: string; value: string; accent?
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: 18, gap: 12, paddingBottom: 40 },
 
@@ -143,4 +144,4 @@ const s = StyleSheet.create({
   tripId: { color: colors.muted, fontSize: 10, opacity: 0.7 },
 
   empty: { color: colors.muted, fontSize: 13, textAlign: 'center', padding: 30, lineHeight: 20 },
-});
+}));

@@ -6,6 +6,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useDriverProfile } from '../../../src/hooks/driver';
 import { useOnboarding, type SectionKey } from '../../../src/onboarding/context';
 import { OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 const SECTIONS: { key: SectionKey; label: string; route: string }[] = [
   { key: 'basic', label: 'Basic info', route: '/passenger/become-driver/basic-info' },
@@ -115,7 +116,7 @@ export default function Checklist() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
   declined: { backgroundColor: '#fdecea', borderColor: '#f5b7b1', borderWidth: 1, borderRadius: 12, padding: 14, gap: 6 },
@@ -146,4 +147,4 @@ const styles = StyleSheet.create({
   chevron: { color: oc.green, fontSize: 24, fontWeight: '500' },
   error: { color: '#c0392b', fontWeight: '600', fontSize: 14 },
   terms: { color: oc.sub, fontSize: 12, textAlign: 'center', lineHeight: 18 },
-});
+}));

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
 import { DateField, IdCardArt, OnbButton, StepHeader, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 export default function License() {
   const router = useRouter();
@@ -43,9 +44,9 @@ export default function License() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
   note: { backgroundColor: oc.note, borderRadius: 12, padding: 14 },
   noteText: { color: oc.noteText, fontSize: 13, lineHeight: 19 },
-});
+}));

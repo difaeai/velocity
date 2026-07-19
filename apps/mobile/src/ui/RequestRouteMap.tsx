@@ -12,6 +12,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { useRouteInfo, type MapPoint } from '../hooks/directions';
 import { DARK_MAP_STYLE } from './mapStyle';
@@ -170,7 +171,7 @@ export function RequestRouteMap({ pickup, dropoff, driver }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   fill: { flex: 1 },
 
   carPin: {
@@ -224,4 +225,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   zoomTxt: { fontSize: 26, fontWeight: '700', color: '#fff', lineHeight: 28 },
-});
+}));

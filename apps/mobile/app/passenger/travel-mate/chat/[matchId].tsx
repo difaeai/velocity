@@ -45,6 +45,7 @@ import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TravelMateMessageInput, type ChatAttachment } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { EmojiPicker, QUICK_REACTIONS } from '../../../../src/ui/EmojiPicker';
 import {
   AttachmentError,
@@ -676,7 +677,7 @@ function timeStr(seconds: number): string {
   return new Date(seconds * 1000).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' });
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 10 },
   backBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -797,4 +798,4 @@ const s = StyleSheet.create({
   cancelText:   { fontSize: 14, fontWeight: '700', color: colors.muted },
   reportBtn:    { flex: 1, height: 46, borderRadius: 12, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
   reportText:   { fontSize: 14, fontWeight: '800', color: '#fff' },
-});
+}));

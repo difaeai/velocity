@@ -24,6 +24,7 @@ import { useRouter } from 'expo-router';
 
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { useTravelMateThreads, type TravelThread } from '../../../src/hooks/travelMateCommunity';
 import { MailIcon } from '../../../src/ui/TabBarIcons';
 
@@ -161,7 +162,7 @@ function senderOf(thread: TravelThread) {
   return thread.requestFrom ? thread.userInfo?.[thread.requestFrom] : undefined;
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -221,4 +222,4 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   acceptText: { fontSize: 14, fontWeight: '900', color: '#000' },
-});
+}));

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { themed } from '../../../src/theme';
 
 /**
  * Driver account gate — reached only when NOBODY is signed in (a fresh install,
@@ -48,7 +49,7 @@ export default function DriverAccountChoice() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#3a3a3a' },
   topbar: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 2 },
   back: { color: '#fff', fontSize: 28, fontWeight: '700' },
@@ -76,4 +77,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   secondaryText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-});
+}));

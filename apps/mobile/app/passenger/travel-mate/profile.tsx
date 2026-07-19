@@ -17,6 +17,7 @@ import { collection, doc, getCountFromServer, getDoc, query, where } from 'fireb
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 interface TMProfile {
   uid: string;
@@ -237,7 +238,7 @@ function TopBar({ router }: { router: ReturnType<typeof useRouter> }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -284,4 +285,4 @@ const s = StyleSheet.create({
 
   shareBtnGhost:     { width: '100%', height: 52, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   shareBtnGhostText: { fontSize: 15, fontWeight: '800', color: colors.text },
-});
+}));

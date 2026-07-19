@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { WalletScreen } from '../../src/ui/WalletScreen';
 import { DriverTabBar } from '../../src/ui/DriverTabBar';
 
@@ -17,7 +18,7 @@ export default function DriverWallet() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
-});
+}));

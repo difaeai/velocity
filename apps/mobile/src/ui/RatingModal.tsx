@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 
 interface Props {
   visible:     boolean;
@@ -101,7 +102,7 @@ export function RatingModal({ visible, targetLabel, targetName, onSubmit, onSkip
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -192,4 +193,4 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '600',
   },
-});
+}));

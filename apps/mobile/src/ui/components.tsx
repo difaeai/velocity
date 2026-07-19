@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 type Variant = 'primary' | 'secondary' | 'danger';
 
@@ -70,7 +71,7 @@ export function Badge({ label, color = colors.primary }: { label: string; color?
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   btn: {
     height: 52,
     borderRadius: 14,
@@ -94,4 +95,4 @@ const styles = StyleSheet.create({
   },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-});
+}));

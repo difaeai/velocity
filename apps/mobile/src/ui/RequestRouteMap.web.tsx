@@ -5,6 +5,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import type { MapPoint } from '../hooks/directions';
 
 export function RequestRouteMap(props: {
@@ -21,7 +22,7 @@ export function RequestRouteMap(props: {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   placeholder: {
     flex: 1,
     alignItems: 'center',
@@ -29,4 +30,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#0e1216',
   },
   text: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-});
+}));

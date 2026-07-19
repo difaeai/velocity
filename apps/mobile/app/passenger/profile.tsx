@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { Card, comingSoon } from '../../src/ui/components';
 
 export default function ProfileScreen() {
@@ -214,7 +215,7 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.background, // Slate dark background
@@ -480,4 +481,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
-});
+}));

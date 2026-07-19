@@ -18,6 +18,7 @@ import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -593,7 +594,7 @@ export default function RidersAdmin() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   // Header
@@ -873,4 +874,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalConfirmText: { fontSize: 14, fontWeight: '900', color: '#fff' },
-});
+}));

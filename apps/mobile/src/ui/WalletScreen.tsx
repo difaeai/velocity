@@ -16,6 +16,7 @@ import {
   useWalletTransactions,
 } from '../hooks/driver';
 import { colors } from '../config';
+import { themed } from '../theme';
 import { Card, PrimaryButton } from './components';
 import { OutstandingFees } from './OutstandingFees';
 
@@ -362,7 +363,7 @@ function AccountRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -454,4 +455,4 @@ const styles = StyleSheet.create({
   },
   txnLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
   txnAmt: { fontSize: 14, fontWeight: '800' },
-});
+}));

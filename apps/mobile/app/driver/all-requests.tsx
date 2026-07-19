@@ -15,6 +15,7 @@ import { api, type ReportReason } from '../../src/api/client';
 import { useOpenRequests, type OpenRequest } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { RequestCard } from '../../src/ui/RequestCard';
 import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
 
@@ -188,7 +189,7 @@ export default function AllRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   header: {
@@ -222,4 +223,4 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   pillTxt: { fontSize: 15, fontWeight: '700', color: '#111' },
-});
+}));

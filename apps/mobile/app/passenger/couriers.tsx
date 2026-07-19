@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCnicVerification } from '../../src/hooks/passenger';
@@ -337,7 +338,7 @@ export default function CouriersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   /* ── CNIC gate ── */
@@ -601,4 +602,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bookBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));

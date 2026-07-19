@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 
 type Target = 'all' | 'passengers' | 'drivers';
@@ -202,7 +203,7 @@ export default function SendNotificationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 40 },
@@ -251,4 +252,4 @@ const styles = StyleSheet.create({
 
   sendBtn: { flexDirection: 'row', height: 54, backgroundColor: colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 8 },
   sendBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));

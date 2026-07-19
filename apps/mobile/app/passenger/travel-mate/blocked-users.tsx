@@ -24,6 +24,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 
 interface BlockRow {
@@ -124,7 +125,7 @@ export default function BlockedUsers() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -143,4 +144,4 @@ const s = StyleSheet.create({
   meta:    { fontSize: 12, color: colors.muted, marginTop: 2 },
   unblockBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99, borderWidth: 1.5, borderColor: colors.primary },
   unblockText:{ fontSize: 13, fontWeight: '900', color: colors.primary },
-});
+}));

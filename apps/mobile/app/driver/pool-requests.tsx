@@ -18,6 +18,7 @@ import { api } from '../../src/api/client';
 import type { NearbyPoolRequest } from '../../src/api/client';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 const GENDER_LABEL: Record<string, string> = {
   male_only:   '♂ Males only',
@@ -268,7 +269,7 @@ export default function PoolRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:           { flex: 1, backgroundColor: colors.background },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:        { width: 40 },
@@ -328,4 +329,4 @@ const styles = StyleSheet.create({
   modalCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   modalSendBtn:    { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   modalSendText:   { fontSize: 14, fontWeight: '900', color: '#000' },
-});
+}));

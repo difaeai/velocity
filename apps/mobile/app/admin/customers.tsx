@@ -25,6 +25,7 @@ import {
 
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 interface Customer {
   uid: string;
@@ -311,7 +312,7 @@ export default function AdminCustomers() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   header:  {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -407,4 +408,4 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 15, fontWeight: '700', color: colors.muted },
   saveBtn:       { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   saveBtnText:   { fontSize: 15, fontWeight: '900', color: '#000' },
-});
+}));

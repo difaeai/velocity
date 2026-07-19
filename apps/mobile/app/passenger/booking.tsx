@@ -18,6 +18,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../src/firebase';
 import { api, type CommuteDay, type NearbyPublicPool } from '../../src/api/client';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
@@ -1126,7 +1127,7 @@ function PoolBubbles() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.background,
@@ -2078,4 +2079,4 @@ const styles = StyleSheet.create({
   schedCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   schedSaveBtn: { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   schedSaveText: { fontSize: 14, fontWeight: '900', color: '#000' },
-});
+}));

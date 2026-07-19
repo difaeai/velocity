@@ -22,6 +22,7 @@ import { db, functions } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 const INTERESTS = [
   'Music', 'Movies', 'Sports', 'Gaming', 'Reading', 'Travel',
@@ -364,7 +365,7 @@ export default function TravelMateSetup() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   scroll:      { padding: 20, gap: 16, paddingBottom: 40 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -406,4 +407,4 @@ const s = StyleSheet.create({
 
   saveBtn:      { height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   saveBtnText:  { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));

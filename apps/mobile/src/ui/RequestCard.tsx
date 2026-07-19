@@ -22,6 +22,7 @@ import {
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { timeAgo } from '../lib/timeAgo';
 import { RIDE_TYPE_LABELS } from '../domain/types';
@@ -194,7 +195,7 @@ export function RequestCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -251,4 +252,4 @@ const styles = StyleSheet.create({
   actionRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-start' },
   action:    { alignItems: 'center', gap: 8, paddingHorizontal: 10, minWidth: 84 },
   actionLabel: { fontSize: 13, fontWeight: '600', color: colors.text, textAlign: 'center', lineHeight: 17 },
-});
+}));

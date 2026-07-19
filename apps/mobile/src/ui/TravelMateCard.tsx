@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 const AVATARS = ['🧑', '👩', '🧔'] as const;
 
@@ -86,7 +87,7 @@ export function TravelMateCard({ onPress }: { onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -139,4 +140,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '900', color: colors.primary },
   sub:   { fontSize: 12, color: '#8a8c8c', lineHeight: 17 },
   arrow: { fontSize: 20, color: colors.primary, fontWeight: '900' },
-});
+}));

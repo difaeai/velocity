@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';
+import { themed } from '../src/theme';
 import { LogoMark } from '../src/ui/LogoMark';
 
 const GENDERS = ['Male', 'Female', 'Other'] as const;
@@ -299,7 +300,7 @@ export default function Onboarding() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:      { flex: 1, backgroundColor: colors.background },
   container: { padding: 24, gap: 20, flexGrow: 1, justifyContent: 'center' },
   logoRow:   { alignItems: 'center', marginBottom: 4 },
@@ -350,4 +351,4 @@ const styles = StyleSheet.create({
   modalCancel:  { fontSize: 15, color: colors.muted, fontWeight: '600' },
   modalDone:    { fontSize: 15, fontWeight: '800', color: colors.primary },
   picker:       { width: '100%', height: 200 },
-});
+}));

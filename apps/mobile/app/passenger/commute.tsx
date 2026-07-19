@@ -18,6 +18,7 @@ import { api } from '../../src/api/client';
 import type { PoolGenderPref, CommuteDay } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 const DAYS: { key: CommuteDay; label: string }[] = [
   { key: 'mon', label: 'Mon' },
@@ -74,7 +75,7 @@ function TimeInput({ value, onChange, label }: { value: string; onChange: (v: st
   );
 }
 
-const timeStyles = StyleSheet.create({
+const timeStyles = themed(() => StyleSheet.create({
   wrap:    { gap: 6 },
   label:   { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.6 },
   row:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -84,7 +85,7 @@ const timeStyles = StyleSheet.create({
   val:     { fontSize: 26, fontWeight: '900', color: colors.text, width: 42, textAlign: 'center' },
   sep:     { fontSize: 22, fontWeight: '900', color: colors.text, marginBottom: 4 },
   ampm:    { fontSize: 16, fontWeight: '800', color: colors.muted, marginBottom: 2 },
-});
+}));
 
 export default function CommuteScheduleScreen() {
   const router    = useRouter();
@@ -335,7 +336,7 @@ export default function CommuteScheduleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:           { flex: 1, backgroundColor: colors.background },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:        { width: 40 },
@@ -383,4 +384,4 @@ const styles = StyleSheet.create({
   saveBtnText:    { color: '#000', fontSize: 17, fontWeight: '900' },
   deleteBtn:      { height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   deleteBtnText:  { fontSize: 13, color: '#ef4444', fontWeight: '700' },
-});
+}));

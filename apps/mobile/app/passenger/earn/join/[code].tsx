@@ -20,6 +20,7 @@ import { api } from '../../../../src/api/client';
 import type { PartnerLevel } from '../../../../src/api/client';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { deviceFingerprint, stashReferralCode } from '../../../../src/hooks/partner';
 import { PrimaryButton } from '../../../../src/ui/components';
 import { LevelBadge } from '../../../../src/ui/partner';
@@ -151,7 +152,7 @@ export default function JoinFleet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', padding: 26, gap: 12, alignItems: 'center' },
 
@@ -174,4 +175,4 @@ const s = StyleSheet.create({
   code: { color: colors.primary, fontSize: 30, fontWeight: '900', letterSpacing: 5, marginTop: 2 },
 
   fine: { color: colors.muted, fontSize: 11, textAlign: 'center', lineHeight: 17, marginBottom: 8 },
-});
+}));

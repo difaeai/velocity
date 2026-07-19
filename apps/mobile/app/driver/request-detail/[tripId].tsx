@@ -30,6 +30,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useDriverProfile, useOpenRequests } from '../../../src/hooks/driver';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { formatDistance } from '../../../src/lib/geo';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { RIDE_TYPE_LABELS } from '../../../src/domain/types';
@@ -347,7 +348,7 @@ export default function RequestDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   safe: { flex: 1, backgroundColor: colors.background },
   map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
@@ -523,4 +524,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalApplyTxt: { fontSize: 17, fontWeight: '900', color: '#000' },
-});
+}));

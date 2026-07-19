@@ -15,6 +15,7 @@ import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 
 
 import { db } from '../firebase';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 interface ChatMessage {
   id:         string;
@@ -143,7 +144,7 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -200,4 +201,4 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-});
+}));

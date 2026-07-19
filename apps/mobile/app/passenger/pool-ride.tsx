@@ -32,6 +32,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { ChatModal } from '../../src/ui/ChatModal';
 import {
   canJoinPool,
@@ -1231,7 +1232,7 @@ export default function PoolRideScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   header: {
@@ -1839,4 +1840,4 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   boardingInfoText: { fontSize: 12, color: '#f5d384', lineHeight: 18, textAlign: 'center' },
-});
+}));

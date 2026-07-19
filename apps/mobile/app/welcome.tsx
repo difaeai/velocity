@@ -25,6 +25,8 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 
+import { themed } from '../src/theme';
+
 /**
  * Welcome carousel — the first thing a signed-out user sees after the splash.
  * Three full-bleed slides (pool rides / travel partners / earn) with a frosted
@@ -318,7 +320,7 @@ export default function Welcome() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: '#050604' },
   overlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
 
@@ -361,4 +363,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   nextText: { fontSize: 20, fontWeight: '800', color: '#0a0d08' },
-});
+}));

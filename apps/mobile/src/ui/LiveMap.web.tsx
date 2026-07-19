@@ -5,6 +5,7 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import type { Coords } from '../hooks/location';
 import type { DriverPin, MapPoint } from './LiveMap';
 
@@ -26,7 +27,7 @@ export function LiveMap({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   placeholder: {
     position: 'absolute',
     top: 0,
@@ -42,4 +43,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+}));

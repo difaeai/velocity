@@ -34,6 +34,7 @@ import { api } from '../../../src/api/client';
 import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
 import { areaSummary } from '../../../src/lib/areaLabel';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 const { width, height } = Dimensions.get('window');
 const CARD_W = width - 40;
@@ -479,7 +480,7 @@ export default function TravelMateDiscover() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn:     { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -534,4 +535,4 @@ const s = StyleSheet.create({
   matchSub:       { fontSize: 15, color: colors.muted, textAlign: 'center', lineHeight: 22 },
   keepSwiping:    { paddingVertical: 12 },
   keepSwipingText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
-});
+}));

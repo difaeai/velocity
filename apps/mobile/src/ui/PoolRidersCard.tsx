@@ -18,6 +18,7 @@
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import type { PoolRider } from '../domain/types';
 
 const GENDER_MARK: Record<string, string> = {
@@ -97,7 +98,7 @@ export function PoolRidersCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -144,4 +145,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   callBtnText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-});
+}));

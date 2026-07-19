@@ -22,6 +22,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { auth, firebaseConfig } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 type Step = 'enter_phone' | 'enter_otp';
 
@@ -399,7 +400,7 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#101210' },
   flex: { flex: 1 },
   flexSpacer: { flexGrow: 1, minHeight: 16 },
@@ -531,4 +532,4 @@ const styles = StyleSheet.create({
     textAlign: 'center', marginTop: 18, marginBottom: 6,
   },
   supportLink: { color: LIME, textDecorationLine: 'underline', fontWeight: '800' },
-});
+}));

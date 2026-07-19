@@ -13,6 +13,7 @@ import { Animated, Easing, StyleSheet, Text, View, useWindowDimensions } from 'r
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 
 interface Props {
   /** Animate the sweep + pulse. False = dimmed, static radar (driver offline). */
@@ -145,7 +146,7 @@ export function RadarScan({ scanning, title, subtitle }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   wrap:    { alignItems: 'center', justifyContent: 'center', paddingVertical: 28, gap: 6 },
   radar:   { alignItems: 'center', justifyContent: 'center' },
   dimmed:  { opacity: 0.35 },
@@ -179,4 +180,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     lineHeight: 19,
   },
-});
+}));

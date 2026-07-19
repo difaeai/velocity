@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOnboarding } from '../../../src/onboarding/context';
 import { Field, OnbButton, OnbKeyboardView, StepHeader, oc } from '../../../src/ui/onboarding';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
+import { themed } from '../../../src/theme';
 
 const RIDE_TYPES = Object.keys(RIDE_TYPE_LABELS) as RideType[];
 
@@ -55,7 +56,7 @@ export default function VehicleDetails() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 12 },
   typeCard: { backgroundColor: oc.card, borderRadius: 16, padding: 16, marginBottom: 2 },
@@ -72,4 +73,4 @@ const styles = StyleSheet.create({
   },
   pillActive: { backgroundColor: oc.green, borderColor: oc.green },
   pillText: { fontWeight: '800', color: oc.text },
-});
+}));

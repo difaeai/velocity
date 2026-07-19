@@ -21,6 +21,7 @@ import { FirebaseError } from 'firebase/app';
 import { api, type TravelMateGroupPreview } from '../../../../src/api/client';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { Card, PrimaryButton } from '../../../../src/ui/components';
 
 const DAY_LABELS: Record<string, string> = {
@@ -242,7 +243,7 @@ export default function GroupInviteScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -268,4 +269,4 @@ const s = StyleSheet.create({
   codeGoText:{ fontSize: 14, fontWeight: '900', color: colors.primary },
   homeLink:  { marginTop: 20, paddingVertical: 8 },
   homeLinkText: { fontSize: 14, fontWeight: '700', color: colors.muted },
-});
+}));

@@ -24,7 +24,7 @@ import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-na
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../config';
-import { getThemeMode } from '../theme';
+import { getThemeMode, themed } from '../theme';
 import type { PartnerLevel, PartnerRideStatus } from '../api/client';
 
 /** Series colours, per surface. Validated against the chart surface in both modes. */
@@ -362,7 +362,7 @@ export function Segmented<T extends string>({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   levelBadge: {
     alignSelf: 'flex-start',
     borderWidth: 1,
@@ -445,4 +445,4 @@ const s = StyleSheet.create({
   segmentActive: { backgroundColor: colors.primary },
   segmentText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
   segmentTextActive: { color: colors.btnText },
-});
+}));

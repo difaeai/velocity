@@ -16,6 +16,7 @@ import { db as firestoreDb } from '../../../src/firebase';
 import { api } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 type Status = 'open' | 'negotiating' | 'active' | 'full' | 'cancelled' | 'completed';
 
@@ -267,7 +268,7 @@ export default function PoolRequestDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:            { flex: 1, backgroundColor: colors.background },
   header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:         { width: 40 },
@@ -331,4 +332,4 @@ const styles = StyleSheet.create({
 
   cancelBtn:       { height: 48, borderRadius: 14, borderWidth: 1, borderColor: '#ef444430', backgroundColor: '#1c0a0a', alignItems: 'center', justifyContent: 'center' },
   cancelBtnText:   { color: '#ef4444', fontWeight: '800', fontSize: 15 },
-});
+}));

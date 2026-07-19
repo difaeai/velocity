@@ -13,6 +13,7 @@ import { FirebaseError } from 'firebase/app';
 
 import { api, type PoolTripByCode } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
 
 export default function PoolJoinScreen() {
@@ -162,7 +163,7 @@ export default function PoolJoinScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   header: {
@@ -259,4 +260,4 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 17, fontWeight: '900', color: colors.text },
   errorSub:   { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
   finePrint:  { fontSize: 11, color: '#6b7280', textAlign: 'center', lineHeight: 16 },
-});
+}));

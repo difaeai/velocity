@@ -18,6 +18,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, firebaseConfig } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { PrimaryButton } from '../../../src/ui/components';
 import { LogoMark } from '../../../src/ui/LogoMark';
 
@@ -290,7 +291,7 @@ export default function DriverLogin() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:      { flex: 1, backgroundColor: colors.background },
   flex:      { flex: 1 },
   container: { flex: 1, padding: 28, justifyContent: 'center', gap: 14 },
@@ -331,4 +332,4 @@ const styles = StyleSheet.create({
   otpFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   link:      { color: colors.primary, fontSize: 15, fontWeight: '700' },
   cooldown:  { color: colors.muted, fontSize: 15, fontWeight: '600' },
-});
+}));

@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useTravelMateThreads, type TravelThread } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { MailIcon } from '../../../src/ui/TabBarIcons';
 
 function timeAgo(seconds: number): string {
@@ -124,7 +125,7 @@ export default function TravelMateChats() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -183,4 +184,4 @@ const s = StyleSheet.create({
   chatName:    { fontSize: 15, fontWeight: '800', color: colors.text },
   chatPreview: { fontSize: 13, color: colors.muted },
   chatTime:    { fontSize: 11, color: colors.muted },
-});
+}));

@@ -16,6 +16,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import { ChatsIcon, FeedIcon, HomeIcon, MatchesIcon, ProfileIcon } from './TabBarIcons';
 
 type TabIconComponent = (props: {
@@ -87,7 +88,7 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   // Matches the screens' backdrop so the pill appears to float over the page.
   wrap: {
     backgroundColor: colors.background,
@@ -129,4 +130,4 @@ const s = StyleSheet.create({
     color: colors.primary,
     fontWeight: '800',
   },
-});
+}));

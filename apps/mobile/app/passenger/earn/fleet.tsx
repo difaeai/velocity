@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../../src/api/client';
 import type { FleetMember, FleetType } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { Segmented, Skeleton, StatTile, formatPKR } from '../../../src/ui/partner';
 import { timeAgo } from '../../../src/lib/timeAgo';
 
@@ -152,7 +153,7 @@ export default function FleetRoster() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: 18, gap: 10, paddingBottom: 40 },
 
@@ -207,4 +208,4 @@ const s = StyleSheet.create({
 
   empty: { padding: 30, alignItems: 'center' },
   emptyText: { color: colors.muted, fontSize: 13, textAlign: 'center', lineHeight: 20 },
-});
+}));

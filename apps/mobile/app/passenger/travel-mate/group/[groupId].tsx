@@ -40,6 +40,7 @@ import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { Card } from '../../../../src/ui/components';
 
 interface Group {
@@ -444,7 +445,7 @@ export default function TravelMateGroup() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:       { flex: 1, backgroundColor: colors.background },
   topBar:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -523,4 +524,4 @@ const s = StyleSheet.create({
   resultSub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 22 },
   doneBtn:     { height: 52, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   doneBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
-});
+}));

@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { api } from '../api/client';
 import { colors } from '../config';
+import { themed } from '../theme';
 import { uploadDriverDoc } from '../lib/uploadDoc';
 import {
   useLatestCommissionSettlement,
@@ -243,7 +244,7 @@ export function CommissionLock({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   lockCard: {
     backgroundColor: '#2a0a0a',
     borderRadius: 16,
@@ -345,4 +346,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   blurOverlayIcon: { fontSize: 20 },
-});
+}));

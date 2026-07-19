@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -9,6 +9,7 @@ import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
+import { getThemeMode, toggleTheme, themed } from '../../src/theme';
 
 function Row({
   icon,
@@ -37,6 +38,15 @@ export default function Settings() {
   const router = useRouter();
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
+  const [dark, setDark] = useState(getThemeMode() === 'dark');
+
+  async function handleThemeToggle() {
+    setDark((d) => !d);
+    const reloaded = await toggleTheme();
+    if (!reloaded) {
+      Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
+    }
+  }
 
   // Fleet referral state, re-fetched on focus so the row updates right after
   // the user comes back from applying a code.
@@ -113,6 +123,17 @@ export default function Settings() {
             />
           </View>
           <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowIcon}>🌙</Text>
+            <Text style={styles.rowLabel}>Dark mode</Text>
+            <Switch
+              value={dark}
+              onValueChange={handleThemeToggle}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              thumbColor="#fff"
+            />
+          </View>
+          <View style={styles.divider} />
           <Row icon="🌐" label="Language" value="English" onPress={() => comingSoon('Language')} />
         </View>
 
@@ -135,7 +156,7 @@ export default function Settings() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -166,4 +187,4 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 52 },
   hint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginLeft: 4, marginTop: -2 },
   version: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 20 },
-});
+}));

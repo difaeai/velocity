@@ -24,6 +24,7 @@ import { db } from '../../src/firebase';
 import { api, type CommuteDay } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type Gender, type RideType } from '../../src/domain/types';
 
 interface ScheduledRide {
@@ -205,7 +206,7 @@ export default function ScheduledRides() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:     { width: 40 },
@@ -239,4 +240,4 @@ const s = StyleSheet.create({
   deleteText: { fontSize: 12, fontWeight: '800', color: '#ef4444' },
 
   lastError: { fontSize: 11, color: '#f59e0b', fontWeight: '600' },
-});
+}));

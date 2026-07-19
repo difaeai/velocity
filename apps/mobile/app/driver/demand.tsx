@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { api, type CommuteDemandSlot } from '../../src/api/client';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { DemandHeatmap } from '../../src/ui/DemandHeatmap';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 
@@ -121,7 +122,7 @@ export default function DriverDemand() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12 },
   headerTitle: { fontSize: 24, fontWeight: '900', color: colors.text },
@@ -200,4 +201,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   offerBtnTxt: { fontSize: 14, fontWeight: '800', color: colors.primary },
-});
+}));

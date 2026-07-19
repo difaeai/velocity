@@ -25,6 +25,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../src/hooks/places';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
 
@@ -550,7 +551,7 @@ export default function PoolRideOfferScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -819,4 +820,4 @@ const styles = StyleSheet.create({
   },
   postBtnText: { color: '#000', fontSize: 17, fontWeight: '900' },
   legalNote: { fontSize: 11, color: colors.muted, textAlign: 'center', lineHeight: 16 },
-});
+}));

@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 
 import { colors } from '../config';
-import { getThemeMode, toggleTheme } from '../theme';
+import { getThemeMode, toggleTheme, themed } from '../theme';
 
 const DRAWER_WIDTH = Dimensions.get('window').width * 0.78;
 
@@ -155,7 +155,7 @@ export function DriverDrawer({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -217,4 +217,4 @@ const styles = StyleSheet.create({
   navLabel:      { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   divider:       { height: 1, backgroundColor: colors.glassChip, marginHorizontal: 20, marginVertical: 4 },
-});
+}));

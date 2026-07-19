@@ -25,6 +25,7 @@ const DEFAULT_REGION = {
 };
 
 import { DARK_MAP_STYLE } from './mapStyle';
+import { themed } from '../theme';
 
 /**
  * Live Google map.
@@ -200,7 +201,7 @@ export function LiveMap({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   // Pickup: lime dot in a soft halo — reads "you are here".
   pickupOuter: {
     width: 26,
@@ -254,4 +255,4 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   driverChipEmoji: { fontSize: 15 },
-});
+}));
