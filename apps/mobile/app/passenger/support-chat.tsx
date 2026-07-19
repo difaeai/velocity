@@ -27,6 +27,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { LogoMark } from '../../src/ui/LogoMark';
 
 interface Message {
@@ -223,7 +224,7 @@ export default function SupportChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   header: {
@@ -319,4 +320,4 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendIcon: { fontSize: 20, fontWeight: '900', color: '#000' },
-});
+}));

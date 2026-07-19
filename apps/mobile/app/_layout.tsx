@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, useSyncExternalStore } from 'react';
 import { LogBox, Platform } from 'react-native';
 import { Slot, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -6,7 +6,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 
 import { AuthProvider } from '../src/auth/AuthContext';
-import { loadTheme, type ThemeMode } from '../src/theme';
+import {
+  getThemeMode,
+  getThemeVersion,
+  loadTheme,
+  subscribeTheme,
+  type ThemeMode,
+} from '../src/theme';
 
 LogBox.ignoreLogs([
   'Could not reach Cloud Firestore backend',
@@ -18,12 +24,18 @@ const isExpoGo = Constants.appOwnership === 'expo';
 export default function RootLayout() {
   const router = useRouter();
 
-  // Screens bake theme colors into their StyleSheets at module load, so the
-  // saved theme must be applied BEFORE any route module is evaluated.
+  // The saved theme must be applied BEFORE any route module is evaluated so the
+  // first StyleSheet build (via themed()) bakes the correct palette.
   const [themeMode, setThemeMode] = useState<ThemeMode | null>(null);
   useEffect(() => {
     loadTheme().then(setThemeMode);
   }, []);
+
+  // Live theme switching: when the palette changes, the version bumps. We key the
+  // route subtree on it so every mounted screen remounts and rebuilds its styles
+  // from the new colors — no reload. expo-router is URL-driven, so the current
+  // route is preserved across the remount (only in-screen local state resets).
+  const themeVersion = useSyncExternalStore(subscribeTheme, getThemeVersion, getThemeVersion);
 
   // Handle FCM notification tap → deep-link driver to request-detail screen
   useEffect(() => {
@@ -60,8 +72,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style={themeMode === 'light' ? 'dark' : 'light'} />
-        <Slot />
+        <StatusBar style={getThemeMode() === 'light' ? 'dark' : 'light'} />
+        <Fragment key={themeVersion}>
+          <Slot />
+        </Fragment>
       </AuthProvider>
     </SafeAreaProvider>
   );

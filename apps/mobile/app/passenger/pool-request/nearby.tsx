@@ -23,6 +23,7 @@ import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { db } from '../../../src/firebase';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { isRideVisibleToUser } from '../../../src/lib/genderAccess';
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -429,7 +430,7 @@ export default function NearbyRidesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:           { flex: 1, backgroundColor: colors.background },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:        { width: 40 },
@@ -508,4 +509,4 @@ const styles = StyleSheet.create({
   dropCancelText:{ fontSize: 13, fontWeight: '700', color: colors.muted },
   dropJoinBtn:   { flex: 2, height: 46, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   dropJoinText:  { fontSize: 13, fontWeight: '900', color: '#000' },
-});
+}));

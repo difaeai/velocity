@@ -24,6 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { REPORT_REASON_LABELS, type ReportReason } from '../api/client';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 const REASONS = Object.keys(REPORT_REASON_LABELS) as ReportReason[];
 
@@ -124,7 +125,7 @@ export function ReportRequestModal({ visible, submitting, error, onClose, onSubm
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   flex:     { flex: 1 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: {
@@ -190,4 +191,4 @@ const styles = StyleSheet.create({
   },
   submitOff: { opacity: 0.4 },
   submitTxt: { fontSize: 18, fontWeight: '900', color: '#000' },
-});
+}));

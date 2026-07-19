@@ -12,6 +12,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 interface HeatRequest {
   id: string;
@@ -134,7 +135,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -161,4 +162,4 @@ const styles = StyleSheet.create({
   legendLabel: { fontSize: 11, color: colors.muted },
 
   emptyText: { fontSize: 12, color: colors.muted, textAlign: 'center', paddingVertical: 4 },
-});
+}));

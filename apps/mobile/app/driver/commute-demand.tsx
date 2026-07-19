@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { api } from '../../src/api/client';
 import type { CommuteDemandSlot } from '../../src/api/client';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 function fmtTime(time: string): string {
   const parts = time.split(':');
@@ -128,7 +129,7 @@ export default function CommuteDemandScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:            { flex: 1, backgroundColor: colors.background },
   header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:         { width: 40 },
@@ -161,4 +162,4 @@ const styles = StyleSheet.create({
   genderRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingBottom: 12 },
   genderChip:      { backgroundColor: colors.background, borderRadius: 8, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 3 },
   genderChipText:  { fontSize: 11, color: colors.muted, fontWeight: '700' },
-});
+}));

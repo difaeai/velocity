@@ -17,6 +17,7 @@ import type { PoolGenderPref } from '../../../src/api/client';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 // Places API (New) requires session tokens to be UUID v4
 function uuidv4() {
@@ -264,7 +265,7 @@ export default function CreatePoolRequestScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:          { flex: 1, backgroundColor: colors.background },
   header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:       { width: 40 },
@@ -316,4 +317,4 @@ const styles = StyleSheet.create({
 
   submitBtn:     { height: 56, backgroundColor: colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   submitBtnText: { color: '#000', fontSize: 17, fontWeight: '900' },
-});
+}));

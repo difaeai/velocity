@@ -14,6 +14,7 @@ import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/f
 
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { db } from '../../../src/firebase';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import type { PartnerRideStatus, PartnerTxnStatus } from '../../../src/api/client';
@@ -164,7 +165,7 @@ export default function PartnerWallet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   list: { padding: 18, gap: 10, paddingBottom: 40 },
 
@@ -199,4 +200,4 @@ const s = StyleSheet.create({
   txnDetail: { color: colors.muted, fontSize: 11 },
 
   empty: { color: colors.muted, fontSize: 13, textAlign: 'center', padding: 30, lineHeight: 20 },
-});
+}));

@@ -43,6 +43,7 @@ import { api, type TMComment, type TMPost } from '../../../../src/api/client';
 import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../../src/lib/timeAgo';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 
 
 /** Minimal dark page hosting a native <video> element. */
@@ -354,7 +355,7 @@ export default function PostDetail() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -398,4 +399,4 @@ const s = StyleSheet.create({
   composerInput: { flex: 1, minHeight: 42, maxHeight: 110, borderRadius: 21, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, fontSize: 14, paddingHorizontal: 16, paddingVertical: 10 },
   sendBtn:       { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendIcon:      { color: '#000', fontSize: 17, fontWeight: '900' },
-});
+}));

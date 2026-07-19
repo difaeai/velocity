@@ -28,6 +28,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api, type TMCommunity } from '../../../src/api/client';
 import { PAKISTAN_CITIES } from '../../../src/domain/intercityTypes';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 
 export default function TravelMateCommunities() {
@@ -273,7 +274,7 @@ export default function TravelMateCommunities() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -324,4 +325,4 @@ const s = StyleSheet.create({
   cancelBtnText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
   confirmBtn:   { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText:{ fontSize: 14, fontWeight: '900', color: '#000' },
-});
+}));

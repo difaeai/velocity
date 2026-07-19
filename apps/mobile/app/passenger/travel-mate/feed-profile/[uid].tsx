@@ -48,6 +48,7 @@ import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../../src/
 import { timeAgo, joinedLabel } from '../../../../src/lib/timeAgo';
 import { areaSummary } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { PostCard } from '../feed';
 
 
@@ -712,7 +713,7 @@ export default function FeedProfile() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
   iconBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -776,4 +777,4 @@ const s = StyleSheet.create({
   listRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   listAvatar:   { width: 40, height: 40, borderRadius: 20 },
   listName:     { flex: 1, fontSize: 14.5, fontWeight: '800', color: colors.text },
-});
+}));

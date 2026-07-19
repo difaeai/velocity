@@ -39,6 +39,7 @@ import {
 import { CommissionLock } from '../../src/ui/CommissionLock';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
 import { RatingModal } from '../../src/ui/RatingModal';
@@ -729,7 +730,7 @@ function PoolBatchRequests({ rideId }: { rideId: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   scroll: { padding: 18, gap: 14, paddingBottom: DRIVER_TAB_BAR_HEIGHT + 18 },
@@ -878,4 +879,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   batchBtnTxt: { fontSize: 12, fontWeight: '900', color: '#000' },
-});
+}));

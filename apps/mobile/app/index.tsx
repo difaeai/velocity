@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
 import { colors } from '../src/config';
+import { themed } from '../src/theme';
 import { LogoMark } from '../src/ui/LogoMark';
 import { WELCOME_SEEN_KEY } from './welcome';
 
@@ -121,7 +122,7 @@ export default function Index() {
   return <Redirect href="/passenger/home" />;
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
@@ -150,5 +151,5 @@ const styles = StyleSheet.create({
     color: '#ccff00',
     opacity: 0.6,
   },
-});
+}));
 

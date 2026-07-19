@@ -28,6 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api/client';
 import type { MyReferral } from '../src/api/client';
 import { colors } from '../src/config';
+import { themed } from '../src/theme';
 import { deviceFingerprint } from '../src/hooks/partner';
 import { PrimaryButton } from '../src/ui/components';
 import { Skeleton } from '../src/ui/partner';
@@ -182,7 +183,7 @@ export default function ReferralCodeScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 22, gap: 12, paddingBottom: 40 },
 
@@ -246,4 +247,4 @@ const s = StyleSheet.create({
   boundCode: { color: colors.primary, fontSize: 26, fontWeight: '900', letterSpacing: 4 },
   boundBody: { color: colors.muted, fontSize: 13, textAlign: 'center', lineHeight: 20, marginTop: 4 },
   boundNote: { color: colors.muted, fontSize: 11, textAlign: 'center', marginTop: 8, opacity: 0.8 },
-});
+}));

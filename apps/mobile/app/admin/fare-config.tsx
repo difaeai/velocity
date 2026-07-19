@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import {
   CityFareConfig,
   CategoryRates,
@@ -295,7 +296,7 @@ export default function FareConfig() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.glassStrong },
   backBtn:{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
@@ -341,4 +342,4 @@ const styles = StyleSheet.create({
 
   defaultsBtn:     { backgroundColor: colors.surface, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 4 },
   defaultsBtnText: { color: '#8a8c8c', fontWeight: '700', fontSize: 13 },
-});
+}));

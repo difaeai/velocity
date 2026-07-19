@@ -3,6 +3,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDriverEntry } from '../../../src/hooks/useDriverEntry';
+import { themed } from '../../../src/theme';
 
 function Benefit({ icon, text }: { icon: string; text: string }) {
   return (
@@ -80,7 +81,7 @@ export default function DriverIntro() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#3a3a3a' },
   topbar: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 2 },
   menuIcon: { color: '#fff', fontSize: 30, fontWeight: '700' },
@@ -109,4 +110,4 @@ const styles = StyleSheet.create({
 
   passengerBtn: { paddingVertical: 14, alignItems: 'center' },
   passengerLink: { color: '#e6e6e6', fontSize: 18, fontWeight: '600' },
-});
+}));

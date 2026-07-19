@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 /**
  * Home-screen entry point for "Earn with Velocity" — the partner program.
@@ -118,7 +119,7 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -200,4 +201,4 @@ const styles = StyleSheet.create({
   chipSolidText: { fontSize: 10, fontWeight: '900', color: '#0b0d0c' },
 
   arrow: { fontSize: 20, color: colors.primary, fontWeight: '900' },
-});
+}));

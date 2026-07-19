@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../config';
+import { themed } from '../theme';
 
 const WINDOW_SECONDS = 5 * 60; // 5 minutes
 
@@ -73,7 +74,7 @@ export function ArrivalCountdown({ arrivedAt, role }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   wrap: {
     backgroundColor: `${colors.primary}12`,
     borderRadius: 14,
@@ -101,4 +102,4 @@ const styles = StyleSheet.create({
   timerExpired: { color: colors.muted },
   trackBg:   { height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: 'hidden' },
   trackFill: { height: 4, borderRadius: 2 },
-});
+}));

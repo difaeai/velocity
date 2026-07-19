@@ -17,6 +17,7 @@ import { api } from '../../../src/api/client';
 import type { WithdrawalMethod } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { db } from '../../../src/firebase';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import { PrimaryButton } from '../../../src/ui/components';
@@ -221,7 +222,7 @@ export default function Withdraw() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, paddingBottom: 44 },
 
@@ -285,4 +286,4 @@ const s = StyleSheet.create({
   historyReason: { color: colors.danger, fontSize: 11, marginTop: 3 },
   historyPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   historyPillText: { fontSize: 11, fontWeight: '900', textTransform: 'capitalize' },
-});
+}));

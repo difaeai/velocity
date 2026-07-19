@@ -39,6 +39,7 @@ import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TMCommunity, type TMPost } from '../../../../src/api/client';
 import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { PostCard } from '../feed';
 
 const PAGE_SIZE = 25;
@@ -298,7 +299,7 @@ export default function CommunityPage() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -325,4 +326,4 @@ const s = StyleSheet.create({
   postsHead: { fontSize: 13, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 },
 
   emptyPosts: { alignItems: 'center', paddingVertical: 32, gap: 10, paddingHorizontal: 24 },
-});
+}));

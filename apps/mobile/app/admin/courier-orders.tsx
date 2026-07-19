@@ -22,6 +22,7 @@ import {
 
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 
 type CourierStatus = 'pending' | 'accepted' | 'picked_up' | 'delivered' | 'cancelled';
@@ -331,7 +332,7 @@ export default function AdminCourierOrdersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 40 },
@@ -381,4 +382,4 @@ const styles = StyleSheet.create({
 
   saveBtn:    { height: 50, backgroundColor: colors.primary, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   saveBtnTxt: { fontSize: 15, fontWeight: '900', color: '#000' },
-});
+}));

@@ -15,6 +15,7 @@ import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { api } from '../../../src/api/client';
 
 type FreightStatus = 'pending' | 'quoted' | 'confirmed' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
@@ -332,14 +333,14 @@ function Row({ icon, label, value, highlight }: { icon: string; label: string; v
   );
 }
 
-const rowStyles = StyleSheet.create({
+const rowStyles = themed(() => StyleSheet.create({
   row:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   icon:  { fontSize: 16, width: 24 },
   label: { fontSize: 12, color: colors.muted, fontWeight: '700', flex: 1 },
   value: { fontSize: 13, color: colors.text, fontWeight: '600', flex: 2, textAlign: 'right' },
-});
+}));
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 40 },
@@ -399,4 +400,4 @@ const styles = StyleSheet.create({
 
   cancelBtn:    { height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   cancelBtnTxt: { fontSize: 15, fontWeight: '800', color: colors.danger },
-});
+}));

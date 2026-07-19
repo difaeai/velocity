@@ -19,6 +19,7 @@ import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
@@ -357,7 +358,7 @@ function ServiceTile({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
@@ -791,5 +792,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
-});
+}));
 

@@ -14,6 +14,7 @@ import {
   oc,
   pickPhoto,
 } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 const now = new Date();
 const DOB_MAX = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate()); // drivers must be adults
@@ -64,9 +65,9 @@ export default function BasicInfo() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 12 },
   photoCard: { backgroundColor: oc.card, borderRadius: 18, padding: 20, alignItems: 'center', gap: 12, marginBottom: 4 },
   bullets: { gap: 6, alignSelf: 'stretch', paddingHorizontal: 8 },
-});
+}));

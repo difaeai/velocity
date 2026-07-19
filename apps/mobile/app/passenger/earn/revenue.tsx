@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { RevenueBuckets } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import {
   DashboardSkeleton,
@@ -114,7 +115,7 @@ export default function Revenue() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, gap: 16, paddingBottom: 40 },
 
@@ -141,4 +142,4 @@ const s = StyleSheet.create({
 
   note: { backgroundColor: colors.glassChip, borderRadius: 14, padding: 14 },
   noteText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-});
+}));

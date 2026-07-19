@@ -29,6 +29,7 @@ import { useCancellationSettings } from '../../../src/hooks/driver';
 import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { Badge, Card, PrimaryButton } from '../../../src/ui/components';
 import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
 import { LiveMap } from '../../../src/ui/LiveMap';
@@ -770,7 +771,7 @@ function ReportIssueModal({ visible, tripId, onClose }: { visible: boolean; trip
   );
 }
 
-const reportStyles = StyleSheet.create({
+const reportStyles = themed(() => StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
     backgroundColor: colors.background,
@@ -818,7 +819,7 @@ const reportStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   submitTxt: { fontSize: 15, fontWeight: '900', color: '#000' },
-});
+}));
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
@@ -829,7 +830,7 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:      { flex: 1, backgroundColor: colors.background },
   center:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: { padding: 18, gap: 14 },
@@ -1284,4 +1285,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: -4,
   },
-});
+}));

@@ -16,6 +16,7 @@ import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestor
 
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 import {
   IntercityTrip,
@@ -387,7 +388,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 10 },
   backBtn: { width: 40 },
@@ -452,4 +453,4 @@ const styles = StyleSheet.create({
   pickerRowActive: { backgroundColor: colors.glassLime },
   pickerRowTxt: { fontSize: 15, fontWeight: '700', color: colors.text },
   pickerRowProv: { fontSize: 12, color: colors.muted },
-});
+}));

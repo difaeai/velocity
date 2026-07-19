@@ -23,6 +23,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 import {
   PAKISTAN_CITIES,
@@ -515,7 +516,7 @@ export default function CityToCityScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -609,9 +610,9 @@ const styles = StyleSheet.create({
   footer: { paddingTop: 10, paddingBottom: 28 },
   bookBtn: { height: 54, backgroundColor: colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   bookBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));
 
-const modal = StyleSheet.create({
+const modal = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   closeBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -632,4 +633,4 @@ const modal = StyleSheet.create({
   cityProvince: { fontSize: 12, color: colors.muted },
   emptyBox: { alignItems: 'center', padding: 32 },
   emptyText: { fontSize: 14, color: colors.muted },
-});
+}));

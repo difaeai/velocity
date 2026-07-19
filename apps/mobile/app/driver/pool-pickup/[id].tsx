@@ -17,6 +17,7 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { Card, PrimaryButton } from '../../../src/ui/components';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { genderLabel } from '../../../src/lib/genderAccess';
@@ -406,7 +407,7 @@ export default function PoolPickup() {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:       { flex: 1, backgroundColor: colors.background },
   container:  { padding: 18, gap: 14 },
   loading:    { padding: 20, color: colors.muted },
@@ -517,4 +518,4 @@ const styles = StyleSheet.create({
   },
   completeEarnLabel: { fontSize: 13, color: colors.primary, fontWeight: '700', marginBottom: 4 },
   completeEarnAmt:   { fontSize: 32, fontWeight: '900', color: colors.primary },
-});
+}));

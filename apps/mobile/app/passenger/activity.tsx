@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { usePassengerTrips } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
 
 const STATUS_META: Record<TripStatus, { label: string; color: string }> = {
@@ -92,7 +93,7 @@ export default function Activity() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -142,4 +143,4 @@ const styles = StyleSheet.create({
   },
   fare: { fontSize: 16, fontWeight: '900', color: colors.primary },
   resume: { fontSize: 12, fontWeight: '700', color: colors.text },
-});
+}));

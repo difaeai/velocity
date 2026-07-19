@@ -54,6 +54,7 @@ import type {
 } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { auth, firebaseConfig } from '../../../src/firebase';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
@@ -787,7 +788,7 @@ function CityPicker({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 20, paddingBottom: 44 },
 
@@ -1068,4 +1069,4 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   cityOtherText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
-});
+}));

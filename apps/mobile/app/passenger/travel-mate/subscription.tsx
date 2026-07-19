@@ -31,6 +31,7 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { useFeatureFlags } from '../../../src/hooks/driver';
 import { Card, PrimaryButton } from '../../../src/ui/components';
 
@@ -328,7 +329,7 @@ export default function TravelMateSubscription() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:         { flex: 1, backgroundColor: colors.background },
   topBar:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn:      { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -391,4 +392,4 @@ const s = StyleSheet.create({
 
   error:        { color: colors.danger, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   blockedNote:  { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: 4 },
-});
+}));

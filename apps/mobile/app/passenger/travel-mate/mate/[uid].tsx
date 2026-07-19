@@ -30,6 +30,7 @@ import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { areaLabel } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { PrimaryButton } from '../../../../src/ui/components';
 
 interface TravelPoint { lat: number; lng: number; label: string }
@@ -232,7 +233,7 @@ export default function TravelMateVisitorProfile() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -269,4 +270,4 @@ const s = StyleSheet.create({
   lockEmoji: { fontSize: 40, textAlign: 'center' },
   lockTitle: { fontSize: 20, fontWeight: '900', color: colors.text, textAlign: 'center', marginTop: 6 },
   lockSub:   { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 20, marginVertical: 10 },
-});
+}));

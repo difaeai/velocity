@@ -36,6 +36,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { api, type EnRouteMatch } from '../../src/api/client';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useDriverActiveTrip } from '../../src/hooks/driver';
 import { fetchRouteInfo } from '../../src/hooks/directions';
@@ -452,7 +453,7 @@ function RouteSetter({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -555,4 +556,4 @@ const styles = StyleSheet.create({
   },
   rulesTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: 2 },
   rule: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-});
+}));

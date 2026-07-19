@@ -1,11 +1,12 @@
 /**
- * Theme engine — dark (default) and light modes.
+ * Theme engine — dark (default) and light modes, applied LIVE (no reload).
  *
- * Every screen builds its StyleSheet from the shared `colors` object at module
- * load, so themes are applied by MUTATING that object in place before any
- * screen module is evaluated (the root layout gates rendering on `loadTheme()`).
- * Switching therefore requires a reload: instant when expo-updates is present
- * (production) or in dev (DevSettings); otherwise the user reopens the app.
+ * Screens build their StyleSheet through `themed(() => StyleSheet.create({…}))`
+ * instead of calling StyleSheet.create at module load directly. `themed` returns
+ * a lazy proxy that rebuilds the sheet from the current `colors` whenever the
+ * global theme version changes, so switching themes is instant: we mutate the
+ * shared `colors` object, bump the version (invalidating every proxy), and force
+ * a re-render of the route tree. No expo-updates reload, no app restart.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -66,20 +67,77 @@ export function getThemeMode(): ThemeMode {
   return currentMode;
 }
 
+// ── Live-theme version store ──────────────────────────────────────────────────
+// Every `themed()` proxy caches its built sheet against this counter; bumping it
+// invalidates all of them at once. Listeners (the root layout) re-render/remount
+// so mounted screens rebuild their styles from the new palette.
+let themeVersion = 0;
+const listeners = new Set<() => void>();
+
+export function getThemeVersion(): number {
+  return themeVersion;
+}
+
+export function subscribeTheme(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+function bumpThemeVersion() {
+  themeVersion += 1;
+  listeners.forEach((l) => l());
+}
+
+/**
+ * Wrap a StyleSheet factory so its styles are rebuilt from the current palette
+ * whenever the theme changes. Screens use it exactly like StyleSheet.create:
+ *
+ *   const styles = themed(() => StyleSheet.create({ … colors.background … }));
+ *
+ * The returned value is a proxy over the built sheet; property access rebuilds
+ * lazily the first time it's read after a theme switch, then serves the cache.
+ */
+export function themed<T extends object>(factory: () => T): T {
+  let built: T | null = null;
+  let builtVersion = -1;
+
+  const ensure = (): T => {
+    if (built === null || builtVersion !== themeVersion) {
+      built = factory();
+      builtVersion = themeVersion;
+    }
+    return built;
+  };
+
+  return new Proxy({} as T, {
+    get(_t, prop) {
+      return (ensure() as Record<PropertyKey, unknown>)[prop];
+    },
+    has(_t, prop) {
+      return prop in (ensure() as object);
+    },
+    ownKeys() {
+      return Reflect.ownKeys(ensure() as object);
+    },
+    getOwnPropertyDescriptor(_t, prop) {
+      return Object.getOwnPropertyDescriptor(ensure() as object, prop);
+    },
+  });
+}
+
 /**
  * Synchronously apply a theme to the shared `colors` object. Exported so the
  * app entry point can apply the saved theme BEFORE expo-router imports the
- * route screens — otherwise each screen's StyleSheet bakes the default (dark)
- * palette and the theme never visually applies until the next reload.
+ * route screens — the first proxy build then bakes the correct palette.
  */
 export function applyTheme(mode: ThemeMode) {
   currentMode = mode;
   Object.assign(colors, mode === 'light' ? LIGHT : DARK);
 }
 
-/** Read the saved theme synchronously is impossible (AsyncStorage is async),
- * so the entry point reads it and calls applyTheme. This maps the raw stored
- * value to a valid mode. */
+/** Map a raw stored value to a valid mode. */
 export function normalizeMode(saved: string | null): ThemeMode {
   return saved === 'light' ? 'light' : 'dark';
 }
@@ -102,44 +160,22 @@ export async function loadTheme(): Promise<ThemeMode> {
 }
 
 /**
- * Best-effort full JS reload so already-loaded screens pick up the new
- * palette. Returns false when no reload mechanism exists (production build
- * without expo-updates) — callers should then ask the user to reopen the app.
- */
-async function reloadApp(): Promise<boolean> {
-  // In development the app is served by Metro, so a JS fast-reload is the only
-  // valid path — calling expo-updates reloadAsync() against a dev server errors
-  // out ("cannot reload in development"). Use DevSettings and never touch Updates.
-  if (__DEV__) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { DevSettings } = require('react-native');
-      if (DevSettings?.reload) {
-        DevSettings.reload();
-        return true;
-      }
-    } catch { /* not available */ }
-    return false;
-  }
-  // Production: reload via expo-updates when it's present.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Updates = require('expo-updates');
-    if (Updates?.reloadAsync) {
-      await Updates.reloadAsync();
-      return true;
-    }
-  } catch { /* expo-updates not installed */ }
-  return false;
-}
-
-/**
- * Persist + apply the opposite theme. Resolves to true when the app reloaded
- * itself; false when the user needs to close and reopen the app manually.
+ * Persist + apply the opposite theme LIVE. Mutates the palette, invalidates all
+ * `themed()` proxies, and notifies listeners so the UI re-themes without a
+ * reload. Resolves to true (kept for callers that previously checked whether a
+ * reload happened — a live switch always "succeeds").
  */
 export async function toggleTheme(): Promise<boolean> {
   const next: ThemeMode = currentMode === 'dark' ? 'light' : 'dark';
   await AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
   apply(next);
-  return reloadApp();
+  bumpThemeVersion();
+  return true;
+}
+
+/** Apply an explicit mode LIVE (same mechanism as toggleTheme). */
+export async function setThemeMode(mode: ThemeMode): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEY, mode).catch(() => {});
+  apply(mode);
+  bumpThemeVersion();
 }

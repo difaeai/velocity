@@ -30,6 +30,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 const MAX_LOCATIONS = 5;
 
@@ -293,7 +294,7 @@ export default function TravelLocations() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:     { flex: 1, backgroundColor: colors.background },
   scroll:   { padding: 20, gap: 16, paddingBottom: 40 },
   center:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -328,4 +329,4 @@ const s = StyleSheet.create({
   saveBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
   skipBtn:     { alignItems: 'center', paddingVertical: 8 },
   skipBtnText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-});
+}));

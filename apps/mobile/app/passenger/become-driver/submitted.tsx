@@ -7,6 +7,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { useDriverProfile } from '../../../src/hooks/driver';
 import { OnbButton, oc } from '../../../src/ui/onboarding';
 import { LogoMark } from '../../../src/ui/LogoMark';
+import { themed } from '../../../src/theme';
 
 /**
  * Post-registration status screen for a driver applicant.
@@ -96,7 +97,7 @@ export default function ApplicationSubmitted() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { flex: 1, padding: 28, alignItems: 'center', justifyContent: 'center', gap: 14 },
 
@@ -118,4 +119,4 @@ const styles = StyleSheet.create({
 
   passengerBtn: { position: 'absolute', bottom: 28, paddingVertical: 14, alignItems: 'center' },
   passengerLink: { color: oc.sub, fontSize: 15, fontWeight: '600' },
-});
+}));

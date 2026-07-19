@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
 import { AddPhotoButton, OnbButton, StepHeader, SupportNote, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 const MAX_EXTRA_PHOTOS = 5;
 
@@ -64,7 +65,7 @@ export default function VehiclePhoto() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
   hint: { backgroundColor: '#eef6f1', borderRadius: 12, padding: 12 },
@@ -88,4 +89,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   thumbRemoveText: { color: '#fff', fontSize: 11, fontWeight: '900' },
-});
+}));

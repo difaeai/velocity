@@ -55,6 +55,7 @@ import { api, type TMCommunity, type TMPost } from '../../../src/api/client';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 const PAGE_SIZE = 25;
 
@@ -675,7 +676,7 @@ export default function TravelMateFeed() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   screenTitle: { fontSize: 22, fontWeight: '900', color: colors.text },
@@ -768,4 +769,4 @@ const s = StyleSheet.create({
   toolIcon:  { fontSize: 16 },
   toolLabel: { fontSize: 13, fontWeight: '800', color: colors.text },
   composeCount: { flex: 1, textAlign: 'right', fontSize: 11, color: colors.muted },
-});
+}));

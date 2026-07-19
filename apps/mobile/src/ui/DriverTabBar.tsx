@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 
 export type DriverTab = 'requests' | 'demand' | 'performance' | 'wallet';
 
@@ -82,7 +83,7 @@ export function DriverTabBar({ active }: { active: DriverTab }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -99,4 +100,4 @@ const styles = StyleSheet.create({
   },
   label:       { fontSize: 11, fontWeight: '600' },
   labelActive: { fontWeight: '800' },
-});
+}));

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
 import { Field, IdCardArt, OnbButton, OnbKeyboardView, StepHeader, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -57,7 +58,7 @@ export default function Cnic() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-});
+}));

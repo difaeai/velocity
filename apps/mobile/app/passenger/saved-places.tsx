@@ -27,6 +27,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 type PlaceCategory = 'home' | 'work' | 'other';
 
@@ -279,7 +280,7 @@ export default function SavedPlacesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -390,4 +391,4 @@ const styles = StyleSheet.create({
 
   saveBtn:    { height: 52, backgroundColor: colors.primary, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   saveBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));

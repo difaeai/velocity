@@ -21,6 +21,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 const { width } = Dimensions.get('window');
 const TILE = (width - 48) / 2;
@@ -96,7 +97,7 @@ export default function TravelMateMatches() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -133,4 +134,4 @@ const s = StyleSheet.create({
 
   newBadge:     { position: 'absolute', top: 10, right: 10, backgroundColor: colors.primary, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
   newBadgeText: { fontSize: 10, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
-});
+}));

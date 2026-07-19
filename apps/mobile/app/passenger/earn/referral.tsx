@@ -22,6 +22,7 @@ import QRCode from 'react-native-qrcode-svg';
 
 import type { FleetType } from '../../../src/api/client';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import { appLink } from '../../../src/share/links';
 import { ErrorState, LevelBadge, SectionTitle, Segmented, Skeleton, formatPKR } from '../../../src/ui/partner';
@@ -194,7 +195,7 @@ function ShareTile({ emoji, label, onPress }: { emoji: string; label: string; on
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, gap: 16, paddingBottom: 40 },
 
@@ -247,4 +248,4 @@ const s = StyleSheet.create({
   rulesText: { color: colors.muted, fontSize: 12, lineHeight: 20 },
 
   empty: { color: colors.muted, fontSize: 14, textAlign: 'center', padding: 30, lineHeight: 21 },
-});
+}));

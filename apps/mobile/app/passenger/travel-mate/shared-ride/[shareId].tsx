@@ -20,6 +20,7 @@ import { FirebaseError } from 'firebase/app';
 
 import { api, type SharedTravelMateRideResult } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
+import { themed } from '../../../../src/theme';
 import { Card, PrimaryButton } from '../../../../src/ui/components';
 
 export default function SharedRideScreen() {
@@ -181,7 +182,7 @@ export default function SharedRideScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.background },
   topBar:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -212,4 +213,4 @@ const s = StyleSheet.create({
   lockEmoji: { fontSize: 44, textAlign: 'center' },
   lockTitle: { fontSize: 20, fontWeight: '900', color: colors.text, textAlign: 'center', marginTop: 6 },
   lockSub:   { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 20, marginVertical: 10 },
-});
+}));

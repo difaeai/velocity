@@ -11,6 +11,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import type { RevenueBuckets } from '../../../src/api/client';
 import {
@@ -250,7 +251,7 @@ function Tile({ emoji, label, onPress }: { emoji: string; label: string; onPress
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, gap: 16, paddingBottom: 40 },
 
@@ -357,4 +358,4 @@ const s = StyleSheet.create({
     padding: 14,
   },
   ruleNoteText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-});
+}));

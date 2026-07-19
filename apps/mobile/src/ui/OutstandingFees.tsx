@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { api } from '../api/client';
 import { colors } from '../config';
+import { themed } from '../theme';
 import { uploadSettlementProof } from '../lib/uploadDoc';
 import {
   useLatestFeeSettlement,
@@ -206,7 +207,7 @@ export function OutstandingFees({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -254,4 +255,4 @@ const styles = StyleSheet.create({
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   busyText: { fontSize: 13, color: colors.muted },
   aiNotice: { fontSize: 11, color: colors.muted, lineHeight: 16 },
-});
+}));

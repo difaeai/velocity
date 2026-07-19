@@ -36,6 +36,7 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hooks/travelMateCommunity';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 
 interface PersonRow {
@@ -197,7 +198,7 @@ export default function FeedSearch() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.background },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
   backBtn:{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -219,4 +220,4 @@ const s = StyleSheet.create({
   followBtnText: { fontSize: 13, fontWeight: '900', color: '#000' },
   followingBtn:  { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.border },
   followingBtnText: { color: colors.muted },
-});
+}));

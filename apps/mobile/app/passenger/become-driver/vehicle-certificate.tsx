@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '../../../src/onboarding/context';
 import { DateField, IdCardArt, OnbButton, StepHeader, SupportNote, UploadCard, oc, pickPhoto } from '../../../src/ui/onboarding';
+import { themed } from '../../../src/theme';
 
 export default function VehicleCertificate() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function VehicleCertificate() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
-});
+}));

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 
 type Priority = 'standard' | 'express' | 'same-day';
@@ -284,7 +285,7 @@ export default function BusinessDeliveryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
 
   header: {
@@ -499,4 +500,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bookBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
-});
+}));

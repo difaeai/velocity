@@ -14,6 +14,7 @@ import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestor
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import {
   IntercityBooking,
   VEHICLE_TYPE_ICONS,
@@ -141,7 +142,7 @@ function BookingCard({ booking, onPress }: { booking: IntercityBooking; onPress:
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 40 },
@@ -176,4 +177,4 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
   statusPillTxt: { fontSize: 11, fontWeight: '800' },
   tapToView: { fontSize: 10, color: colors.muted, marginTop: 2 },
-});
+}));

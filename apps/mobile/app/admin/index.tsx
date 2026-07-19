@@ -24,6 +24,7 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 
 interface PoolSettings {
   pickupRadius: number;
@@ -357,7 +358,7 @@ export default function AdminDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -477,4 +478,4 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   footerText: { fontSize: 11, color: colors.muted, textAlign: 'center', lineHeight: 18 },
-});
+}));

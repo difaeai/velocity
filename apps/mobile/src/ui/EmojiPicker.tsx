@@ -7,6 +7,7 @@
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 
 /** Emojis offered as one-tap message reactions (WhatsApp-style). */
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
@@ -47,9 +48,9 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:  { height: 220, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
   grid:  { padding: 8 },
   cell:  { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', maxWidth: `${100 / 8}%` },
   emoji: { fontSize: 26 },
-});
+}));

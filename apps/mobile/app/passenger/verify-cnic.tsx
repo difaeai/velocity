@@ -18,6 +18,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCnicVerification } from '../../src/hooks/passenger';
 import { uploadCnicDoc } from '../../src/lib/uploadDoc';
 import { Field, IdCardArt, OnbButton, StepHeader, UploadCard, oc, pickPhoto } from '../../src/ui/onboarding';
+import { themed } from '../../src/theme';
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -160,7 +161,7 @@ export default function VerifyCnic() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:      { flex: 1, backgroundColor: oc.screen },
   container: { padding: 18, gap: 14 },
   centre:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -189,4 +190,4 @@ const styles = StyleSheet.create({
   statusEmoji: { fontSize: 56 },
   statusTitle: { fontSize: 22, fontWeight: '900', color: oc.text },
   statusBody:  { fontSize: 14, color: oc.sub, textAlign: 'center', lineHeight: 21, marginBottom: 12 },
-});
+}));

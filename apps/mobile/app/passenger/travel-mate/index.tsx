@@ -33,6 +33,7 @@ import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
 import { api } from '../../../src/api/client';
 import { appLink } from '../../../src/share/links';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 
 
 interface Group {
@@ -505,7 +506,7 @@ function ActionTile({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn:     { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: `${colors.primary}18`, borderWidth: 1.5, borderColor: `${colors.primary}40` },
@@ -596,4 +597,4 @@ const s = StyleSheet.create({
   cancelBtnText:{ fontSize: 14, fontWeight: '700', color: colors.muted },
   confirmBtn:   { flex: 1, height: 46, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText:{ fontSize: 14, fontWeight: '800', color: '#000' },
-});
+}));

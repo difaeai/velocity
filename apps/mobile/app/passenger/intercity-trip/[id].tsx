@@ -25,6 +25,7 @@ import {
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { api } from '../../../src/api/client';
 import {
   IntercityBooking,
@@ -360,7 +361,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   errorTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
@@ -428,4 +429,4 @@ const styles = StyleSheet.create({
   chatInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: colors.text, maxHeight: 100 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendBtnTxt: { fontSize: 18, fontWeight: '900', color: '#000', lineHeight: 22 },
-});
+}));

@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../src/auth/AuthContext';
 import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
+import { themed } from '../../src/theme';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 
 type Period = 'today' | 'week' | 'month' | 'all';
@@ -237,7 +238,7 @@ function formatDate(ts: Timestamp | undefined) {
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   safe:     { flex: 1, backgroundColor: colors.background },
   header:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   back:     { fontSize: 16, fontWeight: '600', color: colors.muted },
@@ -272,4 +273,4 @@ const styles = StyleSheet.create({
   chartBarTrack: { flex: 1, width: '100%', backgroundColor: colors.border, borderRadius: 4, justifyContent: 'flex-end' },
   chartBarFill:  { backgroundColor: colors.primary, borderRadius: 4 },
   chartBarLabel: { fontSize: 10, color: colors.muted, fontWeight: '700' },
-});
+}));

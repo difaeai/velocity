@@ -12,6 +12,7 @@ import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native
 import { onSnapshot, doc } from 'firebase/firestore';
 
 import { colors } from '../config';
+import { themed } from '../theme';
 import { db } from '../firebase';
 
 // ── Type-only import of react-native-maps to avoid crashing Expo Go ──────────
@@ -197,7 +198,7 @@ function AnimatedPlaceholder({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   map: {
     height: 200,
     borderRadius: 18,
@@ -213,4 +214,4 @@ const styles = StyleSheet.create({
   pinLabel:  { fontSize: 11, fontWeight: '700', color: colors.text },
   car:       { position: 'absolute' },
   watermark: { alignSelf: 'center', marginBottom: 8, color: colors.muted, fontSize: 10, fontWeight: '700' },
-});
+}));

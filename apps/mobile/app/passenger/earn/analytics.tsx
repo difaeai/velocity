@@ -10,6 +10,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../../../src/config';
+import { themed } from '../../../src/theme';
 import { usePartnerDashboard } from '../../../src/hooks/partner';
 import {
   DashboardSkeleton,
@@ -180,7 +181,7 @@ function Progress({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 18, gap: 16, paddingBottom: 40 },
 
@@ -216,4 +217,4 @@ const s = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
   },
-});
+}));

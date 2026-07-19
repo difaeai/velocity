@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { themed } from '../theme';
 
 /**
  * Light onboarding palette.
@@ -381,7 +382,7 @@ export function PhotoCircle({ uri, onPick }: { uri: string | null; onPick: () =>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   header: {
     minHeight: 56,
     backgroundColor: oc.header,
@@ -510,4 +511,4 @@ const styles = StyleSheet.create({
   },
   photoCircleImg: { width: '100%', height: '100%' },
   photoPlus: { fontSize: 40, color: oc.green, fontWeight: '300' },
-});
+}));
