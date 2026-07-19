@@ -8,7 +8,8 @@
  * Kept as `MapPlaceholder` so existing import sites require no changes.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { onSnapshot, doc } from 'firebase/firestore';
 
 import { colors } from '../config';

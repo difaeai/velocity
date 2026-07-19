@@ -16,9 +16,9 @@ import {
   PanResponder,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from './Text';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../config';

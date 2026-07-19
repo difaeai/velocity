@@ -6,12 +6,13 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from './Text';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../config';
+import { getLanguage, setLanguage } from '../i18n';
 import { getThemeMode, toggleTheme, themed } from '../theme';
 
 const DRAWER_WIDTH = Dimensions.get('window').width * 0.78;
@@ -146,6 +147,16 @@ export function DriverDrawer({
               if (!reloaded) {
                 Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
               }
+            }}
+          />
+          {/* Drivers who never open the passenger home still need a way to
+              reach Urdu — the passenger-side selector lives in that header. */}
+          <NavItem
+            icon="🌐"
+            label={getLanguage() === 'ur' ? 'English' : 'اردو (Urdu)'}
+            onPress={() => {
+              onClose();
+              setLanguage(getLanguage() === 'ur' ? 'en' : 'ur').catch(() => {});
             }}
           />
           <NavItem icon="🚪" label="Sign out" onPress={() => { onClose(); setTimeout(onSignOut, 220); }} danger />

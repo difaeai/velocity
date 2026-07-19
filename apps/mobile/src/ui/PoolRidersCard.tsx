@@ -15,7 +15,8 @@
  * Fares are shown for you and nobody else — everyone in a pool rides a different
  * slice of the road and pays for their own, and what somebody else paid is theirs.
  */
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 
 import { colors } from '../config';
 import { themed } from '../theme';

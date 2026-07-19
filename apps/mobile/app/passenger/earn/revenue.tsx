@@ -6,7 +6,8 @@
  * legended and direct-labelled — the percentages are readable without colour.
  */
 import { useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { RevenueBuckets } from '../../../src/api/client';

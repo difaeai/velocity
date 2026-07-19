@@ -12,7 +12,8 @@
  */
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import type { ColorValue } from 'react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../config';

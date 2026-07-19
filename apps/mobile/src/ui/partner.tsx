@@ -20,7 +20,8 @@
  * dual-axis chart can be made to show any correlation you like by scaling it.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
+import { Text } from './Text';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../config';
