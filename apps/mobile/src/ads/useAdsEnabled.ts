@@ -139,5 +139,31 @@ export function useAdsEnabled(): boolean {
 
   if (!uid) return true;
   const paid = current?.uid === uid ? current.store.paid : undefined;
-  return paid === false;
+  const enabled = paid === false;
+
+  // Ads failing closed is right for policy but invisible to debug: "no banner
+  // anywhere" looks identical whether the user is a paying Pro partner, the
+  // entitlement is still loading, or something is actually broken. Say which,
+  // once per state change, in development only.
+  if (__DEV__) logGate(uid, paid);
+
+  return enabled;
+}
+
+let lastLogged: string | null = null;
+
+function logGate(uid: string, paid: Entitlement) {
+  const state = `${uid}:${String(paid)}`;
+  if (state === lastLogged) return;
+  lastLogged = state;
+  if (paid === undefined) {
+    console.log('[ads] hidden — entitlement still loading for', uid);
+  } else if (paid) {
+    console.log(
+      `[ads] hidden — ${uid} is a PAYING user (Pro partner or active Travel Partner ` +
+        'subscription). This is intended: sign in with a non-paying account to see ads.',
+    );
+  } else {
+    console.log('[ads] enabled —', uid, 'holds no paid entitlement');
+  }
 }
