@@ -3,12 +3,15 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, Vie
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import * as Clipboard from 'expo-clipboard';
+
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import {
   useCommissionStatus,
   useDriverProfile,
   useOutstanding,
+  useSettlementAccounts,
   useWalletBalance,
   useWalletTransactions,
 } from '../hooks/driver';
@@ -60,6 +63,9 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   // Commission cycle — only meaningful for drivers.
   const driverProfile = useDriverProfile(role === 'driver' ? uid : undefined);
   const commission = useCommissionStatus(driverProfile);
+  // Velocity's official receiving accounts — where drivers send commission and
+  // dues manually (same admin-maintained accounts the commission lock shows).
+  const velocityAccounts = useSettlementAccounts();
   // Unpaid cancellation fees — both roles can owe these.
   const outstanding = useOutstanding(uid);
 
@@ -210,6 +216,36 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           </Card>
         ) : null}
 
+        {/* Velocity's official accounts — where the driver sends commission /
+            dues manually before uploading the payment screenshot. */}
+        {role === 'driver' &&
+        (velocityAccounts?.easypaisaNumber || velocityAccounts?.jazzcashNumber || velocityAccounts?.bankIban) ? (
+          <Card>
+            <Text style={styles.label}>Pay Velocity — official accounts</Text>
+            <Text style={styles.accountsIntro}>
+              Send your commission or dues to one of these accounts
+              {velocityAccounts.accountTitle ? (
+                <>
+                  {' '}(account title: <Text style={styles.accountsTitleName}>{velocityAccounts.accountTitle}</Text>)
+                </>
+              ) : null}
+              , then upload the payment screenshot when the app asks for it.
+            </Text>
+            {velocityAccounts.easypaisaNumber ? (
+              <AccountRow label="📱 Easypaisa" value={velocityAccounts.easypaisaNumber} />
+            ) : null}
+            {velocityAccounts.jazzcashNumber ? (
+              <AccountRow label="📲 JazzCash" value={velocityAccounts.jazzcashNumber} />
+            ) : null}
+            {velocityAccounts.bankIban ? (
+              <AccountRow
+                label={`🏦 ${velocityAccounts.bankName ?? 'Bank'} (IBAN)`}
+                value={velocityAccounts.bankIban}
+              />
+            ) : null}
+          </Card>
+        ) : null}
+
         {topupComingSoon ? (
           <Card>
             <View style={styles.comingSoonRow}>
@@ -305,6 +341,27 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   );
 }
 
+/** One official account: label, number/IBAN, and a copy button. */
+function AccountRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    await Clipboard.setStringAsync(value).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+  return (
+    <View style={styles.accountRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.accountRowLabel}>{label}</Text>
+        <Text style={styles.accountRowValue} selectable>{value}</Text>
+      </View>
+      <Pressable onPress={copy} style={styles.copyBtn} hitSlop={8}>
+        <Text style={styles.copyBtnText}>{copied ? '✓ Copied' : 'Copy'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
@@ -353,6 +410,29 @@ const styles = StyleSheet.create({
   methodChipText: { fontSize: 12, fontWeight: '700', color: colors.muted },
   methodChipTextActive: { color: colors.primary },
   payoutHint: { fontSize: 11, color: colors.muted, marginTop: 8 },
+  accountsIntro: { fontSize: 12, color: colors.muted, lineHeight: 18, marginBottom: 10 },
+  accountsTitleName: { fontWeight: '800', color: colors.text },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: `${colors.primary}12`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}40`,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  accountRowLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  accountRowValue: { fontSize: 15, fontWeight: '900', color: colors.text, marginTop: 2 },
+  copyBtn: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  copyBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
   commCardLocked: { borderColor: colors.danger, borderWidth: 1.5 },
   commRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   commMeta: { fontSize: 12, color: colors.muted, fontWeight: '600' },

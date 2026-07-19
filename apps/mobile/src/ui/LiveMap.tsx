@@ -103,7 +103,10 @@ export function LiveMap({
       style={[StyleSheet.absoluteFill, style]}
       provider={PROVIDER_GOOGLE}
       customMapStyle={DARK_MAP_STYLE}
-      showsUserLocation
+      // NEVER enable showsUserLocation: on this RN/new-arch combo the native map
+      // dispatches topUserLocationChange events that JS has no registered handler
+      // for, and each one throws — a fatal crash in release builds. We draw our
+      // own GPS marker from `coords` instead.
       showsMyLocationButton={false}
       showsCompass={false}
       toolbarEnabled={false}
