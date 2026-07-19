@@ -15,6 +15,12 @@
  */
 import mobileAds, { AdsConsent, MaxAdContentRating } from 'react-native-google-mobile-ads';
 
+/** Devices that should be served test ads even on a live-ID build. */
+const TEST_DEVICE_IDS = (process.env.EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS ?? '')
+  .split(',')
+  .map((id: string) => id.trim())
+  .filter(Boolean);
+
 let bootstrap: Promise<boolean> | null = null;
 
 async function run(): Promise<boolean> {
@@ -43,6 +49,18 @@ async function run(): Promise<boolean> {
       maxAdContentRating: MaxAdContentRating.PG,
       tagForChildDirectedTreatment: false,
       tagForUnderAgeOfConsent: false,
+      // Handsets listed here are served TEST ads even though the build carries
+      // the live ad unit IDs. This is the only safe way to exercise the real
+      // configuration by hand: tapping a genuine ad on your own device is
+      // invalid traffic, and repeated invalid traffic gets an AdMob account
+      // limited or disabled.
+      //
+      // To register a device: run the app once, then find the line the Google
+      // SDK prints in logcat —
+      //   "Use RequestConfiguration.Builder.setTestDeviceIds(...)"
+      // and put that hash in EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS (comma-separated
+      // for several devices).
+      ...(TEST_DEVICE_IDS.length ? { testDeviceIdentifiers: TEST_DEVICE_IDS } : {}),
     });
 
     await mobileAds().initialize();
