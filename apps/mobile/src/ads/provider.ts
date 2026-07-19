@@ -30,7 +30,12 @@ async function run(): Promise<boolean> {
 
   try {
     const { canRequestAds } = await AdsConsent.getConsentInfo();
-    if (!canRequestAds) return false;
+    if (!canRequestAds) {
+      // The other silent-failure path: no ad may be requested, and every
+      // placement simply renders nothing. Never leave that unexplained.
+      console.warn('[ads] consent withheld — canRequestAds is false, no ads will load');
+      return false;
+    }
 
     await mobileAds().setRequestConfiguration({
       // Velocity is a general-audience ride app used by families; anything above
