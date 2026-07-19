@@ -7,7 +7,8 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '../../../src/api/client';

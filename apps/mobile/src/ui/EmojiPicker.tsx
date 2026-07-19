@@ -4,7 +4,8 @@
  *
  * Pure JS (no native module), so it works on the current build immediately.
  */
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 
 import { colors } from '../config';
 import { themed } from '../theme';

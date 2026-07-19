@@ -2,7 +2,8 @@
  * Web stand-in for {@link ./RequestRouteMap}. The web bundle must never import
  * react-native-maps (it has no web build), so Metro picks this file on web.
  */
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 
 import { colors } from '../config';
 import { themed } from '../theme';

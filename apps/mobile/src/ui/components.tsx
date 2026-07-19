@@ -5,10 +5,10 @@ import {
   Linking,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type ViewStyle,
 } from 'react-native';
+import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
 

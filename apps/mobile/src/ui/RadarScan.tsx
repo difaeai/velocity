@@ -9,7 +9,8 @@
  * dimmed and still, which is the "you are not receiving orders" state.
  */
 import { useEffect, useMemo } from 'react';
-import { Animated, Easing, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text } from './Text';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import { colors } from '../config';

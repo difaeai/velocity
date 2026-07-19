@@ -7,7 +7,8 @@
  * lime→amber→red depending on density.
  */
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { collection, onSnapshot } from 'firebase/firestore';
 
 import { db } from '../firebase';

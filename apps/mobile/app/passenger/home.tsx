@@ -2,13 +2,14 @@ import { useEffect, useState, type ReactElement } from 'react';
 import {
   Alert,
   Dimensions,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -19,7 +20,8 @@ import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useRecentDestinations } from '../../src/hooks/passenger';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { colors } from '../../src/config';
-import { themed } from '../../src/theme';
+import { getLanguage, setLanguage, type Language } from '../../src/i18n';
+import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
@@ -41,6 +43,7 @@ export default function PassengerHome() {
   const driverEntry = useDriverEntry();
   const recents = useRecentDestinations(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
 
   // Register FCM push token on first load
   useEffect(() => {
@@ -75,11 +78,30 @@ export default function PassengerHome() {
     setDrawerOpen(false);
     comingSoon(feature);
   };
+  /**
+   * Safety → police helpline 15.
+   *
+   * The number is shown first and the call is placed only from the explicit
+   * "Call 15" button. Nothing here dials on its own: a stray tap on Safety must
+   * never put an emergency call through to the police.
+   */
   const openSafety = () => {
     setDrawerOpen(false);
     Alert.alert(
-      'Safety',
-      'During a ride you can trigger an Emergency SOS from the trip screen. Our team monitors safety events in real time.',
+      'Safety — Police helpline 15',
+      'Dial 15 to reach the Pakistan police emergency helpline directly.\n\nDuring a ride you can also trigger an Emergency SOS from the trip screen — our team monitors safety events in real time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Call 15',
+          style: 'destructive',
+          onPress: () => {
+            Linking.openURL('tel:15').catch(() => {
+              Alert.alert('Could not start the call', 'Dial 15 from your phone app.');
+            });
+          },
+        },
+      ],
     );
   };
   const goDriverMode = () => {
@@ -117,6 +139,27 @@ export default function PassengerHome() {
           </Pressable>
 
           <View style={styles.topRightGroup}>
+            {/* Mode selector — flips dark/light live, no reload */}
+            <Pressable
+              style={styles.headerIconButton}
+              onPress={() => {
+                toggleTheme().catch(() => {});
+              }}
+              accessibilityLabel={getThemeMode() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <Text style={styles.headerIconText}>{getThemeMode() === 'dark' ? '☀️' : '🌙'}</Text>
+            </Pressable>
+
+            {/* Language selector — English ⇄ اردو, also live */}
+            <Pressable
+              style={styles.headerIconButton}
+              onPress={() => setLangOpen(true)}
+              accessibilityLabel="Change language"
+            >
+              <Text style={styles.headerIconText}>🌐</Text>
+              <Text style={styles.headerIconTag}>{getLanguage() === 'ur' ? 'اردو' : 'EN'}</Text>
+            </Pressable>
+
             <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
               <Text style={styles.notificationText}>🔔</Text>
               <View style={styles.badgeDot} />
@@ -253,19 +296,13 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Business delivery</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/city-to-city')}>
-                    <Text style={styles.menuItemIcon}>🌐</Text>
-                    <Text style={styles.menuItemText}>City to City</Text>
-                  </Pressable>
+                  {/* City to City and Notifications intentionally live only on
+                      the home screen (a service tile and the header bell) —
+                      duplicating them here just made the drawer longer. */}
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/saved-places')}>
                     <Text style={styles.menuItemIcon}>🔖</Text>
                     <Text style={styles.menuItemText}>Saved places</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/notifications')}>
-                    <Text style={styles.menuItemIcon}>🔔</Text>
-                    <Text style={styles.menuItemText}>Notifications</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
@@ -317,7 +354,63 @@ export default function PassengerHome() {
           <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
         </View>
       </Modal>
+
+      {/* 5. Language selector — passenger + driver apps only (the admin console
+             stays English, since its screens don't use the translating Text) */}
+      <Modal
+        visible={langOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLangOpen(false)}
+      >
+        <Pressable style={styles.langBackdrop} onPress={() => setLangOpen(false)}>
+          {/* Inner Pressable swallows taps so they don't close the sheet */}
+          <Pressable style={styles.langSheet} onPress={() => {}}>
+            <Text style={styles.langTitle}>Language / زبان</Text>
+            <LanguageOption
+              label="English"
+              note="Default"
+              active={getLanguage() === 'en'}
+              onPress={() => {
+                setLangOpen(false);
+                setLanguage('en').catch(() => {});
+              }}
+            />
+            <LanguageOption
+              label="اردو"
+              note="Urdu"
+              active={getLanguage() === 'ur'}
+              onPress={() => {
+                setLangOpen(false);
+                setLanguage('ur').catch(() => {});
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+function LanguageOption({
+  label,
+  note,
+  active,
+  onPress,
+}: {
+  label: string;
+  note: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[styles.langRow, active && styles.langRowActive]} onPress={onPress}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.langLabel}>{label}</Text>
+        <Text style={styles.langNote}>{note}</Text>
+      </View>
+      {active ? <Text style={styles.langCheck}>✓</Text> : null}
+    </Pressable>
   );
 }
 
@@ -463,12 +556,40 @@ const styles = themed(() => StyleSheet.create({
   topRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  /* Three controls now share the right edge (mode, language, bell), so each is
+     38px instead of 46 — the row stays inside the width the pill gives up. */
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(18,21,20,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  headerIconText: {
+    fontSize: 16,
+  },
+  /* "EN" / "اردو" under the globe, so the current language is readable at a
+     glance instead of needing the sheet opened to find out. */
+  headerIconTag: {
+    fontSize: 7,
+    fontWeight: '800',
+    color: colors.primary,
+    marginTop: -1,
   },
   notificationButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(18,21,20,0.72)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
@@ -481,15 +602,15 @@ const styles = themed(() => StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   notificationText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   badgeDot: {
     position: 'absolute',
-    top: 10,
-    right: 12,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 8,
+    right: 9,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: '#ef4444',
   },
   bottomSheet: {
@@ -524,20 +645,22 @@ const styles = themed(() => StyleSheet.create({
     color: '#ffffff',
     marginBottom: 16,
   },
+  /* Shrunk from left:74/right:74 — the right edge now clears three 38px
+     controls (16 padding + 3×38 + 2×6 gap + 8 breathing room = 150). */
   pickupPillFloating: {
     position: 'absolute',
-    left: 74,
-    right: 74,
-    top: 2,
+    left: 70,
+    right: 150,
+    top: 4,
     backgroundColor: 'rgba(16,19,18,0.88)',
     borderRadius: 99,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 16,
-    paddingRight: 12,
-    paddingVertical: 8,
+    paddingLeft: 11,
+    paddingRight: 8,
+    paddingVertical: 7,
     justifyContent: 'space-between',
     elevation: 4,
     shadowColor: '#000',
@@ -556,15 +679,15 @@ const styles = themed(() => StyleSheet.create({
     textTransform: 'uppercase',
   },
   pickupPillValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#ffffff',
     marginTop: 1,
   },
   pickupArrow: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.primary,
-    marginLeft: 8,
+    marginLeft: 6,
     fontWeight: '800',
   },
   /* ── "Where to?" hero — the sheet's primary action ── */
@@ -791,6 +914,56 @@ const styles = themed(() => StyleSheet.create({
     color: '#000000',
     fontSize: 16,
     fontWeight: '900',
+  },
+
+  /* ── Language selector sheet ── */
+  langBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  langSheet: {
+    backgroundColor: colors.glassPanel,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.glassStrong,
+    padding: 18,
+    gap: 8,
+  },
+  langTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  langRowActive: {
+    backgroundColor: colors.glassLime,
+    borderColor: colors.glassLimeBorder,
+  },
+  langLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  langNote: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 1,
+  },
+  langCheck: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: colors.primary,
   },
 }));
 

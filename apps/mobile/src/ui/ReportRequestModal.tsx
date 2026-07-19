@@ -16,10 +16,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
+import { Text, TextInput } from './Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { REPORT_REASON_LABELS, type ReportReason } from '../api/client';

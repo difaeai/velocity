@@ -2,7 +2,8 @@
  * Web stand-in for {@link ./LiveMap}. The web bundle must never import
  * react-native-maps (it has no web build), so Metro picks this file on web.
  */
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text } from './Text';
 
 import { colors } from '../config';
 import { themed } from '../theme';

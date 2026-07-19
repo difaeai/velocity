@@ -13,7 +13,8 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Text } from '../../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '../../../../src/api/client';
