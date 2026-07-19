@@ -18,6 +18,7 @@ import { db } from '../../src/firebase';
 import { api, type CommuteDay, type NearbyPublicPool } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
+import { AdBanner } from '../../src/ads';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
@@ -573,6 +574,13 @@ export default function Booking() {
             </View>
           )}
         </ScrollView>
+
+        {/* Banner sits BELOW the suggestion list, never inside it — a scrolling
+            ad between tappable destination rows is the classic accidental-click
+            trap, and accidental clicks count as invalid traffic. The component's
+            own top border draws the line between "app" and "ad", and it yields
+            the space entirely while the keyboard is up. */}
+        <AdBanner hideOnKeyboard />
       </SafeAreaView>
     );
   }

@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../config';
 import { themed } from '../theme';
+import { AdBanner } from '../ads';
 import { ChatsIcon, FeedIcon, HomeIcon, MatchesIcon, ProfileIcon } from './TabBarIcons';
 
 type TabIconComponent = (props: {
@@ -46,8 +47,16 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
   const bottomInset = Math.max(insets.bottom, 12);
 
   return (
-    <View style={[s.wrap, { paddingBottom: bottomInset }]}>
-      <View style={s.bar}>
+    <View>
+      {/* The section's single banner. Living here rather than in each of the
+          five tab screens means one integration, and it inherits the bar's own
+          visibility rule for free: the early return above already hides both on
+          chat, post and every other push-navigated full-screen, which is
+          exactly where a banner would be most intrusive. Full-bleed, above the
+          floating pill, so it never crowds the tab targets. */}
+      <AdBanner />
+      <View style={[s.wrap, { paddingBottom: bottomInset }]}>
+        <View style={s.bar}>
         {state.routes.map((route) => {
           const tab = TABS[route.name];
           if (!tab) return null;
@@ -84,6 +93,7 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
             </Pressable>
           );
           })}
+        </View>
       </View>
     </View>
   );

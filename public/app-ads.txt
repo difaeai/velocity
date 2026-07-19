@@ -1,0 +1,14 @@
+# app-ads.txt — authorised digital sellers for the Velocity mobile app.
+# Spec: IAB Tech Lab (https://iabtechlab.com/app-ads-txt/)
+#
+# Declares which ad networks may sell Velocity's ad inventory. Without this file
+# published at the ROOT of the developer website listed on our Google Play
+# listing, AdMob cannot verify the app, and some buyers will refuse to bid on
+# our inventory at all.
+#
+# This is a public file by design — the publisher ID is not a secret; it is the
+# whole point of the file that anyone can read and verify it.
+#
+# Served at <developer-website-root>/app-ads.txt because Next.js publishes
+# everything under public/ at the domain root.
+google.com, pub-7505727874471807, DIRECT, f08c47fec0942fa0
