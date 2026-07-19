@@ -60,11 +60,22 @@ export function useInterstitial(placement: string) {
     if (!adsEnabled || shownThisSession.has(placement)) return;
 
     let disposed = false;
+    let retried = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const cleanups: (() => void)[] = [];
 
     (async () => {
       const ok = await ensureAdsReady();
-      if (!ok || disposed || (await withinCooldown())) return;
+      if (!ok || disposed) return;
+      if (await withinCooldown()) {
+        if (__DEV__) {
+          console.log(
+            `[ads] ${placement}: not preloading — within the ${MIN_GAP_MS / 60000}min ` +
+              'gap since the last full-screen ad',
+          );
+        }
+        return;
+      }
 
       const ad = InterstitialAd.createForAdRequest(INTERSTITIAL_UNIT_ID);
       adRef.current = ad;
@@ -72,9 +83,20 @@ export function useInterstitial(placement: string) {
       cleanups.push(
         ad.addAdEventListener(AdEventType.LOADED, () => {
           loaded.current = true;
+          if (__DEV__) console.log(`[ads] ${placement}: interstitial ready`);
         }),
-        ad.addAdEventListener(AdEventType.ERROR, () => {
+        ad.addAdEventListener(AdEventType.ERROR, (error) => {
           loaded.current = false;
+          if (__DEV__) console.warn(`[ads] ${placement}: interstitial failed to load —`, error);
+          // One retry. Without it a single transient failure (a dropped
+          // request on mobile data, a momentary no-fill) silently disabled
+          // this placement for the rest of the session.
+          if (!retried && !disposed) {
+            retried = true;
+            retryTimer = setTimeout(() => {
+              if (!disposed) ad.load();
+            }, 3000);
+          }
         }),
         ad.addAdEventListener(AdEventType.CLOSED, () => {
           // One per placement per session: do not reload after a dismissal.
@@ -87,6 +109,7 @@ export function useInterstitial(placement: string) {
 
     return () => {
       disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
       cleanups.forEach((c) => c());
       adRef.current = null;
       loaded.current = false;
@@ -98,10 +121,34 @@ export function useInterstitial(placement: string) {
    * resolves; never throws; never makes the caller wait on a network request.
    */
   const maybeShow = useCallback(async () => {
-    if (!adsEnabled) return;
-    if (shownThisSession.has(placement)) return;
-    if (!loaded.current || !adRef.current) return;
-    if (await withinCooldown()) return;
+    // Five separate reasons this can decline, all of them correct and all of
+    // them previously indistinguishable from "the feature is broken".
+    if (!adsEnabled) {
+      if (__DEV__) console.log(`[ads] ${placement}: skipped — user is ad-free`);
+      return;
+    }
+    if (shownThisSession.has(placement)) {
+      if (__DEV__) console.log(`[ads] ${placement}: skipped — already shown this session`);
+      return;
+    }
+    if (!loaded.current || !adRef.current) {
+      if (__DEV__) {
+        console.log(
+          `[ads] ${placement}: skipped — no ad preloaded yet. Interstitials take a few ` +
+            'seconds to fetch; this is expected if you tapped straight after the screen opened.',
+        );
+      }
+      return;
+    }
+    if (await withinCooldown()) {
+      if (__DEV__) {
+        console.log(
+          `[ads] ${placement}: skipped — another full-screen ad showed less than ` +
+            `${MIN_GAP_MS / 60000}min ago`,
+        );
+      }
+      return;
+    }
 
     // Marked BEFORE showing: if show() throws halfway we still must not retry
     // in a loop and hammer the user with ads.
