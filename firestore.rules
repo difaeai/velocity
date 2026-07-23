@@ -276,6 +276,35 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- paymentMethods/{id} --------------------------------------------
+    // Connected Easypaisa/JazzCash/bank/card instruments. The owner may READ
+    // the display data (kind, masked tail, default flag) so the app can render
+    // the Payment methods screen live, but never writes: connecting, removing
+    // and re-defaulting all go through callables that also talk to the gateway.
+    match /paymentMethods/{methodId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+
+    // The setup handshake — readable by its owner so the app can watch a
+    // connection complete. Never client-written.
+    match /paymentMethodSetups/{setupId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+
+    // ----- payment secrets -------------------------------------------------
+    // The gateway tokens themselves: the one thing that can actually move
+    // money without the user present. NOBODY reads these from a client, not
+    // even the owner and not even an admin — only server code with the Admin
+    // SDK, which bypasses rules. Same posture as paymentIntentSecrets.
+    match /paymentMethodSecrets/{methodId} {
+      allow read, write: if false;
+    }
+    match /paymentMethodSetupSecrets/{setupId} {
+      allow read, write: if false;
+    }
+
     // ----- commissionSettlements/{id} -------------------------------------
     // Manual settlements (bank transfer + AI-verified screenshot): driver
     // commission cycles AND cancellation fees owed by passengers or drivers.

@@ -83,6 +83,8 @@ export interface PoolTripByCode {
   visibility: PoolVisibility;
   hostName: string;
   riders: number;
+  males: number;
+  females: number;
   maxRiders: number;
   seatsLeft: number;
   perSeatFareNow: number;
@@ -98,6 +100,9 @@ export interface NearbyPublicPool {
   dropoffAddress: string;
   rideType: RideType;
   riders: number;
+  /** Riders already aboard, broken down by gender (names are never exposed). */
+  males: number;
+  females: number;
   seatsLeft: number;
   perSeatFareIfYouJoin: number;
   distanceKm: number;
@@ -190,6 +195,43 @@ export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
   other:               'Other',
 };
 
+/** One address suggestion from the backend Places proxy. */
+export interface PlacePrediction {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
+}
+
+/** A resolved place: where it is and what to call it. */
+export interface PlaceDetail {
+  lat: number;
+  lng: number;
+  address: string;
+}
+
+/** Gateways the backend can send a top-up to. `payfast` fronts several rails. */
+export type TopupProvider = 'jazzcash' | 'easypaisa' | 'payfast';
+
+/** What kind of account a saved instrument is. Mirrors the backend enum. */
+export type SavedMethodKind = 'easypaisa' | 'jazzcash' | 'card' | 'bank';
+
+/**
+ * A connected payment method as the backend returns it. Display data only —
+ * the gateway token that can actually charge the account never leaves the
+ * server (see backend/functions/src/payments/paymentMethods.ts).
+ */
+export interface SavedMethodView {
+  id: string;
+  kind: SavedMethodKind;
+  label: string;
+  maskedAccount: string | null;
+  brand: string | null;
+  isDefault: boolean;
+  status: 'active' | 'revoked' | 'expired';
+  createdAt: number | null;
+}
+
 export const api = {
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
@@ -207,7 +249,14 @@ export const api = {
     { ok: boolean; visibility: PoolVisibility }
   >('setPoolVisibility'),
   getNearbyPublicPoolTrips: callable<
-    { lat: number; lng: number; radiusKm?: number },
+    {
+      lat: number;
+      lng: number;
+      radiusKm?: number;
+      destLat?: number;
+      destLng?: number;
+      destRadiusKm?: number;
+    },
     { pools: NearbyPublicPool[] }
   >('getNearbyPublicPoolTrips'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
@@ -272,13 +321,37 @@ export const api = {
   >('raiseSafetyEvent'),
   getPaymentOptions: callable<
     Record<string, never>,
-    { ok: boolean; providers: ('jazzcash' | 'easypaisa')[]; mock: boolean; comingSoon?: boolean }
+    { ok: boolean; providers: TopupProvider[]; mock: boolean; comingSoon?: boolean }
   >('getPaymentOptions'),
   createTopupIntent: callable<
-    { amount: number; provider?: 'jazzcash' | 'easypaisa'; phone?: string },
+    { amount: number; provider?: TopupProvider; phone?: string },
     { ok: boolean; intentId: string; provider: string; redirectUrl: string | null; mock: boolean }
   >('createTopupIntent'),
   mockConfirmTopup: callable<{ intentId: string }, { ok: boolean }>('mockConfirmTopup'),
+
+  // ── Saved payment methods — connected accounts, inDrive style ─────────────
+  getPaymentMethods: callable<
+    Record<string, never>,
+    {
+      ok: boolean;
+      comingSoon: boolean;
+      methods: SavedMethodView[];
+      supportedKinds: SavedMethodKind[];
+    }
+  >('getPaymentMethods'),
+  createPaymentMethodSetup: callable<
+    { kind: SavedMethodKind; phone?: string },
+    { ok: boolean; setupId: string; redirectUrl: string; mock: boolean }
+  >('createPaymentMethodSetup'),
+  mockConfirmPaymentMethod: callable<{ setupId: string }, { ok: boolean; methodId: string }>(
+    'mockConfirmPaymentMethod',
+  ),
+  setDefaultPaymentMethod: callable<{ methodId: string }, { ok: boolean }>('setDefaultPaymentMethod'),
+  deletePaymentMethod: callable<{ methodId: string }, { ok: boolean }>('deletePaymentMethod'),
+  topupWithSavedMethod: callable<
+    { methodId: string; amount: number },
+    { ok: boolean; intentId: string; amount: number }
+  >('topupWithSavedMethod'),
   requestPayout: callable<
     { amount: number; method?: 'jazzcash' | 'easypaisa' | 'bank'; account?: string },
     { ok: boolean; payoutId: string }
@@ -522,6 +595,34 @@ export const api = {
     { lat: number; lng: number; radiusKm?: number },
     { demand: CommuteDemandSlot[] }
   >('getCommuteDemand'),
+
+  // ── Maps proxy ────────────────────────────────────────────────────────────
+  // Places and directions run on the backend with GOOGLE_MAPS_SERVER_KEY. The
+  // app deliberately holds no Google key that can spend money: an Android-
+  // restricted key cannot authorise a REST call anyway (the native SDK, not
+  // fetch, is what proves the package name), and an unrestricted one shipped
+  // inside the APK is extractable. `configured: false` means the server key is
+  // unset — callers show "search unavailable" rather than failing.
+  placesAutocomplete: callable<
+    { input: string; sessionToken: string },
+    { ok: boolean; configured: boolean; predictions: PlacePrediction[] }
+  >('placesAutocomplete'),
+  placeDetails: callable<
+    { placeId: string; sessionToken: string },
+    { ok: boolean; configured: boolean; detail: PlaceDetail | null }
+  >('placeDetails'),
+  geocodeAddress: callable<
+    { text: string },
+    { ok: boolean; configured: boolean; detail: PlaceDetail | null }
+  >('geocodeAddress'),
+  getDirections: callable<
+    { origin: { lat: number; lng: number }; destination: { lat: number; lng: number } },
+    {
+      ok: boolean;
+      configured: boolean;
+      route: { polyline: string; distanceM: number; durationSec: number } | null;
+    }
+  >('getDirections'),
 
   // ── Fare engine ───────────────────────────────────────────────────────────
   getFareEstimate: callable<

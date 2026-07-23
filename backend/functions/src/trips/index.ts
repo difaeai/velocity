@@ -200,6 +200,12 @@ export const createTrip = onCall(async (req) => {
             poolMembers: [ctx.uid],
             poolPerSeatFare: finalFare, // just the host so far → full fare
             maxPoolRiders: MAX_POOL_RIDERS,
+            // Running gender tally so nearby riders can see the make-up of a
+            // pool before joining (names are never exposed — just the counts).
+            poolGenders: {
+              male:   data.passengerGender === 'male'   ? 1 : 0,
+              female: data.passengerGender === 'female' ? 1 : 0,
+            },
           }
         : {}),
       paymentMethod: data.paymentMethod,
@@ -227,7 +233,16 @@ export const createTrip = onCall(async (req) => {
       passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
       pool: isPool,
       ...(isPool
-        ? { poolVisibility, shareCode, poolRiders: 1, poolPerSeatFare: finalFare }
+        ? {
+            poolVisibility,
+            shareCode,
+            poolRiders: 1,
+            poolPerSeatFare: finalFare,
+            poolGenders: {
+              male:   data.passengerGender === 'male'   ? 1 : 0,
+              female: data.passengerGender === 'female' ? 1 : 0,
+            },
+          }
         : {}),
       paymentMethod: data.paymentMethod,
       preferFemaleDriver: data.preferFemaleDriver ?? false,

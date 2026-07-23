@@ -1,22 +1,27 @@
+/**
+ * Address search — autocomplete, place details and free-text geocoding.
+ *
+ * These used to call Google Places directly from the device. They cannot: the
+ * Android Maps key is restricted to the app's package name and signing
+ * certificate, and that restriction is proven by the *native* SDK attaching
+ * those to the request. A `fetch()` from JS attaches neither, so Google
+ * answered every call with
+ *
+ *   PERMISSION_DENIED — "Requests from this Android client application
+ *                        <empty> are blocked."
+ *
+ * `<empty>` being the package name it never received. So the calls now go
+ * through backend callables that use GOOGLE_MAPS_SERVER_KEY, and the app ships
+ * no Google key that can spend money. See backend/functions/src/lib/places.ts.
+ *
+ * Everything still degrades to null / [] rather than throwing — a Places
+ * outage should leave the user typing an address by hand, not stuck.
+ */
 import { useEffect, useRef, useState } from 'react';
-import { GOOGLE_MAPS_API_KEY } from '../config';
 
-export interface PlacePrediction {
-  placeId: string;
-  mainText: string;
-  secondaryText: string;
-  fullText: string;
-}
+import { api, type PlaceDetail, type PlacePrediction } from '../api/client';
 
-export interface PlaceDetail {
-  lat: number;
-  lng: number;
-  address: string;
-}
-
-// Places API (New) endpoints — v1
-const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
-const DETAILS_BASE_URL = 'https://places.googleapis.com/v1/places';
+export type { PlaceDetail, PlacePrediction };
 
 export function usePlacesAutocomplete(input: string, sessionToken: string) {
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -35,61 +40,25 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
+    // Debounced so a destination search is a few calls, not one per keystroke.
+    // The session token matters for cost too: Google bills autocomplete per
+    // session, so every keystroke plus the final details call is one charge.
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(AUTOCOMPLETE_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-          },
-          body: JSON.stringify({
-            input: trimmed,
-            sessionToken,
-            includedRegionCodes: ['pk'],
-            languageCode: 'en',
-          }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          const status = data?.error?.status ?? `HTTP_${res.status}`;
-          const message = data?.error?.message ?? 'Unknown error';
-          setApiStatus(status);
-          setApiMessage(message);
-          console.error('[Places API]', status, message, '| body:', JSON.stringify(data));
+        const res = await api.placesAutocomplete({ input: trimmed, sessionToken });
+        if (!res.configured) {
+          setApiStatus('NOT_CONFIGURED');
+          setApiMessage('Address search is not set up yet.');
           setPredictions([]);
           return;
         }
-
         setApiStatus('OK');
-        const suggestions = data.suggestions ?? [];
-        setPredictions(
-          suggestions
-            .filter((s: { placePrediction?: unknown }) => s.placePrediction)
-            .map((s: {
-              placePrediction: {
-                placeId: string;
-                text?: { text: string };
-                structuredFormat?: {
-                  mainText?: { text: string };
-                  secondaryText?: { text: string };
-                };
-              };
-            }) => {
-              const p = s.placePrediction;
-              return {
-                placeId: p.placeId,
-                mainText: p.structuredFormat?.mainText?.text ?? p.text?.text ?? '',
-                secondaryText: p.structuredFormat?.secondaryText?.text ?? '',
-                fullText: p.text?.text ?? '',
-              };
-            }),
-        );
-      } catch {
+        setApiMessage(null);
+        setPredictions(res.predictions);
+      } catch (e) {
         setApiStatus('NETWORK_ERROR');
+        setApiMessage(e instanceof Error ? e.message : null);
         setPredictions([]);
       } finally {
         setLoading(false);
@@ -104,12 +73,8 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
   return { predictions, loading, apiStatus, apiMessage };
 }
 
-// Places API (New) text search — used as a geocoder for free-typed addresses
-// and old recents that carry no coordinates.
-const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
-
 /**
- * Resolve a typed address to coordinates via Places Text Search (New).
+ * Resolve a typed address to coordinates.
  * Returns null on failure — callers fall back to a coordinate-less booking,
  * exactly as before this helper existed.
  */
@@ -117,55 +82,21 @@ export async function geocodeAddress(text: string): Promise<PlaceDetail | null> 
   const trimmed = text.trim();
   if (!trimmed) return null;
   try {
-    const res = await fetch(SEARCH_TEXT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-        'X-Goog-FieldMask': 'places.location,places.formattedAddress',
-      },
-      body: JSON.stringify({
-        textQuery: trimmed,
-        regionCode: 'PK',
-        languageCode: 'en',
-        pageSize: 1,
-      }),
-    });
-    const data = await res.json();
-    const place = data?.places?.[0];
-    if (res.ok && place?.location) {
-      return {
-        lat: place.location.latitude,
-        lng: place.location.longitude,
-        address: place.formattedAddress ?? trimmed,
-      };
-    }
-    return null;
+    const res = await api.geocodeAddress({ text: trimmed });
+    return res.detail;
   } catch {
     return null;
   }
 }
 
-export async function fetchPlaceDetail(placeId: string, sessionToken: string): Promise<PlaceDetail | null> {
+/** Resolve a prediction the user tapped into coordinates. */
+export async function fetchPlaceDetail(
+  placeId: string,
+  sessionToken: string,
+): Promise<PlaceDetail | null> {
   try {
-    const res = await fetch(
-      `${DETAILS_BASE_URL}/${placeId}?sessionToken=${sessionToken}`,
-      {
-        headers: {
-          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-          'X-Goog-FieldMask': 'location,formattedAddress',
-        },
-      },
-    );
-    const data = await res.json();
-    if (res.ok && data.location) {
-      return {
-        lat: data.location.latitude,
-        lng: data.location.longitude,
-        address: data.formattedAddress ?? '',
-      };
-    }
-    return null;
+    const res = await api.placeDetails({ placeId, sessionToken });
+    return res.detail;
   } catch {
     return null;
   }

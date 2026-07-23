@@ -10,12 +10,14 @@ import { Card } from '@/components/ui';
 
 interface Flags {
   walletTopupEnabled: boolean;
+  savedPaymentMethodsEnabled: boolean;
   travelMateSubscriptionsEnabled: boolean;
   travelMateFree: boolean;
 }
 
 const DEFAULTS: Flags = {
   walletTopupEnabled: false,
+  savedPaymentMethodsEnabled: false,
   travelMateSubscriptionsEnabled: false,
   travelMateFree: true,
 };
@@ -23,9 +25,15 @@ const DEFAULTS: Flags = {
 const ROWS: { key: keyof Flags; title: string; on: string; off: string }[] = [
   {
     key: 'walletTopupEnabled',
-    title: 'Wallet top-ups (JazzCash / Easypaisa)',
+    title: 'Wallet top-ups (gateway checkout)',
     on: 'Live — passengers and drivers can load their wallets and pay from them.',
     off: 'Coming Soon — the top-up screen shows a "Coming soon" card; rides are cash-only.',
+  },
+  {
+    key: 'savedPaymentMethodsEnabled',
+    title: 'Connected payment methods (one-tap top-up)',
+    on: 'Live — users can connect an Easypaisa/JazzCash/bank/card account and top up in one tap.',
+    off: 'Coming Soon — the Payment methods screen lists the rails but nothing is connectable.',
   },
   {
     key: 'travelMateSubscriptionsEnabled',
@@ -53,6 +61,7 @@ export default function FeatureFlagsPage() {
       const d = snap.data();
       setFlags({
         walletTopupEnabled: d?.walletTopupEnabled === true,
+        savedPaymentMethodsEnabled: d?.savedPaymentMethodsEnabled === true,
         travelMateSubscriptionsEnabled: d?.travelMateSubscriptionsEnabled === true,
         travelMateFree: d?.travelMateFree !== false,
       });

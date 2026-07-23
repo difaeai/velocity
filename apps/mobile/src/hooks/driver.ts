@@ -246,6 +246,8 @@ export function useCommissionStatus(profile: DriverProfile | null): CommissionSt
 export interface FeatureFlags {
   /** Gateway wallet top-ups. Off = "Coming Soon". */
   walletTopupEnabled: boolean;
+  /** Connected Easypaisa/JazzCash/bank/card instruments. Off = "Coming Soon". */
+  savedPaymentMethodsEnabled: boolean;
   /** Paid Travel Partner subscriptions. Off = "Coming Soon". */
   travelMateSubscriptionsEnabled: boolean;
   /** Travel Partner likes unlimited for everyone. */
@@ -256,6 +258,7 @@ export interface FeatureFlags {
 export function useFeatureFlags(): FeatureFlags {
   const [flags, setFlags] = useState<FeatureFlags>({
     walletTopupEnabled: false,
+    savedPaymentMethodsEnabled: false,
     travelMateSubscriptionsEnabled: false,
     travelMateFree: true,
   });
@@ -266,6 +269,7 @@ export function useFeatureFlags(): FeatureFlags {
         const d = s.data() ?? {};
         setFlags({
           walletTopupEnabled: d.walletTopupEnabled === true,
+          savedPaymentMethodsEnabled: d.savedPaymentMethodsEnabled === true,
           travelMateSubscriptionsEnabled: d.travelMateSubscriptionsEnabled === true,
           travelMateFree: d.travelMateFree !== false,
         });
@@ -274,6 +278,67 @@ export function useFeatureFlags(): FeatureFlags {
     );
   }, []);
   return flags;
+}
+
+/**
+ * Whether the wallet should still present itself as "Coming soon".
+ *
+ * Every entry point into the wallet reads this rather than hard-coding the
+ * label, so flipping `walletTopupEnabled` from the dashboard drops the
+ * "(Coming soon)" everywhere at once with no deploy — the whole point of
+ * keeping the feature built but switched off.
+ */
+export function useWalletComingSoon(): boolean {
+  return !useFeatureFlags().walletTopupEnabled;
+}
+
+/** "Wallet" → "Wallet (Coming soon)" while top-ups are off. */
+export function useWalletLabel(base: string): string {
+  return useWalletComingSoon() ? `${base} (Coming soon)` : base;
+}
+
+/** What kind of account a saved instrument is — drives its icon and label. */
+export type SavedMethodKind = 'easypaisa' | 'jazzcash' | 'card' | 'bank';
+
+export interface SavedPaymentMethod {
+  id: string;
+  kind: SavedMethodKind;
+  label: string;
+  maskedAccount?: string | null;
+  brand?: string | null;
+  isDefault?: boolean;
+  status?: 'active' | 'revoked' | 'expired';
+}
+
+/**
+ * The user's connected payment methods, live.
+ *
+ * Streams the documents directly (rules allow the owner to read their own) so
+ * removing or re-defaulting an instrument reflects instantly instead of waiting
+ * on a callable round-trip. The chargeable token is NOT in these documents —
+ * it lives in paymentMethodSecrets, which no client can read.
+ */
+/** Stable empty result, so the signed-out case never allocates a new array. */
+const NO_METHODS: SavedPaymentMethod[] = [];
+
+export function useSavedPaymentMethods(uid?: string): SavedPaymentMethod[] {
+  const [rows, setRows] = useState<SavedPaymentMethod[]>([]);
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'paymentMethods'), where('uid', '==', uid)),
+      (snap) => {
+        const methods = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SavedPaymentMethod);
+        // Default first, then everything else — matches the Active/Inactive split.
+        methods.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+        setRows(methods);
+      },
+      () => setRows([]),
+    );
+  }, [uid]);
+  // Signed out: report empty by derivation rather than resetting state inside
+  // the effect, which would cascade an extra render on every sign-out.
+  return uid ? rows : NO_METHODS;
 }
 
 export interface CommissionSettlement {
