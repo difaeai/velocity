@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Constants from 'expo-constants';
 import { Text } from './Text';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
@@ -24,6 +25,24 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.05,
   longitudeDelta: 0.05,
 };
+
+// Solid base colour behind the map — also the fallback surface below.
+const MAP_BASE = '#151b22';
+
+/**
+ * Google Maps only authenticates in a real dev-client / release build compiled
+ * with the Android Maps API key (see app.config.ts). In Expo Go — or any build
+ * where the key is absent — the native map paints an ugly grey tile grid with
+ * concentric rings and never loads real tiles. We detect that up front and show
+ * a clean dark surface instead, so users never see that broken grid.
+ */
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
+const MAPS_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ??
+  (Constants.expoConfig as { android?: { config?: { googleMaps?: { apiKey?: string } } } } | null)
+    ?.android?.config?.googleMaps?.apiKey ??
+  '';
+const MAPS_AVAILABLE = !IS_EXPO_GO && !!MAPS_KEY;
 
 import { DARK_MAP_STYLE } from './mapStyle';
 import { themed } from '../theme';
@@ -99,12 +118,32 @@ export function LiveMap({
     }
   }, [coords, hasRoute]);
 
+  // No usable native map (Expo Go / no key) → clean dark placeholder, never the
+  // grey Google grid. A soft brand halo keeps it reading as an intentional
+  // "locating you" surface rather than a broken map.
+  if (!MAPS_AVAILABLE) {
+    return (
+      <View style={[StyleSheet.absoluteFill, styles.fallback, style]}>
+        <View style={styles.fallbackHalo}>
+          <View style={styles.fallbackHaloMid}>
+            <View style={styles.pickupInner} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <MapView
       ref={mapRef}
       style={[StyleSheet.absoluteFill, style]}
       provider={PROVIDER_GOOGLE}
       customMapStyle={DARK_MAP_STYLE}
+      // While the native map spins up, show our dark base + brand spinner — not
+      // the default white grid that flashes on every open.
+      loadingEnabled
+      loadingBackgroundColor={MAP_BASE}
+      loadingIndicatorColor="#ccff00"
       // NEVER enable showsUserLocation: on this RN/new-arch combo the native map
       // dispatches topUserLocationChange events that JS has no registered handler
       // for, and each one throws — a fatal crash in release builds. We draw our
@@ -203,6 +242,29 @@ export function LiveMap({
 }
 
 const styles = themed(() => StyleSheet.create({
+  // Dark placeholder shown when the native map can't render (Expo Go / no key).
+  fallback: {
+    backgroundColor: MAP_BASE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackHalo: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'rgba(204,255,0,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackHaloMid: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(204,255,0,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // Pickup: lime dot in a soft halo — reads "you are here".
   pickupOuter: {
     width: 26,
