@@ -90,6 +90,26 @@ export {
   adminSetSettlementAccounts,
 } from './payments';
 
+// Maps proxy — Places + directions run with the server key, never the client's
+export {
+  placesAutocomplete,
+  placeDetails,
+  geocodeAddress,
+  getDirections,
+} from './maps';
+
+// Saved payment methods — connected Easypaisa/JazzCash/bank/card instruments
+export {
+  getPaymentMethods,
+  createPaymentMethodSetup,
+  paymentMethodSetupPage,
+  paymentMethodCallback,
+  mockConfirmPaymentMethod,
+  setDefaultPaymentMethod,
+  deletePaymentMethod,
+  topupWithSavedMethod,
+} from './payments/paymentMethods';
+
 // Travel Partner — commute-partner matching (identity-walled from ride data)
 export { getTravelMateFeed } from './travelMate/feed';
 export { upsertTravelMateProfile } from './travelMate/upsertProfile';

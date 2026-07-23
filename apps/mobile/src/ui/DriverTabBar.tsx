@@ -20,6 +20,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../config';
 import { themed } from '../theme';
+import { useWalletComingSoon } from '../hooks/driver';
 
 export type DriverTab = 'requests' | 'demand' | 'performance' | 'wallet';
 
@@ -58,12 +59,17 @@ const ICON_PATHS: Record<DriverTab, string> = {
 export function DriverTabBar({ active }: { active: DriverTab }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const walletComingSoon = useWalletComingSoon();
 
   return (
     <View style={[styles.bar, { paddingBottom: insets.bottom, height: DRIVER_TAB_BAR_HEIGHT + insets.bottom }]}>
       {TABS.map((t) => {
         const focused = t.key === active;
         const tint = focused ? colors.text : colors.muted;
+        // A tab is a quarter of the screen at 11pt — "Wallet (Coming soon)"
+        // would truncate to nonsense, so the badge carries it here and the
+        // full wording appears on the drawer rows and the screen itself.
+        const soon = t.key === 'wallet' && walletComingSoon;
         return (
           <Pressable
             key={t.key}
@@ -71,9 +77,16 @@ export function DriverTabBar({ active }: { active: DriverTab }) {
             onPress={() => { if (!focused) router.replace(t.href); }}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={t.label}
+            accessibilityLabel={soon ? `${t.label} (Coming soon)` : t.label}
           >
-            <TabIcon tab={t.key} color={tint} />
+            <View>
+              <TabIcon tab={t.key} color={tint} />
+              {soon ? (
+                <View style={styles.soonDot}>
+                  <Text style={styles.soonDotText}>soon</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={[styles.label, { color: tint }, focused && styles.labelActive]} numberOfLines={1}>
               {t.label}
             </Text>
@@ -101,4 +114,14 @@ const styles = themed(() => StyleSheet.create({
   },
   label:       { fontSize: 11, fontWeight: '600' },
   labelActive: { fontWeight: '800' },
+  soonDot: {
+    position: 'absolute',
+    top: -6,
+    left: 14,
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  soonDotText: { fontSize: 8, fontWeight: '900', color: colors.btnText, textTransform: 'uppercase' },
 }));

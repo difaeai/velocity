@@ -23,11 +23,13 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, requireAdmin, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getFeatureFlags } from '../domain/featureFlags';
+import { creditFromIntent } from './credit';
 import {
   configuredProviders,
   easypaisaProvider,
   getProviderByName,
   isMockProvider,
+  payfastProvider,
   providerForCallback,
   resolveProvider,
   type CheckoutForm,
@@ -35,6 +37,13 @@ import {
 
 const MIN_TOPUP = 100;
 const MAX_TOPUP = 100000;
+
+/** Human names for the gateways, used on the hosted redirect page. */
+const PROVIDER_LABEL: Record<string, string> = {
+  jazzcash: 'JazzCash',
+  easypaisa: 'Easypaisa',
+  payfast: 'PayFast secure',
+};
 
 /** Public base URL of the deployed functions (for gateway redirect/callback URLs). */
 function functionsBaseUrl(): string {
@@ -56,7 +65,7 @@ function makeProviderRef(): string {
 
 const topupSchema = z.object({
   amount: z.number().int().min(MIN_TOPUP).max(MAX_TOPUP),
-  provider: z.enum(['jazzcash', 'easypaisa']).optional(),
+  provider: z.enum(['jazzcash', 'easypaisa', 'payfast']).optional(),
   phone: z.string().max(20).optional(),
 });
 
@@ -219,8 +228,21 @@ export const paymentCheckout = onRequest(async (request, response) => {
     const callbackUrl = providerName === 'easypaisa'
       ? `${base}/paymentCheckout?intent=${intentId}&step=confirm&t=${token}`
       : webhookUrl;
-    const form = provider.buildCheckoutForm(ctx, callbackUrl);
-    response.status(200).send(autoSubmitPage(form, `Redirecting to ${providerName === 'jazzcash' ? 'JazzCash' : 'Easypaisa'} secure payment…`));
+
+    // PayFast needs a network round-trip for an access token before its form can
+    // be built; the other gateways sign their form offline.
+    let form: CheckoutForm;
+    if (providerName === 'payfast') {
+      const accessToken = await payfastProvider.prepare(ctx);
+      if (!accessToken) {
+        response.status(502).send(resultPage(false, 'The payment gateway did not respond. No money was taken — please try again.'));
+        return;
+      }
+      form = payfastProvider.buildCheckoutForm(ctx, callbackUrl, accessToken);
+    } else {
+      form = provider.buildCheckoutForm(ctx, callbackUrl);
+    }
+    response.status(200).send(autoSubmitPage(form, `Redirecting to ${PROVIDER_LABEL[providerName] ?? 'secure'} payment…`));
   } catch (e) {
     logger.error('paymentCheckout failed', { intentId, e });
     response.status(500).send('Could not start the payment. Please try again.');
@@ -228,34 +250,6 @@ export const paymentCheckout = onRequest(async (request, response) => {
 });
 
 // ─── Webhook / return URL ────────────────────────────────────────────────────
-
-/** Idempotently credits a wallet from a paid intent. Returns false if unknown. */
-async function creditFromIntent(intentId: string, providerTxnRef: string): Promise<boolean> {
-  const intentRef = db.doc(`paymentIntents/${intentId}`);
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(intentRef);
-    if (!snap.exists) return false;
-    if (snap.get('status') === 'paid') return true; // already credited
-    const uid = snap.get('uid') as string;
-    const amount = snap.get('amount') as number;
-    const walletRef = db.doc(`wallets/${uid}`);
-    const txRef = walletRef.collection('transactions').doc();
-    tx.set(intentRef, { status: 'paid', providerTxnRef, paidAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(
-      walletRef,
-      { balance: FieldValue.increment(amount), updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
-    tx.set(txRef, {
-      type: 'topup',
-      amount,
-      intentId,
-      provider: snap.get('provider') ?? null,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
-}
 
 /** Flatten query + body into a plain string map (gateways use form posts/redirects). */
 function callbackParams(request: { query: unknown; body: unknown }): Record<string, string> {
@@ -320,7 +314,23 @@ export const paymentWebhook = onRequest(async (request, response) => {
   }
 
   if (outcome.success) {
+    // The credit always comes from the amount stored on our own intent, never
+    // from the callback — so a forged amount cannot mint balance. This check is
+    // therefore an alarm, not a gate: it is warned rather than rejected because
+    // a gateway is entitled to settle us less than face value once fees are
+    // deducted, and refusing that would strand a payment the user really made.
+    const expected = intentSnap.get('amount') as number;
+    if (outcome.settledAmount !== undefined && Math.abs(outcome.settledAmount - expected) > 0.5) {
+      logger.error('Settled amount does not match the intent', {
+        intentId, expected, settled: outcome.settledAmount, provider: provider.name,
+      });
+    }
     const ok = await creditFromIntent(intentId, outcome.providerRef);
+    if (outcome.methodName) {
+      await db.doc(`paymentIntents/${intentId}`)
+        .set({ methodName: outcome.methodName }, { merge: true })
+        .catch(() => undefined);
+    }
     if (!outcome.verified) {
       logger.warn('Credited top-up on token-only verification (configure Easypaisa inquiry for production)', { intentId });
     }

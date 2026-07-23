@@ -15,7 +15,7 @@
  *              EASYPAISA_INQUIRE_USERNAME / EASYPAISA_INQUIRE_PASSWORD (optional,
  *              enables server-to-server confirmation), EASYPAISA_ENV=sandbox|live
  */
-import { createHmac, createCipheriv, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, createCipheriv, timingSafeEqual } from 'crypto';
 import { logger } from 'firebase-functions';
 
 export interface ChargeContext {
@@ -44,6 +44,14 @@ export interface CallbackOutcome {
   verified: boolean;
   responseCode?: string;
   message?: string;
+  /**
+   * What the gateway says actually reaches our merchant account, in PKR.
+   * Never used to decide the credit — `creditFromIntent` always credits the
+   * amount stored on our own intent — but a mismatch is worth shouting about.
+   */
+  settledAmount?: number;
+  /** Which rail the payer actually used ("Card", "Easypaisa", …), for the ledger. */
+  methodName?: string;
 }
 
 export interface PaymentProvider {
@@ -59,6 +67,82 @@ export interface PaymentProvider {
   ownsCallback(params: Record<string, string>): boolean;
   /** Verify a gateway callback and extract the outcome. Null = invalid/forged. */
   verifyCallback(params: Record<string, string>): Promise<CallbackOutcome | null>;
+}
+
+// ─── Saved payment methods (tokenisation) ────────────────────────────────────
+// The inDrive-style "connected accounts" model: the user authorises us once at
+// the gateway, the gateway hands back a reusable token, and later top-ups are a
+// single server-to-server charge with no redirect.
+//
+// This is a SEPARATE gateway permission from plain checkout — every Pakistani
+// provider sells recurring/tokenisation as its own approval — so a provider may
+// be fully configured for top-ups and still not implement this interface.
+
+/** What a saved instrument actually is, for display and for icon choice. */
+export type SavedMethodKind = 'easypaisa' | 'jazzcash' | 'card' | 'bank';
+
+export interface SetupContext {
+  /** Our paymentMethodSetups doc id. */
+  setupId: string;
+  /** Gateway-safe alphanumeric reference stored on the setup. */
+  providerRef: string;
+  kind: SavedMethodKind;
+  phone?: string;
+}
+
+/** What the gateway tells us once the user has authorised a reusable token. */
+export interface SetupOutcome {
+  providerRef: string;
+  success: boolean;
+  /** Whether success was proven cryptographically / server-to-server. */
+  verified: boolean;
+  /** The reusable token. Server-only — never returned to a client. */
+  token?: string;
+  /** Display-safe tail of the account/card, e.g. "4321". Never the full number. */
+  maskedAccount?: string;
+  /** Card scheme, when the instrument is a card. */
+  brand?: string;
+  expiryMonth?: number;
+  expiryYear?: number;
+  message?: string;
+}
+
+export interface TokenChargeResult {
+  success: boolean;
+  /** The gateway's own transaction reference, for the ledger. */
+  providerTxnRef?: string;
+  responseCode?: string;
+  message?: string;
+  /**
+   * True when the token is permanently unusable (revoked, expired, closed
+   * account) so the caller should mark the saved method dead rather than let
+   * the user keep retrying it.
+   */
+  tokenDead?: boolean;
+}
+
+/** A provider that can store and re-charge an instrument on the user's behalf. */
+export interface TokenizingProvider extends PaymentProvider {
+  /** Which instrument kinds this gateway can save. */
+  supportedMethodKinds(): SavedMethodKind[];
+  /**
+   * Build the form that sends the user to the gateway to authorise a reusable
+   * token. `callbackUrl` carries the per-setup secret, like checkout does.
+   */
+  buildSetupForm(ctx: SetupContext, callbackUrl: string): CheckoutForm;
+  /** Does this callback payload belong to this provider's setup flow? */
+  ownsSetupCallback(params: Record<string, string>): boolean;
+  /** Verify a setup callback and extract the token. Null = invalid/forged. */
+  verifySetupCallback(params: Record<string, string>): Promise<SetupOutcome | null>;
+  /** Charge a saved token server-to-server. No user interaction. */
+  chargeToken(token: string, ctx: ChargeContext): Promise<TokenChargeResult>;
+  /** Best-effort revoke at the gateway when the user removes the method. */
+  revokeToken(token: string): Promise<void>;
+}
+
+/** Narrow a provider to one that supports saved instruments. */
+export function supportsTokenization(p: PaymentProvider): p is TokenizingProvider {
+  return typeof (p as Partial<TokenizingProvider>).chargeToken === 'function';
 }
 
 function env(name: string): string | undefined {
@@ -296,8 +380,201 @@ class EasypaisaProvider implements PaymentProvider {
   }
 }
 
+// ─── PayFast (Pakistan) — the single-contract aggregator ─────────────────────
+// PayFast by APPS is one merchant account that fronts cards, JazzCash,
+// Easypaisa, HBL Konnect and bank transfer, so the app gets a full method
+// picker without a separate onboarding per rail.
+//
+// STATUS — verified end to end against the sandbox on 2026-07-20 with a real
+// card payment (PKR 150, err_code 000). gopayfast.com/docs is IP-gated, so the
+// field names below were confirmed empirically rather than from documentation.
+//
+//   1. TOKEN_PATH — ✅ /Ecommerce/api/Transaction/GetAccessToken returns
+//      200 + ACCESS_TOKEN for form, JSON and query encodings.
+//   2. The checkout field set — ✅ accepted; PayFast renders its own method
+//      picker (Bank / Card / Wallets incl. Easypaisa+JazzCash / Raast), so the
+//      app does not need to choose a rail before redirecting.
+//   3. Callback fields — ✅ confirmed, see verifyCallback.
+//   4. signature() — ❓ STILL UNVERIFIED. md5(merchantId:merchantName:amount:
+//      basketId) per a community package. A payment succeeded with it present,
+//      but one also got the same treatment with a deliberately wrong value and
+//      with the field absent, so it may simply be ignored on this flow. Harmless
+//      to send; do not rely on it as security.
+//   5. PAYFAST_BASE_URL — ✅ sandbox https://ipguat.apps.net.pk;
+//      ❓ production host still unknown. There is deliberately no live default:
+//      `isConfigured()` refuses to run live until it is set explicitly, so a
+//      missing value fails closed instead of posting real money at the sandbox.
+//
+// PostTransaction is a BROWSER form POST. Driving it server-side always lands
+// on /Ecommerce/Error/Index with an empty error code, so it can only be
+// exercised from a real browser session — which is how the app uses it anyway
+// (paymentCheckout renders an auto-submitting form into the user's browser).
+//
+// The callback also carries Recurring_txn, which is PayFast's marker for
+// tokenised repeat charges — i.e. this gateway can support the saved-payment-
+// method flow in payments/paymentMethods.ts once that permission is granted.
+//
+// Deliberately NOT guessed: we never parse PayFast's response field names to
+// decide success. The outcome is carried on OUR OWN return URLs
+// (`?pfoutcome=success|failure`) alongside the per-intent secret, both of which
+// we set ourselves. That is forgery-resistant given the secret and it cannot
+// silently break if PayFast renames a response field.
+//
+// Still worth adding once you have the pack: a server-to-server transaction
+// inquiry before crediting, exactly as EasypaisaProvider.inquireTransaction
+// does. Until then a top-up rests on the per-intent secret alone.
+const PAYFAST_SANDBOX_URL = 'https://ipguat.apps.net.pk';
+const PAYFAST_TOKEN_PATH = '/Ecommerce/api/Transaction/GetAccessToken';
+const PAYFAST_TXN_PATH = '/Ecommerce/api/Transaction/PostTransaction';
+
+class PayFastProvider implements PaymentProvider {
+  readonly name = 'payfast';
+
+  private get merchantId() { return env('PAYFAST_MERCHANT_ID'); }
+  private get securedKey() { return env('PAYFAST_SECURED_KEY'); }
+  private get merchantName() { return env('PAYFAST_MERCHANT_NAME') ?? 'Velocity'; }
+  private get isLive() { return env('PAYFAST_ENV') === 'live'; }
+
+  /** Sandbox has a known host; live must be set explicitly (see the note above). */
+  private get baseUrl(): string | undefined {
+    const explicit = env('PAYFAST_BASE_URL');
+    if (explicit) return explicit.replace(/\/+$/, '');
+    return this.isLive ? undefined : PAYFAST_SANDBOX_URL;
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.merchantId && this.securedKey && this.baseUrl);
+  }
+
+  /** CONFIRM against the merchant pack before going live. */
+  private signature(amount: number, basketId: string): string {
+    return createHash('md5')
+      .update(`${this.merchantId}:${this.merchantName}:${amount}:${basketId}`)
+      .digest('hex');
+  }
+
+  /**
+   * Leg 1: exchange the merchant credentials for a short-lived access token.
+   * Returns null when PayFast declines — the caller must not build a form then.
+   */
+  private async fetchAccessToken(amount: number, basketId: string): Promise<string | null> {
+    try {
+      const body = new URLSearchParams({
+        MERCHANT_ID: this.merchantId!,
+        SECURED_KEY: this.securedKey!,
+        BASKET_ID: basketId,
+        TXNAMT: String(amount),
+        CURRENCY_CODE: 'PKR',
+      });
+      const res = await fetch(`${this.baseUrl}${PAYFAST_TOKEN_PATH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      if (!res.ok) {
+        logger.error('PayFast token HTTP error', { status: res.status, basketId });
+        return null;
+      }
+      // VERIFIED against the sandbox 2026-07-20. A successful response is:
+      //   {"MERCHANT_ID":14833.0,"ACCESS_TOKEN":"…","NAME":"…",
+      //    "GENERATED_DATE_TIME":"2026-07-20T13:00:00+05:00"}
+      // There is no status/code field — the presence of ACCESS_TOKEN is the
+      // only success signal, so treat its absence as a decline.
+      const data = (await res.json()) as { ACCESS_TOKEN?: string; Message?: string };
+      if (!data.ACCESS_TOKEN) {
+        logger.error('PayFast token declined', { basketId, message: data.Message ?? null });
+        return null;
+      }
+      return data.ACCESS_TOKEN;
+    } catch (e) {
+      logger.error('PayFast token fetch failed', { basketId, e });
+      return null;
+    }
+  }
+
+  /**
+   * PayFast needs an access token fetched over the network before the form can
+   * be built, which the synchronous `buildCheckoutForm` contract cannot express.
+   * `paymentCheckout` calls this first and passes the result through.
+   */
+  async prepare(ctx: ChargeContext): Promise<string | null> {
+    if (!this.isConfigured()) return null;
+    return this.fetchAccessToken(ctx.amount, ctx.providerRef);
+  }
+
+  buildCheckoutForm(ctx: ChargeContext, callbackUrl: string, accessToken?: string): CheckoutForm {
+    if (!this.isConfigured()) throw new Error('PayFast is not configured.');
+    if (!accessToken) throw new Error('PayFast access token could not be obtained.');
+    const separator = callbackUrl.includes('?') ? '&' : '?';
+    return {
+      actionUrl: `${this.baseUrl}${PAYFAST_TXN_PATH}`,
+      method: 'POST',
+      fields: {
+        MERCHANT_ID: this.merchantId!,
+        MERCHANT_NAME: this.merchantName,
+        TOKEN: accessToken,
+        PROCCODE: '00',
+        TXNAMT: String(ctx.amount),
+        CUSTOMER_MOBILE_NO: ctx.phone ?? '',
+        CUSTOMER_EMAIL_ADDRESS: '',
+        SIGNATURE: this.signature(ctx.amount, ctx.providerRef),
+        TXNDESC: (ctx.description ?? 'Velocity wallet top-up').slice(0, 100),
+        BASKET_ID: ctx.providerRef,
+        ORDER_DATE: new Date().toISOString().slice(0, 10),
+        CURRENCY_CODE: 'PKR',
+        SUCCESS_URL: `${callbackUrl}${separator}pfoutcome=success`,
+        FAILURE_URL: `${callbackUrl}${separator}pfoutcome=failure`,
+      },
+    };
+  }
+
+  ownsCallback(params: Record<string, string>): boolean {
+    // basket_id + err_code is PayFast's own signature on a return; pfoutcome is
+    // the marker we put on our return URLs, kept as a belt-and-braces fallback.
+    return ('basket_id' in params && 'err_code' in params) || 'pfoutcome' in params;
+  }
+
+  async verifyCallback(params: Record<string, string>): Promise<CallbackOutcome | null> {
+    if (!this.isConfigured()) return null;
+    const providerRef = params.basket_id ?? params.BASKET_ID ?? params.pfref;
+    if (!providerRef) return null;
+
+    // VERIFIED against a real sandbox card payment 2026-07-20. A success is:
+    //   err_code=000, err_msg="Transaction completed successfully",
+    //   transaction_id=<uuid>, basket_id=<our ref>, PaymentName="Card",
+    //   transaction_amount="152.00", merchant_amount="150.00",
+    //   validation_hash=<64 hex>, Recurring_txn="false"
+    //
+    // Note transaction_amount ≠ merchant_amount: PayFast added its fee on top
+    // of the PKR 150 we asked for, charged the payer 152, and settled us the
+    // full 150. So the payer can be charged more than the wallet is credited —
+    // which is correct, and why the credit always comes from our own intent.
+    const settled = Number.parseFloat(params.merchant_amount ?? '');
+
+    return {
+      providerRef,
+      // err_code "000" is PayFast's success code; fall back to the marker on
+      // our own return URL if a future response ever omits it.
+      success: params.err_code === '000'
+        || (params.err_code === undefined && params.pfoutcome === 'success'),
+      // The response carries validation_hash (SHA-256), but its formula is not
+      // published and could not be derived from a captured response, so we
+      // cannot check it. Until it can be, the per-intent secret in the callback
+      // URL is the proof — paymentWebhook enforces that when verified is false.
+      verified: false,
+      responseCode: params.err_code,
+      message: params.err_msg,
+      settledAmount: Number.isFinite(settled) ? settled : undefined,
+      methodName: params.PaymentName || undefined,
+    };
+  }
+}
+
 // ─── Mock — development only, no real money ──────────────────────────────────
-class MockProvider implements PaymentProvider {
+// Implements tokenisation in full so the entire saved-payment-method flow —
+// connect an account, set a default, one-tap top-up, remove it — is testable
+// end to end without any merchant contract.
+class MockProvider implements TokenizingProvider {
   readonly name = 'mock';
   isConfigured(): boolean { return true; }
 
@@ -313,17 +590,61 @@ class MockProvider implements PaymentProvider {
     if (!params.mockProviderRef) return null;
     return { providerRef: params.mockProviderRef, success: params.success === 'true', verified: false };
   }
+
+  supportedMethodKinds(): SavedMethodKind[] {
+    return ['easypaisa', 'jazzcash', 'card', 'bank'];
+  }
+
+  buildSetupForm(): CheckoutForm {
+    throw new Error('The mock provider has no hosted setup page; use mockConfirmPaymentMethod.');
+  }
+
+  ownsSetupCallback(params: Record<string, string>): boolean {
+    return 'mockSetupRef' in params;
+  }
+
+  async verifySetupCallback(params: Record<string, string>): Promise<SetupOutcome | null> {
+    if (!params.mockSetupRef) return null;
+    return {
+      providerRef: params.mockSetupRef,
+      success: true,
+      verified: false,
+      token: `mocktok_${params.mockSetupRef}`,
+      maskedAccount: '4321',
+    };
+  }
+
+  async chargeToken(token: string): Promise<TokenChargeResult> {
+    return { success: true, providerTxnRef: `mockcharge_${token.slice(-8)}_${Date.now()}` };
+  }
+
+  async revokeToken(): Promise<void> { /* nothing to revoke */ }
 }
 
 const jazzcash = new JazzCashProvider();
 const easypaisa = new EasypaisaProvider();
+const payfast = new PayFastProvider();
 const mock = new MockProvider();
 
-const REGISTRY: Record<string, PaymentProvider> = { jazzcash, easypaisa, mock };
+const REGISTRY: Record<string, PaymentProvider> = { jazzcash, easypaisa, payfast, mock };
+
+/** Every real provider, in the order the app should offer them. */
+const REAL_PROVIDERS: PaymentProvider[] = [payfast, jazzcash, easypaisa];
 
 /** Real providers that currently have credentials configured. */
 export function configuredProviders(): PaymentProvider[] {
-  return [jazzcash, easypaisa].filter((p) => p.isConfigured());
+  return REAL_PROVIDERS.filter((p) => p.isConfigured());
+}
+
+/**
+ * The provider that saved payment methods run through: the configured one that
+ * can actually tokenise. Falls back to mock in development so the flow is
+ * exercisable without a merchant account.
+ */
+export function tokenizingProvider(): TokenizingProvider | null {
+  const real = configuredProviders().find(supportsTokenization);
+  if (real) return real;
+  return configuredProviders().length === 0 ? mock : null;
 }
 
 /**
@@ -350,8 +671,16 @@ export function getProviderByName(name: string): PaymentProvider | null {
 
 /** Find which provider a gateway callback belongs to. */
 export function providerForCallback(params: Record<string, string>): PaymentProvider | null {
-  for (const p of [jazzcash, easypaisa, mock]) {
+  for (const p of [...REAL_PROVIDERS, mock]) {
     if (p.ownsCallback(params)) return p;
+  }
+  return null;
+}
+
+/** Find which tokenizing provider a saved-method setup callback belongs to. */
+export function providerForSetupCallback(params: Record<string, string>): TokenizingProvider | null {
+  for (const p of [...REAL_PROVIDERS, mock]) {
+    if (supportsTokenization(p) && p.ownsSetupCallback(params)) return p;
   }
   return null;
 }
@@ -360,4 +689,4 @@ export function isMockProvider(): boolean {
   return resolveProvider().name === 'mock';
 }
 
-export { easypaisa as easypaisaProvider };
+export { easypaisa as easypaisaProvider, payfast as payfastProvider };

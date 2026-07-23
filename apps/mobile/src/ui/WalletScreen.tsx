@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from './Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,14 +12,18 @@ import {
   useCommissionStatus,
   useDriverProfile,
   useOutstanding,
+  useSavedPaymentMethods,
   useSettlementAccounts,
   useWalletBalance,
+  useWalletComingSoon,
+  useWalletLabel,
   useWalletTransactions,
 } from '../hooks/driver';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { Card, PrimaryButton } from './components';
 import { OutstandingFees } from './OutstandingFees';
+import { TopUpSheet } from './TopUpSheet';
 
 const TXN_LABEL: Record<string, string> = {
   topup: 'Top-up',
@@ -35,7 +39,6 @@ const TXN_LABEL: Record<string, string> = {
 };
 
 type PayoutMethod = 'jazzcash' | 'easypaisa' | 'bank';
-type TopupProvider = 'jazzcash' | 'easypaisa';
 
 const PAYOUT_METHODS: { key: PayoutMethod; label: string }[] = [
   { key: 'easypaisa', label: 'Easypaisa' },
@@ -43,10 +46,15 @@ const PAYOUT_METHODS: { key: PayoutMethod; label: string }[] = [
   { key: 'bank', label: 'Bank (IBAN)' },
 ];
 
-const PROVIDER_LABEL: Record<TopupProvider, string> = {
-  easypaisa: 'Easypaisa',
-  jazzcash: 'JazzCash',
-};
+/** What the wallet is for, behind the (?) on the balance card. */
+function explainWallet(role: 'passenger' | 'driver') {
+  Alert.alert(
+    'Your Velocity wallet',
+    role === 'driver'
+      ? 'Top up to settle the commission you owe on cash rides, so your account never gets locked mid-shift. Fares you earn on online rides land here too, and you can withdraw those to your own account.'
+      : 'Top up once and pay for rides straight from your balance — no cash, no change. Your balance is also used for any cancellation fees you owe.',
+  );
+}
 
 export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const { user } = useAuth();
@@ -54,13 +62,21 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const router = useRouter();
   const balance = useWalletBalance(uid);
   const txns = useWalletTransactions(uid);
-  const [amount, setAmount] = useState('500');
   const [busy, setBusy] = useState(false);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('easypaisa');
   const [payoutAccount, setPayoutAccount] = useState('');
-  const [topupProviders, setTopupProviders] = useState<TopupProvider[]>([]);
-  const [topupProvider, setTopupProvider] = useState<TopupProvider | undefined>(undefined);
-  const [topupComingSoon, setTopupComingSoon] = useState(false);
+  // Withdrawals have their own amount field. Top-up amounts now live in the
+  // top-up sheet, so the two no longer share one input.
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [topupOpen, setTopupOpen] = useState(false);
+  // Connected instruments — surfaced on the balance card so the user can see at
+  // a glance whether a one-tap top-up is available before opening the sheet.
+  const savedMethods = useSavedPaymentMethods(uid);
+  // Launch posture: the whole top-up economy is built but switched off, so the
+  // screen says so up front rather than letting the user pick an amount and
+  // only then discover the gateway is not live.
+  const walletComingSoon = useWalletComingSoon();
+  const walletLabel = useWalletLabel('Wallet');
 
   // Commission cycle — only meaningful for drivers.
   const driverProfile = useDriverProfile(role === 'driver' ? uid : undefined);
@@ -71,45 +87,8 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   // Unpaid cancellation fees — both roles can owe these.
   const outstanding = useOutstanding(uid);
 
-  // Which gateways the backend has configured. `comingSoon` = top-ups are off
-  // for launch (feature flag); we show a Coming Soon card instead of the form.
-  useEffect(() => {
-    let cancelled = false;
-    api.getPaymentOptions({})
-      .then((res) => {
-        if (cancelled) return;
-        setTopupComingSoon(res.comingSoon === true);
-        setTopupProviders(res.providers);
-        setTopupProvider(res.providers[0]);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
-
-  async function topup() {
-    const amt = parseInt(amount, 10);
-    if (!amt || amt < 100) {
-      Alert.alert('Invalid amount', 'Minimum top-up is 100 PKR.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await api.createTopupIntent({ amount: amt, provider: topupProvider });
-      if (res.mock) {
-        await api.mockConfirmTopup({ intentId: res.intentId });
-        Alert.alert('Wallet topped up', `${amt} PKR added (mock provider).`);
-      } else if (res.redirectUrl) {
-        await Linking.openURL(res.redirectUrl);
-      }
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Top-up failed.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function payout() {
-    const amt = parseInt(amount, 10);
+    const amt = parseInt(payoutAmount, 10);
     if (!amt || amt > balance) {
       Alert.alert('Invalid amount', 'Enter an amount within your balance.');
       return;
@@ -148,20 +127,61 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
         >
           <Text style={styles.backText}>←</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Wallet</Text>
+        <Text style={styles.headerTitle}>{walletLabel}</Text>
         <View style={{ width: 32 }} />
       </View>
       <ScrollView contentContainerStyle={styles.container}>
 
         <Card style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Balance</Text>
-          <Text style={styles.balance}>{balance} PKR</Text>
+          <View style={styles.balanceHead}>
+            <View style={styles.balanceIcon}>
+              <Text style={styles.balanceIconGlyph}>◎</Text>
+            </View>
+            <Text style={styles.balanceLabel}>Balance</Text>
+            <Pressable onPress={() => explainWallet(role)} hitSlop={10} style={styles.helpBtn}>
+              <Text style={styles.helpBtnText}>?</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.balance}>PKR {balance.toLocaleString()}</Text>
           {outstanding.amount > 0 ? (
             <Text style={styles.balanceOwed}>
               −{outstanding.amount.toLocaleString()} PKR outstanding to Velocity
             </Text>
           ) : null}
+          <View style={styles.topUpButtonWrap}>
+            <PrimaryButton
+              label={walletComingSoon ? 'Top up (Coming soon)' : 'Top up'}
+              onPress={() => setTopupOpen(true)}
+              disabled={walletComingSoon}
+            />
+            {walletComingSoon ? (
+              <Text style={styles.topUpSoonNote}>
+                {role === 'driver'
+                  ? 'Adding money isn’t switched on yet. Settle commission by transferring to the accounts below and uploading your receipt.'
+                  : 'Adding money isn’t switched on yet. Pay your driver in cash for now.'}
+              </Text>
+            ) : null}
+          </View>
         </Card>
+
+        {/* Connected accounts — the one-tap top-up instruments */}
+        <Pressable
+          onPress={() => router.push(role === 'driver' ? '/driver/payment-methods' : '/passenger/payment-methods')}
+          style={({ pressed }) => [styles.methodsRow, pressed && styles.methodsRowPressed]}
+        >
+          <Text style={styles.methodsIcon}>💳</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.methodsLabel}>Payment methods</Text>
+            <Text style={styles.methodsSub}>
+              {walletComingSoon
+                ? 'Coming soon'
+                : savedMethods.length > 0
+                  ? `${savedMethods.length} connected`
+                  : 'Connect Easypaisa, JazzCash, a bank or a card'}
+            </Text>
+          </View>
+          <Text style={styles.methodsChevron}>›</Text>
+        </Pressable>
 
         {/* Cancellation fees owed to Velocity — passengers and drivers alike */}
         {outstanding.amount > 0 ? (
@@ -248,47 +268,6 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           </Card>
         ) : null}
 
-        {topupComingSoon ? (
-          <Card>
-            <View style={styles.comingSoonRow}>
-              <Text style={styles.label}>Add money</Text>
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
-              </View>
-            </View>
-            <Text style={styles.comingSoonText}>
-              Wallet top-ups with JazzCash and Easypaisa are on the way. You&apos;ll be able to load
-              your wallet and pay for rides from it here soon.
-            </Text>
-          </Card>
-        ) : (
-          <Card>
-            <Text style={styles.label}>Amount (PKR)</Text>
-            {topupProviders.length > 0 ? (
-              <View style={styles.methodRow}>
-                {topupProviders.map((p) => (
-                  <Pressable
-                    key={p}
-                    onPress={() => setTopupProvider(p)}
-                    style={[styles.methodChip, topupProvider === p && styles.methodChipActive]}
-                  >
-                    <Text style={[styles.methodChipText, topupProvider === p && styles.methodChipTextActive]}>
-                      {PROVIDER_LABEL[p]}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            <TextInput
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="number-pad"
-              style={styles.input}
-            />
-            <PrimaryButton label="Add money" onPress={topup} loading={busy} />
-          </Card>
-        )}
-
         {role === 'driver' ? (
           <Card>
             <Text style={styles.label}>Withdraw earnings</Text>
@@ -305,6 +284,14 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
                 </Pressable>
               ))}
             </View>
+            <TextInput
+              value={payoutAmount}
+              onChangeText={(t) => setPayoutAmount(t.replace(/[^0-9]/g, ''))}
+              placeholder={`Amount (max ${balance.toLocaleString()} PKR)`}
+              placeholderTextColor={colors.muted}
+              keyboardType="number-pad"
+              style={styles.input}
+            />
             <TextInput
               value={payoutAccount}
               onChangeText={setPayoutAccount}
@@ -339,6 +326,8 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
         )}
 
       </ScrollView>
+
+      <TopUpSheet visible={topupOpen} onClose={() => setTopupOpen(false)} role={role} uid={uid} />
     </SafeAreaView>
   );
 }
@@ -381,9 +370,39 @@ const styles = themed(() => StyleSheet.create({
   container: { padding: 18, gap: 14 },
   title: { fontSize: 24, fontWeight: '900', color: colors.text },
   balanceCard: { backgroundColor: colors.primary },
-  balanceLabel: { color: '#cdebd9', fontSize: 13, fontWeight: '700' },
-  balance: { color: '#fff', fontSize: 34, fontWeight: '900', marginTop: 4 },
+  balanceHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  balanceIcon: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  balanceIconGlyph: { fontSize: 20, color: '#fff', fontWeight: '900' },
+  balanceLabel: { flex: 1, color: '#cdebd9', fontSize: 15, fontWeight: '800' },
+  helpBtn: {
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  helpBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+  balance: { color: '#fff', fontSize: 34, fontWeight: '900', marginTop: 10 },
   balanceOwed: { color: '#ffdada', fontSize: 12, fontWeight: '800', marginTop: 6 },
+  topUpButtonWrap: { marginTop: 14 },
+  topUpSoonNote: { color: '#e9f6ee', fontSize: 11, lineHeight: 16, marginTop: 8, fontWeight: '600' },
+  methodsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  methodsRowPressed: { borderColor: colors.primary },
+  methodsIcon: { fontSize: 22 },
+  methodsLabel: { fontSize: 15, fontWeight: '800', color: colors.text },
+  methodsSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  methodsChevron: { fontSize: 22, color: colors.muted },
   label: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 6 },
   input: {
     height: 48,

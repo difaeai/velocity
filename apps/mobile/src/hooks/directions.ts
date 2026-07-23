@@ -2,24 +2,28 @@
  * Road-following route between two points.
  *
  * The map draws a straight geodesic line from pickup to drop-off unless we can
- * get the real streets, so this hook asks Google for the driving route and
- * decodes its polyline into the coordinates the map draws.
+ * get the real streets, so this asks for the driving route and decodes its
+ * polyline into the coordinates the map draws.
  *
- * We call the **Routes API** (routes.googleapis.com/directions/v2:computeRoutes),
- * not the legacy Directions API. `velocity-fe379` is a post-2025 Cloud project,
- * and Google no longer lets those projects enable any legacy Maps API — the old
- * endpoint answers every request with REQUEST_DENIED ("You're calling a legacy
- * API"), which is why the line used to stay straight. The legacy call is kept
- * only as a fallback for the (unlikely) case that a future project has
- * Directions enabled but not Routes.
+ * The Routes API call now happens on the BACKEND (`getDirections`), with
+ * GOOGLE_MAPS_SERVER_KEY. Calling it from the device stopped being possible
+ * once the Android Maps key was restricted to the app's package name and
+ * signing certificate: that restriction is proven by the native SDK attaching
+ * those to the request, and a `fetch()` from JS attaches neither, so Google
+ * rejected every call. Routing through the backend also means one place owns
+ * the Routes API — en-route matching already used the same server helper.
  *
- * The Routes API must be enabled on the project AND allowed on the API key's
- * API restriction list, otherwise it answers API_KEY_SERVICE_BLOCKED. When the
- * route can't be fetched (offline, blocked key, no route) this returns null and
- * the caller falls back to the straight line — the map is never left blank.
+ * The legacy Directions endpoint is gone rather than kept as a fallback:
+ * `velocity-fe379` is a post-2025 Cloud project, and Google does not let those
+ * enable any legacy Maps API, so it answered REQUEST_DENIED every single time.
+ *
+ * When the route can't be fetched (offline, rate limited, no server key, no
+ * road) this returns null and the caller falls back to the straight line — the
+ * map is never left blank.
  */
 import { useEffect, useState } from 'react';
-import { GOOGLE_MAPS_API_KEY } from '../config';
+
+import { api } from '../api/client';
 
 export interface LatLng {
   latitude: number;
@@ -30,9 +34,6 @@ export interface MapPoint {
   lat: number;
   lng: number;
 }
-
-const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-const LEGACY_DIRECTIONS_URL = 'https://maps.googleapis.com/maps/api/directions/json';
 
 /**
  * Decode an encoded polyline (Google's algorithm) into lat/lng points.
@@ -94,83 +95,25 @@ export interface RouteInfo {
   encoded: string;
 }
 
-/** Routes API v2. `duration` comes back as a protobuf string like "914s". */
-async function fetchViaRoutesApi(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
-  const res = await fetch(ROUTES_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      // Field mask is mandatory — asking for everything is rejected on this API.
-      'X-Goog-FieldMask':
-        'routes.polyline.encodedPolyline,routes.duration,routes.distanceMeters',
-    },
-    body: JSON.stringify({
-      origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-      destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
-      travelMode: 'DRIVE',
-      routingPreference: 'TRAFFIC_AWARE',
-      polylineQuality: 'HIGH_QUALITY',
-      regionCode: 'PK',
-      languageCode: 'en',
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    console.error('[Routes API]', data?.error?.status ?? res.status, data?.error?.message ?? '');
-    return null;
-  }
-
-  const route = data?.routes?.[0];
-  const encoded: string | undefined = route?.polyline?.encodedPolyline;
-  if (!encoded) return null;
-  const coords = decodePolyline(encoded);
-  if (coords.length < 2) return null;
-
-  return {
-    coords,
-    durationSec: parseInt(String(route.duration ?? '0'), 10) || 0,
-    distanceM: route.distanceMeters ?? 0,
-    encoded,
-  };
-}
-
-/** Legacy Directions API — only reachable on projects that still have it enabled. */
-async function fetchViaLegacyDirections(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
-  const url =
-    `${LEGACY_DIRECTIONS_URL}?origin=${origin.lat},${origin.lng}` +
-    `&destination=${dest.lat},${dest.lng}` +
-    `&mode=driving&region=pk&key=${GOOGLE_MAPS_API_KEY}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  const route = data?.routes?.[0];
-  const encoded: string | undefined = route?.overview_polyline?.points;
-  if (data?.status !== 'OK' || !encoded) return null;
-  const coords = decodePolyline(encoded);
-  if (coords.length < 2) return null;
-
-  // Sum the legs — there are no waypoints here, so this is normally just one.
-  const legs: { duration?: { value?: number }; distance?: { value?: number } }[] = route.legs ?? [];
-  return {
-    coords,
-    durationSec: legs.reduce((s, l) => s + (l.duration?.value ?? 0), 0),
-    distanceM: legs.reduce((s, l) => s + (l.distance?.value ?? 0), 0),
-    encoded,
-  };
-}
-
 /** Fetch the driving route between two points with its ETA, or null on failure. */
 export async function fetchRouteInfo(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
   try {
-    const routed = await fetchViaRoutesApi(origin, dest);
-    if (routed) return routed;
+    const res = await api.getDirections({
+      origin: { lat: origin.lat, lng: origin.lng },
+      destination: { lat: dest.lat, lng: dest.lng },
+    });
+    const encoded = res.route?.polyline;
+    if (!encoded) return null;
+    const coords = decodePolyline(encoded);
+    if (coords.length < 2) return null;
+    return {
+      coords,
+      durationSec: res.route!.durationSec,
+      distanceM: res.route!.distanceM,
+      encoded,
+    };
   } catch {
-    /* fall through to the legacy endpoint */
-  }
-  try {
-    return await fetchViaLegacyDirections(origin, dest);
-  } catch {
+    // Offline, rate limited, Maps outage — the caller draws the straight line.
     return null;
   }
 }

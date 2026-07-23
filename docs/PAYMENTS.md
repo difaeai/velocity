@@ -15,8 +15,15 @@ app-wide with no deploy. Defaults:
 | Flag | Default | Effect when off |
 |------|---------|-----------------|
 | `walletTopupEnabled` | `false` | Wallet top-ups show "Coming Soon"; `createTopupIntent`/`getPaymentOptions` decline; ride booking is cash-only (the Wallet pay option is disabled). |
+| `savedPaymentMethodsEnabled` | `false` | Payment methods screen shows "Coming Soon"; connecting, charging and removing an instrument all decline. |
 | `travelMateSubscriptionsEnabled` | `false` | Paid plans show "Coming Soon"; `requestTravelMateSubscription` declines. |
 | `travelMateFree` | `true` | Travel Mate likes are unlimited for everyone (`travelMateSwipe` grants a very high free allowance). |
+
+`savedPaymentMethodsEnabled` is deliberately **separate** from
+`walletTopupEnabled`: tokenisation (charging a stored instrument again on our
+say-so) is a distinct merchant permission every Pakistani gateway grants on top
+of plain checkout, so basic top-ups are expected to go live first and connected
+accounts to follow.
 
 While top-ups are off, drivers settle their commission by **manual bank
 transfer + AI-verified screenshot** (below) rather than from their wallet.
@@ -28,6 +35,28 @@ doc + asks the provider to charge → user pays on the gateway → the gateway c
 `paymentWebhook` → the backend verifies it and **credits the wallet idempotently**.
 Gateway settlement (where the customer's money physically lands) is the JazzCash /
 Easypaisa / bank **merchant account registered with the gateway**.
+
+**Saved payment methods (connected accounts):** the inDrive-style model — the
+user authorises Velocity once at the gateway and later top-ups are one tap.
+`createPaymentMethodSetup(kind)` creates a `paymentMethodSetups` doc and returns
+a URL; the user authorises at the gateway; the gateway returns a reusable token
+to `paymentMethodCallback`, which stores it and writes a `paymentMethods` doc.
+`topupWithSavedMethod(methodId, amount)` then charges that token
+server-to-server and credits the wallet through the **same idempotent
+`creditFromIntent`** the gateway webhook uses, so both routes into the wallet
+share one money path.
+
+The token is split out exactly like `paymentIntentSecrets`: display data lives
+in `paymentMethods/{id}` (owner-readable), the chargeable token in
+`paymentMethodSecrets/{id}` which **rules deny to every client, owner and admin
+alike**. It is only ever read by server code through the Admin SDK. A charge
+that comes back `tokenDead` marks the method `revoked` so the user is prompted
+to reconnect rather than retrying a dead instrument forever.
+
+Only a provider implementing `TokenizingProvider` can do this; a gateway may be
+fully configured for checkout and still not support it. The **mock** provider
+implements it in full, so the whole connect → default → one-tap → remove flow is
+testable end to end without any merchant contract.
 
 **Wallet ride (escrow):** trips created with `paymentMethod: 'wallet'` are
 rejected at `createTrip` if the passenger can't afford the offer. When the
@@ -116,6 +145,14 @@ account and calls `markPayoutPaid`.
 | `markPayoutPaid` | admin | Mark a payout disbursed. |
 | `payCommission` | driver | Pay the cash-ride commission cycle from the wallet. |
 | `submitCancellationFeeSettlement` | any user | Clear unpaid cancellation fees with a payment screenshot. |
+| `getPaymentMethods` | any user | List connected instruments (display data only). |
+| `createPaymentMethodSetup` | any user | Start connecting an Easypaisa/JazzCash/bank/card account. |
+| `paymentMethodSetupPage` (HTTP) | browser | Hosted page that auto-submits the gateway's authorisation form. |
+| `paymentMethodCallback` (HTTP) | gateway | Verified callback that stores the reusable token. |
+| `mockConfirmPaymentMethod` | owner (mock only) | Dev shortcut to simulate a successful authorisation. |
+| `setDefaultPaymentMethod` | any user | Choose which instrument one-tap top-ups use. |
+| `deletePaymentMethod` | any user | Revoke at the gateway, then delete the token and the doc. |
+| `topupWithSavedMethod` | any user | One-tap top-up charged against a saved instrument. |
 
 ## Platform books
 
@@ -129,6 +166,12 @@ account and calls `markPayoutPaid`.
   `travelMateRevenue`, plus the existing trip totals) for the dashboard.
 - `wallets/{uid}.outstanding` — unpaid cancellation fees this user owes
   Velocity. Server-written only; drives the booking/bidding block.
+- `paymentMethods/{id}` — a connected instrument's display data (kind, masked
+  tail, brand, default flag, status). Owner-readable, server-written only.
+- `paymentMethodSecrets/{id}` — the gateway token that can charge it. **Denied
+  to every client, owner and admin alike**; server-only via the Admin SDK.
+- `paymentMethodSetups/{id}` / `paymentMethodSetupSecrets/{id}` — the
+  authorisation handshake and its per-setup callback secret, same split.
 - `config/settlementAccounts` — the platform's receiving accounts
   (`easypaisaNumber`, `jazzcashNumber`, `bankName`, `bankIban`, `accountTitle`),
   maintained by admins; the app shows the right one for manual transfers.
@@ -141,14 +184,36 @@ account and calls `markPayoutPaid`.
 The provider is selected by the `PAYMENTS_PROVIDER` env var (default `mock`).
 `backend/functions/src/payments/providers.ts` defines the interface and ships:
 
-- **`mock`** — no real money; used in development and CI.
-- **`jazzcash`, `easypaisa`** — placeholder adapters that throw until configured.
+- **`mock`** — no real money; used in development and CI. The only provider that
+  currently implements `TokenizingProvider`, so saved methods are exercisable
+  end to end in dev.
+- **`payfast`** — the single-contract aggregator: one merchant account fronting
+  cards, JazzCash, Easypaisa, HBL Konnect and bank transfer.
+- **`jazzcash`, `easypaisa`** — direct per-rail adapters.
+
+### Which one to get
+
+**PayFast first.** One contract covers four rails, where direct JazzCash +
+Easypaisa means two onboardings for a narrower method list (no cards, no
+Konnect). It also accepts individuals and unregistered businesses, so it does
+not block on SECP registration. Apply at <https://getstarted.apps.net.pk/signup>
+with NTN, CNIC and a utility bill. Keep the JazzCash/Easypaisa adapters as a
+fallback — they need zero code if PayFast onboarding drags.
+
+⚠️ **The PayFast adapter is a scaffold, not a verified integration.**
+gopayfast.com/docs is IP-gated, so its field names come from public summaries
+and a community package. Three things must be checked against the integration
+pack that arrives with the merchant account before the first live rupee: the
+access-token endpoint path, the `SIGNATURE` formula, and the production base
+URL. `PAYFAST_BASE_URL` has no live default so the adapter fails closed rather
+than posting real money at the sandbox. Success/failure is read from our own
+return URLs plus the per-intent secret, never from guessed response field names.
 
 ### Going live
 
-The adapters are fully implemented (JazzCash Page Redirection v1.1 with
-HMAC-SHA256 secure-hash verification; Easypaisa hosted checkout with optional
-server-to-server inquiry). Going live is **configuration only**:
+The JazzCash and Easypaisa adapters are fully implemented (Page Redirection v1.1
+with HMAC-SHA256 secure-hash verification; Easypay hosted checkout with optional
+server-to-server inquiry). For those, going live is **configuration only**:
 
 1. Get merchant credentials from the JazzCash / Easypay merchant portals.
 2. Provide them as function environment variables — the keys are listed in

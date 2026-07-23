@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
+import { useWalletComingSoon } from '../../src/hooks/driver';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { Card, comingSoon } from '../../src/ui/components';
@@ -20,6 +21,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const driverEntry = useDriverEntry();
+  const walletComingSoon = useWalletComingSoon();
 
   const openSettings = () => router.push('/passenger/settings');
   const openActivity = () => router.push('/passenger/activity');
@@ -144,7 +146,9 @@ export default function ProfileScreen() {
               <Text style={styles.itemIcon}>💳</Text>
               <View>
                 <Text style={styles.itemTitle}>Wallet &amp; payments</Text>
-                <Text style={styles.itemSubtitle}>Top up · Cash</Text>
+                <Text style={styles.itemSubtitle}>
+                  {walletComingSoon ? 'Top up coming soon · Cash' : 'Top up · Cash'}
+                </Text>
               </View>
             </View>
             <View style={styles.cashBadgeContainer}>

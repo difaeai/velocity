@@ -208,3 +208,57 @@ describe('visibility', () => {
     expect(feed.poolVisibility).toBe('private');
   });
 });
+
+describe('gender tally', () => {
+  it('seeds the host gender and increments as riders join', async () => {
+    // Host is female; a male and a female join → 2F, 1M.
+    await db().doc(`users/${HOST}`).set({ displayName: 'Host', gender: 'female' });
+    await db().doc(`users/${JOINER}`).set({ displayName: 'J1', gender: 'male' });
+    await db().doc(`users/${JOINER2}`).set({ displayName: 'J2', gender: 'female' });
+
+    const { tripId, shareCode } = await createPool(HOST, { passengerGender: 'female' });
+    let trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolGenders).toEqual({ male: 0, female: 1 });
+
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER2));
+
+    trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolGenders).toEqual({ male: 1, female: 2 });
+
+    // The nearby feed surfaces the same counts, no names.
+    const res = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER3),
+    );
+    const pool = (res.pools as { males: number; females: number; riders: number }[])[0];
+    expect(pool.males).toBe(1);
+    expect(pool.females).toBe(2);
+    expect(pool.riders).toBe(3);
+  });
+});
+
+describe('destination filter', () => {
+  it('only surfaces pools whose drop-off is near the searched destination', async () => {
+    const { tripId } = await createPool(JOINER); // drops at G-9 Markaz (DROPOFF)
+
+    // Searching toward the pool's actual destination finds it…
+    const near = await getNearbyPublicPoolTrips.run(
+      makeReq(
+        { lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5, destLat: DROPOFF.lat, destLng: DROPOFF.lng, destRadiusKm: 2 },
+        JOINER2,
+      ),
+    );
+    expect(near.pools).toHaveLength(1);
+
+    // …searching toward a far-away destination (Lahore) excludes it.
+    const far = await getNearbyPublicPoolTrips.run(
+      makeReq(
+        { lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5, destLat: 31.5204, destLng: 74.3587, destRadiusKm: 2 },
+        JOINER2,
+      ),
+    );
+    expect(far.pools).toHaveLength(0);
+
+    expect(tripId).toBeTruthy();
+  });
+});

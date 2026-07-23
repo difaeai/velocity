@@ -12,6 +12,7 @@ import { Text } from './Text';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../config';
+import { useWalletLabel } from '../hooks/driver';
 import { getLanguage, setLanguage } from '../i18n';
 import { getThemeMode, toggleTheme, themed } from '../theme';
 
@@ -60,6 +61,7 @@ export function DriverDrawer({
   const router  = useRouter();
   const slideX  = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const walletLabel = useWalletLabel('Wallet & Payouts');
 
   useEffect(() => {
     if (visible) {
@@ -128,7 +130,7 @@ export function DriverDrawer({
         <View style={styles.navSection}>
           <NavItem icon="🏠" label="Home"                   onPress={() => go('/driver/home')} />
           <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
-          <NavItem icon="💳" label="Wallet & Payouts"       onPress={() => go('/driver/wallet')} />
+          <NavItem icon="💳" label={walletLabel}            onPress={() => go('/driver/wallet')} />
           <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
           {/* Where a driver recruited by a Velocity partner enters their code. */}
           <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code')} />

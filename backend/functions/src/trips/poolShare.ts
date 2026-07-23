@@ -67,6 +67,7 @@ export const getPoolTripByCode = onCall(async (req) => {
   const hostSnap = await db.doc(`users/${members[0]}`).get();
   const pickup   = snap.get('pickup')  as { address?: string } | undefined;
   const dropoff  = snap.get('dropoff') as { address?: string } | undefined;
+  const genders  = (snap.get('poolGenders') as { male?: number; female?: number } | undefined) ?? {};
 
   return {
     code,
@@ -77,6 +78,8 @@ export const getPoolTripByCode = onCall(async (req) => {
     visibility: (snap.get('poolVisibility') as string | undefined) ?? 'public',
     hostName:   (hostSnap.get('displayName') as string | undefined) ?? 'A Velocity rider',
     riders:     members.length,
+    males:      genders.male   ?? 0,
+    females:    genders.female ?? 0,
     maxRiders,
     seatsLeft:  Math.max(0, maxRiders - members.length),
     perSeatFareNow:       poolPerSeatFare(soloFare, members.length),
@@ -125,6 +128,7 @@ export const joinPoolTrip = onCall(async (req) => {
     // A rider on another active trip can't be in two cars at once.
     const userSnap = await tx.get(db.doc(`users/${ctx.uid}`));
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
+    const joinerGender = userSnap.get('gender') as string | undefined;
     if (activeTripId && activeTripId !== tripRef.id) {
       const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
       if (activeSnap.exists && ACTIVE_STATUSES.has(activeSnap.get('status') as TripStatus)) {
@@ -135,12 +139,20 @@ export const joinPoolTrip = onCall(async (req) => {
     const newMembers  = [...members, ctx.uid];
     const perSeatFare = poolPerSeatFare(soloFare, newMembers.length);
 
+    // Bump the running gender tally so the nearby feed reflects who's aboard.
+    // Merge keeps the existing map and only touches the joiner's bucket.
+    const genderBump =
+      joinerGender === 'male'   ? { male:   FieldValue.increment(1) } :
+      joinerGender === 'female' ? { female: FieldValue.increment(1) } :
+      null;
+
     tx.set(
       tripRef,
       {
         poolMembers: newMembers,
         seats: newMembers.length,
         poolPerSeatFare: perSeatFare,
+        ...(genderBump ? { poolGenders: genderBump } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -149,7 +161,12 @@ export const joinPoolTrip = onCall(async (req) => {
     if (status === 'requested') {
       tx.set(
         db.doc(`openRequests/${tripRef.id}`),
-        { seats: newMembers.length, poolRiders: newMembers.length, poolPerSeatFare: perSeatFare },
+        {
+          seats: newMembers.length,
+          poolRiders: newMembers.length,
+          poolPerSeatFare: perSeatFare,
+          ...(genderBump ? { poolGenders: genderBump } : {}),
+        },
         { merge: true },
       );
     }
@@ -215,17 +232,28 @@ const nearbySchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   radiusKm: z.number().min(0.5).max(15).default(5),
+  // Optional destination gate: when the rider is searching for a pool heading
+  // their way, only surface pools whose drop-off lands within destRadiusKm of
+  // the point they typed. Omit all three and it's plain "pools near me".
+  destLat: z.number().min(-90).max(90).optional(),
+  destLng: z.number().min(-180).max(180).optional(),
+  destRadiusKm: z.number().min(0.5).max(15).default(5),
 });
 
 /**
  * Public pool trips near the caller that still have seats — shown on the
  * booking screen so a rider can join an existing pool instead of starting one.
+ *
+ * With destLat/destLng the feed narrows to pools going the rider's way: the
+ * pickup must be within radiusKm of the rider and the drop-off within
+ * destRadiusKm of where they want to go.
  */
 export const getNearbyPublicPoolTrips = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = nearbySchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid location data.');
-  const { lat, lng, radiusKm } = parsed.data;
+  const { lat, lng, radiusKm, destLat, destLng, destRadiusKm } = parsed.data;
+  const filterByDest = typeof destLat === 'number' && typeof destLng === 'number';
 
   // Skip the caller's own open request without exposing passenger ids in the feed.
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
@@ -250,12 +278,24 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
     const distanceKm = haversineKm(lat, lng, pLat, pLng);
     if (distanceKm > radiusKm) continue;
 
+    // When searching by destination, drop pools that aren't heading there.
+    if (filterByDest) {
+      const dLat = d.dropoff?.lat as number | undefined;
+      const dLng = d.dropoff?.lng as number | undefined;
+      if (typeof dLat !== 'number' || typeof dLng !== 'number') continue;
+      if (haversineKm(destLat, destLng, dLat, dLng) > destRadiusKm) continue;
+    }
+
+    const genders = (d.poolGenders as { male?: number; female?: number } | undefined) ?? {};
+
     pools.push({
       code: d.shareCode as string,
       pickupAddress:  d.pickup?.address ?? 'Nearby',
       dropoffAddress: d.dropoff?.address ?? 'Destination',
       rideType: d.rideType as string,
       riders,
+      males:   genders.male   ?? 0,
+      females: genders.female ?? 0,
       seatsLeft: MAX_POOL_RIDERS - riders,
       perSeatFareIfYouJoin: poolPerSeatFare(d.offeredFare as number, riders + 1),
       distanceKm: Math.round(distanceKm * 10) / 10,
