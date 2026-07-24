@@ -296,6 +296,15 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>My routes</Text>
                   </Pressable>
 
+                  {/* Gender-aware pool discovery. The booking flow finds pools on
+                      the route you just typed; this browses every shared ride
+                      nearby and honours the mixed-gender seating rules, so it
+                      needs its own way in. */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/pool-request/nearby')}>
+                    <Text style={styles.menuItemIcon}>👥</Text>
+                    <Text style={styles.menuItemText}>Nearby sharing rides</Text>
+                  </Pressable>
+
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
                     <Text style={styles.menuItemIcon}>🤝</Text>
                     <Text style={styles.menuItemText}>Travel Partner</Text>

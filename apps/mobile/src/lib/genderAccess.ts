@@ -115,3 +115,20 @@ export function genderLabel(gender: string): string {
   if (gender === 'female') return '♀ Female';
   return '? Unspecified';
 }
+
+/**
+ * Who is already aboard a pool, as a short chip caption.
+ *
+ * Counts only — the discovery feeds are anonymous, so this never names anyone.
+ * It is the one thing a rider needs before tapping "Join": whether they'd be
+ * sharing the car with the opposite gender, which the cultural seating rules
+ * in `canJoinPool` then enforce for real.
+ */
+export function poolGenderSummary(males: number, females: number): string {
+  if (males <= 0 && females <= 0) return '👥 Empty — you’d be first';
+  const parts: string[] = [];
+  if (males   > 0) parts.push(`♂ ${males}`);
+  if (females > 0) parts.push(`♀ ${females}`);
+  const mixed = males > 0 && females > 0 ? ' · mixed' : '';
+  return `${parts.join('  ')} aboard${mixed}`;
+}

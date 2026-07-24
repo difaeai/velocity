@@ -23,6 +23,7 @@ import { AdBanner } from '../../src/ads';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { poolGenderSummary } from '../../src/lib/genderAccess';
 import { usePassengerTrips, useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
 import {
   usePlacesAutocomplete,
@@ -830,6 +831,11 @@ export default function Booking() {
                     {p.distanceKm} km away · {RIDE_TYPE_LABELS[p.rideType] ?? p.rideType} · {p.seatsLeft} seat{p.seatsLeft !== 1 ? 's' : ''} left
                     {p.hasDriver ? ' · driver on the way' : ''}
                   </Text>
+                  {/* Who's already in the car. Riders decide on this before fare —
+                      sharing with the opposite gender is a real consideration here. */}
+                  <Text style={styles.matchGender} numberOfLines={1}>
+                    {poolGenderSummary(p.males, p.females)}
+                  </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.matchFare}>PKR {p.perSeatFareIfYouJoin}</Text>
@@ -1130,6 +1136,9 @@ export default function Booking() {
                           <Text style={styles.nearbyPoolDest} numberOfLines={1}>{p.dropoffAddress}</Text>
                           <Text style={styles.nearbyPoolMeta}>
                             {p.distanceKm} km away · {p.riders} rider{p.riders > 1 ? 's' : ''} · {p.seatsLeft} seat{p.seatsLeft > 1 ? 's' : ''} left
+                          </Text>
+                          <Text style={styles.matchGender} numberOfLines={1}>
+                            {poolGenderSummary(p.males, p.females)}
                           </Text>
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
@@ -1950,6 +1959,12 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 11,
     color: colors.muted,
     fontWeight: '600',
+    marginTop: 2,
+  },
+  matchGender: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '800',
     marginTop: 2,
   },
   matchFare: {

@@ -131,6 +131,11 @@ export function DriverDrawer({
           <NavItem icon="🏠" label="Home"                   onPress={() => go('/driver/home')} />
           <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
           <NavItem icon="💳" label={walletLabel}            onPress={() => go('/driver/wallet')} />
+          {/* Pool work, kept apart from the solo feed on the home tab. Passengers
+              asking for a shared ride are a different job — several pickups and
+              drop-offs, a fare to accept or counter — so they get their own
+              screen rather than being mixed into the incoming solo requests. */}
+          <NavItem icon="👥" label="Pool ride requests"     onPress={() => go('/driver/pool-requests')} />
           <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
           {/* Where a driver recruited by a Velocity partner enters their code. */}
           <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code')} />
