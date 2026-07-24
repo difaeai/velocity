@@ -69,6 +69,13 @@ service cloud.firestore {
       match /savedPlaces/{placeId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Daily routes — owner-managed commutes that trigger public-pool alerts.
+      // The match runs server-side via a collection-group scan (admin SDK), so
+      // no group-scope read exception is needed here.
+      match /dailyRoutes/{routeId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // ----- cnicVerifications/{uid} -----------------------------------------

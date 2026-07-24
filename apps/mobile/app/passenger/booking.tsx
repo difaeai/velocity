@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../src/ui/Text';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
@@ -22,13 +23,14 @@ import { AdBanner } from '../../src/ads';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
-import { useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
+import { usePassengerTrips, useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
 import {
   usePlacesAutocomplete,
   fetchPlaceDetail,
   geocodeAddress,
   type PlacePrediction,
 } from '../../src/hooks/places';
+import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { ClockIcon } from '../../src/ui/ServiceIcons';
 import { CarIllustration } from '../../src/ui/VehicleIllustrations';
@@ -73,6 +75,22 @@ const RIDE_TO_CAT: Record<RideType, VehicleCategory> = {
   comfort: 'luxury',
   xl:      'luxury',
 };
+
+// How far out to look for pools to join. The rider picks; we remember it, so
+// someone who always searches 15 km never has to say so twice. Capped at the
+// 25 km the backend accepts.
+const POOL_RADIUS_OPTIONS = [2, 5, 10, 15, 25] as const;
+const POOL_RADIUS_KEY = 'velocity.poolRadiusKm';
+const DEFAULT_POOL_RADIUS_KM = 5;
+
+// The mode sheet opens taller than the others: it carries the pool matches AND
+// both ride cards, and the map behind it is only a route summary at this point.
+const MODE_SNAP_POINTS = [0.45, 0.72, 0.94];
+
+// Stand-in shown the moment coordinates land, before the reverse-geocoded
+// street address does. The backend receives real coordinates either way, so this
+// is only ever a label.
+const CURRENT_LOCATION_LABEL = 'Current location';
 
 // The prefilled offer is pinned below the engine's market-fair estimate so
 // Velocity always reads cheaper than inDrive/Yango for the same trip:
@@ -141,6 +159,34 @@ export default function Booking() {
     useCurrentLocation();
   const recents = useRecentDestinations(user?.uid);
 
+  // Full ride history — every past trip that reached a real destination, with
+  // date/fare so the rider can spot the exact trip and rebook it. Tucked behind
+  // a small button next to "Recent destinations" so it never crowds the list.
+  const { trips } = usePassengerTrips(user?.uid);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRows = useMemo(() => {
+    return trips
+      .map((t) => {
+        const address = t.dropoff?.address?.trim();
+        if (!address) return null;
+        const seconds = (t as { createdAt?: { seconds?: number } }).createdAt?.seconds;
+        const date = seconds
+          ? new Date(seconds * 1000).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })
+          : '';
+        return {
+          id: t.id,
+          address,
+          lat: t.dropoff?.lat,
+          lng: t.dropoff?.lng,
+          date,
+          fare: t.fare ?? t.offeredFare ?? null,
+          pool: !!t.pool,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .slice(0, 30);
+  }, [trips]);
+
   // Three explicit steps: type the route → pick Solo or Pool → tune the ride.
   const [stage, setStage] = useState<'route' | 'mode' | 'details'>('route');
   const [pickup, setPickup] = useState('');
@@ -157,11 +203,32 @@ export default function Booking() {
 
   function newSession() { sessionTokenRef.current = uuidv4(); }
 
-  // Prefill the pickup with the rider's real (reverse-geocoded) address once we
-  // have it, unless they've already typed something.
+  // Whether the rider has taken the pickup field over. Until they do, the field
+  // belongs to their device location — nobody opening "Where to?" should have to
+  // type where they are already standing.
+  const [pickupEdited, setPickupEdited] = useState(false);
+
+  /**
+   * Fill the pickup from the device as soon as there is ANYTHING to show, and
+   * refine it as better data lands: coordinates arrive from the GPS watch in a
+   * second or two, while the reverse-geocoded street address can take several
+   * more (or never resolve at all indoors). Waiting for the address — which is
+   * what this used to do — left the rider staring at an empty "Search pickup
+   * location…" box for the whole of that gap.
+   */
   useEffect(() => {
-    if (currentAddress) setPickup((prev) => (prev.trim() ? prev : currentAddress));
-  }, [currentAddress]);
+    if (pickupEdited) return;
+    if (currentAddress) setPickup(currentAddress);
+    else if (coords) setPickup(CURRENT_LOCATION_LABEL);
+  }, [currentAddress, coords?.lat, coords?.lng, pickupEdited]);
+
+  /** Hand the field back to the device location after the rider has edited it. */
+  function useMyLocationForPickup() {
+    setPickupEdited(false);
+    if (currentAddress) setPickup(currentAddress);
+    else if (coords) setPickup(CURRENT_LOCATION_LABEL);
+    else requestLocation();
+  }
 
   // Fare engine config from Firestore (city-level rates set by admin)
   const [fareConfig, setFareConfig] = useState<CityFareConfig | null>(null);
@@ -185,6 +252,8 @@ export default function Booking() {
   // people with the share link can join.
   const [poolVisibility, setPoolVisibility] = useState<PoolVisibility>('public');
   const [nearbyPools, setNearbyPools] = useState<NearbyPublicPool[]>([]);
+  const [poolsLoading, setPoolsLoading] = useState(false);
+  const [poolRadiusKm, setPoolRadiusKm] = useState<number>(DEFAULT_POOL_RADIUS_KM);
   const [joinCode, setJoinCode] = useState('');
   // Wallet ride payments depend on wallet top-ups, which are "Coming Soon" for
   // launch — until then rides are cash-only.
@@ -247,17 +316,46 @@ export default function Booking() {
     if (next === 'pool' && rideType === 'bike') selectRide('mini'); // bikes have one seat — nothing to pool
   }
 
-  // Public pools near the rider — shown in Pool mode so they can hop onto an
-  // existing pool instead of starting their own.
+  // Public pools already heading where this rider is going. This is the whole of
+  // pool discovery now — the home screen no longer has its own "find rides"
+  // entry point, so the moment a destination is picked we look up who is going
+  // that way and offer those seats BEFORE offering to start a new pool.
+  //
+  // The pickup is gated to the radius the rider chose; once we know their
+  // drop-off the destination is gated by the same distance, so the list really
+  // is "rides going your way" rather than "any pool nearby".
   useEffect(() => {
-    if (mode !== 'pool' || !coords) return;
+    if (stage === 'route' || !coords) return;
     let alive = true;
-    api.getNearbyPublicPoolTrips({ lat: coords.lat, lng: coords.lng, radiusKm: 5 })
+    setPoolsLoading(true);
+    api.getNearbyPublicPoolTrips({
+      lat: coords.lat,
+      lng: coords.lng,
+      radiusKm: poolRadiusKm,
+      ...(dropoffCoords
+        ? { destLat: dropoffCoords.lat, destLng: dropoffCoords.lng, destRadiusKm: poolRadiusKm }
+        : {}),
+    })
       .then((r) => { if (alive) setNearbyPools(r.pools); })
-      .catch(() => { /* discovery is best-effort */ });
+      .catch(() => { if (alive) setNearbyPools([]); /* discovery is best-effort */ })
+      .finally(() => { if (alive) setPoolsLoading(false); });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [stage, poolRadiusKm, coords?.lat, coords?.lng, dropoffCoords?.lat, dropoffCoords?.lng]);
+
+  // Remembered search radius, restored before the first lookup runs.
+  useEffect(() => {
+    AsyncStorage.getItem(POOL_RADIUS_KEY)
+      .then((saved) => {
+        const km = Number(saved);
+        if (POOL_RADIUS_OPTIONS.some((o) => o === km)) setPoolRadiusKm(km);
+      })
+      .catch(() => {});
+  }, []);
+
+  function changePoolRadius(km: number) {
+    setPoolRadiusKm(km);
+    AsyncStorage.setItem(POOL_RADIUS_KEY, String(km)).catch(() => {});
+  }
 
   function bumpFare(delta: number) {
     userEditedFare.current = true;
@@ -432,6 +530,11 @@ export default function Booking() {
     ? recents.filter((r) => r.address.toLowerCase().includes(query))
     : recents;
 
+  // Pickup field state: "finding you" only while there is genuinely nothing to
+  // show yet; "your location" whenever the field still mirrors the device.
+  const locatingPickup = !pickupEdited && !coords && locStatus !== 'denied' && locStatus !== 'unavailable';
+  const usingCurrentPickup = !pickupEdited && !!coords;
+
   const maxSavePct = Math.round((1 - (POOL_TIERS[POOL_TIERS.length - 1]?.pct ?? 1)) * 100);
   const fareMin = engineEst?.minAcceptableBid ?? bounds.min;
   const fareMax = engineEst?.suggestedMaxBid  ?? bounds.max;
@@ -460,15 +563,34 @@ export default function Booking() {
               <PickupDotIcon size={19} color="rgba(255,255,255,0.75)" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>PICKUP</Text>
+              <View style={styles.pickupLabelRow}>
+                <Text style={styles.inputLabel}>PICKUP</Text>
+                {locatingPickup ? (
+                  <>
+                    <ActivityIndicator size="small" color={colors.muted} />
+                    <Text style={styles.pickupStatus}>Finding you…</Text>
+                  </>
+                ) : usingCurrentPickup ? (
+                  <Text style={styles.pickupStatusOn}>Your location</Text>
+                ) : null}
+              </View>
               <TextInput
                 value={pickup}
-                onChangeText={setPickup}
-                placeholder="Search pickup location…"
+                onChangeText={(t) => { setPickupEdited(true); setPickup(t); }}
+                placeholder={locatingPickup ? 'Finding your location…' : 'Search pickup location…'}
                 placeholderTextColor={colors.muted}
                 style={styles.textInput}
               />
             </View>
+            {/* Only offered once it would actually change something: after the
+                rider has typed over the field, or when location is off. */}
+            {!usingCurrentPickup && !locatingPickup ? (
+              <Pressable onPress={useMyLocationForPickup} hitSlop={10} style={styles.useLocBtn}>
+                <Text style={styles.useLocBtnText}>
+                  {coords ? 'Use my location' : 'Enable location'}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           <View style={styles.railLegRow}>
@@ -499,12 +621,19 @@ export default function Booking() {
           </View>
         </View>
 
-        {/* Section header */}
+        {/* Section header — History tucks into the right corner beside it */}
         <View style={styles.resultsHeaderRow}>
           <Text style={styles.sectionHeader}>
             {placesLoading ? 'Searching…' : (query && predictions.length > 0 ? 'Suggestions' : 'Recent destinations')}
           </Text>
           {placesLoading ? <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} /> : null}
+          <View style={{ flex: 1 }} />
+          {historyRows.length > 0 && (
+            <Pressable style={styles.historyChip} onPress={() => setHistoryOpen(true)} hitSlop={8}>
+              <ClockIcon size={13} color={colors.primary} />
+              <Text style={styles.historyChipText}>History</Text>
+            </Pressable>
+          )}
         </View>
 
         <ScrollView style={styles.resultsScroll} keyboardShouldPersistTaps="handled">
@@ -625,10 +754,94 @@ export default function Booking() {
 
       {stage === 'mode' ? (
         /* ── STAGE 2: PICK YOUR RIDE STYLE ── */
-        <View style={[styles.modeSheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.dragIndicator} />
+        <DraggableSheet
+          style={[styles.modeSheet, { paddingBottom: insets.bottom + 16 }]}
+          snapPoints={MODE_SNAP_POINTS}
+        >
           <Text style={styles.modeHeading}>How do you want to ride?</Text>
-          <Text style={styles.modeHeadingSub}>Same route, two ways to go — switch anytime</Text>
+          <Text style={styles.modeHeadingSub}>Join a pool going your way, or book your own</Text>
+
+          {/* Matches + both ride cards scroll together: with a few pools on the
+              route this content is taller than the sheet on a small phone, and
+              a bounded sheet that scrolls beats one that runs off the screen. */}
+          <ScrollView
+            style={{ flexShrink: 1 }}
+            contentContainerStyle={styles.modeScrollBody}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+
+          {/* ── Rides going your way — public pools on this exact route.
+               Joining one is cheaper than starting a pool, so it comes first;
+               the rider sets how far out we look, and if nobody is going their
+               way they start their own from the card below. ── */}
+          <View style={styles.goingYourWayHeader}>
+            <PoolIcon size={14} color={colors.primary} accent={colors.primary} />
+            <Text style={styles.goingYourWayLabel}>RIDES GOING YOUR WAY</Text>
+            {nearbyPools.length > 0 && (
+              <View style={styles.goingYourWayCount}>
+                <Text style={styles.goingYourWayCountText}>{nearbyPools.length}</Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }} />
+            <Text style={styles.radiusHint}>within</Text>
+          </View>
+
+          {/* The rider owns the search radius — 2 km for "must be right here",
+              25 km to sweep the whole city when nothing turns up nearby. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.radiusRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {POOL_RADIUS_OPTIONS.map((km) => {
+              const on = km === poolRadiusKm;
+              return (
+                <Pressable
+                  key={km}
+                  style={[styles.radiusChip, on && styles.radiusChipOn]}
+                  onPress={() => changePoolRadius(km)}
+                >
+                  <Text style={[styles.radiusChipText, on && styles.radiusChipTextOn]}>{km} km</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {poolsLoading && nearbyPools.length === 0 ? (
+            <View style={styles.poolFindRow}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.poolFindText}>Looking for rides going your way…</Text>
+            </View>
+          ) : nearbyPools.length > 0 ? (
+            nearbyPools.slice(0, 3).map((p) => (
+              <Pressable
+                key={p.code}
+                style={({ pressed }) => [styles.matchRow, pressed && { opacity: 0.75 }]}
+                onPress={() => router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])}
+              >
+                <View style={styles.matchIcon}>
+                  <PoolIcon size={17} color={colors.primary} accent={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.matchDest} numberOfLines={1}>{p.dropoffAddress}</Text>
+                  <Text style={styles.matchMeta} numberOfLines={1}>
+                    {p.distanceKm} km away · {RIDE_TYPE_LABELS[p.rideType] ?? p.rideType} · {p.seatsLeft} seat{p.seatsLeft !== 1 ? 's' : ''} left
+                    {p.hasDriver ? ' · driver on the way' : ''}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.matchFare}>PKR {p.perSeatFareIfYouJoin}</Text>
+                  <Text style={styles.matchJoin}>Join →</Text>
+                </View>
+              </Pressable>
+            ))
+          ) : (
+            <Text style={styles.noMatchHint}>
+              No pools within {poolRadiusKm} km going your way — widen the search above, or start your own below.
+            </Text>
+          )}
 
           {/* Pool — share & save (leads: it's the flagship option) */}
           <Pressable
@@ -640,15 +853,28 @@ export default function Booking() {
                 <PoolIcon size={15} color={colors.primary} accent={colors.primary} />
                 <Text style={[styles.modeEyebrow, { color: colors.primary }]}>POOL</Text>
                 <View style={styles.saveBadge}>
-                  <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>
+                  <Text style={styles.saveBadgeText}>−{maxSavePct}% WHEN FULL</Text>
                 </View>
               </View>
-              <Text style={styles.modeCardTitle}>Ride Pool</Text>
-              <Text style={styles.modeCardSub}>Invite friends or nearby riders — everyone pays less as seats fill.</Text>
+              <Text style={styles.modeCardTitle}>
+                {nearbyPools.length > 0 ? 'Start your own pool' : 'Ride Pool'}
+              </Text>
+              <Text style={styles.modeCardSub}>
+                {nearbyPools.length > 0
+                  ? 'None of these suit you? Start your own — riders going your way can join it.'
+                  : "No one's going your way yet — start a pool and nearby riders can join and split the fare."}
+              </Text>
+              {/* Lead with the price they actually pay TODAY. Leading with the
+                  full-car per-seat price read as "this ride costs 140" when
+                  140 only happens if three strangers turn up. */}
               <View style={styles.modePriceRow}>
-                <Text style={[styles.modePrice, { color: colors.primary }]}>from PKR {poolFrom}</Text>
-                <Text style={styles.modePriceUnit}>/seat, full car</Text>
+                <Text style={styles.modePrice}>PKR {soloFrom}</Text>
+                <Text style={styles.modePriceUnit}>if nobody joins</Text>
               </View>
+              <Text style={styles.poolPriceCaveat}>
+                Starts at the full fare. It only drops — to as low as PKR {poolFrom} each — as riders
+                actually join.
+              </Text>
             </View>
             <View style={styles.modeCardArt}>
               <PoolBubbles />
@@ -683,12 +909,12 @@ export default function Booking() {
             <CashIcon size={15} color="#8f9694" accent="#8f9694" />
             <Text style={styles.modeFootText}>Pay cash · drivers bid on your offer · no surge tricks</Text>
           </View>
-        </View>
+
+          </ScrollView>
+        </DraggableSheet>
       ) : (
         /* ── STAGE 3: RIDE OPTIONS ── */
-        <View style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
-          <View style={styles.dragIndicator} />
-
+        <DraggableSheet style={[styles.bottomRideSheet, { paddingBottom: insets.bottom }]}>
           {/* Compact Solo ⟷ Pool switch — the big choice already happened */}
           <View style={styles.modeToggleRow}>
             <Pressable
@@ -716,7 +942,7 @@ export default function Booking() {
           </View>
           <Text style={styles.modeCaption}>
             {mode === 'pool'
-              ? `Share your ride & save up to ${maxSavePct}% — invite people right after booking`
+              ? 'You offer the full fare. It only drops as riders actually join.'
               : 'Private ride — the car is all yours'}
           </Text>
 
@@ -791,16 +1017,33 @@ export default function Booking() {
 
             {mode === 'pool' && (
               <>
+                {/* The one thing riders get wrong about pooling: the discount is
+                    earned, not promised. Say it before the tier table, in the
+                    rider's own numbers, so nobody reads the best-case row as
+                    the price of the ride. */}
+                <View style={styles.poolFareNotice}>
+                  <Text style={styles.poolFareNoticeTitle}>
+                    You pay PKR {fare} if nobody joins
+                  </Text>
+                  <Text style={styles.poolFareNoticeBody}>
+                    A pool starts as a normal ride at the full fare — exactly what Solo costs.
+                    Nothing is split in advance. Every rider who joins cuts everyone's share, and
+                    only then does your fare come down.
+                  </Text>
+                </View>
+
                 {/* Everyone's fare drops as riders join — you always offer the solo fare */}
-                <Text style={styles.sectionLabel}>FARE PER RIDER AS PEOPLE JOIN</Text>
+                <Text style={styles.sectionLabel}>WHAT YOU PAY, RIDER BY RIDER</Text>
                 <View style={styles.poolTierTable}>
-                  <View style={styles.poolTierRow}>
+                  <View style={[styles.poolTierRow, styles.poolTierRowNow]}>
                     <View style={styles.poolTierLeft}>
-                      <SoloIcon size={15} color={colors.muted} accent={colors.muted} />
-                      <Text style={styles.poolTierRiders}>Just you</Text>
+                      <SoloIcon size={15} color={colors.text} accent={colors.text} />
+                      <Text style={[styles.poolTierRiders, styles.poolTierRidersNow]}>Just you</Text>
                     </View>
                     <Text style={styles.poolTierFareSolo}>PKR {fare}</Text>
-                    <Text style={styles.poolTierSavingNone}>—</Text>
+                    <View style={styles.poolTierNowBadge}>
+                      <Text style={styles.poolTierNowText}>YOU START HERE</Text>
+                    </View>
                   </View>
                   {POOL_TIERS.map((tier, i) => {
                     const tierFare = poolFareFor(fare, tier.extra);
@@ -843,7 +1086,8 @@ export default function Booking() {
                   </Pressable>
                 </View>
                 <Text style={styles.poolShareHint}>
-                  You get an invite link right after booking — share it on WhatsApp so friends can join and everyone pays less.
+                  You get an invite link right after booking — share it on WhatsApp. The more people
+                  who actually join, the less each of you pays; with nobody joining it stays PKR {fare}.
                 </Text>
 
                 {/* Manual code entry — mirrors the code shown on the link page */}
@@ -872,7 +1116,7 @@ export default function Booking() {
                 {/* Join an existing pool instead */}
                 {nearbyPools.length > 0 && (
                   <>
-                    <Text style={styles.sectionLabel}>OR JOIN A POOL NEARBY</Text>
+                    <Text style={styles.sectionLabel}>OR JOIN A POOL GOING YOUR WAY</Text>
                     {nearbyPools.slice(0, 3).map((p) => (
                       <Pressable
                         key={p.code}
@@ -1033,11 +1277,12 @@ export default function Booking() {
             </Pressable>
             {mode === 'pool' && !loading ? (
               <Text style={styles.poolCtaCaption}>
-                PKR {fare} riding alone · drops to PKR {poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3)} each with a full car
+                You're booking at PKR {fare}. That's what you pay if you ride alone — it drops to
+                PKR {poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3)} each only with a full car.
               </Text>
             ) : null}
           </View>
-        </View>
+        </DraggableSheet>
       )}
 
       {/* Schedule-ride modal */}
@@ -1106,6 +1351,68 @@ export default function Booking() {
                 <Text style={styles.schedSaveText}>{schedSaving ? 'Saving…' : 'Save schedule'}</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Ride history — full past-trip list, opened from the header chip */}
+      <Modal
+        visible={historyOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHistoryOpen(false)}
+      >
+        <View style={styles.historyOverlay}>
+          <View style={styles.historySheet}>
+            <View style={styles.historyGrabber} />
+            <View style={styles.historyHeaderRow}>
+              <Text style={styles.historyHeaderTitle}>Your ride history</Text>
+              <Pressable onPress={() => setHistoryOpen(false)} hitSlop={12}>
+                <Text style={styles.historyClose}>✕</Text>
+              </Pressable>
+            </View>
+
+            {historyRows.length > 0 ? (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+                {historyRows.map((h) => (
+                  <Pressable
+                    key={h.id}
+                    style={styles.historyRow}
+                    onPress={() => {
+                      setHistoryOpen(false);
+                      selectLocation({ address: h.address, lat: h.lat, lng: h.lng });
+                    }}
+                  >
+                    <View style={styles.historyIconCircle}>
+                      <ClockIcon size={15} color={colors.muted} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyRowName} numberOfLines={1}>{h.address}</Text>
+                      <Text style={styles.historyRowMeta} numberOfLines={1}>
+                        {h.date}{h.fare ? ` · PKR ${h.fare}` : ''}{h.pool ? ' · Pool' : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyGo}>↺</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.historyEmpty}>
+                <Text style={styles.historyEmptyText}>
+                  No past trips yet. Book your first ride to see it here.
+                </Text>
+              </View>
+            )}
+
+            <Pressable
+              style={styles.historyAllLink}
+              onPress={() => {
+                setHistoryOpen(false);
+                router.push('/passenger/activity');
+              }}
+            >
+              <Text style={styles.historyAllLinkText}>View full request history →</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1207,6 +1514,38 @@ const styles = themed(() => StyleSheet.create({
     color: colors.muted,
     letterSpacing: 1,
   },
+  /* ── Pickup: device-location state next to the label ── */
+  pickupLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  pickupStatus: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.muted,
+    letterSpacing: 0.3,
+  },
+  pickupStatusOn: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.3,
+  },
+  useLocBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    backgroundColor: colors.glassLime,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    marginLeft: 6,
+  },
+  useLocBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.primary,
+  },
   textInput: {
     color: colors.text,
     fontSize: 15,
@@ -1292,6 +1631,113 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 14,
     color: colors.primary,
     fontWeight: '800',
+  },
+
+  /* ── History chip (right corner of the "Recent destinations" header) ── */
+  historyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(204,255,0,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  historyChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.3,
+  },
+
+  /* ── History modal ── */
+  historyOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  historySheet: {
+    maxHeight: '78%',
+    backgroundColor: colors.glassPanel,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    borderColor: colors.glassStrong,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
+  historyGrabber: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  historyHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  historyClose: {
+    fontSize: 18,
+    color: colors.muted,
+    fontWeight: '700',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  historyIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(204,255,0,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyRowName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  historyRowMeta: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  historyGo: { fontSize: 15, color: colors.primary, fontWeight: '800' },
+  historyEmpty: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  historyEmptyText: {
+    fontSize: 13,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 19,
+    paddingHorizontal: 20,
+  },
+  historyAllLink: {
+    marginTop: 14,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  historyAllLinkText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
   },
   emptyResults: {
     paddingHorizontal: 4,
@@ -1381,30 +1827,14 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.10)',
     marginLeft: 22,
   },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignSelf: 'center',
-    marginBottom: 10,
-  },
-
   /* ════════ Stage 2 — Solo / Pool chooser ════════ */
+  /* Height is the rider's, via DraggableSheet — this only skins the surface. */
   modeSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: 'rgba(11,13,12,0.97)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: 18,
-    paddingTop: 12,
     gap: 12,
   },
+  modeScrollBody: { gap: 12, paddingBottom: 2 },
   modeHeading: {
     fontSize: 21,
     fontWeight: '900',
@@ -1417,6 +1847,121 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '600',
     marginTop: -8,
     marginBottom: 2,
+  },
+
+  /* ── "Rides going your way" — pool matches on this route ── */
+  poolFindRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingVertical: 4,
+  },
+  poolFindText: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  goingYourWayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: -4,
+  },
+  goingYourWayLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.9,
+  },
+  goingYourWayCount: {
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 9,
+    backgroundColor: colors.glassLime,
+    alignItems: 'center',
+  },
+  goingYourWayCountText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+  radiusHint: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  radiusRow: {
+    flexDirection: 'row',
+    gap: 7,
+    paddingRight: 4,
+  },
+  radiusChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  radiusChipOn: {
+    backgroundColor: colors.glassLime,
+    borderColor: colors.glassLimeBorder,
+  },
+  radiusChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.muted,
+  },
+  radiusChipTextOn: { color: colors.primary },
+  noMatchHint: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  matchIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.glassLime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchDest: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  matchMeta: {
+    fontSize: 11,
+    color: colors.muted,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  matchFare: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  matchJoin: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary,
+    marginTop: 1,
   },
   modeCard: {
     flexDirection: 'row',
@@ -1452,6 +1997,7 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     marginLeft: 2,
+    flexShrink: 1, // never push the POOL eyebrow off a narrow card
   },
   saveBadgeText: {
     fontSize: 8.5,
@@ -1485,6 +2031,15 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: colors.muted,
+  },
+  /* The pool card's price is the FULL fare; this line is what stops that number
+     being mistaken for a promise of the shared price. */
+  poolPriceCaveat: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: '#a9b0ad',
+    marginTop: 2,
   },
   modeChip: {
     borderWidth: 1,
@@ -1535,18 +2090,9 @@ const styles = themed(() => StyleSheet.create({
   },
 
   /* ════════ Stage 3 — ride options ════════ */
+  /* Height is the rider's, via DraggableSheet — this only skins the surface. */
   bottomRideSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '58%',
     backgroundColor: 'rgba(11,13,12,0.97)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-    paddingTop: 10,
   },
   modeToggleRow: {
     flexDirection: 'row',
@@ -1726,6 +2272,30 @@ const styles = themed(() => StyleSheet.create({
   },
 
   // Pool tier table
+  /* ── "you pay full fare if nobody joins" notice ── */
+  poolFareNotice: {
+    marginHorizontal: 20,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 5,
+  },
+  poolFareNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  poolFareNoticeBody: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#a9b0ad',
+    fontWeight: '600',
+  },
+
   poolTierTable: {
     marginHorizontal: 20,
     backgroundColor: colors.surface,
@@ -1753,10 +2323,33 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '700',
     color: '#d8dcda',
   },
+  /* The "just you" row is the DEFAULT outcome, not a footnote — it is tinted
+     and labelled so it can't be skimmed past on the way to the cheapest row. */
+  poolTierRowNow: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
+    marginVertical: 2,
+    paddingHorizontal: 8,
+  },
+  poolTierRidersNow: { color: colors.text, fontWeight: '800' },
+  poolTierNowBadge: {
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  poolTierNowText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#d8dcda',
+    letterSpacing: 0.3,
+  },
+  /* Full fare — the amount actually charged when nobody joins, so it reads as
+     loud as the discounted rows below it rather than greyed out. */
   poolTierFareSolo: {
     fontSize: 13,
-    fontWeight: '800',
-    color: colors.muted,
+    fontWeight: '900',
+    color: colors.text,
     marginRight: 12,
   },
   poolTierFare: {
@@ -1764,12 +2357,6 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '900',
     color: colors.text,
     marginRight: 12,
-  },
-  poolTierSavingNone: {
-    fontSize: 12,
-    color: colors.muted,
-    width: 48,
-    textAlign: 'center',
   },
   poolTierSavingBadge: {
     width: 48,
@@ -2058,9 +2645,11 @@ const styles = themed(() => StyleSheet.create({
   },
   poolCtaCaption: {
     fontSize: 11,
+    lineHeight: 15,
     fontWeight: '700',
     color: '#8cc840',
     textAlign: 'center',
+    paddingHorizontal: 4,
   },
 
   // Schedule-ride modal

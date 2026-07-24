@@ -65,13 +65,19 @@ export default function RootLayout() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require('expo-notifications');
 
+    const routeFromData = (data: Record<string, string>) => {
+      if (data.screen === 'request-detail' && data.tripId) {
+        router.push(`/driver/request-detail/${data.tripId}`);
+      } else if (data.screen === 'pool-join' && data.code) {
+        // Daily-route pool alert → straight to the join screen for that pool.
+        router.push(`/passenger/pool-join/${data.code}`);
+      }
+    };
+
     // Handle tap on a notification that arrived while the app was in foreground/background
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response: { notification: { request: { content: { data: Record<string, string> } } } }) => {
-        const data = response.notification.request.content.data;
-        if (data.screen === 'request-detail' && data.tripId) {
-          router.push(`/driver/request-detail/${data.tripId}`);
-        }
+        routeFromData(response.notification.request.content.data);
       },
     );
 
@@ -79,10 +85,7 @@ export default function RootLayout() {
     Notifications.getLastNotificationResponseAsync().then(
       (response: { notification: { request: { content: { data: Record<string, string> } } } } | null) => {
         if (!response) return;
-        const data = response.notification.request.content.data;
-        if (data.screen === 'request-detail' && data.tripId) {
-          router.push(`/driver/request-detail/${data.tripId}`);
-        }
+        routeFromData(response.notification.request.content.data);
       },
     );
 

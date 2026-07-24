@@ -196,6 +196,34 @@ describe('visibility', () => {
     expect(res.pools).toHaveLength(0);
   });
 
+  it('keeps a public pool discoverable after a driver accepts it', async () => {
+    // A matched pool leaves the drivers' open feed but is still joinable until
+    // it departs — discovery must pick it up from the trip itself.
+    const { tripId } = await createPool(HOST);
+    await db().doc(`openRequests/${tripId}`).delete();
+    await db().doc(`trips/${tripId}`).set({ status: 'matched', fare: 400 }, { merge: true });
+
+    const res = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
+    );
+    const pools = res.pools as { code: string; riders: number; hasDriver: boolean; perSeatFareIfYouJoin: number }[];
+    expect(pools).toHaveLength(1);
+    expect(pools[0].hasDriver).toBe(true);
+    expect(pools[0].riders).toBe(1);
+    expect(pools[0].perSeatFareIfYouJoin).toBe(240); // 2 riders → 60% of 400
+  });
+
+  it('a private pool stays hidden even after a driver accepts it', async () => {
+    const { tripId } = await createPool(HOST, { poolVisibility: 'private' });
+    await db().doc(`openRequests/${tripId}`).delete();
+    await db().doc(`trips/${tripId}`).set({ status: 'matched' }, { merge: true });
+
+    const res = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
+    );
+    expect(res.pools).toHaveLength(0);
+  });
+
   it('setPoolVisibility is host-only and mirrors to the feed', async () => {
     const { tripId } = await createPool();
     await expect(setPoolVisibility.run(makeReq({ tripId, visibility: 'private' }, JOINER)))

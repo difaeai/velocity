@@ -135,8 +135,30 @@ export function RequestCard({
   const name = r.passengerName?.trim() || 'Passenger';
   const paymentLabel = r.paymentMethod === 'wallet' ? 'Wallet' : 'Cash';
 
+  // Pool vs solo is the single most important thing about a request for the
+  // driver — a pool means several pickups and several drop-offs on one fare —
+  // so it is called out on a banner above the card, not buried in the chips.
+  const isPool = r.pool === true;
+  const poolRiders = r.poolRiders ?? 1;
+  const poolCap = r.maxPoolRiders ?? 4;
+
   return (
     <Animated.View style={[styles.card, { transform: [{ translateX: dx }] }]} {...pan.panHandlers}>
+      {isPool ? (
+        <View style={styles.poolBanner}>
+          <Text style={styles.poolBannerTag}>POOL</Text>
+          <Text style={styles.poolBannerTxt} numberOfLines={1}>
+            {poolRiders} rider{poolRiders === 1 ? '' : 's'} now, up to {poolCap} · several pickups &amp; drop-offs
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.soloBanner}>
+          <Text style={styles.soloBannerTag}>SOLO</Text>
+          <Text style={styles.soloBannerTxt} numberOfLines={1}>
+            One pickup, one drop-off
+          </Text>
+        </View>
+      )}
       <Pressable style={styles.cardInner} onPress={onOpen} disabled={locked}>
         {/* Passenger */}
         <View style={styles.who}>
@@ -202,6 +224,58 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: colors.background,
   },
   cardInner: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 12, gap: 10 },
+
+  // ── Pool / solo banner ──
+  poolBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  poolBannerTag: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000',
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    letterSpacing: 0.6,
+    overflow: 'hidden',
+  },
+  poolBannerTxt: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  soloBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  soloBannerTag: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: colors.text,
+    backgroundColor: colors.glassStrong,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    letterSpacing: 0.6,
+    overflow: 'hidden',
+  },
+  soloBannerTxt: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+  },
 
   // ── Passenger column ──
   who:    { width: 62, alignItems: 'center', gap: 2 },

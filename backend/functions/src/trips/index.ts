@@ -34,6 +34,7 @@ import {
   splitFeeAgainstBalance,
 } from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
+import { notifyDailyRouteMatches } from '../dailyRoutes';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -237,6 +238,9 @@ export const createTrip = onCall(async (req) => {
             poolVisibility,
             shareCode,
             poolRiders: 1,
+            // Mirrored so the driver feed can say "1 rider now, up to 4"
+            // without hard-coding the cap on the client.
+            maxPoolRiders: MAX_POOL_RIDERS,
             poolPerSeatFare: finalFare,
             poolGenders: {
               male:   data.passengerGender === 'male'   ? 1 : 0,
@@ -269,6 +273,19 @@ export const createTrip = onCall(async (req) => {
     data.pool ?? false,
     data.rideType,
   ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
+
+  // Public pools go out to riders whose saved daily route matches this one on
+  // both ends, so they can choose to hop in — best-effort, never blocks.
+  if (isPool && poolVisibility === 'public') {
+    notifyDailyRouteMatches({
+      tripId:  tripRef.id,
+      hostUid: ctx.uid,
+      shareCode,
+      pickup:  { lat: data.pickup.lat, lng: data.pickup.lng },
+      dropoff: { lat: data.dropoff.lat, lng: data.dropoff.lng },
+      rideType: data.rideType,
+    }).catch((err) => logger.error('Daily-route alerts failed', { tripId: tripRef.id, err }));
+  }
 
   return { ok: true, tripId: tripRef.id, shareCode };
 });

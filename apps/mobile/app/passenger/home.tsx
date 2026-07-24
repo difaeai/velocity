@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import {
   Alert,
   Dimensions,
@@ -17,21 +17,17 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
-import { usePassengerTrips } from '../../src/hooks/passenger';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
-import { api, type NearbyPublicPool } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { getLanguage, setLanguage, type Language } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
+import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
-import { NearbyPoolCard } from '../../src/ui/NearbyPoolCard';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
-import { PoolIcon } from '../../src/ui/RideIcons';
 import {
-  ClockIcon,
   CourierIcon,
   IntercityIcon,
   SearchIcon,
@@ -46,22 +42,8 @@ export default function PassengerHome() {
   const walletLabel = useWalletLabel('Wallet & payments');
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
-  const { trips } = usePassengerTrips(user?.uid);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [nearbyPools, setNearbyPools] = useState<NearbyPublicPool[]>([]);
-
-  // Public pools near the rider — a live preview of who's already heading out,
-  // so pooling is discoverable from the home screen and not buried in booking.
-  useEffect(() => {
-    if (!coords) return;
-    let alive = true;
-    api.getNearbyPublicPoolTrips({ lat: coords.lat, lng: coords.lng, radiusKm: 5 })
-      .then((r) => { if (alive) setNearbyPools(r.pools); })
-      .catch(() => { /* discovery is best-effort */ });
-    return () => { alive = false; };
-  }, [coords?.lat, coords?.lng]);
 
   // Register FCM push token on first load
   useEffect(() => {
@@ -87,30 +69,6 @@ export default function PassengerHome() {
   }, [user?.uid]);
 
   const pickupLabel = currentAddress ?? (coords ? 'Current location' : 'Set pickup location');
-
-  // History rows — every past trip that reached a real destination, newest
-  // first (the trips hook already sorts). Names/phones never appear here; this
-  // is the rider's own trip list.
-  const historyRows = useMemo(() => {
-    return trips
-      .map((t) => {
-        const address = t.dropoff?.address?.trim();
-        if (!address) return null;
-        const seconds = (t as { createdAt?: { seconds?: number } }).createdAt?.seconds;
-        const date = seconds
-          ? new Date(seconds * 1000).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })
-          : '';
-        return {
-          id: t.id,
-          address,
-          date,
-          fare: t.fare ?? t.offeredFare ?? null,
-          pool: !!t.pool,
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .slice(0, 30);
-  }, [trips]);
 
   const navTo = (path: string) => {
     setDrawerOpen(false);
@@ -210,71 +168,29 @@ export default function PassengerHome() {
         </View>
       </SafeAreaView>
 
-      {/* 3. Bottom Booking Sheet */}
-      <ScrollView
-        style={styles.bottomSheet}
-        contentContainerStyle={styles.bottomSheetContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.dragIndicator} />
+      {/* 3. Bottom Booking Sheet — drag the grabber to resize it, or tap the
+             grabber to swap between this height and (near) full screen. */}
+      <DraggableSheet style={styles.bottomSheet}>
+        <ScrollView
+          style={styles.sheetScroll}
+          contentContainerStyle={styles.bottomSheetContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
-        {/* ── Where to? — the primary action, so it leads the sheet ── */}
+        {/* ── Where to? — the ONE way into a city ride.
+             Pool discovery ("rides going your way") used to sit here as a second
+             entry point doing the same job; it now lives inside this flow, right
+             after the destination is set, so there is only one path to follow. ── */}
         <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
           <View style={styles.searchHeroIcon}>
             <SearchIcon size={20} color="#0b0d0c" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.searchHeroTitle}>Where to?</Text>
-            <Text style={styles.searchHeroSub}>Name your fare · drivers bid · pay cash</Text>
+            <Text style={styles.searchHeroSub}>Join a pool going your way — or ride solo</Text>
           </View>
           <Text style={styles.searchHeroArrow}>→</Text>
-        </Pressable>
-
-        {/* History — every past destination now lives behind this button
-             instead of crowding the sheet with two stale rows. */}
-        <Pressable style={styles.historyButton} onPress={() => setHistoryOpen(true)}>
-          <View style={styles.historyIconCircle}>
-            <ClockIcon size={16} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.historyButtonTitle}>History</Text>
-            <Text style={styles.historyButtonSub}>Your past trips & destinations</Text>
-          </View>
-          <Text style={styles.historyGo}>→</Text>
-        </Pressable>
-
-        {/* ── Pools near you — who's already heading out within 5 km ── */}
-        <View style={styles.poolsHeaderRow}>
-          <Text style={styles.sectionLabel}>Pools near you</Text>
-          <View style={styles.radiusChip}>
-            <Text style={styles.radiusChipText}>within 5 km</Text>
-          </View>
-        </View>
-        {nearbyPools.length > 0 ? (
-          <View style={{ gap: 10 }}>
-            {nearbyPools.slice(0, 2).map((p) => (
-              <NearbyPoolCard
-                key={p.code}
-                pool={p}
-                onJoin={() =>
-                  router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])
-                }
-              />
-            ))}
-          </View>
-        ) : (
-          <View style={styles.poolsEmpty}>
-            <PoolIcon size={22} color={colors.primary} accent={colors.primary} />
-            <Text style={styles.poolsEmptyText}>
-              No pools nearby yet — search your route to find riders going your way or start one.
-            </Text>
-          </View>
-        )}
-        <Pressable style={styles.findRidesButton} onPress={() => router.push('/passenger/find-pools')}>
-          <PoolIcon size={17} color="#0b0d0c" accent="#0b0d0c" />
-          <Text style={styles.findRidesButtonText}>Find rides going your way</Text>
-          <Text style={styles.findRidesArrow}>→</Text>
         </Pressable>
 
         {/* ── Services — city rides live in "Where to?", so only the two
@@ -302,7 +218,8 @@ export default function PassengerHome() {
         <EarnCard onPress={() => router.push('/passenger/earn')} />
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+        </ScrollView>
+      </DraggableSheet>
 
       {/* 4. Custom Slide-out Side Drawer Menu Overlay */}
       <Modal
@@ -372,6 +289,11 @@ export default function PassengerHome() {
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/saved-places')}>
                     <Text style={styles.menuItemIcon}>🔖</Text>
                     <Text style={styles.menuItemText}>Saved places</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/daily-routes')}>
+                    <Text style={styles.menuItemIcon}>🛣️</Text>
+                    <Text style={styles.menuItemText}>My routes</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
@@ -458,67 +380,6 @@ export default function PassengerHome() {
         </Pressable>
       </Modal>
 
-      {/* 6. Ride history — every past destination, moved out of the sheet */}
-      <Modal
-        visible={historyOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setHistoryOpen(false)}
-      >
-        <View style={styles.historyOverlay}>
-          <View style={styles.historySheet}>
-            <View style={styles.historyGrabber} />
-            <View style={styles.historyHeaderRow}>
-              <Text style={styles.historyHeaderTitle}>Your ride history</Text>
-              <Pressable onPress={() => setHistoryOpen(false)} hitSlop={12}>
-                <Text style={styles.historyClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            {historyRows.length > 0 ? (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
-                {historyRows.map((h) => (
-                  <Pressable
-                    key={h.id}
-                    style={styles.historyRow}
-                    onPress={() => {
-                      setHistoryOpen(false);
-                      router.push('/passenger/booking');
-                    }}
-                  >
-                    <View style={styles.historyIconCircle}>
-                      <ClockIcon size={15} color={colors.muted} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.historyRowName} numberOfLines={1}>{h.address}</Text>
-                      <Text style={styles.historyRowMeta} numberOfLines={1}>
-                        {h.date}{h.fare ? ` · PKR ${h.fare}` : ''}{h.pool ? ' · Pool' : ''}
-                      </Text>
-                    </View>
-                    <Text style={styles.historyGo}>↺</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.historyEmpty}>
-                <Text style={styles.historyEmptyText}>
-                  No past trips yet. Book your first ride to see it here.
-                </Text>
-              </View>
-            )}
-
-            <Pressable
-              style={styles.historyAllLink}
-              onPress={() => {
-                setHistoryOpen(false);
-                router.push('/passenger/activity');
-              }}
-            >
-              <Text style={styles.historyAllLinkText}>View full request history →</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -744,31 +605,20 @@ const styles = themed(() => StyleSheet.create({
     borderRadius: 4.5,
     backgroundColor: '#ef4444',
   },
+  /* Height now comes from DraggableSheet (the user's drag decides it) — this
+     only skins the surface. */
   bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '58%',
     backgroundColor: 'rgba(11,13,12,0.96)',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    borderTopWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
   },
+  sheetScroll: { flex: 1 },
   bottomSheetContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
-    paddingTop: 8,
+    paddingTop: 4,
     gap: 12,
-  },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignSelf: 'center',
-    marginBottom: 6,
   },
   sheetTitle: {
     fontSize: 18,
@@ -856,173 +706,6 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 17,
     color: colors.primary,
     fontWeight: '800',
-  },
-
-  /* ── History button ── */
-  historyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  historyButtonTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  historyButtonSub: {
-    fontSize: 11,
-    color: '#8f9694',
-    marginTop: 1,
-  },
-  historyIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(204,255,0,0.10)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  historyGo: { fontSize: 15, color: colors.primary, fontWeight: '800' },
-
-  /* ── Pools near you ── */
-  poolsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  radiusChip: {
-    backgroundColor: 'rgba(204,255,0,0.10)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  radiusChipText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: colors.primary,
-  },
-  poolsEmpty: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 14,
-  },
-  poolsEmptyText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#8f9694',
-    lineHeight: 17,
-  },
-  findRidesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
-  },
-  findRidesButtonText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0b0d0c',
-  },
-  findRidesArrow: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#0b0d0c',
-  },
-
-  /* ── History modal ── */
-  historyOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  historySheet: {
-    maxHeight: '78%',
-    backgroundColor: colors.glassPanel,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderTopWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 24,
-  },
-  historyGrabber: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  historyHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  historyHeaderTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: colors.text,
-  },
-  historyClose: {
-    fontSize: 18,
-    color: colors.muted,
-    fontWeight: '700',
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  historyRowName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  historyRowMeta: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  historyEmpty: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  historyEmptyText: {
-    fontSize: 13,
-    color: colors.muted,
-    textAlign: 'center',
-    lineHeight: 19,
-    paddingHorizontal: 20,
-  },
-  historyAllLink: {
-    marginTop: 14,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  historyAllLinkText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.primary,
   },
 
   /* ── Services ── */

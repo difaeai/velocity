@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 
@@ -32,6 +32,7 @@ import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { formatDistance } from '../../../src/lib/geo';
 import { timeAgo } from '../../../src/lib/timeAgo';
+import { DraggableSheet } from '../../../src/ui/DraggableSheet';
 import { RIDE_TYPE_LABELS } from '../../../src/domain/types';
 import { RequestRouteMap } from '../../../src/ui/RequestRouteMap';
 import { ReportRequestModal } from '../../../src/ui/ReportRequestModal';
@@ -46,6 +47,9 @@ export default function RequestDetailScreen() {
   const { user, signOut } = useAuth();
   const profile = useDriverProfile(user?.uid);
   const { coords } = useCurrentLocation();
+  // The sheet is absolutely positioned, so edge-to-edge Android would draw its
+  // last row behind the navigation bar without this.
+  const insets = useSafeAreaInsets();
 
   const requests = useOpenRequests(true, coords?.lat, coords?.lng);
   const request = requests.find((r) => r.tripId === tripId);
@@ -194,13 +198,32 @@ export default function RequestDetailScreen() {
         </Pressable>
       </SafeAreaView>
 
-      {/* ── Request sheet ── */}
-      <SafeAreaView style={styles.sheetSafe} edges={['bottom']}>
+      {/* ── Request sheet — drag the grabber to see more of the route map or
+             more of the request; tap it to fill the screen. ── */}
+      <DraggableSheet style={styles.sheet}>
         <ScrollView
-          style={styles.sheet}
-          contentContainerStyle={styles.sheetBody}
+          style={styles.sheetScroll}
+          contentContainerStyle={[styles.sheetBody, { paddingBottom: 16 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
         >
+          {/* What kind of job this is, before anything else: a pool means the
+              car makes several pickups and several drop-offs, a solo is one of
+              each. Same fare figure, very different drive. */}
+          {request.pool === true ? (
+            <View style={[styles.jobBanner, styles.jobBannerPool]}>
+              <Text style={styles.jobBannerTag}>POOL RIDE</Text>
+              <Text style={styles.jobBannerTxt}>
+                {request.poolRiders ?? 1} rider{(request.poolRiders ?? 1) === 1 ? '' : 's'} now, up to{' '}
+                {request.maxPoolRiders ?? 4} — several pickups and several drop-offs on this one fare.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.jobBanner}>
+              <Text style={[styles.jobBannerTag, styles.jobBannerTagSolo]}>SOLO RIDE</Text>
+              <Text style={styles.jobBannerTxt}>One pickup, one drop-off — no other riders.</Text>
+            </View>
+          )}
+
           {/* Passenger + fare */}
           <View style={styles.topRow}>
             <View style={styles.who}>
@@ -298,7 +321,7 @@ export default function RequestDetailScreen() {
             <Text style={styles.closeTxt}>Close</Text>
           </Pressable>
         </ScrollView>
-      </SafeAreaView>
+      </DraggableSheet>
 
       {/* Custom fare */}
       <Modal visible={customOpen} transparent animationType="fade" onRequestClose={() => setCustomOpen(false)}>
@@ -391,13 +414,46 @@ const styles = themed(() => StyleSheet.create({
   moreTxt: { fontSize: 15, fontWeight: '900', color: '#fff', letterSpacing: 1 },
 
   // ── Sheet ──
-  sheetSafe: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '62%' },
+  /* Height is the driver's, via DraggableSheet — this only skins the surface. */
   sheet: {
     backgroundColor: '#1b1e1d',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
   },
+  sheetScroll: { flex: 1 },
   sheetBody: { padding: 16, gap: 14 },
+
+  /* ── Pool / solo job banner ── */
+  jobBanner: {
+    gap: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  jobBannerPool: {
+    borderColor: colors.glassLimeBorder,
+    backgroundColor: colors.glassLime,
+  },
+  jobBannerTag: {
+    alignSelf: 'flex-start',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: '#000',
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  jobBannerTagSolo: {
+    color: colors.text,
+    backgroundColor: colors.glassStrong,
+  },
+  jobBannerTxt: { fontSize: 12, fontWeight: '600', color: colors.text, lineHeight: 17 },
 
   topRow: { flexDirection: 'row', gap: 12 },
   who: { width: 66, alignItems: 'center', gap: 2 },

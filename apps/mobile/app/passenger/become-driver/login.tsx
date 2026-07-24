@@ -121,13 +121,32 @@ export default function DriverLogin() {
     }
   }
 
-  async function verifyOtp() {
+  // A ref, not the `verifying` state: two calls landing in the same render batch
+  // (the 6th digit and the keyboard's Done key) would both read the stale
+  // `false` and fire two confirms against one code.
+  const verifyingRef = useRef(false);
+
+  /**
+   * Typing (or SMS-autofilling) the last digit verifies on its own. The code is
+   * passed explicitly by the change handler because `otp` state has not
+   * re-rendered yet at that point.
+   */
+  function onOtpChange(raw: string) {
+    const next = raw.replace(/\D/g, '').slice(0, 6);
+    setOtp(next);
+    if (next.length === 6) verifyOtp(next);
+  }
+
+  async function verifyOtp(codeArg?: string) {
+    const code = codeArg ?? otp;
+    if (verifyingRef.current) return;
     setError(null);
     if (!confirmation) { setError('Please request OTP first.'); return; }
-    if (otp.length !== 6) { setError('Enter the 6-digit code.'); return; }
+    if (code.length !== 6) { setError('Enter the 6-digit code.'); return; }
+    verifyingRef.current = true;
     setVerifying(true);
     try {
-      const cred = await confirmation.confirm(otp);
+      const cred = await confirmation.confirm(code);
 
       // Decide where to send the verified driver based on whether they already
       // have a driver record:
@@ -159,6 +178,7 @@ export default function DriverLogin() {
       const isFirebase = e instanceof FirebaseError;
       setError(isFirebase ? 'Incorrect code — please try again.' : 'Sign-in failed — please try again.');
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
     }
   }
@@ -252,21 +272,25 @@ export default function DriverLogin() {
               <TextInput
                 ref={otpRef}
                 value={otp}
-                onChangeText={setOtp}
+                onChangeText={onOtpChange}
                 keyboardType="number-pad"
                 placeholder="• • • • • •"
                 placeholderTextColor={colors.muted}
                 style={styles.otpInput}
                 maxLength={6}
+                autoComplete="sms-otp"
+                textContentType="oneTimeCode"
                 returnKeyType="done"
-                onSubmitEditing={verifyOtp}
+                onSubmitEditing={() => verifyOtp()}
               />
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
+              {/* Verification starts on the last digit — this is the retry
+                  affordance after a wrong code, not the normal path. */}
               <PrimaryButton
-                label="Verify & continue"
-                onPress={verifyOtp}
+                label={verifying ? 'Verifying…' : 'Verify & continue'}
+                onPress={() => verifyOtp()}
                 loading={verifying}
               />
 

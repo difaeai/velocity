@@ -106,6 +106,8 @@ export interface NearbyPublicPool {
   seatsLeft: number;
   perSeatFareIfYouJoin: number;
   distanceKm: number;
+  /** A driver has already accepted this pool — it's on the way, not waiting. */
+  hasDriver?: boolean;
 }
 
 /**

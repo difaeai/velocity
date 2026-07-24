@@ -231,14 +231,35 @@ export const setPoolVisibility = onCall(async (req) => {
 const nearbySchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  radiusKm: z.number().min(0.5).max(15).default(5),
+  // The rider picks how far they're willing to walk/wait for a pool, so the
+  // radius is theirs to set — 25 km is the ceiling (a whole metro area).
+  radiusKm: z.number().min(0.5).max(25).default(5),
   // Optional destination gate: when the rider is searching for a pool heading
   // their way, only surface pools whose drop-off lands within destRadiusKm of
   // the point they typed. Omit all three and it's plain "pools near me".
   destLat: z.number().min(-90).max(90).optional(),
   destLng: z.number().min(-180).max(180).optional(),
-  destRadiusKm: z.number().min(0.5).max(15).default(5),
+  destRadiusKm: z.number().min(0.5).max(25).default(5),
 });
+
+/** Pools that already have a driver but have not departed — still joinable. */
+const MATCHED_JOINABLE: TripStatus[] = ['matched', 'arriving', 'arrived'];
+
+/** One row of the discovery feed. Carries areas and counts, never identities. */
+interface PoolFeedRow {
+  code: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  rideType: string;
+  riders: number;
+  males: number;
+  females: number;
+  seatsLeft: number;
+  perSeatFareIfYouJoin: number;
+  distanceKm: number;
+  /** True when a driver has already accepted — the ride is on its way. */
+  hasDriver: boolean;
+}
 
 /**
  * Public pool trips near the caller that still have seats — shown on the
@@ -247,6 +268,14 @@ const nearbySchema = z.object({
  * With destLat/destLng the feed narrows to pools going the rider's way: the
  * pickup must be within radiusKm of the rider and the drop-off within
  * destRadiusKm of where they want to go.
+ *
+ * "Public" means public to everyone, so the feed spans BOTH sources a joinable
+ * pool can live in:
+ *   • openRequests — the driver feed, which exists only while status is
+ *     'requested' and is deleted the moment a driver accepts;
+ *   • trips        — pools that already have a driver but haven't departed.
+ * Reading only the first made a public pool disappear from discovery as soon as
+ * a driver accepted it, even though riders may still join until it departs.
  */
 export const getNearbyPublicPoolTrips = onCall(async (req) => {
   const ctx = requireAuth(req);
@@ -259,37 +288,46 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const ownTripId = userSnap.get('activeTripId') as string | undefined;
 
-  const openSnap = await db.collection('openRequests')
-    .where('pool', '==', true)
-    .limit(100)
-    .get();
+  const pools: PoolFeedRow[] = [];
+  const seenCodes = new Set<string>();
 
-  const pools: object[] = [];
-  for (const doc of openSnap.docs) {
-    const d = doc.data();
-    if (doc.id === ownTripId) continue;
-    if ((d.poolVisibility ?? 'public') !== 'public') continue;
-    if (!d.shareCode) continue; // legacy pool requests without invite codes
-    const riders = (d.poolRiders as number | undefined) ?? 1;
-    if (riders >= MAX_POOL_RIDERS) continue;
+  /**
+   * Gate one candidate pool and, if it passes, shape it into a feed row.
+   * Never exposes rider identities — only areas, counts, seats and fare.
+   */
+  const consider = (
+    docId: string,
+    d: FirebaseFirestore.DocumentData,
+    riders: number,
+    soloFare: number,
+    hasDriver: boolean,
+  ) => {
+    if (docId === ownTripId) return;
+    if ((d.poolVisibility ?? 'public') !== 'public') return;
+    const code = d.shareCode as string | undefined;
+    if (!code || seenCodes.has(code)) return; // legacy pools have no invite code
+    if (riders >= MAX_POOL_RIDERS) return;
+    if (!(soloFare > 0)) return;
+
     const pLat = d.pickup?.lat as number | undefined;
     const pLng = d.pickup?.lng as number | undefined;
-    if (typeof pLat !== 'number' || typeof pLng !== 'number') continue;
+    if (typeof pLat !== 'number' || typeof pLng !== 'number') return;
     const distanceKm = haversineKm(lat, lng, pLat, pLng);
-    if (distanceKm > radiusKm) continue;
+    if (distanceKm > radiusKm) return;
 
     // When searching by destination, drop pools that aren't heading there.
     if (filterByDest) {
       const dLat = d.dropoff?.lat as number | undefined;
       const dLng = d.dropoff?.lng as number | undefined;
-      if (typeof dLat !== 'number' || typeof dLng !== 'number') continue;
-      if (haversineKm(destLat, destLng, dLat, dLng) > destRadiusKm) continue;
+      if (typeof dLat !== 'number' || typeof dLng !== 'number') return;
+      if (haversineKm(destLat, destLng, dLat, dLng) > destRadiusKm) return;
     }
 
     const genders = (d.poolGenders as { male?: number; female?: number } | undefined) ?? {};
 
+    seenCodes.add(code);
     pools.push({
-      code: d.shareCode as string,
+      code,
       pickupAddress:  d.pickup?.address ?? 'Nearby',
       dropoffAddress: d.dropoff?.address ?? 'Destination',
       rideType: d.rideType as string,
@@ -297,11 +335,41 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
       males:   genders.male   ?? 0,
       females: genders.female ?? 0,
       seatsLeft: MAX_POOL_RIDERS - riders,
-      perSeatFareIfYouJoin: poolPerSeatFare(d.offeredFare as number, riders + 1),
+      perSeatFareIfYouJoin: poolPerSeatFare(soloFare, riders + 1),
       distanceKm: Math.round(distanceKm * 10) / 10,
+      // Lets the joiner see they'd be hopping onto a ride that already has a
+      // driver on the way, rather than one still waiting for bids.
+      hasDriver,
     });
+  };
+
+  const openSnap = await db.collection('openRequests')
+    .where('pool', '==', true)
+    .limit(100)
+    .get();
+  for (const doc of openSnap.docs) {
+    const d = doc.data();
+    consider(doc.id, d, (d.poolRiders as number | undefined) ?? 1, d.offeredFare as number, false);
   }
 
-  pools.sort((a, b) => (a as { distanceKm: number }).distanceKm - (b as { distanceKm: number }).distanceKm);
+  // Matched-but-not-departed pools. Best-effort: if the composite index is not
+  // in place yet, discovery still returns the open requests above.
+  try {
+    const matchedSnap = await db.collection('trips')
+      .where('pool', '==', true)
+      .where('status', 'in', MATCHED_JOINABLE)
+      .limit(100)
+      .get();
+    for (const doc of matchedSnap.docs) {
+      const d = doc.data();
+      const members = (d.poolMembers as string[] | undefined) ?? [d.passengerId as string];
+      const soloFare = (d.fare as number | null) ?? (d.offeredFare as number);
+      consider(doc.id, d, members.length, soloFare, true);
+    }
+  } catch (err) {
+    logger.warn('getNearbyPublicPoolTrips: matched-pool scan skipped', err);
+  }
+
+  pools.sort((a, b) => a.distanceKm - b.distanceKm);
   return { pools: pools.slice(0, 20) };
 });

@@ -72,6 +72,17 @@ export interface OpenRequest {
   dropoff?: { address?: string; lat?: number; lng?: number };
   createdAt?: { seconds: number };
   /**
+   * Pool request: more riders can join before (and during) the ride, so the car
+   * makes several pickups and several drop-offs. Solo requests are one pickup,
+   * one drop-off. The driver's feed has to make that difference obvious — the
+   * two are very different jobs for the same fare figure.
+   */
+  pool?: boolean;
+  /** Riders already on the pool (the host counts as one). */
+  poolRiders?: number;
+  /** Seat cap for the pool — how many riders it can grow to. */
+  maxPoolRiders?: number;
+  /**
    * Metres from the driver to the pickup point, computed on the client from the
    * driver's live coordinates. Undefined until the driver's location is known.
    */

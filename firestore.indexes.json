@@ -503,6 +503,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "pool",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "trips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "driverId",
           "order": "ASCENDING"
         },

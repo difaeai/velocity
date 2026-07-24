@@ -26,6 +26,7 @@ import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
 import { useCancellationSettings } from '../../../src/hooks/driver';
 import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
+import { DraggableSheet } from '../../../src/ui/DraggableSheet';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
@@ -326,10 +327,9 @@ export default function TripScreen() {
           </View>
         </SafeAreaView>
 
-        {/* 3. Bottom sheet — offers first, everything else below */}
-        <View style={styles.bottomBiddingSheet}>
-          <View style={styles.dragIndicator} />
-
+        {/* 3. Bottom sheet — offers first, everything else below. Drag the
+             grabber to trade map for offers, or tap it to fill the screen. */}
+        <DraggableSheet style={styles.bottomBiddingSheet}>
           <View style={styles.priorityBanner}>
             <Text style={styles.priorityText}>
               {pendingBids.length > 0 ? 'Driver offers' : 'Finding you a driver…'}
@@ -492,7 +492,7 @@ export default function TripScreen() {
               You've joined this pool — you'll ride along once the host picks a driver.
             </Text>
           )}
-        </View>
+        </DraggableSheet>
       </View>
     );
   }
@@ -977,26 +977,12 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
   },
+  /* Height is the rider's, via DraggableSheet — this only skins the surface. */
   bottomBiddingSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '50%',
     backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderWidth: 1,
     borderColor: colors.glassStrong,
-    paddingTop: 10,
-  },
-  dragIndicator: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.glassStrong,
-    alignSelf: 'center',
-    marginBottom: 10,
   },
   priorityBanner: {
     flexDirection: 'row',

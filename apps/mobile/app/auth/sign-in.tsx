@@ -191,19 +191,40 @@ export default function SignIn() {
     }
   }
 
-  async function verifyOtp() {
-    if (verifying) return;
+  // A ref, not the `verifying` state: two calls landing in the same render batch
+  // (the 6th digit and the keyboard's Done key) would both read the stale
+  // `false` and fire two confirms against one code.
+  const verifyingRef = useRef(false);
+
+  async function verifyOtp(codeArg?: string) {
+    const code = codeArg ?? otp;
+    if (verifyingRef.current) return;
     setError(null);
     if (!confirmation) { setError('Please request a code first.'); return; }
-    if (otp.length !== OTP_LENGTH) { setError('Enter the 6-digit code.'); return; }
+    if (code.length !== OTP_LENGTH) { setError('Enter the 6-digit code.'); return; }
+    verifyingRef.current = true;
     setVerifying(true);
     try {
-      await confirmation.confirm(otp);
+      await confirmation.confirm(code);
+      Keyboard.dismiss();
     } catch {
       setError('Incorrect code — please try again.');
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
     }
+  }
+
+  /**
+   * Typing (or SMS-autofilling) the last digit verifies on its own — nobody
+   * should have to hunt for a button after entering a code they were just told.
+   * The code is passed explicitly because `otp` state has not re-rendered yet at
+   * this point. Verify stays on screen as the retry affordance after a bad code.
+   */
+  function onOtpChange(raw: string) {
+    const next = raw.replace(/\D/g, '').slice(0, OTP_LENGTH);
+    setOtp(next);
+    if (next.length === OTP_LENGTH) verifyOtp(next);
   }
 
   function goBack() {
@@ -323,7 +344,7 @@ export default function SignIn() {
         <TextInput
           ref={otpRef}
           value={otp}
-          onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, OTP_LENGTH))}
+          onChangeText={onOtpChange}
           keyboardType="number-pad"
           maxLength={OTP_LENGTH}
           style={styles.hiddenInput}
@@ -331,7 +352,7 @@ export default function SignIn() {
           autoComplete="sms-otp"
           textContentType="oneTimeCode"
           returnKeyType="done"
-          onSubmitEditing={verifyOtp}
+          onSubmitEditing={() => verifyOtp()}
         />
       </Pressable>
 
@@ -354,16 +375,22 @@ export default function SignIn() {
       <View style={styles.autoReadCard}>
         <SmsIcon />
         <View style={styles.flex}>
-          <Text style={styles.autoReadTitle}>Auto-reading SMS</Text>
-          <Text style={styles.autoReadSub}>We'll automatically detect the code once it arrives.</Text>
+          <Text style={styles.autoReadTitle}>{verifying ? 'Verifying your code…' : 'Auto-reading SMS'}</Text>
+          <Text style={styles.autoReadSub}>
+            {verifying
+              ? 'Hang on — checking the code you entered.'
+              : "We'll detect the code once it arrives and verify it for you."}
+          </Text>
         </View>
       </View>
 
       <View style={styles.flexSpacer} />
 
+      {/* Verification starts on the last digit — this is the retry affordance
+          for a code that came back wrong, not the normal way through. */}
       <Pressable
         style={[styles.primaryBtn, verifying && { opacity: 0.7 }]}
-        onPress={verifyOtp}
+        onPress={() => verifyOtp()}
         disabled={verifying}
       >
         {verifying ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Verify</Text>}
