@@ -16,6 +16,7 @@ import { api, type PoolTripByCode } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
+import { poolGenderSummary } from '../../../src/lib/genderAccess';
 
 export default function PoolJoinScreen() {
   const params = useLocalSearchParams<{ code: string }>();
@@ -113,6 +114,12 @@ export default function PoolJoinScreen() {
               </Text>
               <Text style={styles.seatsLabel}>
                 {info.riders}/{info.maxRiders} riders · {info.seatsLeft} seat{info.seatsLeft === 1 ? '' : 's'} left
+              </Text>
+              {/* Gender make-up of the car, counts only. The decision a rider
+                  makes on this screen is "am I comfortable in this car", so it
+                  belongs next to the seat count, not buried below the fare. */}
+              <Text style={styles.seatsGender}>
+                {poolGenderSummary(info.males, info.females)}
               </Text>
             </View>
 
@@ -225,6 +232,7 @@ const styles = themed(() => StyleSheet.create({
   seatsRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
   seatsTxt:   { fontSize: 16, letterSpacing: 2 },
   seatsLabel: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  seatsGender: { fontSize: 12, fontWeight: '800', color: colors.primary, marginTop: 4 },
 
   fareBox: {
     backgroundColor: colors.glassLime,

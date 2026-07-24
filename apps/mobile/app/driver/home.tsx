@@ -532,6 +532,16 @@ export default function DriverHome() {
                     Set your route and we'll show you pool riders standing on it.
                   </Text>
                 </Pressable>
+                {/* This feed is solo + pool trips mixed together. Passengers who
+                    asked for a shared ride and named their own fare live in a
+                    separate queue — surfaced here because a driver who never
+                    opens the drawer would otherwise never find that work. */}
+                <Pressable style={styles.poolCta} onPress={() => router.push('/driver/pool-requests')}>
+                  <Text style={styles.routeCtaTitle}>👥 Pool ride requests</Text>
+                  <Text style={styles.routeCtaBody}>
+                    Passengers looking to share a ride. Accept their fare or counter it.
+                  </Text>
+                </Pressable>
                 {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
               </>
             }
@@ -807,6 +817,18 @@ const styles = themed(() => StyleSheet.create({
   },
   routeCtaTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   routeCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  // Same shape as routeCta, tinted lime so pool work reads as its own lane
+  // rather than another row of the solo feed.
+  poolCta: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 14,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   tripTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   tripFare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
   cancelFeeNote: {
