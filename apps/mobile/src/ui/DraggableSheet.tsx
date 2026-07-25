@@ -20,7 +20,18 @@
  * point, never by animating `height` — only transforms can run on the native
  * driver, and a JS-driven height animation stutters badly on low-end Androids.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import {
   Animated,
   PanResponder,
@@ -58,6 +69,42 @@ interface Props {
   onSnap?: (index: number) => void;
 }
 
+/** A vertical ScrollView is the thing we can lengthen to make a short sheet
+ *  scroll. Identified structurally: it takes a contentContainerStyle and is not
+ *  a horizontal carousel. Nested scrollers (e.g. the vehicle strip) are never
+ *  direct children of the sheet, so scanning one level deep can't reach them. */
+function isVerticalScroller(node: ReactNode): node is ReactElement<{ children?: ReactNode }> {
+  return (
+    isValidElement(node) &&
+    (node.props as { contentContainerStyle?: unknown }).contentContainerStyle !== undefined &&
+    !(node.props as { horizontal?: boolean }).horizontal
+  );
+}
+
+/**
+ * Append a `height: hiddenBelow` spacer to the LAST vertical ScrollView among
+ * the sheet's direct children, so its content can always be scrolled past the
+ * screen edge. Runs on every render (spacer height 0 when fully expanded) so the
+ * child tree keeps a stable shape and never remounts as the sheet is resized.
+ */
+function injectScrollSpacer(children: ReactNode, hiddenBelow: number): ReactNode {
+  const arr = Children.toArray(children);
+  let target = -1;
+  arr.forEach((c, i) => {
+    if (isVerticalScroller(c)) target = i;
+  });
+  if (target < 0) return children;
+
+  const scroller = arr[target] as ReactElement<{ children?: ReactNode }>;
+  arr[target] = cloneElement(
+    scroller,
+    undefined,
+    scroller.props.children,
+    <View key="__sheet_scroll_spacer" style={{ height: Math.max(0, hiddenBelow) }} pointerEvents="none" />,
+  );
+  return arr;
+}
+
 export function DraggableSheet({
   children,
   snapPoints = DEFAULT_SNAP_POINTS,
@@ -83,6 +130,9 @@ export function DraggableSheet({
   // throwaway Animated.Value on every single render.
   const [translateY] = useState(() => new Animated.Value(offsets[openIndex] ?? 0));
   const indexRef = useRef(openIndex);
+  // Mirrors indexRef in state so the scroll spacer below re-measures whenever the
+  // sheet settles on a new height. The ref stays the source of truth for gestures.
+  const [settledIndex, setSettledIndex] = useState(openIndex);
   // Where the sheet sat when the current drag began.
   const grantOffset = useRef(offsets[openIndex] ?? 0);
 
@@ -90,6 +140,7 @@ export function DraggableSheet({
     (i: number) => {
       const clamped = Math.min(Math.max(i, 0), offsets.length - 1);
       indexRef.current = clamped;
+      setSettledIndex(clamped);
       Animated.spring(translateY, {
         toValue: offsets[clamped] ?? 0,
         useNativeDriver: true,
@@ -164,6 +215,19 @@ export function DraggableSheet({
     }),
   );
 
+  // How much of the sheet currently sits below the screen edge. At the tallest
+  // snap this is 0; at a peek snap it is most of the sheet. The scroll area is
+  // the full sheet height, so without help the lower content (e.g. the Travel
+  // Partner and Earn cards on home) can only be reached by dragging the sheet
+  // taller — the ScrollView thinks everything fits and refuses to scroll.
+  // Appending a spacer exactly this tall makes the content overflow the visible
+  // window, so a plain scroll brings the bottom into view at any snap height.
+  const hiddenBelow = offsets[settledIndex] ?? 0;
+  const content = useMemo(
+    () => injectScrollSpacer(children, hiddenBelow),
+    [children, hiddenBelow],
+  );
+
   return (
     <Animated.View
       style={[styles.sheet, { height: sheetHeight, transform: [{ translateY }] }, style]}
@@ -176,7 +240,7 @@ export function DraggableSheet({
       >
         <View style={styles.grabber} />
       </View>
-      {children}
+      {content}
     </Animated.View>
   );
 }
