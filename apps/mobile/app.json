@@ -16,7 +16,9 @@
         "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
         "NSCameraUsageDescription": "Velocity needs camera access so you can take and share a photo in chat and capture verification documents.",
         "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
-        "NSContactsUsageDescription": "Velocity lets you pick a contact to share their number in chat."
+        "NSContactsUsageDescription": "Velocity lets you pick a contact to share their number in chat.",
+        "NSMicrophoneUsageDescription": "Velocity uses your microphone so you can book a ride by speaking instead of typing.",
+        "NSSpeechRecognitionUsageDescription": "Velocity turns your speech into a ride booking. Recognition happens on your device."
       }
     },
     "android": {
@@ -32,7 +34,8 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -68,6 +71,14 @@
         {
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#ccff00"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Velocity uses your microphone so you can book a ride by speaking instead of typing.",
+          "speechRecognitionPermission": "Velocity turns your speech into a ride booking. Recognition happens on your device.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ]
     ],

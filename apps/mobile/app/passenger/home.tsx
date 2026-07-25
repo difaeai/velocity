@@ -30,9 +30,11 @@ import { EarnCard } from '../../src/ui/EarnCard';
 import {
   CourierIcon,
   IntercityIcon,
+  MicIcon,
   SearchIcon,
   type ServiceIconProps,
 } from '../../src/ui/ServiceIcons';
+import { isRecognitionAvailable } from '../../src/voice/speech';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +46,10 @@ export default function PassengerHome() {
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+
+  // Checked once on mount rather than per render: the answer is a property of
+  // the handset and cannot change while the app is open.
+  const [voiceAvailable] = useState(() => isRecognitionAvailable());
 
   // Register FCM push token on first load
   useEffect(() => {
@@ -192,6 +198,29 @@ export default function PassengerHome() {
           </View>
           <Text style={styles.searchHeroArrow}>→</Text>
         </Pressable>
+
+        {/* ── Speak instead of typing.
+             Sits directly under "Where to?" because it is the same job by a
+             different route — the one that works for riders who cannot
+             comfortably read or type. Hidden on handsets with no speech
+             recogniser (typically no-GMS devices), where tapping it could only
+             lead to an apology. ── */}
+        {voiceAvailable ? (
+          <Pressable
+            style={styles.voiceHero}
+            onPress={() => router.push('/passenger/voice')}
+            accessibilityRole="button"
+            accessibilityLabel="Book a ride by speaking"
+          >
+            <View style={styles.voiceHeroIcon}>
+              <MicIcon size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.voiceHeroTitle}>Bol kar book karein</Text>
+              <Text style={styles.voiceHeroSub}>Tap and just say where you want to go</Text>
+            </View>
+          </Pressable>
+        ) : null}
 
         {/* ── Services — city rides live in "Where to?", so only the two
              services that are NOT plain city rides get tiles ── */}
@@ -705,6 +734,38 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: -0.2,
+  },
+  /* ── "Bol kar book karein" — the voice route into the same booking flow ── */
+  voiceHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: 'rgba(204,255,0,0.10)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(204,255,0,0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 10,
+  },
+  voiceHeroIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(204,255,0,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceHeroTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: -0.2,
+  },
+  voiceHeroSub: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 2,
   },
   searchHeroSub: {
     fontSize: 12,

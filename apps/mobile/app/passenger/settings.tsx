@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -10,6 +10,7 @@ import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { comingSoon } from '../../src/ui/components';
+import { getLanguage, setLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
 
 function Row({
@@ -40,6 +41,7 @@ export default function Settings() {
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
   const [dark, setDark] = useState(getThemeMode() === 'dark');
+  const [langOpen, setLangOpen] = useState(false);
 
   async function handleThemeToggle() {
     setDark((d) => !d);
@@ -135,7 +137,12 @@ export default function Settings() {
             />
           </View>
           <View style={styles.divider} />
-          <Row icon="🌐" label="Language" value="English" onPress={() => comingSoon('Language')} />
+          <Row
+            icon="🌐"
+            label="Language"
+            value={getLanguage() === 'ur' ? 'اردو' : 'English'}
+            onPress={() => setLangOpen(true)}
+          />
         </View>
 
         <Text style={styles.sectionLabel}>SUPPORT</Text>
@@ -153,7 +160,62 @@ export default function Settings() {
           Velocity v{Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
       </ScrollView>
+
+      {/* Language selector — switches live; the root layout re-keys the tree on
+          setLanguage, so this screen and every other repaint immediately. */}
+      <Modal
+        visible={langOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLangOpen(false)}
+      >
+        <Pressable style={styles.langBackdrop} onPress={() => setLangOpen(false)}>
+          <Pressable style={styles.langSheet} onPress={() => {}}>
+            <Text style={styles.langTitle}>Language / زبان</Text>
+            <LanguageOption
+              label="English"
+              note="Default"
+              active={getLanguage() === 'en'}
+              onPress={() => {
+                setLangOpen(false);
+                setLanguage('en').catch(() => {});
+              }}
+            />
+            <LanguageOption
+              label="اردو"
+              note="Urdu"
+              active={getLanguage() === 'ur'}
+              onPress={() => {
+                setLangOpen(false);
+                setLanguage('ur').catch(() => {});
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
+  );
+}
+
+function LanguageOption({
+  label,
+  note,
+  active,
+  onPress,
+}: {
+  label: string;
+  note: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[styles.langRow, active && styles.langRowActive]} onPress={onPress}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.langLabel}>{label}</Text>
+        <Text style={styles.langNote}>{note}</Text>
+      </View>
+      {active ? <Text style={styles.langCheck}>✓</Text> : null}
+    </Pressable>
   );
 }
 
@@ -188,4 +250,33 @@ const styles = themed(() => StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 52 },
   hint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginLeft: 4, marginTop: -2 },
   version: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 20 },
+
+  /* ── Language selector sheet ── */
+  langBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  langSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 34,
+    gap: 10,
+  },
+  langTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  langRowActive: { borderColor: colors.primary, backgroundColor: colors.primary + '18' },
+  langLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  langNote: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  langCheck: { fontSize: 18, fontWeight: '800', color: colors.primary },
 }));

@@ -11,7 +11,7 @@ import {
 import { Text, TextInput } from '../../src/ui/Text';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -56,6 +56,7 @@ import {
 } from '../../src/ui/RideIcons';
 import {
   BASE_FARES,
+  MAX_SEATS,
   RIDE_TYPE_LABELS,
   fareBounds,
   type Gender,
@@ -66,6 +67,46 @@ import {
   CityFareConfig, VehicleCategory,
   calculateFare, round5,
 } from '../../src/lib/fareEngine';
+
+/** A booking dictated on the voice screen, ready to seed this screen's state. */
+interface VoicePrefill {
+  readonly dropoff: string;
+  /** Present only when the destination came from a past trip, which stores them. */
+  readonly coords: { lat: number; lng: number } | null;
+  readonly rideType: RideType | null;
+  readonly pool: boolean;
+  readonly seats: number;
+}
+
+/**
+ * Read the voice screen's route params, or null for a normal typed booking.
+ *
+ * Everything is validated rather than trusted: the params survive a round trip
+ * through the URL, so a ride type is checked against the real list and the seat
+ * count is clamped to what a vehicle actually holds.
+ */
+function readVoicePrefill(params: Record<string, string | string[] | undefined>): VoicePrefill | null {
+  const dropoff = typeof params.voiceDropoff === 'string' ? params.voiceDropoff.trim() : '';
+  if (!dropoff) return null;
+
+  const lat = Number(params.voiceDropoffLat);
+  const lng = Number(params.voiceDropoffLng);
+  const coords =
+    Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+
+  const spokenRide = params.voiceRideType;
+  const rideType =
+    typeof spokenRide === 'string' && spokenRide in BASE_FARES
+      ? (spokenRide as RideType)
+      : null;
+
+  const spokenSeats = Number(params.voiceSeats);
+  const seats = Number.isFinite(spokenSeats)
+    ? Math.min(Math.max(Math.round(spokenSeats), 1), MAX_SEATS)
+    : 1;
+
+  return { dropoff, coords, rideType, pool: params.voicePool === '1', seats };
+}
 
 // Map app RideType keys to fareEngine VehicleCategory keys
 const RIDE_TO_CAT: Record<RideType, VehicleCategory> = {
@@ -152,6 +193,15 @@ const RIDE_OPTIONS: {
 
 export default function Booking() {
   const router = useRouter();
+  /** Prefill handed over by the voice screen; empty for a typed booking. */
+  const params = useLocalSearchParams<{
+    voiceDropoff?: string;
+    voiceDropoffLat?: string;
+    voiceDropoffLng?: string;
+    voiceRideType?: string;
+    voicePool?: string;
+    voiceSeats?: string;
+  }>();
   const { user } = useAuth();
   // The ride sheet is absolutely pinned to the screen bottom; edge-to-edge
   // Android draws it behind the system navigation bar unless padded.
@@ -188,14 +238,35 @@ export default function Booking() {
       .slice(0, 30);
   }, [trips]);
 
+  /**
+   * A booking spoken on the voice screen (app/passenger/voice.tsx), read once.
+   *
+   * Voice fills the slots and stops; it never books. Everything that touches
+   * money — the real fare from the fare engine, the map, the final confirm —
+   * happens here, on exactly the screen a typed booking would have reached.
+   * One pricing path, not two, and a mis-heard destination surfaces as
+   * something the rider can see and change rather than a wrong charge.
+   */
+  const voicePrefill = useMemo(() => readVoicePrefill(params), []);
+
   // Three explicit steps: type the route → pick Solo or Pool → tune the ride.
-  const [stage, setStage] = useState<'route' | 'mode' | 'details'>('route');
+  // A voice booking that already answered the route and the vehicle opens on
+  // "details", so the rider lands on the fare and the Book button instead of
+  // questions they have just answered out loud.
+  const [stage, setStage] = useState<'route' | 'mode' | 'details'>(
+    voicePrefill ? (voicePrefill.rideType ? 'details' : 'mode') : 'route',
+  );
   const [pickup, setPickup] = useState('');
-  const [dropoff, setDropoff] = useState('');
+  const [dropoff, setDropoff] = useState(voicePrefill?.dropoff ?? '');
   // Resolved coords for the selected dropoff place — this is what puts the
   // destination pin + route line on the map, so every selection path below
   // (autocomplete, recents, free-typed) must eventually fill it.
-  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // Seeded from the voice screen when the destination came from the rider's own
+  // past trips — those records already carry coordinates, so that path costs no
+  // geocoding at all.
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(
+    voicePrefill?.coords ?? null,
+  );
   // A destination pick invalidates any still-running coordinate lookup from a
   // previous pick, so a slow response can't clobber the newer selection.
   const destSeq = useRef(0);
@@ -241,11 +312,13 @@ export default function Booking() {
 
   // Details state — one explicit booking mode; Solo and Pool can never be
   // "selected" at the same time, and one CTA reflects the active mode.
-  const [mode, setMode] = useState<'solo' | 'pool'>('solo');
-  const [rideType, setRideType] = useState<RideType>('mini');
+  const [mode, setMode] = useState<'solo' | 'pool'>(voicePrefill?.pool ? 'pool' : 'solo');
+  const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
   const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
-  const [seats] = useState(1);
+  // Voice booking can arrive with a passenger count already spoken ("do banday
+  // hain"). The typed flow has no seat picker and never calls the setter.
+  const [seats, setSeats] = useState(voicePrefill?.seats ?? 1);
   const [gender] = useState<Gender>('unspecified');
   const [autoAccept, setAutoAccept] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
@@ -419,6 +492,22 @@ export default function Booking() {
       if (geo && destSeq.current === seq) setDropoffCoords({ lat: geo.lat, lng: geo.lng });
     });
   }
+
+  /**
+   * Resolve a spoken destination that arrived without coordinates.
+   *
+   * Only the geocode needs to happen after mount — every other slot from the
+   * voice screen is applied straight into the state initialisers above, so the
+   * screen renders once, already correct, with no flash of an empty form.
+   */
+  useEffect(() => {
+    if (!voicePrefill || voicePrefill.coords) return;
+
+    const seq = ++destSeq.current;
+    geocodeAddress(voicePrefill.dropoff).then((geo) => {
+      if (geo && destSeq.current === seq) setDropoffCoords({ lat: geo.lat, lng: geo.lng });
+    });
+  }, [voicePrefill]);
 
   async function submitRide() {
     setError(null);

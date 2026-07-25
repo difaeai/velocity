@@ -112,6 +112,31 @@ export function SearchIcon({ size = 22, color = '#0b0d0c' }: { size?: number; co
   );
 }
 
+/**
+ * Microphone for the voice-booking entry point, and for the big button on the
+ * voice screen itself. Drawn on the same 24-unit grid as the icons above so it
+ * scales cleanly from the 22px home-screen badge to the 54px mic.
+ */
+export function MicIcon({ size = 22, color = '#0b0d0c' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 3.5a2.6 2.6 0 0 1 2.6 2.6v5.6a2.6 2.6 0 0 1-5.2 0V6.1A2.6 2.6 0 0 1 12 3.5Z"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6.2 11.2a5.8 5.8 0 0 0 11.6 0"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Path d="M12 17v3.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 /** Clock face for the recent-destination rows. */
 export function ClockIcon({ size = 16, color = colors.muted }: { size?: number; color?: string }) {
   return (
