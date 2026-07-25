@@ -82,7 +82,7 @@
     <p class="lede">This policy explains what information the Velocity Rides mobile app collects,
       why we collect it, and the choices you have over your data.</p>
     <div class="meta">
-      <span><b>Effective:</b> 16 July 2026</span>
+      <span><b>Effective:</b> 25 July 2026</span>
       <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
       <span><b>Contact:</b> <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a></span>
     </div>
@@ -130,6 +130,11 @@
         technical data needed to deliver notifications and keep the app working reliably.</li>
       <li><strong>Trip activity</strong> — pickup and drop-off points, trip status, and fare
         estimates generated while you use the service.</li>
+      <li><strong>Voice input</strong> — if you use voice booking, audio is captured only while
+        the microphone is running and is converted to text by your device's speech-recognition
+        service. Velocity does not store the audio. See section 6.</li>
+      <li><strong>Advertising ID</strong> — for users who are not on a paid plan, your device's
+        Google advertising identifier is used to serve and measure ads. See section 7.</li>
     </ul>
     <h3>Payments</h3>
     <p>Rides may be paid in cash or, where enabled, through supported local payment methods.
@@ -147,6 +152,8 @@
           <tr><td><b>Chat &amp; community content</b></td><td>Deliver your messages and posts to their recipients</td><td>With the people you send it to</td></tr>
           <tr><td><b>Push token / device</b></td><td>Trip &amp; account notifications</td><td>Service providers</td></tr>
           <tr><td><b>Trip activity</b></td><td>Operate and improve the service</td><td>No</td></tr>
+          <tr><td><b>Voice input</b></td><td>Turn a spoken booking into text (only while the mic is running)</td><td>Your device's speech recogniser</td></tr>
+          <tr><td><b>Advertising ID</b></td><td>Serve &amp; measure ads for users without a paid plan</td><td>Google AdMob</td></tr>
         </tbody>
       </table>
     </div>
@@ -164,8 +171,10 @@
       <li>Prevent fraud, enforce our terms, and keep the community safe.</li>
       <li>Diagnose problems and improve app reliability.</li>
     </ul>
-    <p>We do not sell your personal information, and we do not use your data for third-party
-      advertising.</p>
+    <p>We do not sell your personal information. We do show third-party advertising from
+      Google AdMob to users who are not on a paid plan, which uses your device's advertising
+      ID — section 7 sets out exactly what is shared, how to turn off ad personalisation, and
+      how to remove ads altogether.</p>
   </section>
 
   <section>
@@ -179,6 +188,13 @@
         location), and Anthropic (automated payment-screenshot verification, section 5). They
         process data only to provide these services to us and are not permitted to use it for
         their own purposes, including training AI models.</li>
+      <li><strong>Advertising</strong> — for users who are not on a paid plan, Google AdMob
+        receives your device's advertising ID to serve and measure ads. Unlike the providers
+        above, Google uses that data under its own privacy policy rather than solely on our
+        instructions. See section 7.</li>
+      <li><strong>Speech recognition</strong> — if you use voice booking, the audio goes to your
+        device's speech-recognition service (Google's, on most Android phones) to be turned into
+        text. See section 6.</li>
       <li><strong>Legal reasons</strong> — we may disclose information if required by law or to
         protect the rights, safety, or property of users and the public.</li>
     </ul>
@@ -206,14 +222,56 @@
   </section>
 
   <section>
-    <h2><span class="n">6</span> Data retention</h2>
+    <h2><span class="n">6</span> Voice booking &amp; the microphone</h2>
+    <p>You can book a ride by speaking instead of typing, and drivers can run a small set of
+      spoken commands. This is optional — everything it does is also available on screen.</p>
+    <ul>
+      <li><strong>The microphone runs only when you start it.</strong> Audio is captured from
+        the moment you tap the microphone button until recognition finishes. There is no
+        background listening and no wake word.</li>
+      <li><strong>Speech becomes text using your device's recogniser.</strong> The audio is
+        handed to the speech-recognition service built into your phone. On most Android
+        devices that service is Google's, and it may send the audio to Google's servers under
+        Google's own privacy policy. Velocity does not record, upload, or keep the audio, and
+        never sends it to a Velocity server.</li>
+      <li><strong>Only the recognised text is used.</strong> The words are interpreted on your
+        device to fill in a destination, pickup point, seat count, or vehicle type. We keep no
+        transcript beyond the booking you go on to confirm.</li>
+      <li><strong>Turning it off.</strong> Decline the microphone permission, or revoke it later
+        in Android settings. The rest of the app is unaffected.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span> Advertising</h2>
+    <p>Velocity shows ads supplied by Google AdMob. They are what keeps the app free to use.</p>
+    <ul>
+      <li><strong>Who sees ads.</strong> Only users without a paid entitlement. An active
+        Travel Partner subscription, or a current Pro partner tier, removes ads across the
+        whole app — not just the section it was bought in.</li>
+      <li><strong>What Google receives.</strong> Your device's advertising ID, together with the
+        technical data needed to serve and measure an ad. Google uses this under its own privacy
+        policy rather than solely on our instructions. We do not send Google your phone number,
+        your name, your trips, or your chat content, and we do not combine the advertising ID
+        with your Velocity account data.</li>
+      <li><strong>Consent.</strong> Where a choice is legally required — including the EEA and
+        the UK — a consent form is shown before any ad is requested, and no ads load if consent
+        is withheld. Ads are limited to a PG content rating.</li>
+      <li><strong>Your controls.</strong> Android lets you delete or reset your advertising ID
+        and opt out of ad personalisation under Settings → Privacy → Ads. Doing so stops
+        personalised ads; you may still see non-personalised ones.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">8</span> Data retention</h2>
     <p>We keep your information for as long as your account is active and as needed to provide the
       service, resolve disputes, and meet legal obligations. When data is no longer needed, we
       delete or anonymise it.</p>
   </section>
 
   <section>
-    <h2><span class="n">7</span> Your rights &amp; account deletion</h2>
+    <h2><span class="n">9</span> Your rights &amp; account deletion</h2>
     <p>You can request access to, correction of, or deletion of your personal data at any time.</p>
     <div class="card">
       <p style="margin-top:0"><strong>To delete your account and associated data</strong>, email
@@ -225,38 +283,39 @@
   </section>
 
   <section>
-    <h2><span class="n">8</span> Security</h2>
+    <h2><span class="n">10</span> Security</h2>
     <p>We use reasonable technical and organisational measures to protect your information against
       unauthorised access, loss, or misuse. No method of transmission or storage is completely
       secure, but we work to safeguard your data.</p>
   </section>
 
   <section>
-    <h2><span class="n">9</span> Children</h2>
+    <h2><span class="n">11</span> Children</h2>
     <p>Velocity Rides is intended for users aged 18 and over. We do not knowingly collect personal
       information from children. If you believe a child has provided us data, contact us and we
       will remove it.</p>
   </section>
 
   <section>
-    <h2><span class="n">10</span> Third-party services</h2>
+    <h2><span class="n">12</span> Third-party services</h2>
     <p>Our app relies on third-party services that have their own privacy policies:</p>
     <ul>
       <li>Google Firebase — <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a></li>
       <li>Google Maps — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
       <li>Anthropic — <a href="https://www.anthropic.com/legal/privacy" rel="noopener">anthropic.com/legal/privacy</a></li>
+      <li>Google AdMob &amp; advertising — <a href="https://policies.google.com/technologies/ads" rel="noopener">policies.google.com/technologies/ads</a></li>
     </ul>
   </section>
 
   <section>
-    <h2><span class="n">11</span> Changes to this policy</h2>
+    <h2><span class="n">13</span> Changes to this policy</h2>
     <p>We may update this Privacy Policy from time to time. When we do, we will revise the
       “Effective” date above and, where appropriate, notify you in the app. Continued use of the
       app after changes means you accept the updated policy.</p>
   </section>
 
   <section>
-    <h2><span class="n">12</span> Contact us</h2>
+    <h2><span class="n">14</span> Contact us</h2>
     <p>Questions about this policy or your data? Reach us at
       <a href="mailto:berreto01@gmail.com">berreto01@gmail.com</a>.</p>
   </section>
