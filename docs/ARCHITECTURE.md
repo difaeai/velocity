@@ -43,6 +43,7 @@ admin      → granted by another admin (bootstrap the first one manually, see S
 |------|-----------|-------|
 | `users/{uid}` | backend + owner (safe fields only) | Profile + `role` mirror + `activeTripId`. |
 | `drivers/{uid}` | backend + owner (presence only) | Verification, rating, vehicle. Driver may update only `online`/`lastLocation`/`heading`/`lastSeenAt`. |
+| `userPresence/{uid}` | owner only | Last known coarse position, written while the home screen is open. Feeds the home map's anonymous "people nearby" dots via `getNearbyActivity`. **Not client-readable** — owner + admin only. TTL on `expireAt`. |
 | `trips/{tripId}` | **backend only** | Server-authoritative state machine. |
 | `trips/{tripId}/bids/{bidId}` | **backend only** | Driver bids; readable by the passenger + bidder. |
 | `wallets/{uid}` + `/transactions` | **backend only** | Balances + immutable ledger. |

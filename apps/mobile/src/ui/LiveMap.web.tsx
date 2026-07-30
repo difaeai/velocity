@@ -8,9 +8,9 @@ import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
 import type { Coords } from '../hooks/location';
-import type { DriverPin, MapPoint } from './LiveMap';
+import type { DemandPin, DriverPin, MapPoint } from './LiveMap';
 
-export type { DriverPin, MapPoint };
+export type { DemandPin, DriverPin, MapPoint };
 
 export function LiveMap({
   style,
@@ -19,6 +19,7 @@ export function LiveMap({
   pickup?: MapPoint | null;
   dropoff?: MapPoint | null;
   drivers?: DriverPin[];
+  demand?: DemandPin[];
   style?: StyleProp<ViewStyle>;
 }) {
   return (

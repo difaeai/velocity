@@ -1,0 +1,106 @@
+import { StyleSheet, View } from 'react-native';
+import { Text } from './Text';
+
+import { colors } from '../config';
+import { themed } from '../theme';
+
+/**
+ * The legend for the home map's activity layer: how many cars are online around
+ * you, and how many other people with Velocity are around you.
+ *
+ * The map alone is ambiguous — a lime chip and a red dot mean nothing on first
+ * sight, and a sparse map could equally be "nobody here" or "not loaded yet".
+ * The chip names both marks and gives the totals, which also carry the part the
+ * pins can't: the arrays on the map are capped, these numbers are not.
+ *
+ * A red dot is anyone nearby with the app, so the label is "riders", not
+ * "waiting". When some of them do have a request open that becomes a third
+ * segment, because "2 waiting" is the number that tells a driver-curious user
+ * there is money on the table right now.
+ *
+ * Non-interactive on purpose. It floats over a map the user pans and pinches, so
+ * it must never swallow a gesture; anything actionable belongs in the sheet.
+ */
+export function MapActivityChip({
+  driverCount,
+  passengerCount,
+  waitingCount,
+}: {
+  driverCount: number;
+  passengerCount: number;
+  waitingCount: number;
+}) {
+  const quiet = driverCount === 0 && passengerCount === 0;
+
+  return (
+    <View style={styles.chip} pointerEvents="none">
+      {quiet ? (
+        <Text style={styles.quietText}>Quiet around you right now</Text>
+      ) : (
+        <>
+          <View style={styles.item}>
+            <Text style={styles.carGlyph}>🚗</Text>
+            <Text style={styles.count}>{driverCount}</Text>
+            <Text style={styles.label}>{driverCount === 1 ? 'car' : 'cars'}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.item}>
+            <View style={styles.demandDot} />
+            <Text style={styles.count}>{passengerCount}</Text>
+            <Text style={styles.label}>{passengerCount === 1 ? 'rider' : 'riders'}</Text>
+          </View>
+          {waitingCount > 0 ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.item}>
+                <Text style={styles.waitingCount}>{waitingCount}</Text>
+                <Text style={styles.label}>waiting</Text>
+              </View>
+            </>
+          ) : null}
+        </>
+      )}
+    </View>
+  );
+}
+
+const styles = themed(() => StyleSheet.create({
+  chip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 16,
+    marginTop: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,19,18,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  carGlyph: { fontSize: 11 },
+  demandDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  count: { fontSize: 12, fontWeight: '900', color: colors.primary },
+  // Waiting riders are the urgent number, so they take the red the dots use
+  // rather than the lime everything else on this chip shares.
+  waitingCount: { fontSize: 12, fontWeight: '900', color: '#ef4444' },
+  label: { fontSize: 10, fontWeight: '700', color: colors.muted },
+  divider: {
+    width: 1,
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  quietText: { fontSize: 10.5, fontWeight: '700', color: colors.muted },
+}));

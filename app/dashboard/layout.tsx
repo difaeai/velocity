@@ -25,6 +25,7 @@ const NAV = [
   { href: '/dashboard/cancellations',  label: '🚫 Cancellation fees' },
   { href: '/dashboard/settlements',    label: '🧾 Settlements' },
   { href: '/dashboard/features',       label: '🚦 Feature flags' },
+  { href: '/dashboard/app-version',    label: '⬆️ App version' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

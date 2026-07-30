@@ -24,6 +24,11 @@ counters self-delete:
 Firebase Console → Firestore → TTL → add policy on collection `rateLimits`,
 field `expireAt`.
 
+Add the same policy on **`userPresence.expireAt`**. This one is not just tidying:
+`userPresence` holds each user's last known position for the home-map dots, and
+the TTL is what makes presence lapse when somebody stops opening the app. Without
+it, a location written once stays in the collection indefinitely.
+
 ### Firebase App Check **(you + code)**
 Stops traffic from anything other than your genuine apps.
 1. Register providers: **Play Integrity** (Android), **App Attest** (iOS),
