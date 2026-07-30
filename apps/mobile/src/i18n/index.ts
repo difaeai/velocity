@@ -29,6 +29,36 @@ export function isUrdu(): boolean {
   return current === 'ur';
 }
 
+/**
+ * The language a tap on the language button switches TO, and its name written
+ * in that language ("اردو" while the app is English, "English" while it is
+ * Urdu). Buttons label themselves with this instead of the current language:
+ * the control is a switch, not a status line, and the destination is the only
+ * thing the user needs to recognise — including the English speaker who landed
+ * in Urdu by accident and has to find the way back out.
+ *
+ * These labels must be rendered with react-native's <Text>, NOT the translating
+ * wrapper in src/ui/Text.tsx — "English" is itself a dictionary key ("انگریزی"),
+ * so the wrapper would translate the one word that has to stay in Latin script.
+ */
+export function otherLanguage(): Language {
+  return current === 'ur' ? 'en' : 'ur';
+}
+
+export function otherLanguageLabel(): string {
+  return current === 'ur' ? 'English' : 'اردو';
+}
+
+/** Short form for the tight header pill on the passenger home. */
+export function otherLanguageTag(): string {
+  return current === 'ur' ? 'EN' : 'اردو';
+}
+
+/** Flip English ⇄ Urdu live. Same contract as setLanguage. */
+export function toggleLanguage(): Promise<void> {
+  return setLanguage(otherLanguage());
+}
+
 // ── Live-language version store ───────────────────────────────────────────────
 let languageVersion = 0;
 const listeners = new Set<() => void>();
