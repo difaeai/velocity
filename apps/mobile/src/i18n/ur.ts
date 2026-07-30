@@ -145,6 +145,7 @@ export const UR: Record<string, string> = {
   'About': 'تعارف',
   'Analytics': 'تجزیات',
   'Language': 'زبان',
+  'Tap Language to switch the whole app instantly.': 'زبان پر دبائیں، پوری ایپ فوراً بدل جائے گی۔',
   'Appearance': 'ظاہری شکل',
   'Dark Mode': 'ڈارک موڈ',
   'Light Mode': 'لائٹ موڈ',

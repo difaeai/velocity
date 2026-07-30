@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   StyleSheet,
+  Text as RNText,
   View,
 } from 'react-native';
 import { Text } from './Text';
@@ -13,7 +14,7 @@ import { useRouter } from 'expo-router';
 
 import { colors } from '../config';
 import { useWalletLabel } from '../hooks/driver';
-import { getLanguage, setLanguage } from '../i18n';
+import { otherLanguageLabel, toggleLanguage } from '../i18n';
 import { getThemeMode, toggleTheme, themed } from '../theme';
 
 const DRAWER_WIDTH = Dimensions.get('window').width * 0.78;
@@ -34,16 +35,24 @@ interface NavItemProps {
   label: string;
   onPress: () => void;
   danger?: boolean;
+  /** Render the label verbatim — for labels that are already in the language
+   *  they name, like the English ⇄ اردو switch. */
+  rawLabel?: boolean;
 }
 
-function NavItem({ icon, label, onPress, danger }: NavItemProps) {
+function NavItem({ icon, label, onPress, danger, rawLabel }: NavItemProps) {
+  const labelStyle = [styles.navLabel, danger && { color: colors.danger }];
   return (
     <Pressable
       style={({ pressed }) => [styles.navItem, pressed && styles.navItemPressed]}
       onPress={onPress}
     >
       <Text style={styles.navIcon}>{icon}</Text>
-      <Text style={[styles.navLabel, danger && { color: colors.danger }]}>{label}</Text>
+      {rawLabel ? (
+        <RNText style={labelStyle}>{label}</RNText>
+      ) : (
+        <Text style={labelStyle}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -157,13 +166,14 @@ export function DriverDrawer({
             }}
           />
           {/* Drivers who never open the passenger home still need a way to
-              reach Urdu — the passenger-side selector lives in that header. */}
+              reach Urdu — the passenger-side switch lives in that header. */}
           <NavItem
             icon="🌐"
-            label={getLanguage() === 'ur' ? 'English' : 'اردو (Urdu)'}
+            label={otherLanguageLabel()}
+            rawLabel
             onPress={() => {
               onClose();
-              setLanguage(getLanguage() === 'ur' ? 'en' : 'ur').catch(() => {});
+              toggleLanguage().catch(() => {});
             }}
           />
           <NavItem icon="🚪" label="Sign out" onPress={() => { onClose(); setTimeout(onSignOut, 220); }} danger />

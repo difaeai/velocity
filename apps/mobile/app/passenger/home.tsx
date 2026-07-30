@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text as RNText,
   View,
 } from 'react-native';
 import { Text } from '../../src/ui/Text';
@@ -23,7 +24,7 @@ import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { colors } from '../../src/config';
-import { getLanguage, setLanguage, type Language } from '../../src/i18n';
+import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { DraggableSheet } from '../../src/ui/DraggableSheet';
@@ -50,7 +51,6 @@ export default function PassengerHome() {
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [langOpen, setLangOpen] = useState(false);
 
   // Live supply/demand around the rider: cars online (lime chips) and everyone
   // else with the app nearby (small red dots). Both come back from the server
@@ -189,14 +189,18 @@ export default function PassengerHome() {
               <Text style={styles.headerIconText}>{getThemeMode() === 'dark' ? '☀️' : '🌙'}</Text>
             </Pressable>
 
-            {/* Language selector — English ⇄ اردو, also live */}
+            {/* Language switch — one tap flips English ⇄ اردو live. The pill
+                names the language you'd GET, not the one you're in, so nobody
+                has to open a picker to find out what the button does. */}
             <Pressable
               style={styles.headerIconButton}
-              onPress={() => setLangOpen(true)}
-              accessibilityLabel="Change language"
+              onPress={() => {
+                toggleLanguage().catch(() => {});
+              }}
+              accessibilityLabel={`Switch to ${otherLanguageLabel()}`}
             >
               <Text style={styles.headerIconText}>🌐</Text>
-              <Text style={styles.headerIconTag}>{getLanguage() === 'ur' ? 'اردو' : 'EN'}</Text>
+              <RNText style={styles.headerIconTag}>{otherLanguageTag()}</RNText>
             </Pressable>
 
             <Pressable style={styles.notificationButton} onPress={() => router.push('/passenger/notifications')}>
@@ -442,63 +446,7 @@ export default function PassengerHome() {
         </View>
       </Modal>
 
-      {/* 5. Language selector — passenger + driver apps only (the admin console
-             stays English, since its screens don't use the translating Text) */}
-      <Modal
-        visible={langOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLangOpen(false)}
-      >
-        <Pressable style={styles.langBackdrop} onPress={() => setLangOpen(false)}>
-          {/* Inner Pressable swallows taps so they don't close the sheet */}
-          <Pressable style={styles.langSheet} onPress={() => {}}>
-            <Text style={styles.langTitle}>Language / زبان</Text>
-            <LanguageOption
-              label="English"
-              note="Default"
-              active={getLanguage() === 'en'}
-              onPress={() => {
-                setLangOpen(false);
-                setLanguage('en').catch(() => {});
-              }}
-            />
-            <LanguageOption
-              label="اردو"
-              note="Urdu"
-              active={getLanguage() === 'ur'}
-              onPress={() => {
-                setLangOpen(false);
-                setLanguage('ur').catch(() => {});
-              }}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
     </View>
-  );
-}
-
-function LanguageOption({
-  label,
-  note,
-  active,
-  onPress,
-}: {
-  label: string;
-  note: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={[styles.langRow, active && styles.langRowActive]} onPress={onPress}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.langLabel}>{label}</Text>
-        <Text style={styles.langNote}>{note}</Text>
-      </View>
-      {active ? <Text style={styles.langCheck}>✓</Text> : null}
-    </Pressable>
   );
 }
 
@@ -998,56 +946,6 @@ const styles = themed(() => StyleSheet.create({
     color: '#000000',
     fontSize: 16,
     fontWeight: '900',
-  },
-
-  /* ── Language selector sheet ── */
-  langBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  langSheet: {
-    backgroundColor: colors.glassPanel,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    padding: 18,
-    gap: 8,
-  },
-  langTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  langRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  langRowActive: {
-    backgroundColor: colors.glassLime,
-    borderColor: colors.glassLimeBorder,
-  },
-  langLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  langNote: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 1,
-  },
-  langCheck: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: colors.primary,
   },
 }));
 
