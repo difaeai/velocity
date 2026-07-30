@@ -66,6 +66,22 @@ service firebase.storage {
       allow write: if isOwner(userId) && isImage() && underSize(15);
     }
 
+    // "Find your Customers" — the offer picture that goes out with the push.
+    // Readable by any signed-in user because the offer screen renders it for
+    // whoever was notified; only the advertiser may upload one.
+    match /businessAdMedia/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) && isImage() && underSize(10);
+    }
+
+    // Advertising-fee receipts. Same posture as the Pro Partner receipts: the
+    // advertiser uploads, only they and the reviewing admin can read it back,
+    // because it carries their bank/wallet details.
+    match /businessAdPayments/{userId}/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) && isImage() && underSize(15);
+    }
+
     // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
     // Admin SDK bypasses rules so only a read rule is needed here.
     match /avatars/{fileName} {

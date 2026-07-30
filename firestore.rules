@@ -764,6 +764,65 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ===== Find your Customers — business proximity advertising ==============
+    //
+    // A business pays for a radius and pushes an offer to people inside it. The
+    // money and the notification budget are both server-owned, so nothing here
+    // is client-writable: an advertiser who could edit their own radius, slots or
+    // expiry would be advertising for free, and one who could edit an impression
+    // doc could reset their own notification cooldown and spam the same person
+    // all day.
+
+    // ----- businessAdApplications/{uid} --------------------------------------
+    // The approval queue. Carries a payment screenshot and the advertiser's own
+    // phone number, so only they and admins may read it.
+    match /businessAdApplications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- businessAdvertisers/{uid} -----------------------------------------
+    // The approved plan: radius, slots, expiry and lifetime counters.
+    match /businessAdvertisers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- businessAds/{adId} -------------------------------------------------
+    // The creatives. Readable by any signed-in user because that is the whole
+    // point — a notified rider taps the push and the offer screen reads the doc.
+    // Writes go through the businessAds callables, which enforce the slot limit
+    // and copy the geography off the paid plan.
+    match /businessAds/{adId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      // Per-day rollups behind the analytics chart. Read by the owner and
+      // admins; the advertiser dashboard callable reads them via the Admin SDK.
+      match /daily/{day} {
+        allow read: if isAdmin()
+                    || (isSignedIn()
+                        && get(/databases/$(database)/documents/businessAds/$(adId)).data.ownerUid == uid());
+        allow write: if false;
+      }
+    }
+
+    // ----- businessAdImpressions/{adId}_{uid} --------------------------------
+    // Who was notified, when, and whether they opened it. Admin-only: it is a
+    // per-person location-adjacent record, and an advertiser has no business
+    // knowing WHICH user walked past their shop — only how many did.
+    match /businessAdImpressions/{impressionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- businessAdNotifyBudget/{uid}_{day} --------------------------------
+    // Today's per-person push allowance. Server-only — a client that could
+    // write this could hand itself an unlimited number of offers.
+    match /businessAdNotifyBudget/{docId} {
+      allow read, write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

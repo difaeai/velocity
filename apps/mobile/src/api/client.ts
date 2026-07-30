@@ -751,7 +751,162 @@ export const api = {
     },
     { ok: boolean; requestId: string }
   >('requestPartnerWithdrawal'),
+
+  // ── Find your Customers — business proximity advertising ──────────────────
+  getBusinessAdPlans: callable<Record<string, never>, BusinessAdPlans>('getBusinessAdPlans'),
+  submitBusinessAdApplication: callable<
+    BusinessAdApplicationInput,
+    { ok: boolean; status: 'pending'; totalFee: number; monthlyFee: number; adSlots: number }
+  >('submitBusinessAdApplication'),
+  getBusinessAdDashboard: callable<Record<string, never>, BusinessAdDashboard>(
+    'getBusinessAdDashboard',
+  ),
+  createBusinessAd: callable<
+    { creative: BusinessAdCreative },
+    { ok: boolean; adId: string; liveAds: number; adSlots: number }
+  >('createBusinessAd'),
+  updateBusinessAd: callable<
+    { adId: string; creative: Partial<BusinessAdCreative> },
+    { ok: boolean }
+  >('updateBusinessAd'),
+  setBusinessAdStatus: callable<
+    { adId: string; status: BusinessAdStatus },
+    { ok: boolean; status: BusinessAdStatus }
+  >('setBusinessAdStatus'),
+  /** Called on significant movement while the app is open. Server decides. */
+  checkNearbyBusinessAds: callable<
+    { lat: number; lng: number },
+    { ok: boolean; notified: number; ads: NearbyBusinessAd[] }
+  >('checkNearbyBusinessAds'),
+  recordBusinessAdClick: callable<{ adId: string }, { ok: boolean }>('recordBusinessAdClick'),
 };
+
+// ── Find your Customers types ────────────────────────────────────────────────
+
+export type BusinessAdStatus = 'active' | 'paused' | 'removed';
+export type BusinessAdPlanMonths = 3 | 6 | 12;
+export type BusinessAdPaymentMethod = 'bank' | 'easypaisa' | 'jazzcash';
+
+/** Where the advertiser sits: no plan, in the queue, running, or lapsed. */
+export type BusinessAdStage =
+  | 'none'
+  | 'pending'
+  | 'rejected'
+  | 'resubmit'
+  | 'active'
+  | 'suspended'
+  | 'expired';
+
+export interface BusinessAdTier {
+  key: string;
+  /** Inclusive ceiling: a 3 km band covers everything up to and including 3 km. */
+  maxRadiusKm: number;
+  monthlyFee: number;
+  /** How many offers may run at once on this band. */
+  adSlots: number;
+}
+
+export interface BusinessAdPlans {
+  ok: boolean;
+  tiers: BusinessAdTier[];
+  currency: string;
+  planMonths: BusinessAdPlanMonths[];
+  maxRadiusKm: number;
+  notifyCooldownHours: number;
+  payment: {
+    bankName: string | null;
+    bankAccountTitle: string | null;
+    bankAccount: string | null;
+    easypaisaTitle: string | null;
+    easypaisaAccount: string | null;
+    jazzcashTitle: string | null;
+    jazzcashAccount: string | null;
+  };
+}
+
+export interface BusinessAdCreative {
+  title: string;
+  businessName: string;
+  offerDetails: string;
+  imageUrl: string;
+}
+
+export interface BusinessAdApplicationInput {
+  radiusKm: number;
+  months: BusinessAdPlanMonths;
+  lat: number;
+  lng: number;
+  address?: string;
+  city: string;
+  contactPhone: string;
+  creative: BusinessAdCreative;
+  paymentProofUrl: string;
+  paymentMethod: BusinessAdPaymentMethod;
+  paymentReference?: string;
+  acceptedTerms: true;
+}
+
+export interface BusinessAd extends BusinessAdCreative {
+  adId: string;
+  status: BusinessAdStatus;
+  radiusKm: number;
+  /** Pushes sent. Higher than `reach` when people re-enter the radius. */
+  notified: number;
+  /** Distinct people reached. */
+  reach: number;
+  /** Offer screen opens — the number that says the push worked. */
+  clicks: number;
+  moderationReason: string | null;
+  createdAtMs: number | null;
+}
+
+export interface BusinessAdDayRow {
+  day: string;
+  notified: number;
+  reach: number;
+  clicks: number;
+}
+
+export interface BusinessAdDashboard {
+  ok: boolean;
+  stage: BusinessAdStage;
+  application: {
+    status: string;
+    radiusKm: number;
+    months: number;
+    monthlyFee: number;
+    totalFee: number;
+    currency: string;
+    rejectionReason: string | null;
+    draft: BusinessAdCreative | null;
+    submittedAtMs: number | null;
+  } | null;
+  advertiser: {
+    businessName: string;
+    city: string | null;
+    contactPhone: string | null;
+    radiusKm: number;
+    adSlots: number;
+    liveAds: number;
+    months: number;
+    monthlyFee: number;
+    totalFee: number;
+    currency: string;
+    expiresAtMs: number | null;
+    daysLeft: number | null;
+    suspensionReason: string | null;
+    draft: BusinessAdCreative | null;
+    center: { lat: number; lng: number; address: string | null } | null;
+  } | null;
+  ads: BusinessAd[];
+  series: BusinessAdDayRow[];
+  totals: { notified: number; reach: number; clicks: number; ctr: number };
+}
+
+export interface NearbyBusinessAd extends BusinessAdCreative {
+  adId: string;
+  distanceM: number;
+}
 
 // ── Partner Program types ────────────────────────────────────────────────────
 

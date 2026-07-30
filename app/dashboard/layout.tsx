@@ -15,6 +15,7 @@ const NAV = [
   { href: '/dashboard/passengers',     label: '👥 Passengers' },
   { href: '/dashboard/disputes',       label: '⚖️ Disputes' },
   { href: '/dashboard/partners',       label: '🏢 Partner Program' },
+  { href: '/dashboard/advertise',      label: '📣 Advertise' },
   { href: '/dashboard/ride-settings',  label: '⚙️ Ride settings' },
   { href: '/dashboard/payouts',        label: '💳 Payouts' },
   { href: '/dashboard/live-ops',        label: '🗺️ Live ops map' },

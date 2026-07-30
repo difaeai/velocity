@@ -195,6 +195,23 @@ export { submitCnicVerification, adminReviewCnicVerification } from './users/cni
 // Freight / business delivery
 export { createFreightRequest, cancelFreightRequest, acceptFreightQuote, adminUpdateFreightStatus } from './freight';
 
+// Find your Customers — business proximity advertising (paid radius + push offers)
+export {
+  getBusinessAdPlans,
+  submitBusinessAdApplication,
+  adminReviewBusinessAdApplication,
+  createBusinessAd,
+  updateBusinessAd,
+  setBusinessAdStatus,
+  adminSetBusinessAdStatus,
+  adminSuspendAdvertiser,
+  adminUpdateBusinessAdSettings,
+  checkNearbyBusinessAds,
+  recordBusinessAdClick,
+  getBusinessAdDashboard,
+  expireBusinessAdPlans,
+} from './businessAds';
+
 // Admin: broadcast push notification
 export { adminSendPushNotification } from './users';
 

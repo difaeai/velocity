@@ -19,6 +19,7 @@ import { useCurrentLocation } from '../../src/hooks/location';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
+import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { colors } from '../../src/config';
 import { getLanguage, setLanguage, type Language } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
@@ -46,6 +47,13 @@ export default function PassengerHome() {
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+
+  // Paid business offers around the rider. This is the whole receiving side of
+  // "Find your Customers": it asks the server whether this position has earned an
+  // offer notification, throttled by distance moved and by time, and the server
+  // enforces the real limits (once per offer per 12 hours, capped per day).
+  // Nothing renders from it — the offer arrives as a push.
+  useNearbyBusinessAdCheck(coords);
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -306,9 +314,11 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Couriers</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business-delivery')}>
+                  {/* "Business" rather than "Business delivery": the hub behind
+                      it carries both deliveries and Find your Customers. */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business')}>
                     <Text style={styles.menuItemIcon}>💼</Text>
-                    <Text style={styles.menuItemText}>Business delivery</Text>
+                    <Text style={styles.menuItemText}>Business</Text>
                   </Pressable>
 
                   {/* City to City and Notifications intentionally live only on

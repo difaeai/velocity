@@ -38,6 +38,10 @@ GoogleService-Info.plist
 .expo-shared/
 apps/mobile/ios/
 apps/mobile/android/
+# A prebuild run from the repo root drops a second native project here (~766 MB
+# of generated Gradle output). Same rule as the app's own android/ — it is built,
+# never authored.
+/android/
 *.keystore
 *.jks
 

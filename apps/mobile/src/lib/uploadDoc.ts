@@ -53,6 +53,25 @@ export async function uploadPartnerPaymentProof(uid: string, uri: string): Promi
   return upload(path, uri);
 }
 
+/**
+ * The offer picture that goes out with a business-ad push. Lives under
+ * `businessAdMedia/{uid}/` — readable by any signed-in user, because whoever gets
+ * the notification has to be able to see the picture.
+ */
+export async function uploadBusinessAdImage(uid: string, uri: string): Promise<UploadResult> {
+  const path = `businessAdMedia/${uid}/offer-${Date.now()}`;
+  return upload(path, uri);
+}
+
+/**
+ * Advertising-fee receipt. Lives under `businessAdPayments/{uid}/` — owner and
+ * admin only, same as the partner receipts, since it carries bank details.
+ */
+export async function uploadBusinessAdPaymentProof(uid: string, uri: string): Promise<UploadResult> {
+  const path = `businessAdPayments/${uid}/payment-${Date.now()}`;
+  return upload(path, uri);
+}
+
 async function upload(path: string, uri: string): Promise<UploadResult> {
   const storageRef = ref(storage, path);
   const blob = await uriToBlob(uri);

@@ -201,4 +201,36 @@ export const adminApi = {
     { uid: string; type: 'driver' | 'passenger'; fleetId?: string | null; reason?: string },
     { ok: boolean }
   >('adminReassignReferral'),
+
+  // ── Advertise — "Find your Customers" business proximity ads ───────────────
+  adminReviewBusinessAdApplication: callable<
+    {
+      uid: string;
+      decision: 'approve' | 'reject' | 'resubmit';
+      reason?: string;
+      /** Approve onto a different radius/plan than asked for — e.g. the transfer
+       * that landed only covers the cheaper band. */
+      radiusKm?: number;
+      months?: 3 | 6 | 12;
+    },
+    { ok: boolean; status: string }
+  >('adminReviewBusinessAdApplication'),
+  adminSetBusinessAdStatus: callable<
+    { adId: string; status: 'active' | 'paused' | 'removed'; reason?: string },
+    { ok: boolean; status: string }
+  >('adminSetBusinessAdStatus'),
+  adminSuspendAdvertiser: callable<
+    { uid: string; suspended: boolean; reason?: string },
+    { ok: boolean }
+  >('adminSuspendAdvertiser'),
+  adminUpdateBusinessAdSettings: callable<
+    {
+      tiers?: { key: string; maxRadiusKm: number; monthlyFee: number; adSlots: number }[];
+      currency?: string;
+      notifyCooldownHours?: number;
+      maxNotifPerUserPerDay?: number;
+      payment?: Record<string, string | null>;
+    },
+    { ok: boolean }
+  >('adminUpdateBusinessAdSettings'),
 };

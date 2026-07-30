@@ -56,11 +56,37 @@ export async function registerForPushNotifications(): Promise<string | null> {
       });
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
-    const token = tokenData.data;
     const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
-    await api.registerFcmToken({ token, platform });
-    return token;
+
+    // Register BOTH tokens. The backend routes by token shape: the native token
+    // (on Android, the raw FCM registration token) goes through the Firebase
+    // Admin SDK, the Expo token through Expo's push service. Registering only
+    // the Expo one is what silently broke pushes — the Admin SDK cannot deliver
+    // to an `ExponentPushToken[...]` and reports it as a per-token failure.
+    let primary: string | null = null;
+
+    try {
+      const device = await Notifications.getDevicePushTokenAsync();
+      if (typeof device?.data === 'string' && device.data.length > 10) {
+        await api.registerFcmToken({ token: device.data, platform });
+        primary = device.data;
+      }
+    } catch {
+      // No native token available (no Google Play services, for instance) —
+      // the Expo token below is then the only route, so keep going.
+    }
+
+    try {
+      const expo = await Notifications.getExpoPushTokenAsync();
+      if (typeof expo?.data === 'string' && expo.data.length > 10) {
+        await api.registerFcmToken({ token: expo.data, platform });
+        primary = primary ?? expo.data;
+      }
+    } catch {
+      // Same deal in reverse: if the native token registered, we still have a route.
+    }
+
+    return primary;
   } catch {
     return null;
   }

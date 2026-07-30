@@ -558,6 +558,44 @@ export const UR: Record<string, string> = {
     'اپنا راستہ اور کرایہ تجویز کریں · ڈرائیور قبول کرے یا جوابی پیشکش کرے',
   'The whole car to yourself': 'پوری گاڑی صرف آپ کی',
 
+  // ── Find your Customers — business proximity advertising ────────────────────
+  // 'Business delivery', 'Waiting for approval', 'Delete' and 'Edit' are shared
+  // labels already defined earlier in this file — a second copy here is a
+  // duplicate key (a TypeScript error), and in 'Edit''s case it silently
+  // redefined the app-wide translation for every other screen.
+  'Find your Customers': 'اپنے گاہک تلاش کریں',
+  'Move your goods, or bring customers to your door. Pick one.':
+    'اپنا سامان بھیجیں، یا گاہکوں کو اپنی دکان تک لائیں۔ ایک منتخب کریں۔',
+  'Reach the people who pass your door': 'اپنی دکان کے قریب گزرنے والوں تک پہنچیں',
+  'What it costs': 'قیمت کیا ہے',
+  'Get started': 'شروع کریں',
+  'Your offer': 'آپ کی پیشکش',
+  'Your results': 'آپ کے نتائج',
+  'People reached': 'پہنچے ہوئے لوگ',
+  'Notifications sent': 'بھیجی گئی اطلاعات',
+  'Open rate': 'اوپن ریٹ',
+  'Opened': 'کھولی گئی',
+  'HOW FAR TO REACH': 'کتنی دور تک پہنچیں',
+  'HOW PEOPLE WILL SEE IT': 'لوگ اسے کیسے دیکھیں گے',
+  'OFFER PICTURE': 'پیشکش کی تصویر',
+  'Add your offer picture': 'اپنی پیشکش کی تصویر شامل کریں',
+  'Offer picture': 'پیشکش کی تصویر',
+  'Publish your offer': 'اپنی پیشکش شائع کریں',
+  'Publish offer': 'پیشکش شائع کریں',
+  'Edit offer': 'پیشکش میں تبدیلی',
+  'Save changes': 'تبدیلیاں محفوظ کریں',
+  'Offer near you': 'آپ کے قریب پیشکش',
+  'This offer has ended': 'یہ پیشکش ختم ہو گئی',
+  'How long?': 'کتنی مدت؟',
+  'One-time payment': 'ایک بار ادائیگی',
+  'Upload payment screenshot': 'ادائیگی کا اسکرین شاٹ اپ لوڈ کریں',
+  'Copy number': 'نمبر کاپی کریں',
+  'YOUR BUSINESS': 'آپ کا کاروبار',
+  'Renew': 'تجدید کریں',
+  'Extend': 'مدت بڑھائیں',
+  'Pause': 'روکیں',
+  'Resume': 'دوبارہ چلائیں',
+
   // ── Couriers / freight / business delivery ──────────────────────────────────
   'Send a package': 'پیکج بھیجیں',
   'Business Delivery': 'کاروباری ڈیلیوری',
