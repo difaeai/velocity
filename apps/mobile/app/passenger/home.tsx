@@ -16,6 +16,8 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useNearbyActivity } from '../../src/hooks/nearbyActivity';
+import { usePresenceBeacon } from '../../src/hooks/presence';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
@@ -26,6 +28,8 @@ import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
 import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
+import { MapActivityChip } from '../../src/ui/MapActivityChip';
+import { QuietAreaCard } from '../../src/ui/QuietAreaCard';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
@@ -48,12 +52,33 @@ export default function PassengerHome() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
 
+  // Live supply/demand around the rider: cars online (lime chips) and everyone
+  // else with the app nearby (small red dots). Both come back from the server
+  // blurred and anonymous — see getNearbyActivity.
+  const activity = useNearbyActivity(coords);
+
+  // …and the other half of that: this handset tells the server it is here, so
+  // this rider is one of the dots on everybody else's map. Nothing renders from
+  // it. Written at most every few minutes, and it lapses on its own if the app
+  // stops being opened.
+  usePresenceBeacon(coords);
+
   // Paid business offers around the rider. This is the whole receiving side of
   // "Find your Customers": it asks the server whether this position has earned an
   // offer notification, throttled by distance moved and by time, and the server
   // enforces the real limits (once per offer per 12 hours, capped per day).
   // Nothing renders from it — the offer arrives as a push.
   useNearbyBusinessAdCheck(coords);
+
+  // A truly empty area is our cue to pitch the partner program. Gated on
+  // `loaded` so a cold start or a failed poll never shows it: "we haven't
+  // looked yet" must not be mistaken for "there is nobody here".
+  const [quietDismissed, setQuietDismissed] = useState(false);
+  const showQuietPitch =
+    activity.loaded &&
+    activity.driverCount === 0 &&
+    activity.passengerCount === 0 &&
+    !quietDismissed;
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -130,7 +155,7 @@ export default function PassengerHome() {
     <View style={styles.container}>
       {/* 1. Full-screen live map (real Google map in the dev build) */}
       <View style={styles.mapContainer}>
-        <LiveMap coords={coords} />
+        <LiveMap coords={coords} drivers={activity.drivers} demand={activity.passengers} />
       </View>
 
       {/* 2. Top Navigation Overlay */}
@@ -180,6 +205,17 @@ export default function PassengerHome() {
             </Pressable>
           </View>
         </View>
+
+        {/* Names the two marks on the map and gives the real totals behind them.
+            Only after a poll has landed — an empty chip would read as "no cars"
+            when it actually means "still looking". */}
+        {activity.loaded ? (
+          <MapActivityChip
+            driverCount={activity.driverCount}
+            passengerCount={activity.passengerCount}
+            waitingCount={activity.waitingCount}
+          />
+        ) : null}
       </SafeAreaView>
 
       {/* 3. Bottom Booking Sheet — drag the grabber to resize it, or tap the
@@ -206,6 +242,18 @@ export default function PassengerHome() {
           </View>
           <Text style={styles.searchHeroArrow}>→</Text>
         </Pressable>
+
+        {/* ── Nothing moving nearby → the honest moment to pitch earning.
+             Sits directly under "Where to?" so it is seen, but never on top of
+             it: booking a ride stays the first thing on this screen even when
+             the area is empty. ── */}
+        {showQuietPitch ? (
+          <QuietAreaCard
+            onEarn={() => router.push('/passenger/earn')}
+            onDrive={goDriverMode}
+            onDismiss={() => setQuietDismissed(true)}
+          />
+        ) : null}
 
         {/* ── Speak instead of typing.
              Sits directly under "Where to?" because it is the same job by a

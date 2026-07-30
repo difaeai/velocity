@@ -18,6 +18,19 @@ export interface DriverPin {
   lng: number;
 }
 
+/**
+ * Somebody nearby with the Velocity app. Drawn as a small red dot: enough to
+ * read "there are people here", never a person you could go and find. The
+ * coordinates arrive already blurred and anonymous from the server (see
+ * getNearbyActivity), which is the only thing that makes drawing them at all
+ * acceptable.
+ */
+export interface DemandPin {
+  id: string;
+  lat: number;
+  lng: number;
+}
+
 // Default map centre (Karachi) — shown instantly before GPS responds.
 const DEFAULT_REGION = {
   latitude: 24.8607,
@@ -54,18 +67,21 @@ import { themed } from '../theme';
  * - `pickup` + `dropoff`: draws pin/flag markers with a route line and frames
  *   the whole route (booking + trip screens).
  * - `drivers`: live driver positions rendered as car chips.
+ * - `demand`: other app users nearby, rendered as small red dots.
  */
 export function LiveMap({
   coords,
   pickup,
   dropoff,
   drivers,
+  demand,
   style,
 }: {
   coords: Coords | null;
   pickup?: MapPoint | null;
   dropoff?: MapPoint | null;
   drivers?: DriverPin[];
+  demand?: DemandPin[];
   style?: StyleProp<ViewStyle>;
 }) {
   const mapRef   = useRef<MapView>(null);
@@ -212,12 +228,29 @@ export function LiveMap({
         </Marker>
       )}
 
+      {/* Waiting riders first, so a car chip always wins the overlap: the dots
+          are context, the cars are the thing you're about to book. */}
+      {demand?.map((p) => (
+        <Marker
+          key={p.id}
+          coordinate={{ latitude: p.lat, longitude: p.lng }}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+          zIndex={1}
+        >
+          <View style={styles.demandOuter}>
+            <View style={styles.demandInner} />
+          </View>
+        </Marker>
+      ))}
+
       {drivers?.map((d) => (
         <Marker
           key={d.id}
           coordinate={{ latitude: d.lat, longitude: d.lng }}
           anchor={{ x: 0.5, y: 0.5 }}
           tracksViewChanges={false}
+          zIndex={2}
         >
           <View style={styles.driverChip}>
             <Text style={styles.driverChipEmoji}>🚗</Text>
@@ -304,6 +337,25 @@ const styles = themed(() => StyleSheet.create({
     width: 2.5,
     height: 10,
     backgroundColor: '#ffffff',
+  },
+
+  // Waiting rider: small red dot in a faint halo. Sized well below the car
+  // chip and the GPS marker so a busy area reads as texture, not as clutter.
+  demandOuter: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239,68,68,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demandInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: 'rgba(10,14,18,0.85)',
   },
 
   driverChip: {

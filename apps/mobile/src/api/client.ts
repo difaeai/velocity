@@ -110,6 +110,37 @@ export interface NearbyPublicPool {
   hasDriver?: boolean;
 }
 
+/** One blurred map pin — an opaque key and a coordinate, and nothing else. */
+export interface ActivityPin {
+  id: string;
+  lat: number;
+  lng: number;
+  distanceKm: number;
+}
+
+/**
+ * The live picture around the passenger: cars that are online nearby, and the
+ * people who have the app around them.
+ *
+ * `passengerCount` is everyone with Velocity installed and recently active
+ * nearby — the red dots — not only the ones with a ride request open.
+ * `waitingCount` is that smaller subset who are actually waiting for a car
+ * right now.
+ *
+ * The counts are the full totals inside the radius, while the arrays are capped
+ * at what a map can legibly hold — so read the counts for "how busy is it", not
+ * `drivers.length`.
+ */
+export interface NearbyActivity {
+  ok: boolean;
+  radiusKm: number;
+  driverCount: number;
+  passengerCount: number;
+  waitingCount: number;
+  drivers: ActivityPin[];
+  passengers: ActivityPin[];
+}
+
 /**
  * A pool request sitting on the driver's route that they are cleared to take:
  * seats, gender rules, the corridor and the fare gate have all already passed on
@@ -261,6 +292,13 @@ export const api = {
     },
     { pools: NearbyPublicPool[] }
   >('getNearbyPublicPoolTrips'),
+  // ── Home map activity layer: anonymised cars + waiting-rider dots ─────────
+  // Coordinates come back deliberately blurred and carry no identity — enough
+  // to answer "is anything moving around me?", never enough to follow anyone.
+  getNearbyActivity: callable<
+    { lat: number; lng: number; radiusKm?: number },
+    NearbyActivity
+  >('getNearbyActivity'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
   // `polyline` is a FALLBACK, and optional. When the backend has its own Maps key
   // (GOOGLE_MAPS_SERVER_KEY) it fetches the road itself and never looks at ours.

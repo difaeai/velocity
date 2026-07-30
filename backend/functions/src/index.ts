@@ -42,6 +42,9 @@ export {
 // Driver reports a fake / abusive request from the open-requests feed
 export { reportOpenRequest } from './trips/reports';
 
+// Passenger home map — anonymised live supply (cars) + demand (waiting riders)
+export { getNearbyActivity } from './trips/nearbyActivity';
+
 // En-route pickups — riders on the driver's way, and driver-declared routes
 export {
   setDriverRoute,

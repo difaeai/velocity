@@ -235,3 +235,32 @@ test('travelMate profile owner may set community fields, others may not write', 
   // Server-only fields can't be smuggled in.
   await assertFails(updateDoc(doc(passenger, 'travelMateProfiles/passenger1'), { suspended: false }));
 });
+
+test('presence: owner writes their own beacon, nobody may read anyone else\'s', async () => {
+  const beacon = {
+    uid: 'passenger1', lat: 33.71, lng: 73.055, geohash: 'tuu4z',
+    lastSeenAt: new Date(), expireAt: new Date(Date.now() + 86_400_000),
+  };
+  await assertSucceeds(setDoc(doc(passenger, 'userPresence/passenger1'), beacon));
+  await assertSucceeds(getDoc(doc(passenger, 'userPresence/passenger1')));
+  await assertSucceeds(getDoc(doc(admin, 'userPresence/passenger1')));
+
+  // The whole point: this collection is NOT a "where is everyone" feed. Only
+  // the blurred, anonymous getNearbyActivity callable may fan it out.
+  await assertFails(getDoc(doc(driver, 'userPresence/passenger1')));
+  await assertFails(getDoc(doc(anon, 'userPresence/passenger1')));
+
+  // Nobody may plant a beacon for somebody else, or fake a swarm of users.
+  await assertFails(setDoc(doc(driver, 'userPresence/passenger1'), beacon));
+  await assertFails(setDoc(doc(passenger, 'userPresence/ghost-user'), { ...beacon, uid: 'ghost-user' }));
+
+  // Field whitelist: nothing privileged rides along on a location ping.
+  await assertFails(updateDoc(doc(passenger, 'userPresence/passenger1'), { role: 'admin' }));
+  await assertFails(updateDoc(doc(passenger, 'userPresence/passenger1'), { verified: true }));
+
+  // Moving is allowed; so is going dark.
+  await assertSucceeds(updateDoc(doc(passenger, 'userPresence/passenger1'), {
+    lat: 33.72, lng: 73.06, geohash: 'tuu4z', lastSeenAt: new Date(),
+  }));
+  await assertSucceeds(deleteDoc(doc(passenger, 'userPresence/passenger1')));
+});

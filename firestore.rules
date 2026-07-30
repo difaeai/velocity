@@ -823,6 +823,34 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- userPresence/{uid} -----------------------------------------------
+    // "Somebody with the app is around here." One doc per user, holding their
+    // last known coarse position, written by their own handset while the app is
+    // open. It is what puts the red dots on the passenger home map.
+    //
+    // WRITE is owner-only and field-whitelisted, and follows the same reasoning
+    // as drivers/{uid}: a location beacon that ran through a Cloud Function
+    // would cost an invocation per ping for a decorative map layer.
+    //
+    // READ is owner + admin ONLY, deliberately. No user may query this
+    // collection — anyone who could would have a live "where is everyone"
+    // feed keyed by uid. The map layer goes through the getNearbyActivity
+    // callable instead, which returns blurred, anonymous, un-attributable
+    // points and never the underlying documents.
+    //
+    // Docs self-delete via a Firestore TTL policy on `expireAt` (see
+    // docs/HARDENING.md), so a user who stops opening the app stops being on
+    // anybody's map.
+    match /userPresence/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId)
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'lat', 'lng', 'geohash', 'lastSeenAt', 'expireAt']);
+      allow update: if isOwner(userId)
+                    && onlyChanges(['lat', 'lng', 'geohash', 'lastSeenAt', 'expireAt']);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

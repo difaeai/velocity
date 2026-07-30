@@ -1371,4 +1371,21 @@ export const UR: Record<string, string> = {
     'براہِ کرم کم از کم ایک مقام مقرر کریں — جب تک آپ ایسا نہیں کرتے ہم آپ کو یہاں یاد دلاتے رہیں گے۔',
   'Your partner account is suspended. Your fleets are not earning. Contact support.':
     'آپ کا پارٹنر اکاؤنٹ معطل ہے۔ آپ کے فلیٹ کمائی نہیں کر رہے۔ سپورٹ سے رابطہ کریں۔',
+
+  // ── Home map activity layer (cars nearby / app users nearby) ──────────────
+  'car': 'گاڑی',
+  'cars': 'گاڑیاں',
+  'rider': 'سوار',
+  'riders': 'سوار',
+  'waiting': 'انتظار میں',
+  'Quiet around you right now': 'اس وقت آپ کے اردگرد خاموشی ہے',
+
+  // ── Quiet-area pitch for Earn with Velocity ───────────────────────────────
+  "It's quiet around you": 'آپ کے اردگرد خاموشی ہے',
+  'No cars online and nobody else on Velocity nearby right now.':
+    'اس وقت کوئی گاڑی آن لائن نہیں اور قریب ویلاسٹی پر کوئی اور نہیں۔',
+  "That's an opening, not a dead end. Register as a driver and invite riders in your area — build your own Velocity fleet and earn from every ride they take.":
+    'یہ موقع ہے، بند راستہ نہیں۔ ڈرائیور کے طور پر رجسٹر ہوں اور اپنے علاقے کے سواروں کو دعوت دیں — اپنا ویلاسٹی فلیٹ بنائیں اور ان کی ہر سواری سے کمائیں۔',
+  'Earn with Velocity →': 'ویلاسٹی کے ساتھ کمائیں →',
+  'Dismiss': 'بند کریں',
 };

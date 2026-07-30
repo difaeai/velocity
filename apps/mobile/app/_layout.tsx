@@ -19,6 +19,7 @@ import {
   subscribeTheme,
   type ThemeMode,
 } from '../src/theme';
+import { UpdateGate } from '../src/ui/UpdateGate';
 
 LogBox.ignoreLogs([
   'Could not reach Cloud Firestore backend',
@@ -104,6 +105,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style={getThemeMode() === 'light' ? 'dark' : 'light'} />
+        {/* Outside the keyed Fragment on purpose: everything inside it remounts
+            on a theme or language switch, and the update prompt must not
+            reappear because somebody tapped the moon icon. */}
+        <UpdateGate />
         <Fragment key={`${themeVersion}:${languageVersion}`}>
           <Slot />
         </Fragment>

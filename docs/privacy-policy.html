@@ -126,6 +126,13 @@
         use to set pickup points, match nearby rides, show drivers on the map, and enable live
         trip tracking. Location is collected only when the app is open and you are using a
         location feature.</li>
+      <li><strong>Nearby activity on the map</strong> — while the home screen is open, your
+        approximate area is used to show other Velocity users that there is activity around them,
+        as an anonymous dot. This is <em>not</em> live tracking and it does not identify you: the
+        position is deliberately shifted by a few hundred metres before anyone sees it, and it
+        carries no name, phone number, photo, account identifier, trip or fare. Nobody can tell
+        which dot is you, message a dot, or look up who it belongs to. Your last known area stops
+        being shown once you stop opening the app.</li>
       <li><strong>Device &amp; diagnostic information</strong> — a device push token and basic
         technical data needed to deliver notifications and keep the app working reliably.</li>
       <li><strong>Trip activity</strong> — pickup and drop-off points, trip status, and fare
@@ -147,6 +154,7 @@
           <tr><td><b>Phone number</b></td><td>Account creation &amp; OTP sign-in</td><td>No</td></tr>
           <tr><td><b>Name / profile</b></td><td>Identify you to your matched driver or rider</td><td>Limited, in-trip</td></tr>
           <tr><td><b>Precise location</b></td><td>Pickup, ride matching, live tracking</td><td>Limited, in-trip</td></tr>
+          <tr><td><b>Approximate area</b></td><td>Show other users that there is activity nearby</td><td>As an anonymous, shifted dot — never identifiable</td></tr>
           <tr><td><b>Camera / photos</b></td><td>Driver &amp; partner document verification, sharing photos in chat</td><td>No</td></tr>
           <tr><td><b>Payment screenshots</b></td><td>Verify commission &amp; fee settlements (AI-assisted, see section 5)</td><td>Service provider (Anthropic)</td></tr>
           <tr><td><b>Chat &amp; community content</b></td><td>Deliver your messages and posts to their recipients</td><td>With the people you send it to</td></tr>
@@ -165,6 +173,7 @@
       <li>Create and secure your account and verify drivers.</li>
       <li>Match riders and drivers and calculate estimated fares.</li>
       <li>Show live location and trip progress during a ride.</li>
+      <li>Show, anonymously, whether there are cars and other users around you.</li>
       <li>Send trip updates, account alerts, and service notifications.</li>
       <li>Verify commission and fee payments, including with the automated (AI) check described
         in section 5.</li>
