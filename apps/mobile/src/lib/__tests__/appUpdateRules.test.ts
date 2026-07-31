@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compareVersions, evaluateUpdate } from '../appUpdateRules';
+import { compareVersions, evaluateUpdate, parseBuildNumber } from '../appUpdateRules';
 
 const URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 
@@ -20,6 +20,27 @@ describe('compareVersions', () => {
   it('reads junk segments as zero rather than NaN', () => {
     expect(compareVersions('1.x.0', '1.0.0')).toBe(0);
     expect(compareVersions('', '0.0.0')).toBe(0);
+  });
+});
+
+describe('parseBuildNumber', () => {
+  it('accepts the string expo-application actually returns', () => {
+    expect(parseBuildNumber('13')).toBe(13);
+    expect(parseBuildNumber('  13  ')).toBe(13);
+    expect(parseBuildNumber(13)).toBe(13);
+  });
+
+  it('reads anything unparseable as unknown, never as zero', () => {
+    // Zero would look older than every published build and nag forever.
+    expect(parseBuildNumber(null)).toBeNull();
+    expect(parseBuildNumber(undefined)).toBeNull();
+    expect(parseBuildNumber('')).toBeNull();
+    expect(parseBuildNumber('1.1.0')).toBeNull();
+    expect(parseBuildNumber('13-beta')).toBeNull();
+    expect(parseBuildNumber(0)).toBeNull();
+    expect(parseBuildNumber(-4)).toBeNull();
+    expect(parseBuildNumber(12.5)).toBeNull();
+    expect(parseBuildNumber(NaN)).toBeNull();
   });
 });
 

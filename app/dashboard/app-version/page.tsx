@@ -6,13 +6,16 @@
  * This is the only writer of `config/appVersion`, the doc every installed app
  * compares itself against on launch (see apps/mobile/src/lib/appUpdate.ts). The
  * rule the app enforces on its side is worth restating here, because it is what
- * makes this page safe to leave switched on: an install only prompts when the
- * published version is strictly NEWER than the one it is running. Publishing
- * 1.1.0 while everyone is already on 1.1.0 prompts nobody.
+ * makes this page safe to leave switched on: an install only prompts when what
+ * is published here is strictly NEWER than what it is running — by version
+ * string, or by build number when the version string is unchanged. Publishing
+ * 1.1.0 / build 13 to a handset already on 1.1.0 / build 13 prompts nobody.
  *
  * Which means the release ritual is: push the build to Play, wait for the
- * rollout, then set the number here. Setting it early would ask people to fetch
- * an update the store cannot serve them yet.
+ * rollout, then set the numbers here. Setting them early would ask people to
+ * fetch an update the store cannot serve them yet. And since our releases often
+ * keep the same version string, the BUILD NUMBER is the field that usually does
+ * the work — publishing the version alone would prompt nobody at all.
  */
 
 import { useEffect, useState } from 'react';
@@ -271,13 +274,14 @@ export default function AppVersionPage() {
               disabled={!isAdmin}
             />
             <div style={hintStyle}>
-              The <code>version</code> from app.json for the build you shipped. This is the number
-              the prompt compares against.
+              The <code>version</code> from app.json for the build you shipped. Only fires for
+              installs on an <em>older</em> version string — so if you shipped this release without
+              bumping app.json, this field alone prompts nobody and you need the build number too.
             </div>
           </div>
 
           <div>
-            <label style={labelStyle}>Build number (optional)</label>
+            <label style={labelStyle}>Build number</label>
             <input
               style={inputStyle}
               value={form.latestBuild}
@@ -286,9 +290,9 @@ export default function AppVersionPage() {
               disabled={!isAdmin}
             />
             <div style={hintStyle}>
-              The Android version code. Only needed when you ship a new build under the{' '}
-              <em>same</em> version string — and only handsets that can report their own build
-              number will act on it.
+              The Android version code EAS assigned the build (the &ldquo;vc&rdquo; number). This is
+              what catches a new build shipped under an unchanged version string, which is most of
+              our releases — fill it in every time.
             </div>
           </div>
         </div>
@@ -355,7 +359,12 @@ export default function AppVersionPage() {
             <>
               On an install older than{' '}
               <strong style={{ color: colors.text }}>
-                {form.latestVersion.trim() || `build ${form.latestBuild.trim()}`}
+                {[
+                  form.latestVersion.trim(),
+                  form.latestBuild.trim() && `build ${form.latestBuild.trim()}`,
+                ]
+                  .filter(Boolean)
+                  .join(' / ')}
               </strong>
               : “{forceFloor ? 'Update required' : 'Update available'}” with{' '}
               {forceFloor ? (
