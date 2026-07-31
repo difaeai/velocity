@@ -31,10 +31,14 @@ export interface DemandPin {
   lng: number;
 }
 
-// Default map centre (Karachi) — shown instantly before GPS responds.
+// Default map centre — shown instantly on a cold start, before GPS responds.
+// Islamabad, the primary market. This is only ever seen on a genuine first fix:
+// once a position has been received, useCurrentLocation keeps it in module scope
+// and hands it back across remounts, so a language or theme switch no longer
+// drops the map onto a default city.
 const DEFAULT_REGION = {
-  latitude: 24.8607,
-  longitude: 67.0011,
+  latitude: 33.6844,
+  longitude: 73.0479,
   latitudeDelta: 0.05,
   longitudeDelta: 0.05,
 };
