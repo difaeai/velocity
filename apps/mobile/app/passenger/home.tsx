@@ -30,7 +30,7 @@ import { comingSoon } from '../../src/ui/components';
 import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
-import { QuietAreaCard } from '../../src/ui/QuietAreaCard';
+import { NewsTicker } from '../../src/ui/NewsTicker';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
@@ -69,16 +69,6 @@ export default function PassengerHome() {
   // enforces the real limits (once per offer per 12 hours, capped per day).
   // Nothing renders from it — the offer arrives as a push.
   useNearbyBusinessAdCheck(coords);
-
-  // A truly empty area is our cue to pitch the partner program. Gated on
-  // `loaded` so a cold start or a failed poll never shows it: "we haven't
-  // looked yet" must not be mistaken for "there is nobody here".
-  const [quietDismissed, setQuietDismissed] = useState(false);
-  const showQuietPitch =
-    activity.loaded &&
-    activity.driverCount === 0 &&
-    activity.passengerCount === 0 &&
-    !quietDismissed;
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -210,6 +200,12 @@ export default function PassengerHome() {
           </View>
         </View>
 
+        {/* One scrolling line, directly under the header: anyone — not only
+            drivers — can bring people onto Velocity and earn from their rides.
+            A strip instead of a card so it can't take space away from the
+            booking controls or hide anything in the sheet. */}
+        <NewsTicker onPress={() => router.push('/passenger/earn')} />
+
         {/* Names the two marks on the map and gives the real totals behind them.
             Only after a poll has landed — an empty chip would read as "no cars"
             when it actually means "still looking". */}
@@ -246,18 +242,6 @@ export default function PassengerHome() {
           </View>
           <Text style={styles.searchHeroArrow}>→</Text>
         </Pressable>
-
-        {/* ── Nothing moving nearby → the honest moment to pitch earning.
-             Sits directly under "Where to?" so it is seen, but never on top of
-             it: booking a ride stays the first thing on this screen even when
-             the area is empty. ── */}
-        {showQuietPitch ? (
-          <QuietAreaCard
-            onEarn={() => router.push('/passenger/earn')}
-            onDrive={goDriverMode}
-            onDismiss={() => setQuietDismissed(true)}
-          />
-        ) : null}
 
         {/* ── Speak instead of typing.
              Sits directly under "Where to?" because it is the same job by a
