@@ -1381,12 +1381,16 @@ export const UR: Record<string, string> = {
   'waiting': 'انتظار میں',
   'Quiet around you right now': 'اس وقت آپ کے اردگرد خاموشی ہے',
 
-  // ── Quiet-area pitch for Earn with Velocity ───────────────────────────────
-  "It's quiet around you": 'آپ کے اردگرد خاموشی ہے',
-  'No cars online and nobody else on Velocity nearby right now.':
-    'اس وقت کوئی گاڑی آن لائن نہیں اور قریب ویلاسٹی پر کوئی اور نہیں۔',
-  "That's an opening, not a dead end. Register as a driver and invite riders in your area — build your own Velocity fleet and earn from every ride they take.":
-    'یہ موقع ہے، بند راستہ نہیں۔ ڈرائیور کے طور پر رجسٹر ہوں اور اپنے علاقے کے سواروں کو دعوت دیں — اپنا ویلاسٹی فلیٹ بنائیں اور ان کی ہر سواری سے کمائیں۔',
   'Earn with Velocity →': 'ویلاسٹی کے ساتھ کمائیں →',
   'Dismiss': 'بند کریں',
+
+  // ── Home news ticker (build your own fleet) ───────────────────────────────
+  'Bring people onto Velocity and they become your fleet — you earn from every ride they take.':
+    'لوگوں کو ویلاسٹی پر لائیں، وہ آپ کا فلیٹ بن جاتے ہیں — ان کی ہر سواری سے آپ کماتے ہیں۔',
+  'Not just drivers: passengers you invite earn for you too.':
+    'صرف ڈرائیور ہی نہیں: آپ کے بلائے ہوئے مسافر بھی آپ کے لیے کماتے ہیں۔',
+  'Invite drivers, invite riders, keep earning — your fares never change.':
+    'ڈرائیور بلائیں، سوار بلائیں، کماتے رہیں — آپ کے کرائے میں کوئی فرق نہیں آتا۔',
+  'Earn with Velocity — build your own fleet of drivers and passengers':
+    'ویلاسٹی کے ساتھ کمائیں — ڈرائیوروں اور مسافروں کا اپنا فلیٹ بنائیں',
 };
