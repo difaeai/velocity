@@ -32,10 +32,30 @@ export interface CurrentLocation {
   request: () => void;
 }
 
+/**
+ * Last position this process actually received, held outside React.
+ *
+ * A language or theme switch deliberately re-keys the whole route subtree (see
+ * app/_layout.tsx) so the new strings/palette reach every open screen. That
+ * remounts this hook and would reset `coords` to null, dropping the map back to
+ * its default city centre for the several seconds a fresh GPS fix takes — which
+ * reads to the user as "changing the language moved me to another city".
+ * Keeping the fix in module scope, the same way theme.ts and i18n/index.ts keep
+ * theirs, lets it survive the remount; the live watch then refines it.
+ *
+ * This is NOT the stale-cache problem that `getLastKnownPositionAsync` has (see
+ * the note in `request`). These values are only ever written from a fix this
+ * running process received, so they are the user's real position from moments
+ * ago — never a leftover from an earlier session in a different city. Nothing is
+ * persisted to disk, so a cold start still waits for real GPS.
+ */
+let lastCoords: Coords | null = null;
+let lastAddress: string | null = null;
+
 export function useCurrentLocation(auto = true): CurrentLocation {
-  const [coords, setCoords] = useState<Coords | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
-  const [status, setStatus] = useState<LocationStatus>('idle');
+  const [coords, setCoords] = useState<Coords | null>(lastCoords);
+  const [address, setAddress] = useState<string | null>(lastAddress);
+  const [status, setStatus] = useState<LocationStatus>(lastCoords ? 'granted' : 'idle');
   const mounted = useRef(true);
   const watchSub = useRef<LocationSubscription | null>(null);
 
@@ -58,7 +78,9 @@ export function useCurrentLocation(auto = true): CurrentLocation {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (!mounted.current) return;
-          setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          lastCoords = next;
+          setCoords(next);
           setStatus('granted');
         },
         (err) => {
@@ -85,7 +107,9 @@ export function useCurrentLocation(auto = true): CurrentLocation {
           { accuracy: Location!.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
           (pos) => {
             if (!mounted.current) return;
-            setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            lastCoords = next;
+            setCoords(next);
             setStatus('granted');
           },
         );
@@ -94,6 +118,7 @@ export function useCurrentLocation(auto = true): CurrentLocation {
         const pos = await Location!.getCurrentPositionAsync({ accuracy: Location!.Accuracy.Balanced });
         if (!mounted.current) return;
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        lastCoords = next;
         setCoords(next);
         setStatus('granted');
         try {
@@ -101,7 +126,10 @@ export function useCurrentLocation(auto = true): CurrentLocation {
           if (!mounted.current) return;
           const place = places[0];
           const line = place ? [place.name, place.street, place.city].filter(Boolean).join(', ') : '';
-          if (line) setAddress(line);
+          if (line) {
+            lastAddress = line;
+            setAddress(line);
+          }
         } catch {
           // reverse geocoding is best-effort; coords are what matter
         }
