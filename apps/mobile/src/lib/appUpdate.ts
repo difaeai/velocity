@@ -18,22 +18,33 @@
  * WHAT THE RUNNING BUILD KNOWS ABOUT ITSELF
  * -----------------------------------------
  * `Constants.expoConfig.version` (app.json `version`) is always there. The
- * Android versionCode is not: this project uses EAS remote versioning, so the
- * build number lives on EAS rather than in source, and the only runtime path to
- * it is a deprecated Constants field that may be absent. So build numbers are
- * compared ONLY when both sides are actually known, and the version string is
- * the reliable path. Publish `latestVersion` for that reason; `latestBuild` is
- * there for the case of shipping a new build under an unchanged version string.
+ * Android versionCode has to come from the installed binary, because this
+ * project uses EAS remote versioning — the build number is not in source at all.
+ *
+ * That build number is the field that actually matters here. Our releases have
+ * repeatedly shipped under an UNCHANGED version string (1.1.0 as vc12, vc13, …),
+ * so a check that could only compare version strings could never fire. It is
+ * read from `expo-application`, which reports what the running APK was built
+ * with. The old path, `Constants.platform.android.versionCode`, is deprecated
+ * and — as of expo-constants 56 — permanently dead: the native module hands
+ * back `platform: { android: {} }`, so that field is always undefined and every
+ * build-number comparison it fed silently evaluated to "not behind".
  * ----------------------------------------------------------------------------
  */
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
-import { evaluateUpdate, type AvailableUpdate, type VersionConfig } from './appUpdateRules';
+import {
+  evaluateUpdate,
+  parseBuildNumber,
+  type AvailableUpdate,
+  type VersionConfig,
+} from './appUpdateRules';
 
 export type { AvailableUpdate, VersionConfig } from './appUpdateRules';
-export { compareVersions, evaluateUpdate } from './appUpdateRules';
+export { compareVersions, evaluateUpdate, parseBuildNumber } from './appUpdateRules';
 
 /** Play Store listing for the Android package (matches app.json android.package). */
 const ANDROID_PACKAGE = 'com.velocityridzpk.app';
@@ -47,13 +58,19 @@ export function currentAppVersion(): string {
 /**
  * The running build's Android versionCode, or null when this build can't tell us.
  *
- * Deprecated in expo-constants and absent in some execution environments, hence
- * the defensive read: an unknown build number must degrade to "compare version
- * strings only", never to a wrong comparison.
+ * `Application.nativeBuildVersion` is a string ("13") baked into the binary at
+ * build time, which is exactly right for EAS remote versioning: it reports the
+ * number EAS assigned, not anything in source.
+ *
+ * Expo Go is excluded deliberately. There it reports Expo Go's OWN version code,
+ * a large unrelated number, and comparing that against a published build would
+ * make the prompt fire (or refuse to) for reasons having nothing to do with our
+ * app. An unknown build number degrades to "compare version strings only", which
+ * is the safe direction.
  */
 export function currentBuildNumber(): number | null {
-  const code: unknown = Constants.platform?.android?.versionCode;
-  return typeof code === 'number' && Number.isFinite(code) ? code : null;
+  if (Constants.appOwnership === 'expo') return null;
+  return parseBuildNumber(Application.nativeBuildVersion);
 }
 
 /**

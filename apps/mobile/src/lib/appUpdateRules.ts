@@ -37,6 +37,30 @@ export interface AvailableUpdate {
 }
 
 /**
+ * Coerces a reported build number to a comparable integer, or null when the
+ * platform could not report one.
+ *
+ * Kept here, pure, because the value arrives as a *string* from
+ * `expo-application` ("13") and as a number from the old expo-constants field,
+ * and because the failure mode matters: anything that isn't a positive whole
+ * number must read as "unknown" — never as 0, which would look like a build
+ * older than every published one and nag every install forever.
+ */
+export function parseBuildNumber(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    return Number.isInteger(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    // Digits only: "13" is a build number, "1.1.0" and "13-beta" are not.
+    if (!/^\d+$/.test(trimmed)) return null;
+    const n = Number(trimmed);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+/**
  * Compares dotted numeric version strings. Returns >0 if `a` is newer than `b`,
  * 0 if they are equal, <0 if older. Missing segments count as 0, so "1.2" and
  * "1.2.0" are the same version. Non-numeric junk in a segment reads as 0 rather
