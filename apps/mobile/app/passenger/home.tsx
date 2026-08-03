@@ -30,6 +30,7 @@ import { comingSoon } from '../../src/ui/components';
 import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
+import { MASCOT_LANE, WhereToMascot } from '../../src/ui/WhereToMascot';
 import { NewsTicker } from '../../src/ui/NewsTicker';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
@@ -232,16 +233,29 @@ export default function PassengerHome() {
              Pool discovery ("rides going your way") used to sit here as a second
              entry point doing the same job; it now lives inside this flow, right
              after the destination is set, so there is only one path to follow. ── */}
-        <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
-          <View style={styles.searchHeroIcon}>
-            <SearchIcon size={20} color="#0b0d0c" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.searchHeroTitle}>Where to?</Text>
-            <Text style={styles.searchHeroSub}>Join a pool going your way — or ride solo</Text>
-          </View>
-          <Text style={styles.searchHeroArrow}>→</Text>
-        </Pressable>
+        {/* The wrapper exists so the mascot's tooltip can sit ABOVE the card,
+            outside it. Nothing else: it has no styling and no height of its own. */}
+        <View>
+          <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
+            <View style={styles.searchHeroIcon}>
+              <SearchIcon size={20} color="#0b0d0c" />
+            </View>
+            {/* The right lane belongs to the mascot, and the sub-line is held to
+                one line, so his arrival can never reflow or grow this card. */}
+            <View style={{ flex: 1, marginRight: MASCOT_LANE }}>
+              <Text style={styles.searchHeroTitle}>Where to?</Text>
+              <Text style={styles.searchHeroSub} numberOfLines={1}>
+                Join a pool — or ride solo
+              </Text>
+            </View>
+          </Pressable>
+
+          {/* Velocity itself, on its feet: walks in from the right edge on open,
+              stops where the text ends, and stays. An overlay on top of the
+              card, so it adds no height and takes no touches — see
+              WhereToMascot. */}
+          <WhereToMascot />
+        </View>
 
         {/* ── Speak instead of typing.
              Sits directly under "Where to?" because it is the same job by a
@@ -294,7 +308,7 @@ export default function PassengerHome() {
         </ScrollView>
       </DraggableSheet>
 
-      {/* 4. Custom Slide-out Side Drawer Menu Overlay */}
+      {/* 5. Custom Slide-out Side Drawer Menu Overlay */}
       <Modal
         visible={drawerOpen}
         transparent={true}
@@ -645,7 +659,10 @@ const styles = themed(() => StyleSheet.create({
   bottomSheetContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
-    paddingTop: 4,
+    // Headroom for the mascot's tooltip, which sits above the first card. A
+    // ScrollView clips its content, so without this the tooltip would be cut
+    // off at the sheet's top edge.
+    paddingTop: 30,
     gap: 12,
   },
   sheetTitle: {
@@ -761,11 +778,6 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 12,
     color: '#8f9694',
     marginTop: 2,
-  },
-  searchHeroArrow: {
-    fontSize: 17,
-    color: colors.primary,
-    fontWeight: '800',
   },
 
   /* ── Services ── */

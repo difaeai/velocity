@@ -310,6 +310,9 @@ export const UR: Record<string, string> = {
   // that flow exists for riders who cannot read the screen at all. These are the
   // on-screen labels that accompany them.
   'Bol kar book karein': 'بول کر بک کریں',
+  // The map mascot's one line. Already roman Urdu in English mode; in Urdu it
+  // becomes the same question in script.
+  'Kahan jana hai?': 'کہاں جانا ہے؟',
   'Tap and just say where you want to go': 'دبائیں اور بتائیں کہاں جانا ہے',
   'Going to': 'جانا ہے',
   'Pool ride': 'پول رائیڈ',
