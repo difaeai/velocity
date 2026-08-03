@@ -59,33 +59,92 @@ const RIGHT_INSET = 16;
  * front-only peak (a domed crown on a wide band read as a sun hat).
  */
 const V_PATH = 'M 36,30 L 60,30 Q 65,30 67,36 L 100,112 L 133,36 Q 135,30 140,30 L 164,30 Q 172,30 168,38 L 112,134 Q 108,142 100,142 Q 92,142 88,134 L 32,38 Q 28,30 36,30 Z';
-const V_SCALE = 0.7;
-const V_TX = 30;
-const V_TY = 63;
+const V_SCALE = 0.6;
+const V_TX = 40;
+const V_TY = 60;
 
-const EYE_Y = 50;
-const EYE_DX = 14;      // from the centre line
-const EYE_R = 10;
-const PUPIL_R = 4.5;
+const EYE_Y = 46;
+const EYE_DX = 13;      // from the centre line
+const EYE_R = 9;
+const PUPIL_R = 4;
 
-const SHOULDER_X = 58;  // right shoulder mirrors to 200 - SHOULDER_X
-const SHOULDER_Y = 100;
+const SHOULDER_X = 64;  // right shoulder mirrors to 200 - SHOULDER_X
+const SHOULDER_Y = 95;
 const ARM_W = 9;
-const ARM_L = 26;
-const GLOVE_R = 8.5;
+const ARM_L = 24;
+const GLOVE_R = 8;
 const ARM_BASE = 20;    // resting outward angle, in degrees
-const ARM_SWING = 15;
 
-const HIP_X = 82;       // right hip mirrors
-const HIP_Y = 168;
-const LEG_W = 11;
-const LEG_L = 30;
-const LEG_SWING = 13;
-const SHOE_W = 18;
-const SHOE_H = 11;
+// Legs are deliberately long — a bit over a quarter of his height. The first
+// build gave him a big head, a long torso and 34-unit stumps, and no gait curve
+// can rescue a stride that short: the feet simply have nowhere to travel, so
+// every step becomes a shuffle no matter how well the knee bends.
+//
+// The hips are close together for a different reason. He is drawn front-on but
+// walks in profile, so a leg swinging forward from a WIDE hip opens outward
+// while the other one swings inward across the body — which made one half of
+// every cycle a wide stance and the other a crossed one, and read as skipping.
+// Close hips make the two halves near enough to mirror each other.
+const HIP_X = 90;       // right hip mirrors
+const HIP_Y = 150;
+const LEG_W = 10;
+const THIGH_L = 26;
+const SHIN_L = 26;
+const SHOE_W = 17;
+const SHOE_H = 10;
+
+/**
+ * One gait cycle — two steps — as keyframes over a phase that runs 0→1 and
+ * repeats. Straight pendulum legs read as marching; what makes a walk look real
+ * is the knee: it stays near-straight through stance while the body vaults over
+ * it, then folds hard at toe-off so the foot clears the ground, and swings
+ * through and extends again just before the heel lands.
+ *
+ * Angles are degrees. Positive swings a hanging limb toward the LEFT — the way
+ * he walks — so a negative knee folds the heel backwards, behind him.
+ *
+ * The right leg is the same curve half a cycle later, written out rather than
+ * computed: Animated needs one ascending input range per interpolation.
+ */
+const GAIT_MS = 700;
+
+const LEFT_PHASE  = [0, 0.15, 0.30, 0.50, 0.62, 0.80, 1];
+const LEFT_THIGH  = [22, 12, 0, -20, -5, 18, 22];
+const LEFT_KNEE   = [0, -8, 0, -15, -55, -25, 0];
+
+const RIGHT_PHASE = [0, 0.12, 0.30, 0.50, 0.65, 0.80, 1];
+const RIGHT_THIGH = [-20, -5, 18, 22, 12, 0, -20];
+const RIGHT_KNEE  = [-15, -55, -25, 0, -8, 0, -15];
+
+/**
+ * The body rises over each stance leg and drops through double support, so it
+ * bobs twice per cycle — the single most-missed cue in a fake walk.
+ *
+ * The amount is not a taste decision, it is arithmetic: with the legs spread
+ * ~21° at double support, the hip sits `L·cos21` above the ground and `L` above
+ * it at mid-stance, so the rise is `L·(1 - cos21)` ≈ 3.8 viewBox units ≈ 1.1px.
+ * Any more than that and the planted foot has to sink through the floor, which
+ * is exactly what a bouncy fake walk looks like.
+ */
+const BOUNCE_PHASE = [0, 0.30, 0.50, 0.80, 1];
+const BOUNCE_PX    = [0, -1.2, 0, -1.2, 0];
+
+/** Arms counter-swing against the same-side leg, around their resting angle. */
+const ARM_PHASE = [0, 0.30, 0.50, 0.80, 1];
+const LEFT_ARM_SWING  = [-13, 0, 13, 0, -13];
+const RIGHT_ARM_SWING = [13, 0, -13, 0, 13];
 
 /** viewBox units → px. */
 const u = (n: number) => (n / VB_W) * SIZE;
+
+/**
+ * The far side of him — his right arm and right leg — is shaded down. With the
+ * hips this close the two legs overlap as they pass, and without depth the
+ * crossing frame reads as a single leg; darker means "behind", which is what
+ * the far limb is doing.
+ */
+const FAR_LIMB = '#a6cf00';
+const FAR_WHITE = '#e2e2d9';
 
 export function WhereToMascot() {
   // The lane measures itself: he has to start beyond the card's real right edge
@@ -94,11 +153,11 @@ export function WhereToMascot() {
 
   const x = useRef(new Animated.Value(0)).current;
   const blink = useRef(new Animated.Value(1)).current;
-  /** -1 → 1 → -1 forever: one stride. Legs and arms read it in opposite
-   *  directions, which is what makes it a walk instead of a hop. */
-  const stride = useRef(new Animated.Value(0)).current;
-  /** The step bounce, and the slow breath he settles into when he stops. */
-  const step = useRef(new Animated.Value(0)).current;
+  /** 0 → 1, linearly, forever: where he is in the gait cycle. Every joint and
+   *  the body's bob are read off this one value, which is what keeps them in
+   *  step with each other. */
+  const phase = useRef(new Animated.Value(0)).current;
+  /** The slow breath he settles into when he stops. */
   const breath = useRef(new Animated.Value(0)).current;
   /** 0 walking, 1 stopped. Drives the limbs, the eyes and the raised hand. */
   const parked = useRef(new Animated.Value(0)).current;
@@ -109,9 +168,12 @@ export function WhereToMascot() {
   const facing = useRef(new Animated.Value(0)).current;
 
   // Stands flush with the end of his lane — which is to say, exactly where the
-  // card's text stops.
+  // card's text stops. He waits just past the lane's right edge, which is the
+  // point at which it clips him: any further out is distance he would have to
+  // cover with his feet, and every extra pixel of travel per step is a pixel of
+  // skate.
   const restX = Math.max(0, laneWidth - SIZE);
-  const offX = laneWidth + RIGHT_INSET + 16;
+  const offX = laneWidth + 8;
 
   useEffect(() => {
     if (laneWidth <= 0) return;
@@ -122,11 +184,13 @@ export function WhereToMascot() {
     facing.setValue(0);
 
     // The whole performance, on a five-second beat: in, ask, turn, out, pause.
+    // The travel legs are slow enough that the number of steps he takes roughly
+    // matches the ground he covers — walk him faster and he skates.
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(x, {
           toValue: restX,
-          duration: 1100,
+          duration: 1600,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
@@ -134,38 +198,34 @@ export function WhereToMascot() {
           Animated.spring(parked, { toValue: 1, friction: 7, tension: 160, useNativeDriver: true }),
           Animated.spring(talk, { toValue: 1, friction: 6, tension: 130, useNativeDriver: true }),
         ]),
-        Animated.delay(1400),
+        Animated.delay(900),
         Animated.parallel([
           Animated.timing(talk, { toValue: 0, duration: 180, easing: Easing.in(Easing.quad), useNativeDriver: true }),
           Animated.timing(parked, { toValue: 0, duration: 180, useNativeDriver: true }),
         ]),
         // Turns on the spot, then walks back out the way he came.
-        Animated.timing(facing, { toValue: 1, duration: 220, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(facing, { toValue: 1, duration: 200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(x, {
           toValue: offX,
-          duration: 850,
+          duration: 1600,
           easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
         // Turns back to face the way he will arrive from — off-card, unseen.
         Animated.timing(facing, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(700),
+        Animated.delay(300),
       ]),
     );
     loop.start();
     return () => loop.stop();
   }, [laneWidth, x, parked, talk, facing, restX, offX]);
 
-  // The stride, the bounce that goes with it, and the breath for standing still.
+  // The gait clock, and the breath for standing still. The gait runs linearly
+  // and never stops or eases: a walk cycle that speeds up and slows down within
+  // a step is the thing that reads as fake.
   useEffect(() => {
-    const swing = (to: number) =>
-      Animated.timing(stride, { toValue: to, duration: 300, easing: Easing.inOut(Easing.sin), useNativeDriver: true });
-    const legs = Animated.loop(Animated.sequence([swing(1), swing(-1)]));
-    const bounce = Animated.loop(
-      Animated.sequence([
-        Animated.timing(step, { toValue: 1, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(step, { toValue: 0, duration: 150, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      ]),
+    const walk = Animated.loop(
+      Animated.timing(phase, { toValue: 1, duration: GAIT_MS, easing: Easing.linear, useNativeDriver: true }),
     );
     const breathing = Animated.loop(
       Animated.sequence([
@@ -173,11 +233,10 @@ export function WhereToMascot() {
         Animated.timing(breath, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
     );
-    legs.start();
-    bounce.start();
+    walk.start();
     breathing.start();
-    return () => { legs.stop(); bounce.stop(); breathing.stop(); };
-  }, [stride, step, breath]);
+    return () => { walk.stop(); breathing.stop(); };
+  }, [phase, breath]);
 
   // Blinks on an uneven rhythm — two blinks with different gaps read as alive,
   // one blink on a fixed timer reads as a machine.
@@ -193,29 +252,57 @@ export function WhereToMascot() {
     return () => loop.stop();
   }, [blink]);
 
-  // Limbs stop swinging the moment he arrives: he does not march on the spot.
+  // Limbs settle the moment he arrives: he does not march on the spot. Every
+  // joint is a degree NUMBER read off the gait, scaled to zero as he parks, and
+  // only then turned into a rotation string — you cannot fade out a "-20deg".
   const walking = parked.interpolate({ inputRange: [0, 1], outputRange: [1, 0], extrapolate: 'clamp' });
-  const swing = Animated.multiply(stride, walking);
-  // Positive rotation swings a hanging limb toward the LEFT — the way he walks.
-  const legAngle = (side: 'left' | 'right') =>
-    Animated.multiply(swing, side === 'left' ? LEG_SWING : -LEG_SWING).interpolate({
-      inputRange: [-LEG_SWING, LEG_SWING],
-      outputRange: [`-${LEG_SWING}deg`, `${LEG_SWING}deg`],
+
+  /** A gait keyframe track, scaled to zero as he parks, as a raw number. */
+  const gaitPx = (
+    inputRange: number[],
+    outputRange: number[],
+  ): Animated.AnimatedInterpolation<number> =>
+    Animated.multiply(phase.interpolate({ inputRange, outputRange }), walking);
+
+  /** …and the same, turned into a rotation. Degrees stay numbers until the last
+   *  step precisely so they can be faded out — you cannot scale a "-20deg". */
+  const gaitDeg = (
+    inputRange: number[],
+    outputRange: number[],
+  ): Animated.AnimatedInterpolation<string> =>
+    Animated.multiply(phase.interpolate({ inputRange, outputRange }), walking).interpolate({
+      inputRange: [-180, 180],
+      outputRange: ['-180deg', '180deg'],
     });
-  // Arms hang outward and swing around that, so a gloved hand never crosses the
-  // torso. Parked, the leading hand comes up to gesture at the words beside him.
-  const armAngle = (side: 'left' | 'right') => {
+
+  const thighAngle = (side: 'left' | 'right') =>
+    side === 'left' ? gaitDeg(LEFT_PHASE, LEFT_THIGH) : gaitDeg(RIGHT_PHASE, RIGHT_THIGH);
+  const kneeAngle = (side: 'left' | 'right') =>
+    side === 'left' ? gaitDeg(LEFT_PHASE, LEFT_KNEE) : gaitDeg(RIGHT_PHASE, RIGHT_KNEE);
+
+  // Arms hang outward and counter-swing against the same-side leg, so a gloved
+  // hand never crosses the torso. Parked, the leading hand comes up to gesture
+  // at the words beside him.
+  const armAngle = (side: 'left' | 'right'): Animated.AnimatedInterpolation<string> => {
     const lead = side === 'left';
-    const value = lead
-      ? Animated.add(Animated.multiply(swing, ARM_SWING), Animated.add(ARM_BASE, Animated.multiply(parked, 18)))
-      : Animated.add(Animated.multiply(swing, -ARM_SWING), -ARM_BASE);
-    return value.interpolate({ inputRange: [-90, 90], outputRange: ['-90deg', '90deg'] });
+    const swing = gaitPx(ARM_PHASE, lead ? LEFT_ARM_SWING : RIGHT_ARM_SWING);
+    const rest = lead ? Animated.add(ARM_BASE, Animated.multiply(parked, 18)) : -ARM_BASE;
+    return Animated.add(swing, rest).interpolate({
+      inputRange: [-180, 180],
+      outputRange: ['-180deg', '180deg'],
+    });
   };
 
   const bobY = Animated.add(
-    Animated.multiply(Animated.multiply(step, walking), -2.2),
+    gaitPx(BOUNCE_PHASE, BOUNCE_PX),
     Animated.multiply(Animated.multiply(breath, parked), -1.4),
   );
+  // Leans into the walk, and stands up straight when he stops. The lean flips
+  // with him, because it is applied after the mirror.
+  const lean: Animated.AnimatedInterpolation<string> = Animated.multiply(walking, -3).interpolate({
+    inputRange: [-180, 180],
+    outputRange: ['-180deg', '180deg'],
+  });
   const flipX = facing.interpolate({ inputRange: [0, 1], outputRange: [1, -1] });
   // Eyes down the road while walking; on the words beside him once he stops.
   const pupilX = parked.interpolate({ inputRange: [0, 1], outputRange: [-1.3, -0.8] });
@@ -278,16 +365,24 @@ export function WhereToMascot() {
     </Animated.View>
   );
 
-  const arm = (side: 'left' | 'right') =>
-    limb(
+  const arm = (side: 'left' | 'right') => {
+    const far = side === 'right';
+    return limb(
       `arm-${side}`,
-      { x: side === 'left' ? SHOULDER_X : VB_W - SHOULDER_X, y: SHOULDER_Y },
+      { x: far ? VB_W - SHOULDER_X : SHOULDER_X, y: SHOULDER_Y },
       armAngle(side),
       <>
-        <View style={[styles.limbBar, { left: -u(ARM_W) / 2, width: u(ARM_W), height: u(ARM_L), borderRadius: u(ARM_W) / 2 }]} />
+        <View
+          style={[
+            styles.limbBar,
+            far && { backgroundColor: FAR_LIMB },
+            { left: -u(ARM_W) / 2, width: u(ARM_W), height: u(ARM_L), borderRadius: u(ARM_W) / 2 },
+          ]}
+        />
         <View
           style={[
             styles.glove,
+            far && { backgroundColor: FAR_WHITE },
             {
               left: -u(GLOVE_R),
               top: u(ARM_L) - u(GLOVE_R) * 0.6,
@@ -299,30 +394,47 @@ export function WhereToMascot() {
         />
       </>,
     );
+  };
 
-  const leg = (side: 'left' | 'right') =>
-    limb(
+  /**
+   * A leg is two pivots, not one: the thigh turns at the hip, and the shin
+   * hangs off a second pivot at the knee, so its angle is relative to the thigh
+   * exactly as a real knee's is. The shoe rides on the shin, which is what
+   * makes the foot lift and tuck under him through the swing instead of
+   * skimming the ground.
+   */
+  const leg = (side: 'left' | 'right') => {
+    const far = side === 'right';
+    const bar = { left: -u(LEG_W) / 2, width: u(LEG_W), borderRadius: u(LEG_W) / 2 };
+    return limb(
       `leg-${side}`,
-      { x: side === 'left' ? HIP_X : VB_W - HIP_X, y: HIP_Y },
-      legAngle(side),
+      { x: far ? VB_W - HIP_X : HIP_X, y: HIP_Y },
+      thighAngle(side),
       <>
-        <View style={[styles.limbBar, { left: -u(LEG_W) / 2, width: u(LEG_W), height: u(LEG_L), borderRadius: u(LEG_W) / 2 }]} />
-        {/* The toe points the way he is walking. */}
-        <View
-          style={[
-            styles.shoe,
-            {
-              left: -u(SHOE_W) + u(LEG_W) / 2 + u(3),
-              top: u(LEG_L) - u(2),
-              width: u(SHOE_W),
-              height: u(SHOE_H),
-              borderRadius: u(SHOE_H) / 2,
-              borderBottomRightRadius: u(3),
-            },
-          ]}
-        />
+        <View style={[styles.limbBar, far && { backgroundColor: FAR_LIMB }, bar, { height: u(THIGH_L) + u(2) }]} />
+        <Animated.View
+          style={[styles.pivot, { left: 0, top: u(THIGH_L), transform: [{ rotate: kneeAngle(side) }] }]}
+        >
+          <View style={[styles.limbBar, far && { backgroundColor: FAR_LIMB }, bar, { height: u(SHIN_L) }]} />
+          {/* The toe points the way he is walking. */}
+          <View
+            style={[
+              styles.shoe,
+              far && { backgroundColor: FAR_WHITE },
+              {
+                left: -u(SHOE_W) + u(LEG_W) / 2 + u(3),
+                top: u(SHIN_L) - u(2),
+                width: u(SHOE_W),
+                height: u(SHOE_H),
+                borderRadius: u(SHOE_H) / 2,
+                borderBottomRightRadius: u(3),
+              },
+            ]}
+          />
+        </Animated.View>
       </>,
     );
+  };
 
   return (
     <View style={styles.layer} pointerEvents="none">
@@ -344,7 +456,7 @@ export function WhereToMascot() {
         <Animated.View
           style={[
             styles.walker,
-            { transform: [{ translateX: x }, { translateY: bobY }, { scaleX: flipX }] },
+            { transform: [{ translateX: x }, { translateY: bobY }, { scaleX: flipX }, { rotate: lean }] },
           ]}
         >
           {/* Legs go down first, so they read as being behind the torso. */}
@@ -354,7 +466,7 @@ export function WhereToMascot() {
           {/* Hips and torso. Split from the head so the arms can sit between
               them, in front of the "V" but behind the face. */}
           <Svg style={styles.part} width={SIZE} height={HEIGHT} viewBox={`0 0 ${VB_W} ${VB_H}`}>
-            <Rect x={74} y={154} width={52} height={18} rx={9} fill={colors.primary} />
+            <Rect x={78} y={138} width={44} height={18} rx={9} fill={colors.primary} />
             <Path
               d={V_PATH}
               fill={colors.primary}
@@ -368,13 +480,13 @@ export function WhereToMascot() {
           {/* Neck, head, smile, and the cap: flat crown, band, and a peak at the
               front only — the shape that reads as a driver rather than a hat. */}
           <Svg style={styles.part} width={SIZE} height={HEIGHT} viewBox={`0 0 ${VB_W} ${VB_H}`}>
-            <Rect x={92} y={72} width={16} height={14} fill={colors.primary} />
-            <Rect x={68} y={22} width={64} height={58} rx={20} fill={colors.primary} />
-            <Path d="M 90,65 Q 100,73 110,65" stroke="#0b0d0c" strokeWidth={3.5} strokeLinecap="round" fill="none" />
-            <Path d="M 70,22 L 48,26 Q 43,29 48,33 L 70,33 Z" fill="#ffffff" />
-            <Rect x={68} y={18} width={64} height={11} rx={4} fill="#ffffff" />
-            <Rect x={72} y={6} width={56} height={14} rx={6} fill="#ffffff" />
-            <Rect x={68} y={24} width={64} height={3} rx={1.5} fill="rgba(11,13,12,0.18)" />
+            <Rect x={92} y={68} width={16} height={14} fill={colors.primary} />
+            <Rect x={70} y={22} width={60} height={52} rx={18} fill={colors.primary} />
+            <Path d="M 90,60 Q 100,67 110,60" stroke="#0b0d0c" strokeWidth={3.2} strokeLinecap="round" fill="none" />
+            <Path d="M 72,22 L 50,26 Q 45,29 50,33 L 72,33 Z" fill="#ffffff" />
+            <Rect x={70} y={18} width={60} height={11} rx={4} fill="#ffffff" />
+            <Rect x={74} y={6} width={52} height={14} rx={6} fill="#ffffff" />
+            <Rect x={70} y={24} width={60} height={3} rx={1.5} fill="rgba(11,13,12,0.18)" />
           </Svg>
 
           {eye('left')}
