@@ -880,10 +880,16 @@ export const UR: Record<string, string> = {
   'Your referral code is minted when your application is approved. Hang tight.':
     'آپ کا ریفرل کوڈ درخواست منظور ہونے پر بنتا ہے۔ ذرا انتظار کریں۔',
   'Enter a partner&apos;s 5-digit code': 'پارٹنر کا 5 ہندسوں کا کوڈ درج کریں',
-  'Build your own transportation network and earn from every genuine completed ride.':
-    'اپنا نقل و حمل نیٹ ورک بنائیں اور ہر حقیقی مکمل سواری سے کمائیں۔',
-  'Invite drivers &amp; riders, earn up to 2% of Velocity&apos;s commission on their every ride.':
-    'ڈرائیور اور سواروں کو مدعو کریں، ان کی ہر سواری پر Velocity کے کمیشن کا 2% تک کمائیں۔',
+  'Your own transport company, run from your phone: register passengers and drivers under your code and earn from both fleets, on every genuine completed ride.':
+    'اپنی خود کی ٹرانسپورٹ کمپنی، آپ کے فون سے: اپنے کوڈ پر مسافر اور ڈرائیور رجسٹر کریں اور ہر حقیقی مکمل سواری پر دونوں فلیٹس سے کمائیں۔',
+  'A ceiling, not a promise. What you make depends on how big your two fleets get and how much they ride.':
+    'یہ زیادہ سے زیادہ حد ہے، کوئی وعدہ نہیں۔ آپ کی کمائی اس پر منحصر ہے کہ آپ کے دونوں فلیٹس کتنے بڑے ہوتے ہیں اور وہ کتنی سواریاں کرتے ہیں۔',
+  'EARN UP TO': 'تک کمائیں',
+  '/month': '/ماہ',
+  'Your own transport company. Register passengers and drivers, then earn from both fleets.':
+    'اپنی خود کی ٹرانسپورٹ کمپنی۔ مسافر اور ڈرائیور رجسٹر کریں، پھر دونوں فلیٹس سے کمائیں۔',
+  'Up to 2% of Velocity commission on their every completed ride.':
+    'ان کی ہر مکمل سواری پر Velocity کے کمیشن کا 2% تک۔',
   'Your fares are unchanged — they earn from Velocity&apos;s side, never from your pocket.':
     'آپ کے کرائے میں تبدیلی نہیں — وہ Velocity کی طرف سے کماتے ہیں، کبھی آپ کی جیب سے نہیں۔',
   'You earn from completed rides': 'آپ مکمل سواریوں سے کماتے ہیں',
