@@ -659,10 +659,11 @@ const styles = themed(() => StyleSheet.create({
   bottomSheetContent: {
     paddingHorizontal: 20,
     paddingBottom: 30,
-    // Headroom for the mascot's tooltip, which sits above the first card. A
-    // ScrollView clips its content, so without this the tooltip would be cut
-    // off at the sheet's top edge.
-    paddingTop: 30,
+    // Just enough headroom for the part of the mascot's tooltip that rises
+    // above the first card — a ScrollView clips its content, so without this it
+    // would be sliced off at the sheet's top edge. Kept tight: everything spent
+    // here is a row of features pushed off the bottom of a small screen.
+    paddingTop: 14,
     gap: 12,
   },
   sheetTitle: {

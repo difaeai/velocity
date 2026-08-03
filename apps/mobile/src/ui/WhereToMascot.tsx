@@ -29,8 +29,9 @@ import { Text } from './Text';
  */
 
 /** Character box, in px. Everything below is a fraction of this. It also sets
- *  the width of the lane the card reserves for him — see MASCOT_LANE. */
-const SIZE = 56;
+ *  the width of the lane the card reserves for him — see MASCOT_LANE. The card
+ *  is 72 tall, so this is as big as he gets while still standing inside it. */
+const SIZE = 60;
 
 /** What the card must keep its text clear of, on the right, so he has somewhere
  *  to stand: his own width plus a little breathing room. */
@@ -368,15 +369,18 @@ const styles = themed(() => StyleSheet.create({
     right: RIGHT_INSET,
     overflow: 'hidden',
   },
-  // Absolute and vertically centred, so he can stand off the lane's right edge
-  // before walking in.
+  // Exactly SIZE square, and centred by offsetting half its own height rather
+  // than by `justifyContent`. This matters: the limbs are absolutely positioned
+  // against this box's top-left, so if the box is taller than the body and the
+  // body floats inside it, every joint lands high and the feet disappear into
+  // the "V". The box and the glyph must be the same 56×56.
   walker: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    bottom: 0,
+    top: '50%',
+    marginTop: -SIZE / 2,
     width: SIZE,
-    justifyContent: 'center',
+    height: SIZE,
   },
 
   pivot: { position: 'absolute', width: 0, height: 0 },
@@ -414,13 +418,15 @@ const styles = themed(() => StyleSheet.create({
     position: 'absolute',
     bottom: '100%',
     right: RIGHT_INSET + SIZE * 0.15,
-    // Small, because the space above the card is paid for out of the sheet's
-    // top padding — see `bottomSheetContent` on the passenger home screen.
-    marginBottom: 2,
+    // Negative on purpose: it sits ON the card's top edge and pokes ~14px above
+    // it, rather than floating clear. Every pixel it rises has to be bought
+    // from the sheet's top padding — see `bottomSheetContent` on the passenger
+    // home screen — and that padding is space the sheet's content wants back.
+    marginBottom: -12,
     backgroundColor: '#f5f3ec',
     borderRadius: 10,
     paddingHorizontal: 11,
-    paddingVertical: 6,
+    paddingVertical: 5,
     elevation: 5,
     shadowColor: '#000',
     shadowOpacity: 0.35,
