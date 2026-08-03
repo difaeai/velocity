@@ -25,6 +25,7 @@ import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-nativ
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { usePartnerStatus } from '../../../src/hooks/partner';
+import { MONTHLY_CEILING, grouped } from '../../../src/ui/EarnCard';
 import { prefetchPartnerTiers } from '../../../src/lib/partnerTiers';
 import { PrimaryButton } from '../../../src/ui/components';
 import { Skeleton } from '../../../src/ui/partner';
@@ -132,8 +133,28 @@ export default function EarnLanding() {
         <GrowthArt />
 
         <Text style={s.h1}>Earn with Velocity</Text>
+
+        {/* The same ceiling the home-screen card advertises. Landing here from
+            that card and finding no number at all read as a bait-and-switch. */}
+        <View style={s.ceilingWrap}>
+          <View style={s.ceiling}>
+            <Text style={s.ceilingLabel}>EARN UP TO</Text>
+            <View style={s.ceilingRow}>
+              <Text style={s.ceilingValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                PKR {grouped(MONTHLY_CEILING)}
+              </Text>
+              <Text style={s.ceilingPer}>/month</Text>
+            </View>
+          </View>
+        </View>
+
         <Text style={s.sub}>
-          Build your own transportation network and earn from every genuine completed ride.
+          Your own transport company, run from your phone: register passengers and drivers under your
+          code and earn from both fleets, on every genuine completed ride.
+        </Text>
+        <Text style={s.ceilingFine}>
+          A ceiling, not a promise. What you make depends on how big your two fleets get and how much
+          they ride.
         </Text>
 
         {/* The rule, stated plainly, before they commit. */}
@@ -376,6 +397,30 @@ const s = themed(() => StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 6,
+  },
+
+  ceilingWrap: { alignItems: 'center', marginTop: -4 },
+  ceiling: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  ceilingLabel: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
+  ceilingRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  ceilingValue: { color: colors.primary, fontSize: 30, fontWeight: '900', letterSpacing: -0.6 },
+  ceilingPer: { color: colors.text, fontSize: 13, fontWeight: '800' },
+  ceilingFine: {
+    color: colors.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
+    opacity: 0.8,
+    paddingHorizontal: 10,
+    marginTop: -8,
   },
 
   ruleCard: {

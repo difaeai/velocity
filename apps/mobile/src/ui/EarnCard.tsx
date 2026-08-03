@@ -1,8 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
+
+/**
+ * The headline number: what a partner running both fleets at the top of the
+ * programme can make in a month. It is a ceiling, not a promise — the card
+ * says "up to" and carries the earning rule underneath it, because a partner
+ * who reads this as a salary and then earns PKR 400 becomes a bad review.
+ */
+export const MONTHLY_CEILING = 730000;
+
+/** 730000 → "730,000". Written out rather than left to Intl, which Hermes
+ *  only partially implements on older Android builds. */
+export function grouped(n: number): string {
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 
 /**
  * Home-screen entry point for "Earn with Velocity" — the partner program.
@@ -10,7 +24,9 @@ import { themed } from '../theme';
  * Sits directly under the Travel Partner card and shares its visual family
  * (shimmer sweep, animated arrow, lime accents) so the two read as siblings,
  * but leads with money instead of people: a coin that pops, rising bars, and
- * the one number that sells the program — up to 2% of Velocity's commission.
+ * the number that actually stops a thumb — a monthly ceiling that counts itself
+ * up on mount, framed as the franchise it is: your own transport company, two
+ * fleets, both of them paying you.
  */
 export function EarnCard({ onPress }: { onPress: () => void }) {
   const coin = useRef(new Animated.Value(0)).current;
@@ -20,6 +36,30 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
   const bar3 = useRef(new Animated.Value(0)).current;
   const arrow = useRef(new Animated.Value(0)).current;
   const shimmer = useRef(new Animated.Value(0)).current;
+  const count = useRef(new Animated.Value(0)).current;
+  const [amount, setAmount] = useState(0);
+
+  // The figure counts itself up once, on mount. A number that lands rather than
+  // just sits there is the whole reason this card gets read at all. Rounding to
+  // the nearest thousand keeps React bailing out of most of the ~90 frames, and
+  // still finishes exactly on MONTHLY_CEILING.
+  useEffect(() => {
+    const id = count.addListener(({ value }) => setAmount(Math.round(value / 1000) * 1000));
+    const anim = Animated.sequence([
+      Animated.delay(250),
+      Animated.timing(count, {
+        toValue: MONTHLY_CEILING,
+        duration: 1500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false, // drives a JS listener, not a transform
+      }),
+    ]);
+    anim.start();
+    return () => {
+      anim.stop();
+      count.removeListener(id);
+    };
+  }, [count]);
 
   useEffect(() => {
     // The coin does a little hop, like a coin dropped into a jar.
@@ -102,9 +142,30 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
             <Text style={styles.newPillText}>NEW</Text>
           </View>
         </View>
+        {/* The number, given its own frame so it reads as a headline and not
+            as another line of body copy. */}
+        <View style={styles.moneyBlock}>
+          <Text style={styles.moneyLabel}>EARN UP TO</Text>
+          <View style={styles.moneyRow}>
+            <Text
+              style={styles.moneyValue}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              PKR {grouped(amount)}
+            </Text>
+            <Text style={styles.moneyPer}>/month</Text>
+          </View>
+        </View>
+
         <Text style={styles.sub}>
-          Invite drivers &amp; riders, earn up to 2% of Velocity&apos;s commission on their every ride.
+          Your own transport company. Register passengers and drivers, then earn from both fleets.
         </Text>
+        <Text style={styles.fine}>
+          Up to 2% of Velocity commission on their every completed ride.
+        </Text>
+
         <View style={styles.chipsRow}>
           <View style={styles.chip}>
             <Text style={styles.chipText}>Free to join</Text>
@@ -187,7 +248,28 @@ const styles = themed(() => StyleSheet.create({
     paddingVertical: 2,
   },
   newPillText: { fontSize: 9, fontWeight: '900', color: '#0b0d0c', letterSpacing: 0.6 },
+
+  moneyBlock: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#ccff000f',
+    borderWidth: 1,
+    borderColor: '#ccff0033',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 1,
+  },
+  moneyLabel: { fontSize: 9, fontWeight: '900', color: '#8fa06a', letterSpacing: 1.1 },
+  moneyRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  // minWidth reserves the width of the finished figure so "/month" does not
+  // slide sideways while the digits are still counting up.
+  moneyValue: { fontSize: 22, fontWeight: '900', color: colors.primary, letterSpacing: -0.4, minWidth: 132 },
+  moneyPer: { fontSize: 11, fontWeight: '800', color: '#d3e9a6' },
+
   sub: { fontSize: 12, color: '#9aa398', lineHeight: 17 },
+  fine: { fontSize: 10, color: '#6f7a68', lineHeight: 14 },
 
   chipsRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
   chip: {
