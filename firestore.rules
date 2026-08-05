@@ -823,6 +823,32 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- specialRidesApplications/{uid} ------------------------------------
+    // The rental car listing queue for admin approval. Carries insurance & registration
+    // docs and contact info — owner and admins only.
+    match /specialRidesApplications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- specialRidesListings/{uid} ----------------------------------------
+    // Approved rental car listings. Readable by all signed-in users (passengers browsing),
+    // owner and admins can read their own. Writes via callables only.
+    match /specialRidesListings/{userId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- specialRidesBookings/{bookingId} ----------------------------------
+    // Rental car bookings. Readable by the renter, host and admins. Server-written only.
+    match /specialRidesBookings/{bookingId} {
+      allow read: if isSignedIn()
+                  && (uid() == get(/databases/$(database)/documents/specialRidesBookings/$(bookingId)).data.uid
+                      || uid() == get(/databases/$(database)/documents/specialRidesBookings/$(bookingId)).data.hostUid
+                      || isAdmin());
+      allow write: if false;
+    }
+
     // ----- userPresence/{uid} -----------------------------------------------
     // "Somebody with the app is around here." One doc per user, holding their
     // last known coarse position, written by their own handset while the app is

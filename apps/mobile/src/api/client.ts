@@ -817,6 +817,66 @@ export const api = {
     { ok: boolean; notified: number; ads: NearbyBusinessAd[] }
   >('checkNearbyBusinessAds'),
   recordBusinessAdClick: callable<{ adId: string }, { ok: boolean }>('recordBusinessAdClick'),
+
+  // ── Special Rides (Rent-a-Car) ──────────────────────────────────────────────
+  submitSpecialRidesApplication: callable<
+    {
+      carDetails: Record<string, unknown>;
+      location: { lat?: number; lng?: number; address: string; city: string };
+      pricePerDay: number;
+      photos: Array<{ url: string; uploadedAt: number }>;
+      documentUrls: { insuranceProof: string; vehicleRegistration: string };
+      ownerName: string;
+      ownerPhone: string;
+      instructions?: string;
+    },
+    { ok: boolean; applicationId: string; message: string }
+  >('submitSpecialRidesApplication'),
+  getSpecialRidesDashboard: callable<
+    Record<string, never>,
+    {
+      ok: boolean;
+      stage: 'none' | 'pending' | 'rejected' | 'active' | 'suspended';
+      applications: Array<Record<string, unknown>>;
+      activeListings: Array<Record<string, unknown>>;
+      totalBookings?: number;
+      totalEarnings?: number;
+    }
+  >('getSpecialRidesDashboard'),
+  getSpecialRidesListings: callable<
+    { city?: string; maxPrice?: number; page?: number },
+    { ok: boolean; listings: Array<Record<string, unknown>>; total: number; hasMore: boolean }
+  >('getSpecialRidesListings'),
+  getSpecialRidesListingDetails: callable<
+    { listingId: string; hostUid: string },
+    { ok: boolean; listing: Record<string, unknown> }
+  >('getSpecialRidesListingDetails'),
+  updateSpecialRidesApplication: callable<
+    { carDetails?: Record<string, unknown>; location?: Record<string, unknown>; pricePerDay?: number },
+    { ok: boolean; message: string }
+  >('updateSpecialRidesApplication'),
+  deleteSpecialRidesListing: callable<
+    Record<string, never>,
+    { ok: boolean; message: string }
+  >('deleteSpecialRidesListing'),
+  bookSpecialRidesCar: callable<
+    {
+      listingId: string;
+      hostUid: string;
+      pickupDate: number;
+      returnDate: number;
+      includeDriver: boolean;
+    },
+    { ok: boolean; bookingId: string; totalPrice: number; message: string }
+  >('bookSpecialRidesCar'),
+  confirmSpecialRidesBooking: callable<
+    { bookingId: string },
+    { ok: boolean; message: string }
+  >('confirmSpecialRidesBooking'),
+  cancelSpecialRidesBooking: callable<
+    { bookingId: string; reason?: string },
+    { ok: boolean; message: string }
+  >('cancelSpecialRidesBooking'),
 };
 
 // ── Find your Customers types ────────────────────────────────────────────────

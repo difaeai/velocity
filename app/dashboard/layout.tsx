@@ -16,6 +16,7 @@ const NAV = [
   { href: '/dashboard/disputes',       label: '⚖️ Disputes' },
   { href: '/dashboard/partners',       label: '🏢 Partner Program' },
   { href: '/dashboard/advertise',      label: '📣 Advertise' },
+  { href: '/dashboard/special-rides',  label: '🚗 Special Rides' },
   { href: '/dashboard/ride-settings',  label: '⚙️ Ride settings' },
   { href: '/dashboard/payouts',        label: '💳 Payouts' },
   { href: '/dashboard/live-ops',        label: '🗺️ Live ops map' },

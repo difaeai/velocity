@@ -30,7 +30,6 @@ import { comingSoon } from '../../src/ui/components';
 import { DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
-import { MASCOT_LANE, WhereToMascot } from '../../src/ui/WhereToMascot';
 import { NewsTicker } from '../../src/ui/NewsTicker';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
@@ -234,27 +233,20 @@ export default function PassengerHome() {
              entry point doing the same job; it now lives inside this flow, right
              after the destination is set, so there is only one path to follow. ── */}
         {/* The wrapper exists so the mascot's tooltip can sit ABOVE the card,
-            outside it. Nothing else: it has no styling and no height of its own. */}
+            outside it. Nothing else: it has no styling and no height of its own.
+            Mascot hidden for later releases. */}
         <View>
           <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
             <View style={styles.searchHeroIcon}>
               <SearchIcon size={20} color="#0b0d0c" />
             </View>
-            {/* The right lane belongs to the mascot, and the sub-line is held to
-                one line, so his arrival can never reflow or grow this card. */}
-            <View style={{ flex: 1, marginRight: MASCOT_LANE }}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.searchHeroTitle}>Where to?</Text>
               <Text style={styles.searchHeroSub} numberOfLines={1}>
                 Join a pool — or ride solo
               </Text>
             </View>
           </Pressable>
-
-          {/* Velocity itself, on its feet: walks in from the right edge on open,
-              stops where the text ends, and stays. An overlay on top of the
-              card, so it adds no height and takes no touches — see
-              WhereToMascot. */}
-          <WhereToMascot />
         </View>
 
         {/* ── Speak instead of typing.
@@ -351,17 +343,12 @@ export default function PassengerHome() {
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/activity')}>
                     <Text style={styles.menuItemIcon}>🕒</Text>
-                    <Text style={styles.menuItemText}>Request history</Text>
+                    <Text style={styles.menuItemText}>Request history & Saved places</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
                     <Text style={styles.menuItemIcon}>💳</Text>
                     <Text style={styles.menuItemText}>{walletLabel}</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/couriers')}>
-                    <Text style={styles.menuItemIcon}>📦</Text>
-                    <Text style={styles.menuItemText}>Couriers</Text>
                   </Pressable>
 
                   {/* "Business" rather than "Business delivery": the hub behind
@@ -371,14 +358,14 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Business</Text>
                   </Pressable>
 
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/special-rides')}>
+                    <Text style={styles.menuItemIcon}>🚗</Text>
+                    <Text style={styles.menuItemText}>Special Rides</Text>
+                  </Pressable>
+
                   {/* City to City and Notifications intentionally live only on
                       the home screen (a service tile and the header bell) —
                       duplicating them here just made the drawer longer. */}
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/saved-places')}>
-                    <Text style={styles.menuItemIcon}>🔖</Text>
-                    <Text style={styles.menuItemText}>Saved places</Text>
-                  </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/daily-routes')}>
                     <Text style={styles.menuItemIcon}>🛣️</Text>

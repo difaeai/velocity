@@ -239,3 +239,18 @@ export {
   getPartnerMemberRides,
   recomputePartnerLevels,
 } from './partners';
+
+// Special Rides — daily vehicle rental with/without drivers
+export {
+  submitSpecialRidesApplication,
+  adminReviewSpecialRidesApplication,
+  getSpecialRidesDashboard,
+  adminSuspendHost,
+  getSpecialRidesListings,
+  getSpecialRidesListingDetails,
+  updateSpecialRidesApplication,
+  deleteSpecialRidesListing,
+  bookSpecialRidesCar,
+  confirmSpecialRidesBooking,
+  cancelSpecialRidesBooking,
+} from './specialRides';
