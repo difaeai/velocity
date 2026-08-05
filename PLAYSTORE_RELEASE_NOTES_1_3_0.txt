@@ -1,0 +1,60 @@
+🚗 SPECIAL RIDES - DAILY CAR RENTALS NOW AVAILABLE!
+
+We're excited to introduce Special Rides, a complete platform to rent cars for any duration directly in Velocity!
+
+✨ WHAT'S NEW
+
+🚗 POST YOUR CAR
+- Earn money by renting your vehicle for the day
+- Upload photos, insurance, and registration documents
+- Set your own daily rental price (₨500-₨10,000)
+- Admin approval for verified listings
+- Track your bookings and earnings
+
+🔍 BROWSE & BOOK
+- Discover available cars in your area
+- View full car details (make, model, year, seats, transmission, mileage)
+- Book for multiple days with transparent pricing
+- Optional professional driver service available (+₨1,000/day)
+- See price breakdown before booking
+- Host confirmation workflow
+
+👥 HOST DASHBOARD (NEW)
+- View all your posted cars and status
+- Track total bookings and earnings
+- Manage your rental listings
+- Easy approval workflow
+
+🎯 IMPROVED NAVIGATION
+- Removed duplicate "Couriers" from sidebar (access from home)
+- Merged "Request history" + "Saved places" into one feature
+- New "Special Rides" feature for quick access
+- Cleaner, more organized navigation
+
+🛡️ SECURE & VERIFIED
+- Admin review process for all posted cars
+- Document verification (insurance & registration)
+- Host suspension capabilities for safety
+- Role-based access control
+- Transparent booking process
+
+📊 WHAT ELSE IMPROVED
+- Bug fixes in navigation and state management
+- Optimized performance with Firestore caching
+- TypeScript improvements for stability
+- Real-time updates across all features
+
+🚀 NEXT UP
+- Photo gallery improvements
+- In-app messaging between host and renter
+- Driver ratings and reviews
+- Enhanced payment options
+
+Available now in your Velocity app! 🎉
+
+Questions? Tap Support from Settings for help.
+
+---
+
+Version: 1.3.0
+Last Updated: August 5, 2026

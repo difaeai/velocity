@@ -1,20 +1,7 @@
 import { onCall } from 'firebase-functions/v2/https';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-  serverTimestamp,
-  FieldValue,
-} from 'firebase-admin/firestore';
 
-import { db, auth } from '../lib/firebase';
-import { invalid } from '../lib/errors';
+import { db } from '../lib/firebase';
+import { invalid } from '../lib/guards';
 import { SpecialRidesApplication, SpecialRidesListing } from './types';
 
 /**
@@ -52,7 +39,7 @@ export const submitSpecialRidesApplication = onCall(
       invalid('At least one photo is required');
     }
 
-    const applicationId = doc(collection(db, 'specialRidesApplications')).id;
+    const applicationId = db.collection('specialRidesApplications').doc().id;
     const now = Date.now();
 
     const application: SpecialRidesApplication = {
@@ -70,11 +57,10 @@ export const submitSpecialRidesApplication = onCall(
       submittedAt: now,
     };
 
-    await setDoc(
-      doc(db, 'specialRidesApplications', uid),
-      application,
-      { merge: true }
-    );
+    await db
+      .collection('specialRidesApplications')
+      .doc(uid)
+      .set(application, { merge: true });
 
     return {
       ok: true,
@@ -93,8 +79,8 @@ export const adminReviewSpecialRidesApplication = onCall(
     if (!adminUid) invalid('Not authenticated');
 
     // Check if user is admin
-    const adminSnap = await getDoc(doc(db, 'admins', adminUid));
-    if (!adminSnap.exists()) invalid('Not authorized to review applications');
+    const adminSnap = await db.collection('admins').doc(adminUid).get();
+    if (!adminSnap.exists) invalid('Not authorized to review applications');
 
     const { uid, decision, rejectionReason, maxDailyRate } = request.data;
 
@@ -103,18 +89,16 @@ export const adminReviewSpecialRidesApplication = onCall(
     }
 
     // Get the application
-    const appSnap = await getDoc(
-      doc(db, 'specialRidesApplications', uid)
-    );
-    if (!appSnap.exists()) invalid('Application not found');
+    const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
+    if (!appSnap.exists) invalid('Application not found');
 
     const app = appSnap.data() as SpecialRidesApplication;
     const now = Date.now();
 
     if (decision === 'approve') {
       // Create active listing
-      const listingId = doc(collection(db, 'specialRidesListings')).id;
-      const listing: SpecialRidesListing = {
+      const listingId = db.collection('specialRidesListings').doc().id;
+      const listing = {
         ...app,
         listingId,
         status: 'active',
@@ -125,16 +109,20 @@ export const adminReviewSpecialRidesApplication = onCall(
         pricePerDay: maxDailyRate || app.pricePerDay,
       };
 
-      await setDoc(doc(db, 'specialRidesListings', uid), listing, {
-        merge: true,
-      });
+      await db
+        .collection('specialRidesListings')
+        .doc(uid)
+        .set(listing, { merge: true });
 
       // Update application status
-      await updateDoc(doc(db, 'specialRidesApplications', uid), {
-        status: 'approved',
-        reviewedAt: now,
-        reviewedBy: adminUid,
-      });
+      await db
+        .collection('specialRidesApplications')
+        .doc(uid)
+        .update({
+          status: 'approved',
+          reviewedAt: now,
+          reviewedBy: adminUid,
+        });
 
       return {
         ok: true,
@@ -142,12 +130,15 @@ export const adminReviewSpecialRidesApplication = onCall(
         message: 'Listing approved and activated',
       };
     } else if (decision === 'reject') {
-      await updateDoc(doc(db, 'specialRidesApplications', uid), {
-        status: 'rejected',
-        reviewedAt: now,
-        reviewedBy: adminUid,
-        rejectionReason,
-      });
+      await db
+        .collection('specialRidesApplications')
+        .doc(uid)
+        .update({
+          status: 'rejected',
+          reviewedAt: now,
+          reviewedBy: adminUid,
+          rejectionReason,
+        });
 
       return {
         ok: true,
@@ -155,12 +146,15 @@ export const adminReviewSpecialRidesApplication = onCall(
         message: 'Application rejected',
       };
     } else if (decision === 'resubmit') {
-      await updateDoc(doc(db, 'specialRidesApplications', uid), {
-        status: 'resubmit',
-        reviewedAt: now,
-        reviewedBy: adminUid,
-        rejectionReason,
-      });
+      await db
+        .collection('specialRidesApplications')
+        .doc(uid)
+        .update({
+          status: 'resubmit',
+          reviewedAt: now,
+          reviewedBy: adminUid,
+          rejectionReason,
+        });
 
       return {
         ok: true,
@@ -181,8 +175,8 @@ export const getSpecialRidesDashboard = onCall(async (request) => {
   if (!uid) invalid('Not authenticated');
 
   // Check for pending applications
-  const appSnap = await getDoc(doc(db, 'specialRidesApplications', uid));
-  if (appSnap.exists()) {
+  const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
+  if (appSnap.exists) {
     const app = appSnap.data() as SpecialRidesApplication;
     const stage = app.status === 'pending'
       ? 'pending'
@@ -193,14 +187,14 @@ export const getSpecialRidesDashboard = onCall(async (request) => {
     return {
       ok: true,
       stage,
-      applications: appSnap.exists() ? [app] : [],
+      applications: appSnap.exists ? [app] : [],
       activeListings: [],
     };
   }
 
   // Check for active listings
-  const listingSnap = await getDoc(doc(db, 'specialRidesListings', uid));
-  if (listingSnap.exists()) {
+  const listingSnap = await db.collection('specialRidesListings').doc(uid).get();
+  if (listingSnap.exists) {
     const listing = listingSnap.data() as SpecialRidesListing;
     const stage =
       listing.status === 'suspended'
@@ -210,12 +204,10 @@ export const getSpecialRidesDashboard = onCall(async (request) => {
         : 'none';
 
     // Get bookings stats
-    const bookingsSnap = await getDocs(
-      query(
-        collection(db, 'specialRidesBookings'),
-        where('hostUid', '==', uid)
-      )
-    );
+    const bookingsSnap = await db
+      .collection('specialRidesBookings')
+      .where('hostUid', '==', uid)
+      .get();
 
     const totalBookings = bookingsSnap.size;
     let totalEarnings = 0;
@@ -252,24 +244,30 @@ export const adminSuspendHost = onCall(async (request) => {
   if (!adminUid) invalid('Not authenticated');
 
   // Check if user is admin
-  const adminSnap = await getDoc(doc(db, 'admins', adminUid));
-  if (!adminSnap.exists()) invalid('Not authorized');
+  const adminSnap = await db.collection('admins').doc(adminUid).get();
+  if (!adminSnap.exists) invalid('Not authorized');
 
   const { uid, suspended, reason } = request.data;
   const now = Date.now();
 
   if (suspended) {
-    await updateDoc(doc(db, 'specialRidesListings', uid), {
-      status: 'suspended',
-      suspendedAt: now,
-      suspensionReason: reason,
-    });
+    await db
+      .collection('specialRidesListings')
+      .doc(uid)
+      .update({
+        status: 'suspended',
+        suspendedAt: now,
+        suspensionReason: reason,
+      });
   } else {
-    await updateDoc(doc(db, 'specialRidesListings', uid), {
-      status: 'active',
-      suspendedAt: null,
-      suspensionReason: null,
-    });
+    await db
+      .collection('specialRidesListings')
+      .doc(uid)
+      .update({
+        status: 'active',
+        suspendedAt: null,
+        suspensionReason: null,
+      });
   }
 
   return {

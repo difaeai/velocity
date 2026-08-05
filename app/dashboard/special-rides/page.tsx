@@ -247,7 +247,7 @@ export default function SpecialRidesAdminPage() {
                   </div>
 
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Button
+                    <button
                       onClick={() => approveApplication(app.uid)}
                       disabled={processingId === app.uid}
                       style={{
@@ -262,8 +262,8 @@ export default function SpecialRidesAdminPage() {
                       }}
                     >
                       ✓ Approve
-                    </Button>
-                    <Button
+                    </button>
+                    <button
                       onClick={() => {
                         const reason = prompt('Rejection reason:');
                         if (reason) rejectApplication(app.uid, reason);
@@ -281,7 +281,7 @@ export default function SpecialRidesAdminPage() {
                       }}
                     >
                       ✕ Reject
-                    </Button>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -336,7 +336,7 @@ export default function SpecialRidesAdminPage() {
 
                   <div>
                     {listing.status === 'active' ? (
-                      <Button
+                      <button
                         onClick={() => suspendListing(listing.uid)}
                         disabled={processingId === listing.uid}
                         style={{
@@ -350,9 +350,9 @@ export default function SpecialRidesAdminPage() {
                         }}
                       >
                         Suspend
-                      </Button>
+                      </button>
                     ) : (
-                      <Button
+                      <button
                         onClick={() => reactivateListing(listing.uid)}
                         disabled={processingId === listing.uid}
                         style={{
@@ -366,7 +366,7 @@ export default function SpecialRidesAdminPage() {
                         }}
                       >
                         Reactivate
-                      </Button>
+                      </button>
                     )}
                   </div>
                 </div>

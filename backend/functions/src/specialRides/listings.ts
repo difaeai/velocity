@@ -1,18 +1,7 @@
 import { onCall } from 'firebase-functions/v2/https';
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-  deleteDoc,
-} from 'firebase-admin/firestore';
 
 import { db } from '../lib/firebase';
-import { invalid } from '../lib/errors';
+import { invalid } from '../lib/guards';
 import { SpecialRidesListing, SpecialRidesBooking } from './types';
 
 /**
@@ -21,12 +10,10 @@ import { SpecialRidesListing, SpecialRidesBooking } from './types';
 export const getSpecialRidesListings = onCall(async (request) => {
   const { city, maxPrice, page = 0 } = request.data;
 
-  let q = query(
-    collection(db, 'specialRidesListings'),
-    where('status', '==', 'active')
-  );
-
-  const snaps = await getDocs(q);
+  const snaps = await db
+    .collection('specialRidesListings')
+    .where('status', '==', 'active')
+    .get();
   let listings = snaps.docs.map((doc) => doc.data() as SpecialRidesListing);
 
   // Client-side filtering (alternative: use composite indexes for server-side)
@@ -58,8 +45,8 @@ export const getSpecialRidesListingDetails = onCall(async (request) => {
     invalid('Listing ID and host UID required');
   }
 
-  const snap = await getDoc(doc(db, 'specialRidesListings', hostUid));
-  if (!snap.exists()) {
+  const snap = await db.collection('specialRidesListings').doc(hostUid).get();
+  if (!snap.exists) {
     invalid('Listing not found');
   }
 
@@ -92,13 +79,13 @@ export const updateSpecialRidesApplication = onCall(async (request) => {
     instructions,
   } = request.data;
 
-  const appSnap = await getDoc(doc(db, 'specialRidesApplications', uid));
-  if (!appSnap.exists()) {
+  const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
+  if (!appSnap.exists) {
     invalid('Application not found');
   }
 
-  const app = appSnap.data();
-  if (app.status !== 'pending' && app.status !== 'resubmit') {
+  const app = appSnap.data() as any;
+  if (!app || (app.status !== 'pending' && app.status !== 'resubmit')) {
     invalid('Cannot edit approved or rejected applications');
   }
 
@@ -116,11 +103,11 @@ export const updateSpecialRidesApplication = onCall(async (request) => {
   if (instructions !== undefined) updates.instructions = instructions;
 
   // Reset to pending if it was resubmit
-  if (app.status === 'resubmit') {
+  if (app && app.status === 'resubmit') {
     updates.status = 'pending';
   }
 
-  await updateDoc(doc(db, 'specialRidesApplications', uid), updates);
+  await db.collection('specialRidesApplications').doc(uid).update(updates);
 
   return {
     ok: true,
@@ -136,23 +123,26 @@ export const deleteSpecialRidesListing = onCall(async (request) => {
   if (!uid) invalid('Not authenticated');
 
   // Check if there's an application
-  const appSnap = await getDoc(doc(db, 'specialRidesApplications', uid));
-  if (appSnap.exists()) {
+  const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
+  if (appSnap.exists) {
     const app = appSnap.data();
-    if (app.status === 'pending' || app.status === 'resubmit') {
-      await deleteDoc(doc(db, 'specialRidesApplications', uid));
+    if (app?.status === 'pending' || app?.status === 'resubmit') {
+      await db.collection('specialRidesApplications').doc(uid).delete();
       return { ok: true, message: 'Application deleted' };
     }
   }
 
   // Check if there's an active listing
-  const listingSnap = await getDoc(doc(db, 'specialRidesListings', uid));
-  if (listingSnap.exists()) {
+  const listingSnap = await db.collection('specialRidesListings').doc(uid).get();
+  if (listingSnap.exists) {
     const listing = listingSnap.data();
-    if (listing.status === 'active' || listing.status === 'suspended') {
-      await updateDoc(doc(db, 'specialRidesListings', uid), {
-        status: 'deleted',
-      });
+    if (listing?.status === 'active' || listing?.status === 'suspended') {
+      await db
+        .collection('specialRidesListings')
+        .doc(uid)
+        .update({
+          status: 'deleted',
+        });
       return { ok: true, message: 'Listing deleted' };
     }
   }
@@ -186,20 +176,20 @@ export const bookSpecialRidesCar = onCall(async (request) => {
   }
 
   // Get listing details
-  const listingSnap = await getDoc(doc(db, 'specialRidesListings', hostUid));
-  if (!listingSnap.exists()) {
+  const listingSnap = await db.collection('specialRidesListings').doc(hostUid).get();
+  if (!listingSnap.exists) {
     invalid('Listing not found or host inactive');
   }
 
   const listing = listingSnap.data() as SpecialRidesListing;
-  if (listing.status !== 'active') {
+  if (listing?.status !== 'active') {
     invalid('This listing is not available for booking');
   }
 
   // Calculate total price
   const days = Math.ceil((returnDate - pickupDate) / (24 * 60 * 60 * 1000));
-  let totalPrice = days * listing.pricePerDay;
-  let driverPrice = undefined;
+  let totalPrice = days * (listing?.pricePerDay || 0);
+  let driverPrice: number | undefined;
 
   if (includeDriver) {
     driverPrice = days * 1000; // 1000 PKR per day for driver
@@ -207,7 +197,7 @@ export const bookSpecialRidesCar = onCall(async (request) => {
   }
 
   // Create booking
-  const bookingId = doc(collection(db, 'specialRidesBookings')).id;
+  const bookingId = db.collection('specialRidesBookings').doc().id;
   const booking: SpecialRidesBooking = {
     bookingId,
     uid,
@@ -222,7 +212,7 @@ export const bookSpecialRidesCar = onCall(async (request) => {
     createdAt: Date.now(),
   };
 
-  await setDoc(doc(db, 'specialRidesBookings', bookingId), booking);
+  await db.collection('specialRidesBookings').doc(bookingId).set(booking);
 
   return {
     ok: true,
@@ -241,23 +231,26 @@ export const confirmSpecialRidesBooking = onCall(async (request) => {
 
   const { bookingId } = request.data;
 
-  const bookingSnap = await getDoc(doc(db, 'specialRidesBookings', bookingId));
-  if (!bookingSnap.exists()) {
+  const bookingSnap = await db.collection('specialRidesBookings').doc(bookingId).get();
+  if (!bookingSnap.exists) {
     invalid('Booking not found');
   }
 
   const booking = bookingSnap.data() as SpecialRidesBooking;
-  if (booking.hostUid !== uid) {
+  if (booking?.hostUid !== uid) {
     invalid('Only the host can confirm this booking');
   }
-  if (booking.status !== 'pending') {
+  if (booking?.status !== 'pending') {
     invalid('Booking is not in pending state');
   }
 
-  await updateDoc(doc(db, 'specialRidesBookings', bookingId), {
-    status: 'confirmed',
-    confirmedAt: Date.now(),
-  });
+  await db
+    .collection('specialRidesBookings')
+    .doc(bookingId)
+    .update({
+      status: 'confirmed',
+      confirmedAt: Date.now(),
+    });
 
   return {
     ok: true,
@@ -274,24 +267,27 @@ export const cancelSpecialRidesBooking = onCall(async (request) => {
 
   const { bookingId, reason } = request.data;
 
-  const bookingSnap = await getDoc(doc(db, 'specialRidesBookings', bookingId));
-  if (!bookingSnap.exists()) {
+  const bookingSnap = await db.collection('specialRidesBookings').doc(bookingId).get();
+  if (!bookingSnap.exists) {
     invalid('Booking not found');
   }
 
   const booking = bookingSnap.data() as SpecialRidesBooking;
-  if (booking.uid !== uid && booking.hostUid !== uid) {
+  if (booking?.uid !== uid && booking?.hostUid !== uid) {
     invalid('You do not have permission to cancel this booking');
   }
-  if (booking.status === 'completed' || booking.status === 'cancelled') {
+  if (booking?.status === 'completed' || booking?.status === 'cancelled') {
     invalid('This booking cannot be cancelled');
   }
 
-  await updateDoc(doc(db, 'specialRidesBookings', bookingId), {
-    status: 'cancelled',
-    cancelledAt: Date.now(),
-    cancellationReason: reason,
-  });
+  await db
+    .collection('specialRidesBookings')
+    .doc(bookingId)
+    .update({
+      status: 'cancelled',
+      cancelledAt: Date.now(),
+      cancellationReason: reason,
+    });
 
   return {
     ok: true,
