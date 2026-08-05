@@ -5,7 +5,6 @@ export default function SpecialRidesLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        animationEnabled: true,
       }}
     >
       <Stack.Screen name="index" />

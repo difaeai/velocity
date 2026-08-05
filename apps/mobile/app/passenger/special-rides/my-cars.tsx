@@ -95,7 +95,7 @@ export default function MyPostedCarsScreen() {
         ) : (
           <>
             <Text style={styles.sectionTitle}>Your Listings</Text>
-            {activeListings.map((listing, idx) => (
+            {activeListings.map((listing: any, idx: number) => (
               <View key={idx} style={styles.carCard}>
                 <View style={styles.carImagePlaceholder}>
                   <Text style={styles.carImageIcon}>🚗</Text>

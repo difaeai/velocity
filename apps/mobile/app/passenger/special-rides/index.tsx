@@ -21,7 +21,7 @@ export default function SpecialRidesScreen() {
   const router = useRouter();
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [stage, setStage] = useState<'none' | 'pending' | 'rejected' | 'active'>('none');
+  const [stage, setStage] = useState<'none' | 'pending' | 'rejected' | 'active' | 'suspended'>('none');
   const [dashboard, setDashboard] = useState<any>(null);
 
   useEffect(() => {
