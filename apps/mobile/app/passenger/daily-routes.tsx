@@ -144,7 +144,7 @@ export default function DailyRoutesScreen() {
     setNotify(true);
     setPickupCoords(null);
     setDropoffCoords(null);
-    setShowModal(true);
+    setShowRoutesModal(true);
   }
 
   function openEdit(r: DailyRoute) {
@@ -161,7 +161,7 @@ export default function DailyRoutesScreen() {
     setNotify(r.notify ?? true);
     setPickupCoords(r.pickup);
     setDropoffCoords(r.dropoff);
-    setShowModal(true);
+    setShowRoutesModal(true);
   }
 
   async function resolve(address: string, cached: GeoPoint | null): Promise<GeoPoint | null> {
@@ -202,7 +202,7 @@ export default function DailyRoutesScreen() {
           createdAt: serverTimestamp(),
         });
       }
-      setShowModal(false);
+      setShowRoutesModal(false);
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
     } finally {
