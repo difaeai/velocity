@@ -341,11 +341,6 @@ export default function PassengerHome() {
                     <Text style={[styles.menuItemText, styles.menuItemTextActive]}>City</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/activity')}>
-                    <Text style={styles.menuItemIcon}>🕒</Text>
-                    <Text style={styles.menuItemText}>Request history & Saved places</Text>
-                  </Pressable>
-
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
                     <Text style={styles.menuItemIcon}>💳</Text>
                     <Text style={styles.menuItemText}>{walletLabel}</Text>

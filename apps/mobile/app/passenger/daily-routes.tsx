@@ -19,10 +19,14 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { geocodeAddress } from '../../src/hooks/places';
+import { usePassengerTrips } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
+import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
 
 const RADIUS_OPTIONS = [2, 3, 5] as const;
+type PlaceCategory = 'home' | 'work' | 'other';
+type Tab = 'routes' | 'history' | 'places';
 
 interface GeoPoint { lat: number; lng: number; address: string; }
 interface DailyRoute {
@@ -36,6 +40,37 @@ interface DailyRoute {
   createdAt: Timestamp | null;
 }
 
+interface SavedPlace {
+  id: string;
+  category: PlaceCategory;
+  label: string;
+  address: string;
+  createdAt: Timestamp | null;
+}
+
+const CATEGORIES: { key: PlaceCategory; icon: string; color: string; label: string }[] = [
+  { key: 'home',  icon: '🏠', color: '#3b82f6', label: 'Home'  },
+  { key: 'work',  icon: '💼', color: '#f59e0b', label: 'Work'  },
+  { key: 'other', icon: '📍', color: colors.primary, label: 'Other' },
+];
+
+const DEFAULT_PLACE_LABELS: Record<PlaceCategory, string> = {
+  home:  'Home',
+  work:  'Work',
+  other: 'Saved Place',
+};
+
+const STATUS_META: Record<TripStatus, { label: string; color: string }> = {
+  requested: { label: 'Finding driver', color: '#ccff00' },
+  matched: { label: 'Driver assigned', color: '#ccff00' },
+  arriving: { label: 'On the way', color: '#ccff00' },
+  arrived: { label: 'Driver arrived', color: '#ccff00' },
+  in_progress: { label: 'In progress', color: '#ccff00' },
+  completed: { label: 'Completed', color: '#10b981' },
+  cancelled: { label: 'Cancelled', color: '#ef4444' },
+  merged: { label: 'Moved to shared ride', color: '#ccff00' },
+};
+
 function fmtTime(h: number, m: number) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
@@ -43,12 +78,15 @@ function fmtTime(h: number, m: number) {
 export default function DailyRoutesScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { trips, loading: tripsLoading } = usePassengerTrips(user?.uid);
 
+  const [tab, setTab] = useState<Tab>('routes');
   const [routes, setRoutes] = useState<DailyRoute[]>([]);
+  const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Editor modal state
-  const [showModal, setShowModal] = useState(false);
+  // Routes editor modal state
+  const [showRoutesModal, setShowRoutesModal] = useState(false);
   const [editTarget, setEditTarget] = useState<DailyRoute | null>(null);
   const [label, setLabel] = useState('');
   const [pickup, setPickup] = useState('');
@@ -58,10 +96,16 @@ export default function DailyRoutesScreen() {
   const [radiusKm, setRadiusKm] = useState<number>(3);
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
-  // Coordinates from the route being edited — reused when its address is
-  // unchanged, so reopening a saved route spends no geocoding call.
   const [pickupCoords, setPickupCoords] = useState<GeoPoint | null>(null);
   const [dropoffCoords, setDropoffCoords] = useState<GeoPoint | null>(null);
+
+  // Places editor modal state
+  const [showPlacesModal, setShowPlacesModal] = useState(false);
+  const [editPlace, setEditPlace] = useState<SavedPlace | null>(null);
+  const [placeCategory, setPlaceCategory] = useState<PlaceCategory>('other');
+  const [placeLabel, setPlaceLabel] = useState('');
+  const [placeAddress, setPlaceAddress] = useState('');
+  const [savingPlace, setSavingPlace] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -74,6 +118,18 @@ export default function DailyRoutesScreen() {
       },
       () => setLoading(false),
     );
+    return unsub;
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'savedPlaces'),
+      orderBy('createdAt', 'asc'),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setPlaces(snap.docs.map(d => ({ id: d.id, ...d.data() } as SavedPlace)));
+    });
     return unsub;
   }, [user?.uid]);
 
@@ -172,6 +228,75 @@ export default function DailyRoutesScreen() {
     ]);
   }
 
+  function openAddPlace() {
+    setEditPlace(null);
+    setPlaceCategory('other');
+    setPlaceLabel('');
+    setPlaceAddress('');
+    setShowPlacesModal(true);
+  }
+
+  function openEditPlace(place: SavedPlace) {
+    setEditPlace(place);
+    setPlaceCategory(place.category);
+    setPlaceLabel(place.label);
+    setPlaceAddress(place.address);
+    setShowPlacesModal(true);
+  }
+
+  async function savePlace() {
+    if (!placeAddress.trim()) { Alert.alert('Missing', 'Enter an address.'); return; }
+    if (!user?.uid) return;
+
+    setSavingPlace(true);
+    const finalLabel = placeLabel.trim() || DEFAULT_PLACE_LABELS[placeCategory];
+    try {
+      if (editPlace) {
+        await updateDoc(doc(db, 'users', user.uid, 'savedPlaces', editPlace.id), {
+          category: placeCategory,
+          label:   finalLabel,
+          address: placeAddress.trim(),
+        });
+      } else {
+        await addDoc(collection(db, 'users', user.uid, 'savedPlaces'), {
+          category: placeCategory,
+          label:     finalLabel,
+          address:   placeAddress.trim(),
+          createdAt: Timestamp.now(),
+        });
+      }
+      setShowPlacesModal(false);
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to save place.');
+    } finally {
+      setSavingPlace(false);
+    }
+  }
+
+  async function deletePlace(place: SavedPlace) {
+    if (!user?.uid) return;
+    Alert.alert(
+      'Delete Place',
+      `Remove "${place.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'users', user.uid!, 'savedPlaces', place.id));
+            } catch {
+              Alert.alert('Error', 'Failed to delete place.');
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  const isLoading = tab === 'history' ? tripsLoading : loading;
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -183,80 +308,212 @@ export default function DailyRoutesScreen() {
           <Text style={styles.backTxt}>←</Text>
         </Pressable>
         <Text style={styles.headerTitle}>My routes</Text>
-        <Pressable style={styles.addBtn} onPress={openAdd} hitSlop={8}>
-          <Text style={styles.addBtnTxt}>+ Add</Text>
+        {tab === 'routes' && (
+          <Pressable style={styles.addBtn} onPress={openAdd} hitSlop={8}>
+            <Text style={styles.addBtnTxt}>+ Add</Text>
+          </Pressable>
+        )}
+        {tab === 'places' && (
+          <Pressable style={styles.addBtn} onPress={openAddPlace} hitSlop={8}>
+            <Text style={styles.addBtnTxt}>+ Add</Text>
+          </Pressable>
+        )}
+        {tab === 'history' && <View style={{ width: 40 }} />}
+      </View>
+
+      {/* Tab Navigation */}
+      <View style={styles.tabBar}>
+        <Pressable
+          style={[styles.tab, tab === 'routes' && styles.tabActive]}
+          onPress={() => setTab('routes')}
+        >
+          <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>Routes</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, tab === 'history' && styles.tabActive]}
+          onPress={() => setTab('history')}
+        >
+          <Text style={[styles.tabText, tab === 'history' && styles.tabTextActive]}>History</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, tab === 'places' && styles.tabActive]}
+          onPress={() => setTab('places')}
+        >
+          <Text style={[styles.tabText, tab === 'places' && styles.tabTextActive]}>Saved places</Text>
         </Pressable>
       </View>
 
-      {loading ? (
+      {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.intro}>
-            Save the commutes you take often. When someone opens a public pool going the same way,
-            around the same time, we'll nudge you to join and split the fare — always your choice.
-          </Text>
-
-          {routes.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🛣️</Text>
-              <Text style={styles.emptyTitle}>No routes yet</Text>
-              <Text style={styles.emptyDesc}>
-                Add your daily commute and get alerted whenever a matching pool opens near your time.
-              </Text>
-              <Pressable style={styles.emptyBtn} onPress={openAdd}>
-                <Text style={styles.emptyBtnTxt}>Add your first route</Text>
-              </Pressable>
-            </View>
-          ) : (
+          {tab === 'routes' && (
             <>
-              {routes.map((r) => (
-                <View key={r.id} style={styles.routeCard}>
-                  <View style={styles.routeTopRow}>
-                    <Text style={styles.routeLabel} numberOfLines={1}>{r.label}</Text>
-                    <View style={[styles.timePill, !r.notify && styles.timePillMuted]}>
-                      <Text style={[styles.timePillTxt, !r.notify && styles.timePillTxtMuted]}>
-                        {r.notify ? `🕒 ${r.time}` : 'Alerts off'}
-                      </Text>
-                    </View>
-                  </View>
+              <Text style={styles.intro}>
+                Save the commutes you take often. When someone opens a public pool going the same way,
+                around the same time, we'll nudge you to join and split the fare — always your choice.
+              </Text>
 
-                  <View style={styles.legRow}>
-                    <View style={[styles.legDot, { backgroundColor: colors.primary }]} />
-                    <Text style={styles.legTxt} numberOfLines={1}>{r.pickup.address}</Text>
-                  </View>
-                  <View style={styles.legRow}>
-                    <View style={[styles.legDot, { backgroundColor: colors.muted }]} />
-                    <Text style={styles.legTxt} numberOfLines={1}>{r.dropoff.address}</Text>
-                  </View>
-
-                  <View style={styles.routeMetaRow}>
-                    <Text style={styles.routeMeta}>Within {r.radiusKm} km</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable style={styles.editBtn} onPress={() => openEdit(r)} hitSlop={8}>
-                        <Text style={styles.editBtnTxt}>Edit</Text>
-                      </Pressable>
-                      <Pressable style={styles.deleteBtn} onPress={() => remove(r)} hitSlop={8}>
-                        <Text style={styles.deleteBtnTxt}>✕</Text>
-                      </Pressable>
-                    </View>
-                  </View>
+              {routes.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>🛣️</Text>
+                  <Text style={styles.emptyTitle}>No routes yet</Text>
+                  <Text style={styles.emptyDesc}>
+                    Add your daily commute and get alerted whenever a matching pool opens near your time.
+                  </Text>
+                  <Pressable style={styles.emptyBtn} onPress={openAdd}>
+                    <Text style={styles.emptyBtnTxt}>Add your first route</Text>
+                  </Pressable>
                 </View>
-              ))}
+              ) : (
+                <>
+                  {routes.map((r) => (
+                    <View key={r.id} style={styles.routeCard}>
+                      <View style={styles.routeTopRow}>
+                        <Text style={styles.routeLabel} numberOfLines={1}>{r.label}</Text>
+                        <View style={[styles.timePill, !r.notify && styles.timePillMuted]}>
+                          <Text style={[styles.timePillTxt, !r.notify && styles.timePillTxtMuted]}>
+                            {r.notify ? `🕒 ${r.time}` : 'Alerts off'}
+                          </Text>
+                        </View>
+                      </View>
 
-              <Pressable style={styles.addMoreBtn} onPress={openAdd}>
-                <Text style={styles.addMoreTxt}>+ Add another route</Text>
-              </Pressable>
+                      <View style={styles.legRow}>
+                        <View style={[styles.legDot, { backgroundColor: colors.primary }]} />
+                        <Text style={styles.legTxt} numberOfLines={1}>{r.pickup.address}</Text>
+                      </View>
+                      <View style={styles.legRow}>
+                        <View style={[styles.legDot, { backgroundColor: colors.muted }]} />
+                        <Text style={styles.legTxt} numberOfLines={1}>{r.dropoff.address}</Text>
+                      </View>
+
+                      <View style={styles.routeMetaRow}>
+                        <Text style={styles.routeMeta}>Within {r.radiusKm} km</Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Pressable style={styles.editBtn} onPress={() => openEdit(r)} hitSlop={8}>
+                            <Text style={styles.editBtnTxt}>Edit</Text>
+                          </Pressable>
+                          <Pressable style={styles.deleteBtn} onPress={() => remove(r)} hitSlop={8}>
+                            <Text style={styles.deleteBtnTxt}>✕</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+
+                  <Pressable style={styles.addMoreBtn} onPress={openAdd}>
+                    <Text style={styles.addMoreTxt}>+ Add another route</Text>
+                  </Pressable>
+                </>
+              )}
+            </>
+          )}
+
+          {tab === 'history' && (
+            <>
+              {trips.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>🛺</Text>
+                  <Text style={styles.emptyTitle}>No rides yet</Text>
+                  <Text style={styles.emptyDesc}>Your trips will show up here once you book one.</Text>
+                  <Pressable style={styles.emptyBtn} onPress={() => router.replace('/passenger/home')}>
+                    <Text style={styles.emptyBtnTxt}>Book a ride</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.tripsList}>
+                  {trips.map((t) => {
+                    const meta = STATUS_META[t.status];
+                    return (
+                      <Pressable key={t.id} style={styles.tripCard} onPress={() => router.push(`/passenger/trip/${t.id}`)}>
+                        <View style={styles.tripTop}>
+                          <Text style={styles.rideType}>{RIDE_TYPE_LABELS[t.rideType]}</Text>
+                          <View style={[styles.statusPill, { borderColor: meta.color }]}>
+                            <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.routeRow}>
+                          <Text style={styles.routeDot}>👤</Text>
+                          <Text style={styles.routeText} numberOfLines={1}>
+                            {t.pickup?.address ?? 'Pickup'}
+                          </Text>
+                        </View>
+                        <View style={styles.routeRow}>
+                          <Text style={styles.routeDot}>🏁</Text>
+                          <Text style={styles.routeText} numberOfLines={1}>
+                            {t.dropoff?.address ?? 'Drop-off'}
+                          </Text>
+                        </View>
+                        <View style={styles.tripBottom}>
+                          <Text style={styles.fare}>{t.fare ?? t.offeredFare} PKR</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )}
+
+          {tab === 'places' && (
+            <>
+              <Text style={styles.intro}>
+                Save your frequently visited places — home, work, or anywhere else. Quick access when booking a ride.
+              </Text>
+
+              {places.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>📍</Text>
+                  <Text style={styles.emptyTitle}>No saved places yet</Text>
+                  <Text style={styles.emptyDesc}>
+                    Add your home, work, or other favorite locations for quick access.
+                  </Text>
+                  <Pressable style={styles.emptyBtn} onPress={openAddPlace}>
+                    <Text style={styles.emptyBtnTxt}>Add your first place</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  {places.map((place) => {
+                    const cat = CATEGORIES.find(c => c.key === place.category);
+                    return (
+                      <View key={place.id} style={styles.placeCard}>
+                        <View style={styles.placeTop}>
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.placeIconRow}>
+                              <Text style={styles.placeIcon}>{cat?.icon}</Text>
+                              <Text style={styles.placeLabel}>{place.label}</Text>
+                            </View>
+                            <Text style={styles.placeAddress} numberOfLines={2}>{place.address}</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <Pressable style={styles.editBtn} onPress={() => openEditPlace(place)} hitSlop={8}>
+                              <Text style={styles.editBtnTxt}>Edit</Text>
+                            </Pressable>
+                            <Pressable style={styles.deleteBtn} onPress={() => deletePlace(place)} hitSlop={8}>
+                              <Text style={styles.deleteBtnTxt}>✕</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  <Pressable style={styles.addMoreBtn} onPress={openAddPlace}>
+                    <Text style={styles.addMoreTxt}>+ Add another place</Text>
+                  </Pressable>
+                </>
+              )}
             </>
           )}
         </ScrollView>
       )}
 
-      <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
+      <Modal visible={showRoutesModal} transparent animationType="slide" onRequestClose={() => setShowRoutesModal(false)}>
         <View style={{ flex: 1 }}>
-          <Pressable style={styles.modalOverlay} onPress={() => setShowModal(false)} />
+          <Pressable style={styles.modalOverlay} onPress={() => setShowRoutesModal(false)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -349,6 +606,58 @@ export default function DailyRoutesScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showPlacesModal} transparent animationType="slide" onRequestClose={() => setShowPlacesModal(false)}>
+        <View style={{ flex: 1 }}>
+          <Pressable style={styles.modalOverlay} onPress={() => setShowPlacesModal(false)} />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>{editPlace ? 'Edit place' : 'Add place'}</Text>
+
+              <Text style={styles.fieldLabel}>CATEGORY</Text>
+              <View style={styles.categoryRow}>
+                {CATEGORIES.map((cat) => (
+                  <Pressable
+                    key={cat.key}
+                    style={[styles.categoryChip, placeCategory === cat.key && styles.categoryChipActive]}
+                    onPress={() => setPlaceCategory(cat.key)}
+                  >
+                    <Text style={styles.categoryIcon}>{cat.icon}</Text>
+                    <Text style={[styles.categoryLabel, placeCategory === cat.key && styles.categoryLabelActive]}>
+                      {cat.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>LABEL</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={placeLabel}
+                onChangeText={setPlaceLabel}
+                placeholder="e.g. My home"
+                placeholderTextColor={colors.muted}
+                maxLength={50}
+              />
+
+              <Text style={styles.fieldLabel}>ADDRESS</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={placeAddress}
+                onChangeText={setPlaceAddress}
+                placeholder="Full address"
+                placeholderTextColor={colors.muted}
+                maxLength={200}
+              />
+
+              <Pressable style={[styles.saveBtn, savingPlace && { opacity: 0.5 }]} onPress={savePlace} disabled={savingPlace}>
+                {savingPlace ? <ActivityIndicator color="#000" /> : <Text style={styles.saveBtnTxt}>{editPlace ? 'Save changes' : 'Add place'}</Text>}
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -369,6 +678,25 @@ const styles = themed(() => StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   addBtn: { backgroundColor: colors.primary, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6 },
   addBtnTxt: { fontSize: 13, fontWeight: '900', color: '#000' },
+
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    alignItems: 'center',
+  },
+  tabActive: {
+    borderBottomColor: colors.primary,
+  },
+  tabText: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  tabTextActive: { color: colors.primary, fontWeight: '800' },
 
   content: { padding: 16, gap: 10, paddingBottom: 40 },
   intro: { fontSize: 13, color: colors.muted, lineHeight: 19, marginBottom: 4 },
@@ -476,4 +804,59 @@ const styles = themed(() => StyleSheet.create({
 
   saveBtn: { height: 52, backgroundColor: colors.primary, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   saveBtnTxt: { fontSize: 16, fontWeight: '900', color: '#000' },
+
+  // History/Trips styles
+  tripsList: { gap: 12 },
+  tripCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 8,
+  },
+  tripTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rideType: { fontSize: 16, fontWeight: '800', color: colors.text },
+  statusPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  statusText: { fontSize: 11, fontWeight: '800' },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  routeDot: { fontSize: 13 },
+  routeText: { flex: 1, fontSize: 13, color: colors.muted },
+  tripBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  fare: { fontSize: 16, fontWeight: '900', color: colors.primary },
+
+  // Saved Places styles
+  placeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 8,
+  },
+  placeTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  placeIconRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  placeIcon: { fontSize: 20 },
+  placeLabel: { fontSize: 15, fontWeight: '800', color: colors.text, flex: 1 },
+  placeAddress: { fontSize: 13, color: colors.muted },
+
+  categoryRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  categoryChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  categoryChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '20' },
+  categoryIcon: { fontSize: 22, marginBottom: 4 },
+  categoryLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  categoryLabelActive: { color: colors.primary, fontWeight: '700' },
 }));
