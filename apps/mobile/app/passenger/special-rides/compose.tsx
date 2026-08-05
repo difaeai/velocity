@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   TextInput as RNTextInput,
+  Image,
 } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,11 +17,18 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { pickChatPhoto, uploadImageAttachment } from '../../../src/chat/attachments';
+
+interface Photo {
+  url: string;
+  uploadedAt: number;
+}
 
 export default function ComposeSpecialRidesScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Car details
   const [make, setMake] = useState('');
@@ -41,6 +49,29 @@ export default function ComposeSpecialRidesScreen() {
   // Contact
   const [ownerName, setOwnerName] = useState(user?.displayName ?? '');
   const [ownerPhone, setOwnerPhone] = useState('');
+
+  // Photos
+  const [photos, setPhotos] = useState<Photo[]>([]);
+
+  async function addPhoto() {
+    if (!user?.uid) return;
+    setUploadingPhoto(true);
+    try {
+      const picked = await pickChatPhoto();
+      if (!picked) return;
+
+      const attachment = await uploadImageAttachment(user.uid, picked);
+      setPhotos([...photos, { url: attachment.url, uploadedAt: Date.now() }]);
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  function removePhoto(index: number) {
+    setPhotos(photos.filter((_, i) => i !== index));
+  }
 
   async function submit() {
     if (!make.trim()) {
@@ -67,6 +98,10 @@ export default function ComposeSpecialRidesScreen() {
       Alert.alert('Missing', 'Enter contact phone');
       return;
     }
+    if (photos.length === 0) {
+      Alert.alert('No Photos', 'Please add at least one photo of your car to help customers.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -89,7 +124,7 @@ export default function ComposeSpecialRidesScreen() {
           city: city.trim(),
         },
         pricePerDay: parseInt(pricePerDay),
-        photos: [], // TODO: integrate photo upload
+        photos,
         documentUrls: {
           insuranceProof: '', // TODO: integrate document upload
           vehicleRegistration: '',
@@ -257,6 +292,36 @@ export default function ComposeSpecialRidesScreen() {
           style={styles.input}
         />
 
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Car Photos</Text>
+        <Pressable
+          style={[styles.addPhotoButton, uploadingPhoto && styles.addPhotoButtonDisabled]}
+          onPress={addPhoto}
+          disabled={loading || uploadingPhoto}
+        >
+          {uploadingPhoto ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <Text style={styles.addPhotoButtonText}>📷 Add Photo {photos.length > 0 ? `(${photos.length})` : ''}</Text>
+          )}
+        </Pressable>
+
+        {photos.length > 0 && (
+          <View style={styles.photosGrid}>
+            {photos.map((photo, index) => (
+              <View key={index} style={styles.photoContainer}>
+                <Image source={{ uri: photo.url }} style={styles.photoImage} />
+                <Pressable
+                  style={styles.removePhotoButton}
+                  onPress={() => removePhoto(index)}
+                  disabled={loading || uploadingPhoto}
+                >
+                  <Text style={styles.removePhotoButtonText}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Instructions (Optional)</Text>
         <RNTextInput
           placeholder="Pickup location, house rules, special instructions..."
@@ -375,6 +440,57 @@ const styles = themed(() =>
       fontSize: 14,
       fontWeight: '700',
       color: '#fff',
+    },
+    addPhotoButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderWidth: 2,
+      borderColor: colors.primary,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginBottom: 12,
+      borderStyle: 'dashed',
+    },
+    addPhotoButtonDisabled: {
+      opacity: 0.5,
+    },
+    addPhotoButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    photosGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 12,
+    },
+    photoContainer: {
+      position: 'relative',
+      width: '48%',
+      aspectRatio: 1,
+    },
+    photoImage: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 8,
+    },
+    removePhotoButton: {
+      position: 'absolute',
+      top: 4,
+      right: 4,
+      width: 28,
+      height: 28,
+      backgroundColor: '#000',
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: 0.8,
+    },
+    removePhotoButtonText: {
+      fontSize: 16,
+      color: '#fff',
+      fontWeight: '700',
     },
   })
 );

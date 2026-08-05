@@ -3,10 +3,16 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 import Link from 'next/link';
+import Image from 'next/image';
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { Button } from '@/components/ui';
+
+interface Photo {
+  url: string;
+  uploadedAt: number;
+}
 
 interface Application {
   id: string;
@@ -16,6 +22,7 @@ interface Application {
   ownerName: string;
   ownerPhone: string;
   pricePerDay: number;
+  photos?: Photo[];
   submittedAt: number;
 }
 
@@ -26,6 +33,7 @@ interface Listing {
   carDetails: Record<string, unknown>;
   ownerName: string;
   pricePerDay: number;
+  photos?: Photo[];
   createdAt: number;
 }
 
@@ -246,6 +254,30 @@ export default function SpecialRidesAdminPage() {
                     </span>
                   </div>
 
+                  {app.photos && app.photos.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {app.photos.map((photo, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            position: 'relative',
+                            width: '100%',
+                            paddingBottom: '100%',
+                            overflow: 'hidden',
+                            borderRadius: 4,
+                          }}
+                        >
+                          <Image
+                            src={photo.url}
+                            alt={`Car photo ${idx + 1}`}
+                            fill
+                            style={{ objectFit: 'cover' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={() => approveApplication(app.uid)}
@@ -333,6 +365,30 @@ export default function SpecialRidesAdminPage() {
                       {listing.status === 'active' ? '✓ Active' : '⊗ Suspended'}
                     </span>
                   </div>
+
+                  {listing.photos && listing.photos.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {listing.photos.map((photo, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            position: 'relative',
+                            width: '100%',
+                            paddingBottom: '100%',
+                            overflow: 'hidden',
+                            borderRadius: 4,
+                          }}
+                        >
+                          <Image
+                            src={photo.url}
+                            alt={`Car photo ${idx + 1}`}
+                            fill
+                            style={{ objectFit: 'cover' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div>
                     {listing.status === 'active' ? (
