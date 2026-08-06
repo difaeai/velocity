@@ -9,6 +9,7 @@ export default defineConfig({
     reporters: ['verbose'],
     setupFiles: ['./src/travelMate/__tests__/setup.ts'],
     include: [
+      'src/auth/__tests__/**/*.test.ts',
       'src/lib/__tests__/**/*.test.ts',
       'src/travelMate/__tests__/**/*.test.ts',
       'src/poolRideRequests/__tests__/**/*.test.ts',

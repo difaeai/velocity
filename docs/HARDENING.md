@@ -40,9 +40,35 @@ Stops traffic from anything other than your genuine apps.
    apps report healthy.
 
 ### Auth providers **(you)**
-- Enable **Phone** sign-in (primary for PK) + configure reCAPTCHA/SMS region
-  allow-list; swap the email dev sign-in for phone/OTP.
+- Enable **Phone** sign-in (primary for PK) + configure the SMS region allow-list
+  so Pakistan (+92) is permitted.
 - Enable **Email/Password** if keeping it for admins.
+
+### Phone sign-in is natively verified **(you — one required step)**
+Verification runs through `@react-native-firebase/auth`, so Android attests the app
+with **Play Integrity** instead of solving a reCAPTCHA in a hidden WebView. That
+unattested WebView traffic was why Firebase's anti-abuse throttle refused real
+users with `auth/error-code:-39`.
+
+For attestation to actually succeed you **must** register the app's signing
+certificate fingerprints in **Firebase Console → Project Settings → Your apps →
+Android → Add fingerprint**:
+- the **Play App Signing** SHA-256 (Play Console → Test and release → App signing)
+  — this is the one that matters for released builds;
+- the upload/debug SHA-1 + SHA-256 for anything you install by hand.
+
+Without a matching fingerprint, Play Integrity fails and the native SDK falls back
+to a reCAPTCHA challenge — working, but back to the traffic profile that gets
+throttled. Note that sideloaded builds (an AAB/APK you install directly rather than
+through Play) can still hit that fallback even when configured correctly, so judge
+this from a Play track, not from a local install.
+
+Use **Phone numbers for testing** (Console → Authentication → Sign-in method) for
+development. Test numbers are exempt from the anti-abuse throttle, so they never
+burn quota and never get the whole project rate-limited.
+
+The client keeps a local send brake regardless (`src/lib/otpThrottle.ts`) — native
+attestation makes the throttle far rarer, not impossible.
 
 ### Monitoring **(you)**
 - Cloud Functions error reporting + alerts on `safetyEvents` (SOS).

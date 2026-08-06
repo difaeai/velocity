@@ -266,6 +266,12 @@ export interface SavedMethodView {
 }
 
 export const api = {
+  /**
+   * The one callable invoked with no signed-in user: it trades the ID token from a
+   * native (Play Integrity attested) phone verification for a custom token the JS
+   * SDK can sign in with. See src/auth/phoneSignIn.ts.
+   */
+  exchangePhoneSession: callable<{ idToken: string }, { customToken: string }>('exchangePhoneSession'),
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',

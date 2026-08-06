@@ -8,6 +8,9 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 
 setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
 
+// Sign-in bridge: native (Play Integrity attested) phone verification → JS SDK session
+export { exchangePhoneSession } from './auth/sessionExchange';
+
 // Users & roles
 export {
   onUserCreate, onUserDelete,

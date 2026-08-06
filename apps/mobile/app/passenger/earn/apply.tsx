@@ -25,7 +25,7 @@
  * and a number only lands there once Firebase verified an SMS code for it.
  */
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -39,9 +39,6 @@ import {
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
-import { FirebaseError } from 'firebase/app';
 
 import { api } from '../../../src/api/client';
 import type {
@@ -55,10 +52,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { useInterstitial } from '../../../src/ads';
-import { auth, firebaseConfig } from '../../../src/firebase';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
-import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../../src/lib/phoneAuthErrors';
-import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../../src/auth/otpGuard';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
@@ -117,7 +111,6 @@ const ID_TYPES: { key: IdDocType; label: string }[] = [
 export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
-  const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
   // Preloaded while the applicant fills the form, so the post-submit handoff
   // never stalls waiting on an ad fetch.
   const showAd = useInterstitial('partner-apply-free');
@@ -147,15 +140,14 @@ export default function PartnerApply() {
   const [payMethod, setPayMethod] = useState<WithdrawalMethod>('easypaisa');
   const [payRef, setPayRef] = useState('');
 
-  // Already-verified users never see the OTP step.
-  const verifiedPhone = user?.phoneNumber ?? null;
-  const [phoneDigits, setPhoneDigits] = useState('');
-  const [otp, setOtp] = useState('');
-  const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [linking, setLinking] = useState(false);
-  const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
-
-  const phone = verifiedPhone ?? linkedPhone;
+  /**
+   * Phone is the app's only sign-in method, so a signed-in user always has a
+   * verified number already. This screen used to carry a whole second OTP flow to
+   * attach one — unreachable in practice, and the only remaining reason the app
+   * still mounted a reCAPTCHA WebView. If it is somehow missing, the honest
+   * outcome is to send the applicant back through sign-in, not to re-verify here.
+   */
+  const phone = user?.phoneNumber ?? null;
 
   // A silent failure here used to leave a skeleton where the tier picker
   // should be — the user could never see which tier they were applying for.
@@ -197,59 +189,6 @@ export default function PartnerApply() {
     // A number typed for another document won't be CNIC-shaped; reformat what
     // we can and let validation ask for the rest.
     if (next === 'cnic') setIdNumber((n) => formatCnic(n));
-  }
-
-  async function sendOtp() {
-    const digits = phoneDigits.replace(/\D/g, '').replace(/^0/, '');
-    if (digits.length !== 10) {
-      Alert.alert('Check the number', 'Enter your 10-digit mobile number, e.g. 3001234567.');
-      return;
-    }
-    if (!recaptchaRef.current) return;
-
-    // Same brake and the same error copy as the sign-in screens: a throttled send
-    // returns an unmapped numeric code, and `e.message` put "Firebase: Error
-    // (auth/error-code:-39)." straight into an Alert.
-    const blocked = await checkOtpSendAllowed(digits);
-    if (blocked) { Alert.alert('Please wait', blocked); return; }
-
-    setLinking(true);
-    try {
-      await noteOtpSendAttempt(digits);
-      const provider = new PhoneAuthProvider(auth);
-      const id = await provider.verifyPhoneNumber(`+92${digits}`, recaptchaRef.current);
-      setVerificationId(id);
-    } catch (e) {
-      const { message, throttled } = describePhoneAuthError(e);
-      if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
-      Alert.alert('Could not send the code', message);
-    } finally {
-      setLinking(false);
-    }
-  }
-
-  async function confirmOtp() {
-    if (!verificationId || otp.length < 6) return;
-    setLinking(true);
-    try {
-      const credential = PhoneAuthProvider.credential(verificationId, otp);
-      // Links the verified number onto the existing account — which is exactly
-      // what the backend checks for. No link, no application.
-      const result = await linkWithCredential(auth.currentUser!, credential);
-      setLinkedPhone(result.user.phoneNumber);
-      setVerificationId(null);
-      setOtp('');
-    } catch (e) {
-      const msg =
-        e instanceof FirebaseError && e.code === 'auth/credential-already-in-use'
-          ? 'That number is already attached to another Velocity account.'
-          : e instanceof FirebaseError && e.code === 'auth/invalid-verification-code'
-            ? 'That code is not right. Check the SMS and try again.'
-            : 'Could not verify that number.';
-      Alert.alert('Verification failed', msg);
-    } finally {
-      setLinking(false);
-    }
   }
 
   async function submit() {
@@ -367,17 +306,6 @@ export default function PartnerApply() {
   // ── Step 2: the details ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['bottom']}>
-      {/* Only mounted while a number still needs verifying. The verifier is a
-          hidden WebView, and keeping one alive under an already-verified form
-          has crashed the app on low-end Android at submit time. */}
-      {!phone ? (
-        <FirebaseRecaptchaVerifierModal
-          ref={recaptchaRef}
-          firebaseConfig={firebaseConfig}
-          attemptInvisibleVerification
-        />
-      ) : null}
-
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <Text style={s.stepBadge}>Step 2 of 2</Text>
 
@@ -412,34 +340,10 @@ export default function PartnerApply() {
             <Text style={s.verifiedText}>✅ {phone}</Text>
             <Text style={s.verifiedHint}>Verified</Text>
           </View>
-        ) : verificationId ? (
-          <View style={{ gap: 10 }}>
-            <TextInput
-              style={s.input}
-              value={otp}
-              onChangeText={setOtp}
-              placeholder="6-digit code"
-              placeholderTextColor={colors.muted}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            <PrimaryButton label="Verify code" onPress={confirmOtp} loading={linking} disabled={otp.length < 6} />
-          </View>
         ) : (
-          <View style={{ gap: 10 }}>
-            <View style={s.phoneRow}>
-              <Text style={s.phonePrefix}>+92</Text>
-              <TextInput
-                style={[s.input, { flex: 1 }]}
-                value={phoneDigits}
-                onChangeText={setPhoneDigits}
-                placeholder="3001234567"
-                placeholderTextColor={colors.muted}
-                keyboardType="phone-pad"
-                maxLength={11}
-              />
-            </View>
-            <PrimaryButton label="Send OTP" onPress={sendOtp} loading={linking} variant="secondary" />
+          <View style={s.verifiedRow}>
+            <Text style={s.verifiedText}>No verified number on this account</Text>
+            <Text style={s.verifiedHint}>Sign in again</Text>
           </View>
         )}
 

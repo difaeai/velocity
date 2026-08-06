@@ -9,12 +9,11 @@ import {
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
-import { auth, db, firebaseConfig } from '../../../src/firebase';
+import { auth, db } from '../../../src/firebase';
+import { startPhoneVerification, type PhoneVerification } from '../../../src/auth/phoneSignIn';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
@@ -39,13 +38,12 @@ function stripPhone(raw: string): string {
 export default function DriverLogin() {
   const router = useRouter();
   const { refreshRole } = useAuth();
-  const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
   const otpRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState<Step>('enter_phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const [confirmation, setConfirmation] = useState<PhoneVerification | null>(null);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resendLabel, setResendLabel] = useState('Resend OTP');
@@ -86,11 +84,6 @@ export default function DriverLogin() {
       setError('Enter a valid Pakistani mobile number, e.g. 3001234567');
       return;
     }
-    if (!recaptchaRef.current) {
-      setError('Captcha not ready — please wait a moment.');
-      return;
-    }
-
     sendingRef.current = true;
     try {
       // Shared with the passenger sign-in screen: Firebase throttles per number
@@ -103,10 +96,10 @@ export default function DriverLogin() {
       if (isResend) setResendLabel('Sending…');
       await noteOtpSendAttempt(digits);
 
-      // Patience timer, not an abort. The old 15-second race was shorter than a
-      // visible captcha challenge takes to solve, so it routinely "timed out" on
-      // sends that had already gone through — telling the driver to resend and
-      // burning a second SMS on a code that already worked.
+      // Patience timer, not an abort. The old 15-second race was shorter than app
+      // attestation plus a slow Pakistani network legitimately takes, so it
+      // routinely "timed out" on sends that had already gone through — telling the
+      // driver to resend and burning a second SMS on a code that already worked.
       let landed = false;
       const patience = setTimeout(() => {
         if (landed) return;
@@ -119,7 +112,13 @@ export default function DriverLogin() {
       }, 60000);
 
       try {
-        const result = await signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current);
+        // Drop any previous attempt's watcher, so an auto-verification for a number
+        // the driver abandoned cannot sign them in as someone else.
+        confirmation?.cancel();
+        const result = await startPhoneVerification(`+92${digits}`, (autoError) => {
+          if (autoError) setError(describePhoneAuthError(autoError).message);
+          else routeVerifiedDriver();
+        });
         landed = true;
         setConfirmation(result);
         setStep('enter_otp');
@@ -158,6 +157,47 @@ export default function DriverLogin() {
     if (next.length === 6) verifyOtp(next);
   }
 
+  /**
+   * Decide where a freshly verified driver lands, based on whether they already
+   * have a driver record:
+   *   • no record       → first time, collect registration details
+   *   • approved record → registered & active, go to the driver dashboard
+   *   • any other status → registered but under review, show status screen
+   *
+   * Split out of `verifyOtp` because Android's automatic verification signs the
+   * driver in without the code ever reaching them, and that path needs to route
+   * them just the same.
+   */
+  async function routeVerifiedDriver() {
+    // The uid comes from the JS-SDK session the bridge just established, not from
+    // a returned credential — `confirm()` hands back nothing now that the native
+    // verification is traded for a JS session.
+    const uid = auth.currentUser?.uid;
+    if (!uid) { setError('Sign-in did not finish — please try again.'); return; }
+
+    let exists = false;
+    let status: string | null = null;
+    try {
+      const snap = await getDoc(doc(db, 'drivers', uid));
+      exists = snap.exists();
+      status = exists ? ((snap.get('verificationStatus') as string) ?? null) : null;
+    } catch {
+      // If the lookup fails, treat as a new applicant rather than blocking.
+      exists = false;
+    }
+
+    if (!exists) {
+      router.replace('/passenger/become-driver/checklist');
+    } else if (status === 'approved') {
+      // Refresh the role claim first so the driver layout guard lets us in
+      // instead of bouncing back to the passenger home.
+      await refreshRole();
+      router.replace('/driver/home');
+    } else {
+      router.replace('/passenger/become-driver/submitted');
+    }
+  }
+
   async function verifyOtp(codeArg?: string) {
     const code = codeArg ?? otp;
     if (verifyingRef.current) return;
@@ -167,37 +207,16 @@ export default function DriverLogin() {
     verifyingRef.current = true;
     setVerifying(true);
     try {
-      const cred = await confirmation.confirm(code);
-
-      // Decide where to send the verified driver based on whether they already
-      // have a driver record:
-      //   • no record        → first time, collect registration details
-      //   • approved record  → registered & active, go to the driver dashboard
-      //   • any other status  → registered but under review, show status screen
-      let exists = false;
-      let status: string | null = null;
-      try {
-        const snap = await getDoc(doc(db, 'drivers', cred.user.uid));
-        exists = snap.exists();
-        status = exists ? ((snap.get('verificationStatus') as string) ?? null) : null;
-      } catch {
-        // If the lookup fails, treat as a new applicant rather than blocking.
-        exists = false;
-      }
-
-      if (!exists) {
-        router.replace('/passenger/become-driver/checklist');
-      } else if (status === 'approved') {
-        // Refresh the role claim first so the driver layout guard lets us in
-        // instead of bouncing back to the passenger home.
-        await refreshRole();
-        router.replace('/driver/home');
-      } else {
-        router.replace('/passenger/become-driver/submitted');
-      }
+      await confirmation.confirm(code);
+      await routeVerifiedDriver();
     } catch (e) {
-      const isFirebase = e instanceof FirebaseError;
-      setError(isFirebase ? 'Incorrect code — please try again.' : 'Sign-in failed — please try again.');
+      const failCode = e instanceof FirebaseError ? e.code : '';
+      if (failCode === 'auth/code-expired' || failCode === 'auth/session-expired')
+        setError('That code has expired. Tap Resend OTP for a new one.');
+      else if (failCode.startsWith('functions/') || failCode === 'auth/network-request-failed')
+        setError('Your code was accepted but sign-in did not finish. Check your connection and tap Verify again.');
+      else if (e instanceof FirebaseError) setError('Incorrect code — please try again.');
+      else setError('Sign-in failed — please try again.');
     } finally {
       verifyingRef.current = false;
       setVerifying(false);
@@ -205,6 +224,9 @@ export default function DriverLogin() {
   }
 
   function goBack() {
+    // Drop the auto-verification watcher with the number it belonged to.
+    confirmation?.cancel();
+    setConfirmation(null);
     setStep('enter_phone');
     setOtp('');
     setError(null);
@@ -214,16 +236,12 @@ export default function DriverLogin() {
     if (timerRef.current) clearInterval(timerRef.current);
   }
 
+  // Same reason, for leaving the screen entirely.
+  useEffect(() => () => confirmation?.cancel(), [confirmation]);
+
   return (
     <SafeAreaView style={styles.safe}>
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaRef}
-        firebaseConfig={firebaseConfig}
-        attemptInvisibleVerification
-        title="Prove you're human!"
-        cancelLabel="Close"
-      />
-
+      {/* No captcha component: verification is native and Play Integrity attested. */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
