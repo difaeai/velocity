@@ -15,11 +15,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-import { auth, firebaseConfig } from '../../src/firebase';
+import { startPhoneVerification, type PhoneVerification } from '../../src/auth/phoneSignIn';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
@@ -82,14 +80,13 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 export default function SignIn() {
-  const recaptchaRef = useRef<FirebaseRecaptchaVerifierModal>(null);
   const otpRef       = useRef<TextInput>(null);
   const scrollRef    = useRef<ScrollView>(null);
 
   const [step, setStep]                 = useState<Step>('enter_phone');
   const [phone, setPhone]               = useState('');
   const [otp, setOtp]                   = useState('');
-  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const [confirmation, setConfirmation] = useState<PhoneVerification | null>(null);
   const [sending, setSending]           = useState(false);   // Send / Resend OTP
   const [verifying, setVerifying]       = useState(false);   // Verify OTP
   const [error, setError]               = useState<string | null>(null);
@@ -134,11 +131,10 @@ export default function SignIn() {
 
   // A ref, not the `sending` state: `sendOtp` awaits the local send brake before
   // it flips `sending`, and two taps landing in that window would both read the
-  // stale `false`. Two concurrent sends orphan one captcha session and spend two
-  // SMS against Firebase's per-number throttle.
+  // stale `false` and spend two SMS against Firebase's per-number throttle.
   const sendingRef = useRef(false);
 
-  function adoptConfirmation(result: ConfirmationResult, isResend: boolean) {
+  function adoptConfirmation(result: PhoneVerification, isResend: boolean) {
     setConfirmation(result);
     setStep('enter_otp');
     setSentAt(Date.now());
@@ -157,11 +153,6 @@ export default function SignIn() {
       setError('Enter a valid Pakistani mobile number, e.g. 3001234567');
       return;
     }
-    if (!recaptchaRef.current) {
-      setError('Captcha not ready — please wait a moment.');
-      return;
-    }
-
     sendingRef.current = true;
     try {
       // Firebase throttles sendVerificationCode per number *and* per device, and
@@ -190,7 +181,14 @@ export default function SignIn() {
       }, 60000);
 
       try {
-        const result = await signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current);
+        // Any previous attempt's listener must go, or an auto-verification from the
+        // number the user just abandoned could sign them in as someone else.
+        confirmation?.cancel();
+        const result = await startPhoneVerification(`+92${digits}`, (autoError) => {
+          // Android read the SMS itself. On success the JS-SDK session is already
+          // live and the root layout navigates away — there is nothing to do here.
+          if (autoError) setError(describePhoneAuthError(autoError).message);
+        });
         landed = true;
         adoptConfirmation(result, isResend);
       } catch (e) {
@@ -223,16 +221,21 @@ export default function SignIn() {
     verifyingRef.current = true;
     setVerifying(true);
     try {
+      // Resolving means the code was right *and* the native verification has been
+      // traded for a JS-SDK session; the root layout navigates on auth state.
       await confirmation.confirm(code);
       Keyboard.dismiss();
     } catch (e) {
-      // "Incorrect code" is a lie when the code simply aged out or the account is
-      // throttled — the user retypes the same digits and fails again.
+      // "Incorrect code" is a lie when the code simply aged out, the account is
+      // throttled, or the session exchange failed — the user retypes the same
+      // digits and fails again.
       const failCode = (e as { code?: string } | null)?.code ?? '';
-      if (failCode === 'auth/code-expired')
+      if (failCode === 'auth/code-expired' || failCode === 'auth/session-expired')
         setError('That code has expired. Tap Resend for a new one.');
       else if (failCode === 'auth/too-many-requests')
         setError('Too many attempts. Please wait a while before trying again.');
+      else if (failCode.startsWith('functions/') || failCode === 'auth/network-request-failed')
+        setError('Your code was accepted but sign-in did not finish. Check your connection and tap Verify again.');
       else setError('Incorrect code — please try again.');
     } finally {
       verifyingRef.current = false;
@@ -253,6 +256,10 @@ export default function SignIn() {
   }
 
   function goBack() {
+    // Drop the auto-verification watcher with the number it belonged to, so a late
+    // SMS for an abandoned number cannot sign the user in behind their back.
+    confirmation?.cancel();
+    setConfirmation(null);
     setStep('enter_phone');
     setOtp('');
     setError(null);
@@ -260,6 +267,9 @@ export default function SignIn() {
     setResendCooldown(0);
     if (timerRef.current) clearInterval(timerRef.current);
   }
+
+  // Same reason, for leaving the screen entirely.
+  useEffect(() => () => confirmation?.cancel(), [confirmation]);
 
   function contactSupport() {
     // Placeholder support address until a real support channel ships.
@@ -430,18 +440,8 @@ export default function SignIn() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Native only: the compat-based captcha modal crashes react-native-web.
-          On web sendOtp falls back to the "Captcha not ready" message instead
-          of taking the whole route down (it crashed the route before too). */}
-      {Platform.OS !== 'web' && (
-        <FirebaseRecaptchaVerifierModal
-          ref={recaptchaRef}
-          firebaseConfig={firebaseConfig}
-          attemptInvisibleVerification
-          title="Prove you're human!"
-          cancelLabel="Close"
-        />
-      )}
+      {/* No captcha component any more: verification is native and attested by
+          Play Integrity, so there is no hidden WebView to mount. */}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

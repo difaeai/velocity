@@ -47,6 +47,17 @@
       "./plugins/withRemovePermissions",
       "expo-router",
       "expo-status-bar",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "forceStaticLinking": ["RNFBApp", "RNFBAuth"]
+          }
+        }
+      ],
       [
         "expo-image-picker",
         {

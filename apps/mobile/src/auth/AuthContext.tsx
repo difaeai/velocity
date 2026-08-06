@@ -6,9 +6,10 @@
  * passenger or driver experience based on this role.
  */
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, signOut as fbSignOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 
 import { auth } from '../firebase';
+import { signOutEverywhere } from './phoneSignIn';
 import type { Role } from '../domain/types';
 
 interface AuthState {
@@ -52,7 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await current.getIdToken(true);
         setRole(await readRole(current));
       },
-      signOut: () => fbSignOut(auth),
+      // Clears the native session as well as the JS one. Phone verification runs on
+      // the native SDK, and a native session left signed in could be replayed
+      // against the session-exchange callable on a later launch.
+      signOut: signOutEverywhere,
     }),
     [user, role, initializing],
   );
