@@ -18,6 +18,8 @@ import { auth, db, firebaseConfig } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
+import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../../src/lib/phoneAuthErrors';
+import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../../src/auth/otpGuard';
 import { PrimaryButton } from '../../../src/ui/components';
 import { LogoMark } from '../../../src/ui/LogoMark';
 
@@ -68,7 +70,14 @@ export default function DriverLogin() {
     if (step === 'enter_otp') setTimeout(() => otpRef.current?.focus(), 300);
   }, [step]);
 
+  // A ref, not the `sending` state: `sendOtp` awaits the local send brake before
+  // it flips `sending`, so two taps in that window would both read the stale
+  // `false` and spend two SMS against Firebase's per-number throttle.
+  const sendingRef = useRef(false);
+
   async function sendOtp(isResend = false) {
+    if (sendingRef.current) return;
+
     setError(null);
     const digits = stripPhone(phone);
     setPhone(digits);
@@ -82,42 +91,54 @@ export default function DriverLogin() {
       return;
     }
 
-    setSending(true);
-    if (isResend) setResendLabel('Sending…');
-    setError(null);
+    sendingRef.current = true;
     try {
-      const result = await Promise.race([
-        signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 15000)
-        ),
-      ]);
-      setConfirmation(result);
-      setStep('enter_otp');
-      const now = Date.now();
-      setSentAt(now);
-      setElapsed(0);
-      setResendCooldown(60);
-      if (isResend) { setOtp(''); setResendLabel('Resend OTP'); }
-    } catch (e) {
-      const isTimeout = e instanceof Error && e.message === 'timeout';
-      if (isTimeout) {
-        setError('Request timed out. Tap Resend OTP to try again.');
+      // Shared with the passenger sign-in screen: Firebase throttles per number
+      // and per device, and a throttled call comes back as an unmapped numeric
+      // code that has no business being shown to a driver.
+      const blocked = await checkOtpSendAllowed(digits);
+      if (blocked) { setError(blocked); return; }
+
+      setSending(true);
+      if (isResend) setResendLabel('Sending…');
+      await noteOtpSendAttempt(digits);
+
+      // Patience timer, not an abort. The old 15-second race was shorter than a
+      // visible captcha challenge takes to solve, so it routinely "timed out" on
+      // sends that had already gone through — telling the driver to resend and
+      // burning a second SMS on a code that already worked.
+      let landed = false;
+      const patience = setTimeout(() => {
+        if (landed) return;
+        // Release the reentrancy guard too, or the button we just re-enabled would
+        // silently do nothing. Whether a retry is allowed is the brake's call.
+        sendingRef.current = false;
+        setSending(false);
+        setResendLabel('Resend OTP');
+        setError('Still sending — Pakistani networks can be slow. Give it a few seconds.');
+      }, 60000);
+
+      try {
+        const result = await signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current);
+        landed = true;
+        setConfirmation(result);
+        setStep('enter_otp');
+        setSentAt(Date.now());
+        setElapsed(0);
+        setResendCooldown(60);
+        if (isResend) setOtp('');
+      } catch (e) {
+        landed = true;
+        const { message, throttled } = describePhoneAuthError(e);
+        if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
+        setError(message);
+      } finally {
+        clearTimeout(patience);
+        setSending(false);
         if (isResend) setResendLabel('Resend OTP');
-        return;
       }
-      const code = e instanceof FirebaseError ? e.code : 'unknown';
-      const msg = e instanceof FirebaseError ? e.message : String(e);
-      if (code === 'auth/invalid-phone-number')       setError('Invalid phone number format.');
-      else if (code === 'auth/too-many-requests')     setError('Too many attempts — wait a few minutes.');
-      else if (code === 'auth/captcha-check-failed')  setError('Captcha failed. Try again.');
-      else if (code === 'auth/operation-not-allowed') setError('Pakistani numbers blocked. Enable Pakistan (+92) in Firebase Console → Authentication → Settings → SMS region policy.');
-      else if (code === 'auth/app-not-authorized')    setError('Phone Auth not enabled. Enable it in Firebase Console → Authentication → Sign-in method.');
-      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded.');
-      else setError(`Failed [${code}]: ${msg}`);
-      if (isResend) setResendLabel('Resend OTP');
     } finally {
-      setSending(false);
+      sendingRef.current = false;
     }
   }
 
