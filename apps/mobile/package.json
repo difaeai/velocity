@@ -2,13 +2,6 @@
   "name": "mobile",
   "version": "1.0.0",
   "main": "index.js",
-  "expo": {
-    "autolinking": {
-      "exclude": [
-        "expo-firebase-core"
-      ]
-    }
-  },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.15",
     "@expo/ngrok": "^4.1.3",
@@ -61,7 +54,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "export": "expo export -p ios -p android",
-    "postinstall": "patch-package && node scripts/postinstall.js",
+    "postinstall": "patch-package",
     "lint": "expo lint",
     "keystore:debug": "node scripts/generate-debug-keystore.mjs"
   },
