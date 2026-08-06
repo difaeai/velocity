@@ -14,7 +14,8 @@
     "lint": "eslint src",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
     "deploy": "firebase deploy --only functions",
-    "test": "firebase emulators:exec --only auth,firestore --project demo-velocity \"vitest run --config vitest.config.ts\""
+    "test": "firebase emulators:exec --only auth,firestore --project demo-velocity \"vitest run --config vitest.config.ts\"",
+    "publish:version": "node scripts/publish-app-version.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.1",
