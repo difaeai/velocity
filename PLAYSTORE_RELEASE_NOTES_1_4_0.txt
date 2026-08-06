@@ -1,0 +1,48 @@
+🔐 SIGNING IN JUST GOT MUCH MORE RELIABLE
+
+This release fixes the biggest problem new users were hitting: being blocked at the login screen by a confusing error before they could even get started.
+
+✨ WHAT'S NEW
+
+🔐 A SIGN-IN THAT ACTUALLY WORKS
+- Fixed the error that stopped some new users from receiving their code
+- Verification is now handled by Android itself, using Google Play's built-in app
+  security check — no more hidden security puzzle behind the scenes
+- On most phones your code is now detected and entered automatically, so you
+  often never have to type it at all
+- Much faster: the whole sign-in is fewer steps and fewer taps
+
+💬 CLEAR MESSAGES INSTEAD OF ERROR CODES
+- If something does go wrong, you get a plain-English explanation and a time to
+  try again — never a technical error code
+- "Code expired" now says exactly that, instead of "incorrect code"
+- Slow network? The app tells you it's still sending, instead of pretending it
+  failed and asking you to start again
+
+📍 THE MAP OPENS ON YOU
+- Your location's green dot is now centred in the visible part of the map
+- Previously it could sit hidden behind the booking card, so you had to zoom out
+  to find yourself
+- The dot stays centred as you drag the booking sheet up and down
+- More precise first fix, so the dot lands on the right spot
+
+📊 WHAT ELSE IMPROVED
+- The app no longer requests codes faster than the network allows, which is what
+  triggered the temporary lockouts some users saw
+- Repeated taps on Continue can no longer send two messages at once
+- Removed an outdated component that ran an old, hidden web page inside the app
+- Smaller, cleaner sign-in flow across passenger and driver login
+
+🚀 NEXT UP
+- App-wide security attestation (App Check)
+- Driver voice booking
+- More payment options
+
+Available now in your Velocity app! 🎉
+
+Questions? Tap Support from Settings for help.
+
+---
+
+Version: 1.4.0
+Last Updated: August 7, 2026

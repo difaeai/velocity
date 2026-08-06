@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text as RNText,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Text } from '../../src/ui/Text';
@@ -27,7 +28,7 @@ import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { comingSoon } from '../../src/ui/components';
-import { DraggableSheet } from '../../src/ui/DraggableSheet';
+import { DEFAULT_SNAP_POINTS, DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
 import { NewsTicker } from '../../src/ui/NewsTicker';
@@ -44,6 +45,13 @@ import { isRecognitionAvailable } from '../../src/voice/speech';
 
 const { width } = Dimensions.get('window');
 
+/**
+ * Which DEFAULT_SNAP_POINTS height the booking sheet opens at. Named here because
+ * the map's bottom inset has to agree with it on the very first frame — if the two
+ * disagree the green dot opens behind the sheet, which is the bug this fixes.
+ */
+const SHEET_INITIAL_INDEX = 1;
+
 export default function PassengerHome() {
   const { user, role, signOut } = useAuth();
   const router = useRouter();
@@ -51,6 +59,15 @@ export default function PassengerHome() {
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // The booking sheet covers the bottom of a full-screen map, so the map has to be
+  // told how much of itself is hidden — otherwise it centres the user's green dot
+  // in the middle of the full rect, which is *behind* the sheet. Tracking the snap
+  // index (rather than assuming the opening one) keeps the dot centred in the
+  // visible band as the sheet is dragged.
+  const { height: screenHeight } = useWindowDimensions();
+  const [sheetIndex, setSheetIndex] = useState(SHEET_INITIAL_INDEX);
+  const sheetInset = screenHeight * (DEFAULT_SNAP_POINTS[sheetIndex] ?? DEFAULT_SNAP_POINTS[1]!);
 
   // Live supply/demand around the rider: cars online (lime chips) and everyone
   // else with the app nearby (small red dots). Both come back from the server
@@ -145,7 +162,12 @@ export default function PassengerHome() {
     <View style={styles.container}>
       {/* 1. Full-screen live map (real Google map in the dev build) */}
       <View style={styles.mapContainer}>
-        <LiveMap coords={coords} drivers={activity.drivers} demand={activity.passengers} />
+        <LiveMap
+          coords={coords}
+          drivers={activity.drivers}
+          demand={activity.passengers}
+          bottomInset={sheetInset}
+        />
       </View>
 
       {/* 2. Top Navigation Overlay */}
@@ -220,7 +242,11 @@ export default function PassengerHome() {
 
       {/* 3. Bottom Booking Sheet — drag the grabber to resize it, or tap the
              grabber to swap between this height and (near) full screen. */}
-      <DraggableSheet style={styles.bottomSheet}>
+      <DraggableSheet
+        style={styles.bottomSheet}
+        initialIndex={SHEET_INITIAL_INDEX}
+        onSnap={setSheetIndex}
+      >
         <ScrollView
           style={styles.sheetScroll}
           contentContainerStyle={styles.bottomSheetContent}
