@@ -17,12 +17,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { FirebaseError } from 'firebase/app';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { auth, firebaseConfig } from '../../src/firebase';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
+import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
+import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
 
 type Step = 'enter_phone' | 'enter_otp';
 
@@ -131,11 +132,22 @@ export default function SignIn() {
     if (step === 'enter_otp') setTimeout(() => otpRef.current?.focus(), 300);
   }, [step]);
 
+  // A ref, not the `sending` state: `sendOtp` awaits the local send brake before
+  // it flips `sending`, and two taps landing in that window would both read the
+  // stale `false`. Two concurrent sends orphan one captcha session and spend two
+  // SMS against Firebase's per-number throttle.
+  const sendingRef = useRef(false);
+
+  function adoptConfirmation(result: ConfirmationResult, isResend: boolean) {
+    setConfirmation(result);
+    setStep('enter_otp');
+    setSentAt(Date.now());
+    setResendCooldown(60);
+    if (isResend) setOtp('');
+  }
+
   async function sendOtp(isResend = false) {
-    // Reentrancy guard — the keyboard "Done" key and the Send button can both
-    // fire. Two concurrent sends orphan one captcha session, which then hangs
-    // until its timeout and dumps a phantom "timed out" error on the OTP screen.
-    if (sending) return;
+    if (sendingRef.current) return;
 
     setError(null);
     const digits = stripPhone(phone);
@@ -150,44 +162,50 @@ export default function SignIn() {
       return;
     }
 
-    setSending(true);
-    setError(null);
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    sendingRef.current = true;
     try {
-      // Generous 60-second timeout: when Google escalates to a VISIBLE captcha
-      // the user needs time to solve it — a short timeout fires mid-challenge.
-      // The timer is cleared once the race settles so it can never fire late.
-      const result = await Promise.race([
-        signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('timeout')), 60000);
-        }),
-      ]);
-      setConfirmation(result);
-      setStep('enter_otp');
-      setSentAt(Date.now());
-      setResendCooldown(60);
-      if (isResend) setOtp('');
-    } catch (e) {
-      const isTimeout = e instanceof Error && e.message === 'timeout';
-      if (isTimeout) {
-        setError(isResend
-          ? 'Request timed out. Tap Resend to try again.'
-          : 'Request timed out. Tap Continue to try again.');
-        return;
+      // Firebase throttles sendVerificationCode per number *and* per device, and
+      // answers a throttled call with an unmapped numeric code that used to land
+      // on this screen as "Failed [auth/error-code:-39]". The brake keeps us under
+      // that ceiling instead of discovering it the hard way.
+      const blocked = await checkOtpSendAllowed(digits);
+      if (blocked) { setError(blocked); return; }
+
+      setSending(true);
+      await noteOtpSendAttempt(digits);
+
+      // Patience timer, not an abort: the SMS is already on its way once the
+      // request lands, so we free the button and say so, but a result that shows
+      // up late is still adopted. Racing it away told the user to "try again" and
+      // spent a second SMS on a code that already worked.
+      let landed = false;
+      const patience = setTimeout(() => {
+        if (landed) return;
+        // Release the reentrancy guard too, or the button we just re-enabled would
+        // silently do nothing. What a retry is allowed to do is the brake's call,
+        // not this timer's.
+        sendingRef.current = false;
+        setSending(false);
+        setError('Still sending — Pakistani networks can be slow. Give it a few seconds.');
+      }, 60000);
+
+      try {
+        const result = await signInWithPhoneNumber(auth, `+92${digits}`, recaptchaRef.current);
+        landed = true;
+        adoptConfirmation(result, isResend);
+      } catch (e) {
+        landed = true;
+        const { message, throttled } = describePhoneAuthError(e);
+        // Sit out a server-side throttle locally, with a countdown, rather than
+        // letting retries extend it.
+        if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
+        setError(message);
+      } finally {
+        clearTimeout(patience);
+        setSending(false);
       }
-      const code = e instanceof FirebaseError ? e.code : 'unknown';
-      const msg  = e instanceof FirebaseError ? e.message : String(e);
-      if (code === 'auth/invalid-phone-number')       setError('Invalid phone number format.');
-      else if (code === 'auth/too-many-requests')     setError('Too many attempts — wait a few minutes.');
-      else if (code === 'auth/captcha-check-failed')  setError('Captcha failed. Try again.');
-      else if (code === 'auth/operation-not-allowed') setError('Pakistani numbers blocked. Enable Pakistan (+92) in Firebase Console → Authentication → Settings → SMS region policy.');
-      else if (code === 'auth/app-not-authorized')    setError('Phone Auth not enabled. Enable it in Firebase Console → Authentication → Sign-in method.');
-      else if (code === 'auth/quota-exceeded')        setError('SMS quota exceeded.');
-      else setError(`Failed [${code}]: ${msg}`);
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-      setSending(false);
+      sendingRef.current = false;
     }
   }
 
@@ -207,8 +225,15 @@ export default function SignIn() {
     try {
       await confirmation.confirm(code);
       Keyboard.dismiss();
-    } catch {
-      setError('Incorrect code — please try again.');
+    } catch (e) {
+      // "Incorrect code" is a lie when the code simply aged out or the account is
+      // throttled — the user retypes the same digits and fails again.
+      const failCode = (e as { code?: string } | null)?.code ?? '';
+      if (failCode === 'auth/code-expired')
+        setError('That code has expired. Tap Resend for a new one.');
+      else if (failCode === 'auth/too-many-requests')
+        setError('Too many attempts. Please wait a while before trying again.');
+      else setError('Incorrect code — please try again.');
     } finally {
       verifyingRef.current = false;
       setVerifying(false);

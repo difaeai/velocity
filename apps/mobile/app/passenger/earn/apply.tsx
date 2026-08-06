@@ -57,6 +57,8 @@ import { themed } from '../../../src/theme';
 import { useInterstitial } from '../../../src/ads';
 import { auth, firebaseConfig } from '../../../src/firebase';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
+import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../../src/lib/phoneAuthErrors';
+import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../../src/auth/otpGuard';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
 import { pickPhoto } from '../../../src/ui/onboarding';
@@ -204,13 +206,23 @@ export default function PartnerApply() {
       return;
     }
     if (!recaptchaRef.current) return;
+
+    // Same brake and the same error copy as the sign-in screens: a throttled send
+    // returns an unmapped numeric code, and `e.message` put "Firebase: Error
+    // (auth/error-code:-39)." straight into an Alert.
+    const blocked = await checkOtpSendAllowed(digits);
+    if (blocked) { Alert.alert('Please wait', blocked); return; }
+
     setLinking(true);
     try {
+      await noteOtpSendAttempt(digits);
       const provider = new PhoneAuthProvider(auth);
       const id = await provider.verifyPhoneNumber(`+92${digits}`, recaptchaRef.current);
       setVerificationId(id);
     } catch (e) {
-      Alert.alert('Could not send the code', e instanceof Error ? e.message : 'Try again.');
+      const { message, throttled } = describePhoneAuthError(e);
+      if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
+      Alert.alert('Could not send the code', message);
     } finally {
       setLinking(false);
     }
