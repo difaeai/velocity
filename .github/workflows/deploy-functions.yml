@@ -1,6 +1,15 @@
 name: Deploy Cloud Functions
 
 on:
+  # Manual trigger (Actions tab → this workflow → "Run workflow").
+  #
+  # Without this, a deploy could ONLY be produced by pushing to one of the paths
+  # below — so when a push landed while Actions was unavailable (an exhausted
+  # minute quota, an outage), the commit stayed permanently undeployed with no way
+  # to re-run it short of a dummy commit. That is precisely how
+  # exchangePhoneSession ended up merged but missing from production while the app
+  # that depends on it was already built.
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
