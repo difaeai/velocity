@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Constants from 'expo-constants';
 import { Text } from './Text';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -47,6 +53,14 @@ const DEFAULT_REGION = {
 const MAP_BASE = '#151b22';
 
 /**
+ * Ceiling on `bottomInset`, as a fraction of screen height. The home sheet can be
+ * dragged to 94% of the screen; padding the camera by that much leaves Google Maps
+ * with almost no viewport to centre in and it starts ignoring the padding
+ * altogether. Capping keeps a usable band so the dot stays put.
+ */
+const MAX_BOTTOM_INSET_FRACTION = 0.62;
+
+/**
  * Google Maps only authenticates in a real dev-client / release build compiled
  * with the Android Maps API key (see app.config.ts). In Expo Go — or any build
  * where the key is absent — the native map paints an ugly grey tile grid with
@@ -80,6 +94,7 @@ export function LiveMap({
   drivers,
   demand,
   style,
+  bottomInset = 0,
 }: {
   coords: Coords | null;
   pickup?: MapPoint | null;
@@ -87,11 +102,22 @@ export function LiveMap({
   drivers?: DriverPin[];
   demand?: DemandPin[];
   style?: StyleProp<ViewStyle>;
+  /**
+   * Height in px of whatever covers the bottom of the map — on the home screen,
+   * the booking sheet. The map fills the whole screen *behind* that sheet, so
+   * without this the "centre" it centres on is the centre of the full rect, which
+   * on home sits below the sheet's top edge: the user's own green dot was being
+   * parked underneath the card, and you had to pinch the map to find yourself.
+   */
+  bottomInset?: number;
 }) {
   const mapRef   = useRef<MapView>(null);
   const centred  = useRef(false);
   const lastLat  = useRef<number | null>(null);
   const lastLng  = useRef<number | null>(null);
+  const lastInset = useRef(bottomInset);
+
+  const { height: screenHeight } = useWindowDimensions();
 
   const hasRoute = !!(pickup && dropoff);
 
@@ -120,23 +146,28 @@ export function LiveMap({
     return () => clearTimeout(t);
   }, [hasRoute, pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng, routeCoords]);
 
-  // Follow mode: re-centre whenever GPS updates significantly (>30m) or on first fix.
+  // Follow mode: re-centre whenever GPS updates significantly (>30m), on first
+  // fix, or when the sheet resizes. Google Maps does not move the camera when
+  // mapPadding changes — it only moves where "centre" *means* — so dragging the
+  // sheet has to re-issue the animation or the dot drifts out of the visible band.
   useEffect(() => {
     if (hasRoute || !coords || !mapRef.current) return;
     const moved =
       lastLat.current === null ||
       Math.abs(coords.lat - lastLat.current) > 0.0003 ||
       Math.abs(coords.lng - lastLng.current!) > 0.0003;
-    if (!centred.current || moved) {
-      centred.current  = true;
-      lastLat.current  = coords.lat;
-      lastLng.current  = coords.lng;
+    const insetChanged = lastInset.current !== bottomInset;
+    if (!centred.current || moved || insetChanged) {
+      centred.current   = true;
+      lastLat.current   = coords.lat;
+      lastLng.current   = coords.lng;
+      lastInset.current = bottomInset;
       mapRef.current.animateToRegion(
         { latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 },
         600,
       );
     }
-  }, [coords, hasRoute]);
+  }, [coords, hasRoute, bottomInset]);
 
   // No usable native map (Expo Go / no key) → clean dark placeholder, never the
   // grey Google grid. A soft brand halo keeps it reading as an intentional
@@ -171,6 +202,17 @@ export function LiveMap({
       showsMyLocationButton={false}
       showsCompass={false}
       toolbarEnabled={false}
+      // Insets the camera's idea of "centre" to the strip of map the user can
+      // actually see above the sheet, so a centred coordinate lands there rather
+      // than behind the card. Clamped: Google Maps misbehaves once the padding
+      // approaches the view height, and a nearly-full sheet must still leave a
+      // usable band to centre within.
+      mapPadding={{
+        top: 0,
+        right: 0,
+        bottom: Math.max(0, Math.min(bottomInset, MAX_BOTTOM_INSET_FRACTION * screenHeight)),
+        left: 0,
+      }}
       initialRegion={
         pickup
           ? { latitude: pickup.lat, longitude: pickup.lng, latitudeDelta: 0.03, longitudeDelta: 0.03 }

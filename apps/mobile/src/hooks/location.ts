@@ -114,8 +114,11 @@ export function useCurrentLocation(auto = true): CurrentLocation {
           },
         );
 
-        // Accurate one-shot fix for reverse geocoding the pickup label.
-        const pos = await Location!.getCurrentPositionAsync({ accuracy: Location!.Accuracy.Balanced });
+        // One-shot fix that anchors the "you are here" dot and the pickup label.
+        // High, not Balanced: Balanced is ~100m, which is enough to put the dot on
+        // the wrong side of the street. The live watch above stays on Balanced —
+        // paying for GPS-grade accuracy once is fine, paying every 5 seconds is not.
+        const pos = await Location!.getCurrentPositionAsync({ accuracy: Location!.Accuracy.High });
         if (!mounted.current) return;
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         lastCoords = next;
