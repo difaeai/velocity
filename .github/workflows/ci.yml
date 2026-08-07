@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  # Manual trigger (Actions tab → CI → "Run workflow"). Without it, CI can only be
+  # started by a new push — so any commit that landed while Actions was unavailable
+  # stays permanently unverified, with no way to check it after the fact.
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
