@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -282,11 +284,18 @@ export default function TravelMateHome() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero — Find travel partners */}
-        <Pressable style={s.hero} onPress={openDiscover}>
+        <Pressable
+          style={({ pressed }) => [s.hero, pressed && s.heroPressed]}
+          onPress={openDiscover}
+          accessibilityRole="button"
+          accessibilityLabel="Find travel partners"
+          accessibilityHint="Opens the swipe deck to discover riders going your way"
+        >
           <View style={{ flex: 1 }}>
             <Text style={s.heroKicker}>DISCOVER</Text>
             <Text style={s.heroTitle}>Find travel partners</Text>
             <Text style={s.heroSub}>Swipe to match with riders going your way</Text>
+            <TapToExplore />
           </View>
           <View style={s.heroIconWrap}>
             <Text style={s.heroIcon}>🔍</Text>
@@ -528,6 +537,64 @@ function ActionTile({
   );
 }
 
+/**
+ * "Tap to explore" cue for the Discover hero.
+ *
+ * The hero was already a Pressable, but nothing on it said so: it reads as a
+ * banner, and the quick-action tiles below it look far more like buttons because
+ * they are visibly separate cards. Users were scrolling straight past the one
+ * entry point to the swipe deck.
+ *
+ * The pill is the label; the slow breathing loop is what pulls the eye to it.
+ * Kept to opacity + scale so it runs on the native driver — no layout work per
+ * frame, and nothing below it moves.
+ */
+function TapToExplore() {
+  // Lazy initialiser rather than `useRef(new Animated.Value(…))`, matching
+  // DraggableSheet: the ref form constructs a throwaway Value on every render,
+  // and reading `.current` during render trips the refs lint rule.
+  const [pulse] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    // Animations survive unmount otherwise, and keep a retained frame callback
+    // running behind whatever screen the user moved on to.
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <Animated.View
+      style={[
+        s.heroCta,
+        {
+          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }),
+          transform: [
+            { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] }) },
+          ],
+        },
+      ]}
+    >
+      <Text style={s.heroCtaText}>👆 Tap to explore partners</Text>
+    </Animated.View>
+  );
+}
+
 const s = themed(() => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.background },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
@@ -546,6 +613,12 @@ const s = themed(() => StyleSheet.create({
   heroSub:     { fontSize: 13, color: 'rgba(0,0,0,0.75)', marginTop: 4, lineHeight: 18 },
   heroIconWrap:{ width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0,0,0,0.12)', alignItems: 'center', justifyContent: 'center' },
   heroIcon:    { fontSize: 30 },
+  heroPressed: { opacity: 0.85 },
+  // Dark pill on the lime hero — the one high-contrast element on the card, so
+  // the eye lands on it. alignSelf keeps it hugging its text instead of
+  // stretching the full width like a second banner.
+  heroCta:     { alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: 'rgba(0,0,0,0.82)' },
+  heroCtaText: { fontSize: 12.5, fontWeight: '900', color: '#ffffff', letterSpacing: 0.2 },
 
   // Quick actions grid
   grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
