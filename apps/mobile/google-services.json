@@ -66,6 +66,14 @@
           }
         },
         {
+          "client_id": "63950615894-svb6ets0iqpmr6iukghtg7t8391hbdiq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocityridzpk.app",
+            "certificate_hash": "dae1f4965775ab384b99ff7d07410425752ffcee"
+          }
+        },
+        {
           "client_id": "63950615894-p5d1ote0vbvgb4cdfqp5vpmekv6m35fs.apps.googleusercontent.com",
           "client_type": 3
         }
