@@ -69,9 +69,9 @@ export default function PassengerHome() {
   const [sheetIndex, setSheetIndex] = useState(SHEET_INITIAL_INDEX);
   const sheetInset = screenHeight * (DEFAULT_SNAP_POINTS[sheetIndex] ?? DEFAULT_SNAP_POINTS[1]!);
 
-  // Live supply/demand around the rider: cars online (lime chips) and everyone
-  // else with the app nearby (small red dots). Both come back from the server
-  // blurred and anonymous — see getNearbyActivity.
+  // Live supply/demand around the passenger: bikes and cars online (lime chips)
+  // and everyone else with the app nearby (small red dots). Both come back from
+  // the server blurred and anonymous — see getNearbyActivity.
   const activity = useNearbyActivity(coords);
 
   // …and the other half of that: this handset tells the server it is here, so
@@ -234,6 +234,8 @@ export default function PassengerHome() {
         {activity.loaded ? (
           <MapActivityChip
             driverCount={activity.driverCount}
+            bikeCount={activity.bikeCount}
+            carCount={activity.carCount}
             passengerCount={activity.passengerCount}
             waitingCount={activity.waitingCount}
           />

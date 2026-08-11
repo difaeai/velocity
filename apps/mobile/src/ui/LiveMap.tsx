@@ -22,6 +22,12 @@ export interface DriverPin {
   id: string;
   lat: number;
   lng: number;
+  /**
+   * What the chip is drawn as. Bikes are half the supply in these cities and a
+   * bike is not a substitute for a car, so they get their own glyph rather than
+   * hiding inside a generic car pin. Missing means car.
+   */
+  vehicle?: 'bike' | 'car';
 }
 
 /**
@@ -84,7 +90,7 @@ import { themed } from '../theme';
  * - `coords` only (home screens): follows the user's GPS position.
  * - `pickup` + `dropoff`: draws pin/flag markers with a route line and frames
  *   the whole route (booking + trip screens).
- * - `drivers`: live driver positions rendered as car chips.
+ * - `drivers`: live driver positions rendered as bike/car chips.
  * - `demand`: other app users nearby, rendered as small red dots.
  */
 export function LiveMap({
@@ -299,7 +305,7 @@ export function LiveMap({
           zIndex={2}
         >
           <View style={styles.driverChip}>
-            <Text style={styles.driverChipEmoji}>🚗</Text>
+            <Text style={styles.driverChipEmoji}>{d.vehicle === 'bike' ? '🏍️' : '🚗'}</Text>
           </View>
         </Marker>
       ))}

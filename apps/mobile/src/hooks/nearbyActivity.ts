@@ -2,7 +2,7 @@
  * The passenger home map's "is anything happening here?" feed.
  *
  * Polls `getNearbyActivity` while the home screen is mounted and hands back
- * blurred car pins, blurred waiting-rider pins, and the counts behind them.
+ * blurred bike/car pins, blurred passenger pins, and the counts behind them.
  *
  * Three things this hook is careful about, because it runs on somebody's home
  * screen on a metered connection:
@@ -31,6 +31,9 @@ export interface NearbyActivityState {
   passengers: ActivityPin[];
   /** Totals inside the radius — may exceed the pin arrays, which are capped. */
   driverCount: number;
+  /** `driverCount` split by product: the chip names bikes and cars separately. */
+  bikeCount: number;
+  carCount: number;
   /** Everyone with the app nearby, whether or not they want a ride. */
   passengerCount: number;
   /** The subset of them with a ride request open right now. */
@@ -43,6 +46,8 @@ const EMPTY: NearbyActivityState = {
   drivers: [],
   passengers: [],
   driverCount: 0,
+  bikeCount: 0,
+  carCount: 0,
   passengerCount: 0,
   waitingCount: 0,
   loaded: false,
@@ -101,10 +106,16 @@ export function useNearbyActivity(coords: Coords | null, radiusKm = 6): NearbyAc
         .getNearbyActivity({ lat: now.lat, lng: now.lng, radiusKm })
         .then((res) => {
           if (cancelled) return;
+          const driverCount = res.driverCount ?? 0;
+          const bikeCount = res.bikeCount ?? 0;
           setState({
             drivers: res.drivers ?? [],
             passengers: res.passengers ?? [],
-            driverCount: res.driverCount ?? 0,
+            driverCount,
+            bikeCount,
+            // A backend that doesn't send the split has only ever meant cars, so
+            // the whole total lands there rather than vanishing off the chip.
+            carCount: res.carCount ?? driverCount - bikeCount,
             passengerCount: res.passengerCount ?? 0,
             waitingCount: res.waitingCount ?? 0,
             loaded: true,

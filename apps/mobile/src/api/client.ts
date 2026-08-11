@@ -116,6 +116,12 @@ export interface ActivityPin {
   lat: number;
   lng: number;
   distanceKm: number;
+  /**
+   * Supply pins only: whether that chip is a bike or a car. Optional because the
+   * demand dots never carry one, and because a response from an older backend
+   * won't either — treat a missing value as a car.
+   */
+  vehicle?: 'bike' | 'car';
 }
 
 /**
@@ -135,6 +141,9 @@ export interface NearbyActivity {
   ok: boolean;
   radiusKm: number;
   driverCount: number;
+  /** `driverCount` split by product — bikes and cars are separate answers. */
+  bikeCount?: number;
+  carCount?: number;
   passengerCount: number;
   waitingCount: number;
   drivers: ActivityPin[];

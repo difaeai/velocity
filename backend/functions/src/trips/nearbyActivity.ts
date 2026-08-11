@@ -138,12 +138,23 @@ function pinId(prefix: string, id: string): string {
   return `${prefix}_${hashId(id).toString(36)}`;
 }
 
+/**
+ * What a supply pin is drawn as. Bikes are a real, separate product here — a
+ * street full of motorbikes and a street full of cars are different answers to
+ * "can I get a ride?" — so the map and the chip split them. Everything that is
+ * not a motorbike (mini/ac/comfort/xl, and rickshaws) is one "car" bucket:
+ * finer than that is fare-selection detail the home map has no business showing.
+ */
+type Vehicle = 'bike' | 'car';
+
 interface Pin {
   id: string;
   lat: number;
   lng: number;
   /** Straight-line distance from the caller, rounded to 100 m. */
   distanceKm: number;
+  /** Supply pins only — absent on the demand dots. */
+  vehicle?: Vehicle;
 }
 
 function toMillis(value: unknown): number {
@@ -200,8 +211,8 @@ export const getNearbyActivity = onCall(async (req) => {
   ]);
 
   const drivers: Pin[] = [];
-  // Anyone drawn as a car must not also be drawn as a dot — one person, one pin.
-  const drawnAsCar = new Set<string>();
+  // Anyone drawn as a vehicle must not also be drawn as a dot — one person, one pin.
+  const drawnAsVehicle = new Set<string>();
   for (const doc of driverSnap.docs) {
     // A driver browsing the passenger app must not see their own car as
     // "another driver nearby" — that reads as one phantom of extra supply.
@@ -213,13 +224,17 @@ export const getNearbyActivity = onCall(async (req) => {
     if (nowMs - toMillis(doc.get('lastSeenAt')) > DRIVER_STALE_MS) continue;
     const distM = haversineM(lat, lng, loc.lat, loc.lng);
     if (distM > radiusM) continue;
-    drawnAsCar.add(doc.id);
+    drawnAsVehicle.add(doc.id);
     const b = blur(loc.lat, loc.lng, doc.id, DRIVER_BLUR_M);
+    // A driver doc predating the vehicle picker has no type at all; a car is the
+    // safe default, since claiming a bike that isn't there is the worse error.
+    const vehicle: Vehicle = doc.get('vehicleType') === 'bike' ? 'bike' : 'car';
     drivers.push({
       id: pinId('d', doc.id),
       lat: b.lat,
       lng: b.lng,
       distanceKm: Math.round((distM / 1000) * 10) / 10,
+      vehicle,
     });
   }
 
@@ -234,7 +249,7 @@ export const getNearbyActivity = onCall(async (req) => {
     if (typeof uid !== 'string' || !uid) return;
     if (typeof pLat !== 'number' || typeof pLng !== 'number') return;
     // You are never one of the dots on your own map, and a car is never a dot.
-    if (uid === ctx.uid || drawnAsCar.has(uid)) return;
+    if (uid === ctx.uid || drawnAsVehicle.has(uid)) return;
     const existing = people.get(uid);
     // Presence must not overwrite the sharper position an open request gives us.
     if (existing?.waiting && !waiting) return;
@@ -285,6 +300,9 @@ export const getNearbyActivity = onCall(async (req) => {
     radiusKm,
     // Counts are the untrimmed truth; the pin arrays are what fits on a map.
     driverCount: drivers.length,
+    /** The split behind `driverCount`, so the chip can name both products. */
+    bikeCount: drivers.filter((d) => d.vehicle === 'bike').length,
+    carCount: drivers.filter((d) => d.vehicle === 'car').length,
     /** Everyone with the app nearby — the red dots. */
     passengerCount: passengers.length,
     /** The subset of them with a ride request actually open right now. */
