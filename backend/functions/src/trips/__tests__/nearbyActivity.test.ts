@@ -25,11 +25,13 @@ const NEAR = { lat: 33.7200, lng: 73.0550 };
 /** ~22 km north — outside every radius this function accepts. */
 const FAR = { lat: 33.9100, lng: 73.0550 };
 
-interface Pin { id: string; lat: number; lng: number; distanceKm: number }
+interface Pin { id: string; lat: number; lng: number; distanceKm: number; vehicle?: string }
 interface Result {
   ok: boolean;
   radiusKm: number;
   driverCount: number;
+  bikeCount: number;
+  carCount: number;
   passengerCount: number;
   waitingCount: number;
   drivers: Pin[];
@@ -134,7 +136,23 @@ describe('getNearbyActivity — supply', () => {
     expect(serialised).not.toContain('Very Identifiable Person');
     expect(serialised).not.toContain('ABC-123');
     expect(serialised).not.toContain('Corolla');
-    expect(Object.keys(res.drivers[0]!).sort()).toEqual(['distanceKm', 'id', 'lat', 'lng']);
+    expect(Object.keys(res.drivers[0]!).sort()).toEqual(['distanceKm', 'id', 'lat', 'lng', 'vehicle']);
+  });
+
+  it('splits supply into bikes and cars, and defaults a typeless driver to a car', async () => {
+    await seedDriver('bike1', NEAR, { vehicleType: 'bike' });
+    await seedDriver('car1', NEAR, { vehicleType: 'mini' });
+    await seedDriver('rickshaw', NEAR, { vehicleType: 'auto' });
+    await seedDriver('legacy', NEAR); // no vehicleType at all
+
+    const res = await call();
+    expect(res.driverCount).toBe(4);
+    expect(res.bikeCount).toBe(1);
+    // Rickshaws and untyped drivers ride in the car bucket — never claimed as bikes.
+    expect(res.carCount).toBe(3);
+
+    const bikes = res.drivers.filter((d) => d.vehicle === 'bike');
+    expect(bikes).toHaveLength(1);
   });
 
   it('blurs the same driver to the same point on every call', async () => {
@@ -268,6 +286,8 @@ describe('getNearbyActivity — the empty case that drives the Earn pitch', () =
     const res = await call();
     expect(res.ok).toBe(true);
     expect(res.driverCount).toBe(0);
+    expect(res.bikeCount).toBe(0);
+    expect(res.carCount).toBe(0);
     expect(res.passengerCount).toBe(0);
     expect(res.waitingCount).toBe(0);
     expect(res.drivers).toEqual([]);

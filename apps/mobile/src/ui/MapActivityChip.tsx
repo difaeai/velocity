@@ -5,16 +5,22 @@ import { colors } from '../config';
 import { themed } from '../theme';
 
 /**
- * The legend for the home map's activity layer: how many cars are online around
- * you, and how many other people with Velocity are around you.
+ * The legend for the home map's activity layer: what is online around you, split
+ * into bikes and cars, and how many other people with Velocity are around you.
  *
  * The map alone is ambiguous — a lime chip and a red dot mean nothing on first
  * sight, and a sparse map could equally be "nobody here" or "not loaded yet".
- * The chip names both marks and gives the totals, which also carry the part the
+ * The chip names the marks and gives the totals, which also carry the part the
  * pins can't: the arrays on the map are capped, these numbers are not.
  *
- * A red dot is anyone nearby with the app, so the label is "riders", not
- * "waiting". When some of them do have a request open that becomes a third
+ * Bikes and cars are counted apart because they are different products, not
+ * different sizes of the same one: "4 nearby" is useless to someone who needs a
+ * car and is looking at four motorbikes. Both segments show even at zero, so the
+ * chip keeps a stable shape between polls and "no bikes here" stays a visible,
+ * honest answer rather than a segment that quietly disappears.
+ *
+ * A red dot is anyone nearby with the app — a passenger, not necessarily someone
+ * waiting. When some of them do have a request open that becomes a further
  * segment, because "2 waiting" is the number that tells a driver-curious user
  * there is money on the table right now.
  *
@@ -23,10 +29,14 @@ import { themed } from '../theme';
  */
 export function MapActivityChip({
   driverCount,
+  bikeCount,
+  carCount,
   passengerCount,
   waitingCount,
 }: {
   driverCount: number;
+  bikeCount: number;
+  carCount: number;
   passengerCount: number;
   waitingCount: number;
 }) {
@@ -39,15 +49,21 @@ export function MapActivityChip({
       ) : (
         <>
           <View style={styles.item}>
-            <Text style={styles.carGlyph}>🚗</Text>
-            <Text style={styles.count}>{driverCount}</Text>
-            <Text style={styles.label}>{driverCount === 1 ? 'car' : 'cars'}</Text>
+            <Text style={styles.vehicleGlyph}>🚗</Text>
+            <Text style={styles.count}>{carCount}</Text>
+            <Text style={styles.label}>{carCount === 1 ? 'car' : 'cars'}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.item}>
+            <Text style={styles.vehicleGlyph}>🏍️</Text>
+            <Text style={styles.count}>{bikeCount}</Text>
+            <Text style={styles.label}>{bikeCount === 1 ? 'bike' : 'bikes'}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.item}>
             <View style={styles.demandDot} />
             <Text style={styles.count}>{passengerCount}</Text>
-            <Text style={styles.label}>{passengerCount === 1 ? 'rider' : 'riders'}</Text>
+            <Text style={styles.label}>{passengerCount === 1 ? 'passenger' : 'passengers'}</Text>
           </View>
           {waitingCount > 0 ? (
             <>
@@ -85,7 +101,7 @@ const styles = themed(() => StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   item: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  carGlyph: { fontSize: 11 },
+  vehicleGlyph: { fontSize: 11 },
   demandDot: {
     width: 8,
     height: 8,
@@ -93,7 +109,7 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   count: { fontSize: 12, fontWeight: '900', color: colors.primary },
-  // Waiting riders are the urgent number, so they take the red the dots use
+  // Waiting passengers are the urgent number, so they take the red the dots use
   // rather than the lime everything else on this chip shares.
   waitingCount: { fontSize: 12, fontWeight: '900', color: '#ef4444' },
   label: { fontSize: 10, fontWeight: '700', color: colors.muted },
