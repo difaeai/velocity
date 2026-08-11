@@ -82,6 +82,9 @@ export async function startPhoneVerification(
   // user's own `confirm()` can both land, and two exchanges would mean two
   // signInWithCustomToken calls racing over one session.
   let bridged = false;
+  // The in-flight auto-verification bridge, so a `confirm()` that arrives while
+  // it is still running can wait for its result instead of racing it.
+  let bridgeInFlight: Promise<void> | null = null;
   let unsubscribe: (() => void) | null = null;
 
   const cancel = () => {
@@ -98,11 +101,12 @@ export async function startPhoneVerification(
     if (!user || bridged) return;
     bridged = true;
     cancel();
-    bridgeToJsSdk(user).then(
+    bridgeInFlight = bridgeToJsSdk(user).then(
       () => onAutoVerified?.(),
       (e) => {
         // Let the user fall back to typing the code.
         bridged = false;
+        bridgeInFlight = null;
         onAutoVerified?.(e);
       },
     );
@@ -120,13 +124,39 @@ export async function startPhoneVerification(
   return {
     cancel,
     async confirm(code: string) {
-      const credential = await confirmation.confirm(code);
-      const user = credential?.user ?? nativeAuth.currentUser;
-      if (!user) throw new Error('Verification did not return a user.');
-      if (bridged) return; // Auto-verification already got there first.
+      // Auto-verification already consumed this verification, so Firebase has
+      // nothing left to check the code against: calling confirm() now rejects
+      // with auth/session-expired, which the screen renders as "that code has
+      // expired" — to a user who just typed the correct code and is, or is about
+      // to be, signed in. Wait for the bridge that is already running instead.
+      // This check has to happen BEFORE confirm(), not after it; after is too
+      // late, the throw has already happened.
+      if (bridged) {
+        if (bridgeInFlight) await bridgeInFlight;
+        return;
+      }
+
+      // Claim ownership before the native sign-in lands. confirm() itself moves
+      // native auth state, which wakes the watcher above — and without this it
+      // would start a second, competing bridge for the same session.
       bridged = true;
       cancel();
       try {
+        // A native session already present means Android verified the number on
+        // its own and only the *bridge* failed (the exchange call, say, on a
+        // flaky connection) — bridgeToJsSdk signs out natively on success, so
+        // this can only be a half-finished attempt. The verification is spent
+        // either way, so re-running confirm() would just fail; retry the part
+        // that actually broke and let the user's Verify tap mean something.
+        const verified = nativeAuth.currentUser;
+        if (verified) {
+          await bridgeToJsSdk(verified);
+          return;
+        }
+
+        const credential = await confirmation.confirm(code);
+        const user = credential?.user ?? nativeAuth.currentUser;
+        if (!user) throw new Error('Verification did not return a user.');
         await bridgeToJsSdk(user);
       } catch (e) {
         // Leave the door open for a retry rather than stranding a verified user.
