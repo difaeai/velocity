@@ -186,8 +186,20 @@ export default function SignIn() {
         confirmation?.cancel();
         const result = await startPhoneVerification(`+92${digits}`, (autoError) => {
           // Android read the SMS itself. On success the JS-SDK session is already
-          // live and the root layout navigates away — there is nothing to do here.
-          if (autoError) setError(describePhoneAuthError(autoError).message);
+          // live and the root layout navigates away. Clear any error still on
+          // screen from an earlier attempt: leaving it there means the last thing
+          // the user sees before landing on the home screen is a red failure
+          // message about something that has just succeeded.
+          if (!autoError) { setError(null); return; }
+
+          // A failure HERE is not a failure to send. The SMS went out, Android
+          // read it, and the number is verified — only the hand-off into the
+          // app's own session broke. Running it through describePhoneAuthError
+          // printed "Could not send the code right now", which is untrue and
+          // sends the user off resending codes they already have. Their next tap
+          // retries exactly the part that failed (see phoneSignIn's confirm()),
+          // so this asks for that instead of raising an alarm.
+          setError('Almost there — tap Verify to finish signing in.');
         });
         landed = true;
         adoptConfirmation(result, isResend);
@@ -217,7 +229,13 @@ export default function SignIn() {
     if (verifyingRef.current) return;
     setError(null);
     if (!confirmation) { setError('Please request a code first.'); return; }
-    if (code.length !== OTP_LENGTH) { setError('Enter the 6-digit code.'); return; }
+    // Auto-verification leaves the boxes empty by design — the user never had to
+    // type anything. Demanding six digits then would block the retry that is the
+    // only way out of a failed hand-off.
+    if (!confirmation.verifiedNatively() && code.length !== OTP_LENGTH) {
+      setError('Enter the 6-digit code.');
+      return;
+    }
     verifyingRef.current = true;
     setVerifying(true);
     try {

@@ -39,6 +39,15 @@ export interface PhoneVerification {
    * `describePhoneAuthError`.
    */
   confirm(code: string): Promise<void>;
+  /**
+   * True when Android already verified the number and only the hand-off into the
+   * JS SDK is still outstanding — `confirm()` then ignores the code entirely.
+   *
+   * The screen needs this because auto-verification means the user never typed
+   * anything: if the hand-off fails, a "tap Verify to finish" prompt would hit
+   * the empty-field guard and refuse to do the one thing that would work.
+   */
+  verifiedNatively(): boolean;
   /** Stop watching for Android's automatic verification. Safe to call twice. */
   cancel(): void;
 }
@@ -123,6 +132,10 @@ export async function startPhoneVerification(
 
   return {
     cancel,
+    // A native session outliving the bridge can only mean the verification
+    // succeeded and the exchange did not: bridgeToJsSdk signs out natively as
+    // its last step on success.
+    verifiedNatively: () => nativeAuth.currentUser !== null,
     async confirm(code: string) {
       // Auto-verification already consumed this verification, so Firebase has
       // nothing left to check the code against: calling confirm() now rejects
