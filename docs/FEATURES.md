@@ -1400,15 +1400,7 @@ forgiven.
 ## 15. Ads and monetisation
 
 `src/ads/*` — AdMob via `react-native-google-mobile-ads`. **Two units total**
-(one banner, one interstitial), reused across placements.
-
-> **Currently OFF.** `EXPO_PUBLIC_ADS_ENABLED` is a build-time master switch that
-> is off unless set to the exact string `"true"`. While off, nothing below runs:
-> no SDK init, no ad requests, no placements mounted. Off while the developer
-> account is still a personal one — see §15.1, and note that this removes the
-> "Contains ads" badge but is **not** what controls the public address. Turn it
-> back on only together with Play Console → App content → **Ads → Yes**, and
-> only for a build that ships after that declaration is saved.
+(one banner, one interstitial), reused across placements:
 
 | Type | Placement |
 |---|---|
@@ -1434,8 +1426,10 @@ forgiven.
 
 ### 15.1 What the Play listing exposes, and why
 
-The public **“About the developer”** block and the **“Contains ads”** badge come
-from two unrelated mechanisms. **Ads control the badge, not the address.**
+Written up because it was investigated once, on the assumption that switching ads
+off would take the developer's home address off the listing. **It would not** —
+ads control the “Contains ads” badge, and nothing else here. Ads stay ON; the
+address is a Play Console / payments-profile matter with no lever in this repo.
 
 Google's documented default for a **personal** account is that only the
 *country* is published — the verification page lists the field as “Legal address
@@ -1456,17 +1450,22 @@ two documented overrides:
   in the EU, regardless of monetisation. This is the likelier cause here, and it
   matches the shape of what the listing shows.
 
-**So switching ads off will not remove the address**, and nothing in this
-codebase can. The address is settled in Play Console and the payments profile:
-check the trader declaration and EU/EEA country availability first, then whether
-a merchant/payments profile is attached. To change the address itself rather than
-hide it, edit the **payments profile** — an organization account does not hide it
-either, it only substitutes a business address for a home one.
+The open question is which of the two applies — check the trader declaration and
+EU/EEA country availability first, then whether a merchant/payments profile is
+attached. To change the address rather than hide it, edit the **payments
+profile**; an organization account does not hide it either, it only substitutes a
+business address for a home one.
 
-> **Careful:** §9.2 “Find your Customers” is *also* advertising for Play's
-> purposes — a business paying to push an offer to nearby users is a third-party
-> ad, even though no ad network is involved. An **Ads → No** declaration is only
-> truthful while both AdMob **and** business-ad delivery are off.
+**Velocity stays free, with no in-app purchases.** Rides are a physical service
+paid in cash or by manual payment upload, so Play Billing does not apply — it
+covers *digital* goods. That also keeps the app clear of the merchant-account
+rule above. See §14 for the money flow.
+
+> **Careful, if ads are ever switched off:** §9.2 “Find your Customers” is *also*
+> advertising for Play's purposes — a business paying to push an offer to nearby
+> users is a third-party ad, even though no ad network is involved. An
+> **Ads → No** declaration would only be truthful with both AdMob **and**
+> business-ad delivery off. Today both run, and **Ads → Yes** is correct.
 
 **Revenue lines overall:** ride commission (10% default) · cash-cycle commission
 settlement · cancellation fees · business-ad plans · partner Pro fees ·
