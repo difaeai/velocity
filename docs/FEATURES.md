@@ -1404,11 +1404,11 @@ forgiven.
 
 > **Currently OFF.** `EXPO_PUBLIC_ADS_ENABLED` is a build-time master switch that
 > is off unless set to the exact string `"true"`. While off, nothing below runs:
-> no SDK init, no ad requests, no placements mounted. It is off because ads make
-> the developer account *monetised*, which is what forces the full postal address
-> onto the public Play listing — see §15.1. Turn it back on only together with
-> Play Console → App content → **Ads → Yes**, and only for a build that ships
-> after that declaration is saved.
+> no SDK init, no ad requests, no placements mounted. Off while the developer
+> account is still a personal one — see §15.1, and note that this removes the
+> "Contains ads" badge but is **not** what controls the public address. Turn it
+> back on only together with Play Console → App content → **Ads → Yes**, and
+> only for a build that ships after that declaration is saved.
 
 | Type | Placement |
 |---|---|
@@ -1434,29 +1434,34 @@ forgiven.
 
 ### 15.1 What the Play listing exposes, and why
 
-The public **“About the developer”** block and the **“Contains ads”** badge are
-not listing copy — they are consequences of two declarations, and the address is
-the one that matters:
+The public **“About the developer”** block and the **“Contains ads”** badge come
+from two unrelated mechanisms. **Ads control the badge, not the address.**
 
-- A **personal** developer account shows only name + country **until the account
-  becomes monetised**. Google's own wording: *“merchant accounts (developer
-  accounts with apps that monetize via paid apps or in-app purchases) must show
-  their full address on Google Play”*, and the address shown is taken from the
-  **Google payments profile**, not from anything in Play Console.
-- **EU/EEA distribution adds a second, independent trigger.** Under the DSA, a
-  developer who has declared **trader** status has name, address, phone and email
-  published on every listing available in the EU — regardless of monetisation.
-  Killing ads does nothing about this one; only non-trader status or dropping
-  EU/EEA country availability does.
+Google's documented default for a **personal** account is that only the
+*country* is published — the verification page lists the field as “Legal address
+(**country** shown on Google Play)” for personal accounts, versus “Legal address
+(shown on Google Play)” for organization accounts. The listing currently shows a
+full street address, so something is overriding that default. There are exactly
+two documented overrides:
 
-So there are three separate levers, and the address only disappears when *every*
-applicable one is clear: no ads (this file), no paid app / IAP, and either
-non-trader status or no EU/EEA availability.
+- **Merchant account.** Google's wording: *“merchant accounts (developer accounts
+  with apps that monetize via **paid apps or in-app purchases**) must show their
+  full address on Google Play”*, taken from the linked **Google payments
+  profile**, not from anything editable in Play Console. Note what is *absent*
+  from that definition: ads. Velocity has no paid app and no IAP — rides are a
+  physical service paid in cash or by manual upload, which is why Play Billing
+  does not apply (it covers *digital* goods).
+- **EU/EEA distribution.** Under the DSA a developer who has declared **trader**
+  status has name, address, phone and email published on every listing available
+  in the EU, regardless of monetisation. This is the likelier cause here, and it
+  matches the shape of what the listing shows.
 
-**Velocity takes no in-app purchases.** Rides are a physical service paid in cash
-or by manual payment upload, which is exactly why Play Billing is not required
-here — Play Billing covers *digital* goods. The account should therefore not be a
-merchant account at all.
+**So switching ads off will not remove the address**, and nothing in this
+codebase can. The address is settled in Play Console and the payments profile:
+check the trader declaration and EU/EEA country availability first, then whether
+a merchant/payments profile is attached. To change the address itself rather than
+hide it, edit the **payments profile** — an organization account does not hide it
+either, it only substitutes a business address for a home one.
 
 > **Careful:** §9.2 “Find your Customers” is *also* advertising for Play's
 > purposes — a business paying to push an offer to nearby users is a third-party
