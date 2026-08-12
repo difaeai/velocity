@@ -19,6 +19,26 @@ import { collection, doc, onSnapshot, query, where, type Timestamp } from 'fireb
 import { db } from '../firebase';
 import { useAuth } from '../auth/AuthContext';
 
+/**
+ * Master kill switch, checked before any per-user entitlement.
+ *
+ * Off by default, and deliberately so. The Play listing's "Contains ads" badge
+ * and the public developer address that comes with a monetised personal account
+ * are both consequences of shipping ads, so a build must be able to prove it
+ * shows none — and "we forgot to set the variable" has to fail towards showing
+ * NOTHING, never towards showing an ad the Play declaration says isn't there.
+ *
+ * Build time, not remote config, for the same reason: the declaration describes
+ * the binary Google reviews, and a server-side toggle would let a shipped "no
+ * ads" build start serving them after review.
+ *
+ * With this false, no placement mounts, the SDK is never initialised, and no ad
+ * is ever requested — the AdMob dependency stays linked but completely inert.
+ * To turn revenue back on: set EXPO_PUBLIC_ADS_ENABLED=true, rebuild, and flip
+ * Play Console → App content → Ads back to "Yes" BEFORE that build rolls out.
+ */
+const ADS_ENABLED = process.env.EXPO_PUBLIC_ADS_ENABLED === 'true';
+
 /** Undefined while unknown — callers must treat that as "no ads yet". */
 type Entitlement = boolean | undefined;
 
@@ -116,7 +136,9 @@ export function useAdsEnabled(): boolean {
   const [, force] = useState(0);
 
   useEffect(() => {
-    if (!uid) return;
+    // Nothing to watch when ads are off for everyone — skip the two Firestore
+    // snapshots entirely rather than paying for an answer no one will read.
+    if (!ADS_ENABLED || !uid) return;
 
     if (current?.uid !== uid) {
       current?.store.stop();
@@ -137,6 +159,11 @@ export function useAdsEnabled(): boolean {
     };
   }, [uid]);
 
+  if (!ADS_ENABLED) {
+    if (__DEV__) logDisabled();
+    return false;
+  }
+
   if (!uid) return true;
   const paid = current?.uid === uid ? current.store.paid : undefined;
   const enabled = paid === false;
@@ -148,6 +175,19 @@ export function useAdsEnabled(): boolean {
   if (__DEV__) logGate(uid, paid);
 
   return enabled;
+}
+
+let loggedDisabled = false;
+
+/** Said once per session, so "no banners anywhere" is never a mystery. */
+function logDisabled() {
+  if (loggedDisabled) return;
+  loggedDisabled = true;
+  console.log(
+    '[ads] disabled for this build — EXPO_PUBLIC_ADS_ENABLED is not "true". No ad ' +
+      'SDK init, no requests, no placements. This matches the Play Console ' +
+      '"App content → Ads → No" declaration; set the var and rebuild to re-enable.',
+  );
 }
 
 let lastLogged: string | null = null;
