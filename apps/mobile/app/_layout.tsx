@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 
 import { AuthProvider } from '../src/auth/AuthContext';
+import { hydrateResourceCache } from '../src/lib/cachedResource';
 import {
   getLanguageVersion,
   loadLanguage,
@@ -43,6 +44,17 @@ export default function RootLayout() {
   const [language, setLanguageState] = useState<Language | null>(null);
   useEffect(() => {
     loadLanguage().then(setLanguageState);
+  }, []);
+
+  // Pull last session's dashboard payloads into memory while we are already
+  // blocked on those two reads. It is a third concurrent AsyncStorage read, so
+  // it rides along for free — and holding the gate for it is what lets a data
+  // screen paint on its first render instead of opening on skeletons. It never
+  // rejects and never blocks on the network; the worst case is an empty cache
+  // and the behaviour the app had before it existed.
+  const [cacheReady, setCacheReady] = useState(false);
+  useEffect(() => {
+    hydrateResourceCache().finally(() => setCacheReady(true));
   }, []);
 
   // Live theme switching: when the palette changes, the version bumps. We key the
@@ -103,7 +115,7 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  if (!themeMode || !language) return null;
+  if (!themeMode || !language || !cacheReady) return null;
 
   return (
     <SafeAreaProvider>

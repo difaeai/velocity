@@ -31,6 +31,7 @@ import { signInWithCustomToken } from 'firebase/auth';
 
 import { auth as jsAuth } from '../firebase';
 import { api } from '../api/client';
+import { clearResourceCache } from '../lib/cachedResource';
 
 export interface PhoneVerification {
   /**
@@ -184,4 +185,8 @@ export async function startPhoneVerification(
 export async function signOutEverywhere(): Promise<void> {
   await nativeSignOut(getNativeAuth()).catch(() => {});
   await jsAuth.signOut();
+  // Cached dashboard payloads are uid-scoped, so the next account could never
+  // read them — but there is no reason to leave someone's earnings sitting on a
+  // handset they have signed out of.
+  await clearResourceCache();
 }

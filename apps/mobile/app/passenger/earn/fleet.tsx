@@ -6,13 +6,14 @@
  * near-identical screens would drift apart within a release.
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '../../../src/api/client';
 import type { FleetMember, FleetType } from '../../../src/api/client';
+import { useCachedResource } from '../../../src/lib/cachedResource';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { Segmented, Skeleton, StatTile, formatPKR } from '../../../src/ui/partner';
@@ -25,26 +26,17 @@ export default function FleetRoster() {
   const params = useLocalSearchParams<{ type?: string }>();
   const type: FleetType = params.type === 'passenger' ? 'passenger' : 'driver';
 
-  const [members, setMembers] = useState<FleetMember[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>('recent');
 
-  useEffect(() => {
-    let cancelled = false;
-    setMembers(null);
-    api
-      .getPartnerFleetMembers({ type, limit: 200 })
-      .then((res) => {
-        if (!cancelled) setMembers(res.members);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your fleet.');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [type]);
+  // Keyed by fleet type, so the driver and passenger lists cache separately —
+  // switching between the two tabs was two cold 200-row callables every time.
+  const { data, loading, error } = useCachedResource<{ members: FleetMember[] }>(
+    `partnerFleet:${type}`,
+    () => api.getPartnerFleetMembers({ type, limit: 200 }),
+    'Could not load your fleet.',
+  );
+  const members = loading ? null : (data?.members ?? []);
 
   const visible = useMemo(() => {
     if (!members) return [];

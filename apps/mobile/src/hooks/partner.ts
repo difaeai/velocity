@@ -11,7 +11,7 @@
  * tap on a WhatsApp link opens the app while the visitor is still signed out —
  * so it is parked in AsyncStorage and played the moment a user exists.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -20,6 +20,7 @@ import { api } from '../api/client';
 import type { PartnerDashboard, PartnerLevel } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { db } from '../firebase';
+import { useCachedResource } from '../lib/cachedResource';
 
 const PENDING_CODE_KEY = 'velocity_pending_referral_code';
 
@@ -110,28 +111,20 @@ export function usePartnerStatus(): PartnerStatus {
   return { stage, rejectionReason: application?.rejectionReason ?? null, level: null };
 }
 
-/** The dashboard payload, with a manual `reload` for pull-to-refresh. */
+/**
+ * The dashboard payload, with a manual `reload` for pull-to-refresh.
+ *
+ * Cached, and it is the same payload behind six Earn screens — dashboard,
+ * analytics, revenue, referral, wallet, withdraw. That means moving between any
+ * two of them is now instant instead of a fresh callable and a fresh screenful
+ * of skeletons each time, and it collapses six round trips into one per visit.
+ */
 export function usePartnerDashboard() {
-  const [data, setData] = useState<PartnerDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    try {
-      setError(null);
-      setData(await api.getPartnerDashboard({}));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your partner dashboard.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  return { data, loading, error, reload };
+  return useCachedResource<PartnerDashboard>(
+    'partnerDashboard',
+    () => api.getPartnerDashboard({}),
+    'Could not load your partner dashboard.',
+  );
 }
 
 /** Park a code that arrived before the user had an account. */

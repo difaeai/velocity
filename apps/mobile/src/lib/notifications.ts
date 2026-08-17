@@ -6,7 +6,8 @@
  */
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState, Linking, Platform } from 'react-native';
 
 import { api } from '../api/client';
 
@@ -27,6 +28,109 @@ if (!isExpoGo) {
       shouldShowList: true,
     }),
   });
+}
+
+/**
+ * Where the handset stands on notifications, in the three states that actually
+ * change what we can put on screen:
+ *
+ *   granted     → nothing to ask for.
+ *   askable     → the OS will still show its own Allow/Don't-allow dialog, so we
+ *                 can explain what Allow gets them and then trigger it.
+ *   blocked     → they already said no once. On Android the OS refuses to ask a
+ *                 second time, so the ONLY way back is the app's settings page,
+ *                 and a button that re-asks would silently do nothing.
+ *
+ * `unsupported` is Expo Go and the simulator, where there is no permission to
+ * hold an opinion about.
+ */
+export type NotificationPermission = 'granted' | 'askable' | 'blocked' | 'unsupported';
+
+export async function getNotificationPermission(): Promise<NotificationPermission> {
+  if (isExpoGo || !Device.isDevice) return 'unsupported';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require('expo-notifications');
+    const perm = await Notifications.getPermissionsAsync();
+    // iOS provisional authorisation delivers quietly but it DOES deliver, so it
+    // counts as granted — nagging someone who is already receiving is noise.
+    if (perm.granted || perm.ios?.status === 3 /* PROVISIONAL */) return 'granted';
+    return perm.canAskAgain ? 'askable' : 'blocked';
+  } catch {
+    return 'unsupported';
+  }
+}
+
+/**
+ * Trigger the OS dialog. Returns where we ended up, so the caller can either get
+ * on with what the user pressed the button for, or point them at settings.
+ *
+ * Registers the push token on the way through, because permission without a
+ * registered token is still silence.
+ */
+export async function askNotificationPermission(): Promise<NotificationPermission> {
+  if (isExpoGo || !Device.isDevice) return 'unsupported';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require('expo-notifications');
+    const current = await Notifications.getPermissionsAsync();
+    if (!current.granted && !current.canAskAgain) return 'blocked';
+    if (!current.granted) await Notifications.requestPermissionsAsync();
+  } catch {
+    return 'unsupported';
+  }
+  // registerForPushNotifications re-reads the permission itself and returns a
+  // token only on success, so it is the honest source of the final answer.
+  const token = await registerForPushNotifications();
+  return token ? 'granted' : getNotificationPermission();
+}
+
+/** The app's own settings page — the only route back once Android has said no twice. */
+export async function openNotificationSettings(): Promise<void> {
+  await Linking.openSettings().catch(() => {});
+}
+
+/**
+ * Live permission state for a screen that needs to ask for it.
+ *
+ * Re-checks when the app comes back to the foreground: someone sent to settings
+ * to flip the switch returns to a screen that must already know they did, not
+ * one still asking them to.
+ */
+export function useNotificationPermission(): {
+  permission: NotificationPermission;
+  /** Undecided on first paint — render nothing rather than flashing a prompt. */
+  ready: boolean;
+  ask: () => Promise<NotificationPermission>;
+  openSettings: () => Promise<void>;
+  refresh: () => void;
+} {
+  const [permission, setPermission] = useState<NotificationPermission>('granted');
+  const [ready, setReady] = useState(false);
+
+  const refresh = useCallback(() => {
+    void getNotificationPermission().then((p) => {
+      setPermission(p);
+      setReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
+
+  const ask = useCallback(async () => {
+    const next = await askNotificationPermission();
+    setPermission(next);
+    setReady(true);
+    return next;
+  }, []);
+
+  return { permission, ready, ask, openSettings: openNotificationSettings, refresh };
 }
 
 export async function registerForPushNotifications(): Promise<string | null> {

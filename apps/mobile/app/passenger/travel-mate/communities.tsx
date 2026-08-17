@@ -26,6 +26,7 @@ import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { api, type TMCommunity } from '../../../src/api/client';
 import { PAKISTAN_CITIES } from '../../../src/domain/intercityTypes';
+import { useCachedResource } from '../../../src/lib/cachedResource';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
@@ -34,8 +35,6 @@ export default function TravelMateCommunities() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const [communities, setCommunities] = useState<TMCommunity[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   // Create modal
@@ -46,23 +45,25 @@ export default function TravelMateCommunities() {
   const [cityQuery, setCityQuery] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
+  // A 200-document read that used to run on every single focus, in front of an
+  // empty list. The city groups barely change between one visit and the next, so
+  // the last set is shown at once and the read happens behind it.
+  const { data, loading, error, reload } = useCachedResource<TMCommunity[]>(
+    'travelMateCommunities',
+    async () => {
       const snap = await getDocs(query(
         collection(db, 'travelMateCommunities'),
         orderBy('city', 'asc'),
         orderBy('memberCount', 'desc'),
         limit(200),
       ));
-      setCommunities(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMCommunity));
-    } catch {
-      Alert.alert('Error', 'Could not load communities. Check your connection.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMCommunity);
+    },
+    'Could not load communities. Check your connection.',
+  );
+  const communities = useMemo(() => data ?? [], [data]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   const sections = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -147,6 +148,18 @@ export default function TravelMateCommunities() {
 
       {loading ? (
         <View style={s.centerBox}><ActivityIndicator size="large" color={colors.primary} /></View>
+      ) : error ? (
+        // A failed read with nothing cached used to be an Alert over an empty
+        // list, which left the screen claiming there are no groups. Say what
+        // happened and give them the retry.
+        <View style={s.centerBox}>
+          <Text style={{ fontSize: 44 }}>📡</Text>
+          <Text style={s.emptyTitle}>Could not load groups</Text>
+          <Text style={s.emptySub}>Check your connection and try again.</Text>
+          <Pressable style={s.createBtn} onPress={() => void reload()}>
+            <Text style={s.createBtnText}>Try again</Text>
+          </Pressable>
+        </View>
       ) : sections.length === 0 ? (
         <View style={s.centerBox}>
           <Text style={{ fontSize: 44 }}>🏙️</Text>
