@@ -70,6 +70,17 @@ async function getTokensForUser(uid: string): Promise<StoredToken[]> {
     .map((token) => ({ token, kind: tokenKind(token) }));
 }
 
+/**
+ * Whether this user has any device we could push to. Callers that need to TELL
+ * someone their push did not go anywhere use this — `sendToUser` deliberately
+ * returns nothing, because for ride alerts a missing token is not the caller's
+ * problem to report. For the advertising demo it is the whole answer: nothing
+ * arriving is otherwise indistinguishable from a broken feature.
+ */
+export async function hasPushToken(uid: string): Promise<boolean> {
+  return (await getTokensForUser(uid)).length > 0;
+}
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));

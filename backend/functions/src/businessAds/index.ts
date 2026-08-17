@@ -22,5 +22,6 @@ export {
 } from './ads';
 
 export { checkNearbyBusinessAds, recordBusinessAdClick } from './nearby';
+export { sendBusinessAdDemoNotification } from './demo';
 export { getBusinessAdDashboard } from './stats';
 export { expireBusinessAdPlans } from './expire';

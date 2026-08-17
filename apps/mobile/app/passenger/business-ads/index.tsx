@@ -19,10 +19,12 @@ import { useCallback, useState } from 'react';
 import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DEMO_OFFER, demoPreview } from '../../../src/ads/demoOffer';
 import { api } from '../../../src/api/client';
 import type { BusinessAd, BusinessAdDashboard } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useBusinessAdDashboard } from '../../../src/hooks/businessAds';
+import { registerForPushNotifications } from '../../../src/lib/notifications';
 import { themed } from '../../../src/theme';
 import { Text } from '../../../src/ui/Text';
 import { PrimaryButton } from '../../../src/ui/components';
@@ -116,6 +118,12 @@ export default function BusinessAdsHome() {
             onRenew={() => router.push('/passenger/business-ads/subscribe')}
           />
         )}
+
+        {/* Outside the state switch on purpose: a business owner wants to see the
+            notification before they pay, while they wait for approval, and again
+            when they are writing their third offer. It is the same demo in all
+            five states, so it lives in one place. */}
+        {loading && !data ? null : <DemoNotificationCard />}
       </ScrollView>
     </SafeAreaView>
   );
@@ -375,6 +383,102 @@ function Live({
   );
 }
 
+// ── The demo: the notification, on the owner's own phone ─────────────────────
+
+/**
+ * "See it on your phone". Two ways to send, because they answer two different
+ * questions:
+ *
+ *   Send now        → what does it look like? (arrives while you are watching)
+ *   Send in 10 secs → does it reach me with Velocity closed? (lock the phone and
+ *                     wait — this is the one that proves the point, because the
+ *                     notification is delivered by the phone, not by the app)
+ *
+ * Pressable as many times as anyone likes; the server sends only to the caller's
+ * own phone and counts it in nobody's advertising results.
+ */
+function DemoNotificationCard() {
+  const [busy, setBusy] = useState<'now' | 'later' | null>(null);
+  const [sent, setSent] = useState<{ title: string; body: string; pushed: boolean } | null>(null);
+  const preview = sent ?? demoPreview();
+
+  async function send(delaySeconds: number) {
+    setBusy(delaySeconds > 0 ? 'later' : 'now');
+    try {
+      // Asks for notification permission the first time and (re)registers the
+      // push token. Without this, a fresh install that never granted permission
+      // would get silence and no explanation.
+      await registerForPushNotifications();
+
+      const res = await api.sendBusinessAdDemoNotification(
+        delaySeconds > 0 ? { delaySeconds } : {},
+      );
+      setSent({ title: res.title, body: res.body, pushed: res.pushed });
+
+      if (!res.pushed) {
+        Alert.alert(
+          'Notifications are switched off',
+          'The offer is saved in your Velocity notifications, but nothing can arrive on your phone until you allow notifications for Velocity in your phone settings.',
+        );
+      }
+    } catch (e) {
+      Alert.alert('Could not send the demo', (e as { message?: string }).message ?? 'Try again.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <View style={styles.demoCard}>
+      <Text style={styles.demoTitle}>See it on your phone</Text>
+      <Text style={styles.demoBody}>
+        Send yourself a sample offer from a made-up KFC branch. It is the same
+        notification your own offer goes out as — picture, name, offer and how far
+        away you are. It arrives on this phone only, and nobody else is notified.
+      </Text>
+
+      {/* A mock of the tray card, so the button is not a leap of faith. */}
+      <View style={styles.trayCard}>
+        <View style={styles.trayHead}>
+          <View style={styles.trayIcon}>
+            <Text style={styles.trayIconTxt}>V</Text>
+          </View>
+          <Text style={styles.trayApp}>Velocity</Text>
+          <Text style={styles.trayNow}>now</Text>
+        </View>
+        <Text style={styles.trayTitle} numberOfLines={2}>{preview.title}</Text>
+        <Text style={styles.trayBody} numberOfLines={3}>{preview.body}</Text>
+        <Image source={{ uri: DEMO_OFFER.imageUrl }} style={styles.trayImage} resizeMode="cover" />
+      </View>
+
+      <PrimaryButton
+        label={busy === 'now' ? 'Sending…' : 'Send it to my phone now'}
+        onPress={() => send(0)}
+        loading={busy === 'now'}
+        disabled={busy === 'later'}
+      />
+      <Pressable
+        style={[styles.demoLater, busy ? { opacity: 0.5 } : null]}
+        disabled={!!busy}
+        onPress={() => send(10)}
+      >
+        <Text style={styles.demoLaterTxt}>
+          {busy === 'later'
+            ? 'Close Velocity now — it arrives in a few seconds'
+            : 'Send in 10 seconds (close the app first)'}
+        </Text>
+      </Pressable>
+
+      {sent && sent.pushed ? (
+        <Text style={styles.demoSentNote}>
+          Sent. Pull your notification shade down to see it — it stays there until
+          you swipe it away, even with Velocity closed. Tap it to open the offer.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function AdStat({ label, value }: { label: string; value: number }) {
   return (
     <View style={styles.adStat}>
@@ -556,6 +660,54 @@ const styles = themed(() => StyleSheet.create({
   adStat: { flex: 1 },
   adStatValue: { fontSize: 16, fontWeight: '900', color: colors.text },
   adStatLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.3 },
+
+  demoCard: {
+    marginTop: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+  },
+  demoTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
+  demoBody: { fontSize: 12, color: colors.muted, fontWeight: '600', lineHeight: 18 },
+
+  // The mock tray card. Deliberately flat grey-on-black rather than themed lime:
+  // it is imitating the phone's notification shade, not the rest of this screen.
+  trayCard: {
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 4,
+  },
+  trayHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  trayIcon: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trayIconTxt: { fontSize: 10, fontWeight: '900', color: '#000' },
+  trayApp: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 0.3 },
+  trayNow: { fontSize: 10, fontWeight: '700', color: `${colors.muted}99` },
+  trayTitle: { fontSize: 13, fontWeight: '900', color: colors.text, marginTop: 2 },
+  trayBody: { fontSize: 11, fontWeight: '600', color: colors.muted, lineHeight: 16 },
+  trayImage: {
+    width: '100%',
+    height: 130,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: colors.surface,
+  },
+
+  demoLater: { alignItems: 'center', paddingVertical: 10 },
+  demoLaterTxt: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  demoSentNote: { fontSize: 11, fontWeight: '700', color: colors.text, lineHeight: 17 },
 
   adActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   adAction: {
