@@ -41,7 +41,7 @@ velocity/
 ├── apps/
 │   └── mobile/              # Expo app (passenger + driver)
 ├── tests/                   # Security-rules unit tests (Firebase emulator)
-├── docs/                    # ARCHITECTURE · SECURITY · DEPLOY · PAYMENTS · HARDENING · ROADMAP
+├── docs/                    # FEATURES · ARCHITECTURE · SECURITY · DEPLOY · PAYMENTS · HARDENING · ROADMAP
 └── legacy-demo/             # The original HTML/JS prototype, kept as a UX reference
 ```
 
