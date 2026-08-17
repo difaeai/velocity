@@ -1,0 +1,55 @@
+📣 SEE THE ADVERTISING BEFORE YOU BUY IT
+
+Velocity lets a local business pay to put their offer on the phones of people
+who pass their door. Until now the only way to find out what that notification
+looks like was to buy it. This release lets you send it to yourself.
+
+✨ WHAT'S NEW
+
+📣 "SEE IT ON YOUR PHONE" — FIND YOUR CUSTOMERS
+- A new button on the Find your Customers screen sends you a sample offer, as a
+  real notification, with a real picture
+- It is the same notification your own offer would go out as: your business
+  name, your offer, your picture, and how far away the customer is
+- Send it now to see what it looks like, or send it in 10 seconds so you can
+  close Velocity first and watch it arrive on a locked phone — which is how your
+  customers will actually get it
+- Pull your notification shade down and it is there, waiting, with the app shut
+- Tap it and the full offer opens, with the address, the distance and the times
+- Press it as many times as you like. It goes to your phone and nobody else's,
+  it costs nothing, and it does not use up anybody's daily notification limit
+
+🧾 A NOTE ON THE SAMPLE
+- The sample offer is clearly marked DEMO. It is an illustration of the format,
+  not a real promotion from the restaurant it names
+
+📊 WHAT ELSE IMPROVED
+- Notification permission is now requested at the moment you ask for the demo,
+  and if notifications are switched off the app says so plainly instead of
+  leaving you waiting for something that cannot arrive
+
+🚀 NEXT UP
+- Driver voice booking
+- App-wide security attestation (App Check)
+- More payment options
+
+Available now in your Velocity app! 🎉
+
+Questions? Tap Support from Settings for help.
+
+---
+
+SHORT VERSION — paste this into Play Console's "What's new" (500-char limit):
+
+Thinking about advertising your business on Velocity? You can now see exactly
+what it looks like first. Open Find your Customers and tap "See it on your
+phone" — we send you a sample offer as a real notification, with the picture,
+the offer and the distance, just as your own customers would get it. Send it in
+10 seconds to watch it arrive with the app closed. It goes to your phone only,
+as often as you like, and costs nothing.
+
+---
+
+Version: 1.5.0
+Version code: 23
+Last Updated: August 17, 2026
