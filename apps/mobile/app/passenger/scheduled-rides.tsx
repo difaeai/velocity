@@ -23,6 +23,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../src/firebase';
 import { api, type CommuteDay } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type Gender, type RideType } from '../../src/domain/types';
@@ -58,21 +59,17 @@ export default function ScheduledRides() {
   const { user } = useAuth();
   const router = useRouter();
 
-  const [rides, setRides] = useState<ScheduledRide[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { rows: rides, loading, publish, settle } = useCachedList<ScheduledRide>('scheduledRides');
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     return onSnapshot(
       query(collection(db, 'scheduledRides'), where('uid', '==', user.uid)),
-      snap => {
-        setRides(snap.docs.map(d => ({ id: d.id, ...d.data() }) as ScheduledRide));
-        setLoading(false);
-      },
-      () => setLoading(false),
+      snap => publish(snap.docs.map(d => ({ id: d.id, ...d.data() }) as ScheduledRide)),
+      settle,
     );
-  }, [user?.uid]);
+  }, [user?.uid, publish, settle]);
 
   async function toggleActive(ride: ScheduledRide, value: boolean) {
     setBusyId(ride.id);

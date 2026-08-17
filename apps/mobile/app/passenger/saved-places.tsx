@@ -25,6 +25,7 @@ import {
 
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 
@@ -53,8 +54,10 @@ const DEFAULT_LABELS: Record<PlaceCategory, string> = {
 export default function SavedPlacesScreen() {
   const router   = useRouter();
   const { user } = useAuth();
-  const [places, setPlaces]     = useState<SavedPlace[]>([]);
-  const [loading, setLoading]   = useState(true);
+  // Saved places barely change and are opened mid-booking, where a spinner is
+  // most expensive — so they come straight out of the cache and the listener
+  // corrects them behind that.
+  const { rows: places, loading, publish, settle } = useCachedList<SavedPlace>('savedPlaces');
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<SavedPlace | null>(null);
 
@@ -71,11 +74,10 @@ export default function SavedPlacesScreen() {
       orderBy('createdAt', 'asc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      setPlaces(snap.docs.map(d => ({ id: d.id, ...d.data() } as SavedPlace)));
-      setLoading(false);
-    }, () => setLoading(false));
+      publish(snap.docs.map(d => ({ id: d.id, ...d.data() } as SavedPlace)));
+    }, settle);
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, publish, settle]);
 
   function openAdd() {
     setEditTarget(null);

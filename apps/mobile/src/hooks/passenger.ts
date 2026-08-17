@@ -3,6 +3,7 @@ import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import type { CnicVerification } from '../api/client';
+import { useCachedList } from '../lib/cachedResource';
 import type { Trip } from '../domain/types';
 
 /**
@@ -13,30 +14,26 @@ import type { Trip } from '../domain/types';
  * composite index (passengerId + createdAt).
  */
 export function usePassengerTrips(uid?: string): { trips: Trip[]; loading: boolean } {
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Ride history is the definition of data worth seeding: it is long, it is
+  // append-only, and "Your rides" is a screen people open to look something up
+  // rather than to watch it change. It now opens on the list.
+  const { rows: trips, loading, publish, settle } = useCachedList<Trip>(uid ? 'passengerTrips' : null);
 
   useEffect(() => {
     if (!uid) {
-      setTrips([]);
-      setLoading(false);
+      settle();
       return;
     }
-    setLoading(true);
     return onSnapshot(
       query(collection(db, 'trips'), where('passengerId', '==', uid)),
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip & { createdAt?: { seconds: number } });
         rows.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
-        setTrips(rows);
-        setLoading(false);
+        publish(rows);
       },
-      () => {
-        setTrips([]);
-        setLoading(false);
-      },
+      settle,
     );
-  }, [uid]);
+  }, [uid, publish, settle]);
 
   return { trips, loading };
 }

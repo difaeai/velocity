@@ -22,6 +22,7 @@ import {
 
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 
@@ -59,8 +60,10 @@ function formatRelativeTime(ts: Timestamp | null): string {
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seeded from the last session so the list is there on the first frame. The
+  // listener below is unchanged and still owns the truth — it just no longer
+  // has an empty screen sitting in front of it while it connects.
+  const { rows: notifications, loading, publish } = useCachedList<Notification>('notifications');
 
   useEffect(() => {
     if (!user) return;
@@ -69,7 +72,7 @@ export default function NotificationsScreen() {
       orderBy('timestamp', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      setNotifications(
+      publish(
         snap.docs.map((d) => ({
           id: d.id,
           title: d.data().title as string,
@@ -79,10 +82,9 @@ export default function NotificationsScreen() {
           read: (d.data().read as boolean) ?? false,
         })),
       );
-      setLoading(false);
     });
     return unsub;
-  }, [user]);
+  }, [user, publish]);
 
   async function markRead(id: string) {
     if (!user) return;

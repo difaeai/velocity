@@ -27,7 +27,9 @@ import { ErrorState, RideBars, SectionTitle, Skeleton, StatTile } from '../../..
 
 export default function BusinessAdAnalytics() {
   const router = useRouter();
-  const { data, loading, error, reload } = useBusinessAdDashboard();
+  // Shares the cached dashboard payload with the screen that linked here, so
+  // arriving on it costs nothing — the numbers are already in memory.
+  const { data, loading, refreshing, error, reload } = useBusinessAdDashboard();
 
   const reachPoints = (data?.series ?? []).map((row) => ({ date: row.day, value: row.reach }));
   const clickPoints = (data?.series ?? []).map((row) => ({ date: row.day, value: row.clicks }));
@@ -45,10 +47,10 @@ export default function BusinessAdAnalytics() {
       <ScrollView
         contentContainerStyle={styles.body}
         refreshControl={
-          <RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing && !!data} onRefresh={reload} tintColor={colors.primary} />
         }
       >
-        {loading && !data ? (
+        {loading ? (
           <View style={{ gap: 12 }}>
             <Skeleton height={80} />
             <Skeleton height={160} />

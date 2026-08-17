@@ -24,7 +24,10 @@ import { api } from '../../../src/api/client';
 import type { BusinessAd, BusinessAdDashboard } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { useBusinessAdDashboard } from '../../../src/hooks/businessAds';
-import { registerForPushNotifications } from '../../../src/lib/notifications';
+import {
+  registerForPushNotifications,
+  useNotificationPermission,
+} from '../../../src/lib/notifications';
 import { themed } from '../../../src/theme';
 import { Text } from '../../../src/ui/Text';
 import { PrimaryButton } from '../../../src/ui/components';
@@ -32,11 +35,12 @@ import { formatPKR, ErrorState, SectionTitle, Skeleton, StatTile } from '../../.
 
 export default function BusinessAdsHome() {
   const router = useRouter();
-  const { data, loading, error, reload } = useBusinessAdDashboard();
+  const { data, loading, refreshing, error, reload } = useBusinessAdDashboard();
   const [busyAdId, setBusyAdId] = useState<string | null>(null);
 
   // Coming back from the composer or the payment flow must not show stale
-  // numbers — the whole screen is a status report.
+  // numbers — the whole screen is a status report. This is a revalidation
+  // behind whatever is already on screen, not a reason to blank it.
   useFocusEffect(
     useCallback(() => {
       void reload();
@@ -92,14 +96,14 @@ export default function BusinessAdsHome() {
 
       <ScrollView
         contentContainerStyle={styles.body}
-        refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing && !!data} onRefresh={reload} tintColor={colors.primary} />}
       >
-        {loading && !data ? (
-          <View style={{ gap: 12 }}>
-            <Skeleton height={120} />
-            <Skeleton height={90} />
-            <Skeleton height={160} />
-          </View>
+        {/* The stage block is the only part of this screen that needs the server.
+            On every open after the first it comes out of the cache and renders
+            on the first frame; `loading` now means "first open, fresh install",
+            and even then it is one slim strip rather than a screenful of grey. */}
+        {loading ? (
+          <PlanPlaceholder />
         ) : error ? (
           <ErrorState message={error} onRetry={reload} />
         ) : !data ? null : data.stage === 'none' || data.stage === 'rejected' || data.stage === 'resubmit' ? (
@@ -122,10 +126,32 @@ export default function BusinessAdsHome() {
         {/* Outside the state switch on purpose: a business owner wants to see the
             notification before they pay, while they wait for approval, and again
             when they are writing their third offer. It is the same demo in all
-            five states, so it lives in one place. */}
-        {loading && !data ? null : <DemoNotificationCard />}
+            five states, so it lives in one place.
+
+            It is also rendered while the stage is still loading, because none of
+            it comes from the server — holding back content we already have just
+            to keep a spinner company is what made this screen feel dead. */}
+        <DemoNotificationCard />
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * First open on a fresh install, and nothing else.
+ *
+ * Deliberately small. The old version stacked three big grey blocks down the
+ * whole screen, which reads as "this app is broken" rather than "one number is
+ * on its way" — and it hid the demo card underneath it, which needed no server
+ * at all. One strip, one honest line of text, and the real content below it.
+ */
+function PlanPlaceholder() {
+  return (
+    <View style={styles.placeholderCard}>
+      <Skeleton height={13} width="55%" radius={6} />
+      <Skeleton height={11} width="35%" radius={6} />
+      <Text style={styles.placeholderNote}>Checking your advertising plan…</Text>
+    </View>
   );
 }
 
@@ -400,14 +426,47 @@ function Live({
 function DemoNotificationCard() {
   const [busy, setBusy] = useState<'now' | 'later' | null>(null);
   const [sent, setSent] = useState<{ title: string; body: string; pushed: boolean } | null>(null);
+  const { permission, ready, ask, openSettings } = useNotificationPermission();
   const preview = sent ?? demoPreview();
 
+  /**
+   * Get permission BEFORE sending, and say why we want it in our own words
+   * first. Firing the demo at a phone with notifications switched off and then
+   * explaining the silence afterwards taught the user nothing except that the
+   * button does not work.
+   *
+   * Returns false when there is no way to deliver, so `send` can stop rather
+   * than burn a push nobody will ever see.
+   */
+  async function ensurePermission(): Promise<boolean> {
+    if (permission === 'granted' || permission === 'unsupported') return true;
+
+    if (permission === 'askable') {
+      const next = await ask();
+      if (next === 'granted' || next === 'unsupported') return true;
+    }
+
+    // Denied once already — Android will not show its dialog a second time, so
+    // the switch has to be flipped in settings and there is no point pretending
+    // otherwise.
+    Alert.alert(
+      'Allow notifications first',
+      'Velocity needs permission to put the offer on your phone. Open Settings › Notifications and switch Velocity on, then come back and press send.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => void openSettings() },
+      ],
+    );
+    return false;
+  }
+
   async function send(delaySeconds: number) {
+    if (!(await ensurePermission())) return;
+
     setBusy(delaySeconds > 0 ? 'later' : 'now');
     try {
-      // Asks for notification permission the first time and (re)registers the
-      // push token. Without this, a fresh install that never granted permission
-      // would get silence and no explanation.
+      // Belt and braces: re-registers the push token, which a first grant will
+      // have just produced and a reinstall may have invalidated.
       await registerForPushNotifications();
 
       const res = await api.sendBusinessAdDemoNotification(
@@ -417,8 +476,12 @@ function DemoNotificationCard() {
 
       if (!res.pushed) {
         Alert.alert(
-          'Notifications are switched off',
-          'The offer is saved in your Velocity notifications, but nothing can arrive on your phone until you allow notifications for Velocity in your phone settings.',
+          'It could not reach your phone',
+          'The offer is saved in your Velocity notifications. If notifications for Velocity are switched off in your phone settings, switch them on and send it again.',
+          [
+            { text: 'OK', style: 'cancel' },
+            { text: 'Open settings', onPress: () => void openSettings() },
+          ],
         );
       }
     } catch (e) {
@@ -428,6 +491,8 @@ function DemoNotificationCard() {
     }
   }
 
+  const needsPermission = ready && permission !== 'granted' && permission !== 'unsupported';
+
   return (
     <View style={styles.demoCard}>
       <Text style={styles.demoTitle}>See it on your phone</Text>
@@ -436,6 +501,8 @@ function DemoNotificationCard() {
         notification your own offer goes out as — picture, name, offer and how far
         away you are. It arrives on this phone only, and nobody else is notified.
       </Text>
+
+      {needsPermission ? <PermissionAsk blocked={permission === 'blocked'} onAsk={ask} onOpenSettings={openSettings} /> : null}
 
       {/* A mock of the tray card, so the button is not a leap of faith. */}
       <View style={styles.trayCard}>
@@ -475,6 +542,45 @@ function DemoNotificationCard() {
           you swipe it away, even with Velocity closed. Tap it to open the offer.
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The ask, in the screen, before anything is sent.
+ *
+ * It is written for someone who has never thought about what a notification
+ * permission is: it names the button they are about to be shown ("Allow"), and
+ * it describes where the offer lands — swipe down from the top — because "you
+ * will get a notification" means nothing to a shopkeeper who has never gone
+ * looking for their notification shade.
+ *
+ * Two shapes, because they are two different problems. `askable` still has the
+ * OS dialog available, so the button triggers it. `blocked` does not — Android
+ * refuses to ask twice — so the only honest button sends them to settings.
+ */
+function PermissionAsk({
+  blocked,
+  onAsk,
+  onOpenSettings,
+}: {
+  blocked: boolean;
+  onAsk: () => Promise<unknown>;
+  onOpenSettings: () => Promise<void>;
+}) {
+  return (
+    <View style={styles.permCard}>
+      <Text style={styles.permTitle}>🔔 Turn on notifications</Text>
+      <Text style={styles.permBody}>
+        {blocked
+          ? 'Notifications for Velocity are switched off on this phone, so nothing can arrive. Open your phone settings, switch Velocity notifications on, and come back — the offer will land on your screen.'
+          : 'Your phone will ask for permission — press Allow. Then the offer arrives on your screen, and swiping down from the top of the screen shows it any time, even with Velocity closed. This is exactly how your customers will see your own offer.'}
+      </Text>
+      <Pressable style={styles.permBtn} onPress={() => void (blocked ? onOpenSettings() : onAsk())}>
+        <Text style={styles.permBtnTxt}>
+          {blocked ? 'Open phone settings' : 'Allow notifications'}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -672,6 +778,36 @@ const styles = themed(() => StyleSheet.create({
   },
   demoTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
   demoBody: { fontSize: 12, color: colors.muted, fontWeight: '600', lineHeight: 18 },
+
+  // Lime-bordered rather than red: this is a thing to switch on, not a failure.
+  permCard: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
+  permTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  permBody: { fontSize: 12, color: colors.text, fontWeight: '600', lineHeight: 18 },
+  permBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  permBtnTxt: { fontSize: 13, fontWeight: '900', color: colors.btnText },
+
+  placeholderCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 8,
+  },
+  placeholderNote: { fontSize: 12, color: colors.muted, fontWeight: '700', marginTop: 2 },
 
   // The mock tray card. Deliberately flat grey-on-black rather than themed lime:
   // it is imitating the phone's notification shade, not the rest of this screen.

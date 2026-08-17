@@ -19,11 +19,12 @@
  * The server owns the actual notification decision. This hook only decides when
  * it is worth asking, and it never notifies anything itself.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { api } from '../api/client';
 import type { BusinessAdDashboard, NearbyBusinessAd } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { useCachedResource } from '../lib/cachedResource';
 import type { Coords } from './location';
 
 /** Below this, the rider hasn't meaningfully moved. */
@@ -90,26 +91,18 @@ export async function fetchNearbyOffers(coords: Coords): Promise<NearbyBusinessA
   }
 }
 
-/** The advertiser's own view: plan, offers, and the numbers behind them. */
+/**
+ * The advertiser's own view: plan, offers, and the numbers behind them.
+ *
+ * Cached, because this screen is opened repeatedly by someone checking whether
+ * their 5,500 rupees bought anything, and every one of those opens used to be a
+ * cold wait on a callable in front of a grey screen. Last session's numbers are
+ * on screen instantly and the fresh ones replace them a moment later.
+ */
 export function useBusinessAdDashboard() {
-  const [data, setData] = useState<BusinessAdDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    try {
-      setError(null);
-      setData(await api.getBusinessAdDashboard({}));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your advertising dashboard.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  return { data, loading, error, reload };
+  return useCachedResource<BusinessAdDashboard>(
+    'businessAdDashboard',
+    () => api.getBusinessAdDashboard({}),
+    'Could not load your advertising dashboard.',
+  );
 }

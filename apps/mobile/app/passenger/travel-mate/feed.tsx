@@ -53,10 +53,13 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api, type TMCommunity, type TMPost } from '../../../src/api/client';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../src/lib/timeAgo';
+import { readCachedValue, writeCachedValue } from '../../../src/lib/cachedResource';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
 const PAGE_SIZE = 25;
+const FEED_CACHE_KEY = 'travelMateFeedPage1';
+const COMMUNITY_RAIL_CACHE_KEY = 'travelMateFeedCommunityRail';
 
 type FeedFilter = 'forYou' | 'following';
 
@@ -145,15 +148,22 @@ export default function TravelMateFeed() {
   const following = useFollowingSet();
 
   const [filter, setFilter] = useState<FeedFilter>('forYou');
-  const [posts, setPosts] = useState<TMPost[]>([]);
+
+  // The feed is cursor-paginated, so only page one is cached — that is the page
+  // that decides whether opening the tab shows posts or a spinner. Pages two
+  // onward are always fresh from the server, and the first refresh overwrites
+  // whatever was seeded here.
+  const [posts, setPosts] = useState<TMPost[]>(() => readCachedValue<TMPost[]>(FEED_CACHE_KEY) ?? []);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => readCachedValue<TMPost[]>(FEED_CACHE_KEY) === null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [endReached, setEndReached] = useState(false);
   const lastDocRef = useRef<QueryDocumentSnapshot | null>(null);
 
-  const [communities, setCommunities] = useState<TMCommunity[]>([]);
+  const [communities, setCommunities] = useState<TMCommunity[]>(
+    () => readCachedValue<TMCommunity[]>(COMMUNITY_RAIL_CACHE_KEY) ?? [],
+  );
 
   // Composer state
   const [composeOpen, setComposeOpen] = useState(false);
@@ -213,6 +223,10 @@ export default function TravelMateFeed() {
       lastDocRef.current = snap.docs.length ? (snap.docs[snap.docs.length - 1] ?? null) : lastDocRef.current;
       setEndReached(snap.docs.length < PAGE_SIZE);
       setPosts(prev => (reset ? batch : [...prev, ...batch.filter(p => !prev.some(q2 => q2.id === p.id))]));
+      // Only the unfiltered first page is worth seeding next time: "Following"
+      // is a different list per user state, and page two has no meaning without
+      // the cursor that produced it.
+      if (reset && filter === 'forYou') writeCachedValue(FEED_CACHE_KEY, batch);
       fetchMyLikes(batch);
     } catch {
       if (reset) Alert.alert('Error', 'Could not load the feed. Check your connection and try again.');
@@ -227,15 +241,23 @@ export default function TravelMateFeed() {
         orderBy('memberCount', 'desc'),
         limit(30),
       ));
-      setCommunities(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMCommunity));
+      const rail = snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMCommunity);
+      setCommunities(rail);
+      writeCachedValue(COMMUNITY_RAIL_CACHE_KEY, rail);
     } catch { /* rail is non-critical */ }
   }, []);
 
   // Initial + filter-change load. The Following tab also reloads when the
   // follow list itself changes (it usually arrives just after mount).
+  // Consumed once, on the first pass that gets past the guard: if the list was
+  // seeded from cache there is nothing to spin for. A later run of this effect
+  // is a filter change, which IS a different list, so that one still spins
+  // rather than leaving the previous tab's posts on screen pretending.
+  const seeded = useRef(posts.length > 0);
   useEffect(() => {
     if (!myUid || myProfile === undefined) return;
-    setLoading(true);
+    setLoading(!seeded.current);
+    seeded.current = false;
     lastDocRef.current = null;
     Promise.all([loadPage(true), loadCommunities()]).finally(() => setLoading(false));
   }, [myUid, filter, myProfile === undefined, filter === 'following' ? following.size : -1]);
