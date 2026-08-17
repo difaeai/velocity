@@ -216,6 +216,7 @@ export {
   recordBusinessAdClick,
   getBusinessAdDashboard,
   expireBusinessAdPlans,
+  sendBusinessAdDemoNotification,
 } from './businessAds';
 
 // Admin: broadcast push notification

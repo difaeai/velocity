@@ -72,6 +72,10 @@ export default function RootLayout() {
       } else if (data.screen === 'pool-join' && data.code) {
         // Daily-route pool alert → straight to the join screen for that pool.
         router.push(`/passenger/pool-join/${data.code}`);
+      } else if (data.screen === 'business-offer-demo') {
+        // The "see it on your phone" demo. No adId, no click to record — it is
+        // the sample offer, rendered from a constant.
+        router.push('/passenger/offer/demo');
       } else if (data.screen === 'business-offer' && data.adId) {
         // A nearby business offer. Opening this screen is the tap the advertiser
         // is paying to measure, so it must land on the offer and nowhere else.

@@ -832,6 +832,16 @@ export const api = {
     { ok: boolean; notified: number; ads: NearbyBusinessAd[] }
   >('checkNearbyBusinessAds'),
   recordBusinessAdClick: callable<{ adId: string }, { ok: boolean }>('recordBusinessAdClick'),
+  /**
+   * Sends the mock KFC offer to the CALLER'S OWN phone, so a business owner can
+   * see the notification they would be paying for. `delaySeconds` holds it back
+   * long enough to close the app first. Reaches nobody else, and is counted in
+   * nobody's advertising results.
+   */
+  sendBusinessAdDemoNotification: callable<
+    { delaySeconds?: number },
+    { ok: boolean; pushed: boolean; title: string; body: string; imageUrl: string }
+  >('sendBusinessAdDemoNotification'),
 
   // ── Special Rides (Rent-a-Car) ──────────────────────────────────────────────
   submitSpecialRidesApplication: callable<
