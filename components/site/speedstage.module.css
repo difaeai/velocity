@@ -1,0 +1,559 @@
+/* The pinned speed stage. Everything visual reads from the custom properties
+   the scroll loop writes on .stage: --p --spd --spin --blur --heat --streak
+   --road. Nothing here animates on a timer, so when the page is idle the
+   compositor is idle too. */
+
+.stage {
+  --p: 0;
+  --spd: 0;
+  --spin: 0deg;
+  --blur: 0;
+  --heat: 0;
+  --streak: 0;
+  --road: 0;
+
+  position: relative;
+  height: 420vh;
+  background: #04170f;
+  color: #fff;
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 560px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+/* ── backdrop ──────────────────────────────────────────────────────────── */
+.sky {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+      120% 80% at 50% 118%,
+      rgba(18, 161, 94, calc(0.14 + var(--spd) * 0.5)),
+      transparent 62%
+    ),
+    radial-gradient(80% 60% at 82% 12%, rgba(204, 255, 0, calc(0.04 + var(--spd) * 0.14)), transparent 60%),
+    linear-gradient(180deg, #030b08 0%, #04150e 52%, #041b12 100%);
+}
+
+.skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 33%;
+  height: 190px;
+  opacity: 0.5;
+  background-repeat: repeat-x;
+  background-size: 900px 190px;
+  /* a low city skyline, drawn as a data-uri so it costs no extra request */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='900' height='190'><g fill='%230a2318'><rect x='0' y='120' width='58' height='70'/><rect x='64' y='92' width='40' height='98'/><rect x='110' y='134' width='72' height='56'/><rect x='188' y='70' width='34' height='120'/><rect x='228' y='110' width='56' height='80'/><rect x='292' y='140' width='88' height='50'/><rect x='386' y='84' width='44' height='106'/><rect x='436' y='124' width='62' height='66'/><rect x='506' y='100' width='38' height='90'/><rect x='550' y='142' width='96' height='48'/><rect x='652' y='76' width='40' height='114'/><rect x='698' y='118' width='66' height='72'/><rect x='770' y='138' width='58' height='52'/><rect x='834' y='96' width='42' height='94'/></g><g fill='%23103a26'><rect x='196' y='62' width='6' height='12'/><rect x='660' y='68' width='6' height='12'/></g></svg>");
+  background-position-x: calc(var(--road) * -0.14px);
+}
+
+/* ── speed streaks ─────────────────────────────────────────────────────── */
+.streakField {
+  position: absolute;
+  top: 8%;
+  bottom: 22%;
+  left: 0;
+  width: 300%;
+  transform: translate3d(calc(var(--streak) * -1%), 0, 0);
+  opacity: calc(0.28 + var(--spd) * 0.72);
+}
+
+.streakTile {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 33.3333%;
+}
+
+.streak {
+  position: absolute;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #ccff00);
+  transform-origin: right center;
+  transform: scaleX(calc(0.18 + var(--spd) * 1.7));
+}
+
+/* ── road ──────────────────────────────────────────────────────────────── */
+.road {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22%;
+  background: linear-gradient(180deg, #0b1a13 0%, #060d0a 40%, #030706 100%);
+  border-top: 1px solid rgba(204, 255, 0, 0.22);
+}
+
+.roadDashes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.55) 0 78px,
+    transparent 78px 160px
+  );
+  background-position-x: calc(var(--road) * -1px);
+  opacity: calc(0.35 + var(--spd) * 0.5);
+}
+
+.roadEdge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30%;
+  background: linear-gradient(180deg, rgba(204, 255, 0, calc(0.05 + var(--spd) * 0.16)), transparent);
+}
+
+/* ── the car ───────────────────────────────────────────────────────────── */
+.carWrap {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  width: min(1180px, 88vw);
+  z-index: 2;
+  /* drifts forward through the section, squats under power */
+  transform: translate3d(calc(-50% + (var(--p) - 0.5) * 9%), 0, 0)
+    rotate(calc(var(--heat) * -0.7deg));
+  transition: none;
+}
+
+.car {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.55));
+}
+
+/* a lime after-image that stretches out behind the car at speed */
+.carGhost {
+  position: absolute;
+  right: 46%;
+  bottom: 14%;
+  height: 42%;
+  width: 60%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(204, 255, 0, 0.16), rgba(18, 161, 94, 0.24));
+  filter: blur(24px);
+  opacity: calc(var(--spd) * 0.9);
+  transform-origin: right center;
+  transform: scaleX(calc(0.3 + var(--spd) * 1.2));
+}
+
+/* ── HUD ───────────────────────────────────────────────────────────────── */
+.hud {
+  position: absolute;
+  right: clamp(20px, 4vw, 64px);
+  top: clamp(94px, 13vh, 128px);
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.gauge {
+  width: clamp(128px, 15vw, 188px);
+  height: auto;
+}
+
+.gaugeFace {
+  fill: rgba(3, 10, 7, 0.72);
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1.5;
+}
+
+.gaugeTrack {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.gaugeFill {
+  fill: none;
+  stroke: #ccff00;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--spd) * 100);
+  filter: drop-shadow(0 0 6px rgba(204, 255, 0, 0.55));
+}
+
+.tick,
+.tickLong {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.tickLong {
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 2.6;
+}
+
+.needle {
+  fill: #ff4d3d;
+  stroke: #ff4d3d;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transform-origin: 100px 100px;
+  transform: rotate(calc(-135deg + var(--spd) * 270deg));
+  filter: drop-shadow(0 0 5px rgba(255, 77, 61, 0.6));
+}
+
+.gaugeHub {
+  fill: #0c1410;
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1.5;
+}
+
+.gaugePin {
+  fill: #ccff00;
+}
+
+.gearBox {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: rgba(3, 10, 7, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gearLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.gearValue {
+  font-family: var(--font-display), sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  color: #ccff00;
+  font-variant-numeric: tabular-nums;
+}
+
+.kmhBox {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.kmh {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(30px, 3.6vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.kmhUnit {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── chapter copy ──────────────────────────────────────────────────────── */
+.copy::before {
+  content: "";
+  position: absolute;
+  inset: -48px -140px -40px -80px;
+  background: radial-gradient(
+    75% 70% at 22% 42%,
+    rgba(3, 11, 8, 0.94) 0%,
+    rgba(3, 11, 8, 0.78) 46%,
+    transparent 78%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+
+.copy {
+  position: absolute;
+  left: clamp(20px, 5vw, 76px);
+  top: clamp(92px, 11vh, 118px);
+  z-index: 3;
+  width: min(520px, 60vw);
+  display: grid;
+  gap: 26px;
+  align-content: start;
+}
+
+.stageHeading {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(28px, 3.6vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: #fff;
+}
+
+.stageHeading span {
+  color: #ccff00;
+}
+
+.chapters {
+  position: relative;
+  min-height: 268px;
+}
+
+.chapter {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+  pointer-events: none;
+}
+
+.chapterOn {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.chapterTag {
+  font-family: var(--font-display), sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #ccff00;
+}
+
+.chapterTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(26px, 3.2vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  color: #fff;
+}
+
+.chapterBody {
+  font-size: clamp(15.5px, 1.35vw, 18px);
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.72);
+  max-width: 46ch;
+}
+
+.chapterMetric {
+  display: inline-flex;
+  align-self: start;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(204, 255, 0, 0.32);
+  background: rgba(204, 255, 0, 0.08);
+  color: #ccff00;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.rail {
+  display: flex;
+  gap: 8px;
+}
+
+.railDot {
+  width: 42px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background-color 0.4s ease;
+}
+
+.railDotOn {
+  background: #ccff00;
+}
+
+/* ── responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 1080px) {
+  .stage {
+    height: 360vh;
+  }
+
+  .copy {
+    width: min(560px, 82vw);
+  }
+
+  .hud {
+    gap: 6px;
+  }
+
+  .carWrap {
+    width: 92vw;
+    bottom: 10%;
+  }
+}
+
+@media (max-width: 720px) {
+  .stage {
+    height: 320vh;
+  }
+
+  .sticky {
+    min-height: 620px;
+  }
+
+  .copy {
+    left: 20px;
+    right: 20px;
+    width: auto;
+    top: 84px;
+  }
+
+  /* On a phone the dial cannot sit beside the copy — it becomes a slim
+     dashboard strip above it instead. */
+  .hud {
+    top: 86px;
+    right: auto;
+    left: 20px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .gauge {
+    width: 54px;
+  }
+
+  .kmh {
+    font-size: 24px;
+  }
+
+  .gearBox {
+    padding: 4px 10px;
+  }
+
+  .copy {
+    top: 152px;
+  }
+
+  .copy::before {
+    inset: -30px -20px -30px -20px;
+    background: linear-gradient(180deg, rgba(3, 11, 8, 0.92), rgba(3, 11, 8, 0.7) 70%, transparent);
+  }
+
+  .chapters {
+    min-height: 290px;
+  }
+
+  .carWrap {
+    width: 116vw;
+    bottom: 16%;
+  }
+
+  .skyline {
+    bottom: 30%;
+    height: 130px;
+    background-size: 640px 130px;
+  }
+}
+
+/* ── reduced motion: no pin, no scrub, all three chapters legible ──────── */
+@media (prefers-reduced-motion: reduce) {
+  .stage {
+    height: auto;
+    padding: 92px 0;
+  }
+
+  /* The pin comes apart into an ordinary column. Note the explicit z-index on
+     everything that stays in flow: .sky is still absolutely positioned, and a
+     positioned element paints above in-flow siblings unless told otherwise. */
+  .sticky {
+    position: static;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    /* .sticky sets place-items: center for the pinned layout; in a column flex
+       container that centres (and shrink-wraps) every row. */
+    align-items: stretch;
+    gap: 44px;
+    padding: 0 clamp(20px, 5vw, 76px);
+  }
+
+  .sky {
+    z-index: 0;
+  }
+
+  .streakField,
+  .carGhost,
+  .skyline,
+  .hud {
+    display: none;
+  }
+
+  .copy::before {
+    display: none;
+  }
+
+  .copy {
+    position: relative;
+    z-index: 1;
+    order: 1;
+    top: auto;
+    left: auto;
+    width: auto;
+  }
+
+  .carWrap {
+    position: relative;
+    z-index: 1;
+    order: 2;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: 880px;
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .road {
+    position: relative;
+    z-index: 1;
+    order: 3;
+    height: 76px;
+  }
+
+  .chapters {
+    position: static;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 34px;
+  }
+
+  .chapter {
+    position: static;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}

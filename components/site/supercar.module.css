@@ -1,0 +1,41 @@
+/* Parts of the car driven by the scroll engine's custom properties.
+   Everything reads from --spin / --blur / --heat, which <SpeedStage> writes
+   once per frame on an ancestor — so a frame costs one style write, not one
+   per moving part. */
+
+.rim {
+  transform: rotate(var(--spin, 0deg));
+}
+
+/* Spoke detail fades out as the smear ring fades in, which is how a spinning
+   wheel actually reads to the eye. */
+.rim {
+  opacity: calc(1 - var(--blur, 0) * 0.85);
+}
+
+.smear {
+  opacity: var(--blur, 0);
+}
+
+.brake {
+  opacity: calc(var(--heat, 0) * 0.9);
+}
+
+.flame {
+  opacity: calc(var(--heat, 0) * 0.85);
+  transform-origin: 52px 236px;
+  transform: scaleX(calc(0.5 + var(--heat, 0)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rim {
+    transform: none;
+    opacity: 1;
+  }
+
+  .smear,
+  .flame,
+  .brake {
+    opacity: 0;
+  }
+}
