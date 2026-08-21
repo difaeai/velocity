@@ -120,7 +120,7 @@
 /* ── the car ───────────────────────────────────────────────────────────── */
 .carWrap {
   position: absolute;
-  bottom: 12%;
+  bottom: 6%;
   left: 50%;
   width: min(1180px, 88vw);
   z-index: 2;
@@ -405,8 +405,8 @@
   }
 
   .carWrap {
-    width: 92vw;
-    bottom: 10%;
+    width: 96vw;
+    bottom: 5%;
   }
 }
 
@@ -464,8 +464,8 @@
   }
 
   .carWrap {
-    width: 116vw;
-    bottom: 16%;
+    width: 122vw;
+    bottom: 11%;
   }
 
   .skyline {

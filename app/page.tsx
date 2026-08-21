@@ -1,5 +1,4 @@
-import Image from 'next/image';
-
+import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
 import { PhoneShowcase } from '@/components/site/PhoneShowcase';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
@@ -139,15 +138,15 @@ const EARN = [
     points: ['Cash collected stays with you', 'Live demand heat map', 'Two-way ratings'],
   },
   {
-    icon: TrendingUp,
-    title: 'Build a fleet',
-    body: 'Earn with Velocity turns one person into a transport business: recruit drivers and riders, run them as your fleet, and take a share of what Velocity earns from them.',
-    points: ['1% of platform commission', 'Fleet dashboard and analytics', 'Your own invite link'],
+    icon: Wallet,
+    title: 'Rent out your car',
+    body: 'List a vehicle on Special Rides and let it earn by the day, with or without you driving it. You set the rate, the days and the rules.',
+    points: ['With or without a driver', 'You set the daily rate', 'Renters are CNIC-verified'],
   },
   {
     icon: Megaphone,
-    title: 'Advertise',
-    body: 'Find your Customers puts your shop offer on the phones of people who pass your door — and you can send yourself a sample notification before you spend a rupee.',
+    title: 'Advertise your shop',
+    body: 'Find your Customers puts your offer on the phones of people who pass your door — and you can send yourself a sample notification before you spend a rupee.',
     points: ['Paid radius around your shop', 'See the ad on your own phone first', 'No daily-limit cost to test'],
   },
 ];
@@ -278,17 +277,14 @@ export default function Home() {
               <div className={styles.heroArt}>
                 <span className={styles.heroGlow} aria-hidden="true" />
                 <div className={styles.heroPhoneStack}>
-                  <div className={styles.phone}>
+                  <div
+                    className={styles.phone}
+                    role="img"
+                    aria-label="The Velocity booking screen: a route pinned on the map, with a fare of 480 rupees offered and a Find a driver button."
+                  >
                     <span className={styles.notch} aria-hidden="true" />
                     <div className={styles.phoneScreen}>
-                      <Image
-                        src="/app/screen-book.png"
-                        alt="The Velocity app booking screen, with a pickup and destination pinned on the map and a Request ride button."
-                        width={1080}
-                        height={1920}
-                        sizes="(max-width: 900px) 70vw, 288px"
-                        priority
-                      />
+                      <ScreenBook />
                     </div>
                   </div>
 
@@ -434,8 +430,8 @@ export default function Home() {
                 It all happens on <span className={styles.accent}>your phone</span>
               </h2>
               <p className={styles.lead}>
-                Velocity is a mobile app — there is no web booking. Everything below is a real screen
-                from the build that is live on Google Play right now.
+                Velocity is a mobile app — there is no web booking. Here is what you actually do in
+                it, screen by screen.
               </p>
             </Reveal>
 
@@ -471,23 +467,109 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── earn ──────────────────────────────────────────────────────── */}
+        {/* ── Earn with Velocity — the partner program, as its own feature ── */}
         <section className={`${styles.section} ${styles.dark}`} id="earn">
+          <div className={styles.wrap}>
+            <div className={`${styles.split} ${styles.splitReverse}`}>
+              <Reveal className={styles.splitCopy}>
+                <span className={styles.eyebrow}>
+                  <TrendingUp />
+                  Earn with Velocity
+                </span>
+                <h2 className={styles.h2}>
+                  Build a transport business
+                  <br />
+                  without <span className={styles.accent}>owning a car</span>
+                </h2>
+                <p className={styles.lead}>
+                  Recruit drivers and riders onto Velocity, run them as your fleet, and take a share
+                  of what Velocity earns from every ride they complete. One five-digit code builds
+                  both fleets — a driver who redeems it joins your driver fleet, a passenger joins
+                  your rider fleet.
+                </p>
+
+                <p className={styles.ruleNote}>
+                  <Shield />
+                  <span>
+                    <b>You earn a share of Velocity&apos;s commission, never of the fare.</b> On a
+                    Rs 1,000 ride with a 10% commission, a 2% Pro rate pays you Rs 2 — 2% of the
+                    Rs 100 commission, not of the fare. The fare belongs to the driver.
+                  </span>
+                </p>
+
+                <div className={styles.tiers}>
+                  <span className={styles.tierHead}>
+                    <b />
+                    <b>Free</b>
+                    <b className={styles.tierPro}>Pro</b>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Driver fleet</small>
+                    <em>0.5%</em>
+                    <em className={styles.tierPro}>2%</em>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Rider fleet</small>
+                    <em>0.5%</em>
+                    <em className={styles.tierPro}>1.3%</em>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Costs you</small>
+                    <em>Nothing</em>
+                    <em className={styles.tierPro}>Rs 4,500/mo</em>
+                  </span>
+                </div>
+
+                <div className={styles.checkList}>
+                  {[
+                    ['Installs pay you nothing', 'only rides that actually complete do'],
+                    ['Withdraw from Rs 500', 'after a 72-hour hold that catches fraud'],
+                    ['A dashboard, not a promise', 'fleet, revenue and analytics, live in the app'],
+                  ].map(([b, t]) => (
+                    <span key={b} className={styles.checkItem}>
+                      <Check />
+                      <span>
+                        <b>{b}</b> — <span>{t}</span>
+                      </span>
+                    </span>
+                  ))}
+                </div>
+
+                <a className={`${styles.btn} ${styles.btnLime}`} href={PLAY_URL} target="_blank" rel="noreferrer">
+                  <GooglePlay />
+                  Start earning
+                </a>
+              </Reveal>
+
+              <Reveal delay={120} className={styles.splitArt}>
+                <div
+                  className={styles.phone}
+                  role="img"
+                  aria-label="The Earn with Velocity dashboard: 18,420 rupees earned this month, a fleet of 24 drivers and 186 riders, and the fleet code 48213."
+                >
+                  <span className={styles.notch} aria-hidden="true" />
+                  <div className={styles.phoneScreen}>
+                    <ScreenEarn />
+                  </div>
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ── the other routes to income ────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.dark}`}>
           <div className={styles.wrap}>
             <Reveal className={styles.sectionHead}>
               <span className={styles.eyebrow}>
-                <TrendingUp />
-                Earn with Velocity
+                <Sparkle />
+                Other ways to earn
               </span>
               <h2 className={styles.h2}>
-                Three ways to make the
+                Velocity is not only for
                 <br />
-                platform <span className={styles.accent}>work for you</span>
+                the people <span className={styles.accent}>taking rides</span>
               </h2>
-              <p className={styles.lead}>
-                Velocity is not only for people who need a ride. It is also for the people who provide
-                them — and for the shop on the corner.
-              </p>
             </Reveal>
 
             <div className={styles.cardGrid}>
@@ -553,17 +635,14 @@ export default function Home() {
               </Reveal>
 
               <Reveal delay={120} className={styles.splitArt}>
-                <div className={styles.phone}>
+                <div
+                  className={styles.phone}
+                  role="img"
+                  aria-label="The Velocity live trip screen: the driver tracked on the map, their name, rating and plate, and an SOS button."
+                >
                   <span className={styles.notch} aria-hidden="true" />
                   <div className={styles.phoneScreen}>
-                    <Image
-                      src="/app/screen-track.png"
-                      alt="The Velocity live trip screen, tracking the driver on the map during a ride."
-                      width={1080}
-                      height={1920}
-                      sizes="(max-width: 900px) 70vw, 288px"
-                      loading="lazy"
-                    />
+                    <ScreenTrip />
                   </div>
                 </div>
               </Reveal>
@@ -682,7 +761,6 @@ export default function Home() {
               <a href={`${LEGAL}/delete-account.html`} target="_blank" rel="noreferrer">
                 Delete your account
               </a>
-              <a href="/login">Admin console</a>
             </div>
           </div>
 

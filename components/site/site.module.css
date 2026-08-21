@@ -643,8 +643,8 @@
 }
 
 .floatB {
-  bottom: 13%;
-  right: -4%;
+  bottom: 6%;
+  right: -8%;
   animation-delay: -3s;
 }
 
@@ -679,12 +679,17 @@
 }
 
 /* ── phone frame ───────────────────────────────────────────────────────── */
+/* Fixed size on purpose: the screens inside are laid out at a nominal 360×780
+   device and scaled by --screen-scale, so the frame and the scale have to agree
+   exactly. --screen-scale = (width - 2 × padding) / 360. */
 .phone {
+  --screen-scale: 0.75;
   position: relative;
-  width: 100%;
-  max-width: 288px;
-  aspect-ratio: 1080 / 1920;
-  border-radius: 40px;
+  width: 288px;
+  height: 603px;
+  max-width: 100%;
+  flex: none;
+  border-radius: 42px;
   padding: 9px;
   background: linear-gradient(160deg, #2b3b34, #0a120e 45%, #223029);
   box-shadow: 0 40px 90px rgba(4, 35, 26, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
@@ -694,28 +699,36 @@
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 32px;
+  border-radius: 34px;
   overflow: hidden;
-  background: #101211;
+  background: #0b100e;
 }
 
-.phoneScreen img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
+/* punch-hole camera rather than a notch — notches read as 2019 */
 .notch {
   position: absolute;
-  top: 9px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  width: 30%;
-  height: 20px;
-  border-radius: var(--r-pill);
-  background: #0a120e;
-  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #050907;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.14);
+  z-index: 6;
+}
+
+@media (max-width: 400px) {
+  .phone {
+    --screen-scale: 0.6278;
+    width: 244px;
+    height: 508px;
+    border-radius: 36px;
+  }
+
+  .phoneScreen {
+    border-radius: 29px;
+  }
 }
 
 /* ── stat strip ────────────────────────────────────────────────────────── */
@@ -990,7 +1003,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 560px;
+  /* must clear the 603px phone frame plus breathing room */
+  min-height: 680px;
 }
 
 .showcaseGlow {
@@ -1144,7 +1158,7 @@
   }
 
   .showcaseStage {
-    min-height: 480px;
+    min-height: 640px;
     order: -1;
   }
 }
@@ -1426,4 +1440,86 @@
   border-color: var(--line-dark);
   color: var(--white);
   background: transparent;
+}
+
+/* ── partner tiers + the commission rule ───────────────────────────────── */
+.ruleNote {
+  display: flex;
+  gap: 13px;
+  padding: 18px 20px;
+  border-radius: var(--r-md);
+  background: rgba(204, 255, 0, 0.07);
+  border: 1px solid rgba(204, 255, 0, 0.26);
+  font-size: 15px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ruleNote svg {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  color: var(--lime);
+  margin-top: 2px;
+}
+
+.ruleNote b {
+  color: var(--white);
+  font-weight: 700;
+}
+
+.tiers {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--line-dark);
+  border: 1px solid var(--line-dark);
+}
+
+.tierHead,
+.tierRow {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  background: var(--ink);
+}
+
+.tierHead {
+  background: var(--ink-2);
+}
+
+.tierHead b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tierRow small {
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.tierRow em {
+  font-style: normal;
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.tierPro {
+  color: var(--lime) !important;
+}
+
+/* Headlines in a half-width column need their own ceiling — the section-level
+   clamp is sized for full-bleed rows and shatters into four lines here. */
+.splitCopy h2 {
+  font-size: clamp(30px, 3.8vw, 48px);
 }

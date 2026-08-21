@@ -1,0 +1,821 @@
+/* Phone-screen UI, laid out at a nominal 360×780 device and scaled by the
+   frame. Every value here is in "device" pixels, so this reads like the app's
+   own stylesheet rather than like a shrunken web page. */
+
+.screen {
+  position: relative;
+  width: 360px;
+  height: 780px;
+  display: flex;
+  flex-direction: column;
+  background: #0b100e;
+  color: #fff;
+  font-family: var(--font-body), system-ui, sans-serif;
+  overflow: hidden;
+  transform: scale(var(--screen-scale, 0.75));
+  transform-origin: top left;
+}
+
+.screenPlain {
+  padding: 0 20px 22px;
+  gap: 16px;
+}
+
+/* ── status bar ────────────────────────────────────────────────────────── */
+.status {
+  flex: none;
+  height: 46px;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  z-index: 5;
+}
+
+.statusLight {
+  color: #0b100e;
+}
+
+.clock {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.statusIcons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bars,
+.wifi {
+  height: 11px;
+  width: auto;
+  fill: currentColor;
+}
+
+.battery {
+  width: 22px;
+  height: 11px;
+  border: 1.4px solid currentColor;
+  border-radius: 3px;
+  padding: 1.4px;
+  display: block;
+  opacity: 0.9;
+}
+
+.battery span {
+  display: block;
+  width: 72%;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+/* ── map ───────────────────────────────────────────────────────────────── */
+.mapWrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: -46px;
+}
+
+.mapWrapShort {
+  flex: 1 1 auto;
+  min-height: 250px;
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.route {
+  fill: none;
+  stroke: #ccff00;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 13;
+}
+
+.routeGlow {
+  fill: none;
+  stroke: #ccff00;
+  stroke-width: 13;
+  stroke-linecap: round;
+  opacity: 0.14;
+}
+
+.carHalo {
+  fill: #ccff00;
+  opacity: 0.24;
+}
+
+.riderDot {
+  fill: #7fe3b4;
+  stroke: #0b100e;
+  stroke-width: 3;
+}
+
+.mapTop {
+  position: absolute;
+  top: 58px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.greet {
+  font-family: var(--font-display), sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+}
+
+.etaPill {
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(11, 16, 14, 0.9);
+  border: 1px solid rgba(204, 255, 0, 0.3);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.etaPill b {
+  color: #ccff00;
+  font-family: var(--font-display), sans-serif;
+}
+
+.sos {
+  position: absolute;
+  right: 20px;
+  bottom: 58px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 82, 61, 0.55);
+  background: rgba(38, 10, 8, 0.92);
+  color: #ff6a55;
+  font-family: var(--font-display), sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* ── bottom sheet ──────────────────────────────────────────────────────── */
+.sheet {
+  position: relative;
+  flex: none;
+  margin-top: -26px;
+  padding: 14px 20px 26px;
+  border-radius: 26px 26px 0 0;
+  background: #121815;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.5);
+  display: grid;
+  gap: 12px;
+  z-index: 4;
+}
+
+.sheetTall {
+  gap: 14px;
+}
+
+.grabber {
+  width: 38px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 auto 4px;
+}
+
+.sheetTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+/* ── fields ────────────────────────────────────────────────────────────── */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 15px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+}
+
+.fieldActive {
+  border-color: rgba(204, 255, 0, 0.35);
+  background: rgba(204, 255, 0, 0.07);
+}
+
+.fieldIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  flex: none;
+}
+
+.fieldIconLime {
+  background: rgba(204, 255, 0, 0.16);
+  color: #ccff00;
+}
+
+.fieldIcon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.field small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.field b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ── segmented control ─────────────────────────────────────────────────── */
+.segment {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+}
+
+.segment span {
+  padding: 9px 0;
+  border-radius: 11px;
+}
+
+.segOn {
+  background: #ccff00;
+  color: #0b100e;
+}
+
+/* ── fare ──────────────────────────────────────────────────────────────── */
+.fareRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.fareRow small,
+.saveCard small,
+.receipt small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.fareBig {
+  font-family: var(--font-display), sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+
+.stepper {
+  display: flex;
+  gap: 8px;
+}
+
+.stepper i {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  font-style: normal;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cta {
+  width: 100%;
+  height: 52px;
+  border: 0;
+  border-radius: 16px;
+  background: #ccff00;
+  color: #0b100e;
+  font-family: var(--font-display), sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* ── pool ──────────────────────────────────────────────────────────────── */
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: -8px;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid #121815;
+  flex: none;
+}
+
+.avatarRow .avatar + .avatar {
+  margin-left: -11px;
+}
+
+.avatarMore {
+  margin-left: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.saveCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 17px;
+  border-radius: 18px;
+  background: rgba(204, 255, 0, 0.08);
+  border: 1px solid rgba(204, 255, 0, 0.26);
+}
+
+.saveCard em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: line-through;
+}
+
+.saveBadge {
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: #ccff00;
+  color: #0b100e;
+  font-family: var(--font-display), sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.ticks {
+  display: grid;
+  gap: 9px;
+  list-style: none;
+}
+
+.ticks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.ticks svg {
+  width: 16px;
+  height: 16px;
+  color: #ccff00;
+  flex: none;
+}
+
+/* ── trip ──────────────────────────────────────────────────────────────── */
+.driver {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.driverInfo {
+  margin-right: auto;
+}
+
+.driverInfo b {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.driverInfo small {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.star {
+  color: #ccff00;
+}
+
+.plate {
+  padding: 7px 11px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.carLine {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.action {
+  padding: 12px 0;
+  border-radius: 13px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.actionLime {
+  background: rgba(204, 255, 0, 0.14);
+  color: #ccff00;
+}
+
+/* ── earn ──────────────────────────────────────────────────────────────── */
+.earnHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+
+.earnHead small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ccff00;
+}
+
+.earnHead b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.proBadge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #ccff00;
+  color: #0b100e;
+  font-family: var(--font-display), sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.earnHero {
+  padding: 20px;
+  border-radius: 22px;
+  background: linear-gradient(150deg, rgba(204, 255, 0, 0.14), rgba(31, 190, 121, 0.08));
+  border: 1px solid rgba(204, 255, 0, 0.22);
+  display: grid;
+  gap: 4px;
+  flex: none;
+}
+
+.earnHero small {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.earnHero b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.earnDelta {
+  font-size: 12.5px;
+  color: #ccff00;
+  font-weight: 600;
+}
+
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 54px;
+  margin-top: 10px;
+}
+
+.spark span {
+  flex: 1;
+  border-radius: 4px 4px 2px 2px;
+  background: rgba(204, 255, 0, 0.35);
+}
+
+.spark span:last-child {
+  background: #ccff00;
+}
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex: none;
+}
+
+.statRow span {
+  padding: 14px 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  text-align: center;
+  display: grid;
+  gap: 2px;
+}
+
+.statRow b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.statRow small {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.codeCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 17px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  flex: none;
+}
+
+.codeCard small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.codeCard b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ccff00;
+}
+
+.copyBtn {
+  padding: 9px 15px;
+  border-radius: 11px;
+  background: rgba(204, 255, 0, 0.14);
+  color: #ccff00;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.feed {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  list-style: none;
+  /* soaks up whatever height is left so the screen never ends in dead space */
+  flex: 1 1 auto;
+}
+
+.feed li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.feed li span {
+  margin-right: auto;
+}
+
+.feed b {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.feed small {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.feed em {
+  font-style: normal;
+  font-family: var(--font-display), sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ccff00;
+}
+
+/* ── cash ──────────────────────────────────────────────────────────────── */
+.doneWrap {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding-top: 12px;
+  flex: none;
+}
+
+.doneTick {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(204, 255, 0, 0.14);
+  color: #ccff00;
+  margin-bottom: 6px;
+}
+
+.doneTick svg {
+  width: 32px;
+  height: 32px;
+}
+
+.doneTitle {
+  font-family: var(--font-display), sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+.doneSub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.receipt {
+  display: grid;
+  gap: 11px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  flex: none;
+}
+
+.receipt > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.receipt small {
+  display: block;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.receipt b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.neg {
+  color: #ccff00;
+}
+
+.total {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* wins over `.receipt b` on source order — the payable total is the one number
+   on this screen that should read from across the room */
+.total b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.total small {
+  font-size: 12px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.payRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: none;
+}
+
+.payOn,
+.payOff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 0;
+  border-radius: 15px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.payOn {
+  background: rgba(204, 255, 0, 0.14);
+  border: 1px solid rgba(204, 255, 0, 0.4);
+  color: #ccff00;
+}
+
+.payOn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.payOff {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.payNote {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  flex: none;
+}
+
+.rate {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  flex: 1 1 auto;
+}
+
+.rate small {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.stars {
+  font-size: 24px;
+  letter-spacing: 4px;
+  color: #ccff00;
+}

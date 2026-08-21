@@ -73,9 +73,6 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
           </div>
 
           <div className={styles.navCta}>
-            <a className={`${styles.btn} ${styles.btnGhost}`} href="/login">
-              Admin
-            </a>
             <a className={`${styles.btn} ${styles.btnPrimary}`} href={playUrl} target="_blank" rel="noreferrer">
               <GooglePlay />
               Get the app
@@ -101,9 +98,6 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
                 {l.label}
               </a>
             ))}
-            <a className={styles.navLink} href="/login" onClick={() => setOpen(false)}>
-              Admin console
-            </a>
             <a
               className={`${styles.btn} ${styles.btnPrimary}`}
               href={playUrl}
