@@ -3,6 +3,15 @@
  * spin, the brakes can glow and the whole thing stays crisp at any width for a
  * few kilobytes.
  *
+ * The shading is what makes it read as a rendered car rather than an
+ * illustration. In profile, glossy paint is a mirror: the crown reflects the
+ * sky (bright), the flank falls into shade, and where the panel turns through
+ * horizontal there is a hard bright band reflecting the horizon, with the
+ * ground reflected dark below it. That dark → bright → dark run down the
+ * `paint` gradient is doing most of the work; the rest is ambient occlusion
+ * around the arches and under the sills, plus light bouncing back up off the
+ * tarmac.
+ *
  * Animated parts read CSS custom properties set by <SpeedStage>:
  *   --spin      wheel rotation, in degrees (accumulates)
  *   --blur      0→1 wheel motion-blur mix
@@ -12,60 +21,73 @@
  */
 import styles from './supercar.module.css';
 
-const SPOKES = [0, 36, 72, 108, 144, 180, 216, 252, 288, 324];
+const SPOKES = [0, 51.4, 102.8, 154.2, 205.7, 257.1, 308.5];
 
-/** Silhouette shared by the paint fill, the clip for surface detail, and the rim light. */
+/** Silhouette, shared by the paint fill, the detail clip and the reflection. */
 const SHELL =
-  'M 916 230 C 914 216 906 206 892 198 L 856 176 C 838 158 812 146 780 145 ' +
-  'C 748 145 724 156 710 174 C 700 186 690 190 676 191 L 654 192 L 560 118 ' +
-  'C 546 107 530 102 512 102 L 424 102 C 402 102 387 109 374 124 L 332 156 ' +
-  'C 314 146 290 141 262 142 C 232 143 208 151 192 161 L 134 172 ' +
+  'M 916 230 C 914 216 906 206 892 198 L 856 176 ' +
+  'C 838 158 812 146 780 145 C 748 145 724 156 710 174 C 700 186 690 190 676 191 ' +
+  'L 654 192 L 560 118 C 546 107 530 102 512 102 L 424 102 C 402 102 387 109 374 124 ' +
+  'L 332 156 C 314 146 290 141 262 142 C 232 143 208 151 192 161 L 134 172 ' +
   'C 116 175 104 179 96 187 L 90 198 L 86 234 C 85 249 91 257 102 260 L 152 264 ' +
   'L 830 262 C 862 261 884 260 896 258 C 910 255 916 246 916 234 Z';
 
-/** Top edge only — carries the lime rim light. */
-const CREST =
-  'M 892 198 L 856 176 C 838 158 812 146 780 145 C 748 145 724 156 710 174 ' +
-  'C 700 186 690 190 676 191 L 654 192 L 560 118 C 546 107 530 102 512 102 ' +
-  'L 424 102 C 402 102 387 109 374 124 L 332 156 C 314 146 290 141 262 142 ' +
-  'C 232 143 208 151 192 161 L 134 172 C 116 175 104 179 96 187 L 90 198';
-
-function Wheel({ cx, prefix }: { cx: number; prefix: string }) {
+function Wheel({ cx, offset, prefix }: { cx: number; offset: number; prefix: string }) {
+  const p = prefix;
   return (
     <g>
-      <circle cx={cx} cy={238} r={62} fill="#0a0e0c" />
-      <circle cx={cx} cy={238} r={58} fill="none" stroke="#1b221e" strokeWidth={7} />
-      {/* brake disc, glowing under hard use */}
-      <circle cx={cx} cy={238} r={34} fill="#0d120f" />
-      <circle
-        className={styles.brake}
-        cx={cx}
-        cy={238}
-        r={34}
+      <circle cx={cx} cy={238} r={65} fill={`url(#${p}-tyre)`} />
+      {/* light catching the top of the sidewall */}
+      <path
+        d={`M ${cx} 238 m -60 0 a 60 60 0 0 1 88 -50`}
         fill="none"
-        stroke="#ff7a1a"
-        strokeWidth={5}
+        stroke="#6b7772"
+        strokeWidth={4}
+        opacity={0.4}
       />
+      <circle cx={cx} cy={238} r={57} fill="none" stroke="#000" strokeWidth={5} opacity={0.5} />
+      <circle cx={cx} cy={238} r={48} fill={`url(#${p}-rimwell)`} />
+
+      {/* brake disc and caliper live behind the spokes and glow under load */}
+      <circle cx={cx} cy={238} r={31} fill="#0b100e" />
+      <path
+        d={`M ${cx} 238 m -26 0 a 26 26 0 0 1 36 -23`}
+        fill="none"
+        stroke="#8c3a12"
+        strokeWidth={7}
+        strokeLinecap="round"
+      />
+      <path
+        className={styles.brake}
+        d={`M ${cx} 238 m -26 0 a 26 26 0 0 1 36 -23`}
+        fill="none"
+        stroke="#ff7a2a"
+        strokeWidth={7}
+        strokeLinecap="round"
+      />
+
       <g className={styles.rim} style={{ transformOrigin: `${cx}px 238px` }}>
-        <circle cx={cx} cy={238} r={46} fill="#121714" />
-        <circle cx={cx} cy={238} r={33} fill="#080b09" stroke="#232b26" strokeWidth={4} />
+        <circle cx={cx} cy={238} r={46.5} fill="none" stroke="#dfe7e3" strokeWidth={3.5} />
+        <circle cx={cx} cy={238} r={43} fill="none" stroke="#000" strokeWidth={1.5} opacity={0.5} />
         {SPOKES.map((deg) => (
           <path
             key={deg}
-            d="M -5.5 -14 L -8 -43.5 L 8 -43.5 L 5.5 -14 Z"
-            fill={`url(#${prefix}-spoke)`}
-            transform={`translate(${cx} 238) rotate(${deg})`}
+            d="M -6 -16 L -9.5 -42 L 9.5 -42 L 6 -16 Z"
+            fill={`url(#${p}-rimface)`}
+            transform={`translate(${cx} 238) rotate(${deg + offset})`}
           />
         ))}
-        <circle cx={cx} cy={238} r={12} fill="#ccff00" />
-        <circle cx={cx} cy={238} r={4.5} fill="#080b09" />
+        <circle cx={cx} cy={238} r={14} fill="#1b221f" />
+        <circle cx={cx} cy={238} r={9} fill="#ccff00" />
+        <circle cx={cx} cy={238} r={3} fill="#0b100e" />
       </g>
-      {/* motion smear that cross-fades in over the spokes at speed — far cheaper
-          than an SVG blur filter running every frame */}
+
+      {/* Spinning spokes read as concentric smear, not as spokes. Cross-fading
+          rings costs a fraction of an SVG blur filter running every frame. */}
       <g className={styles.smear}>
-        <circle cx={cx} cy={238} r={44} fill="none" stroke="#c8d4ce" strokeWidth={3} opacity={0.5} />
-        <circle cx={cx} cy={238} r={36} fill="none" stroke="#9fb0a7" strokeWidth={4} opacity={0.4} />
-        <circle cx={cx} cy={238} r={26} fill="none" stroke="#7d8d85" strokeWidth={5} opacity={0.3} />
+        <circle cx={cx} cy={238} r={44} fill="none" stroke="#c8d4ce" strokeWidth={4} opacity={0.55} />
+        <circle cx={cx} cy={238} r={36} fill="none" stroke="#8e9c95" strokeWidth={5} opacity={0.45} />
+        <circle cx={cx} cy={238} r={25} fill="none" stroke="#5f6b66" strokeWidth={6} opacity={0.35} />
       </g>
     </g>
   );
@@ -75,42 +97,90 @@ export function Supercar({ idPrefix = 'car', className }: { idPrefix?: string; c
   const p = idPrefix;
   return (
     <svg
-      viewBox="0 0 1000 320"
+      viewBox="0 0 1000 360"
       className={className}
       role="img"
       aria-label="A green Velocity supercar in side profile, accelerating"
     >
       <defs>
-        <linearGradient id={`${p}-paint`} x1=".15" y1="0" x2=".4" y2="1">
-          <stop offset="0" stopColor="#33d986" />
-          <stop offset=".22" stopColor="#12ab62" />
-          <stop offset=".5" stopColor="#057444" />
-          <stop offset=".78" stopColor="#02502e" />
-          <stop offset="1" stopColor="#012b19" />
+        <linearGradient id={`${p}-paint`} x1="0" y1="0.3" x2="0" y2="1">
+          <stop offset="0" stopColor="#B6F5DB" />
+          <stop offset=".05" stopColor="#5ADFA3" />
+          <stop offset=".14" stopColor="#17A96B" />
+          <stop offset=".27" stopColor="#067544" />
+          <stop offset=".41" stopColor="#02452C" />
+          <stop offset=".5" stopColor="#012D1D" />
+          <stop offset=".545" stopColor="#0B7A4A" />
+          <stop offset=".585" stopColor="#6BE8B0" />
+          <stop offset=".6" stopColor="#9CF4CC" />
+          <stop offset=".625" stopColor="#40C689" />
+          <stop offset=".68" stopColor="#065B37" />
+          <stop offset=".78" stopColor="#053A24" />
+          <stop offset=".9" stopColor="#04291A" />
+          <stop offset="1" stopColor="#072F1E" />
         </linearGradient>
-        <linearGradient id={`${p}-low`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#000" stopOpacity="0" />
-          <stop offset="1" stopColor="#000" stopOpacity=".55" />
+        <linearGradient id={`${p}-lengthwise`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#000" stopOpacity=".42" />
+          <stop offset=".2" stopColor="#000" stopOpacity=".14" />
+          <stop offset=".55" stopColor="#fff" stopOpacity=".03" />
+          <stop offset=".88" stopColor="#fff" stopOpacity=".12" />
+          <stop offset="1" stopColor="#fff" stopOpacity=".2" />
         </linearGradient>
-        <linearGradient id={`${p}-glass`} x1=".2" y1="0" x2=".85" y2="1">
-          <stop offset="0" stopColor="#274035" />
-          <stop offset=".5" stopColor="#0b120f" />
-          <stop offset="1" stopColor="#040706" />
-        </linearGradient>
-        <linearGradient id={`${p}-rimlight`} x1="1" y1="0" x2="0" y2="0">
-          <stop offset="0" stopColor="#ccff00" stopOpacity=".2" />
-          <stop offset=".3" stopColor="#ccff00" stopOpacity=".95" />
-          <stop offset=".75" stopColor="#ccff00" stopOpacity=".45" />
-          <stop offset="1" stopColor="#ccff00" stopOpacity="0" />
-        </linearGradient>
-        <linearGradient id={`${p}-spoke`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#f2f7f4" />
-          <stop offset="1" stopColor="#8b9a93" />
-        </linearGradient>
-        <radialGradient id={`${p}-contact`} cx=".5" cy=".5" r=".5">
-          <stop offset="0" stopColor="#000" stopOpacity=".85" />
+        <radialGradient id={`${p}-archAO`} cx=".5" cy=".5" r=".5">
+          <stop offset=".5" stopColor="#000" stopOpacity="0" />
+          <stop offset=".62" stopColor="#000" stopOpacity=".62" />
+          <stop offset=".78" stopColor="#000" stopOpacity=".28" />
           <stop offset="1" stopColor="#000" stopOpacity="0" />
         </radialGradient>
+        <linearGradient id={`${p}-rockerAO`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#000" stopOpacity="0" />
+          <stop offset="1" stopColor="#000" stopOpacity=".52" />
+        </linearGradient>
+        <linearGradient id={`${p}-bounce`} x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#7FE3B4" stopOpacity=".3" />
+          <stop offset=".45" stopColor="#7FE3B4" stopOpacity=".07" />
+          <stop offset="1" stopColor="#7FE3B4" stopOpacity="0" />
+        </linearGradient>
+        <radialGradient id={`${p}-spec`} cx=".5" cy=".5" r=".5">
+          <stop offset="0" stopColor="#fff" stopOpacity=".85" />
+          <stop offset=".45" stopColor="#fff" stopOpacity=".22" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={`${p}-glass`} x1=".1" y1="0" x2=".7" y2="1">
+          <stop offset="0" stopColor="#54786A" />
+          <stop offset=".2" stopColor="#182720" />
+          <stop offset=".58" stopColor="#060A09" />
+          <stop offset="1" stopColor="#0E1714" />
+        </linearGradient>
+        <linearGradient id={`${p}-tyre`} x1=".3" y1="0" x2=".7" y2="1">
+          <stop offset="0" stopColor="#313935" />
+          <stop offset=".3" stopColor="#191E1C" />
+          <stop offset=".62" stopColor="#0B0E0D" />
+          <stop offset="1" stopColor="#040606" />
+        </linearGradient>
+        <linearGradient id={`${p}-rimface`} x1=".25" y1="0" x2=".75" y2="1">
+          <stop offset="0" stopColor="#F4F8F6" />
+          <stop offset=".3" stopColor="#CBD5D0" />
+          <stop offset=".62" stopColor="#8B968F" />
+          <stop offset="1" stopColor="#454E49" />
+        </linearGradient>
+        <radialGradient id={`${p}-rimwell`} cx=".46" cy=".38" r=".64">
+          <stop offset="0" stopColor="#333B37" />
+          <stop offset=".6" stopColor="#121715" />
+          <stop offset="1" stopColor="#050807" />
+        </radialGradient>
+        <radialGradient id={`${p}-contact`} cx=".5" cy=".5" r=".5">
+          <stop offset="0" stopColor="#000" stopOpacity=".92" />
+          <stop offset=".5" stopColor="#000" stopOpacity=".5" />
+          <stop offset="1" stopColor="#000" stopOpacity="0" />
+        </radialGradient>
+        {/* Fades away from the car in the flipped space, so no mask or filter
+            has to run while the car is transforming every frame. */}
+        <linearGradient id={`${p}-refl`} x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#1FBE79" stopOpacity=".26" />
+          <stop offset=".18" stopColor="#0A5537" stopOpacity=".08" />
+          <stop offset=".45" stopColor="#04231A" stopOpacity="0" />
+        </linearGradient>
         <radialGradient id={`${p}-flame`} cx=".85" cy=".5" r=".7">
           <stop offset="0" stopColor="#fff6d0" />
           <stop offset=".35" stopColor="#ffb020" />
@@ -124,85 +194,120 @@ export function Supercar({ idPrefix = 'car', className }: { idPrefix?: string; c
         </clipPath>
       </defs>
 
+      {/* wet-tarmac reflection, squashed the way a road reflection actually is */}
+      <g transform="translate(0 397) scale(1 -0.325)">
+        <path d={SHELL} fill={`url(#${p}-refl)`} />
+      </g>
+
       <g clipPath={`url(#${p}-ground)`}>
-        <ellipse cx="500" cy="294" rx="410" ry="24" fill={`url(#${p}-contact)`} />
+        <ellipse cx="500" cy="297" rx="392" ry="17" fill={`url(#${p}-contact)`} />
+        <ellipse cx="262" cy="299" rx="76" ry="12" fill="#000" opacity=".8" />
+        <ellipse cx="760" cy="299" rx="76" ry="12" fill="#000" opacity=".8" />
 
-        {/* exhaust flare, only visible when --heat rises */}
-        <ellipse className={styles.flame} cx="52" cy="236" rx="66" ry="15" fill={`url(#${p}-flame)`} />
+        <ellipse className={styles.flame} cx="52" cy="230" rx="62" ry="14" fill={`url(#${p}-flame)`} />
 
-        {/* wheel wells sit behind the paint */}
-        <circle cx="262" cy="238" r="76" fill="#040705" />
-        <circle cx="760" cy="238" r="76" fill="#040705" />
+        <circle cx="262" cy="238" r="80" fill="#020403" />
+        <circle cx="760" cy="238" r="80" fill="#020403" />
 
         {/* swan-neck rear wing */}
-        <path d="M 136 164 L 142 150 L 152 150 L 148 166 Z" fill="#02371f" />
-        <path d="M 200 158 L 206 145 L 216 145 L 212 160 Z" fill="#02371f" />
-        <path d="M 98 152 C 140 142 194 137 246 136 L 248 151 C 196 152 142 158 100 168 Z" fill="#0a1310" />
-        <path d="M 100 155 C 142 146 194 141 244 140 L 245 145 C 194 146 142 152 101 161 Z" fill="#ccff00" opacity=".5" />
+        <path d="M 136 164 L 142 150 L 152 150 L 148 166 Z" fill="#0a3a29" />
+        <path d="M 200 158 L 206 145 L 216 145 L 212 160 Z" fill="#0a3a29" />
+        <path d="M 98 152 C 140 142 194 137 246 136 L 248 151 C 196 152 142 158 100 168 Z" fill="#16261f" />
+        <path d="M 100 154 C 142 145 194 140 244 139 L 245 143 C 194 144 142 150 101 159 Z" fill="#a8e8c8" opacity=".4" />
 
         <path d={SHELL} fill={`url(#${p}-paint)`} />
 
         <g clipPath={`url(#${p}-shell)`}>
-          <rect x="0" y="196" width="1000" height="120" fill={`url(#${p}-low)`} />
-          {/* cabin shadow */}
+          <path d={SHELL} fill={`url(#${p}-lengthwise)`} />
+
+          {/* sky riding the crown of the front fender and the rear haunch */}
           <path
-            d="M 654 192 L 560 118 C 546 107 530 102 512 102 L 424 102 C 402 102 387 109 374 124 L 332 156 C 386 178 476 190 654 192 Z"
-            fill="#000"
-            opacity=".2"
-          />
-          {/* fender highlights */}
-          <path
-            d="M 856 176 C 838 158 812 146 780 146 C 750 146 728 158 714 176 L 722 180 C 736 165 754 156 780 156 C 808 156 830 168 848 184 Z"
+            d="M 862 182 C 840 160 812 148 780 148 C 748 148 724 160 710 178 L 702 194 C 720 172 744 160 780 160 C 816 160 842 176 866 198 Z"
             fill="#fff"
-            opacity=".14"
+            opacity=".34"
           />
           <path
-            d="M 332 156 C 314 146 290 141 262 142 C 232 143 208 151 192 161 L 196 168 C 214 158 236 150 264 149 C 290 148 312 153 328 162 Z"
+            d="M 334 152 C 316 142 290 138 262 139 C 230 140 206 148 190 158 L 188 170 C 208 159 232 152 262 151 C 292 150 316 156 334 165 Z"
             fill="#fff"
-            opacity=".14"
+            opacity=".3"
           />
+          <ellipse cx="806" cy="170" rx="52" ry="13" fill={`url(#${p}-spec)`} transform="rotate(-20 806 170)" />
+          <ellipse cx="250" cy="150" rx="44" ry="10" fill={`url(#${p}-spec)`} transform="rotate(-6 250 150)" />
+
+          {/* the horizon, reflected hard along the flank */}
+          <path
+            d="M 150 205 C 330 236 540 240 700 214 C 758 205 806 190 844 172 L 848 181 C 810 201 760 215 702 225 C 540 249 330 247 148 215 Z"
+            fill="#f2fff8"
+            opacity=".6"
+          />
+          <path
+            d="M 152 213 C 330 243 540 245 700 221 L 700 226 C 540 251 330 251 150 221 Z"
+            fill="#04150e"
+            opacity=".45"
+          />
+
+          {/* nose and tail sit at the bottom of the vertical ramp; light them back up */}
+          <ellipse cx="888" cy="216" rx="60" ry="46" fill={`url(#${p}-spec)`} opacity=".34" />
+          <ellipse cx="108" cy="218" rx="52" ry="44" fill={`url(#${p}-spec)`} opacity=".26" />
+          <ellipse cx="612" cy="212" rx="120" ry="26" fill={`url(#${p}-spec)`} opacity=".16" transform="rotate(-4 612 212)" />
+
+          <circle cx="262" cy="238" r="128" fill={`url(#${p}-archAO)`} />
+          <circle cx="760" cy="238" r="128" fill={`url(#${p}-archAO)`} />
+
+          {/* panel creases: a lit edge sitting on a shadowed one */}
+          <path d="M 652 194 C 610 208 578 220 556 232" fill="none" stroke="#c3f7dd" strokeWidth={1.4} opacity=".34" />
+          <path d="M 653.5 197 C 611.5 211 579.5 223 557.5 235" fill="none" stroke="#00190f" strokeWidth={2.2} opacity=".55" />
+          <path d="M 706 182 C 690 190 676 194 656 195" fill="none" stroke="#00190f" strokeWidth={2} opacity=".4" />
+
           {/* mid-engine side intake */}
-          <path d="M 300 176 C 336 190 366 198 392 202 L 384 226 C 350 220 318 208 288 192 Z" fill="#040706" />
-          <path d="M 306 183 C 338 194 364 201 386 205 L 384 212 C 358 208 330 200 302 190 Z" fill="#ccff00" opacity=".3" />
-          {/* door shut line */}
-          <path d="M 652 194 C 610 208 578 220 556 232 L 560 256" fill="none" stroke="#00301f" strokeWidth={2.5} opacity=".6" />
-          {/* character blade: white with a lime pinstripe */}
-          <path
-            d="M 150 210 C 330 242 540 244 700 218 C 756 209 800 196 832 180 L 836 192 C 802 210 758 224 702 234 C 540 258 330 256 148 224 Z"
-            fill="#fff"
-            opacity=".95"
-          />
-          <path d="M 150 230 C 330 260 540 258 698 236 L 697 243 C 540 264 330 262 149 236 Z" fill="#ccff00" opacity=".9" />
-          {/* rocker + diffuser shadow */}
-          <path d="M 330 256 L 700 258 L 700 272 L 330 268 Z" fill="#030605" opacity=".95" />
-          <path d="M 86 232 L 128 236 L 128 262 L 88 258 Z" fill="#050d09" opacity=".9" />
+          <path d="M 300 176 C 336 190 366 198 392 202 L 384 226 C 350 220 318 208 288 192 Z" fill="#010302" />
+          <path d="M 300 176 C 336 190 366 198 392 202 L 392 205 C 362 201 330 193 298 179 Z" fill="#d8ffed" opacity=".38" />
+          <path d="M 308 186 C 340 197 366 203 388 207 L 387 211 C 362 207 332 200 306 190 Z" fill="#3f9e70" opacity=".3" />
+
+          <rect x="0" y="230" width="1000" height="58" fill={`url(#${p}-rockerAO)`} />
+          <rect x="0" y="222" width="1000" height="66" fill={`url(#${p}-bounce)`} />
+          <rect x="82" y="222" width="58" height="60" fill="#000" opacity=".45" />
         </g>
 
         {/* splitter + diffuser */}
-        <path d="M 828 254 C 862 254 886 250 900 242 L 908 252 C 892 264 862 268 832 267 Z" fill="#050d09" />
-        <path d="M 92 244 L 206 256 L 206 266 L 104 262 Z" fill="#050d09" />
+        <path d="M 826 252 C 862 252 886 248 902 240 L 910 250 C 892 264 860 268 830 267 Z" fill="#050e0a" />
+        <path d="M 90 242 L 208 254 L 208 266 L 102 262 Z" fill="#050e0a" />
 
-        {/* headlight */}
-        <path d="M 852 180 C 872 190 890 200 904 212 L 896 224 C 882 212 864 202 844 192 Z" fill="#faffe8" />
-        <path d="M 855 186 C 872 195 887 204 899 214 L 896 218 C 883 208 868 200 851 192 Z" fill="#ccff00" />
-        {/* tail light bar */}
-        <path d="M 88 198 L 136 202 L 136 216 L 87 212 Z" fill="#ccff00" />
-        <path d="M 93 203 L 130 206 L 130 211 L 92 208 Z" fill="#fff" opacity=".75" />
+        {/* headlight: housing, lens, hot core, lime signature */}
+        <path d="M 848 178 C 872 189 892 201 906 214 L 896 226 C 880 213 860 201 838 190 Z" fill="#060f0b" />
+        <path d="M 852 183 C 873 193 890 204 902 215 L 897 221 C 883 210 866 199 845 190 Z" fill="#cfe9da" />
+        <path d="M 856 189 C 873 197 887 206 897 215 L 895 218 C 884 209 869 200 851 193 Z" fill="#fff" />
+        <path d="M 858.5 195 C 872 202 884 209 891 215" fill="none" stroke="#ccff00" strokeWidth={2.6} strokeLinecap="round" />
+        <ellipse cx="878" cy="203" rx="34" ry="17" fill={`url(#${p}-spec)`} opacity=".5" transform="rotate(32 878 203)" />
+
+        {/* taillight bar */}
+        <path d="M 86 196 L 138 201 L 138 218 L 85 213 Z" fill="#150907" />
+        <path d="M 89 200 L 134 204 L 134 214 L 88 210 Z" fill="#e8341a" />
+        <path d="M 91 202 L 132 206 L 132 209 L 90 205 Z" fill="#ffcfc4" opacity=".9" />
+
         {/* wing mirror */}
-        <path d="M 646 150 C 660 145 672 148 676 157 L 654 161 Z" fill="#02371f" />
+        <path d="M 644 150 C 660 144 674 148 678 158 L 652 162 Z" fill="#042c1d" />
+        <path d="M 646 151 C 660 146 671 149 675 156 L 660 158 Z" fill="#9fecc6" opacity=".4" />
 
-        {/* glass */}
+        {/* glass: tint, a hint of headrests, and a hard reflection streak */}
         <path
           d="M 654 190 L 564 120 C 550 110 534 106 516 106 L 426 106 C 406 106 392 113 379 127 L 342 154 C 424 178 524 188 654 190 Z"
           fill={`url(#${p}-glass)`}
         />
-        <path d="M 562 124 L 644 188 L 614 187 L 538 128 Z" fill="#fff" opacity=".12" />
-        <path d="M 428 110 L 502 110 L 406 150 L 374 138 Z" fill="#fff" opacity=".08" />
+        <path d="M 430 116 L 466 116 L 400 150 L 374 141 Z" fill="#101d17" opacity=".55" />
+        <path d="M 452 128 C 462 122 476 122 484 128 L 486 148 L 450 148 Z" fill="#050a08" opacity=".55" />
+        <path d="M 512 134 C 521 129 533 129 540 134 L 542 152 L 510 152 Z" fill="#050a08" opacity=".5" />
+        <path d="M 566 124 L 650 188 L 622 187 L 542 128 Z" fill="#fff" opacity=".16" />
+        <path d="M 592 140 L 646 184 L 636 184 L 582 143 Z" fill="#fff" opacity=".3" />
+        <path
+          d="M 654 190 L 564 120 C 550 110 534 106 516 106 L 426 106 C 406 106 392 113 379 127 L 342 154"
+          fill="none"
+          stroke="#0d3f2b"
+          strokeWidth={2.6}
+        />
 
-        <path d={CREST} fill="none" stroke={`url(#${p}-rimlight)`} strokeWidth={3} strokeLinecap="round" />
-
-        <Wheel cx={262} prefix={p} />
-        <Wheel cx={760} prefix={p} />
+        <Wheel cx={262} offset={0} prefix={p} />
+        <Wheel cx={760} offset={23} prefix={p} />
       </g>
     </svg>
   );

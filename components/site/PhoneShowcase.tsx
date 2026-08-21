@@ -1,40 +1,47 @@
 'use client';
 
-import Image from 'next/image';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
-import { Banknote, ChevronLeft, ChevronRight, Handshake, MapPin, Navigation, Pause, Play } from './Icons';
+import { ScreenBook, ScreenCash, ScreenEarn, ScreenPool, ScreenTrip } from './AppScreens';
+import { Banknote, ChevronLeft, ChevronRight, MapPin, Navigation, Pause, Play, TrendingUp, Users } from './Icons';
 import { useReducedMotion } from './useReducedMotion';
 import styles from './site.module.css';
 
 const SLIDES = [
   {
-    src: '/app/screen-book.png',
+    screen: ScreenBook,
     icon: MapPin,
     title: 'Book in seconds',
     body: 'Pickup, destination, and the fare you want to pay. Solo or pooled, cash or wallet — all decided on one screen.',
-    alt: 'The Velocity booking screen showing a pickup pin, a destination pin and a Request ride button.',
+    label: 'The booking screen: pickup and destination set, with a fare of 480 rupees offered and a Find a driver button.',
   },
   {
-    src: '/app/screen-track.png',
+    screen: ScreenPool,
+    icon: Users,
+    title: 'Split it with the city',
+    body: 'See who else is going your way before you commit, what each seat costs, and who is in the car with you.',
+    label: 'The pool screen: three riders matched, the fare dropping from 480 to 192 rupees, a 60 percent saving.',
+  },
+  {
+    screen: ScreenTrip,
     icon: Navigation,
     title: 'Track every metre',
     body: 'Watch your driver approach on a live map, share the trip with someone you trust, and reach the safety desk without leaving the ride.',
-    alt: 'The Velocity live trip screen tracking a driver on the map with the trip details below.',
+    label: 'The live trip screen: the driver four minutes away on the map, driver details, and an SOS button.',
   },
   {
-    src: '/app/screen-partner.png',
-    icon: Handshake,
-    title: 'Find a travel partner',
-    body: 'Match with people who make your commute, form groups, split the cost, and keep up with your city in the feed.',
-    alt: 'The Velocity Travel Partner screen showing commuter matches.',
+    screen: ScreenEarn,
+    icon: TrendingUp,
+    title: 'Earn with Velocity',
+    body: 'Run a fleet from your phone. Watch what your drivers and riders earn you, share your code, and withdraw when you want.',
+    label: 'The Earn with Velocity dashboard: 18,420 rupees earned this month, 24 drivers, 186 riders, fleet code 48213.',
   },
   {
-    src: '/app/screen-cash.png',
+    screen: ScreenCash,
     icon: Banknote,
     title: 'Pay in cash',
     body: 'No card, no account, no top-up needed. Hand the driver the fare at the end — the app handles the rest.',
-    alt: 'The Velocity payment screen with cash selected as the payment method.',
+    label: 'The trip summary screen: the fare broken down to 172 rupees with cash selected as the payment method.',
   },
 ];
 
@@ -174,30 +181,27 @@ export function PhoneShowcase() {
 
       <div className={styles.showcaseStage}>
         <span className={styles.showcaseGlow} aria-hidden="true" />
-        {SLIDES.map((s, i) => (
-          <div
-            key={s.src}
-            id={`${baseId}-panel-${i}`}
-            role="tabpanel"
-            aria-labelledby={`${baseId}-tab-${i}`}
-            inert={i !== active ? true : undefined}
-            className={`${styles.showcaseSlide} ${i === active ? styles.slideIn : styles.slideOut}`}
-          >
-            <div className={styles.phone}>
-              <span className={styles.notch} aria-hidden="true" />
-              <div className={styles.phoneScreen}>
-                <Image
-                  src={s.src}
-                  alt={s.alt}
-                  width={1080}
-                  height={1920}
-                  sizes="(max-width: 900px) 70vw, 300px"
-                  priority={i === 0}
-                />
+        {SLIDES.map((s, i) => {
+          const Screen = s.screen;
+          return (
+            <div
+              key={s.title}
+              id={`${baseId}-panel-${i}`}
+              role="tabpanel"
+              aria-labelledby={`${baseId}-tab-${i}`}
+              aria-label={s.label}
+              inert={i !== active ? true : undefined}
+              className={`${styles.showcaseSlide} ${i === active ? styles.slideIn : styles.slideOut}`}
+            >
+              <div className={styles.phone}>
+                <span className={styles.notch} aria-hidden="true" />
+                <div className={styles.phoneScreen}>
+                  <Screen />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

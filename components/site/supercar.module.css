@@ -5,25 +5,24 @@
 
 .rim {
   transform: rotate(var(--spin, 0deg));
-}
-
-/* Spoke detail fades out as the smear ring fades in, which is how a spinning
-   wheel actually reads to the eye. */
-.rim {
-  opacity: calc(1 - var(--blur, 0) * 0.85);
+  /* Spoke detail fades out as the smear ring fades in, which is how a spinning
+     wheel actually reads to the eye. */
+  opacity: calc(1 - var(--blur, 0) * 0.8);
 }
 
 .smear {
   opacity: var(--blur, 0);
 }
 
+/* Sits over a static, cold caliper, so the brake is always a physical part and
+   only the glow is speed-dependent. */
 .brake {
-  opacity: calc(var(--heat, 0) * 0.9);
+  opacity: calc(var(--heat, 0) * 0.95);
 }
 
 .flame {
-  opacity: calc(var(--heat, 0) * 0.85);
-  transform-origin: 52px 236px;
+  opacity: calc(var(--heat, 0) * 0.8);
+  transform-origin: 52px 230px;
   transform: scaleX(calc(0.5 + var(--heat, 0)));
 }
 
