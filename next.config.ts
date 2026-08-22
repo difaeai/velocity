@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
       { source: '/privacy-policy.html', destination: '/legal/privacy-policy.html' },
       { source: '/delete-account', destination: '/legal/delete-account.html' },
       { source: '/delete-account.html', destination: '/legal/delete-account.html' },
+      { source: '/terms', destination: '/legal/terms.html' },
+      { source: '/terms-of-service', destination: '/legal/terms.html' },
+      { source: '/terms.html', destination: '/legal/terms.html' },
     ];
   },
 };

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velocity Rides — Terms of Service</title>
+<meta name="description" content="Terms of Service for the Velocity Rides mobile app.">
+<style>
+  :root{
+    --bg:#f7f8f6; --surface:#ffffff; --ink:#161d18; --muted:#5c665f;
+    --border:#e5e9e3; --accent:#c3f000; --accent-ink:#1f2b10; --link:#2c7a46;
+    --shadow:0 1px 2px rgba(20,30,22,.05),0 8px 30px rgba(20,30,22,.05);
+    --maxw:44rem;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1210; --surface:#151a17; --ink:#e7ede8; --muted:#98a49b;
+      --border:#242b26; --link:#a8e05a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:clamp(1.25rem,4vw,3rem) clamp(1.1rem,4vw,2rem) 4rem}
+  header.doc{margin-bottom:2.5rem}
+  .brandbar{display:flex;align-items:center;gap:.7rem;margin-bottom:1.75rem}
+  .mark{display:inline-grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:.55rem;
+    background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:1.05rem;
+    letter-spacing:-.02em;box-shadow:var(--shadow)}
+  .brandname{font-weight:700;letter-spacing:-.01em;font-size:1.02rem}
+  .brandname small{display:block;font-weight:500;color:var(--muted);font-size:.72rem;letter-spacing:.02em}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 .6rem}
+  h1{font-size:clamp(1.9rem,5vw,2.7rem);line-height:1.08;letter-spacing:-.025em;
+    text-wrap:balance;margin:0 0 1rem;font-weight:800}
+  .meta{display:flex;flex-wrap:wrap;gap:.5rem .9rem;font-size:.85rem;color:var(--muted);
+    padding-top:1rem;border-top:1px solid var(--border)}
+  .meta b{color:var(--ink);font-weight:600}
+  .lede{font-size:1.06rem;color:var(--ink);margin:1.6rem 0 0;max-width:38rem}
+  section{margin-top:2.6rem}
+  h2{font-size:1.18rem;letter-spacing:-.01em;margin:0 0 .8rem;font-weight:700;
+    display:flex;gap:.7rem;align-items:baseline;text-wrap:balance}
+  h2 .n{font-family:var(--mono);font-size:.82rem;color:var(--accent-ink);
+    background:var(--accent);border-radius:.35rem;padding:.12rem .42rem;font-weight:700;
+    flex:none;transform:translateY(-1px)}
+  h3{font-size:.98rem;margin:1.5rem 0 .4rem;font-weight:700;letter-spacing:-.005em}
+  p{margin:.7rem 0}
+  a{color:var(--link);text-underline-offset:2px}
+  a:focus-visible{outline:2px solid var(--link);outline-offset:3px;border-radius:2px}
+  ul{margin:.6rem 0;padding-left:1.15rem}
+  li{margin:.35rem 0}
+  li::marker{color:var(--muted)}
+  strong{font-weight:650}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:.9rem;
+    padding:1.1rem 1.25rem;box-shadow:var(--shadow);margin-top:1rem}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:.9rem;margin-top:1.1rem;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;background:var(--surface)}
+  th,td{text-align:left;padding:.7rem .9rem;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    background:color-mix(in srgb,var(--surface) 92%,var(--ink))}
+  tr:last-child td{border-bottom:none}
+  td b{font-weight:650}
+  footer.doc{margin-top:3.5rem;padding-top:1.4rem;border-top:1px solid var(--border);
+    color:var(--muted);font-size:.85rem;display:flex;flex-direction:column;gap:.3rem}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;
+    color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:.2rem .6rem}
+</style>
+</head>
+</head>
+<body>
+<div class="wrap">
+  <header class="doc">
+    <div class="brandbar">
+      <span class="mark" aria-hidden="true">V</span>
+      <span class="brandname">Velocity Rides<small>com.velocityridzpk.app</small></span>
+    </div>
+    <p class="eyebrow">Legal · Terms</p>
+    <h1>Terms of Service</h1>
+    <p class="lede">These terms are the agreement between you and Velocity Rides. They explain what
+      the app does, what we expect of you, what you can expect of us, and what happens when
+      something goes wrong.</p>
+    <div class="meta">
+      <span><b>Effective:</b> 22 August 2026</span>
+      <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
+      <span><b>Contact:</b> <a href="mailto:support@velocityrides.app">support@velocityrides.app</a></span>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="n">1</span> Agreeing to these terms</h2>
+    <p>Velocity Rides (&ldquo;Velocity&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) operates a
+      ride-hailing and shared-travel platform in Pakistan. By creating an account, signing in, or
+      using the Velocity Rides app or website, you agree to these Terms of Service and to our
+      <a href="/privacy">Privacy Policy</a>. If you do not agree, do not use the app.</p>
+    <p>If you use Velocity on behalf of a business &mdash; a fleet, a franchise, or an advertiser
+      &mdash; you confirm you are authorised to accept these terms for that business.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> Eligibility and your account</h2>
+    <ul>
+      <li>You must be at least 18 years old to hold a Velocity account.</li>
+      <li>You sign in with your mobile number and a one-time code sent by SMS. Keep control of
+        that number and your device &mdash; anyone who receives the code can access your account.</li>
+      <li>One person, one account. Give accurate information and keep it current.</li>
+      <li>You are responsible for everything done through your account, including rides booked
+        for someone else.</li>
+    </ul>
+    <p>Tell us immediately at <a href="mailto:support@velocityrides.app">support@velocityrides.app</a>
+      if you believe someone else is using your account.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> What Velocity is &mdash; and is not</h2>
+    <p>Velocity is a technology platform that connects riders and senders with independent drivers
+      and couriers. <strong>We do not provide transport services.</strong> Drivers and couriers are
+      independent contractors, not our employees or agents. They choose whether to accept a
+      request, and the transport contract for a trip is between the rider and that driver.</p>
+    <p>We work to verify drivers &mdash; including CNIC and vehicle checks &mdash; but we do not
+      control how a driver drives, maintains a vehicle, or behaves. Use your own judgement, and
+      check that the vehicle and driver match what the app shows before you get in.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span> Using the app as a rider</h2>
+    <ul>
+      <li>Book only genuine trips. Do not create fake bookings, fake accounts, or repeatedly
+        cancel to manipulate driver supply, pricing, or promotions.</li>
+      <li>Be at the pickup point on time and be ready when the driver arrives.</li>
+      <li>Treat drivers and other passengers with respect. Harassment, threats, discrimination,
+        and any conduct that makes another person unsafe are grounds for immediate removal.</li>
+      <li>Do not carry weapons, illegal drugs, or anything prohibited by law. Do not smoke, vape,
+        or consume alcohol in a vehicle. Do not damage or soil a vehicle &mdash; if you do, you are
+        liable for cleaning or repair costs.</li>
+      <li>Wear a seatbelt where one is fitted, and follow safety instructions from your driver.</li>
+      <li>Do not ask a driver to break traffic law, exceed the vehicle&rsquo;s seating capacity, or
+        take payment outside the app in place of the fare shown.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span> Using the app as a driver or courier</h2>
+    <p>If you drive or deliver on Velocity, you additionally agree that:</p>
+    <ul>
+      <li>You hold a valid driving licence, vehicle registration, and any insurance and permits
+        required by law in your city, and you will keep them current. We may suspend your account
+        when a document expires or fails verification.</li>
+      <li>Your CNIC and vehicle details are genuine and belong to you. Driving on someone
+        else&rsquo;s account, or letting someone else drive on yours, is prohibited.</li>
+      <li>You complete accepted trips as offered, take the reasonable route, and do not solicit
+        payment above the fare the app shows or ask riders to cancel and pay off-app.</li>
+      <li>You do not discriminate against riders on any basis, and you honour gender preferences
+        where the app applies them to a shared ride.</li>
+      <li>You are responsible for your own taxes, fuel, maintenance, fines, and any employment or
+        social-security obligations arising from your work.</li>
+      <li>You use the app safely: do not interact with the screen while the vehicle is moving.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span> Fares, payment, and our commission</h2>
+    <p>The app shows an estimated fare before you book, calculated from distance, time, vehicle
+      type, and any surcharges in effect. The final fare may differ if the route, waiting time, or
+      destination changes during the trip.</p>
+    <ul>
+      <li><b>Cash.</b> Most trips are paid in cash directly to the driver at the end of the trip.
+        Pay the amount the app shows. Drivers are expected to carry change.</li>
+      <li><b>In-app payment.</b> Where a card or wallet method is available, payment is processed
+        by a third-party payment provider under its own terms. We do not store your full card
+        details.</li>
+      <li><b>Commission.</b> Velocity charges drivers a commission on completed fares. The current
+        rate is shown in the driver app. We may change it with notice.</li>
+      <li><b>Settlements.</b> Money owed to a driver or partner is settled to the account they
+        register with us. It is your responsibility to keep those details correct.</li>
+    </ul>
+    <p>Fares, surcharges, and commission rates can change. Changes apply to trips booked after the
+      change takes effect, never retroactively to a completed trip.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span> Shared rides, pools, and en-route pickups</h2>
+    <p>On a shared or pool ride you buy a seat, not the vehicle. That means:</p>
+    <ul>
+      <li>The driver may pick up and drop off other passengers along the route, and your trip may
+        take longer than a solo ride to the same destination.</li>
+      <li>Per-seat pricing depends on how many seats are taken. The price you are quoted at
+        booking is the price you pay, even if the pool does not fill.</li>
+      <li>Some pools are created by other riders and shared by invite link. Anyone with a public
+        pool link can request a seat; a private link is limited to whoever you send it to. Share
+        pool links only with people you are willing to travel with.</li>
+      <li>Where a pool is restricted by gender, you must not misrepresent your gender to join it.</li>
+      <li>Your approximate pickup and drop-off area is visible to others in the same pool. Do not
+        share another passenger&rsquo;s details outside the trip.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">8</span> Courier and parcel deliveries</h2>
+    <p>When you send a parcel, you confirm you are entitled to send it and that its contents are
+      legal. You must not send cash, jewellery, documents of title, weapons, drugs, hazardous or
+      perishable goods, live animals, or anything prohibited by law.</p>
+    <p>Describe the parcel accurately and pack it properly. Couriers may refuse or open a parcel
+      they reasonably believe is unsafe or unlawful. Liability for loss or damage is limited as set
+      out in section 17, and we are not liable at all for prohibited items.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">9</span> Cancellations, no-shows, and waiting</h2>
+    <p>You may cancel a booking before the driver arrives. A cancellation fee may apply once a
+      driver has been dispatched and has travelled toward you, or if you are not at the pickup
+      point after the free waiting period. The applicable fee is shown in the app before you
+      confirm the cancellation.</p>
+    <p>Repeated cancellations or no-shows &mdash; by a rider or a driver &mdash; may lead to
+      reduced matching priority or account suspension.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">10</span> Partner Program</h2>
+    <p>Partners in the Earn with Velocity program receive a share of the <strong>platform
+      commission</strong> Velocity earns on qualifying completed rides by users they introduce.
+      Partner earnings are a percentage of our commission, never a percentage of the fare, and
+      never a charge added to the rider.</p>
+    <ul>
+      <li>Earnings accrue only on genuine, completed, paid rides.</li>
+      <li>New partner earnings may be held for a review period before they become withdrawable.</li>
+      <li>Self-referral, fake accounts, incentivised sign-ups, spam, and any coordinated activity
+        between linked accounts void the earnings involved and may end your participation.</li>
+      <li>We may adjust the rate, the qualifying criteria, or end the program with notice.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">11</span> Business advertising</h2>
+    <p>Businesses can pay to send offers to Velocity users within a chosen radius. If you
+      advertise, you are solely responsible for your offer: it must be accurate, lawful, honoured
+      as stated, and not misleading. Any transaction arising from your offer is between you and the
+      customer &mdash; Velocity is not a party to it.</p>
+    <p>We review submissions and may reject or remove any advertisement, and we cap how often users
+      receive them. Advertising fees are for placement, not for a guaranteed number of customers or
+      any particular result.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">12</span> Fleet and franchise partners</h2>
+    <p>Fleet partners may add and manage drivers through the fleet portal. You are responsible for
+      the drivers you onboard: their documents, their conduct, and their compliance with these
+      terms. A fleet portal link is a convenience, not a credential &mdash; treat access to your
+      fleet the way you would treat any business account, and tell us if a link is misused.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">13</span> Ratings, conduct, suspension, and removal</h2>
+    <p>Riders and drivers rate each other after a trip. Ratings help keep the platform safe, and we
+      use them, along with reports and our own checks, to decide who may keep using Velocity.</p>
+    <p>We may warn, restrict, suspend, or permanently ban an account &mdash; with or without prior
+      notice, depending on severity &mdash; where we reasonably believe there has been fraud, a
+      safety risk, abuse or harassment, a serious or repeated breach of these terms, or activity
+      that harms other users or the platform. Where it is safe and lawful to do so, we will tell you
+      why and how to appeal. Appeals go to
+      <a href="mailto:support@velocityrides.app">support@velocityrides.app</a>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">14</span> Safety</h2>
+    <p>The app includes safety features such as trip sharing, an emergency contact button, and
+      driver verification. These are aids, not a substitute for emergency services. <strong>In an
+      emergency, call the police (15) or Rescue 1122 first.</strong> Location data is shared during
+      a trip as described in our <a href="/privacy">Privacy Policy</a>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">15</span> Disputes, refunds, and lost items</h2>
+    <p>If a fare looks wrong, an item was left in a vehicle, or something went wrong on a trip,
+      raise it in the app or email
+      <a href="mailto:support@velocityrides.app">support@velocityrides.app</a> within 7 days of the
+      trip. We investigate using trip records and both accounts, and we will tell you the
+      outcome.</p>
+    <p>Where a fare was charged in error we will correct it. Because most trips are paid in cash
+      directly to the driver, a correction may be settled through your Velocity balance or through
+      the driver rather than as a card refund.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">16</span> Advertising and third-party services</h2>
+    <p>Free accounts may see advertisements in the app. Ads are served by third parties, including
+      Google AdMob, and we do not endorse advertised products. The app also relies on third-party
+      services &mdash; maps, messaging, payments &mdash; each governed by its own terms. Links to
+      third-party sites are provided for convenience and are not under our control.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">17</span> Our responsibility, and its limits</h2>
+    <p>We provide the app with reasonable skill and care, but we do not promise that it will be
+      uninterrupted, error-free, or available everywhere at all times. Fare estimates, arrival
+      times, and map data are estimates.</p>
+    <p>Because drivers and couriers are independent, we are not responsible for their acts or
+      omissions, for the condition of a vehicle, or for the conduct of other passengers in a pool.
+      Nothing in these terms excludes liability for death or personal injury caused by our
+      negligence, for fraud, or for anything else that cannot be excluded under Pakistani law.</p>
+    <p>Subject to that, our total liability to you for any claim connected with the app or a trip
+      is limited to the greater of the fare for the trip the claim relates to, or PKR 10,000. We are
+      not liable for indirect or consequential loss, loss of profit, or loss of opportunity.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">18</span> Your responsibility to us</h2>
+    <p>You agree to cover our reasonable losses, costs, and claims arising from your breach of
+      these terms, your misuse of the app, or your breach of the law or the rights of another
+      person &mdash; including damage you cause to a vehicle or to a parcel.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">19</span> Our content and yours</h2>
+    <p>The Velocity name, logo, app, and content belong to us. You may use them only as needed to
+      use the service. Do not copy, reverse-engineer, scrape, or build a competing product from the
+      app, and do not use automated tools to access it.</p>
+    <p>Content you post &mdash; community posts, reviews, photos, support messages &mdash; remains
+      yours, but you grant us a licence to host, display, and moderate it so the service can work.
+      Do not post anything unlawful, hateful, deceptive, or that infringes someone else&rsquo;s
+      rights. We may remove content that breaches these terms.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">20</span> Ending your account</h2>
+    <p>You may stop using Velocity at any time and delete your account from Settings or by
+      following our <a href="/delete-account">account deletion</a> instructions. We may end or
+      suspend your access as described in section 13, or if we discontinue the service.</p>
+    <p>Ending an account does not cancel amounts already owed in either direction, and we keep
+      records we are required by law to keep &mdash; see the Privacy Policy.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">21</span> Changes to these terms</h2>
+    <p>We may update these terms. When we do, we will revise the &ldquo;Effective&rdquo; date above
+      and, for significant changes, notify you in the app. Continuing to use Velocity after a change
+      means you accept the updated terms. If you do not accept them, stop using the app and delete
+      your account.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">22</span> Governing law</h2>
+    <p>These terms are governed by the laws of the Islamic Republic of Pakistan, and the courts of
+      Pakistan have jurisdiction over any dispute. If any part of these terms is found
+      unenforceable, the rest continues to apply.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">23</span> Contact us</h2>
+    <p>Questions about these terms? Reach us at
+      <a href="mailto:support@velocityrides.app">support@velocityrides.app</a>.</p>
+  </section>
+
+  <footer class="doc">
+    <span class="pill">Velocity Rides &middot; com.velocityridzpk.app</span>
+    <span>&copy; 2026 Velocity Rides. All rights reserved.</span>
+  </footer>
+</div>
+</body>
+</html>

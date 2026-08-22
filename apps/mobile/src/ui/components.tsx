@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Text } from './Text';
 import { colors } from '../config';
+import { SUPPORT_EMAIL } from '../share/links';
 import { themed } from '../theme';
 
 type Variant = 'primary' | 'secondary' | 'danger';
@@ -21,8 +22,8 @@ export function comingSoon(feature = 'This feature') {
 
 /** Opens the device mail composer to contact support. */
 export function contactSupport() {
-  Linking.openURL('mailto:support@velocity.app').catch(() =>
-    Alert.alert('Support', 'Email us at support@velocity.app'),
+  Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() =>
+    Alert.alert('Support', `Email us at ${SUPPORT_EMAIL}`),
   );
 }
 

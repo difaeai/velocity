@@ -18,7 +18,7 @@ import { api } from '../../src/api/client';
 import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { DELETE_ACCOUNT_URL, PRIVACY_URL } from '../../src/share/links';
+import { DELETE_ACCOUNT_URL, PRIVACY_URL, TERMS_URL } from '../../src/share/links';
 import { otherLanguageLabel, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
 
@@ -181,6 +181,8 @@ export default function Settings() {
           <Row icon="🎧" label="Contact support" onPress={() => router.push('/passenger/support-chat')} />
           <View style={styles.divider} />
           <Row icon="📄" label="Privacy Policy" onPress={() => openLegal(PRIVACY_URL)} />
+          <View style={styles.divider} />
+          <Row icon="📜" label="Terms of Service" onPress={() => openLegal(TERMS_URL)} />
           <View style={styles.divider} />
           <Row icon="🗑️" label="Delete my account" onPress={() => openLegal(DELETE_ACCOUNT_URL)} />
         </View>

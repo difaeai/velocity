@@ -19,7 +19,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { startPhoneVerification, type PhoneVerification } from '../../src/auth/phoneSignIn';
 import { colors } from '../../src/config';
-import { PRIVACY_URL } from '../../src/share/links';
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
 import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
@@ -291,8 +291,7 @@ export default function SignIn() {
   useEffect(() => () => confirmation?.cancel(), [confirmation]);
 
   function contactSupport() {
-    // Placeholder support address until a real support channel ships.
-    Linking.openURL('mailto:support@govelocity.pk').catch(() => {});
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
   }
 
   const cooldownLabel = `0:${String(resendCooldown % 60).padStart(2, '0')}`;
@@ -361,6 +360,13 @@ export default function SignIn() {
 
       <Text style={styles.terms}>
         By continuing, you agree to Velocity&apos;s{' '}
+        <Text
+          style={styles.termsLink}
+          onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
+        >
+          Terms of Service
+        </Text>{' '}
+        and{' '}
         <Text
           style={styles.termsLink}
           onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
