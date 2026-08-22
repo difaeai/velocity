@@ -223,6 +223,18 @@ export const adminApi = {
     { uid: string; suspended: boolean; reason?: string },
     { ok: boolean }
   >('adminSuspendAdvertiser'),
+  adminListDriverSubmissions: callable<
+    { status?: 'pending' | 'approved' | 'rejected'; limit?: number },
+    { ok: boolean; submissions: Record<string, unknown>[] }
+  >('adminListDriverSubmissions'),
+  adminReviewDriverSubmission: callable<
+    { submissionId: string; decision: 'approve' | 'reject'; reason?: string },
+    { ok: boolean; status: string; driverUid?: string; fleetBound?: boolean }
+  >('adminReviewDriverSubmission'),
+  adminRotatePartnerPortal: callable<
+    { uid: string; reason?: string },
+    { ok: boolean; portalId: string }
+  >('adminRotatePartnerPortal'),
   adminUpdateBusinessAdSettings: callable<
     {
       tiers?: { key: string; maxRadiusKm: number; monthlyFee: number; adSlots: number }[];
@@ -233,4 +245,74 @@ export const adminApi = {
     },
     { ok: boolean }
   >('adminUpdateBusinessAdSettings'),
+};
+
+/* ── franchise portal ─────────────────────────────────────────────────────
+ * Called from the Pro partner's own web portal, not from the admin console.
+ * Each is guarded server-side by `requirePortalOwner`, which re-derives
+ * ownership from the signed-in uid — the portalId in the payload is a claim,
+ * never a credential.
+ * ------------------------------------------------------------------------- */
+
+export interface PortalSubmission {
+  id: string;
+  fullName: string;
+  phone: string;
+  vehicleType: string;
+  vehicleLabel: string;
+  plate: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason: string | null;
+  fleetBound: boolean;
+  createdAt: { seconds: number } | null;
+  reviewedAt: { seconds: number } | null;
+}
+
+export interface PortalPayload {
+  ok: boolean;
+  partner: {
+    uid: string;
+    fullName: string | null;
+    city: string | null;
+    mobile: string | null;
+    tier: string;
+    level: string;
+    referralCode: string | null;
+    portalId: string;
+    totalDrivers: number;
+    totalPassengers: number;
+    completedRides: number;
+    lifetimeEarnings: number;
+  };
+  wallet: { balance: number; pending: number; withdrawn: number; currency: string } | null;
+  submissions: { pending: number; approved: number; rejected: number };
+}
+
+export interface PortalDriverInput {
+  portalId: string;
+  fullName: string;
+  phone: string;
+  email?: string;
+  cnic: string;
+  licenseNumber?: string;
+  vehicleType: string;
+  vehicleLabel: string;
+  plate: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
+  notes?: string;
+}
+
+export const portalApi = {
+  getPortal: callable<{ portalId: string }, PortalPayload>('getFranchisePortal'),
+  listDrivers: callable<
+    { portalId: string; status?: string; limit?: number },
+    { ok: boolean; drivers: PortalSubmission[] }
+  >('franchiseListDrivers'),
+  submitDriver: callable<PortalDriverInput, { ok: boolean; submissionId: string; status: string }>(
+    'franchiseSubmitDriver',
+  ),
+  withdrawSubmission: callable<{ portalId: string; submissionId: string }, { ok: boolean }>(
+    'franchiseWithdrawSubmission',
+  ),
 };

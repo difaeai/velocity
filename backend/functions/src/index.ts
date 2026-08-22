@@ -31,6 +31,17 @@ export { submitCancellationFeeSettlement } from './payments/cancellationFees';
 // Franchise management
 export { adminCreateFranchise, adminAssignFranchise } from './franchises';
 
+// Franchise portal — a Pro partner's own web dashboard for building their fleet
+export {
+  getFranchisePortal,
+  adminRotatePartnerPortal,
+  franchiseSubmitDriver,
+  franchiseListDrivers,
+  franchiseWithdrawSubmission,
+  adminListDriverSubmissions,
+  adminReviewDriverSubmission,
+} from './franchise';
+
 // Trip lifecycle
 export {
   createTrip,

@@ -1,0 +1,535 @@
+/* Fleet portal — the Pro partner's working surface.
+   Same brand as the marketing site (deep green, lime accent) but built as a
+   tool: dense, high contrast, no decoration that does not carry information. */
+
+.page,
+.shell {
+  --ink: #04170f;
+  --ink-2: #08241a;
+  --panel: #0b2a1d;
+  --brand: #046b41;
+  --lime: #ccff00;
+  --white: #ffffff;
+  --text: #eaf3ee;
+  --mut: rgba(234, 243, 238, 0.62);
+  --line: rgba(255, 255, 255, 0.12);
+  --danger: #ff6a55;
+  --warn: #ffc453;
+
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(18, 161, 94, 0.16), transparent 60%),
+    var(--ink);
+  color: var(--text);
+  font-family: var(--font-body), system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.shell {
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.centreNote {
+  color: var(--mut);
+}
+
+.wrap {
+  width: min(1080px, calc(100% - 40px));
+  margin-inline: auto;
+}
+
+.page :is(h1, h2) {
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.page :is(a, button):focus-visible,
+.shell :is(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--lime);
+  color: #0a1300;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  flex: none;
+}
+
+/* ── sign-in card ──────────────────────────────────────────────────────── */
+.authCard {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  padding: 34px;
+  border-radius: 24px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.authTitle {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.authSub {
+  color: var(--mut);
+  font-size: 15px;
+}
+
+.fine {
+  font-size: 13px;
+  color: rgba(234, 243, 238, 0.45);
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  width: 100%;
+}
+
+/* ── inputs ────────────────────────────────────────────────────────────── */
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mut);
+}
+
+.label i {
+  font-style: normal;
+  color: var(--lime);
+}
+
+.hint {
+  font-size: 12.5px;
+  color: rgba(234, 243, 238, 0.42);
+}
+
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15.5px;
+}
+
+.input::placeholder {
+  color: rgba(234, 243, 238, 0.32);
+}
+
+.input:focus {
+  border-color: rgba(204, 255, 0, 0.5);
+}
+
+.textarea {
+  min-height: 0;
+  resize: vertical;
+}
+
+.codeInput {
+  font-family: var(--font-display), sans-serif;
+  font-size: 26px;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+/* ── buttons ───────────────────────────────────────────────────────────── */
+.primary,
+.secondary,
+.signOut,
+.rowBtn,
+.linkBtn {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.primary {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--lime);
+  color: #0a1300;
+  font-size: 16px;
+}
+
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #d9ff3d;
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.secondary,
+.signOut,
+.rowBtn {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 14.5px;
+}
+
+.secondary:hover,
+.signOut:hover,
+.rowBtn:hover:not(:disabled) {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+
+.rowBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rowBtnSpacer {
+  display: block;
+  min-width: 108px;
+}
+
+.linkBtn {
+  border: 0;
+  background: none;
+  color: var(--mut);
+  font-size: 14px;
+  text-decoration: underline;
+  padding: 6px 0;
+}
+
+.linkBtn:hover {
+  color: var(--lime);
+}
+
+/* ── messages ──────────────────────────────────────────────────────────── */
+.error,
+.success {
+  width: 100%;
+  padding: 12px 15px;
+  border-radius: 12px;
+  font-size: 14.5px;
+}
+
+.error {
+  background: rgba(255, 106, 85, 0.12);
+  border: 1px solid rgba(255, 106, 85, 0.4);
+  color: #ffb3a6;
+}
+
+.success {
+  background: rgba(204, 255, 0, 0.1);
+  border: 1px solid rgba(204, 255, 0, 0.35);
+  color: var(--lime);
+}
+
+/* ── top bar ───────────────────────────────────────────────────────────── */
+.topbar {
+  border-bottom: 1px solid var(--line);
+  background: rgba(4, 23, 15, 0.85);
+  backdrop-filter: blur(14px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar .wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 72px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: auto;
+  min-width: 0;
+}
+
+.brand b {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand small {
+  display: block;
+  font-size: 12.5px;
+  color: var(--mut);
+}
+
+/* ── layout ────────────────────────────────────────────────────────────── */
+.page main {
+  display: grid;
+  gap: 20px;
+  padding: 28px 0 72px;
+}
+
+.h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.panel {
+  display: grid;
+  /* an implicit `auto` column would size to the unbroken portal URL and burst
+     the card; minmax(0,·) lets the value truncate instead */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-content: start;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+
+.panelNote {
+  font-size: 14.5px;
+  color: var(--mut);
+  max-width: 68ch;
+}
+
+.twoUp {
+  display: grid;
+  /* minmax(0,·) or the long portal URL's min-content width steals the row: a
+     bare 1fr is minmax(auto, 1fr), and auto respects unbreakable content. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+/* title, note, then the value pinned to the bottom, so the two cards line up
+   however differently their copy wraps */
+.twoUp .panel {
+  grid-template-rows: auto 1fr auto;
+}
+
+@media (max-width: 820px) {
+  .twoUp {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── stats ─────────────────────────────────────────────────────────────── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stat {
+  display: grid;
+  gap: 4px;
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+
+.stat b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.statAccent {
+  color: var(--lime);
+}
+
+.stat small {
+  font-size: 13px;
+  color: var(--mut);
+  line-height: 1.4;
+}
+
+@media (max-width: 820px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── copyable values ───────────────────────────────────────────────────── */
+.copyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px dashed var(--line);
+}
+
+.codeBig,
+.codeSmall {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display), ui-monospace, monospace;
+  color: var(--lime);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codeBig {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.codeSmall {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+/* ── form ──────────────────────────────────────────────────────────────── */
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .formGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.form .primary {
+  justify-self: start;
+  width: auto;
+  min-width: 220px;
+}
+
+/* ── driver list ───────────────────────────────────────────────────────── */
+.empty {
+  color: var(--mut);
+  font-size: 15px;
+  max-width: 62ch;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--line);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowMain b {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.rowMain small {
+  display: block;
+  font-size: 13.5px;
+  color: var(--mut);
+}
+
+.reason {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 13.5px;
+  color: var(--warn);
+}
+
+.pill {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pillPending {
+  background: rgba(255, 196, 83, 0.14);
+  color: var(--warn);
+  border: 1px solid rgba(255, 196, 83, 0.35);
+}
+
+.pillApproved {
+  background: rgba(204, 255, 0, 0.12);
+  color: var(--lime);
+  border: 1px solid rgba(204, 255, 0, 0.35);
+}
+
+.pillRejected {
+  background: rgba(255, 106, 85, 0.12);
+  color: #ffb3a6;
+  border: 1px solid rgba(255, 106, 85, 0.35);
+}
+
+@media (max-width: 640px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .rowMain {
+    flex-basis: 100%;
+  }
+
+  .rowBtnSpacer {
+    display: none;
+  }
+}

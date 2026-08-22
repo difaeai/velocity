@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin, invalid } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
+import { mintPortalId } from '../franchise/portal';
 
 const updateSchema = z.object({
   partnerId: z.string().min(1).max(128),
@@ -44,6 +45,13 @@ export const adminUpdatePartner = onCall(async (req) => {
   if (city !== undefined) patch.city = city;
   if (mobile !== undefined) patch.mobile = mobile;
   if (tier !== undefined) patch.tier = tier;
+
+  // Upgrading someone to Pro from this screen has to hand them the portal too,
+  // otherwise they hold the tier that pays for a dashboard they cannot reach.
+  if (tier === 'pro' && !snap.get('portalId')) {
+    patch.portalId = await mintPortalId();
+    patch.portalIssuedAt = FieldValue.serverTimestamp();
+  }
   await ref.set(patch, { merge: true });
 
   // The fleets carry the partner's name — a renamed partner whose fleets still

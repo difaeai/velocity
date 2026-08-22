@@ -15,6 +15,7 @@ const NAV = [
   { href: '/dashboard/passengers',     label: '👥 Passengers' },
   { href: '/dashboard/disputes',       label: '⚖️ Disputes' },
   { href: '/dashboard/partners',       label: '🏢 Partner Program' },
+  { href: '/dashboard/fleet-submissions', label: '🧾 Fleet submissions' },
   { href: '/dashboard/advertise',      label: '📣 Advertise' },
   { href: '/dashboard/special-rides',  label: '🚗 Special Rides' },
   { href: '/dashboard/ride-settings',  label: '⚙️ Ride settings' },

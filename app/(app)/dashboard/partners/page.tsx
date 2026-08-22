@@ -61,6 +61,8 @@ interface Application {
 }
 
 interface Partner {
+  /** Pro only — the id in their private fleet-portal URL. */
+  portalId?: string;
   id: string;
   tier?: Tier;
   referralCode?: string;
@@ -569,7 +571,8 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
                   />
                 </td>
                 <td style={td}>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {p.tier === 'pro' ? <PortalActions partner={p} /> : null}
                     <Button
                       variant="ghost"
                       disabled={busy === p.id}
@@ -1006,3 +1009,66 @@ const docBox: React.CSSProperties = {
 
 const th: React.CSSProperties = { padding: '8px 10px', fontWeight: 700, whiteSpace: 'nowrap' };
 const td: React.CSSProperties = { padding: '10px', color: colors.text, whiteSpace: 'nowrap' };
+
+/**
+ * A Pro partner's fleet-portal link: copy it to send them, or reissue it if the
+ * old one got out. Reissuing takes effect on the partner's next request — the
+ * gate re-reads `portalId` every call rather than trusting an open tab.
+ */
+function PortalActions({ partner }: { partner: Partner }) {
+  const [portalId, setPortalId] = useState(partner.portalId ?? null);
+  const [state, setState] = useState<'idle' | 'copied' | 'working'>('idle');
+
+  const url = portalId ? `${typeof window !== 'undefined' ? window.location.origin : ''}/f/${portalId}` : null;
+
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setState('copied');
+      window.setTimeout(() => setState('idle'), 2000);
+    } catch {
+      window.prompt('Copy this link', url);
+    }
+  }
+
+  async function reissue() {
+    if (
+      !window.confirm(
+        `Reissue ${partner.fullName ?? 'this partner'}'s portal link?
+
+The old link stops working immediately and you will need to send them the new one.`,
+      )
+    ) {
+      return;
+    }
+    setState('working');
+    try {
+      const res = await adminApi.adminRotatePartnerPortal({ uid: partner.id });
+      setPortalId(res.portalId);
+      setState('idle');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not reissue the link.');
+      setState('idle');
+    }
+  }
+
+  if (!portalId) {
+    return (
+      <Button variant="ghost" disabled={state === 'working'} onClick={reissue}>
+        {state === 'working' ? 'Issuing…' : 'Issue portal'}
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button variant="ghost" onClick={copy}>
+        {state === 'copied' ? 'Copied' : 'Portal link'}
+      </Button>
+      <Button variant="ghost" disabled={state === 'working'} onClick={reissue}>
+        {state === 'working' ? 'Reissuing…' : 'Reissue'}
+      </Button>
+    </>
+  );
+}

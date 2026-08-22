@@ -600,6 +600,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- driver_submissions/{id} ------------------------------------------
+    // Drivers a Pro partner filed from their fleet portal, waiting on an admin.
+    // Admin-read only: the owning partner reads their own through the
+    // franchiseListDrivers callable, never by querying the collection, so one
+    // partner can never widen the filter and enumerate a rival's fleet. Written
+    // exclusively by Cloud Functions — a client-writable submission queue would
+    // let a partner file a driver and mark it approved in the same breath.
+    match /driver_submissions/{submissionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- fareConfig/{cityId} ----------------------------------------------
     // City-level fare engine rates (per-km / per-min, base fares, bid floors,
     // surge cap, pooling factors, commission). The booking screen reads these
