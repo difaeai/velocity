@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Outfit, Work_Sans } from 'next/font/google';
 
+import { SITE_URL as SITE } from '@/lib/site';
+
 import './globals.css';
 
 const outfit = Outfit({
@@ -16,8 +18,6 @@ const workSans = Work_Sans({
   variable: '--font-body',
   display: 'swap',
 });
-
-const SITE = 'https://velocity--velocity-fe379.us-east4.hosted.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),

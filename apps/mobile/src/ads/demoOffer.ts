@@ -29,7 +29,7 @@ export const DEMO_OFFER = {
     'Dine-in and takeaway. Show this offer at the counter before you pay.',
   imageUrl:
     process.env.EXPO_PUBLIC_DEMO_AD_IMAGE_URL ??
-    'https://velocity--velocity-fe379.us-east4.hosted.app/demo/kfc-offer.jpg',
+    'https://velocityrides.app/demo/kfc-offer.jpg',
   /** Gulberg Greens, Islamabad — used only for the directions link. */
   center: { lat: 33.6152, lng: 73.1489 },
 } as const;

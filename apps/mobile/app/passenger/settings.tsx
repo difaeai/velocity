@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,9 +18,20 @@ import { api } from '../../src/api/client';
 import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { comingSoon } from '../../src/ui/components';
+import { DELETE_ACCOUNT_URL, PRIVACY_URL } from '../../src/share/links';
 import { otherLanguageLabel, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
+
+/**
+ * Opens a legal page in the browser. Play requires the privacy policy and the
+ * account-deletion instructions to be reachable from inside the app, and both
+ * are served from the website rather than duplicated as native screens.
+ */
+function openLegal(url: string) {
+  Linking.openURL(url).catch(() =>
+    Alert.alert('Could not open the page', url),
+  );
+}
 
 function Row({
   icon,
@@ -168,7 +180,9 @@ export default function Settings() {
         <View style={styles.card}>
           <Row icon="🎧" label="Contact support" onPress={() => router.push('/passenger/support-chat')} />
           <View style={styles.divider} />
-          <Row icon="📄" label="Terms & Privacy" onPress={() => comingSoon('Terms & Privacy')} />
+          <Row icon="📄" label="Privacy Policy" onPress={() => openLegal(PRIVACY_URL)} />
+          <View style={styles.divider} />
+          <Row icon="🗑️" label="Delete my account" onPress={() => openLegal(DELETE_ACCOUNT_URL)} />
         </View>
 
         <View style={[styles.card, { marginTop: 16 }]}>

@@ -350,7 +350,7 @@ export default function AdminDashboard() {
         <View style={styles.footerNote}>
           <Text style={styles.footerText}>
             Full admin web dashboard: manage rides, drivers, fares, and analytics at{'\n'}
-            velocity-fe379.web.app/admin
+            velocityrides.app/dashboard
           </Text>
         </View>
       </ScrollView>
