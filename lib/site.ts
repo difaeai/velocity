@@ -17,8 +17,16 @@ export const SITE_URL = 'https://velocityrides.app';
 export const PRIVACY_URL = `${SITE_URL}/privacy`;
 export const DELETE_ACCOUNT_URL = `${SITE_URL}/delete-account`;
 
-/** Where support mail goes. Kept here so the legal pages and the site agree. */
-export const SUPPORT_EMAIL = 'berreto01@gmail.com';
+/** Terms of Service. Served by the same rewrite mechanism as the two above. */
+export const TERMS_URL = `${SITE_URL}/terms`;
+
+/**
+ * Where support mail goes. Kept here so the legal pages and the site agree.
+ *
+ * This is a domain mailbox, not a personal inbox: it has to keep working when
+ * someone else answers support. Point it wherever mail should actually land.
+ */
+export const SUPPORT_EMAIL = 'support@velocityrides.app';
 
 /**
  * Official profiles, emitted as schema.org `sameAs` on the homepage.

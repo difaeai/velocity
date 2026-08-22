@@ -32,6 +32,7 @@ import styles from '@/components/site/site.module.css';
 import {
   SITE_URL as SITE,
   PRIVACY_URL,
+  TERMS_URL,
   DELETE_ACCOUNT_URL,
   SOCIAL_PROFILES,
   FACEBOOK_URL,
@@ -764,6 +765,9 @@ export default function Home() {
               <a href="#safety">Safety</a>
               <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
                 Privacy policy
+              </a>
+              <a href={TERMS_URL} target="_blank" rel="noreferrer">
+                Terms of service
               </a>
               <a href={DELETE_ACCOUNT_URL} target="_blank" rel="noreferrer">
                 Delete your account

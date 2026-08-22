@@ -763,8 +763,13 @@ export const UR: Record<string, string> = {
   'Front of your vehicle': 'آپ کی گاڑی کا سامنے',
   'More photos': 'مزید تصاویر',
   'Add other angles — sides, back or interior.': 'دیگر زاویے شامل کریں — اطراف، پیچھے یا اندر۔',
-  'By submitting you agree to our Terms &amp; Privacy Policy.':
-    'جمع کرا کر آپ ہماری شرائط اور رازداری پالیسی سے اتفاق کرتے ہیں۔',
+  // The consent line is now two tappable links, so it is translated in pieces:
+  // <Text> translates each string leaf on its own.
+  'By submitting you agree to our': 'جمع کرا کر آپ ہماری',
+  'Terms of Service': 'سروس کی شرائط',
+  'Privacy Policy': 'رازداری پالیسی',
+  'and': 'اور',
+  "By continuing, you agree to Velocity's": 'جاری رکھ کر، آپ ویلوسٹی کی',
   'Submitted': 'جمع ہو گئی',
   'Your application is under review.': 'آپ کی درخواست زیرِ جائزہ ہے۔',
   'Waiting for admin approval…': 'ایڈمن کی منظوری کا انتظار…',

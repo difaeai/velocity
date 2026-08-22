@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,6 +8,7 @@ import { useDriverProfile } from '../../../src/hooks/driver';
 import { useOnboarding, type SectionKey } from '../../../src/onboarding/context';
 import { OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
 import { themed } from '../../../src/theme';
+import { PRIVACY_URL, TERMS_URL } from '../../../src/share/links';
 
 const SECTIONS: { key: SectionKey; label: string; route: string }[] = [
   { key: 'basic', label: 'Basic info', route: '/passenger/become-driver/basic-info' },
@@ -111,7 +112,17 @@ export default function Checklist() {
               : 'Complete all the sections above first — the incomplete ones are marked with !'
           }
         />
-        <Text style={styles.terms}>By submitting you agree to our Terms &amp; Privacy Policy.</Text>
+        <Text style={styles.terms}>
+          By submitting you agree to our{' '}
+          <Text style={styles.termsLink} onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}>
+            Terms of Service
+          </Text>{' '}
+          and{' '}
+          <Text style={styles.termsLink} onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}>
+            Privacy Policy
+          </Text>
+          .
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -148,4 +159,5 @@ const styles = themed(() => StyleSheet.create({
   chevron: { color: oc.green, fontSize: 24, fontWeight: '500' },
   error: { color: '#c0392b', fontWeight: '600', fontSize: 14 },
   terms: { color: oc.sub, fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  termsLink: { color: oc.green, fontWeight: '800', textDecorationLine: 'underline' },
 }));

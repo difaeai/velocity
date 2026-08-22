@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDriverEntry } from '../../../src/hooks/useDriverEntry';
 import { themed } from '../../../src/theme';
+import { SUPPORT_EMAIL } from '../../../src/share/links';
 
 function Benefit({ icon, text }: { icon: string; text: string }) {
   return (
@@ -49,7 +50,7 @@ export default function DriverIntro() {
   const openMenu = () =>
     Alert.alert('Velocity', undefined, [
       { text: 'Switch to passenger mode', onPress: goPassenger },
-      { text: 'Contact support', onPress: () => Linking.openURL('mailto:support@velocity.app').catch(() => {}) },
+      { text: 'Contact support', onPress: () => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {}) },
       { text: 'Close', style: 'cancel' },
     ]);
 

@@ -18,6 +18,10 @@ export const WEB_ORIGIN =
 /** Legal pages shown from Settings and sign-in, and listed in Play Console. */
 export const PRIVACY_URL = `${WEB_ORIGIN}/privacy`;
 export const DELETE_ACCOUNT_URL = `${WEB_ORIGIN}/delete-account`;
+export const TERMS_URL = `${WEB_ORIGIN}/terms`;
+
+/** The one support address. Anything user-facing must use this, not a literal. */
+export const SUPPORT_EMAIL = 'support@velocityrides.app';
 
 /** Builds an https share link that opens the given in-app path. */
 export function appLink(path: string): string {
