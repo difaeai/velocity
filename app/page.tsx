@@ -29,10 +29,16 @@ import {
   Wallet,
 } from '@/components/site/Icons';
 import styles from '@/components/site/site.module.css';
+import {
+  SITE_URL as SITE,
+  PRIVACY_URL,
+  DELETE_ACCOUNT_URL,
+  SOCIAL_PROFILES,
+  FACEBOOK_URL,
+  INSTAGRAM_URL,
+} from '@/lib/site';
 
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
-const LEGAL = 'https://velocity-fe379.web.app';
-const SITE = 'https://velocity--velocity-fe379.us-east4.hosted.app';
 
 /** Store badge — Play links out, Apple is honestly marked as not shipped yet. */
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
@@ -194,6 +200,7 @@ const JSON_LD = {
       url: SITE,
       logo: `${SITE}/app/icon.png`,
       areaServed: { '@type': 'Country', name: 'Pakistan' },
+      sameAs: SOCIAL_PROFILES,
     },
     {
       '@type': 'MobileApplication',
@@ -755,11 +762,17 @@ export default function Home() {
             <div className={styles.footerCol}>
               <h3>Company</h3>
               <a href="#safety">Safety</a>
-              <a href={`${LEGAL}/privacy-policy.html`} target="_blank" rel="noreferrer">
+              <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
                 Privacy policy
               </a>
-              <a href={`${LEGAL}/delete-account.html`} target="_blank" rel="noreferrer">
+              <a href={DELETE_ACCOUNT_URL} target="_blank" rel="noreferrer">
                 Delete your account
+              </a>
+              <a href={FACEBOOK_URL} target="_blank" rel="noreferrer">
+                Facebook
+              </a>
+              <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer">
+                Instagram
               </a>
             </div>
           </div>

@@ -8,10 +8,31 @@
   },
   "hosting": {
     "site": "velocity-fe379",
-    "public": "docs",
-    "ignore": ["**/*.md", "**/.*"],
-    "rewrites": [
-      { "source": "/", "destination": "/privacy-policy.html" }
+    "public": "hosting",
+    "ignore": [
+      "**/.*"
+    ],
+    "redirects": [
+      {
+        "source": "/privacy-policy.html",
+        "destination": "https://velocityrides.app/privacy",
+        "type": 301
+      },
+      {
+        "source": "/delete-account.html",
+        "destination": "https://velocityrides.app/delete-account",
+        "type": 301
+      },
+      {
+        "source": "/admin{,/**}",
+        "destination": "https://velocityrides.app/dashboard",
+        "type": 301
+      },
+      {
+        "source": "**",
+        "destination": "https://velocityrides.app",
+        "type": 301
+      }
     ]
   },
   "functions": [
@@ -26,10 +47,20 @@
     }
   ],
   "emulators": {
-    "auth": { "port": 9099 },
-    "functions": { "port": 5001 },
-    "firestore": { "port": 8080 },
-    "storage": { "port": 9199 },
-    "ui": { "enabled": true }
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "ui": {
+      "enabled": true
+    }
   }
 }

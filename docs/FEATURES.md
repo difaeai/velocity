@@ -1606,9 +1606,13 @@ until the booking itself is placed.
 ## 19. Admin console
 
 Next.js app at the repo root (`app/`, `components/`, `lib/`), deployed to
-Firebase App Hosting at
-`velocity--velocity-fe379.us-east4.hosted.app`. Email sign-in, **admin-claim
-gated** — non-admins are rejected. `/link` serves the share-link interstitial.
+Firebase App Hosting and served from the custom domain `velocityrides.app`
+(the App Hosting default domain `velocity--velocity-fe379.us-east4.hosted.app`
+still answers on the same backend). Every outward-facing URL is built from
+`lib/site.ts` on the web and `src/share/links.ts` in the app. Email sign-in,
+**admin-claim gated** — non-admins are rejected. `/link` serves the share-link
+interstitial; `/privacy` and `/delete-account` serve the Play Console legal
+pages from `public/legal/`.
 
 | Page | What it does |
 |---|---|

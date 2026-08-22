@@ -32,7 +32,7 @@ import { requireAdmin, requireAuth, invalid } from '../lib/guards';
  * links; the default is the production App Hosting origin.
  */
 export const PORTAL_ORIGIN =
-  process.env.VELOCITY_WEB_ORIGIN ?? 'https://velocity--velocity-fe379.us-east4.hosted.app';
+  process.env.VELOCITY_WEB_ORIGIN ?? 'https://velocityrides.app';
 
 export function portalUrl(portalId: string): string {
   return `${PORTAL_ORIGIN}/f/${portalId}`;

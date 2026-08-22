@@ -55,7 +55,7 @@ import { rateLimit } from '../lib/ratelimit';
  */
 const DEMO_IMAGE_URL =
   process.env.BUSINESS_AD_DEMO_IMAGE_URL ??
-  'https://velocity--velocity-fe379.us-east4.hosted.app/demo/kfc-offer.jpg';
+  'https://velocityrides.app/demo/kfc-offer.jpg';
 
 /**
  * The demo offer. `distanceKm` is a fixed, made-up number rather than the

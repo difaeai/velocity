@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const SITE = 'https://velocity--velocity-fe379.us-east4.hosted.app';
+import { SITE_URL as SITE } from '@/lib/site';
 
 export default function robots(): MetadataRoute.Robots {
   return {

@@ -19,6 +19,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { startPhoneVerification, type PhoneVerification } from '../../src/auth/phoneSignIn';
 import { colors } from '../../src/config';
+import { PRIVACY_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
 import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
@@ -359,8 +360,14 @@ export default function SignIn() {
       <View style={styles.flexSpacer} />
 
       <Text style={styles.terms}>
-        By continuing, you agree to Velocity's <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-        <Text style={styles.termsLink}>Privacy Policy</Text>.
+        By continuing, you agree to Velocity&apos;s{' '}
+        <Text
+          style={styles.termsLink}
+          onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
+        >
+          Privacy Policy
+        </Text>
+        .
       </Text>
     </ScrollView>
   );
