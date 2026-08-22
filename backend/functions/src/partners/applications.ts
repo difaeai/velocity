@@ -32,6 +32,7 @@ import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth, invalid } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { getPartnerSettings } from './config';
+import { mintPortalId, portalUrl } from '../franchise/portal';
 import { createFleetsForPartner, mintPartnerCode } from './fleets';
 import type { PartnerApplicationStatus, PartnerTier } from './types';
 
@@ -268,6 +269,11 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
     parsed.data.tier ?? ((snap.get('tier') as PartnerTier | undefined) ?? 'free');
   const code = decision === 'approve' ? await mintPartnerCode() : null;
 
+  // Pro buys a private web portal for running a fleet. Minted here for the same
+  // reason the code is — it queries for collisions, and a partner who has to ask
+  // support for their link is a partner who never opens it.
+  const portalId = decision === 'approve' && tier === 'pro' ? await mintPortalId() : null;
+
   // Pro is bought by the month (3, 6 or 12). The clock starts at approval, not
   // at payment — the applicant shouldn't lose days to the review queue.
   const proMonths =
@@ -306,6 +312,8 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
         proMonths,
         proExpiresAt,
         referralCode: code,
+        portalId,
+        portalIssuedAt: portalId ? now : null,
         fullName,
         mobile: snap.get('mobile'),
         city: snap.get('city'),
@@ -352,7 +360,10 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
   const copy: Record<PartnerApplicationStatus, { title: string; body: string }> = {
     approved: {
       title: 'You are a Velocity Partner 🎉',
-      body: `Approved on the ${tier === 'pro' ? 'Pro' : 'Free'} tier. Your referral code is ${code}. Share it to start building your fleets.`,
+      body:
+        tier === 'pro'
+          ? `Approved on Pro. Your code is ${code}. Your private fleet portal: ${portalUrl(portalId!)} — sign in with this same number.`
+          : `Approved on the Free tier. Your referral code is ${code}. Share it to start building your fleets.`,
     },
     rejected: {
       title: 'Partner application rejected',

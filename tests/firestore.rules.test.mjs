@@ -42,6 +42,9 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     driverId: 'driver1', verificationStatus: 'pending', online: false, rating: 4.5,
   });
   await setDoc(doc(db, 'system/counters'), { totalRevenue: 0 });
+  await setDoc(doc(db, 'driver_submissions/sub1'), {
+    partnerId: 'partner1', fullName: 'Rashid', phone: '+923001234567', status: 'pending',
+  });
   await setDoc(doc(db, 'config/fares'), { bike: 150 });
   await setDoc(doc(db, 'trips/trip1'), {
     passengerId: 'passenger1', driverId: 'driver1', status: 'requested',
@@ -263,4 +266,19 @@ test('presence: owner writes their own beacon, nobody may read anyone else\'s', 
     lat: 33.72, lng: 73.06, geohash: 'tuu4z', lastSeenAt: new Date(),
   }));
   await assertSucceeds(deleteDoc(doc(passenger, 'userPresence/passenger1')));
+});
+
+test('fleet submissions are admin-read and server-write only', async () => {
+  // The partner who filed it reads their own through the franchiseListDrivers
+  // callable, never from the collection — otherwise a partner could widen the
+  // filter and enumerate a rival fleet's drivers and their CNICs.
+  await assertFails(getDoc(doc(passenger, 'driver_submissions/sub1')));
+  await assertFails(getDoc(doc(driver, 'driver_submissions/sub1')));
+  await assertFails(getDoc(doc(anon, 'driver_submissions/sub1')));
+  await assertSucceeds(getDoc(doc(admin, 'driver_submissions/sub1')));
+
+  // Nobody writes here directly — a client-writable queue would let a partner
+  // file a driver and mark it approved in the same breath.
+  await assertFails(setDoc(doc(passenger, 'driver_submissions/sub2'), { status: 'approved' }));
+  await assertFails(updateDoc(doc(admin, 'driver_submissions/sub1'), { status: 'approved' }));
 });

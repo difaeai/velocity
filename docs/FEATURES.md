@@ -22,6 +22,7 @@ Companion documents: [ARCHITECTURE](ARCHITECTURE.md) · [PAYMENTS](PAYMENTS.md) 
 8. [Couriers](#8-couriers)
 9. [Business — Business delivery and “Find your Customers”](#9-business--business-delivery-and-find-your-customers)
 10. [Earn with Velocity — the Partner Program](#10-earn-with-velocity--the-partner-program)
+    - [10.11 The Pro fleet portal (web)](#1011-the-pro-fleet-portal-web)
 11. [Special Rides — rent your car out](#11-special-rides--rent-your-car-out)
 12. [Franchises](#12-franchises)
 13. [Travel Partner](#13-travel-partner)
@@ -1061,6 +1062,59 @@ the code and share links.
 
 The landing page headlines an **“earn up to 730,000 PKR/month”** ceiling
 (`MONTHLY_CEILING`) with the fine print attached, animated up from zero.
+
+---
+
+### 10.11 The Pro fleet portal (web)
+
+`backend/functions/src/franchise/*`, web route `app/(portal)/f/[portalId]`, admin
+page **Fleet submissions**.
+
+**Pro buys a web dashboard of the partner's own.** Free partners do not get one.
+
+- **The link.** Approving a Pro application mints a 22-character `portalId` on
+  `partners/{uid}` and the partner's private address becomes
+  `https://<web-host>/f/<portalId>`. It is sent to them in the approval push, and
+  an admin can copy or reissue it from the Partner Program page
+  (`adminRotatePartnerPortal`). Upgrading a free partner to Pro from that same
+  screen mints one too.
+- **The link is not a credential.** It is unguessable so it does not turn up in
+  scans or referrer logs, but `requirePortalOwner` re-derives ownership from the
+  *signed-in uid* on every call: partner doc exists, tier is `pro`, status is
+  `active`, Pro has not expired, and `portalId` matches. A stranger who opens the
+  link sees the sign-in screen and nothing else, and a rotated link stops working
+  on the next request rather than whenever a tab is next reloaded.
+- **Sign-in is phone + OTP** against the same Firebase account the partner uses
+  in the app. Firebase keys phone users by number within a project, so web OTP
+  resolves to the same uid `partners/{uid}` is filed under — no account linking,
+  no second password. The web host must be in Firebase Auth's **authorised
+  domains** or `signInWithPhoneNumber` refuses.
+
+**Filing a driver.** `franchiseSubmitDriver` writes `driver_submissions/{id}` and
+creates *nothing else*: no auth account, no `drivers/{uid}`, no fleet edge. A
+partner able to mint driver accounts could mint a fleet of accounts they control
+and farm commission on staged rides between them — the door stays shut rather
+than relying on the fraud engine to catch it afterwards. Rate-limited to 40/hour.
+Refused if the phone or CNIC is the partner's own (self-referral), or if the
+number or plate is already filed by anyone.
+
+**Approving.** `adminReviewDriverSubmission` is the final approval the flow waits
+on. On approve it resolves the driver's auth account **by phone number**
+(creating it if new, because that is how drivers actually sign in), grants the
+`driver` role, writes `drivers/{uid}` as `approved`, and binds
+`driver_referrals/{uid}` to the partner's **driver fleet** so the ordinary Pro
+rate pays through the existing commission path — [§10.7](#107-earning-on-a-ride).
+No new money path exists here; the portal is a recruitment surface, not a second
+earning scheme, and the franchise 5% of [§12](#12-franchises) is **not** applied.
+
+The retro-crediting rule of [§10.5](#105-referral-integrity) is preserved: a
+driver who has already completed rides is approved as a driver but **not**
+credited to the fleet, and both the admin and the partner are told which happened
+rather than left wondering why a counter did not move.
+
+`driver_submissions` is **admin-read, server-write only**. The owning partner
+reads their own through `franchiseListDrivers`, never by querying the collection,
+so one partner can never widen the filter and enumerate a rival's drivers.
 
 ---
 
