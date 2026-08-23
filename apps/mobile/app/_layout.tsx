@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, useSyncExternalStore } from 'react';
 import { LogBox, Platform } from 'react-native';
 import { Slot, useRouter } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -28,6 +29,18 @@ LogBox.ignoreLogs([
 ]);
 
 const isExpoGo = Constants.appOwnership === 'expo';
+
+// The gate at the bottom of RootLayout renders `null` until the saved theme,
+// language and warm cache have loaded. Without this the native splash hides the
+// moment the JS bundle is up, so that gate shows as a bare white flash between
+// the brand splash and the first screen. Holding the splash across it means the
+// user sees the logo until there is something real to look at.
+//
+// Global scope, not an effect: by the time a component body runs, auto-hide has
+// already fired. Rejections are ignored on purpose — a splash that will not stay
+// put is a cosmetic problem, never a reason to fail a launch.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.setOptions({ duration: 250, fade: true });
 
 export default function RootLayout() {
   const router = useRouter();
@@ -115,7 +128,15 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  if (!themeMode || !language || !cacheReady) return null;
+  // Hand the screen over only once the gate below is open, so the splash gives
+  // way directly to a painted screen. useEffect, not the render body: hiding
+  // mid-render would race the first commit and flash white anyway.
+  const ready = Boolean(themeMode) && Boolean(language) && cacheReady;
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  if (!ready) return null;
 
   return (
     <SafeAreaProvider>

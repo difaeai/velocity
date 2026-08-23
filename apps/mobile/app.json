@@ -47,6 +47,19 @@
       "./plugins/withRemovePermissions",
       "expo-router",
       "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#101211",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#101211"
+          }
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       [
