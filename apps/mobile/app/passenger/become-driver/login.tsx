@@ -128,8 +128,12 @@ export default function DriverLogin() {
         if (isResend) setOtp('');
       } catch (e) {
         landed = true;
-        const { message, throttled } = describePhoneAuthError(e);
+        const { message, throttled, misconfigured, detail } = describePhoneAuthError(e);
         if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
+        // Same refusal the passenger sign-in screen logs: a console
+        // misconfiguration fails identically on every retry, and the native text
+        // is the only thing that names which setting is at fault.
+        if (misconfigured && detail) console.warn('[phone-auth] send refused:', detail);
         setError(message);
       } finally {
         clearTimeout(patience);

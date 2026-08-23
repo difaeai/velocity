@@ -72,6 +72,49 @@ function SmsIcon({ size = 26 }: { size?: number }) {
   );
 }
 
+/**
+ * The red failure line, with the native diagnostic hidden behind a long-press.
+ *
+ * A passenger sees a plain sentence and nothing else. But when the cause is a
+ * project misconfiguration the sentence alone cannot be acted on by anybody —
+ * the Android SDK's own text is the only thing that names the console setting at
+ * fault, and this app ships signed by Play, so there is no debug build to
+ * reproduce it on. A long-press is discoverable enough for whoever needs it and
+ * invisible to everyone else.
+ */
+function ErrorLine({
+  error,
+  detail,
+  shown,
+  onReveal,
+  centered = false,
+}: {
+  error: string | null;
+  detail: string | null;
+  shown: boolean;
+  onReveal: () => void;
+  centered?: boolean;
+}) {
+  if (!error) return null;
+  const align = centered ? ({ textAlign: 'center' } as const) : undefined;
+  return (
+    <View>
+      <Text
+        style={[styles.error, align]}
+        onLongPress={detail ? onReveal : undefined}
+        suppressHighlighting
+      >
+        {error}
+      </Text>
+      {detail && shown ? (
+        <Text selectable style={[styles.errorDetail, align]}>
+          {detail}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 /* ──────────────────────────────── Screen ────────────────────────────────── */
 
 // LayoutAnimation needs an explicit opt-in on the old Android architecture;
@@ -90,7 +133,28 @@ export default function SignIn() {
   const [confirmation, setConfirmation] = useState<PhoneVerification | null>(null);
   const [sending, setSending]           = useState(false);   // Send / Resend OTP
   const [verifying, setVerifying]       = useState(false);   // Verify OTP
-  const [error, setError]               = useState<string | null>(null);
+  const [error, setErrorText]           = useState<string | null>(null);
+  // The native SDK's own words about why a send failed, kept aside rather than
+  // shown. A passenger must never read a Firebase exception — but when the cause
+  // is a project misconfiguration, this string names the console setting that
+  // needs changing, and it is the only place that information exists. Long-press
+  // the red line to reveal it.
+  const [errorDetail, setErrorDetail]   = useState<string | null>(null);
+  const [detailShown, setDetailShown]   = useState(false);
+
+  /**
+   * Sets the red line, and the diagnostic that belongs to it.
+   *
+   * Every error path goes through here so the two can never drift apart: a stale
+   * native message left attached to a new, unrelated failure would send whoever
+   * reads it chasing a problem that is no longer happening. Callers with nothing
+   * to attach simply omit the second argument and the old one is dropped.
+   */
+  function setError(message: string | null, detail?: string) {
+    setErrorText(message);
+    setErrorDetail(detail && detail.length ? detail : null);
+    setDetailShown(false);
+  }
   // True while the soft keyboard is up. The brand block collapses and the
   // scroll view follows the card, so the input and the Continue button are
   // never left hiding behind the keypad.
@@ -206,11 +270,16 @@ export default function SignIn() {
         adoptConfirmation(result, isResend);
       } catch (e) {
         landed = true;
-        const { message, throttled } = describePhoneAuthError(e);
+        const { message, throttled, misconfigured, detail } = describePhoneAuthError(e);
         // Sit out a server-side throttle locally, with a countdown, rather than
         // letting retries extend it.
         if (throttled) await noteOtpThrottled(digits, SMS_THROTTLE_COOLDOWN_MS);
-        setError(message);
+        // A project misconfiguration will fail identically on every retry, so the
+        // native text is the only thing that moves it forward. Put it in logcat
+        // for whoever is holding a cable, and behind a long-press for whoever is
+        // holding the phone.
+        if (misconfigured && detail) console.warn('[phone-auth] send refused:', detail);
+        setError(message, misconfigured ? detail : undefined);
       } finally {
         clearTimeout(patience);
         setSending(false);
@@ -341,7 +410,12 @@ export default function SignIn() {
           />
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <ErrorLine
+          error={error}
+          detail={errorDetail}
+          shown={detailShown}
+          onReveal={() => setDetailShown(true)}
+        />
 
         <Pressable
           style={[styles.primaryBtn, styles.primaryGlow, sending && { opacity: 0.7 }]}
@@ -435,7 +509,14 @@ export default function SignIn() {
         </Text>
       </Pressable>
 
-      {error ? <Text style={[styles.error, { textAlign: 'center' }]}>{error}</Text> : null}
+      <ErrorLine
+        error={error}
+        detail={errorDetail}
+        shown={detailShown}
+        onReveal={() => setDetailShown(true)}
+        centered
+      />
+
 
       {/* Auto-read card */}
       <View style={styles.autoReadCard}>
@@ -488,6 +569,9 @@ const styles = themed(() => StyleSheet.create({
   flex: { flex: 1 },
   flexSpacer: { flexGrow: 1, minHeight: 16 },
   error: { color: colors.danger, fontSize: 13, fontWeight: '700' },
+  // Selectable so the text can be copied into a bug report rather than retyped
+  // off a photograph of the screen.
+  errorDetail: { color: colors.muted, fontSize: 11, marginTop: 6, lineHeight: 15 },
 
   /* ── Phone step ── */
   phoneContainer: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 28 },
