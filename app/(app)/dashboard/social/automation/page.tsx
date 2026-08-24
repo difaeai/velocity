@@ -110,9 +110,10 @@ export default function AutomationPage() {
       <header>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Automation</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          When the crew works, what they make, and where it goes. What they say is on the{' '}
-          <Link href="/dashboard/social/crew" style={{ color: colors.secondary, fontWeight: 700 }}>
-            crew page
+          When the team works, what they make, and where it goes. Who does the work, and what they
+          are told, is on the{' '}
+          <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
+            Employees page
           </Link>
           .
         </p>
