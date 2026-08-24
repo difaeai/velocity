@@ -10,7 +10,7 @@
  * field rather than eight.
  */
 import { employeeIntro } from './employees';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   ROLE_SPECS,
@@ -148,7 +148,6 @@ Reply with one JSON object and nothing else:
     model: params.settings.textModel,
     system: `${system}\n\n${standingInstructions(params.settings)}`,
     what: "The team's plan",
-    temperature: 1,
     prompt: [
       `FORMAT: ${spec.label} — ${spec.brief}`,
       `Aspect ${spec.aspect}${spec.seconds ? `, about ${spec.seconds} seconds` : ''}${spec.slides > 1 ? `, ${spec.slides} slides` : ''}.`,

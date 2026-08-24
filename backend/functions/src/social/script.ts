@@ -18,7 +18,7 @@
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';
 import { feedbackBlock, planBlock, researchBlock, systemFor } from './crew';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   type ContentFormat,
@@ -140,8 +140,6 @@ export async function draftPost(params: {
     model: params.settings.textModel,
     system: `${systemFor(params.employee, params.settings)}\n\n${RESPONSE_SHAPE}`,
     what: "Today's script",
-    temperature: 1,
-    maxOutputTokens: 3000,
     prompt: [
       `FORMAT: ${spec.label}. ${frameBrief(params.format)}`,
       `TODAY'S ANGLE: ${params.angle} — ${brief}`,
@@ -230,8 +228,6 @@ export async function rewriteCaption(params: {
     model: params.settings.textModel,
     system: `${systemFor(params.employee, params.settings)}\n\nReply with one JSON object and nothing else:\n{ "caption": "the rewritten caption, no hashtags", "hashtags": ["5-8 tags, no # prefix"] }`,
     what: 'The rewritten caption',
-    temperature: 0.9,
-    maxOutputTokens: 1200,
     prompt: [
       `The piece is already made. Its hook is: ${params.script.hook}`,
       params.script.cta ? `It closes on: ${params.script.cta}` : '',

@@ -125,7 +125,12 @@ export default function AutomationPage() {
       {readiness ? (
         <Card>
           <h2 style={h2}>Before it can run</h2>
-          <Readiness readiness={readiness} connectedCount={settings.platforms.length} staffed={staffed} />
+          <Readiness
+            readiness={readiness}
+            connectedCount={settings.platforms.length}
+            staffed={staffed}
+            providers={{ image: settings.imageProvider, video: settings.videoProvider }}
+          />
           {coverage.length ? (
             <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
               {coverage[0]}{' '}

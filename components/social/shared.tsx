@@ -405,57 +405,93 @@ export function StatusPill({ status }: { status: string }) {
 }
 
 /**
- * What is wired up and what is not. Shown wherever someone is about to rely on
+ * What is wired up and what is not. Shown wherever somebody is about to rely on
  * the desk, because the failure everyone hits is switching automation on and
  * finding out at 10am that a key was never added — or that nobody was hired.
+ *
+ * Three states, not two. A row that is **off by choice** — video rendering you
+ * deliberately left switched off — is not a green tick, because a tick reads as
+ * "this is working" and would be a lie; and it is not a warning either, because
+ * nothing is wrong. It gets a dash and says what it means for the work.
  */
 export function Readiness({
   readiness,
   connectedCount,
   staffed,
+  providers,
 }: {
   readiness: { writer: boolean; designer: boolean; video: boolean; tokenVault: boolean };
   connectedCount: number;
   staffed?: number;
+  /** What the console has rendering switched to, when the caller knows. */
+  providers?: { image: 'gemini' | 'none'; video: 'veo' | 'none' };
 }) {
-  const rows = [
+  type Row = { state: 'ok' | 'warn' | 'off'; label: string; note: string };
+
+  const all: Row[] = [
     {
-      ok: (staffed ?? 0) > 0,
+      state: (staffed ?? 0) > 0 ? 'ok' : 'warn',
       label: 'Somebody on the team',
-      good: `${staffed} employee${staffed === 1 ? '' : 's'} on the books.`,
-      bad: 'Nobody works here yet. Hire at least a content writer on the Employees page — an empty office makes nothing.',
+      note:
+        (staffed ?? 0) > 0
+          ? `${staffed} employee${staffed === 1 ? '' : 's'} on the books.`
+          : 'Nobody works here yet. Hire at least a content writer on the Employees page — an empty office makes nothing.',
     },
     {
-      ok: readiness.writer,
-      label: 'The engine (Gemini)',
-      good: 'GEMINI_API_KEY is set — everyone can work.',
-      bad: 'GEMINI_API_KEY is missing. Add it to the backend secrets; nobody can plan, write or draw without it.',
+      state: readiness.writer ? 'ok' : 'warn',
+      label: 'The engine (Claude)',
+      note: readiness.writer
+        ? 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.'
+        : 'ANTHROPIC_API_KEY is missing. Add it to the backend secrets; nobody can plan, write, brief or reply without it.',
     },
     {
-      ok: readiness.tokenVault,
+      state: readiness.tokenVault ? 'ok' : 'warn',
       label: 'Token vault',
-      good: 'SOCIAL_TOKEN_KEY is set — access tokens can be stored encrypted.',
-      bad: 'SOCIAL_TOKEN_KEY is missing. Generate one with `openssl rand -base64 32`, add it as a GitHub Actions secret and redeploy. Accounts cannot be connected until then.',
+      note: readiness.tokenVault
+        ? 'SOCIAL_TOKEN_KEY is set — access tokens can be stored encrypted.'
+        : 'SOCIAL_TOKEN_KEY is missing. Generate one with `openssl rand -base64 32`, add it as a GitHub Actions secret and redeploy. Accounts cannot be connected until then.',
     },
     {
-      ok: readiness.designer,
-      label: 'Image rendering',
-      good: 'Pictures are generated for posts, carousels and covers.',
-      bad: 'Image rendering is off. The designer still writes the art direction — attach the files yourself from the queue.',
+      // Claude writes the art direction; it does not draw. The pictures are
+      // Google's, on the Gemini key, which is why this row names a different one.
+      state: providers && providers.image === 'none' ? 'off' : readiness.designer ? 'ok' : 'warn',
+      label: 'Pictures (Google)',
+      note:
+        providers && providers.image === 'none'
+          ? 'Switched off. The designer still writes the art direction — attach the files yourself from the queue.'
+          : readiness.designer
+            ? 'Slides, post images and covers are drawn on the Gemini key.'
+            : 'GEMINI_API_KEY is missing, so nothing can be drawn. Add it, or switch pictures off and attach them yourself.',
     },
     {
-      ok: readiness.video,
-      label: 'Video rendering',
-      good: 'Videos are rendered.',
-      bad: 'Video rendering is off. The editor still writes the cut — attach the file yourself from the queue.',
+      state: providers && providers.video === 'none' ? 'off' : readiness.video ? 'ok' : 'warn',
+      label: 'Video (Google Veo)',
+      note:
+        providers && providers.video === 'none'
+          ? 'Switched off — the most expensive thing here. The editor still writes the cut; attach the file yourself.'
+          : readiness.video
+            ? 'Videos are rendered by Veo on the Gemini key.'
+            : 'GEMINI_API_KEY is missing, so nothing can be rendered. Add it, or switch video off and attach the file yourself.',
     },
     {
-      ok: connectedCount > 0,
+      state: connectedCount > 0 ? 'ok' : 'warn',
       label: 'Connected accounts',
-      good: `${connectedCount} account${connectedCount === 1 ? '' : 's'} connected.`,
-      bad: 'No accounts connected yet, so there is nowhere to publish.',
+      note:
+        connectedCount > 0
+          ? `${connectedCount} account${connectedCount === 1 ? '' : 's'} connected.`
+          : 'No accounts connected yet, so there is nowhere to publish.',
     },
-  ].filter((r) => staffed !== undefined || r.label !== 'Somebody on the team');
+  ];
+
+  // The queue and the accounts pages show this without a headcount; there, the
+  // staffing row is somebody else's question.
+  const rows = all.filter((r) => staffed !== undefined || r.label !== 'Somebody on the team');
+
+  const MARK: Record<Row['state'], { bg: string; glyph: string }> = {
+    ok: { bg: '#0ca30c', glyph: '✓' },
+    warn: { bg: '#fab219', glyph: '!' },
+    off: { bg: '#9aa5a0', glyph: '–' },
+  };
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
@@ -474,14 +510,14 @@ export function Readiness({
               fontSize: 11,
               fontWeight: 900,
               color: '#fff',
-              background: r.ok ? '#0ca30c' : '#fab219',
+              background: MARK[r.state].bg,
             }}
           >
-            {r.ok ? '✓' : '!'}
+            {MARK[r.state].glyph}
           </span>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{r.label}</div>
-            <div style={{ fontSize: 12.5, color: colors.muted }}>{r.ok ? r.good : r.bad}</div>
+            <div style={{ fontSize: 12.5, color: colors.muted }}>{r.note}</div>
           </div>
         </div>
       ))}

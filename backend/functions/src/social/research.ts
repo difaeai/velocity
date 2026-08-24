@@ -24,7 +24,7 @@ import { logger } from 'firebase-functions';
 
 import { db } from '../lib/firebase';
 import { BRAND, systemFor } from './crew';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings } from './types';
 
 /** Kept per day so a second run the same morning does not pay for it twice. */
@@ -103,8 +103,6 @@ export async function runResearch(params: {
         .join('\n\n'),
       what: 'The market read',
       grounded: true,
-      temperature: 0.7,
-      maxOutputTokens: 3000,
       prompt: [
         `Date: ${params.date}. Market: Pakistan.`,
         competitors.length

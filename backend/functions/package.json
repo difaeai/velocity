@@ -18,7 +18,7 @@
     "publish:version": "node scripts/publish-app-version.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.1",
+    "@anthropic-ai/sdk": "^0.120.0",
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^6.3.2",
     "geofire-common": "^6.0.0",

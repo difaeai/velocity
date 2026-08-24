@@ -1,26 +1,21 @@
 /**
- * The one door to Google. Every agent on the desk talks to Gemini through this
- * file — Qalam writes with it, Rang draws with it, Raftar's Veo renders go
- * through the same key, and Awaaz reads comments with it.
+ * The one door to Google — and, since the desk moved its thinking to Claude,
+ * only for the things Claude cannot make: **pictures and video.**
  *
- * Raw REST rather than an SDK, on purpose: the backend already calls Veo this
- * way (see video.ts), the surface used here is four endpoints wide, and a
- * dependency that ships breaking changes on someone else's schedule is a bad
- * trade for a function that has to still work at 10am unattended.
+ * Rang's frames are rendered here, and `video.ts` borrows `geminiKey` and
+ * `GEMINI_BASE` to drive a Veo render the same way. Everything written or
+ * decided — research, scripts, SEO, captions, replies — goes through
+ * `claude.ts` instead.
  *
- * Two things here are worth knowing before changing anything:
+ * Raw REST rather than an SDK, on purpose: the surface used here is two
+ * endpoints wide, and a dependency that ships breaking changes on someone
+ * else's schedule is a bad trade for a function that has to still work at 10am
+ * unattended.
  *
- * 1. **Grounded calls cannot ask for JSON.** `responseMimeType:
- *    application/json` and the `google_search` tool are mutually exclusive in
- *    the API. So a grounded call asks for JSON in the prompt and the reply is
- *    parsed tolerantly — which is what `extractJson` is for, and why every
- *    caller has to survive a null.
- * 2. **Model ids come from settings, not from here.** Google renames preview
- *    models often; when `gemini-2.5-flash-image` becomes something else, that
- *    is a text field in the console, not a redeploy.
+ * Model ids come from settings, not from here. Google renames preview models
+ * often; when `gemini-2.5-flash-image` becomes something else, that is a text
+ * field in the console, not a redeploy.
  */
-import { logger } from 'firebase-functions';
-
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 export class GeminiError extends Error {
@@ -30,7 +25,7 @@ export class GeminiError extends Error {
   }
 }
 
-/** True when anything on this desk can run at all. */
+/** True when pictures (and, if switched on, video) can be rendered. */
 export function geminiReady(): boolean {
   const key = process.env.GEMINI_API_KEY;
   return typeof key === 'string' && key.trim() !== '';
@@ -40,7 +35,7 @@ export function geminiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key || !key.trim()) {
     throw new GeminiError(
-      'GEMINI_API_KEY is not configured, so the content crew cannot run. Add it as a GitHub Actions secret and redeploy.',
+      'GEMINI_API_KEY is not configured, so nothing can be drawn or rendered. Add it as a GitHub Actions secret and redeploy.',
     );
   }
   return key.trim();
@@ -88,112 +83,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
-// ── text ────────────────────────────────────────────────────────────────────
+// ── the shape of a generateContent reply ────────────────────────────────────
 
 interface Candidate {
   content?: { parts?: { text?: string; inlineData?: { mimeType?: string; data?: string } }[] };
   finishReason?: string;
-  groundingMetadata?: {
-    groundingChunks?: { web?: { uri?: string; title?: string } }[];
-    webSearchQueries?: string[];
-  };
 }
 
 interface GenerateResponse {
   candidates?: Candidate[];
   promptFeedback?: { blockReason?: string };
-}
-
-export interface GroundedSource {
-  title: string;
-  url: string;
-}
-
-export interface TextResult {
-  text: string;
-  /** Populated only on grounded calls — what the model actually read. */
-  sources: GroundedSource[];
-  searches: string[];
-}
-
-export interface TextRequest {
-  model: string;
-  system: string;
-  prompt: string;
-  /** Let the model run a Google search first. Costs a call; buys today's facts. */
-  grounded?: boolean;
-  temperature?: number;
-  maxOutputTokens?: number;
-}
-
-export async function generateText(req: TextRequest): Promise<TextResult> {
-  const body: Record<string, unknown> = {
-    systemInstruction: { parts: [{ text: req.system }] },
-    contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
-    generationConfig: {
-      temperature: req.temperature ?? 0.9,
-      maxOutputTokens: req.maxOutputTokens ?? 4096,
-      // See the file header: JSON mode and search grounding cannot coexist.
-      ...(req.grounded ? {} : { responseMimeType: 'application/json' }),
-    },
-    ...(req.grounded ? { tools: [{ google_search: {} }] } : {}),
-  };
-
-  const res = await post<GenerateResponse>(`models/${encodeURIComponent(req.model)}:generateContent`, body);
-
-  if (res.promptFeedback?.blockReason) {
-    throw new GeminiError(`Gemini refused the prompt (${res.promptFeedback.blockReason}).`);
-  }
-  const candidate = res.candidates?.[0];
-  const text = (candidate?.content?.parts ?? []).map((p) => p.text ?? '').join('').trim();
-  if (!text) {
-    throw new GeminiError(
-      `Gemini returned nothing usable${candidate?.finishReason ? ` (${candidate.finishReason})` : ''}.`,
-    );
-  }
-
-  const sources: GroundedSource[] = [];
-  for (const chunk of candidate?.groundingMetadata?.groundingChunks ?? []) {
-    const url = chunk.web?.uri;
-    if (!url) continue;
-    if (sources.some((s) => s.url === url)) continue;
-    sources.push({ title: chunk.web?.title ?? url, url });
-  }
-
-  return { text, sources, searches: candidate?.groundingMetadata?.webSearchQueries ?? [] };
-}
-
-/**
- * Pull the first JSON object out of a reply. Grounded answers come back as
- * prose with the object somewhere inside it, and a fenced ```json block is the
- * common shape, so both are handled rather than insisted against.
- */
-export function extractJson<T>(text: string): T | null {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidates = [fenced?.[1], text].filter((s): s is string => typeof s === 'string');
-
-  for (const candidate of candidates) {
-    const start = candidate.indexOf('{');
-    const end = candidate.lastIndexOf('}');
-    if (start === -1 || end <= start) continue;
-    try {
-      return JSON.parse(candidate.slice(start, end + 1)) as T;
-    } catch {
-      /* try the next shape */
-    }
-  }
-  return null;
-}
-
-/** Ask for one JSON object and get it back, or fail with what came instead. */
-export async function generateJson<T>(req: TextRequest & { what: string }): Promise<{ data: T; sources: GroundedSource[] }> {
-  const result = await generateText(req);
-  const data = extractJson<T>(result.text);
-  if (!data) {
-    logger.error('social: could not parse a Gemini reply', { what: req.what, text: result.text.slice(0, 600) });
-    throw new GeminiError(`${req.what} came back in a shape that could not be read.`);
-  }
-  return { data, sources: result.sources };
 }
 
 // ── images ──────────────────────────────────────────────────────────────────

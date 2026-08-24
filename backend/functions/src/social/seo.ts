@@ -23,7 +23,7 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   type AdPlan,
@@ -82,8 +82,6 @@ Reply with one JSON object and nothing else:
   "note": "one line for the console: the call you made and why"
 }`,
       what: 'The SEO brief',
-      temperature: 0.7,
-      maxOutputTokens: 1500,
       prompt: [
         `FORMAT: ${spec.label}, ${spec.slides} frame${spec.slides === 1 ? '' : 's'}.`,
         `ANGLE: ${params.angle}`,
@@ -154,8 +152,6 @@ Reply with one JSON object and nothing else:
   "note": "one line for the console"
 }`,
       what: 'The search pack',
-      temperature: 0.7,
-      maxOutputTokens: 2000,
       prompt: [
         `FORMAT: ${spec.label}`,
         planBlock(params.plan, params.employee),
@@ -233,8 +229,6 @@ Reply with one JSON object and nothing else:
   "successLooksLike": "the number that would mean it worked"
 }`,
       what: 'The ad brief',
-      temperature: 0.8,
-      maxOutputTokens: 2000,
       prompt: [
         `THE VIDEO: ${params.script.hook}`,
         params.script.voiceover ? `Voiceover: ${params.script.voiceover}` : '',

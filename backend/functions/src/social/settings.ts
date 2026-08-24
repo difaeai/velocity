@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { activeTeam, coverageGaps } from './employees';
+import { claudeReady } from './claude';
 import { geminiReady } from './gemini';
 import { tokenVaultReady } from './secrets';
 import { videoConfigured } from './video';
@@ -98,7 +99,7 @@ export const adminGetSocialSettings = onCall(async (req) => {
      * key was ever added.
      */
     readiness: {
-      writer: geminiReady(),
+      writer: claudeReady(),
       designer: settings.imageProvider === 'none' || geminiReady(),
       video: videoConfigured(settings.videoProvider),
       tokenVault: tokenVaultReady(),
@@ -117,10 +118,10 @@ export const adminUpdateSocialSettings = onCall(async (req) => {
   // Turning automation on is the one change worth guarding: without a key the
   // crew cannot produce anything, and a schedule that fails every morning is
   // worse than one that was never switched on.
-  if (parsed.data.enabled === true && !geminiReady()) {
+  if (parsed.data.enabled === true && !claudeReady()) {
     throw new HttpsError(
       'failed-precondition',
-      'Automation cannot be enabled: GEMINI_API_KEY is not configured, so nobody can work.',
+      'Automation cannot be enabled: ANTHROPIC_API_KEY is not configured, so nobody can work.',
     );
   }
 

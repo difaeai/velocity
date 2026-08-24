@@ -18,7 +18,8 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateImage, generateJson } from './gemini';
+import { generateImage } from './gemini';
+import { generateJson } from './claude';
 import { postFolder, storeFile } from './assets';
 import {
   FORMAT_SPECS,
@@ -33,6 +34,11 @@ import {
 
 export class DesignError extends Error {}
 
+/**
+ * Rang writes the art direction with Claude either way; this is only about
+ * whether anything is *rendered* from it. Pictures are Google's — Claude does
+ * not draw — so this stays on the Gemini key.
+ */
 export function designerConfigured(settings: SocialSettings): boolean {
   return settings.imageProvider === 'none' || typeof process.env.GEMINI_API_KEY === 'string';
 }
@@ -78,8 +84,6 @@ The overlay text is burned on afterwards by the image model — keep it to the w
 Reply with one JSON object and nothing else:
 { "frames": [{ "prompt": "the full image prompt", "overlay": "the words on this frame", "alt": "one-line alt text for a screen reader" }] }`,
     what: 'The art direction',
-    temperature: 0.95,
-    maxOutputTokens: 2500,
     prompt: [
       `FORMAT: ${spec.label}, ${spec.aspect}. Give me exactly ${params.count} frame${params.count === 1 ? '' : 's'}, in order.`,
       planBlock(params.plan, params.employee),

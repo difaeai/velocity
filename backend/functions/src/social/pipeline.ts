@@ -42,7 +42,7 @@ import { postFolder, refreshAssetUrls, storeFile } from './assets';
 import { planContent } from './crew';
 import { design, DesignError } from './designer';
 import { activeTeam, assign, creditWork, teamRefs } from './employees';
-import { geminiReady } from './gemini';
+import { claudeReady } from './claude';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { runResearch } from './research';
@@ -723,8 +723,8 @@ export const socialDailyContent = onSchedule(
     const nowPkt = new Date(Date.now() + 5 * 3600_000);
     if (nowPkt.getUTCHours() !== settings.runHour) return;
 
-    if (!geminiReady()) {
-      await recordRun('Skipped: GEMINI_API_KEY is not configured.');
+    if (!claudeReady()) {
+      await recordRun('Skipped: ANTHROPIC_API_KEY is not configured.');
       return;
     }
     if (!(await activeTeam()).length) {
@@ -765,10 +765,10 @@ export const adminGenerateSocialPost = onCall(
       .safeParse(req.data ?? {});
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
 
-    if (!geminiReady()) {
+    if (!claudeReady()) {
       throw new HttpsError(
         'failed-precondition',
-        'GEMINI_API_KEY is not configured, so nobody can work. Add it as a backend secret and redeploy.',
+        'ANTHROPIC_API_KEY is not configured, so nobody can work. Add it as a backend secret and redeploy.',
       );
     }
     const team = await activeTeam();

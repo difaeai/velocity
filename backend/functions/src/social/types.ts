@@ -683,7 +683,11 @@ export interface SocialSettings {
   /** The editor renders, or leaves the file to be attached by hand. */
   videoProvider: 'veo' | 'none';
 
-  /** Model ids, editable so a Google rename is a settings change, not a deploy. */
+  /**
+   * Model ids, editable so a rename is a settings change and not a deploy.
+   * `textModel` is a Claude model (everything written or decided); the other
+   * two are Google's, because Claude renders neither pictures nor video.
+   */
   textModel: string;
   imageModel: string;
   videoModel: string;
@@ -698,6 +702,9 @@ export interface SocialSettings {
   lastEngagementAtMs: number | null;
   lastEngagementStatus: string | null;
 }
+
+/** What the desk writes and decides with unless the console says otherwise. */
+export const DEFAULT_TEXT_MODEL = 'claude-opus-5';
 
 export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
@@ -718,7 +725,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   imageProvider: 'gemini',
   videoProvider: 'none',
 
-  textModel: 'gemini-2.5-pro',
+  textModel: DEFAULT_TEXT_MODEL,
   imageModel: 'gemini-2.5-flash-image',
   videoModel: 'veo-3.1-generate-preview',
 

@@ -206,7 +206,14 @@ export default function SocialOverview() {
         <Card>
           <h2 style={h2}>Before it can run</h2>
           {readiness ? (
-            <Readiness readiness={readiness} connectedCount={connected.length} staffed={onShift.length} />
+            <Readiness
+              readiness={readiness}
+              connectedCount={connected.length}
+              staffed={onShift.length}
+              {...(settings
+                ? { providers: { image: settings.imageProvider, video: settings.videoProvider } }
+                : {})}
+            />
           ) : (
             <p style={{ color: colors.muted, fontSize: 13 }}>Checking…</p>
           )}

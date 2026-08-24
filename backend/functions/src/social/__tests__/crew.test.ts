@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { extractJson } from '../gemini';
+import { extractJson, resolveModel } from '../claude';
 import { captionFor } from '../manager';
 import {
   FORMAT_SPECS,
@@ -108,9 +108,9 @@ describe('reading a model reply', () => {
     expect(extractJson<{ hook: string }>(reply)).toEqual({ hook: 'two' });
   });
 
-  it('reads JSON out of prose, which is how grounded answers come back', () => {
-    // Search grounding and JSON mode are mutually exclusive in the API, so the
-    // research call always has to survive a chatty answer.
+  it('reads JSON out of prose, which is how a searched answer comes back', () => {
+    // A model that has just been searching answers in prose with the object
+    // somewhere inside it, so the research call has to survive a chatty reply.
     const reply = 'After searching, my findings: {"trends":["a","b"]} — sources above.';
     expect(extractJson<{ trends: string[] }>(reply)).toEqual({ trends: ['a', 'b'] });
   });
@@ -118,6 +118,24 @@ describe('reading a model reply', () => {
   it('returns null rather than throwing when there is no object at all', () => {
     expect(extractJson('I could not do that.')).toBeNull();
     expect(extractJson('')).toBeNull();
+  });
+});
+
+describe('which model the team writes with', () => {
+  it('uses whatever Claude model the console names', () => {
+    expect(resolveModel('claude-sonnet-5')).toBe('claude-sonnet-5');
+  });
+
+  it('ignores a Gemini id left behind from before the desk moved to Claude', () => {
+    // The real failure this prevents: a settings document saved months ago
+    // still says gemini-2.5-pro, and every run dies on a bad model id.
+    expect(resolveModel('gemini-2.5-pro')).toBe('claude-opus-5');
+  });
+
+  it('falls back when the field is empty or missing', () => {
+    expect(resolveModel('')).toBe('claude-opus-5');
+    expect(resolveModel(undefined)).toBe('claude-opus-5');
+    expect(resolveModel('   ')).toBe('claude-opus-5');
   });
 });
 

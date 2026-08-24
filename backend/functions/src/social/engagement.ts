@@ -27,7 +27,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { loadCredentials, markAccountError } from './accounts';
 import { systemFor } from './crew';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
 import { activeTeam, assign, creditWork } from './employees';
 import { getSocialSettings } from './settings';
@@ -182,8 +182,6 @@ export async function draftReplies(
         model: settings.textModel,
         system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM}`,
         what: 'The comment replies',
-        temperature: 0.8,
-        maxOutputTokens: 2500,
         prompt: [
           'COMMENTS:',
           ...batch.map((c) => `- id: ${c.id}\n  network: ${c.platform}\n  from: ${c.authorName}\n  said: ${c.text}`),

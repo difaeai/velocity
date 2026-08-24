@@ -14,7 +14,7 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateJson } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   PLATFORMS,
@@ -99,8 +99,6 @@ Drop a network from targets if the piece genuinely does not belong there. Do not
 Reply with one JSON object and nothing else:
 { "captions": { "instagram": "...", "facebook": "..." }, "targets": ["instagram", "facebook"], "note": "one line on the call you made" }`,
       what: 'The distribution plan',
-      temperature: 0.85,
-      maxOutputTokens: 2500,
       prompt: [
         `FORMAT: ${FORMAT_SPECS[params.format].label}`,
         `CANDIDATE NETWORKS (only these): ${candidates.join(', ')}`,

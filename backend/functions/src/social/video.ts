@@ -24,7 +24,8 @@ import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
 import { downloadAsset, postFolder, storeFile } from './assets';
-import { GEMINI_BASE, geminiKey, generateJson } from './gemini';
+import { GEMINI_BASE, geminiKey } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   type ContentFormat,
@@ -86,8 +87,6 @@ Write it as directions, not as prose. Never ask for more than the seconds allow.
 Reply with one JSON object and nothing else:
 { "prompt": "the full video prompt", "note": "one line describing the cut, for the console" }`,
       what: 'The cut',
-      temperature: 0.9,
-      maxOutputTokens: 2000,
       prompt: [
         `FORMAT: ${spec.label}, ${spec.aspect}, ${spec.seconds} seconds.`,
         planBlock(params.plan, params.employee),

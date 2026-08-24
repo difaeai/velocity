@@ -292,19 +292,33 @@ export default function EmployeesPage() {
       <Card>
         <h2 style={{ ...h2, marginBottom: 4 }}>The tools</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
-          Everyone runs on Google Gemini, on one key. Model ids are editable because Google renames preview models
-          often — when a name changes, this is the fix, not a redeploy.
+          Everyone <strong>thinks and writes with Claude</strong>, on the <code>ANTHROPIC_API_KEY</code> this backend
+          already uses. <strong>Pictures and video are Google&rsquo;s</strong> — Claude renders neither — so the
+          designer and the editor need <code>GEMINI_API_KEY</code> as well, and only for the rendering. Model ids are
+          editable because model names change; when one does, this is the fix, not a redeploy.
         </p>
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          <Field label="Writing and thinking" hint="Standup, research, writing, SEO, ads, captions and replies.">
+          <Field
+            label="Writing and thinking (Claude)"
+            hint="Standup, research, writing, SEO, ads, captions and replies. A Claude model id."
+          >
             <input
               value={(value('textModel') as string) ?? ''}
               onChange={(e) => set('textModel', e.target.value)}
               style={inputStyle}
             />
+            {/* A Gemini id left here from before the desk moved to Claude is
+                ignored by the backend rather than sent to fail — but a field
+                showing a value nobody is using is its own kind of lie. */}
+            {(value('textModel') as string) && !((value('textModel') as string) ?? '').startsWith('claude-') ? (
+              <p style={{ fontSize: 11.5, color: colors.warn, margin: '6px 0 0', lineHeight: 1.45 }}>
+                Not a Claude model — the team is writing with <code>claude-opus-5</code> instead. Put a Claude model id
+                here to change that.
+              </p>
+            ) : null}
           </Field>
-          <Field label="Pictures" hint="Carousel slides, post images, story frames, video covers.">
+          <Field label="Pictures (Google)" hint="Carousel slides, post images, story frames, video covers.">
             <input
               value={(value('imageModel') as string) ?? ''}
               onChange={(e) => set('imageModel', e.target.value)}
@@ -319,7 +333,7 @@ export default function EmployeesPage() {
               <option value="none">Direction only — I will attach files</option>
             </select>
           </Field>
-          <Field label="Video" hint="Veo, through the same Gemini key.">
+          <Field label="Video (Google)" hint="Veo, on the same Gemini key as the pictures.">
             <input
               value={(value('videoModel') as string) ?? ''}
               onChange={(e) => set('videoModel', e.target.value)}
