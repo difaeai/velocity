@@ -93,7 +93,10 @@ const SOCIAL_NAV: NavGroup[] = [
   },
   {
     title: 'Channels',
-    items: [{ href: '/dashboard/social/accounts', label: '🔗 Connected accounts' }],
+    items: [
+      { href: '/dashboard/social/accounts', label: '🔗 Connected accounts' },
+      { href: '/dashboard/social/employees', label: '👥 Employees' },
+    ],
   },
   {
     title: 'Content',
@@ -104,11 +107,8 @@ const SOCIAL_NAV: NavGroup[] = [
     ],
   },
   {
-    title: 'The crew',
-    items: [
-      { href: '/dashboard/social/crew', label: '🧠 Agents & instructions' },
-      { href: '/dashboard/social/automation', label: '🤖 Automation' },
-    ],
+    title: 'Settings',
+    items: [{ href: '/dashboard/social/automation', label: '🤖 Automation' }],
   },
 ];
 

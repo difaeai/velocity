@@ -126,7 +126,7 @@ export default function CalendarPage() {
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Content calendar</h1>
           <p style={{ color: colors.muted, margin: 0 }}>
-            Everything the crew has made, by the day it belongs to. The empty squares are the ones to worry about.
+            Everything the team has made, by the day it belongs to. The empty squares are the ones to worry about.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -252,7 +252,7 @@ export default function CalendarPage() {
                       <FormatPicker value={format} onChange={setFormat} />
                       <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
                       <Button onClick={() => generate(selected)} disabled={busy}>
-                        {busy ? 'The crew is working…' : 'Brief the crew'}
+                        {busy ? 'The team is working…' : 'Brief the team'}
                       </Button>
                     </div>
                   </details>
@@ -260,12 +260,12 @@ export default function CalendarPage() {
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <p style={{ fontSize: 13.5, color: colors.muted, margin: 0 }}>
-                    Nothing here. Brief the crew — pick a format and an angle, or leave both to the rotation.
+                    Nothing here. Brief the team — pick a format and an angle, or leave both to the rotation.
                   </p>
                   <FormatPicker value={format} onChange={setFormat} />
                   <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
                   <Button onClick={() => generate(selected)} disabled={busy}>
-                    {busy ? 'The crew is working…' : 'Brief the crew'}
+                    {busy ? 'The team is working…' : 'Brief the team'}
                   </Button>
                 </div>
               )}

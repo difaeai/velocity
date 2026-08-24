@@ -1,24 +1,28 @@
 'use client';
 
 /**
- * Pieces shared across the Manage social pages: the four agents and their
- * mascots, how each network and format is labelled, and the small components
- * (status pill, crew line, readiness checklist) that appear on more than one
- * screen.
+ * Pieces shared across the Manage social pages: how each role, network and
+ * format is labelled, the mascots, and the small components (status pill, work
+ * log, readiness checklist) that appear on more than one screen.
  *
  * The mascots are hand-drawn SVG rather than generated images on purpose: they
- * render with no key, no network call and no cost, they are crisp at 28px in a
- * table row and at 96px on the crew page, and they never change between
- * deploys — which is what makes them recognisable as characters rather than
- * decoration.
+ * render with no key, no network call and no cost, they are crisp at 22px in a
+ * queue row and at 96px on the employees page, and they never change between
+ * deploys — which is what makes a designer look like a designer at a glance.
+ *
+ * They belong to the *role*, not the person. Hire three designers and they
+ * share a face; what distinguishes them is their name, which is the thing you
+ * chose.
  */
 import type {
-  SocialAgent,
-  SocialAgentRun,
   SocialFormat,
   SocialPlatform,
   SocialPostDoc,
+  SocialRole,
+  SocialStage,
+  SocialWorkEntry,
 } from '@/lib/api';
+import { SOCIAL_STAGES } from '@/lib/api';
 import { colors } from '@/lib/config';
 
 export const PLATFORM_META: Record<
@@ -52,45 +56,84 @@ export const FORMAT_META: Record<SocialFormat, { label: string; glyph: string; n
   story: { label: 'Story', glyph: '⚡', note: 'One 9:16 frame, gone in 24 hours.' },
 };
 
-// ── the crew ────────────────────────────────────────────────────────────────
+// ── the jobs ────────────────────────────────────────────────────────────────
 
-export const AGENT_META: Record<
-  SocialAgent,
-  { name: string; role: string; colour: string; blurb: string; does: string }
+export const ROLE_META: Record<
+  SocialRole,
+  { label: string; short: string; colour: string; stage: SocialStage; does: string }
 > = {
-  qalam: {
-    name: 'Qalam',
-    role: 'Content writer',
+  'research-assistant': {
+    label: 'Research assistant',
+    short: 'Research',
+    colour: '#28c76f',
+    stage: 'research',
+    does: 'Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Brings it to standup with the pages it came from.',
+  },
+  'content-writer': {
+    label: 'Content writer',
+    short: 'Writing',
     colour: '#ccff00',
-    blurb: 'Reads the market, then writes.',
-    does: 'Searches what is travelling in Pakistan this week and what the other apps are posting, brings it to standup, and writes the hook, the frames and the caption.',
+    stage: 'script',
+    does: 'Writes the hook, the shots or slides, the voiceover and the caption. Ruthless about the first three seconds, and never writes a number nobody gave them.',
   },
-  rang: {
-    name: 'Rang',
-    role: 'Designer',
-    colour: '#ff8a3d',
-    blurb: 'Turns the script into pictures.',
-    does: 'Art directs every frame — subject, light, lens, where the lime sits — then renders the slides, the post image or the cover the video opens on.',
+  'seo-expert': {
+    label: 'SEO expert',
+    short: 'SEO',
+    colour: '#00cfc1',
+    stage: 'seo',
+    does: 'Briefs the writer before they write: the query this piece should answer, the phrases that belong in the copy, hashtags people actually search, and real alt text.',
   },
-  raftar: {
-    name: 'Raftar',
-    role: 'Video editor',
+  'google-seo-expert': {
+    label: 'Google SEO expert',
+    short: 'Search',
     colour: '#4db8ff',
-    blurb: 'Decides the cut.',
-    does: 'Writes the second-by-second edit — pacing, the pattern interrupt, the sound bed — and renders it. The reason someone is still watching at second seven.',
+    stage: 'search',
+    does: 'Writes the YouTube title, description and tags the video is posted with — used verbatim — and names the one query velocityrides.app should try to own.',
   },
-  awaaz: {
-    name: 'Awaaz',
-    role: 'Social media manager',
+  designer: {
+    label: 'Designer',
+    short: 'Design',
+    colour: '#ff8a3d',
+    stage: 'design',
+    does: 'Art directs every frame — subject, light, lens, type, where the lime sits — then renders the slides, the post image, the story frame or the video cover.',
+  },
+  'video-editor': {
+    label: 'Video editor',
+    short: 'Editing',
     colour: '#b07dff',
-    blurb: 'Posts it, then answers everyone.',
+    stage: 'video',
+    does: 'Writes the second-by-second cut — pacing, the pattern interrupt, the sound bed — and renders it. The reason someone is still watching at second seven.',
+  },
+  'youtube-ads-expert': {
+    label: 'YouTube ads expert',
+    short: 'Ads',
+    colour: '#ff5c8a',
+    stage: 'ads',
+    does: 'Writes the campaign brief a human takes into Google Ads: objective, five-second hooks to test, targeting, budget range and what success would look like. Spends nothing itself.',
+  },
+  'social-manager': {
+    label: 'Social media manager',
+    short: 'Distribution',
+    colour: '#ffd166',
+    stage: 'distribute',
     does: 'Rewrites the caption for each network, decides where the piece belongs, publishes once you approve, and drafts a reply to every comment that comes back.',
   },
 };
 
-/** The mascots. One 64×64 viewBox each, drawn to read at any size. */
-export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number }) {
-  const accent = AGENT_META[agent].colour;
+export const STAGE_META: Record<SocialStage, { label: string; role: SocialRole }> = {
+  research: { label: 'Market read', role: 'research-assistant' },
+  seo: { label: 'Search brief', role: 'seo-expert' },
+  script: { label: 'The script', role: 'content-writer' },
+  search: { label: 'YouTube & Google', role: 'google-seo-expert' },
+  design: { label: 'The pictures', role: 'designer' },
+  video: { label: 'The cut', role: 'video-editor' },
+  ads: { label: 'Campaign brief', role: 'youtube-ads-expert' },
+  distribute: { label: 'Where it goes', role: 'social-manager' },
+};
+
+/** The mascots. One 64×64 viewBox per role, drawn to read at any size. */
+export function Mascot({ role, size = 44 }: { role: SocialRole; size?: number }) {
+  const accent = ROLE_META[role].colour;
   const body = '#1a1c1c';
 
   return (
@@ -99,11 +142,22 @@ export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number
       height={size}
       viewBox="0 0 64 64"
       role="img"
-      aria-label={AGENT_META[agent].name}
+      aria-label={ROLE_META[role].label}
       style={{ flex: 'none', display: 'block' }}
     >
       <rect x="2" y="2" width="60" height="60" rx="18" fill={body} />
-      {agent === 'qalam' ? (
+
+      {role === 'research-assistant' ? (
+        <>
+          {/* a clipboard being read through a lens */}
+          <rect x="14" y="14" width="28" height="36" rx="4" fill={accent} />
+          <path d="M22 22h12M22 29h12M22 36h8" stroke={body} strokeWidth="2.6" strokeLinecap="round" />
+          <circle cx="43" cy="38" r="10" fill="none" stroke="#fff" strokeWidth="3.4" />
+          <path d="M50 45l6 6" stroke="#fff" strokeWidth="4" strokeLinecap="round" />
+        </>
+      ) : null}
+
+      {role === 'content-writer' ? (
         <>
           {/* a nib, mid-stroke */}
           <path d="M20 44 L38 16 L46 22 L28 50 Z" fill={accent} />
@@ -113,7 +167,33 @@ export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number
           <path d="M14 54 Q32 60 52 52" stroke={accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
         </>
       ) : null}
-      {agent === 'rang' ? (
+
+      {role === 'seo-expert' ? (
+        <>
+          {/* a hashtag climbing */}
+          <path
+            d="M24 16 L20 48 M40 16 L36 48 M14 26 H46 M12 38 H44"
+            stroke={accent}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+          />
+          <path d="M40 44 L48 34 L56 40" stroke="#fff" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="56" cy="40" r="3.4" fill="#fff" />
+        </>
+      ) : null}
+
+      {role === 'google-seo-expert' ? (
+        <>
+          {/* a globe, and a results list with the top slot taken */}
+          <circle cx="26" cy="30" r="15" fill="none" stroke={accent} strokeWidth="3.6" />
+          <path d="M11 30h30M26 15c8 8 8 22 0 30-8-8-8-22 0-30Z" stroke={accent} strokeWidth="2.8" fill="none" />
+          <rect x="12" y="48" width="40" height="5" rx="2.5" fill="#fff" />
+          <rect x="44" y="20" width="10" height="22" rx="3" fill={accent} />
+          <rect x="44" y="14" width="10" height="5" rx="2.5" fill="#fff" />
+        </>
+      ) : null}
+
+      {role === 'designer' ? (
         <>
           {/* a palette blob with a bitten-out thumb hole */}
           <path
@@ -126,7 +206,8 @@ export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number
           <circle cx="27" cy="38" r="2.6" fill="#fff" />
         </>
       ) : null}
-      {agent === 'raftar' ? (
+
+      {role === 'video-editor' ? (
         <>
           {/* a clapper board mid-clap, with speed lines */}
           <rect x="16" y="26" width="34" height="24" rx="4" fill={accent} />
@@ -137,10 +218,30 @@ export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number
           <path d="M6 34 H13 M4 42 H12" stroke={accent} strokeWidth="3" strokeLinecap="round" />
         </>
       ) : null}
-      {agent === 'awaaz' ? (
+
+      {role === 'youtube-ads-expert' ? (
+        <>
+          {/* a play button, and the money it costs */}
+          <rect x="10" y="16" width="36" height="26" rx="7" fill={accent} />
+          <path d="M26 23 L36 29 L26 35 Z" fill={body} />
+          <circle cx="46" cy="44" r="11" fill="#fff" />
+          <path
+            d="M42 39h7a3.5 3.5 0 0 1 0 7h-7m0 0h8m-8 4h8"
+            stroke={body}
+            strokeWidth="2.4"
+            fill="none"
+            strokeLinecap="round"
+          />
+        </>
+      ) : null}
+
+      {role === 'social-manager' ? (
         <>
           {/* a speech bubble that is also a megaphone */}
-          <path d="M14 18h36a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H30l-10 8v-8h-6a4 4 0 0 1-4-4V22a4 4 0 0 1 4-4Z" fill={accent} />
+          <path
+            d="M14 18h36a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H30l-10 8v-8h-6a4 4 0 0 1-4-4V22a4 4 0 0 1 4-4Z"
+            fill={accent}
+          />
           <circle cx="26" cy="31" r="3.2" fill={body} />
           <circle cx="38" cy="31" r="3.2" fill={body} />
           <path d="M24 39c3 3 13 3 16 0" stroke={body} strokeWidth="2.4" fill="none" strokeLinecap="round" />
@@ -150,45 +251,56 @@ export function Mascot({ agent, size = 44 }: { agent: SocialAgent; size?: number
   );
 }
 
-const AGENT_STATE_STYLE: Record<SocialAgentRun['state'], { dot: string; label: string }> = {
-  idle: { dot: '#c8d0cb', label: 'Waiting' },
+const WORK_STATE_STYLE: Record<SocialWorkEntry['state'] | 'idle', { dot: string; label: string }> = {
+  idle: { dot: '#c8d0cb', label: 'Not started' },
   working: { dot: '#2a78d6', label: 'Working' },
   done: { dot: '#0ca30c', label: 'Done' },
-  skipped: { dot: '#9aa5a0', label: 'Not needed' },
+  skipped: { dot: '#9aa5a0', label: 'Skipped' },
   failed: { dot: '#d03b3b', label: 'Failed' },
 };
 
 /**
- * The assembly line, live. Shown wherever a post is — this is the answer to
- * "what is actually happening right now", which a single status word never is.
+ * The working day, live: every stage this format runs, who has it, and what
+ * they are doing. This is the answer to "what is actually happening right now",
+ * which a single status word never is.
  */
-export function CrewLine({
-  crew,
+export function WorkLine({
+  work,
+  format,
   compact = false,
 }: {
-  crew: Partial<Record<SocialAgent, SocialAgentRun>> | undefined;
+  work: Partial<Record<SocialStage, SocialWorkEntry>> | undefined;
+  format: SocialFormat | undefined;
   compact?: boolean;
 }) {
-  const agents: SocialAgent[] = ['qalam', 'rang', 'raftar', 'awaaz'];
+  const still = format === 'carousel' || format === 'post' || format === 'story';
+  const stages = SOCIAL_STAGES.filter((s) => !(still && (s === 'video' || s === 'ads')));
+
   return (
-    <div style={{ display: 'grid', gap: compact ? 6 : 10 }}>
-      {agents.map((agent) => {
-        const run = crew?.[agent];
-        const state = AGENT_STATE_STYLE[run?.state ?? 'idle'];
+    <div style={{ display: 'grid', gap: compact ? 7 : 11 }}>
+      {stages.map((stage) => {
+        const entry = work?.[stage];
+        const state = WORK_STATE_STYLE[entry?.state ?? 'idle'];
+        const role = entry?.role ?? STAGE_META[stage].role;
         return (
-          <div key={agent} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <Mascot agent={agent} size={compact ? 22 : 30} />
+          <div key={stage} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <Mascot role={role} size={compact ? 22 : 30} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: compact ? 12 : 13, fontWeight: 800 }}>{AGENT_META[agent].name}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: compact ? 12 : 13, fontWeight: 800 }}>
+                  {entry?.name ?? '—'}
+                </span>
+                <span style={{ fontSize: 11, color: colors.muted, fontWeight: 700 }}>
+                  {STAGE_META[stage].label}
+                </span>
                 <span
                   aria-hidden
                   style={{ width: 7, height: 7, borderRadius: 999, background: state.dot, flex: 'none' }}
                 />
-                <span style={{ fontSize: 11, color: colors.muted, fontWeight: 700 }}>{state.label}</span>
+                <span style={{ fontSize: 11, color: colors.muted }}>{state.label}</span>
               </div>
               <div style={{ fontSize: 12.5, color: colors.muted, lineHeight: 1.35 }}>
-                {run?.error ?? run?.note ?? AGENT_META[agent].blurb}
+                {entry?.error ?? entry?.note ?? 'Waiting for their turn.'}
               </div>
             </div>
           </div>
@@ -246,9 +358,13 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   error: { bg: '#d03b3b1a', fg: '#a52c2c', label: 'Needs attention' },
   disconnected: { bg: '#6f7a721a', fg: '#5c665f', label: 'Not connected' },
 
+  active: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'On the team' },
+  off_duty: { bg: '#6f7a721a', fg: '#5c665f', label: 'Off duty' },
+
   planning: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'At standup' },
   researching: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Researching' },
   drafting: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Writing' },
+  optimising: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Optimising' },
   designing: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Designing' },
   rendering: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Rendering' },
   awaiting_approval: { bg: '#fab2192e', fg: '#8a6100', label: 'Needs approval' },
@@ -290,22 +406,30 @@ export function StatusPill({ status }: { status: string }) {
 
 /**
  * What is wired up and what is not. Shown wherever someone is about to rely on
- * the crew, because the failure everyone hits is switching automation on and
- * finding out at 10am that a key was never added.
+ * the desk, because the failure everyone hits is switching automation on and
+ * finding out at 10am that a key was never added — or that nobody was hired.
  */
 export function Readiness({
   readiness,
   connectedCount,
+  staffed,
 }: {
   readiness: { writer: boolean; designer: boolean; video: boolean; tokenVault: boolean };
   connectedCount: number;
+  staffed?: number;
 }) {
   const rows = [
     {
+      ok: (staffed ?? 0) > 0,
+      label: 'Somebody on the team',
+      good: `${staffed} employee${staffed === 1 ? '' : 's'} on the books.`,
+      bad: 'Nobody works here yet. Hire at least a content writer on the Employees page — an empty office makes nothing.',
+    },
+    {
       ok: readiness.writer,
-      label: 'The crew (Gemini)',
-      good: 'GEMINI_API_KEY is set — all four can work.',
-      bad: 'GEMINI_API_KEY is missing. Add it to the backend secrets; nothing can be planned, written or drawn without it.',
+      label: 'The engine (Gemini)',
+      good: 'GEMINI_API_KEY is set — everyone can work.',
+      bad: 'GEMINI_API_KEY is missing. Add it to the backend secrets; nobody can plan, write or draw without it.',
     },
     {
       ok: readiness.tokenVault,
@@ -315,15 +439,15 @@ export function Readiness({
     },
     {
       ok: readiness.designer,
-      label: 'Rang can render',
-      good: 'Images are generated for posts, carousels and covers.',
-      bad: 'Image rendering is off. Rang still writes the art direction — attach the files yourself from the queue.',
+      label: 'Image rendering',
+      good: 'Pictures are generated for posts, carousels and covers.',
+      bad: 'Image rendering is off. The designer still writes the art direction — attach the files yourself from the queue.',
     },
     {
       ok: readiness.video,
-      label: 'Raftar can render',
+      label: 'Video rendering',
       good: 'Videos are rendered.',
-      bad: 'Video rendering is off. Raftar still writes the cut — attach the file yourself from the queue.',
+      bad: 'Video rendering is off. The editor still writes the cut — attach the file yourself from the queue.',
     },
     {
       ok: connectedCount > 0,
@@ -331,7 +455,7 @@ export function Readiness({
       good: `${connectedCount} account${connectedCount === 1 ? '' : 's'} connected.`,
       bad: 'No accounts connected yet, so there is nowhere to publish.',
     },
-  ];
+  ].filter((r) => staffed !== undefined || r.label !== 'Somebody on the team');
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>

@@ -388,9 +388,31 @@ export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 export const SOCIAL_FORMATS = ['reel', 'video', 'carousel', 'post', 'story'] as const;
 export type SocialFormat = (typeof SOCIAL_FORMATS)[number];
 
-/** The four agents. Mirrors AGENTS in the backend's social/types.ts. */
-export const SOCIAL_AGENTS = ['qalam', 'rang', 'raftar', 'awaaz'] as const;
-export type SocialAgent = (typeof SOCIAL_AGENTS)[number];
+/** The jobs you can hire for. Mirrors ROLES in the backend's social/types.ts. */
+export const SOCIAL_ROLES = [
+  'research-assistant',
+  'content-writer',
+  'seo-expert',
+  'google-seo-expert',
+  'designer',
+  'video-editor',
+  'youtube-ads-expert',
+  'social-manager',
+] as const;
+export type SocialRole = (typeof SOCIAL_ROLES)[number];
+
+/** The stages of one piece, in the order they happen. */
+export const SOCIAL_STAGES = [
+  'research',
+  'seo',
+  'script',
+  'search',
+  'design',
+  'video',
+  'ads',
+  'distribute',
+] as const;
+export type SocialStage = (typeof SOCIAL_STAGES)[number];
 
 /** Which networks take which formats. Mirrors PLATFORM_FORMATS on the backend. */
 export const PLATFORM_FORMATS: Record<SocialPlatform, SocialFormat[]> = {
@@ -406,6 +428,15 @@ export const PLATFORM_FORMATS: Record<SocialPlatform, SocialFormat[]> = {
 export function platformTakes(platform: SocialPlatform, format: SocialFormat): boolean {
   return PLATFORM_FORMATS[platform].includes(format);
 }
+
+/** Which stages a format actually runs. */
+export const FORMAT_STAGES: Record<SocialFormat, SocialStage[]> = {
+  reel: [...SOCIAL_STAGES],
+  video: [...SOCIAL_STAGES],
+  carousel: ['research', 'seo', 'script', 'search', 'design', 'distribute'],
+  post: ['research', 'seo', 'script', 'search', 'design', 'distribute'],
+  story: ['research', 'seo', 'script', 'search', 'design', 'distribute'],
+};
 
 /** The console-visible half of a connection (never the token itself). */
 export interface SocialAccountDoc {
@@ -439,6 +470,49 @@ export interface ConnectSchema {
   }[];
 }
 
+// ── the staff ───────────────────────────────────────────────────────────────
+
+export interface SocialEmployee {
+  id: string;
+  name: string;
+  role: SocialRole;
+  title: string;
+  status: 'active' | 'off_duty';
+  instructions: string;
+  colour: string;
+  hiredAtMs: number;
+  hiredBy: string | null;
+  lastWorkedAtMs: number | null;
+  piecesWorked: number;
+}
+
+export interface SocialRoleOption {
+  role: SocialRole;
+  label: string;
+  blurb: string;
+  stage: SocialStage;
+  titles: string[];
+}
+
+export interface SocialTeamMemberRef {
+  id: string;
+  name: string;
+  role: SocialRole;
+  title: string;
+}
+
+export interface SocialWorkEntry {
+  stage: SocialStage;
+  employeeId: string | null;
+  name: string;
+  role: SocialRole | null;
+  state: 'working' | 'done' | 'skipped' | 'failed';
+  note: string | null;
+  error: string | null;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+}
+
 export interface SocialCompetitor {
   name: string;
   url: string;
@@ -455,9 +529,8 @@ export interface SocialSettings {
   formats: SocialFormat[];
   lastFormatIndex: number;
 
-  /** Read by all four agents on every run. */
+  /** Read by every employee, on every job. */
   crewInstructions: string;
-  agentNotes: Record<SocialAgent, string>;
 
   researchEnabled: boolean;
   competitors: SocialCompetitor[];
@@ -488,6 +561,7 @@ export type SocialPostStatus =
   | 'planning'
   | 'researching'
   | 'drafting'
+  | 'optimising'
   | 'designing'
   | 'rendering'
   | 'awaiting_approval'
@@ -498,14 +572,6 @@ export type SocialPostStatus =
   | 'partial'
   | 'failed'
   | 'rejected';
-
-export interface SocialAgentRun {
-  state: 'idle' | 'working' | 'done' | 'skipped' | 'failed';
-  note: string | null;
-  error: string | null;
-  startedAtMs: number | null;
-  finishedAtMs: number | null;
-}
 
 export interface SocialMediaAsset {
   kind: 'video' | 'image';
@@ -525,7 +591,8 @@ export interface SocialPlan {
   visualDirection: string;
   editDirection: string;
   distribution: string;
-  notes: Partial<Record<SocialAgent, string>>;
+  /** Keyed by employee id. */
+  notes: Record<string, string>;
 }
 
 export interface SocialResearch {
@@ -539,11 +606,38 @@ export interface SocialResearch {
   error: string | null;
 }
 
+export interface SocialSeoPack {
+  searchIntent: string;
+  keywords: string[];
+  hashtags: string[];
+  altTexts: string[];
+  note: string;
+}
+
+export interface SocialSearchPack {
+  youtube: { title: string; description: string; tags: string[] } | null;
+  webAngle: string;
+  note: string;
+}
+
+export interface SocialAdPlan {
+  objective: string;
+  campaignType: string;
+  hookVariants: string[];
+  targeting: { locations: string[]; ages: string; interests: string[] };
+  budgetNote: string;
+  cta: string;
+  whatToTest: string;
+  successLooksLike: string;
+}
+
+export type SocialRevisionScope = 'script' | 'design' | 'video' | 'caption' | 'seo' | 'ads';
+
 export interface SocialRevision {
   atMs: number;
   by: string;
   feedback: string;
-  scope: ('script' | 'design' | 'video' | 'caption')[];
+  scope: SocialRevisionScope[];
 }
 
 export interface SocialPostDoc {
@@ -552,6 +646,8 @@ export interface SocialPostDoc {
   format?: SocialFormat;
   angle: string;
   status: SocialPostStatus;
+  team?: SocialTeamMemberRef[];
+  work?: Partial<Record<SocialStage, SocialWorkEntry>>;
   plan?: SocialPlan | null;
   script: {
     hook: string;
@@ -570,6 +666,9 @@ export interface SocialPostDoc {
   hashtags: string[];
   facts: Record<string, number | string>;
   research?: SocialResearch | null;
+  seo?: SocialSeoPack | null;
+  search?: SocialSearchPack | null;
+  ads?: SocialAdPlan | null;
   direction?: { prompt: string; overlay: string; alt: string }[] | null;
   cut?: { prompt: string; note: string } | null;
   media?: SocialMediaAsset[];
@@ -579,13 +678,12 @@ export interface SocialPostDoc {
   results: Partial<
     Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>
   >;
-  crew?: Record<SocialAgent, SocialAgentRun>;
   revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;
 }
 
-/** Everything on a post that can be shown, in either shape. */
+/** Everything on a piece that can be shown, in either shape. */
 export function postAssets(post: SocialPostDoc): SocialMediaAsset[] {
   if (post.media?.length) return [...post.media].sort((a, b) => a.slide - b.slide);
   if (post.video?.url) {
@@ -617,6 +715,7 @@ export interface SocialCommentDoc {
   status: 'new' | 'drafted' | 'replied' | 'ignored' | 'escalated';
   intent: 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other' | null;
   draftReply: string | null;
+  draftedBy?: string | null;
   sentReply: string | null;
   sentAtMs: number | null;
   error: string | null;
@@ -638,20 +737,40 @@ export const socialApi = {
   verify: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminVerifySocialAccount'),
   disconnect: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminDisconnectSocialAccount'),
 
-  getSettings: callable<Record<string, never>, { settings: SocialSettings; readiness: SocialReadiness }>(
-    'adminGetSocialSettings',
-  ),
+  roles: callable<Record<string, never>, { roles: SocialRoleOption[] }>('adminGetSocialRoles'),
+  hire: callable<
+    { name: string; role: SocialRole; title?: string; instructions?: string },
+    { ok: boolean; employee: SocialEmployee }
+  >('adminHireSocialEmployee'),
+  updateEmployee: callable<
+    {
+      id: string;
+      name?: string;
+      title?: string;
+      instructions?: string;
+      status?: 'active' | 'off_duty';
+      role?: SocialRole;
+    },
+    { ok: boolean }
+  >('adminUpdateSocialEmployee'),
+  fire: callable<{ id: string }, { ok: boolean }>('adminFireSocialEmployee'),
+  seedTeam: callable<Record<string, never>, { ok: boolean; hired: number }>('adminSeedSocialTeam'),
+
+  getSettings: callable<
+    Record<string, never>,
+    { settings: SocialSettings; readiness: SocialReadiness; coverage: string[]; staffed: number }
+  >('adminGetSocialSettings'),
   updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings }>(
     'adminUpdateSocialSettings',
   ),
 
-  /** Brief the crew. Always ends in the approval queue. */
+  /** Put the team on a piece. It always ends in the approval queue. */
   generate: callable<
     { date?: string; format?: SocialFormat; angle?: string; targets?: SocialPlatform[]; replace?: boolean },
     { ok: boolean; id: string; format: SocialFormat }
   >('adminGenerateSocialPost'),
   requestChanges: callable<
-    { postId: string; feedback: string; scope: ('script' | 'design' | 'video' | 'caption')[] },
+    { postId: string; feedback: string; scope: SocialRevisionScope[] },
     { ok: boolean; reran: string[] }
   >('adminRequestSocialChanges'),
   review: callable<
