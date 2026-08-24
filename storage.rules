@@ -126,6 +126,24 @@ service firebase.storage {
       allow write: if isOwner(userId) && underSize(25);
     }
 
+    // Social desk — a video made outside the pipeline (an editor, a phone, a
+    // third-party generator) that an admin attaches to a post. Admins upload
+    // here from the approval queue; adminAttachSocialVideo then copies it to
+    // social/{postId}.mp4, which is the only path publishing ever reads.
+    match /socialUploads/{fileName} {
+      allow read: if isAdmin();
+      allow write: if isAdmin()
+                   && underSize(200)
+                   && request.resource.contentType.matches('video/.*');
+    }
+
+    // Rendered/attached post videos. Written only by Cloud Functions; the
+    // networks fetch them over a signed URL, not through these rules.
+    match /social/{fileName} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Everything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;

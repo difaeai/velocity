@@ -282,3 +282,50 @@ test('fleet submissions are admin-read and server-write only', async () => {
   await assertFails(setDoc(doc(passenger, 'driver_submissions/sub2'), { status: 'approved' }));
   await assertFails(updateDoc(doc(admin, 'driver_submissions/sub1'), { status: 'approved' }));
 });
+
+test('social access tokens are unreadable by everyone, admins included', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'socialAccounts/facebook'), {
+      platform: 'facebook', status: 'connected', displayName: 'Velocity', followers: 158000,
+    });
+    await setDoc(doc(db, 'socialAccounts/facebook/secret/credentials'), {
+      accessToken: { c: 'sealed', iv: 'iv', t: 'tag' },
+    });
+    await setDoc(doc(db, 'socialPosts/2026-08-24'), { date: '2026-08-24', status: 'ready' });
+    await setDoc(doc(db, 'analyticsDaily/2026-08-24'), { date: '2026-08-24', tripsCompleted: 12 });
+    await setDoc(doc(db, 'system/socialAutomation'), { enabled: false, runHour: 10 });
+  });
+
+  // The profile half is what the console renders, so admins read it.
+  await assertSucceeds(getDoc(doc(admin, 'socialAccounts/facebook')));
+  await assertFails(getDoc(doc(passenger, 'socialAccounts/facebook')));
+  await assertFails(getDoc(doc(anon, 'socialAccounts/facebook')));
+
+  // The token half is a password that can post to the whole audience. An admin
+  // session is exactly the thing an attacker would be holding, so it is shut to
+  // admins too — subcollections don't inherit the parent's read rule, which is
+  // what makes this a real gate rather than a comment.
+  await assertFails(getDoc(doc(admin, 'socialAccounts/facebook/secret/credentials')));
+  await assertFails(getDoc(doc(passenger, 'socialAccounts/facebook/secret/credentials')));
+  await assertFails(
+    setDoc(doc(admin, 'socialAccounts/facebook/secret/credentials'), { accessToken: 'mine-now' }),
+  );
+
+  // Connecting, disconnecting and publishing all go through callables that
+  // verify the credential first — a client write here would let anyone mark an
+  // account connected without ever proving a token.
+  await assertFails(setDoc(doc(admin, 'socialAccounts/tiktok'), { status: 'connected' }));
+  await assertFails(updateDoc(doc(admin, 'socialPosts/2026-08-24'), { status: 'published' }));
+
+  // Posts, the analytics cache and the automation settings are admin-read.
+  await assertSucceeds(getDoc(doc(admin, 'socialPosts/2026-08-24')));
+  await assertFails(getDoc(doc(driver, 'socialPosts/2026-08-24')));
+  await assertSucceeds(getDoc(doc(admin, 'analyticsDaily/2026-08-24')));
+  await assertFails(getDoc(doc(passenger, 'analyticsDaily/2026-08-24')));
+
+  // The marketing brief lives under system/ precisely so that config/{doc}'s
+  // "any signed-in user may read" does not apply to it.
+  await assertSucceeds(getDoc(doc(admin, 'system/socialAutomation')));
+  await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
+});

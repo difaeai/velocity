@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useState } from 'react';
 
-import { Bolt, Close, GooglePlay, Menu } from './Icons';
+import { Close, GooglePlay, Menu } from './Icons';
+import { VelocityMark } from '@/components/BrandMark';
 import styles from './site.module.css';
 
 const LINKS = [
@@ -59,7 +60,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
         <nav className={styles.navInner} aria-label="Main">
           <a className={styles.brand} href="#top">
             <span className={styles.brandMark}>
-              <Bolt style={{ color: '#ccff00' }} />
+              <VelocityMark style={{ color: '#ccff00' }} />
             </span>
             <span className={styles.brandName}>Velocity</span>
           </a>

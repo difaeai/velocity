@@ -6,7 +6,7 @@ backend actually enforces. Written from the shipped code (`backend/functions/src
 
 Companion documents: [ARCHITECTURE](ARCHITECTURE.md) · [PAYMENTS](PAYMENTS.md) ·
 [SECURITY](SECURITY.md) · [HARDENING](HARDENING.md) · [ADMIN](ADMIN.md) ·
-[DEPLOY](DEPLOY.md)
+[SOCIAL](SOCIAL.md) · [DEPLOY](DEPLOY.md)
 
 ---
 

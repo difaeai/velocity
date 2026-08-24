@@ -316,3 +316,197 @@ export const portalApi = {
     'franchiseWithdrawSubmission',
   ),
 };
+
+// ── Dashboard analytics ─────────────────────────────────────────────────────
+
+/** One Pakistan day of platform activity. Mirrors DailyStats on the backend. */
+export interface DailyStats {
+  date: string;
+  tripsRequested: number;
+  tripsCompleted: number;
+  tripsCancelled: number;
+  tripsPooled: number;
+  revenue: number;
+  commission: number;
+  driverPayout: number;
+  cashTrips: number;
+  walletTrips: number;
+  byRideType: Record<string, number>;
+  intercity: number;
+  couriers: number;
+  freight: number;
+  specialRides: number;
+  scheduled: number;
+  newPassengers: number;
+  newDrivers: number;
+}
+
+export interface AnalyticsPayload {
+  days: number;
+  series: DailyStats[];
+  totals: {
+    revenue: number;
+    commission: number;
+    driverPayout: number;
+    tripsCompleted: number;
+    tripsRequested: number;
+    tripsCancelled: number;
+    newPassengers: number;
+    newDrivers: number;
+  };
+  snapshot: {
+    driversPending: number;
+    driversApproved: number;
+    driversSuspended: number;
+    passengers: number;
+    activeTrips: number;
+    openDisputes: number;
+    cnicPending: number;
+    payoutsPending: number;
+  };
+  generatedAt: number;
+}
+
+export const analyticsApi = {
+  get: callable<{ days?: number }, AnalyticsPayload>('adminGetAnalytics'),
+};
+
+// ── Social desk ─────────────────────────────────────────────────────────────
+
+export const SOCIAL_PLATFORMS = [
+  'facebook',
+  'instagram',
+  'youtube',
+  'tiktok',
+  'threads',
+  'x',
+  'linkedin',
+] as const;
+
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+
+/** The console-visible half of a connection (never the token itself). */
+export interface SocialAccountDoc {
+  platform: SocialPlatform;
+  status: 'connected' | 'error' | 'disconnected';
+  displayName?: string;
+  handle?: string | null;
+  externalId?: string;
+  followers?: number | null;
+  avatarUrl?: string | null;
+  canPublishVideo?: boolean;
+  tokenHint?: string | null;
+  lastError?: string | null;
+  connectedBy?: string | null;
+}
+
+export interface ConnectField {
+  key: 'accessToken' | 'externalId' | 'clientId' | 'clientSecret';
+  label: string;
+  hint: string;
+  secret: boolean;
+}
+
+export interface ConnectSchema {
+  vaultReady: boolean;
+  platforms: {
+    platform: SocialPlatform;
+    label: string;
+    canPublishVideo: boolean;
+    fields: ConnectField[];
+  }[];
+}
+
+export interface SocialSettings {
+  enabled: boolean;
+  runHour: number;
+  platforms: SocialPlatform[];
+  requireApproval: boolean;
+  videoProvider: 'veo' | 'none';
+  videoModel: string;
+  aspect: '9:16' | '16:9';
+  angles: string[];
+  lastAngleIndex: number;
+  brandVoice: string;
+  lastRunAtMs: number | null;
+  lastRunStatus: string | null;
+}
+
+export interface SocialPostDoc {
+  id: string;
+  date: string;
+  angle: string;
+  status:
+    | 'drafting'
+    | 'awaiting_approval'
+    | 'rendering'
+    | 'ready'
+    | 'publishing'
+    | 'published'
+    | 'partial'
+    | 'failed'
+    | 'rejected';
+  script: {
+    hook: string;
+    beats: string[];
+    voiceover: string;
+    onScreenText: string[];
+    cta: string;
+    rationale: string;
+  } | null;
+  caption: string;
+  hashtags: string[];
+  facts: Record<string, number | string>;
+  video: { url: string | null; provider: string; aspect: string } | null;
+  targets: SocialPlatform[];
+  results: Partial<Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>>;
+  error: string | null;
+  approvedBy: string | null;
+}
+
+export const socialApi = {
+  connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),
+  connect: callable<
+    {
+      platform: SocialPlatform;
+      accessToken: string;
+      externalId?: string;
+      clientId?: string;
+      clientSecret?: string;
+      expiresInDays?: number;
+    },
+    { ok: boolean }
+  >('adminConnectSocialAccount'),
+  verify: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminVerifySocialAccount'),
+  disconnect: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminDisconnectSocialAccount'),
+
+  getSettings: callable<
+    Record<string, never>,
+    { settings: SocialSettings; readiness: { writer: boolean; video: boolean; tokenVault: boolean } }
+  >('adminGetSocialSettings'),
+  updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings }>(
+    'adminUpdateSocialSettings',
+  ),
+
+  generate: callable<{ date?: string; angle?: string; replace?: boolean }, { ok: boolean; id: string }>(
+    'adminGenerateSocialPost',
+  ),
+  review: callable<
+    {
+      postId: string;
+      approve: boolean;
+      caption?: string;
+      targets?: SocialPlatform[];
+      publishNow?: boolean;
+    },
+    { ok: boolean; status?: string; published?: number; failed?: number }
+  >('adminReviewSocialPost'),
+  publish: callable<
+    { postId: string; platforms?: SocialPlatform[] },
+    { ok: boolean; published: number; failed: number }
+  >('adminPublishSocialPost'),
+  attachVideo: callable<{ postId: string; storagePath: string; aspect?: '9:16' | '16:9' }, { ok: boolean }>(
+    'adminAttachSocialVideo',
+  ),
+  deletePost: callable<{ postId: string }, { ok: boolean }>('adminDeleteSocialPost'),
+};
