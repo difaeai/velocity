@@ -21,7 +21,14 @@ import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { ADAPTERS, PlatformError } from './platforms';
 import { fingerprint, open, seal, tokenVaultReady, type SealedSecret } from './secrets';
-import { PLATFORMS, VIDEO_CAPABLE, type Platform, type PlatformCredentials } from './types';
+import {
+  PLATFORMS,
+  VIDEO_CAPABLE,
+  supports,
+  type ContentFormat,
+  type Platform,
+  type PlatformCredentials,
+} from './types';
 
 const platformSchema = z.enum(PLATFORMS);
 
@@ -65,12 +72,17 @@ export async function loadCredentials(platform: Platform): Promise<PlatformCrede
   }
 }
 
-/** The platforms currently connected and able to take a video. */
-export async function publishableAccounts(): Promise<Platform[]> {
+/** Every platform with a working credential right now. */
+export async function connectedPlatforms(): Promise<Platform[]> {
   const snap = await db.collection('socialAccounts').where('status', '==', 'connected').get();
-  return snap.docs
-    .map((d) => d.id as Platform)
-    .filter((p) => PLATFORMS.includes(p) && VIDEO_CAPABLE.includes(p));
+  return snap.docs.map((d) => d.id as Platform).filter((p) => PLATFORMS.includes(p));
+}
+
+/** The connected platforms that can take this particular format. */
+export async function publishableAccounts(format?: ContentFormat): Promise<Platform[]> {
+  const connected = await connectedPlatforms();
+  if (!format) return connected.filter((p) => VIDEO_CAPABLE.includes(p));
+  return connected.filter((p) => supports(p, format));
 }
 
 /** Record a failure on the account so the console stops claiming it works. */

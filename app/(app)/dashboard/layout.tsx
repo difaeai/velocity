@@ -98,8 +98,15 @@ const SOCIAL_NAV: NavGroup[] = [
   {
     title: 'Content',
     items: [
-      { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
       { href: '/dashboard/social/queue', label: '✅ Approval queue' },
+      { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
+      { href: '/dashboard/social/inbox', label: '💬 Comments' },
+    ],
+  },
+  {
+    title: 'The crew',
+    items: [
+      { href: '/dashboard/social/crew', label: '🧠 Agents & instructions' },
       { href: '/dashboard/social/automation', label: '🤖 Automation' },
     ],
   },

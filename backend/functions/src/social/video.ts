@@ -1,39 +1,42 @@
 /**
- * The editor. Turns a script into an actual video file.
+ * Raftar — the video editor.
  *
- * Two providers exist on purpose:
+ * Two jobs, in order. First the cut: a model call in Raftar's voice that turns
+ * the writer's shots and the designer's frame into a second-by-second edit —
+ * what moves, where the interrupt lands, what the audio is doing. Then the
+ * render: Veo, through the Gemini API, one long-running operation, an MP4 at
+ * the end.
  *
- *   `veo`  — Google's Veo, through the Gemini API. One key, one long-running
- *            operation, an MP4 at the end. Chosen as the default vendor
- *            because it renders dialogue and ambient sound in the same pass,
- *            which is what a 20-second advert needs.
- *   `none` — no rendering at all. The pipeline still writes the script and
- *            stops at "ready for a video", so you can attach a file made
- *            anywhere else. This is the default until you have picked a vendor
- *            and are willing to spend on renders.
+ * The cut is a separate call rather than a template because a video prompt is
+ * where a post is won or lost. "Driver counts cash" renders as a man holding
+ * money; "hold on his hands for 1.5s, cut wide as the note count lands, lime
+ * text stamps in on the beat" renders as something someone watches twice.
+ *
+ * `videoProvider: none` writes the cut and stops — you attach a file made
+ * anywhere else, and it goes out through exactly the same publish path.
  *
  * ⚠️ Like the payments adapter, the Veo calls here were written from Google's
- * published API shape. Render one video from the admin console ("Generate now")
- * and watch the logs before you switch the daily job on — that first render is
- * the real test of the endpoint, the model name and the response shape.
- *
- * Whatever renders it, the file ends up in our own bucket: Instagram, Facebook,
- * Threads and TikTok all *pull* the video from a URL rather than accepting an
- * upload, so it has to be somewhere they can reach.
+ * published API shape. Render one video from the console and watch the logs
+ * before switching the daily job on — that first render is the real test of the
+ * endpoint, the model name and the response shape.
  */
 import { logger } from 'firebase-functions';
 
-import { storage } from '../lib/firebase';
-import type { SocialSettings, VideoAsset } from './types';
-
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+import { agentSystem, feedbackBlock, planBlock } from './crew';
+import { downloadAsset, postFolder, storeFile } from './assets';
+import { GEMINI_BASE, geminiKey, generateJson } from './gemini';
+import {
+  FORMAT_SPECS,
+  type ContentFormat,
+  type ContentPlan,
+  type MediaAsset,
+  type PostScript,
+  type SocialSettings,
+} from './types';
 
 /** How long to let a render run before giving up on it. */
 const RENDER_TIMEOUT_MS = 8 * 60 * 1000;
 const POLL_INTERVAL_MS = 10_000;
-
-/** Signed URLs outlive the publish attempt by a wide margin, for retries. */
-const URL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class VideoError extends Error {}
 
@@ -43,6 +46,99 @@ export function videoConfigured(provider: SocialSettings['videoProvider']): bool
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ── the cut ─────────────────────────────────────────────────────────────────
+
+export interface Cut {
+  /** The prompt handed to the renderer. */
+  prompt: string;
+  /** One line for the console, so an operator can see what was cut. */
+  note: string;
+}
+
+/**
+ * Raftar writes the edit. Falls back to assembling the script directly if the
+ * model call fails — a plainer video is a better outcome than no video.
+ */
+export async function planCut(params: {
+  settings: SocialSettings;
+  format: ContentFormat;
+  script: PostScript;
+  plan: ContentPlan | null;
+  feedback: string[];
+}): Promise<Cut> {
+  const spec = FORMAT_SPECS[params.format];
+
+  try {
+    const { data } = await generateJson<{ prompt?: unknown; note?: unknown }>({
+      model: params.settings.textModel,
+      system: `${agentSystem('raftar', params.settings)}
+
+You are writing a single prompt for a text-to-video model that renders picture and sound in one pass. It has no memory and no second take, so the prompt carries everything: the shot order with rough timings, camera movement, lighting, wardrobe, the spoken voiceover verbatim, the on-screen text verbatim, and what the audio bed is doing.
+
+Write it as directions, not as prose. Never ask for more than the seconds allow.
+
+Reply with one JSON object and nothing else:
+{ "prompt": "the full video prompt", "note": "one line describing the cut, for the console" }`,
+      what: 'The cut',
+      temperature: 0.9,
+      maxOutputTokens: 2000,
+      prompt: [
+        `FORMAT: ${spec.label}, ${spec.aspect}, ${spec.seconds} seconds.`,
+        planBlock(params.plan, 'raftar'),
+        '',
+        `HOOK (this is second zero): ${params.script.hook}`,
+        'SHOTS:',
+        ...params.script.frames.map((f, i) => `${i + 1}. ${f.scene}${f.overlay ? ` — on screen: "${f.overlay}"` : ''}`),
+        '',
+        params.script.voiceover ? `VOICEOVER, spoken exactly:\n"${params.script.voiceover}"` : '',
+        params.script.cta ? `ENDS ON: ${params.script.cta}` : '',
+        feedbackBlock(params.feedback),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+
+    const prompt = typeof data.prompt === 'string' ? data.prompt.trim().slice(0, 4000) : '';
+    if (prompt) {
+      return {
+        prompt,
+        note: (typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '') || 'Cut written.',
+      };
+    }
+  } catch (e) {
+    logger.warn('social: the editor could not write a cut; falling back to the script', {
+      message: (e as Error).message,
+    });
+  }
+
+  return { prompt: assembleCut(params.script, spec.aspect), note: 'Cut assembled straight from the script.' };
+}
+
+/**
+ * The fallback prompt, built without a model call. Kept because a render that
+ * happens is worth more than one that waited for a second opinion.
+ */
+export function assembleCut(script: PostScript, aspect: string): string {
+  return [
+    `A ${aspect} short-form advert for Velocity, a ride-hailing app in Pakistan.`,
+    'Look: modern Pakistani city streets — Lahore, Karachi, Islamabad — real cars, real drivers, natural daylight.',
+    'Brand palette: near-black (#1a1c1c) and bright lime (#ccff00). Clean, confident, no stock-footage cheesiness.',
+    '',
+    'Shots:',
+    ...script.frames.map((f, i) => `${i + 1}. ${f.scene}`),
+    '',
+    script.voiceover ? `Spoken voiceover: "${script.voiceover}"` : '',
+    script.frames.some((f) => f.overlay)
+      ? `On-screen text overlays: ${script.frames.map((f) => f.overlay).filter(Boolean).join(' / ')}`
+      : '',
+    script.cta ? `Ends on: ${script.cta}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+// ── the render ──────────────────────────────────────────────────────────────
 
 /** Pull the first thing in an arbitrarily-shaped response that looks like a video. */
 function findVideoUri(node: unknown, depth = 0): string | null {
@@ -58,30 +154,51 @@ function findVideoUri(node: unknown, depth = 0): string | null {
 }
 
 /**
- * Render with Veo and return the raw MP4. The operation is long-running:
- * kick it off, then poll until Google reports it done.
+ * Render with Veo and return the raw MP4. The operation is long-running: kick
+ * it off, then poll until Google reports it done.
+ *
+ * `firstFrame` is the designer's cover image, when there is one. Image-to-video
+ * is the one part of this call whose shape is most likely to drift, so a
+ * failure with an image retries once without it — a video that opens on a
+ * different frame beats no video at all.
  */
 async function renderWithVeo(params: {
   prompt: string;
   model: string;
   aspect: string;
+  firstFrame: { bytes: Buffer; mimeType: string } | null;
 }): Promise<{ jobId: string; bytes: Buffer }> {
-  const key = process.env.GEMINI_API_KEY!;
+  const key = geminiKey();
 
-  const startRes = await fetch(
-    `${GEMINI_BASE}/models/${encodeURIComponent(params.model)}:predictLongRunning?key=${key}`,
-    {
+  const start = async (withFrame: boolean) => {
+    const instance: Record<string, unknown> = { prompt: params.prompt };
+    if (withFrame && params.firstFrame) {
+      instance.image = {
+        bytesBase64Encoded: params.firstFrame.bytes.toString('base64'),
+        mimeType: params.firstFrame.mimeType,
+      };
+    }
+    return fetch(`${GEMINI_BASE}/models/${encodeURIComponent(params.model)}:predictLongRunning?key=${key}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        instances: [{ prompt: params.prompt }],
+        instances: [instance],
         parameters: { aspectRatio: params.aspect, personGeneration: 'allow_adult' },
       }),
-    },
-  );
+    });
+  };
+
+  let startRes = await start(params.firstFrame !== null);
+  if (!startRes.ok && params.firstFrame) {
+    logger.warn('social: Veo refused the conditioned render, retrying from the prompt alone', {
+      detail: (await startRes.text()).slice(0, 300),
+    });
+    startRes = await start(false);
+  }
   if (!startRes.ok) {
     throw new VideoError(`Veo refused the render: ${(await startRes.text()).slice(0, 400)}`);
   }
+
   const started = (await startRes.json()) as { name?: string };
   if (!started.name) throw new VideoError('Veo did not return an operation to poll.');
 
@@ -112,54 +229,21 @@ async function renderWithVeo(params: {
   return { jobId: started.name, bytes: Buffer.from(await fileRes.arrayBuffer()) };
 }
 
-/**
- * Put the file where the networks can fetch it.
- *
- * Signed URLs are preferred — the link expires and nothing is left permanently
- * open. On a bucket with uniform access and no token-creator role the signing
- * call fails, in which case the object is made public instead: this is a
- * marketing video about to be posted publicly anyway, so the fallback costs
- * nothing but is worth knowing about.
- */
+/** Put a finished MP4 in the bucket under the post it belongs to. */
 export async function storeVideo(postId: string, bytes: Buffer): Promise<{ path: string; url: string; expiresAtMs: number }> {
-  const path = `social/${postId}.mp4`;
-  const file = storage.bucket().file(path);
-  await file.save(bytes, { contentType: 'video/mp4', resumable: false });
-
-  const expiresAtMs = Date.now() + URL_TTL_MS;
-  try {
-    const [url] = await file.getSignedUrl({ action: 'read', expires: expiresAtMs });
-    return { path, url, expiresAtMs };
-  } catch (e) {
-    logger.warn('social: could not sign the video URL, falling back to a public object', { e });
-    await file.makePublic();
-    return {
-      path,
-      url: `https://storage.googleapis.com/${storage.bucket().name}/${path}`,
-      expiresAtMs: 0,
-    };
-  }
-}
-
-/** Re-sign a video whose URL has aged out, so a retry days later still works. */
-export async function refreshVideoUrl(asset: VideoAsset): Promise<VideoAsset> {
-  if (!asset.storagePath) return asset;
-  if (asset.urlExpiresAtMs === 0) return asset; // public object, never expires
-  if (asset.urlExpiresAtMs && asset.urlExpiresAtMs > Date.now() + 60_000) return asset;
-
-  const file = storage.bucket().file(asset.storagePath);
-  const expiresAtMs = Date.now() + URL_TTL_MS;
-  const [url] = await file.getSignedUrl({ action: 'read', expires: expiresAtMs });
-  return { ...asset, url, urlExpiresAtMs: expiresAtMs };
+  return storeFile({ path: `${postFolder(postId)}/video.mp4`, bytes, contentType: 'video/mp4' });
 }
 
 /** Render one video for one post, or return null when no provider is configured. */
 export async function renderVideo(params: {
   postId: string;
-  prompt: string;
+  cut: Cut;
   settings: SocialSettings;
-}): Promise<VideoAsset | null> {
-  const { videoProvider: provider, videoModel: model, aspect } = params.settings;
+  format: ContentFormat;
+  /** The designer's cover frame, used as the opening frame where Veo accepts it. */
+  cover: MediaAsset | null;
+}): Promise<MediaAsset | null> {
+  const { videoProvider: provider, videoModel: model } = params.settings;
   if (provider === 'none') return null;
 
   if (!videoConfigured(provider)) {
@@ -169,17 +253,38 @@ export async function renderVideo(params: {
     );
   }
 
-  const { jobId, bytes } = await renderWithVeo({ prompt: params.prompt, model, aspect });
+  let firstFrame: { bytes: Buffer; mimeType: string } | null = null;
+  if (params.cover?.storagePath) {
+    try {
+      firstFrame = {
+        bytes: await downloadAsset(params.cover),
+        mimeType: params.cover.storagePath.endsWith('.jpg') ? 'image/jpeg' : 'image/png',
+      };
+    } catch (e) {
+      logger.warn('social: could not read the cover frame; rendering from the prompt alone', { e });
+    }
+  }
+
+  const spec = FORMAT_SPECS[params.format];
+  const { jobId, bytes } = await renderWithVeo({
+    prompt: params.cut.prompt,
+    model,
+    aspect: spec.aspect,
+    firstFrame,
+  });
   const stored = await storeVideo(params.postId, bytes);
 
   return {
+    kind: 'video',
     provider,
     model,
     jobId,
     storagePath: stored.path,
     url: stored.url,
     urlExpiresAtMs: stored.expiresAtMs,
-    durationSec: null,
-    aspect,
+    durationSec: spec.seconds,
+    aspect: spec.aspect,
+    slide: 1,
+    alt: '',
   };
 }

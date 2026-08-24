@@ -1,31 +1,43 @@
 /**
- * The network adapters: prove a credential, then post a video with it.
+ * The network adapters: prove a credential, post in whatever format the crew
+ * made, and read the comments that come back.
  *
- * Each adapter does exactly two things — `verify` turns a pasted token into a
+ * Each adapter does up to four things — `verify` turns a pasted token into a
  * profile (which is how the console can say "connected as @velocity.rides_,
- * 158k followers" rather than "saved"), and `publish` puts one finished video
- * up. Anything a network cannot do is absent rather than faked; `VIDEO_CAPABLE`
- * in types.ts is the list the pipeline trusts.
+ * 158k followers" rather than "saved"), `publish` puts one finished piece up,
+ * `listComments` reads what people said under it, and `reply` answers them.
+ * Anything a network cannot do is absent rather than faked; `PLATFORM_FORMATS`
+ * in types.ts is the matrix the pipeline trusts, and the console greys out the
+ * rest.
  *
  * ⚠️ These were written from each platform's public API documentation. Meta,
- * TikTok and YouTube all gate publishing behind app review and scopes that only
- * exist on an approved app, so the first successful post from a *new* app is
- * the real test — verify each adapter against your app's own docs before
- * turning auto-publish on. Every call fails loudly with the network's own error
- * text, which is what you will need when one of them does not match.
+ * TikTok, X, LinkedIn and YouTube all gate publishing behind app review and
+ * scopes that only exist on an approved app, so the first successful post from
+ * a *new* app is the real test — verify each adapter against your app's own
+ * docs before turning the crew loose. Every call fails loudly with the
+ * network's own error text, which is what you will need when one of them does
+ * not match.
  *
- * All three video networks pull the file from a URL rather than accepting an
- * upload from us, which is why the pipeline puts each render in Cloud Storage
- * behind a signed URL first (see video.ts).
+ * Most networks pull media from a URL rather than accepting an upload from us,
+ * which is why everything the crew makes lands in Cloud Storage behind a signed
+ * URL first (see assets.ts). YouTube, X and LinkedIn are the exceptions: they
+ * want the bytes, so the file is streamed back through the backend.
  */
 import { logger } from 'firebase-functions';
 
-import type { Platform, PlatformCredentials, PlatformProfile } from './types';
+import { downloadAsset } from './assets';
+import type {
+  ContentFormat,
+  MediaAsset,
+  Platform,
+  PlatformCredentials,
+  PlatformProfile,
+} from './types';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const THREADS = 'https://graph.threads.net/v1.0';
 
-/** How long to wait for a network to finish ingesting a video before giving up. */
+/** How long to wait for a network to finish ingesting media before giving up. */
 const INGEST_TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
 
@@ -76,17 +88,51 @@ async function call<T>(
   if (!res.ok) {
     // Surface the network's own message — "(#200) requires pages_manage_posts"
     // tells you exactly what to fix; "request failed" does not.
-    const b = body as { error?: { message?: string }; error_description?: string } | string | null;
+    const b = body as
+      | { error?: { message?: string }; error_description?: string; message?: string; detail?: string }
+      | string
+      | null;
     const detail =
       typeof b === 'string'
         ? b.slice(0, 300)
-        : (b?.error?.message ?? b?.error_description ?? `HTTP ${res.status}`);
+        : (b?.error?.message ?? b?.error_description ?? b?.message ?? b?.detail ?? `HTTP ${res.status}`);
     throw new PlatformError(platform, detail);
   }
   return body as T;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** What a finished piece looks like to an adapter. */
+export interface PublishPayload {
+  format: ContentFormat;
+  /** One video, or one to ten images in slide order. */
+  media: MediaAsset[];
+  caption: string;
+  title: string;
+  tags: string[];
+}
+
+export interface RawComment {
+  commentId: string;
+  mediaId: string;
+  authorName: string;
+  text: string;
+  permalink: string | null;
+  createdAtMs: number;
+}
+
+const firstVideo = (p: PublishPayload, platform: Platform): MediaAsset => {
+  const video = p.media.find((m) => m.kind === 'video' && m.url);
+  if (!video?.url) throw new PlatformError(platform, 'That post has no rendered video to publish.');
+  return video;
+};
+
+const images = (p: PublishPayload, platform: Platform): MediaAsset[] => {
+  const list = p.media.filter((m) => m.kind === 'image' && m.url).sort((a, b) => a.slide - b.slide);
+  if (!list.length) throw new PlatformError(platform, 'That post has no images to publish.');
+  return list;
+};
 
 // ── Facebook Page ───────────────────────────────────────────────────────────
 
@@ -105,17 +151,84 @@ async function verifyFacebook(c: PlatformCredentials): Promise<PlatformProfile> 
   };
 }
 
+/** Upload one photo without publishing it, so it can be attached to something. */
+async function facebookStagePhoto(c: PlatformCredentials, url: string): Promise<string> {
+  const res = await call<{ id: string }>('facebook', `${GRAPH}/${c.externalId}/photos`, {
+    form: { url, published: 'false', access_token: c.accessToken },
+  });
+  return res.id;
+}
+
 async function publishFacebook(
   c: PlatformCredentials,
-  v: { videoUrl: string; caption: string },
+  p: PublishPayload,
 ): Promise<{ id: string; url: string }> {
-  const res = await call<{ id: string }>('facebook', `${GRAPH}/${c.externalId}/videos`, {
-    form: { file_url: v.videoUrl, description: v.caption, access_token: c.accessToken },
+  if (p.format === 'reel' || p.format === 'video') {
+    const video = firstVideo(p, 'facebook');
+    const res = await call<{ id: string }>('facebook', `${GRAPH}/${c.externalId}/videos`, {
+      form: { file_url: video.url!, description: p.caption, access_token: c.accessToken },
+    });
+    return { id: res.id, url: `https://www.facebook.com/${res.id}` };
+  }
+
+  if (p.format === 'story') {
+    // Stories attach an already-uploaded photo rather than taking a URL.
+    const photoId = await facebookStagePhoto(c, images(p, 'facebook')[0].url!);
+    const res = await call<{ post_id?: string; id?: string; success?: boolean }>(
+      'facebook',
+      `${GRAPH}/${c.externalId}/photo_stories`,
+      { form: { photo_id: photoId, access_token: c.accessToken } },
+    );
+    const id = res.post_id ?? res.id ?? photoId;
+    return { id, url: `https://www.facebook.com/${c.externalId}` };
+  }
+
+  const photos = images(p, 'facebook');
+  if (p.format === 'post' && photos.length === 1) {
+    const res = await call<{ post_id?: string; id: string }>('facebook', `${GRAPH}/${c.externalId}/photos`, {
+      form: { url: photos[0].url!, caption: p.caption, access_token: c.accessToken },
+    });
+    return { id: res.post_id ?? res.id, url: `https://www.facebook.com/${res.post_id ?? res.id}` };
+  }
+
+  // A carousel on a Page is one feed post with several attached photos.
+  const staged: string[] = [];
+  for (const image of photos.slice(0, 10)) staged.push(await facebookStagePhoto(c, image.url!));
+  const res = await call<{ id: string }>('facebook', `${GRAPH}/${c.externalId}/feed`, {
+    form: {
+      message: p.caption,
+      attached_media: JSON.stringify(staged.map((id) => ({ media_fbid: id }))),
+      access_token: c.accessToken,
+    },
   });
   return { id: res.id, url: `https://www.facebook.com/${res.id}` };
 }
 
-// ── Instagram (Business/Creator, Reels) ─────────────────────────────────────
+async function facebookComments(c: PlatformCredentials, mediaId: string): Promise<RawComment[]> {
+  const res = await call<{
+    data?: { id: string; message?: string; created_time?: string; permalink_url?: string; from?: { name?: string } }[];
+  }>(
+    'facebook',
+    `${GRAPH}/${mediaId}/comments?fields=id,message,created_time,permalink_url,from&limit=50&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+  return (res.data ?? []).map((comment) => ({
+    commentId: comment.id,
+    mediaId,
+    authorName: comment.from?.name ?? 'Someone',
+    text: comment.message ?? '',
+    permalink: comment.permalink_url ?? null,
+    createdAtMs: comment.created_time ? Date.parse(comment.created_time) : Date.now(),
+  }));
+}
+
+async function facebookReply(c: PlatformCredentials, commentId: string, text: string): Promise<string> {
+  const res = await call<{ id: string }>('facebook', `${GRAPH}/${commentId}/comments`, {
+    form: { message: text, access_token: c.accessToken },
+  });
+  return res.id;
+}
+
+// ── Instagram (Business/Creator) ────────────────────────────────────────────
 
 async function verifyInstagram(c: PlatformCredentials): Promise<PlatformProfile> {
   if (!c.externalId) {
@@ -141,45 +254,105 @@ async function verifyInstagram(c: PlatformCredentials): Promise<PlatformProfile>
 }
 
 /**
- * Instagram's two-step publish: create a container, wait for Instagram to
- * finish downloading and transcoding the file, then publish the container.
- * Publishing a container that is still `IN_PROGRESS` is the single most common
- * way this call fails, hence the poll.
+ * Instagram containers are asynchronous: it downloads and transcodes the file
+ * on its own time, and publishing a container that is still `IN_PROGRESS` is
+ * the single most common way this call fails. Hence the poll.
  */
-async function publishInstagram(
-  c: PlatformCredentials,
-  v: { videoUrl: string; caption: string },
-): Promise<{ id: string; url: string }> {
-  const container = await call<{ id: string }>('instagram', `${GRAPH}/${c.externalId}/media`, {
-    form: {
-      media_type: 'REELS',
-      video_url: v.videoUrl,
-      caption: v.caption,
-      share_to_feed: 'true',
-      access_token: c.accessToken,
-    },
-  });
-
+async function instagramAwait(c: PlatformCredentials, containerId: string): Promise<void> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS;
   for (;;) {
     const status = await call<{ status_code: string; status?: string }>(
       'instagram',
-      `${GRAPH}/${container.id}?fields=status_code,status&access_token=${encodeURIComponent(c.accessToken)}`,
+      `${GRAPH}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(c.accessToken)}`,
     );
-    if (status.status_code === 'FINISHED') break;
+    if (status.status_code === 'FINISHED') return;
     if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') {
-      throw new PlatformError('instagram', `Instagram rejected the video: ${status.status ?? status.status_code}`);
+      throw new PlatformError('instagram', `Instagram rejected the media: ${status.status ?? status.status_code}`);
     }
     if (Date.now() > deadline) {
-      throw new PlatformError('instagram', 'Instagram is still processing the video after 5 minutes.');
+      throw new PlatformError('instagram', 'Instagram is still processing the media after 5 minutes.');
     }
     await sleep(POLL_INTERVAL_MS);
   }
+}
+
+async function instagramContainer(c: PlatformCredentials, form: Record<string, string>): Promise<string> {
+  const res = await call<{ id: string }>('instagram', `${GRAPH}/${c.externalId}/media`, {
+    form: { ...form, access_token: c.accessToken },
+  });
+  return res.id;
+}
+
+async function publishInstagram(
+  c: PlatformCredentials,
+  p: PublishPayload,
+): Promise<{ id: string; url: string }> {
+  let containerId: string;
+
+  if (p.format === 'reel') {
+    containerId = await instagramContainer(c, {
+      media_type: 'REELS',
+      video_url: firstVideo(p, 'instagram').url!,
+      caption: p.caption,
+      share_to_feed: 'true',
+    });
+  } else if (p.format === 'story') {
+    containerId = await instagramContainer(c, {
+      media_type: 'STORIES',
+      image_url: images(p, 'instagram')[0].url!,
+    });
+  } else if (p.format === 'carousel') {
+    const slides = images(p, 'instagram').slice(0, 10);
+    if (slides.length < 2) throw new PlatformError('instagram', 'A carousel needs at least two images.');
+    const children: string[] = [];
+    for (const slide of slides) {
+      const child = await instagramContainer(c, { image_url: slide.url!, is_carousel_item: 'true' });
+      await instagramAwait(c, child);
+      children.push(child);
+    }
+    containerId = await instagramContainer(c, {
+      media_type: 'CAROUSEL',
+      children: children.join(','),
+      caption: p.caption,
+    });
+  } else {
+    containerId = await instagramContainer(c, {
+      image_url: images(p, 'instagram')[0].url!,
+      caption: p.caption,
+    });
+  }
+
+  await instagramAwait(c, containerId);
 
   const published = await call<{ id: string }>('instagram', `${GRAPH}/${c.externalId}/media_publish`, {
-    form: { creation_id: container.id, access_token: c.accessToken },
+    form: { creation_id: containerId, access_token: c.accessToken },
   });
-  return { id: published.id, url: `https://www.instagram.com/reel/${published.id}` };
+  const path = p.format === 'reel' ? 'reel' : 'p';
+  return { id: published.id, url: `https://www.instagram.com/${path}/${published.id}` };
+}
+
+async function instagramComments(c: PlatformCredentials, mediaId: string): Promise<RawComment[]> {
+  const res = await call<{
+    data?: { id: string; text?: string; timestamp?: string; username?: string }[];
+  }>(
+    'instagram',
+    `${GRAPH}/${mediaId}/comments?fields=id,text,timestamp,username&limit=50&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+  return (res.data ?? []).map((comment) => ({
+    commentId: comment.id,
+    mediaId,
+    authorName: comment.username ? `@${comment.username}` : 'Someone',
+    text: comment.text ?? '',
+    permalink: null,
+    createdAtMs: comment.timestamp ? Date.parse(comment.timestamp) : Date.now(),
+  }));
+}
+
+async function instagramReply(c: PlatformCredentials, commentId: string, text: string): Promise<string> {
+  const res = await call<{ id: string }>('instagram', `${GRAPH}/${commentId}/replies`, {
+    form: { message: text, access_token: c.accessToken },
+  });
+  return res.id;
 }
 
 // ── Threads ─────────────────────────────────────────────────────────────────
@@ -198,37 +371,95 @@ async function verifyThreads(c: PlatformCredentials): Promise<PlatformProfile> {
   };
 }
 
-async function publishThreads(
-  c: PlatformCredentials,
-  v: { videoUrl: string; caption: string },
-): Promise<{ id: string; url: string }> {
-  const container = await call<{ id: string }>('threads', `${THREADS}/${c.externalId}/threads`, {
-    form: {
-      media_type: 'VIDEO',
-      video_url: v.videoUrl,
-      text: v.caption,
-      access_token: c.accessToken,
-    },
+async function threadsContainer(c: PlatformCredentials, form: Record<string, string>): Promise<string> {
+  const res = await call<{ id: string }>('threads', `${THREADS}/${c.externalId}/threads`, {
+    form: { ...form, access_token: c.accessToken },
   });
+  return res.id;
+}
 
+async function threadsAwait(c: PlatformCredentials, containerId: string): Promise<void> {
   const deadline = Date.now() + INGEST_TIMEOUT_MS;
   for (;;) {
     const status = await call<{ status: string; error_message?: string }>(
       'threads',
-      `${THREADS}/${container.id}?fields=status,error_message&access_token=${encodeURIComponent(c.accessToken)}`,
+      `${THREADS}/${containerId}?fields=status,error_message&access_token=${encodeURIComponent(c.accessToken)}`,
     );
-    if (status.status === 'FINISHED') break;
+    if (status.status === 'FINISHED') return;
     if (status.status === 'ERROR' || status.status === 'EXPIRED') {
       throw new PlatformError('threads', status.error_message ?? `Threads returned ${status.status}`);
     }
     if (Date.now() > deadline) throw new PlatformError('threads', 'Threads is still processing after 5 minutes.');
     await sleep(POLL_INTERVAL_MS);
   }
+}
 
+async function threadsPublish(c: PlatformCredentials, containerId: string): Promise<{ id: string; url: string }> {
   const published = await call<{ id: string }>('threads', `${THREADS}/${c.externalId}/threads_publish`, {
-    form: { creation_id: container.id, access_token: c.accessToken },
+    form: { creation_id: containerId, access_token: c.accessToken },
   });
   return { id: published.id, url: `https://www.threads.net/@${c.externalId}/post/${published.id}` };
+}
+
+async function publishThreads(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
+  let containerId: string;
+
+  if (p.format === 'reel') {
+    containerId = await threadsContainer(c, {
+      media_type: 'VIDEO',
+      video_url: firstVideo(p, 'threads').url!,
+      text: p.caption,
+    });
+  } else if (p.format === 'carousel') {
+    const slides = images(p, 'threads').slice(0, 10);
+    const children: string[] = [];
+    for (const slide of slides) {
+      const child = await threadsContainer(c, {
+        media_type: 'IMAGE',
+        image_url: slide.url!,
+        is_carousel_item: 'true',
+      });
+      await threadsAwait(c, child);
+      children.push(child);
+    }
+    containerId = await threadsContainer(c, {
+      media_type: 'CAROUSEL',
+      children: children.join(','),
+      text: p.caption,
+    });
+  } else {
+    const image = p.media.find((m) => m.kind === 'image' && m.url);
+    containerId = image
+      ? await threadsContainer(c, { media_type: 'IMAGE', image_url: image.url!, text: p.caption })
+      : await threadsContainer(c, { media_type: 'TEXT', text: p.caption });
+  }
+
+  await threadsAwait(c, containerId);
+  return threadsPublish(c, containerId);
+}
+
+async function threadsComments(c: PlatformCredentials, mediaId: string): Promise<RawComment[]> {
+  const res = await call<{
+    data?: { id: string; text?: string; timestamp?: string; username?: string; permalink?: string }[];
+  }>(
+    'threads',
+    `${THREADS}/${mediaId}/replies?fields=id,text,timestamp,username,permalink&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+  return (res.data ?? []).map((reply) => ({
+    commentId: reply.id,
+    mediaId,
+    authorName: reply.username ? `@${reply.username}` : 'Someone',
+    text: reply.text ?? '',
+    permalink: reply.permalink ?? null,
+    createdAtMs: reply.timestamp ? Date.parse(reply.timestamp) : Date.now(),
+  }));
+}
+
+async function threadsReply(c: PlatformCredentials, commentId: string, text: string): Promise<string> {
+  const containerId = await threadsContainer(c, { media_type: 'TEXT', text, reply_to_id: commentId });
+  await threadsAwait(c, containerId);
+  const published = await threadsPublish(c, containerId);
+  return published.id;
 }
 
 // ── TikTok ──────────────────────────────────────────────────────────────────
@@ -256,18 +487,16 @@ async function verifyTikTok(c: PlatformCredentials): Promise<PlatformProfile> {
  * app's verified-domain list in the TikTok developer portal, or init returns
  * `url_ownership_unverified` — that is a portal setting, not a bug here.
  */
-async function publishTikTok(
-  c: PlatformCredentials,
-  v: { videoUrl: string; caption: string },
-): Promise<{ id: string; url: string }> {
+async function publishTikTok(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
+  const video = firstVideo(p, 'tiktok');
   const res = await call<{ data: { publish_id: string }; error?: { code: string; message: string } }>(
     'tiktok',
     'https://open.tiktokapis.com/v2/post/publish/video/init/',
     {
       headers: { authorization: `Bearer ${c.accessToken}` },
       json: {
-        post_info: { title: v.caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE' },
-        source_info: { source: 'PULL_FROM_URL', video_url: v.videoUrl },
+        post_info: { title: p.caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE' },
+        source_info: { source: 'PULL_FROM_URL', video_url: video.url! },
       },
     },
   );
@@ -326,11 +555,9 @@ async function verifyYouTube(c: PlatformCredentials): Promise<PlatformProfile> {
  * YouTube is the one network that will not fetch the file itself, so the video
  * is streamed through us: start a resumable session, then PUT the bytes.
  */
-async function publishYouTube(
-  c: PlatformCredentials,
-  v: { videoUrl: string; caption: string; title: string; tags: string[] },
-): Promise<{ id: string; url: string }> {
+async function publishYouTube(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
   const token = await youtubeAccessToken(c);
+  const video = firstVideo(p, 'youtube');
 
   const start = await fetch(
     'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
@@ -339,9 +566,11 @@ async function publishYouTube(
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         snippet: {
-          title: v.title.slice(0, 100),
-          description: v.caption.slice(0, 5000),
-          tags: v.tags.slice(0, 20),
+          // A vertical upload under a minute is a Short; the hashtag is what
+          // tells YouTube to treat it as one.
+          title: `${p.title.slice(0, 90)}${p.format === 'reel' ? ' #Shorts' : ''}`.slice(0, 100),
+          description: p.caption.slice(0, 5000),
+          tags: p.tags.slice(0, 20),
         },
         status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
       }),
@@ -352,21 +581,59 @@ async function publishYouTube(
     throw new PlatformError('youtube', `Could not start the upload: ${(await start.text()).slice(0, 300)}`);
   }
 
-  const file = await fetch(v.videoUrl);
-  if (!file.ok) throw new PlatformError('youtube', 'Could not read the rendered video back from storage.');
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const bytes = await downloadAsset(video).catch(() => {
+    throw new PlatformError('youtube', 'Could not read the rendered video back from storage.');
+  });
 
   const done = await fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'content-type': 'video/mp4', 'content-length': String(bytes.length) },
-    body: bytes,
+    body: new Uint8Array(bytes),
   });
   if (!done.ok) throw new PlatformError('youtube', `Upload failed: ${(await done.text()).slice(0, 300)}`);
   const result = (await done.json()) as { id: string };
   return { id: result.id, url: `https://www.youtube.com/watch?v=${result.id}` };
 }
 
-// ── X and LinkedIn (authenticate only) ──────────────────────────────────────
+async function youtubeComments(c: PlatformCredentials, mediaId: string): Promise<RawComment[]> {
+  const token = await youtubeAccessToken(c);
+  const res = await call<{
+    items?: {
+      snippet?: {
+        topLevelComment?: {
+          id: string;
+          snippet?: { authorDisplayName?: string; textOriginal?: string; publishedAt?: string };
+        };
+      };
+    }[];
+  }>(
+    'youtube',
+    `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${encodeURIComponent(mediaId)}&maxResults=50&order=time`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  return (res.items ?? [])
+    .map((item) => item.snippet?.topLevelComment)
+    .filter((comment): comment is NonNullable<typeof comment> => Boolean(comment?.id))
+    .map((comment) => ({
+      commentId: comment.id,
+      mediaId,
+      authorName: comment.snippet?.authorDisplayName ?? 'Someone',
+      text: comment.snippet?.textOriginal ?? '',
+      permalink: `https://www.youtube.com/watch?v=${mediaId}&lc=${comment.id}`,
+      createdAtMs: comment.snippet?.publishedAt ? Date.parse(comment.snippet.publishedAt) : Date.now(),
+    }));
+}
+
+async function youtubeReply(c: PlatformCredentials, commentId: string, text: string): Promise<string> {
+  const token = await youtubeAccessToken(c);
+  const res = await call<{ id: string }>('youtube', 'https://www.googleapis.com/youtube/v3/comments?part=snippet', {
+    headers: { authorization: `Bearer ${token}` },
+    json: { snippet: { parentId: commentId, textOriginal: text } },
+  });
+  return res.id;
+}
+
+// ── X ───────────────────────────────────────────────────────────────────────
 
 async function verifyX(c: PlatformCredentials): Promise<PlatformProfile> {
   const res = await call<{ data: { id: string; name: string; username: string } }>(
@@ -387,6 +654,51 @@ async function verifyX(c: PlatformCredentials): Promise<PlatformProfile> {
   };
 }
 
+/** X wants the bytes, as multipart, before it will attach anything to a post. */
+async function xUploadImage(c: PlatformCredentials, asset: MediaAsset): Promise<string> {
+  const bytes = await downloadAsset(asset);
+  const form = new FormData();
+  form.append('media', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'image.png');
+  form.append('media_category', 'tweet_image');
+
+  const res = await fetch('https://api.x.com/2/media/upload', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${c.accessToken}` },
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new PlatformError('x', `Media upload failed: ${text.slice(0, 300)}`);
+  const body = JSON.parse(text) as { data?: { id?: string }; media_id_string?: string };
+  const id = body.data?.id ?? body.media_id_string;
+  if (!id) throw new PlatformError('x', 'X accepted the image but returned no media id.');
+  return id;
+}
+
+async function publishX(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
+  const image = p.media.find((m) => m.kind === 'image' && m.url);
+  const mediaIds: string[] = [];
+  if (image) {
+    try {
+      mediaIds.push(await xUploadImage(c, image));
+    } catch (e) {
+      // A text post that goes out beats a post that didn't because the image
+      // endpoint moved. The error is logged, not swallowed silently.
+      logger.warn('social: X would not take the image; posting text only', { message: (e as Error).message });
+    }
+  }
+
+  const res = await call<{ data: { id: string } }>('x', 'https://api.x.com/2/tweets', {
+    headers: { authorization: `Bearer ${c.accessToken}` },
+    json: {
+      text: p.caption.slice(0, 280),
+      ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
+    },
+  });
+  return { id: res.data.id, url: `https://x.com/i/web/status/${res.data.id}` };
+}
+
+// ── LinkedIn ────────────────────────────────────────────────────────────────
+
 async function verifyLinkedIn(c: PlatformCredentials): Promise<PlatformProfile> {
   const me = await call<{ sub: string; name: string; picture?: string }>(
     'linkedin',
@@ -402,19 +714,89 @@ async function verifyLinkedIn(c: PlatformCredentials): Promise<PlatformProfile> 
   };
 }
 
-// ── registry ────────────────────────────────────────────────────────────────
-
-export interface VideoPost {
-  videoUrl: string;
-  caption: string;
-  title: string;
-  tags: string[];
+/** Post as the organisation when a URN was given, otherwise as the person. */
+function linkedinAuthor(c: PlatformCredentials): string {
+  const id = c.externalId ?? '';
+  return id.startsWith('urn:li:') ? id : `urn:li:person:${id}`;
 }
+
+async function linkedinUploadImage(c: PlatformCredentials, asset: MediaAsset): Promise<string> {
+  const author = linkedinAuthor(c);
+  const registered = await call<{
+    value?: { asset?: string; uploadMechanism?: Record<string, { uploadUrl?: string }> };
+  }>('linkedin', 'https://api.linkedin.com/v2/assets?action=registerUpload', {
+    headers: { authorization: `Bearer ${c.accessToken}`, 'x-restli-protocol-version': '2.0.0' },
+    json: {
+      registerUploadRequest: {
+        owner: author,
+        recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+        serviceRelationships: [
+          { relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' },
+        ],
+      },
+    },
+  });
+
+  const mechanism = registered.value?.uploadMechanism ?? {};
+  const uploadUrl = Object.values(mechanism)[0]?.uploadUrl;
+  const assetUrn = registered.value?.asset;
+  if (!uploadUrl || !assetUrn) throw new PlatformError('linkedin', 'LinkedIn did not return an upload URL.');
+
+  const bytes = await downloadAsset(asset);
+  const put = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${c.accessToken}`, 'content-type': 'application/octet-stream' },
+    body: new Uint8Array(bytes),
+  });
+  if (!put.ok) throw new PlatformError('linkedin', `Image upload failed: ${(await put.text()).slice(0, 300)}`);
+  return assetUrn;
+}
+
+async function publishLinkedIn(c: PlatformCredentials, p: PublishPayload): Promise<{ id: string; url: string }> {
+  const author = linkedinAuthor(c);
+  const image = p.media.find((m) => m.kind === 'image' && m.url);
+
+  let assetUrn: string | null = null;
+  if (image) {
+    try {
+      assetUrn = await linkedinUploadImage(c, image);
+    } catch (e) {
+      logger.warn('social: LinkedIn would not take the image; posting text only', {
+        message: (e as Error).message,
+      });
+    }
+  }
+
+  const res = await call<{ id: string }>('linkedin', 'https://api.linkedin.com/v2/ugcPosts', {
+    headers: { authorization: `Bearer ${c.accessToken}`, 'x-restli-protocol-version': '2.0.0' },
+    json: {
+      author,
+      lifecycleState: 'PUBLISHED',
+      specificContent: {
+        'com.linkedin.ugc.ShareContent': {
+          shareCommentary: { text: p.caption.slice(0, 3000) },
+          shareMediaCategory: assetUrn ? 'IMAGE' : 'NONE',
+          ...(assetUrn
+            ? { media: [{ status: 'READY', media: assetUrn, description: { text: image?.alt ?? '' } }] }
+            : {}),
+        },
+      },
+      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
+    },
+  });
+  return { id: res.id, url: `https://www.linkedin.com/feed/update/${res.id}` };
+}
+
+// ── registry ────────────────────────────────────────────────────────────────
 
 interface Adapter {
   label: string;
   verify: (c: PlatformCredentials) => Promise<PlatformProfile>;
-  publish?: (c: PlatformCredentials, v: VideoPost) => Promise<{ id: string; url: string }>;
+  publish?: (c: PlatformCredentials, p: PublishPayload) => Promise<{ id: string; url: string }>;
+  /** Read what people said under one of our posts. */
+  listComments?: (c: PlatformCredentials, mediaId: string) => Promise<RawComment[]>;
+  /** Answer one of them. */
+  reply?: (c: PlatformCredentials, commentId: string, text: string) => Promise<string>;
   /** What the console tells you to paste, in order. */
   fields: { key: keyof PlatformCredentials; label: string; hint: string; secret: boolean }[];
 }
@@ -424,6 +806,8 @@ export const ADAPTERS: Record<Platform, Adapter> = {
     label: 'Facebook Page',
     verify: verifyFacebook,
     publish: publishFacebook,
+    listComments: facebookComments,
+    reply: facebookReply,
     fields: [
       {
         key: 'accessToken',
@@ -438,11 +822,13 @@ export const ADAPTERS: Record<Platform, Adapter> = {
     label: 'Instagram',
     verify: verifyInstagram,
     publish: publishInstagram,
+    listComments: instagramComments,
+    reply: instagramReply,
     fields: [
       {
         key: 'accessToken',
         label: 'Access token',
-        hint: 'The same long-lived Page token, with instagram_basic and instagram_content_publish.',
+        hint: 'The same long-lived Page token, with instagram_basic, instagram_content_publish and instagram_manage_comments.',
         secret: true,
       },
       {
@@ -456,12 +842,14 @@ export const ADAPTERS: Record<Platform, Adapter> = {
   youtube: {
     label: 'YouTube',
     verify: verifyYouTube,
-    publish: (c, v) => publishYouTube(c, v),
+    publish: publishYouTube,
+    listComments: youtubeComments,
+    reply: youtubeReply,
     fields: [
       {
         key: 'accessToken',
         label: 'OAuth refresh token',
-        hint: 'Scope https://www.googleapis.com/auth/youtube.upload, obtained once with access_type=offline.',
+        hint: 'Scopes youtube.upload and youtube.force-ssl, obtained once with access_type=offline.',
         secret: true,
       },
       { key: 'clientId', label: 'OAuth client ID', hint: 'Google Cloud console → Credentials.', secret: false },
@@ -485,11 +873,13 @@ export const ADAPTERS: Record<Platform, Adapter> = {
     label: 'Threads',
     verify: verifyThreads,
     publish: publishThreads,
+    listComments: threadsComments,
+    reply: threadsReply,
     fields: [
       {
         key: 'accessToken',
         label: 'Threads access token',
-        hint: 'Threads API, scopes threads_basic and threads_content_publish.',
+        hint: 'Threads API, scopes threads_basic, threads_content_publish and threads_manage_replies.',
         secret: true,
       },
     ],
@@ -497,11 +887,12 @@ export const ADAPTERS: Record<Platform, Adapter> = {
   x: {
     label: 'X',
     verify: verifyX,
+    publish: publishX,
     fields: [
       {
         key: 'accessToken',
         label: 'OAuth 2.0 user token',
-        hint: 'X developer portal, scope users.read tweet.read tweet.write.',
+        hint: 'X developer portal, scopes users.read tweet.read tweet.write media.write.',
         secret: true,
       },
     ],
@@ -509,8 +900,14 @@ export const ADAPTERS: Record<Platform, Adapter> = {
   linkedin: {
     label: 'LinkedIn',
     verify: verifyLinkedIn,
+    publish: publishLinkedIn,
     fields: [
-      { key: 'accessToken', label: 'Access token', hint: 'LinkedIn app, scopes openid profile w_member_social.', secret: true },
+      {
+        key: 'accessToken',
+        label: 'Access token',
+        hint: 'LinkedIn app, scopes openid profile w_member_social.',
+        secret: true,
+      },
       {
         key: 'externalId',
         label: 'Organization URN (optional)',
@@ -521,19 +918,46 @@ export const ADAPTERS: Record<Platform, Adapter> = {
   },
 };
 
-/** Post one video to one network, or explain why that network cannot take it. */
+/** Post one finished piece to one network, or explain why that network can't take it. */
 export async function publishTo(
   platform: Platform,
   credentials: PlatformCredentials,
-  post: VideoPost,
+  payload: PublishPayload,
 ): Promise<{ id: string; url: string }> {
   const adapter = ADAPTERS[platform];
   if (!adapter.publish) {
     throw new PlatformError(
       platform,
-      `Publishing video to ${adapter.label} is not implemented yet — the account is connected for reporting only.`,
+      `Publishing to ${adapter.label} is not implemented yet — the account is connected for reporting only.`,
     );
   }
-  logger.info('social: publishing', { platform });
-  return adapter.publish(credentials, post);
+  logger.info('social: publishing', { platform, format: payload.format });
+  return adapter.publish(credentials, payload);
+}
+
+export function canListComments(platform: Platform): boolean {
+  return typeof ADAPTERS[platform].listComments === 'function';
+}
+
+export async function listComments(
+  platform: Platform,
+  credentials: PlatformCredentials,
+  mediaId: string,
+): Promise<RawComment[]> {
+  const adapter = ADAPTERS[platform];
+  if (!adapter.listComments) return [];
+  return adapter.listComments(credentials, mediaId);
+}
+
+export async function replyToComment(
+  platform: Platform,
+  credentials: PlatformCredentials,
+  commentId: string,
+  text: string,
+): Promise<string> {
+  const adapter = ADAPTERS[platform];
+  if (!adapter.reply) {
+    throw new PlatformError(platform, `Replying on ${adapter.label} is not supported by its API here.`);
+  }
+  return adapter.reply(credentials, commentId, text);
 }

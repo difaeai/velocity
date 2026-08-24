@@ -273,7 +273,7 @@ export {
 // Admin dashboard analytics — daily series + live snapshot, cached per day
 export { adminGetAnalytics } from './analytics';
 
-// Social desk — connected accounts and the daily AI content pipeline
+// Social desk — the content crew, the accounts they post to, and the inbox
 export {
   adminConnectSocialAccount,
   adminDisconnectSocialAccount,
@@ -283,8 +283,13 @@ export {
   adminUpdateSocialSettings,
   socialDailyContent,
   adminGenerateSocialPost,
+  adminRequestSocialChanges,
   adminReviewSocialPost,
   adminPublishSocialPost,
-  adminAttachSocialVideo,
+  adminAttachSocialMedia,
   adminDeleteSocialPost,
+  socialEngagement,
+  adminSyncSocialComments,
+  adminReplySocialComment,
+  adminSetCommentStatus,
 } from './social';

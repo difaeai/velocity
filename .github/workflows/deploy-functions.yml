@@ -92,9 +92,9 @@ jobs:
           fi
           if [ -n "$GEMINI_API_KEY" ]; then
             printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> .env.velocity-fe379
-            echo "· social: video rendering ENABLED"
+            echo "· social: the content crew is READY"
           else
-            echo "· social: no GEMINI_API_KEY — scripts are written, videos attached by hand"
+            echo "· social: no GEMINI_API_KEY — the crew cannot plan, write, draw or render"
           fi
           echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 
