@@ -3,15 +3,24 @@
 /**
  * Manage social → Approval queue.
  *
- * The gate between a machine-written post and 158k people. Everything the
- * pipeline produced is here in full — the hook, the shot list, the voiceover,
- * the caption, the video, and the numbers the script was written from — because
- * approving a claim you cannot check is the failure mode this whole feature has
- * to avoid.
+ * The gate between four agents and the whole audience. Nothing this desk makes
+ * reaches a network without passing through this screen, so everything the crew
+ * produced is here in full — the concept they agreed at standup, the hook, the
+ * frames, the slides or the video, the per-network captions, and the numbers
+ * the script was written from. Approving a claim you cannot check is the exact
+ * failure this feature has to avoid.
  *
- * The caption is editable in place: the common case is a good post with one
- * phrase you'd rather word differently, and re-generating for that wastes a
- * render.
+ * Four things you can do with a draft, and they are deliberately different
+ * weights:
+ *
+ *   Approve         — it is right. Post it now, or mark it ready for later.
+ *   Ask for changes — say what is wrong; only the stages you name re-run.
+ *   Reject          — not this one. It stays readable, it just never goes out.
+ *   Delete          — as if it never happened.
+ *
+ * The caption is editable in place, because the common case is a good post with
+ * one phrase you would rather word differently, and re-running the crew for
+ * that wastes a render.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -20,11 +29,39 @@ import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
 import { colors } from '@/lib/config';
-import { socialApi, type SocialPlatform, type SocialPostDoc } from '@/lib/api';
+import {
+  postAssets,
+  socialApi,
+  type SocialPlatform,
+  type SocialPostDoc,
+  type SocialRevision,
+} from '@/lib/api';
 import { Button, Card } from '@/components/ui';
-import { PlatformBadge, PLATFORM_META, StatusPill, longDate } from '@/components/social/shared';
+import {
+  CrewLine,
+  FormatChip,
+  PLATFORM_META,
+  PlatformBadge,
+  StatusPill,
+  longDate,
+} from '@/components/social/shared';
 
-const OPEN_STATES = ['drafting', 'rendering', 'awaiting_approval', 'ready', 'failed', 'partial'];
+const OPEN_STATES = [
+  'planning',
+  'researching',
+  'drafting',
+  'designing',
+  'rendering',
+  'awaiting_approval',
+  'changes_requested',
+  'ready',
+  'failed',
+  'partial',
+];
+
+const WORKING_STATES = ['planning', 'researching', 'drafting', 'designing', 'rendering', 'publishing'];
+
+type ChangeScope = 'script' | 'design' | 'video' | 'caption';
 
 export default function QueuePage() {
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
@@ -52,10 +89,19 @@ export default function QueuePage() {
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
           <p style={{ color: colors.muted, margin: 0 }}>
-            Read it, check the numbers, then let it out.
+            Everything the crew has made. Read it, check the numbers, then approve it — or tell them what to fix.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 4, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: 3 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 4,
+            background: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 10,
+            padding: 3,
+          }}
+        >
           {(['open', 'all'] as const).map((t) => (
             <button
               key={t}
@@ -83,13 +129,15 @@ export default function QueuePage() {
       {shown.length === 0 ? (
         <Card>
           <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>
-            {tab === 'open' ? 'Nothing waiting. The queue is clear.' : 'No posts have been generated yet.'}
+            {tab === 'open'
+              ? 'Nothing waiting. The queue is clear.'
+              : 'The crew has not made anything yet — brief them from the overview.'}
           </p>
         </Card>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
-          {shown.map((p) => (
-            <PostCard key={p.id} post={p} />
+          {shown.map((post) => (
+            <PostCard key={post.id} post={post} />
           ))}
         </div>
       )}
@@ -98,288 +146,527 @@ export default function QueuePage() {
 }
 
 function PostCard({ post }: { post: SocialPostDoc }) {
-  // Null means "not edited here yet", so the backend's caption keeps showing
-  // while a post is still being written, and an admin's edit is never clobbered
-  // by a later write to the same post.
-  const [edited, setEdited] = useState<string | null>(null);
-  const caption = edited ?? post.caption;
+  const [caption, setCaption] = useState(post.caption);
   const [targets, setTargets] = useState<SocialPlatform[]>(post.targets ?? []);
+  const [feedback, setFeedback] = useState('');
+  const [scope, setScope] = useState<ChangeScope[]>(['script']);
   const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ kind: 'ok' | 'bad'; text: string } | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
 
-  const canPublish = post.video?.url && ['ready', 'awaiting_approval', 'partial', 'failed'].includes(post.status);
+  /**
+   * The document is live, so an edit in this box has to survive an unrelated
+   * snapshot — but must be thrown away the moment the crew rewrites the thing
+   * being edited. Adjusting during render (rather than in an effect) is React's
+   * own answer to that: it re-renders before anything is painted, so the stale
+   * value is never on screen.
+   */
+  const [serverCaption, setServerCaption] = useState(post.caption);
+  if (post.caption !== serverCaption) {
+    setServerCaption(post.caption);
+    setCaption(post.caption);
+  }
+  const serverTargets = (post.targets ?? []).join(',');
+  const [lastTargets, setLastTargets] = useState(serverTargets);
+  if (serverTargets !== lastTargets) {
+    setLastTargets(serverTargets);
+    setTargets(post.targets ?? []);
+  }
 
-  async function act(kind: 'approve' | 'reject' | 'publish' | 'delete') {
-    setBusy(kind);
-    setMessage(null);
+  const assets = postAssets(post);
+  const working = WORKING_STATES.includes(post.status);
+  const format = post.format ?? 'reel';
+
+  async function run(label: string, fn: () => Promise<string | null>) {
+    setBusy(label);
+    setError(null);
+    setNotice(null);
     try {
-      if (kind === 'reject') {
-        await socialApi.review({ postId: post.id, approve: false });
-        setMessage({ kind: 'ok', text: 'Rejected. It will not be posted.' });
-      } else if (kind === 'approve') {
-        await socialApi.review({ postId: post.id, approve: true, caption, targets });
-        setMessage({ kind: 'ok', text: 'Approved. Publish when you are ready.' });
-      } else if (kind === 'publish') {
-        const r = await socialApi.review({ postId: post.id, approve: true, caption, targets, publishNow: true });
-        setMessage(
-          r.published
-            ? { kind: 'ok', text: `Published to ${r.published} network${r.published === 1 ? '' : 's'}.` }
-            : { kind: 'bad', text: 'Every network rejected it — see the per-network errors below.' },
-        );
-      } else {
-        await socialApi.deletePost({ postId: post.id });
-      }
+      setNotice(await fn());
     } catch (e) {
-      setMessage({ kind: 'bad', text: e instanceof Error ? e.message : 'That did not work.' });
+      setError(e instanceof Error ? e.message : 'That did not work.');
     } finally {
       setBusy(null);
     }
   }
 
+  const approve = (publishNow: boolean) =>
+    run(publishNow ? 'publish' : 'approve', async () => {
+      const res = await socialApi.review({ postId: post.id, approve: true, caption, targets, publishNow });
+      if (!publishNow) return 'Approved. It is ready whenever you want it out.';
+      return `Posted to ${res.published ?? 0} network${res.published === 1 ? '' : 's'}${
+        res.failed ? `, ${res.failed} failed — see below.` : '.'
+      }`;
+    });
+
+  const askForChanges = () =>
+    run('changes', async () => {
+      if (feedback.trim().length < 3) throw new Error('Say what you want changed.');
+      if (!scope.length) throw new Error('Pick what should be redone.');
+      const res = await socialApi.requestChanges({ postId: post.id, feedback: feedback.trim(), scope });
+      setFeedback('');
+      return `Sent back to the crew. Re-running: ${res.reran.join(', ')}.`;
+    });
+
+  const reject = () => run('reject', async () => {
+    await socialApi.review({ postId: post.id, approve: false });
+    return 'Rejected. It stays here to read, but it will not go out.';
+  });
+
+  const remove = () =>
+    run('delete', async () => {
+      if (!confirm('Delete this post entirely?')) return null;
+      await socialApi.deletePost({ postId: post.id });
+      return null;
+    });
+
   async function attach(file: File) {
-    setBusy('attach');
-    setMessage(null);
-    setUploading(true);
-    try {
-      const path = `socialUploads/${post.id}-${Date.now()}.mp4`;
-      await uploadBytes(ref(storage, path), file, { contentType: file.type || 'video/mp4' });
-      await socialApi.attachVideo({ postId: post.id, storagePath: path });
-      setMessage({ kind: 'ok', text: 'Video attached.' });
-    } catch (e) {
-      setMessage({ kind: 'bad', text: e instanceof Error ? e.message : 'The upload failed.' });
-    } finally {
-      setBusy(null);
-      setUploading(false);
-    }
+    await run('attach', async () => {
+      const kind = file.type.startsWith('video') ? 'video' : 'image';
+      const path = `socialUploads/${post.id}-${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
+      await uploadBytes(ref(storage, path), file);
+      await socialApi.attachMedia({ postId: post.id, storagePath: path, kind });
+      return `${kind === 'video' ? 'Video' : 'Image'} attached.`;
+    });
   }
 
   return (
     <Card>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <strong style={{ fontSize: 15 }}>{longDate(post.date)}</strong>
-        <StatusPill status={post.status} />
-        <span style={{ fontSize: 12, color: colors.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-          {post.angle}
-        </span>
+      {/* header */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <span style={{ fontWeight: 900, fontSize: 15 }}>{longDate(post.date)}</span>
+        <FormatChip format={format} />
+        <span style={{ fontSize: 12.5, color: colors.muted }}>{post.angle}</span>
         <span style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={() => act('delete')} disabled={busy !== null}>
-          Delete
-        </Button>
+        <StatusPill status={post.status} />
       </div>
 
-      {post.error ? (
-        <p style={{ color: colors.danger, fontSize: 13, marginTop: 0 }}>{post.error}</p>
-      ) : null}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(240px, 1fr)', gap: 20 }}>
-        <div style={{ minWidth: 0 }}>
-          {post.script ? (
-            <>
-              <h3 style={h3}>Hook</h3>
-              <p style={{ fontSize: 17, fontWeight: 800, margin: '0 0 14px', lineHeight: 1.35 }}>{post.script.hook}</p>
-
-              <h3 style={h3}>Shots</h3>
-              <ol style={{ margin: '0 0 14px', paddingLeft: 20, fontSize: 13.5, lineHeight: 1.6 }}>
-                {post.script.beats.map((b, i) => (
-                  <li key={i}>{b}</li>
-                ))}
-              </ol>
-
-              <h3 style={h3}>Voiceover</h3>
-              <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 14px' }}>{post.script.voiceover}</p>
-
-              {post.script.onScreenText.length ? (
-                <>
-                  <h3 style={h3}>On screen</h3>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-                    {post.script.onScreenText.map((t, i) => (
-                      <span key={i} style={chip}>
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              ) : null}
-
-              {post.script.rationale ? (
-                <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 14px' }}>
-                  Why this angle: {post.script.rationale}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p style={{ color: colors.muted, fontSize: 13.5 }}>No script yet.</p>
-          )}
-
-          <h3 style={h3}>Caption</h3>
-          <textarea
-            value={caption}
-            onChange={(e) => setEdited(e.target.value)}
-            rows={4}
+      <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'minmax(220px, 300px) 1fr', alignItems: 'start' }}>
+        {/* what they made */}
+        <div style={{ display: 'grid', gap: 10 }}>
+          <MediaPreview assets={assets} format={format} />
+          <label
             style={{
-              width: '100%',
+              fontSize: 12,
+              color: colors.muted,
+              border: `1px dashed ${colors.border}`,
               borderRadius: 10,
-              border: `1px solid ${colors.border}`,
-              padding: 10,
-              fontSize: 13.5,
-              fontFamily: 'inherit',
-              lineHeight: 1.5,
-              resize: 'vertical',
+              padding: '8px 10px',
+              cursor: 'pointer',
+              textAlign: 'center',
             }}
-          />
-
-          {Object.keys(post.facts ?? {}).length ? (
-            <details style={{ marginTop: 14 }}>
-              <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: colors.muted }}>
-                The numbers this was written from
-              </summary>
-              <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginTop: 8 }}>
-                {Object.entries(post.facts).map(([k, v]) => (
-                  <div key={k} style={{ display: 'contents' }}>
-                    <dt style={{ color: colors.muted }}>{k}</dt>
-                    <dd style={{ margin: 0, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </details>
-          ) : null}
-        </div>
-
-        <div style={{ minWidth: 0 }}>
-          <h3 style={h3}>Video</h3>
-          {post.video?.url ? (
-            <video
-              src={post.video.url}
-              controls
-              style={{ width: '100%', borderRadius: 12, background: '#000', aspectRatio: post.video.aspect === '16:9' ? '16 / 9' : '9 / 16' }}
-            />
-          ) : (
-            <div
-              style={{
-                border: `1px dashed ${colors.border}`,
-                borderRadius: 12,
-                padding: 18,
-                textAlign: 'center',
-                color: colors.muted,
-                fontSize: 13,
-              }}
-            >
-              {post.status === 'rendering' ? 'Rendering…' : 'No video yet.'}
-            </div>
-          )}
-
-          <label style={{ display: 'block', marginTop: 10 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700 }}>Attach a video</span>
+          >
+            {busy === 'attach' ? 'Uploading…' : 'Attach a file made elsewhere'}
             <input
               type="file"
-              accept="video/*"
-              disabled={busy !== null}
+              accept="video/*,image/*"
+              style={{ display: 'none' }}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void attach(file);
                 e.target.value = '';
               }}
-              style={{ display: 'block', marginTop: 6, fontSize: 12.5, width: '100%' }}
             />
-            {uploading ? (
-              <span style={{ fontSize: 12, color: colors.muted }}>Uploading…</span>
-            ) : (
-              <span style={{ fontSize: 12, color: colors.muted }}>
-                Up to 200 MB. Use this for anything made outside the pipeline.
-              </span>
-            )}
           </label>
 
-          <h3 style={{ ...h3, marginTop: 18 }}>Post to</h3>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {(Object.keys(PLATFORM_META) as SocialPlatform[]).map((p) => {
-              const result = post.results?.[p];
-              const checked = targets.includes(p);
-              return (
-                <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) =>
-                      setTargets((t) => (e.target.checked ? [...t, p] : t.filter((x) => x !== p)))
-                    }
-                    id={`${post.id}-${p}`}
-                  />
-                  <PlatformBadge platform={p} size={20} />
-                  <label htmlFor={`${post.id}-${p}`} style={{ fontSize: 13, flex: 1, cursor: 'pointer' }}>
-                    {PLATFORM_META[p].label}
-                  </label>
-                  {result ? (
-                    result.ok ? (
-                      <a
-                        href={result.url ?? '#'}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 11.5, fontWeight: 700, color: colors.success }}
-                      >
-                        Posted ↗
-                      </a>
-                    ) : (
-                      <span title={result.error ?? ''} style={{ fontSize: 11.5, fontWeight: 700, color: colors.danger }}>
-                        Failed
-                      </span>
-                    )
-                  ) : null}
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
+            <CrewLine crew={post.crew} compact />
+          </div>
+        </div>
+
+        {/* what they wrote */}
+        <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
+          {post.plan?.concept ? (
+            <div style={{ background: `${colors.primary}0a`, borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: colors.primary, marginBottom: 3 }}>
+                AGREED AT STANDUP
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{post.plan.concept}</div>
+              {post.plan.why ? (
+                <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>{post.plan.why}</div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {post.script ? (
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 900, lineHeight: 1.3 }}>{post.script.hook}</div>
+              {post.script.viralHook ? (
+                <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 3 }}>
+                  Why it should travel: {post.script.viralHook}
                 </div>
-              );
-            })}
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: colors.muted }}>
+              {working ? 'The crew is working on it…' : 'Nothing written yet.'}
+            </div>
+          )}
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, color: colors.muted }}>CAPTION</label>
+            <textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={4}
+              style={{
+                width: '100%',
+                marginTop: 4,
+                padding: 10,
+                fontSize: 13,
+                lineHeight: 1.5,
+                fontFamily: 'inherit',
+                border: `1px solid ${colors.border}`,
+                borderRadius: 10,
+                resize: 'vertical',
+              }}
+            />
           </div>
 
-          {Object.entries(post.results ?? {}).some(([, r]) => r && !r.ok) ? (
-            <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 12, color: colors.danger }}>
-              {Object.entries(post.results ?? {})
-                .filter(([, r]) => r && !r.ok)
-                .map(([p, r]) => (
-                  <li key={p}>
-                    <strong>{PLATFORM_META[p as SocialPlatform].label}:</strong> {r?.error}
-                  </li>
-                ))}
-            </ul>
-          ) : null}
+          {/* where it goes */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 6 }}>POSTING TO</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {(post.targets ?? []).length === 0 ? (
+                <span style={{ fontSize: 12.5, color: colors.muted }}>
+                  Nowhere yet — no connected account takes a {format}.
+                </span>
+              ) : null}
+              {(post.targets ?? []).map((platform) => {
+                const on = targets.includes(platform);
+                const result = post.results?.[platform];
+                return (
+                  <button
+                    key={platform}
+                    onClick={() => setTargets(on ? targets.filter((t) => t !== platform) : [...targets, platform])}
+                    title={result?.error ?? PLATFORM_META[platform].note}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: on ? `${colors.primary}12` : 'transparent',
+                      border: `1px solid ${on ? colors.primary : colors.border}`,
+                      color: on ? colors.primary : colors.muted,
+                      borderRadius: 999,
+                      padding: '4px 10px 4px 4px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <PlatformBadge platform={platform} size={20} />
+                    {PLATFORM_META[platform].label}
+                    {result ? <span>{result.ok ? '✓' : '✕'}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowDetail(!showDetail)}
+            style={{
+              alignSelf: 'start',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: colors.secondary,
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {showDetail ? 'Hide the working' : 'Show the working — script, numbers, sources, history'}
+          </button>
+
+          {showDetail ? <Working post={post} /> : null}
         </div>
       </div>
 
-      {message ? (
-        <p style={{ fontSize: 13, marginTop: 14, marginBottom: 0, color: message.kind === 'ok' ? colors.success : colors.danger }}>
-          {message.text}
-        </p>
+      {post.error ? (
+        <p style={{ color: colors.danger, fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>{post.error}</p>
       ) : null}
+      {error ? <p style={{ color: colors.danger, fontSize: 12.5, marginTop: 10, marginBottom: 0 }}>{error}</p> : null}
+      {notice ? <p style={{ color: colors.success, fontSize: 12.5, marginTop: 10, marginBottom: 0 }}>{notice}</p> : null}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        <Button onClick={() => act('publish')} disabled={busy !== null || !canPublish || targets.length === 0}>
-          {busy === 'publish' ? 'Publishing…' : 'Approve and publish now'}
-        </Button>
-        <Button variant="secondary" onClick={() => act('approve')} disabled={busy !== null}>
-          Approve only
-        </Button>
-        <Button variant="ghost" onClick={() => act('reject')} disabled={busy !== null}>
-          Reject
-        </Button>
+      {/* the four decisions */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 14, paddingTop: 14, display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button onClick={() => approve(true)} disabled={working || !!busy || assets.length === 0}>
+            {busy === 'publish' ? 'Posting…' : 'Approve & post now'}
+          </Button>
+          <Button variant="secondary" onClick={() => approve(false)} disabled={working || !!busy}>
+            Approve only
+          </Button>
+          <span style={{ flex: 1 }} />
+          <Button variant="ghost" onClick={reject} disabled={working || !!busy}>
+            Reject
+          </Button>
+          <Button variant="danger" onClick={remove} disabled={!!busy}>
+            Delete
+          </Button>
+        </div>
+
+        <div style={{ background: colors.bg, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 6 }}>
+            ASK FOR CHANGES — the crew reads this, and keeps reading it on every later version
+          </div>
+          <textarea
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            rows={2}
+            placeholder="e.g. the hook is generic, open on the driver's hands instead — and stop using the word seamless"
+            style={{
+              width: '100%',
+              padding: 10,
+              fontSize: 13,
+              fontFamily: 'inherit',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 10,
+              resize: 'vertical',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+            {(['script', 'design', 'video', 'caption'] as ChangeScope[]).map((s) => {
+              const on = scope.includes(s);
+              const disabled = s === 'video' && format !== 'reel' && format !== 'video';
+              return (
+                <label
+                  key={s}
+                  style={{
+                    display: 'flex',
+                    gap: 5,
+                    alignItems: 'center',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    color: disabled ? colors.border : on ? colors.text : colors.muted,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on && !disabled}
+                    disabled={disabled}
+                    onChange={() => setScope(on ? scope.filter((x) => x !== s) : [...scope, s])}
+                  />
+                  Redo the {s}
+                </label>
+              );
+            })}
+            <span style={{ flex: 1 }} />
+            <Button variant="secondary" onClick={askForChanges} disabled={working || !!busy}>
+              {busy === 'changes' ? 'Sending back…' : 'Send back to the crew'}
+            </Button>
+          </div>
+        </div>
       </div>
     </Card>
   );
 }
 
-const h3: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 800,
-  letterSpacing: 0.6,
-  textTransform: 'uppercase',
-  color: colors.muted,
-  margin: '0 0 6px',
-};
+/** The video, or the slides, exactly as they will appear. */
+function MediaPreview({
+  assets,
+  format,
+}: {
+  assets: ReturnType<typeof postAssets>;
+  format: string;
+}) {
+  const vertical = format === 'reel' || format === 'story';
+  const frame = {
+    width: '100%',
+    borderRadius: 12,
+    background: '#1a1c1c',
+    aspectRatio: vertical ? '9 / 16' : format === 'video' ? '16 / 9' : '4 / 5',
+    objectFit: 'cover' as const,
+    display: 'block' as const,
+  };
 
-const chip: React.CSSProperties = {
-  background: colors.bg,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 8,
-  padding: '4px 9px',
-  fontSize: 12,
-  fontWeight: 700,
-};
+  if (!assets.length) {
+    return (
+      <div style={{ ...frame, display: 'grid', placeItems: 'center', color: '#8a938e', fontSize: 12.5 }}>
+        Nothing rendered yet
+      </div>
+    );
+  }
+
+  const video = assets.find((a) => a.kind === 'video');
+  if (video?.url) return <video src={video.url} controls style={frame} />;
+
+  const slides = assets.filter((a) => a.kind === 'image');
+  if (slides.length === 1) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={slides[0].url ?? ''} alt={slides[0].alt} style={frame} />;
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+      {slides.map((slide) => (
+        <div key={slide.slide} style={{ position: 'relative', flex: 'none', width: '72%' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={slide.url ?? ''} alt={slide.alt} style={frame} />
+          <span
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              background: '#000000a8',
+              color: '#fff',
+              borderRadius: 999,
+              padding: '2px 8px',
+              fontSize: 11,
+              fontWeight: 800,
+            }}
+          >
+            {slide.slide}/{slides.length}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Everything behind the post: the script, the numbers, the sources, the history. */
+function Working({ post }: { post: SocialPostDoc }) {
+  const frames = post.script?.frames ?? [];
+  const legacyBeats = post.script?.beats ?? [];
+
+  return (
+    <div style={{ display: 'grid', gap: 12, background: colors.bg, borderRadius: 10, padding: 12 }}>
+      {post.script?.hookVariants?.length ? (
+        <Section title="Other hooks the writer offered">
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
+            {post.script.hookVariants.map((h) => (
+              <li key={h}>{h}</li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
+      {frames.length || legacyBeats.length ? (
+        <Section title={post.format === 'carousel' ? 'The slides' : 'The shots'}>
+          <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
+            {frames.map((f, i) => (
+              <li key={i}>
+                {f.scene}
+                {f.overlay ? <strong> — “{f.overlay}”</strong> : null}
+              </li>
+            ))}
+            {frames.length === 0 ? legacyBeats.map((b, i) => <li key={i}>{b}</li>) : null}
+          </ol>
+        </Section>
+      ) : null}
+
+      {post.script?.voiceover ? (
+        <Section title="Voiceover">
+          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{post.script.voiceover}</p>
+        </Section>
+      ) : null}
+
+      {post.captions && Object.keys(post.captions).length ? (
+        <Section title="Caption, per network">
+          <div style={{ display: 'grid', gap: 8 }}>
+            {Object.entries(post.captions).map(([platform, text]) => (
+              <div key={platform}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted }}>
+                  {PLATFORM_META[platform as SocialPlatform]?.label ?? platform}
+                </div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{text}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {post.cut?.prompt ? (
+        <Section title="The cut Raftar wrote">
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>
+            {post.cut.prompt}
+          </p>
+        </Section>
+      ) : null}
+
+      <Section title="The numbers this was written from">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {Object.entries(post.facts ?? {}).map(([key, value]) => (
+            <span
+              key={key}
+              style={{
+                background: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 8,
+                padding: '3px 8px',
+                fontSize: 11.5,
+              }}
+            >
+              <span style={{ color: colors.muted }}>{key}</span> <strong>{String(value)}</strong>
+            </span>
+          ))}
+        </div>
+      </Section>
+
+      {post.research && !post.research.error ? (
+        <Section title="What the market read found">
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
+            {post.research.trends.slice(0, 4).map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+          {post.research.sources.length ? (
+            <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {post.research.sources.slice(0, 8).map((s) => (
+                <a
+                  key={s.url}
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontSize: 11.5, color: colors.secondary }}
+                >
+                  {s.title.slice(0, 40)}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {post.revisions?.length ? (
+        <Section title="What you have already asked for">
+          <div style={{ display: 'grid', gap: 6 }}>
+            {post.revisions.map((r: SocialRevision, i) => (
+              <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                <span style={{ color: colors.muted }}>{r.scope.join(' + ')}:</span> {r.feedback}
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {Object.entries(post.results ?? {}).some(([, r]) => r && !r.ok) ? (
+        <Section title="Networks that refused it">
+          <div style={{ display: 'grid', gap: 4 }}>
+            {Object.entries(post.results ?? {})
+              .filter(([, r]) => r && !r.ok)
+              .map(([platform, r]) => (
+                <div key={platform} style={{ fontSize: 12.5, color: colors.danger }}>
+                  <strong>{PLATFORM_META[platform as SocialPlatform]?.label ?? platform}:</strong> {r?.error}
+                </div>
+              ))}
+          </div>
+        </Section>
+      ) : null}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 5 }}>
+        {title.toUpperCase()}
+      </div>
+      {children}
+    </div>
+  );
+}

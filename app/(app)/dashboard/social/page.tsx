@@ -4,9 +4,9 @@
  * Manage social → Overview.
  *
  * The one screen that answers "is the marketing machine actually running?" —
- * what is wired up, which accounts are live, when the next post goes out, and
- * what it has published lately. Everything else in this section is a detail
- * view of one of those four things.
+ * who is on shift, what is wired up, which accounts are live, when the next
+ * piece gets planned, and what is waiting for a decision. Everything else in
+ * this section is a detail view of one of those.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -15,24 +15,51 @@ import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/fir
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
-import { socialApi, type SocialAccountDoc, type SocialPostDoc, type SocialSettings } from '@/lib/api';
+import {
+  SOCIAL_AGENTS,
+  SOCIAL_FORMATS,
+  socialApi,
+  type SocialAccountDoc,
+  type SocialFormat,
+  type SocialPostDoc,
+  type SocialReadiness,
+  type SocialSettings,
+} from '@/lib/api';
 import { Button, Card } from '@/components/ui';
-import { PlatformBadge, PLATFORM_META, Readiness, StatusPill, longDate, postSummary } from '@/components/social/shared';
+import {
+  AGENT_META,
+  FORMAT_META,
+  FormatChip,
+  Mascot,
+  PlatformBadge,
+  PLATFORM_META,
+  Readiness,
+  StatusPill,
+  longDate,
+  postSummary,
+} from '@/components/social/shared';
 
 export default function SocialOverview() {
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
-  const [readiness, setReadiness] = useState<{ writer: boolean; video: boolean; tokenVault: boolean } | null>(null);
+  const [readiness, setReadiness] = useState<SocialReadiness | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [format, setFormat] = useState<SocialFormat | ''>('');
 
   useEffect(
     () =>
       onSnapshot(
         collection(db, 'socialAccounts'),
-        (snap) => setAccounts(snap.docs.map((d) => ({ ...(d.data() as SocialAccountDoc), platform: d.id as SocialAccountDoc['platform'] }))),
+        (snap) =>
+          setAccounts(
+            snap.docs.map((d) => ({
+              ...(d.data() as SocialAccountDoc),
+              platform: d.id as SocialAccountDoc['platform'],
+            })),
+          ),
         (e) => setError(e.message),
       ),
     [],
@@ -66,7 +93,7 @@ export default function SocialOverview() {
 
   const connected = accounts.filter((a) => a.status === 'connected');
   const broken = accounts.filter((a) => a.status === 'error');
-  const awaiting = posts.filter((p) => p.status === 'awaiting_approval');
+  const awaiting = posts.filter((p) => p.status === 'awaiting_approval' || p.status === 'changes_requested');
 
   // The wall clock is an external system, so it is subscribed to rather than
   // read during render — and the "next run" line then advances on its own.
@@ -92,15 +119,21 @@ export default function SocialOverview() {
     return at;
   }, [settings, nowMs]);
 
-  async function generateNow() {
+  /** What the rotation will make next, so the button is not a surprise. */
+  const upNext = useMemo(() => {
+    if (!settings?.formats?.length) return null;
+    return settings.formats[(settings.lastFormatIndex + 1) % settings.formats.length];
+  }, [settings]);
+
+  async function briefCrew() {
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
-      await socialApi.generate({ replace: true });
-      setNotice('Drafted. It is in the approval queue.');
+      const res = await socialApi.generate({ replace: true, ...(format ? { format } : {}) });
+      setNotice(`The crew made a ${FORMAT_META[res.format].label.toLowerCase()}. It is in the approval queue.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not generate a post.');
+      setError(e instanceof Error ? e.message : 'The crew could not produce anything.');
     } finally {
       setBusy(false);
     }
@@ -111,12 +144,34 @@ export default function SocialOverview() {
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          Every Velocity channel, and the daily pipeline that writes, renders and posts to them.
+          Four agents who plan, write, design, cut and post Velocity’s content — and stop at your approval, every
+          time.
         </p>
       </header>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+
+      {/* who is on shift */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>On shift</h2>
+          <Link href="/dashboard/social/crew" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
+            Brief them
+          </Link>
+        </div>
+        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {SOCIAL_AGENTS.map((agent) => (
+            <div key={agent} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <Mascot agent={agent} size={40} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 900 }}>{AGENT_META[agent].name}</div>
+                <div style={{ fontSize: 12, color: colors.muted }}>{AGENT_META[agent].role}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         <Card>
@@ -130,7 +185,7 @@ export default function SocialOverview() {
 
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>The daily job</h2>
+            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>The daily run</h2>
             <StatusPill status={settings?.enabled ? 'connected' : 'disconnected'} />
           </div>
           {settings ? (
@@ -139,26 +194,73 @@ export default function SocialOverview() {
                 label="Schedule"
                 value={
                   settings.enabled
-                    ? `Every day at ${String(settings.runHour).padStart(2, '0')}:00 PKT`
-                    : 'Paused — nothing is posted automatically'
+                    ? `${settings.postsPerDay} piece${settings.postsPerDay === 1 ? '' : 's'} a day at ${String(
+                        settings.runHour,
+                      ).padStart(2, '0')}:00 PKT`
+                    : 'Paused — the crew only works when you ask'
                 }
               />
               {nextRun ? (
-                <Row label="Next run" value={`${longDate(nextRun.toISOString().slice(0, 10))}, ${String(settings.runHour).padStart(2, '0')}:00`} />
+                <Row
+                  label="Next run"
+                  value={`${longDate(nextRun.toISOString().slice(0, 10))}, ${String(settings.runHour).padStart(2, '0')}:00`}
+                />
               ) : null}
-              <Row label="Video" value={settings.videoProvider === 'none' ? 'Attached by hand' : `${settings.videoProvider} · ${settings.videoModel}`} />
-              <Row label="Approval" value={settings.requireApproval ? 'A human approves every post' : 'Publishes straight away'} />
+              <Row label="Up next" value={upNext ? FORMAT_META[upNext].label : '—'} />
+              <Row
+                label="Rendering"
+                value={[
+                  settings.imageProvider === 'none' ? 'images by hand' : 'images on',
+                  settings.videoProvider === 'none' ? 'video by hand' : `video on (${settings.videoModel})`,
+                ].join(' · ')}
+              />
+              <Row label="Approval" value="Always — nothing posts itself" />
+              <Row
+                label="Comments"
+                value={
+                  settings.engagementEnabled
+                    ? settings.autoReply
+                      ? 'Read and replied to automatically'
+                      : 'Read; replies wait for you'
+                    : 'Not being read'
+                }
+              />
               <Row
                 label="Last run"
-                value={settings.lastRunAtMs ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}` : 'Never'}
+                value={
+                  settings.lastRunAtMs
+                    ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
+                    : 'Never'
+                }
               />
             </div>
           ) : (
             <p style={{ color: colors.muted, fontSize: 13 }}>Loading…</p>
           )}
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-            <Button onClick={generateNow} disabled={busy}>
-              {busy ? 'Working…' : 'Generate today’s post now'}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select
+              value={format}
+              onChange={(e) => setFormat(e.target.value as SocialFormat | '')}
+              style={{
+                padding: '8px 10px',
+                fontSize: 13,
+                fontFamily: 'inherit',
+                border: `1px solid ${colors.border}`,
+                borderRadius: 9,
+                background: colors.surface,
+                color: colors.text,
+              }}
+            >
+              <option value="">Next in the rotation{upNext ? ` (${FORMAT_META[upNext].label})` : ''}</option>
+              {SOCIAL_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_META[f].label} — {FORMAT_META[f].note}
+                </option>
+              ))}
+            </select>
+            <Button onClick={briefCrew} disabled={busy}>
+              {busy ? 'The crew is working…' : 'Brief the crew now'}
             </Button>
             <Link href="/dashboard/social/automation">
               <Button variant="ghost">Settings</Button>
@@ -169,7 +271,10 @@ export default function SocialOverview() {
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Channels</h2>
-            <Link href="/dashboard/social/accounts" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
+            <Link
+              href="/dashboard/social/accounts"
+              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+            >
               Manage
             </Link>
           </div>
@@ -187,7 +292,15 @@ export default function SocialOverview() {
                 <div key={a.platform} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <PlatformBadge platform={a.platform} size={30} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {a.displayName ?? PLATFORM_META[a.platform].label}
                     </div>
                     <div style={{ fontSize: 12, color: colors.muted }}>
@@ -202,21 +315,24 @@ export default function SocialOverview() {
           )}
           {broken.length ? (
             <p style={{ color: colors.warn, fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
-              {broken.length} account{broken.length === 1 ? '' : 's'} stopped working — most often an expired
-              token. Reconnect from the accounts page.
+              {broken.length} account{broken.length === 1 ? '' : 's'} stopped working — most often an expired token.
+              Reconnect from the accounts page.
             </p>
           ) : null}
         </Card>
 
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Latest posts</h2>
-            <Link href="/dashboard/social/calendar" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
+            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Latest work</h2>
+            <Link
+              href="/dashboard/social/calendar"
+              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+            >
               Calendar
             </Link>
           </div>
           {posts.length === 0 ? (
-            <p style={{ color: colors.muted, fontSize: 13 }}>Nothing generated yet.</p>
+            <p style={{ color: colors.muted, fontSize: 13 }}>Nothing made yet.</p>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>
               {posts.map((p) => (
@@ -225,8 +341,9 @@ export default function SocialOverview() {
                   href="/dashboard/social/queue"
                   style={{ display: 'grid', gap: 4, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}
                 >
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, color: colors.muted, fontWeight: 700 }}>{longDate(p.date)}</span>
+                    <FormatChip format={p.format} />
                     <StatusPill status={p.status} />
                   </div>
                   <div style={{ fontSize: 13.5, fontWeight: 600 }}>{postSummary(p)}</div>
@@ -237,7 +354,7 @@ export default function SocialOverview() {
           {awaiting.length ? (
             <p style={{ fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
               <Link href="/dashboard/social/queue" style={{ color: colors.secondary, fontWeight: 700 }}>
-                {awaiting.length} post{awaiting.length === 1 ? '' : 's'} waiting for approval →
+                {awaiting.length} piece{awaiting.length === 1 ? '' : 's'} waiting on you →
               </Link>
             </p>
           ) : null}

@@ -385,6 +385,28 @@ export const SOCIAL_PLATFORMS = [
 
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
+export const SOCIAL_FORMATS = ['reel', 'video', 'carousel', 'post', 'story'] as const;
+export type SocialFormat = (typeof SOCIAL_FORMATS)[number];
+
+/** The four agents. Mirrors AGENTS in the backend's social/types.ts. */
+export const SOCIAL_AGENTS = ['qalam', 'rang', 'raftar', 'awaaz'] as const;
+export type SocialAgent = (typeof SOCIAL_AGENTS)[number];
+
+/** Which networks take which formats. Mirrors PLATFORM_FORMATS on the backend. */
+export const PLATFORM_FORMATS: Record<SocialPlatform, SocialFormat[]> = {
+  facebook: ['reel', 'video', 'carousel', 'post', 'story'],
+  instagram: ['reel', 'carousel', 'post', 'story'],
+  youtube: ['reel', 'video'],
+  tiktok: ['reel', 'video'],
+  threads: ['reel', 'post', 'carousel'],
+  x: ['post'],
+  linkedin: ['post'],
+};
+
+export function platformTakes(platform: SocialPlatform, format: SocialFormat): boolean {
+  return PLATFORM_FORMATS[platform].includes(format);
+}
+
 /** The console-visible half of a connection (never the token itself). */
 export interface SocialAccountDoc {
   platform: SocialPlatform;
@@ -417,51 +439,187 @@ export interface ConnectSchema {
   }[];
 }
 
+export interface SocialCompetitor {
+  name: string;
+  url: string;
+}
+
 export interface SocialSettings {
   enabled: boolean;
   runHour: number;
+  postsPerDay: number;
   platforms: SocialPlatform[];
-  requireApproval: boolean;
-  videoProvider: 'veo' | 'none';
-  videoModel: string;
-  aspect: '9:16' | '16:9';
+
   angles: string[];
   lastAngleIndex: number;
-  brandVoice: string;
+  formats: SocialFormat[];
+  lastFormatIndex: number;
+
+  /** Read by all four agents on every run. */
+  crewInstructions: string;
+  agentNotes: Record<SocialAgent, string>;
+
+  researchEnabled: boolean;
+  competitors: SocialCompetitor[];
+
+  imageProvider: 'gemini' | 'none';
+  videoProvider: 'veo' | 'none';
+  textModel: string;
+  imageModel: string;
+  videoModel: string;
+
+  engagementEnabled: boolean;
+  autoReply: boolean;
+
   lastRunAtMs: number | null;
   lastRunStatus: string | null;
+  lastEngagementAtMs: number | null;
+  lastEngagementStatus: string | null;
+}
+
+export interface SocialReadiness {
+  writer: boolean;
+  designer: boolean;
+  video: boolean;
+  tokenVault: boolean;
+}
+
+export type SocialPostStatus =
+  | 'planning'
+  | 'researching'
+  | 'drafting'
+  | 'designing'
+  | 'rendering'
+  | 'awaiting_approval'
+  | 'changes_requested'
+  | 'ready'
+  | 'publishing'
+  | 'published'
+  | 'partial'
+  | 'failed'
+  | 'rejected';
+
+export interface SocialAgentRun {
+  state: 'idle' | 'working' | 'done' | 'skipped' | 'failed';
+  note: string | null;
+  error: string | null;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+}
+
+export interface SocialMediaAsset {
+  kind: 'video' | 'image';
+  provider: string;
+  url: string | null;
+  storagePath: string | null;
+  aspect: string;
+  slide: number;
+  alt: string;
+}
+
+export interface SocialPlan {
+  concept: string;
+  audience: string;
+  why: string;
+  hookDirection: string;
+  visualDirection: string;
+  editDirection: string;
+  distribution: string;
+  notes: Partial<Record<SocialAgent, string>>;
+}
+
+export interface SocialResearch {
+  atMs: number;
+  trends: string[];
+  competitorMoves: string[];
+  opportunities: string[];
+  hookPatterns: string[];
+  avoid: string[];
+  sources: { title: string; url: string }[];
+  error: string | null;
+}
+
+export interface SocialRevision {
+  atMs: number;
+  by: string;
+  feedback: string;
+  scope: ('script' | 'design' | 'video' | 'caption')[];
 }
 
 export interface SocialPostDoc {
   id: string;
   date: string;
+  format?: SocialFormat;
   angle: string;
-  status:
-    | 'drafting'
-    | 'awaiting_approval'
-    | 'rendering'
-    | 'ready'
-    | 'publishing'
-    | 'published'
-    | 'partial'
-    | 'failed'
-    | 'rejected';
+  status: SocialPostStatus;
+  plan?: SocialPlan | null;
   script: {
     hook: string;
-    beats: string[];
+    hookVariants?: string[];
+    frames?: { scene: string; overlay: string }[];
     voiceover: string;
-    onScreenText: string[];
     cta: string;
     rationale: string;
+    viralHook?: string;
+    /** Written before formats existed. */
+    beats?: string[];
+    onScreenText?: string[];
   } | null;
   caption: string;
+  captions?: Partial<Record<SocialPlatform, string>>;
   hashtags: string[];
   facts: Record<string, number | string>;
-  video: { url: string | null; provider: string; aspect: string } | null;
+  research?: SocialResearch | null;
+  direction?: { prompt: string; overlay: string; alt: string }[] | null;
+  cut?: { prompt: string; note: string } | null;
+  media?: SocialMediaAsset[];
+  /** Posts made before carousels existed carry one video here. */
+  video?: { url: string | null; provider: string; aspect: string } | null;
   targets: SocialPlatform[];
-  results: Partial<Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>>;
+  results: Partial<
+    Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>
+  >;
+  crew?: Record<SocialAgent, SocialAgentRun>;
+  revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;
+}
+
+/** Everything on a post that can be shown, in either shape. */
+export function postAssets(post: SocialPostDoc): SocialMediaAsset[] {
+  if (post.media?.length) return [...post.media].sort((a, b) => a.slide - b.slide);
+  if (post.video?.url) {
+    return [
+      {
+        kind: 'video',
+        provider: post.video.provider,
+        url: post.video.url,
+        storagePath: null,
+        aspect: post.video.aspect,
+        slide: 1,
+        alt: '',
+      },
+    ];
+  }
+  return [];
+}
+
+export interface SocialCommentDoc {
+  id: string;
+  platform: SocialPlatform;
+  mediaId: string;
+  postId: string | null;
+  commentId: string;
+  authorName: string;
+  text: string;
+  permalink: string | null;
+  createdAtMs: number;
+  status: 'new' | 'drafted' | 'replied' | 'ignored' | 'escalated';
+  intent: 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other' | null;
+  draftReply: string | null;
+  sentReply: string | null;
+  sentAtMs: number | null;
+  error: string | null;
 }
 
 export const socialApi = {
@@ -480,17 +638,22 @@ export const socialApi = {
   verify: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminVerifySocialAccount'),
   disconnect: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminDisconnectSocialAccount'),
 
-  getSettings: callable<
-    Record<string, never>,
-    { settings: SocialSettings; readiness: { writer: boolean; video: boolean; tokenVault: boolean } }
-  >('adminGetSocialSettings'),
+  getSettings: callable<Record<string, never>, { settings: SocialSettings; readiness: SocialReadiness }>(
+    'adminGetSocialSettings',
+  ),
   updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings }>(
     'adminUpdateSocialSettings',
   ),
 
-  generate: callable<{ date?: string; angle?: string; replace?: boolean }, { ok: boolean; id: string }>(
-    'adminGenerateSocialPost',
-  ),
+  /** Brief the crew. Always ends in the approval queue. */
+  generate: callable<
+    { date?: string; format?: SocialFormat; angle?: string; targets?: SocialPlatform[]; replace?: boolean },
+    { ok: boolean; id: string; format: SocialFormat }
+  >('adminGenerateSocialPost'),
+  requestChanges: callable<
+    { postId: string; feedback: string; scope: ('script' | 'design' | 'video' | 'caption')[] },
+    { ok: boolean; reran: string[] }
+  >('adminRequestSocialChanges'),
   review: callable<
     {
       postId: string;
@@ -505,8 +668,18 @@ export const socialApi = {
     { postId: string; platforms?: SocialPlatform[] },
     { ok: boolean; published: number; failed: number }
   >('adminPublishSocialPost'),
-  attachVideo: callable<{ postId: string; storagePath: string; aspect?: '9:16' | '16:9' }, { ok: boolean }>(
-    'adminAttachSocialVideo',
-  ),
+  attachMedia: callable<
+    { postId: string; storagePath: string; kind?: 'video' | 'image'; slide?: number; alt?: string },
+    { ok: boolean }
+  >('adminAttachSocialMedia'),
   deletePost: callable<{ postId: string }, { ok: boolean }>('adminDeleteSocialPost'),
+
+  syncComments: callable<Record<string, never>, { ok: boolean; summary: string }>('adminSyncSocialComments'),
+  replyComment: callable<{ platform: SocialPlatform; commentId: string; text: string }, { ok: boolean }>(
+    'adminReplySocialComment',
+  ),
+  setCommentStatus: callable<
+    { platform: SocialPlatform; commentId: string; status: 'new' | 'drafted' | 'ignored' | 'escalated' },
+    { ok: boolean }
+  >('adminSetCommentStatus'),
 };

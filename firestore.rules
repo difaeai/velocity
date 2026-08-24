@@ -280,9 +280,28 @@ service cloud.firestore {
       }
     }
 
-    // ----- socialPosts/{YYYY-MM-DD} ----------------------------------------
-    // A day's generated post: script, caption, video and per-network results.
+    // ----- socialPosts/{YYYY-MM-DD-format} ---------------------------------
+    // One piece the crew made: the plan, script, media, per-network results and
+    // the round-by-round feedback an admin gave on it.
     match /socialPosts/{postId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- socialResearch/{YYYY-MM-DD} -------------------------------------
+    // The writer's market read for one day, with the pages it came from. Cached
+    // so a second run the same morning does not pay for the search twice.
+    match /socialResearch/{date} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- socialComments/{platform_commentId} ------------------------------
+    // What people said under our own posts, and the reply the manager drafted.
+    // Written only by the backend: a reply that leaves this collection is
+    // Velocity speaking in public, so it goes out through a callable that
+    // checks admin, never through a client write.
+    match /socialComments/{commentId} {
       allow read: if isAdmin();
       allow write: if false;
     }

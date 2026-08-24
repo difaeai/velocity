@@ -4,12 +4,14 @@
  * Manage social → Content calendar.
  *
  * A month at a glance: what went out, what is waiting, and which days are
- * empty. The gaps are the point — a daily channel that quietly skipped four
- * days is invisible in a list and obvious in a grid.
+ * empty. The gaps are the point — a channel that quietly skipped four days is
+ * invisible in a list and obvious in a grid.
  *
- * Any day can be drafted on demand, with the angle chosen by hand, which is
- * how you get ahead of a launch or a holiday instead of taking whatever the
- * rotation happens to land on.
+ * A day can hold several pieces now (a reel and a carousel are different posts
+ * on the same date), so a square carries one dot per piece rather than one dot
+ * per day. Any day can be briefed on demand, with the format and angle chosen
+ * by hand, which is how you get ahead of a launch or a holiday instead of
+ * taking whatever the rotation happens to land on.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -18,9 +20,15 @@ import { collection, onSnapshot, orderBy, query, limit } from 'firebase/firestor
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
-import { socialApi, type SocialPostDoc, type SocialSettings } from '@/lib/api';
+import {
+  SOCIAL_FORMATS,
+  socialApi,
+  type SocialFormat,
+  type SocialPostDoc,
+  type SocialSettings,
+} from '@/lib/api';
 import { Button, Card } from '@/components/ui';
-import { StatusPill, longDate, postSummary } from '@/components/social/shared';
+import { FORMAT_META, FormatChip, StatusPill, longDate, postSummary } from '@/components/social/shared';
 
 /** Pakistan's today, as `YYYY-MM-DD`. PKT is UTC+5, no daylight saving. */
 function todayPkt(): string {
@@ -34,7 +42,11 @@ const STATUS_DOT: Record<string, string> = {
   partial: '#eb6834',
   ready: '#2a78d6',
   awaiting_approval: '#fab219',
+  changes_requested: '#eb6834',
+  planning: '#2a78d6',
+  researching: '#2a78d6',
   drafting: '#2a78d6',
+  designing: '#2a78d6',
   rendering: '#2a78d6',
   publishing: '#2a78d6',
   failed: '#d03b3b',
@@ -44,10 +56,12 @@ const STATUS_DOT: Record<string, string> = {
 export default function CalendarPage() {
   const today = todayPkt();
   const [cursor, setCursor] = useState(() => today.slice(0, 7)); // YYYY-MM
-  const [posts, setPosts] = useState<Record<string, SocialPostDoc>>({});
+  /** Keyed by date, because one date can now hold several pieces. */
+  const [posts, setPosts] = useState<Record<string, SocialPostDoc[]>>({});
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [angle, setAngle] = useState('');
+  const [format, setFormat] = useState<SocialFormat | ''>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,9 +70,10 @@ export default function CalendarPage() {
       onSnapshot(
         query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(120)),
         (snap) => {
-          const next: Record<string, SocialPostDoc> = {};
+          const next: Record<string, SocialPostDoc[]> = {};
           snap.docs.forEach((d) => {
-            next[d.id] = { ...(d.data() as SocialPostDoc), id: d.id };
+            const post = { ...(d.data() as SocialPostDoc), id: d.id };
+            (next[post.date] ??= []).push(post);
           });
           setPosts(next);
         },
@@ -89,7 +104,12 @@ export default function CalendarPage() {
     setBusy(true);
     setError(null);
     try {
-      await socialApi.generate({ date, angle: angle || undefined, replace: true });
+      await socialApi.generate({
+        date,
+        angle: angle || undefined,
+        format: format || undefined,
+        replace: true,
+      });
       setAngle('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate that post.');
@@ -98,14 +118,16 @@ export default function CalendarPage() {
     }
   }
 
-  const selectedPost = selected ? posts[selected] : undefined;
+  const selectedPosts = (selected ? posts[selected] : undefined) ?? [];
 
   return (
     <div>
       <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Content calendar</h1>
-          <p style={{ color: colors.muted, margin: 0 }}>One post a day. The empty squares are the ones to worry about.</p>
+          <p style={{ color: colors.muted, margin: 0 }}>
+            Everything the crew has made, by the day it belongs to. The empty squares are the ones to worry about.
+          </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Button variant="ghost" onClick={() => shiftMonth(-1)}>
@@ -152,17 +174,20 @@ export default function CalendarPage() {
                   <span style={{ fontSize: 12, fontWeight: 700, color: date === today ? colors.primary : colors.text }}>
                     {Number(date.slice(8))}
                   </span>
-                  {posts[date] ? (
-                    <span
-                      title={posts[date].status}
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
-                        background: STATUS_DOT[posts[date].status] ?? colors.muted,
-                      }}
-                    />
-                  ) : null}
+                  <span style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {(posts[date] ?? []).slice(0, 4).map((post) => (
+                      <span
+                        key={post.id}
+                        title={`${FORMAT_META[post.format ?? 'reel'].label} — ${post.status}`}
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: STATUS_DOT[post.status] ?? colors.muted,
+                        }}
+                      />
+                    ))}
+                  </span>
                 </button>
               ),
             )}
@@ -187,35 +212,60 @@ export default function CalendarPage() {
           {selected ? (
             <>
               <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 10px' }}>{longDate(selected)}</h2>
-              {selectedPost ? (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <StatusPill status={selectedPost.status} />
-                  <div style={{ fontSize: 12, color: colors.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                    {selectedPost.angle}
-                  </div>
-                  <p style={{ fontSize: 14, fontWeight: 700, margin: 0, lineHeight: 1.4 }}>{postSummary(selectedPost)}</p>
-                  {selectedPost.caption ? (
-                    <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.5 }}>{selectedPost.caption}</p>
-                  ) : null}
+              {selectedPosts.length ? (
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {selectedPosts.map((post) => (
+                    <div key={post.id} style={{ display: 'grid', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <FormatChip format={post.format} />
+                        <StatusPill status={post.status} />
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: colors.muted,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        {post.angle}
+                      </div>
+                      <p style={{ fontSize: 14, fontWeight: 700, margin: 0, lineHeight: 1.4 }}>
+                        {postSummary(post)}
+                      </p>
+                      {post.caption ? (
+                        <p style={{ fontSize: 13, color: colors.muted, margin: 0, lineHeight: 1.5 }}>
+                          {post.caption}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
                   <Link href="/dashboard/social/queue">
                     <Button variant="secondary">Open in the queue</Button>
                   </Link>
+                  <details>
+                    <summary style={{ fontSize: 12.5, color: colors.secondary, cursor: 'pointer', fontWeight: 700 }}>
+                      Add another piece to this day
+                    </summary>
+                    <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                      <FormatPicker value={format} onChange={setFormat} />
+                      <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
+                      <Button onClick={() => generate(selected)} disabled={busy}>
+                        {busy ? 'The crew is working…' : 'Brief the crew'}
+                      </Button>
+                    </div>
+                  </details>
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <p style={{ fontSize: 13.5, color: colors.muted, margin: 0 }}>
-                    Nothing scheduled. Draft one now — pick an angle, or leave it to the rotation.
+                    Nothing here. Brief the crew — pick a format and an angle, or leave both to the rotation.
                   </p>
-                  <select value={angle} onChange={(e) => setAngle(e.target.value)} style={selectStyle}>
-                    <option value="">Next in the rotation</option>
-                    {(settings?.angles ?? []).map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
+                  <FormatPicker value={format} onChange={setFormat} />
+                  <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
                   <Button onClick={() => generate(selected)} disabled={busy}>
-                    {busy ? 'Writing…' : 'Draft this day'}
+                    {busy ? 'The crew is working…' : 'Brief the crew'}
                   </Button>
                 </div>
               )}
@@ -226,6 +276,46 @@ export default function CalendarPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function FormatPicker({
+  value,
+  onChange,
+}: {
+  value: SocialFormat | '';
+  onChange: (v: SocialFormat | '') => void;
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value as SocialFormat | '')} style={selectStyle}>
+      <option value="">Next format in the rotation</option>
+      {SOCIAL_FORMATS.map((f) => (
+        <option key={f} value={f}>
+          {FORMAT_META[f].label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function AnglePicker({
+  value,
+  onChange,
+  angles,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  angles: string[];
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
+      <option value="">Next angle in the rotation</option>
+      {angles.map((a) => (
+        <option key={a} value={a}>
+          {a}
+        </option>
+      ))}
+    </select>
   );
 }
 
