@@ -273,12 +273,17 @@ export {
 // Admin dashboard analytics — daily series + live snapshot, cached per day
 export { adminGetAnalytics } from './analytics';
 
-// Social desk — the content crew, the accounts they post to, and the inbox
+// Social desk — the staff, the accounts they post to, and the inbox
 export {
   adminConnectSocialAccount,
   adminDisconnectSocialAccount,
   adminVerifySocialAccount,
   adminGetSocialConnectSchema,
+  adminGetSocialRoles,
+  adminHireSocialEmployee,
+  adminUpdateSocialEmployee,
+  adminFireSocialEmployee,
+  adminSeedSocialTeam,
   adminGetSocialSettings,
   adminUpdateSocialSettings,
   socialDailyContent,

@@ -1,25 +1,31 @@
 /**
- * The line. What the four of them do, in what order, and where it stops.
+ * The working day. Who does what, in what order, and where it stops.
  *
- *   standup ─► research ─► script ─► design ─► cut & render ─► distribution
- *                                                                   │
- *                                                            THE APPROVAL QUEUE
- *                                                                   │
- *                                          approve ─► publish   changes ─► back to the line
+ *   standup ─► research ─► SEO brief ─► script ─► search metadata
+ *           ─► design ─► cut & render ─► ads brief ─► distribution
+ *                                   │
+ *                          THE APPROVAL QUEUE
+ *                                   │
+ *          approve ─► publish   changes ─► back to whoever owns that stage
  *
- * Two rules the rest of this file exists to enforce:
+ * Three rules the rest of this file exists to enforce:
  *
- * 1. **Nothing publishes itself.** Every run ends at `awaiting_approval`. There
- *    is no auto-publish switch, because everything the crew writes is a claim
- *    Velocity is making in public, and the cost of reading one post a day is
- *    nothing next to the cost of the one that should not have gone out.
- * 2. **Every stage writes before the next begins.** A failure halfway through
- *    leaves a post you can open, read and retry, rather than a silent gap in
- *    the calendar. The crew log on the post is what the console renders live.
+ * 1. **Only people who have been hired do work.** Each stage asks the roster
+ *    who covers it. If nobody does, the stage is recorded as skipped with the
+ *    reason — "no designer on the team" — rather than silently producing
+ *    nothing. This is what makes hiring someone actually change the output.
+ * 2. **Nothing publishes itself.** Every run ends at `awaiting_approval`.
+ *    Everything the team writes is a claim Velocity is making in public, and
+ *    the cost of reading one piece a day is nothing next to the cost of the one
+ *    that should not have gone out.
+ * 3. **Every stage writes before the next begins.** A failure halfway through
+ *    leaves a piece you can open, read and retry, rather than a silent gap in
+ *    the calendar. The work log on the post is what the console renders live,
+ *    with the name of the person whose turn it was.
  *
  * The scheduler ticks hourly and does nothing unless automation is on, the
  * Pakistan hour matches `runHour`, and today does not already have that
- * format's post. Hourly rather than a fixed cron so the run hour can change
+ * format's piece. Hourly rather than a fixed cron so the run hour can change
  * from the console without a redeploy; the post id carries the date and the
  * format, so a retried tick cannot produce a duplicate.
  */
@@ -35,34 +41,40 @@ import { loadCredentials, markAccountError, publishableAccounts } from './accoun
 import { postFolder, refreshAssetUrls, storeFile } from './assets';
 import { planContent } from './crew';
 import { design, DesignError } from './designer';
+import { activeTeam, assign, creditWork, teamRefs } from './employees';
 import { geminiReady } from './gemini';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { runResearch } from './research';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
+import { adPass, searchPass, seoPass } from './seo';
 import { getSocialSettings, nextAngle, nextFormat, recordRun } from './settings';
 import { planCut, renderVideo, storeVideo, VideoError } from './video';
 import {
   FORMATS,
   FORMAT_SPECS,
   PLATFORMS,
-  freshCrewLog,
-  postMedia,
+  ROLE_SPECS,
   REVISION_SCOPES,
+  STAGE_COVER,
+  postMedia,
   supports,
   WORKING_STATUSES,
-  type AgentId,
   type ContentFormat,
+  type Employee,
   type MediaAsset,
   type Platform,
   type PostStatus,
   type Revision,
   type RevisionScope,
   type SocialPost,
+  type Stage,
+  type WorkEntry,
+  type WorkState,
 } from './types';
 
 const REGION = 'asia-south1';
-/** Research, four model calls and a render. The run needs room. */
+/** Research, several model calls and a render. The run needs room. */
 const RUN_TIMEOUT_SECONDS = 900;
 
 const postRef = (id: string) => db.doc(`socialPosts/${id}`);
@@ -71,31 +83,47 @@ async function patch(id: string, fields: Record<string, unknown>): Promise<void>
   await postRef(id).set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 }
 
-/** Move one agent's light on the console. */
-async function setAgent(
+/**
+ * Put someone's name against a stage, live.
+ *
+ * A nested map rather than a `work.design` key: dotted paths are field paths
+ * only in update(), and set({ merge: true }) would write a field literally
+ * called "work.design". Merging a nested map leaves the other stages alone.
+ */
+async function setWork(
   id: string,
-  agent: AgentId,
-  state: 'working' | 'done' | 'skipped' | 'failed',
-  note: string | null,
-  error?: string,
+  stage: Stage,
+  entry: Partial<WorkEntry> & { state: WorkState; name: string },
 ): Promise<void> {
-  // A nested map, not a `crew.qalam` key: dotted paths are field paths only in
-  // update(), and set({ merge: true }) would write a field literally called
-  // "crew.qalam". Merging a nested map leaves the other three agents alone and
-  // keeps startedAtMs from the working write.
   await patch(id, {
-    crew: {
-      [agent]: {
-        state,
-        note,
-        error: error ?? null,
-        ...(state === 'working' ? { startedAtMs: Date.now(), finishedAtMs: null } : { finishedAtMs: Date.now() }),
+    work: {
+      [stage]: {
+        stage,
+        employeeId: entry.employeeId ?? null,
+        name: entry.name,
+        role: entry.role ?? null,
+        state: entry.state,
+        note: entry.note ?? null,
+        error: entry.error ?? null,
+        ...(entry.state === 'working'
+          ? { startedAtMs: Date.now(), finishedAtMs: null }
+          : { finishedAtMs: Date.now() }),
       },
     },
   });
 }
 
-/** The hooks of the last fortnight, so the writer doesn't repeat itself. */
+/** Nobody holds this job, and nobody covers it. Say so on the piece. */
+async function noteNobody(id: string, stage: Stage): Promise<void> {
+  const role = ROLE_SPECS[STAGE_COVER[stage].primary].label;
+  await setWork(id, stage, {
+    state: 'skipped',
+    name: 'Nobody',
+    note: `No ${role.toLowerCase()} on the team — hire one and this stage starts running.`,
+  });
+}
+
+/** The hooks and concepts of the last fortnight, so the team doesn't repeat itself. */
 async function recentWork(): Promise<{ hooks: string[]; concepts: string[] }> {
   const snap = await db.collection('socialPosts').orderBy('date', 'desc').limit(14).get();
   const hooks: string[] = [];
@@ -108,7 +136,7 @@ async function recentWork(): Promise<{ hooks: string[]; concepts: string[] }> {
   return { hooks, concepts };
 }
 
-/** Everything the admin has asked for on this post so far, oldest first. */
+/** Everything the admin has asked for on this piece so far, oldest first. */
 function feedbackFrom(post: Partial<SocialPost> | undefined): string[] {
   return (post?.revisions ?? []).map((r) => r.feedback).filter(Boolean);
 }
@@ -120,32 +148,87 @@ export function postIdFor(date: string, format: ContentFormat): string {
 
 // ── the run ─────────────────────────────────────────────────────────────────
 
-type Stage = 'plan' | 'script' | 'design' | 'video' | 'distribute';
-
-const ALL_STAGES: Stage[] = ['plan', 'script', 'design', 'video', 'distribute'];
+const ALL_STAGES: Stage[] = ['research', 'seo', 'script', 'search', 'design', 'video', 'ads', 'distribute'];
 
 /**
- * Run the crew over one post.
+ * Run the team over one piece.
  *
- * `stages` is what makes "ask for changes" cheap: a caption rewrite re-runs
- * nothing, a design note re-runs the designer and the manager, a script note
+ * `stages` is what makes "ask for changes" cheap: a caption note re-runs one
+ * call, a design note re-runs the designer and the manager, a script note
  * re-runs everything downstream of the script. Re-rendering a video because
  * someone wanted a different word in the caption is how you spend a month's
  * budget in an afternoon.
  */
-async function runCrew(params: {
+async function runTeam(params: {
   id: string;
   date: string;
   format: ContentFormat;
   angle: string;
   stages: Stage[];
-  /** Only used when the post is being created. */
+  /** Only used when the piece is being created. */
   targets?: Platform[];
+  /** Re-hold the standup. False when only a later stage is being redone. */
+  standup: boolean;
 }): Promise<void> {
   const settings = await getSocialSettings();
   const spec = FORMAT_SPECS[params.format];
+  const team = await activeTeam();
   const existing = (await postRef(params.id).get()).data() as SocialPost | undefined;
   const feedback = feedbackFrom(existing);
+
+  if (!team.length) {
+    await patch(params.id, {
+      status: 'failed' as PostStatus,
+      error: 'Nobody works here yet. Hire at least a content writer on the Employees page.',
+    });
+    throw new Error('The team is empty.');
+  }
+
+  await patch(params.id, { team: teamRefs(team) });
+
+  /** Only the stages this format needs, in run order, that were asked for. */
+  const wanted = ALL_STAGES.filter((s) => spec.stages.includes(s) && params.stages.includes(s));
+
+  /** Who is on this stage — and record it, or record that nobody is. */
+  const who = async (stage: Stage): Promise<Employee | null> => {
+    const picked = assign(team, stage);
+    if (!picked) {
+      await noteNobody(params.id, stage);
+      return null;
+    }
+    await setWork(params.id, stage, {
+      state: 'working',
+      employeeId: picked.employee.id,
+      name: picked.employee.name,
+      role: picked.employee.role,
+      note: picked.covering
+        ? `Covering ${ROLE_SPECS[STAGE_COVER[stage].primary].label.toLowerCase()} — nobody is hired into it.`
+        : 'Starting.',
+    });
+    return picked.employee;
+  };
+
+  const done = async (stage: Stage, employee: Employee, note: string) => {
+    await setWork(params.id, stage, {
+      state: 'done',
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.role,
+      note,
+    });
+    await creditWork(employee.id);
+  };
+
+  const failed = async (stage: Stage, employee: Employee, message: string) => {
+    await setWork(params.id, stage, {
+      state: 'failed',
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.role,
+      note: 'Could not finish it.',
+      error: message,
+    });
+  };
 
   let plan = existing?.plan ?? null;
   let script = existing?.script ?? null;
@@ -154,169 +237,295 @@ async function runCrew(params: {
   let media: MediaAsset[] = existing ? postMedia(existing) : [];
   let facts = existing?.facts ?? {};
   let research = existing?.research ?? null;
+  let seo = existing?.seo ?? null;
+  let search = existing?.search ?? null;
 
-  // ── Qalam: read the market, agree the concept, write it ───────────────────
-  if (params.stages.includes('plan') || params.stages.includes('script')) {
-    await setAgent(params.id, 'qalam', 'working', 'Reading the market.');
+  // ── research ──────────────────────────────────────────────────────────────
+  if (wanted.includes('research')) {
     await patch(params.id, { status: 'researching' as PostStatus });
+    facts = await gatherFacts();
+    const researcher = await who('research');
+    research = await runResearch({ settings, date: params.date, employee: researcher });
+    await patch(params.id, { facts, research });
+    if (researcher) {
+      await done(
+        'research',
+        researcher,
+        research.error ? `Could not read the market: ${research.error}` : `${research.trends.length} things moving.`,
+      );
+    }
+  }
 
+  // ── standup ───────────────────────────────────────────────────────────────
+  if (params.standup) {
+    await patch(params.id, { status: 'planning' as PostStatus });
+    const { concepts } = await recentWork();
     try {
-      facts = await gatherFacts();
-      research = await runResearch(settings, params.date);
-      await patch(params.id, { facts, research });
+      plan = await planContent({
+        settings,
+        team,
+        format: params.format,
+        angle: params.angle,
+        facts,
+        research,
+        recentConcepts: concepts,
+        feedback,
+      });
+      await patch(params.id, { plan });
+    } catch (e) {
+      await patch(params.id, { status: 'failed' as PostStatus, error: `Standup: ${(e as Error).message}` });
+      throw e;
+    }
+  }
 
-      const recent = await recentWork();
+  // ── the SEO brief, before anything is written ─────────────────────────────
+  if (wanted.includes('seo')) {
+    await patch(params.id, { status: 'optimising' as PostStatus });
+    const expert = await who('seo');
+    if (expert) {
+      seo = await seoPass({
+        employee: expert,
+        settings,
+        format: params.format,
+        angle: params.angle,
+        plan,
+        research,
+        feedback,
+      });
+      await patch(params.id, { seo });
+      if (seo) await done('seo', expert, seo.note || `Targeting: ${seo.searchIntent}`);
+      else await failed('seo', expert, 'The search brief came back unusable.');
+    }
+  }
 
-      if (params.stages.includes('plan')) {
-        await patch(params.id, { status: 'planning' as PostStatus });
-        await setAgent(params.id, 'qalam', 'working', 'At standup with the crew.');
-        plan = await planContent({
-          settings,
-          format: params.format,
-          angle: params.angle,
-          facts,
-          research,
-          recentConcepts: recent.concepts,
-          feedback,
-        });
-        await patch(params.id, { plan });
-        // The standup is the whole crew's, so everyone's light shows it.
-        for (const agent of ['rang', 'raftar', 'awaaz'] as AgentId[]) {
-          if (!spec.crew.includes(agent)) continue;
-          await setAgent(params.id, agent, 'working', plan.notes[agent] ?? 'Briefed at standup.');
-        }
-      }
-
-      await patch(params.id, { status: 'drafting' as PostStatus });
-      await setAgent(params.id, 'qalam', 'working', 'Writing.');
+  // ── the script ────────────────────────────────────────────────────────────
+  if (wanted.includes('script')) {
+    await patch(params.id, { status: 'drafting' as PostStatus });
+    const writer = await who('script');
+    if (!writer) {
+      await patch(params.id, {
+        status: 'failed' as PostStatus,
+        error: 'No content writer on the team, so nothing can be written. Hire one on the Employees page.',
+      });
+      throw new Error('No content writer.');
+    }
+    try {
+      const { hooks } = await recentWork();
       const drafted = await draftPost({
+        employee: writer,
         settings,
         format: params.format,
         angle: params.angle,
         plan,
         facts,
         research,
-        recentHooks: recent.hooks,
+        seo,
+        recentHooks: hooks,
         feedback,
       });
       script = drafted.script;
       caption = drafted.caption;
-      hashtags = drafted.hashtags;
+      // The SEO desk's tags win where they exist: they were chosen because
+      // somebody searches them, which the writer's were not.
+      hashtags = seo?.hashtags.length ? seo.hashtags : drafted.hashtags;
       await patch(params.id, {
         script,
         caption: `${caption}\n\n${hashtags.map((h) => `#${h}`).join(' ')}`.trim(),
         hashtags,
       });
-      await setAgent(params.id, 'qalam', 'done', script.viralHook || script.hook);
+      await done('script', writer, script.viralHook || script.hook);
     } catch (e) {
       const message = (e as Error).message;
-      await setAgent(params.id, 'qalam', 'failed', 'Could not write it.', message);
-      await patch(params.id, { status: 'failed' as PostStatus, error: `Writer: ${message}` });
+      await failed('script', writer, message);
+      await patch(params.id, { status: 'failed' as PostStatus, error: `Writing: ${message}` });
       throw e;
     }
   }
 
   if (!script) throw new Error('There is no script to work from.');
 
-  // ── Rang: draw it ─────────────────────────────────────────────────────────
-  if (params.stages.includes('design')) {
-    await patch(params.id, { status: 'designing' as PostStatus });
-    await setAgent(params.id, 'rang', 'working', 'Art directing.');
-    try {
-      const result = await design({
-        settings,
-        postId: params.id,
-        format: params.format,
-        script,
-        plan,
-        feedback,
-        onProgress: (note) => setAgent(params.id, 'rang', 'working', note),
-      });
-      // Replace this format's images; a re-run should not leave slide 6 of a
-      // five-slide carousel lying around from the previous version.
-      media = [...media.filter((m) => m.kind !== 'image'), ...result.media];
-      await patch(params.id, { media, direction: result.direction });
-      await setAgent(params.id, 'rang', result.media.length ? 'done' : 'skipped', result.note);
-    } catch (e) {
-      const message = e instanceof DesignError ? e.message : (e as Error).message;
-      await setAgent(params.id, 'rang', 'failed', 'Could not draw it.', message);
-      // A failed design is fatal for an image format and survivable for a video
-      // one, where the cover frame is a nicety.
-      if (spec.kind === 'image') {
-        await patch(params.id, { status: 'failed' as PostStatus, error: `Designer: ${message}` });
-        throw e;
-      }
-    }
-  }
-
-  // ── Raftar: cut and render ────────────────────────────────────────────────
-  if (spec.kind === 'video' && params.stages.includes('video')) {
-    await patch(params.id, { status: 'rendering' as PostStatus });
-    await setAgent(params.id, 'raftar', 'working', 'Writing the cut.');
-    try {
-      const cut = await planCut({ settings, format: params.format, script, plan, feedback });
-      await patch(params.id, { cut });
-
-      if (settings.videoProvider === 'none') {
-        await setAgent(params.id, 'raftar', 'skipped', `${cut.note} Rendering is off — attach a file.`);
-      } else {
-        await setAgent(params.id, 'raftar', 'working', 'Rendering. This takes a few minutes.');
-        const cover = media.find((m) => m.kind === 'image') ?? null;
-        const video = await renderVideo({ postId: params.id, cut, settings, format: params.format, cover });
-        if (video) {
-          media = [...media.filter((m) => m.kind !== 'video'), video];
-          await patch(params.id, { media });
-        }
-        await setAgent(params.id, 'raftar', video ? 'done' : 'skipped', cut.note);
-      }
-    } catch (e) {
-      const message = e instanceof VideoError ? e.message : (e as Error).message;
-      await setAgent(params.id, 'raftar', 'failed', 'The render failed.', message);
-      // Not fatal: the script and the frames survive, and a file can be
-      // attached by hand from the queue.
-      await patch(params.id, { error: `Editor: ${message}` });
-    }
-  } else if (spec.kind === 'image') {
-    await setAgent(params.id, 'raftar', 'skipped', 'Nothing to cut on a still format.');
-  }
-
-  // ── Awaaz: work out where it goes ─────────────────────────────────────────
-  if (params.stages.includes('distribute')) {
-    await setAgent(params.id, 'awaaz', 'working', 'Writing the captions per network.');
-    try {
-      const connected = await publishableAccounts(params.format);
-      const candidates = (params.targets ?? existing?.targets ?? settings.platforms).filter(
-        (p) => supports(p, params.format) && (connected.length === 0 || connected.includes(p)),
-      );
-      const distribution = await planDistribution({
+  // ── YouTube and Google metadata ───────────────────────────────────────────
+  if (wanted.includes('search')) {
+    await patch(params.id, { status: 'optimising' as PostStatus });
+    const expert = await who('search');
+    if (expert) {
+      search = await searchPass({
+        employee: expert,
         settings,
         format: params.format,
         script,
-        plan,
         caption,
-        hashtags,
-        candidates: candidates.length ? candidates : connected,
+        seo,
+        plan,
         feedback,
       });
-      await patch(params.id, { captions: distribution.captions, targets: distribution.targets });
-      await setAgent(
-        params.id,
-        'awaaz',
-        'done',
-        distribution.targets.length
-          ? `${distribution.note} Queued for ${distribution.targets.join(', ')}.`
-          : 'Nowhere to post this yet — no connected account takes this format.',
-      );
-    } catch (e) {
-      await setAgent(params.id, 'awaaz', 'failed', 'Could not plan the distribution.', (e as Error).message);
+      await patch(params.id, { search });
+      if (search) await done('search', expert, search.note || search.youtube?.title || search.webAngle);
+      else await failed('search', expert, 'The search metadata came back unusable.');
     }
   }
 
-  // The line always ends here. Approval is a human's job.
+  // ── design ────────────────────────────────────────────────────────────────
+  if (wanted.includes('design')) {
+    await patch(params.id, { status: 'designing' as PostStatus });
+    const designer = await who('design');
+    if (designer) {
+      try {
+        const result = await design({
+          employee: designer,
+          settings,
+          postId: params.id,
+          format: params.format,
+          script,
+          plan,
+          seo,
+          feedback,
+          onProgress: (note) =>
+            setWork(params.id, 'design', {
+              state: 'working',
+              employeeId: designer.id,
+              name: designer.name,
+              role: designer.role,
+              note,
+            }),
+        });
+        // Replace this format's images; a re-run should not leave slide 6 of a
+        // five-slide carousel lying around from the previous version.
+        media = [...media.filter((m) => m.kind !== 'image'), ...result.media];
+        await patch(params.id, { media, direction: result.direction });
+        await done('design', designer, result.note);
+      } catch (e) {
+        const message = e instanceof DesignError ? e.message : (e as Error).message;
+        await failed('design', designer, message);
+        // A failed design is fatal for an image format and survivable for a
+        // video one, where the cover frame is a nicety.
+        if (spec.kind === 'image') {
+          await patch(params.id, { status: 'failed' as PostStatus, error: `Design: ${message}` });
+          throw e;
+        }
+      }
+    }
+  }
+
+  // ── the cut and the render ────────────────────────────────────────────────
+  if (wanted.includes('video')) {
+    await patch(params.id, { status: 'rendering' as PostStatus });
+    const editor = await who('video');
+    if (editor) {
+      try {
+        const cut = await planCut({
+          employee: editor,
+          settings,
+          format: params.format,
+          script,
+          plan,
+          search,
+          feedback,
+        });
+        await patch(params.id, { cut });
+
+        if (settings.videoProvider === 'none') {
+          await setWork(params.id, 'video', {
+            state: 'skipped',
+            employeeId: editor.id,
+            name: editor.name,
+            role: editor.role,
+            note: `${cut.note} Rendering is switched off — attach a file.`,
+          });
+        } else {
+          await setWork(params.id, 'video', {
+            state: 'working',
+            employeeId: editor.id,
+            name: editor.name,
+            role: editor.role,
+            note: 'Rendering. This takes a few minutes.',
+          });
+          const cover = media.find((m) => m.kind === 'image') ?? null;
+          const video = await renderVideo({
+            postId: params.id,
+            cut,
+            settings,
+            format: params.format,
+            cover,
+          });
+          if (video) {
+            media = [...media.filter((m) => m.kind !== 'video'), video];
+            await patch(params.id, { media });
+          }
+          await done('video', editor, cut.note);
+        }
+      } catch (e) {
+        const message = e instanceof VideoError ? e.message : (e as Error).message;
+        await failed('video', editor, message);
+        // Not fatal: the script and the frames survive, and a file can be
+        // attached by hand from the queue.
+        await patch(params.id, { error: `Editing: ${message}` });
+      }
+    }
+  }
+
+  // ── the ads brief ─────────────────────────────────────────────────────────
+  if (wanted.includes('ads')) {
+    await patch(params.id, { status: 'optimising' as PostStatus });
+    const buyer = await who('ads');
+    if (buyer) {
+      const ads = await adPass({
+        employee: buyer,
+        settings,
+        format: params.format,
+        script,
+        facts,
+        plan,
+        search,
+        feedback,
+      });
+      await patch(params.id, { ads });
+      if (ads) await done('ads', buyer, `${ads.campaignType} — ${ads.objective}`.slice(0, 200));
+      else await failed('ads', buyer, 'The campaign brief came back unusable.');
+    }
+  }
+
+  // ── where it goes ─────────────────────────────────────────────────────────
+  if (wanted.includes('distribute')) {
+    await patch(params.id, { status: 'optimising' as PostStatus });
+    const manager = await who('distribute');
+    if (manager) {
+      try {
+        const connected = await publishableAccounts(params.format);
+        const candidates = (params.targets ?? existing?.targets ?? settings.platforms).filter(
+          (p) => supports(p, params.format) && (connected.length === 0 || connected.includes(p)),
+        );
+        const distribution = await planDistribution({
+          employee: manager,
+          settings,
+          format: params.format,
+          script,
+          plan,
+          caption,
+          hashtags,
+          search,
+          candidates: candidates.length ? candidates : connected,
+          feedback,
+        });
+        await patch(params.id, { captions: distribution.captions, targets: distribution.targets });
+        await done(
+          'distribute',
+          manager,
+          distribution.targets.length
+            ? `${distribution.note} Queued for ${distribution.targets.join(', ')}.`
+            : 'Nowhere to post this yet — no connected account takes this format.',
+        );
+      } catch (e) {
+        await failed('distribute', manager, (e as Error).message);
+      }
+    }
+  }
+
+  // The day always ends here. Approval is a human's job.
   await patch(params.id, { status: 'awaiting_approval' as PostStatus });
 }
 
-/** Create the document, then run the crew over it. */
+/** Create the document, then put the team on it. */
 async function createPost(opts: {
   date: string;
   format: ContentFormat;
@@ -337,6 +546,8 @@ async function createPost(opts: {
     format: opts.format,
     angle,
     status: 'planning' as PostStatus,
+    team: [],
+    work: {},
     plan: null,
     script: null,
     caption: '',
@@ -344,10 +555,14 @@ async function createPost(opts: {
     hashtags: [],
     facts: {},
     research: null,
+    seo: null,
+    search: null,
+    ads: null,
+    direction: null,
+    cut: null,
     media: [],
     targets,
     results: {},
-    crew: freshCrewLog(),
     revisions: [],
     error: null,
     approvedBy: null,
@@ -355,7 +570,15 @@ async function createPost(opts: {
     publishedAt: null,
   });
 
-  await runCrew({ id, date: opts.date, format: opts.format, angle, stages: ALL_STAGES, targets });
+  await runTeam({
+    id,
+    date: opts.date,
+    format: opts.format,
+    angle,
+    stages: ALL_STAGES,
+    targets,
+    standup: true,
+  });
   return id;
 }
 
@@ -372,11 +595,11 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
   if (!media.length) {
     throw new HttpsError(
       'failed-precondition',
-      'That post has nothing to publish yet. Render it, or attach a file, first.',
+      'That piece has nothing to publish yet. Render it, or attach a file, first.',
     );
   }
 
-  // Signed URLs age out; a post retried a week later needs fresh ones.
+  // Signed URLs age out; a piece retried a week later needs fresh ones.
   const refreshed = await refreshAssetUrls(media);
   if (refreshed.some((m, i) => m.url !== media[i].url)) {
     media = refreshed;
@@ -388,8 +611,18 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
     throw new HttpsError('failed-precondition', 'None of the selected networks can take this format.');
   }
 
+  // Whoever manages social signs the post — and it is their name in the log.
+  const team = await activeTeam();
+  const manager = assign(team, 'distribute')?.employee ?? null;
+
   await patch(id, { status: 'publishing' as PostStatus });
-  await setAgent(id, 'awaaz', 'working', `Posting to ${targets.join(', ')}.`);
+  await setWork(id, 'distribute', {
+    state: 'working',
+    employeeId: manager?.id ?? null,
+    name: manager?.name ?? 'The desk',
+    role: manager?.role ?? null,
+    note: `Posting to ${targets.join(', ')}.`,
+  });
 
   const results: Record<string, unknown> = {};
   let published = 0;
@@ -411,6 +644,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
         caption: captionFor(platform, post.caption, post.captions),
         title: post.script?.hook ?? 'Velocity',
         tags: post.hashtags ?? [],
+        youtube: post.search?.youtube ?? null,
       });
       results[platform] = { ok: true, id: out.id, url: out.url, error: null, atMs: Date.now() };
       published++;
@@ -432,20 +666,22 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
     publishedAt: published > 0 ? FieldValue.serverTimestamp() : null,
     error: published === 0 ? 'Every network rejected the post — see the per-network errors.' : null,
   });
-  await setAgent(
-    id,
-    'awaaz',
-    published > 0 ? 'done' : 'failed',
-    `${published} posted, ${failed} failed.`,
-    published === 0 ? 'No network accepted it.' : undefined,
-  );
+  await setWork(id, 'distribute', {
+    state: published > 0 ? 'done' : 'failed',
+    employeeId: manager?.id ?? null,
+    name: manager?.name ?? 'The desk',
+    role: manager?.role ?? null,
+    note: `${published} posted, ${failed} failed.`,
+    error: published === 0 ? 'No network accepted it.' : null,
+  });
+  if (manager && published > 0) await creditWork(manager.id);
 
   return { published, failed };
 }
 
 // ── the trigger ─────────────────────────────────────────────────────────────
 
-/** One scheduled run: whatever formats today calls for, all of them queued. */
+/** One scheduled day: whatever formats today calls for, all of them queued. */
 async function runDaily(date: string): Promise<string> {
   const wanted = Math.max(1, Math.min((await getSocialSettings()).postsPerDay, FORMATS.length));
   const made: string[] = [];
@@ -491,6 +727,10 @@ export const socialDailyContent = onSchedule(
       await recordRun('Skipped: GEMINI_API_KEY is not configured.');
       return;
     }
+    if (!(await activeTeam()).length) {
+      await recordRun('Skipped: nobody is on the team. Hire someone on the Employees page.');
+      return;
+    }
 
     const date = dayKey(Date.now());
     try {
@@ -509,7 +749,7 @@ export const socialDailyContent = onSchedule(
 
 const formatSchema = z.enum(FORMATS);
 
-/** "Brief the crew" — the same run the scheduler does, on demand. */
+/** "Put the team on it" — the same run the scheduler does, on demand. */
 export const adminGenerateSocialPost = onCall(
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
   async (req) => {
@@ -528,7 +768,14 @@ export const adminGenerateSocialPost = onCall(
     if (!geminiReady()) {
       throw new HttpsError(
         'failed-precondition',
-        'GEMINI_API_KEY is not configured, so the crew cannot run. Add it as a backend secret and redeploy.',
+        'GEMINI_API_KEY is not configured, so nobody can work. Add it as a backend secret and redeploy.',
+      );
+    }
+    const team = await activeTeam();
+    if (!team.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Nobody works here yet. Hire at least a content writer on the Employees page.',
       );
     }
 
@@ -553,14 +800,24 @@ export const adminGenerateSocialPost = onCall(
   },
 );
 
+/** Which stages a change request re-runs. The cost of a note is this list. */
+const SCOPE_STAGES: Record<RevisionScope, Stage[]> = {
+  script: ['seo', 'script', 'search', 'design', 'video', 'ads'],
+  design: ['design'],
+  video: ['video', 'ads'],
+  seo: ['seo', 'search'],
+  ads: ['ads'],
+  caption: [],
+};
+
 /**
  * Ask for changes.
  *
- * The scope decides what actually re-runs, and therefore what it costs: a
- * caption note is one cheap call, a script note re-runs the writer and
- * everything downstream of it. The feedback is kept on the post forever and
- * fed to every agent on every later run, so "stop saying 'seamless'" said once
- * keeps being true.
+ * The scope decides who is called back in, and therefore what it costs: a
+ * caption note is one cheap call to the writer, a script note puts most of the
+ * team back on it. The feedback is kept on the piece forever and fed to
+ * everyone who touches it later, so "stop saying seamless" said once keeps
+ * being true.
  */
 export const adminRequestSocialChanges = onCall(
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
@@ -580,7 +837,7 @@ export const adminRequestSocialChanges = onCall(
     if (!snap.exists) throw new HttpsError('not-found', 'No such post.');
     const post = snap.data() as SocialPost;
     if (WORKING_STATUSES.includes(post.status)) {
-      throw new HttpsError('failed-precondition', 'The crew is still working on that one.');
+      throw new HttpsError('failed-precondition', 'The team is still working on that one.');
     }
 
     const revision: Revision = { atMs: Date.now(), by: ctx.uid, feedback, scope: scope as RevisionScope[] };
@@ -590,13 +847,22 @@ export const adminRequestSocialChanges = onCall(
       error: null,
     });
 
-    // Caption-only notes never touch the media. Everything else re-runs the
-    // stages downstream of what was criticised.
+    // A caption-only note never touches the media, and never re-runs a render.
     if (scope.length === 1 && scope[0] === 'caption') {
       const settings = await getSocialSettings();
-      if (!post.script) throw new HttpsError('failed-precondition', 'That post has no script to rewrite.');
-      await setAgent(postId, 'qalam', 'working', 'Rewriting the caption.');
+      if (!post.script) throw new HttpsError('failed-precondition', 'That piece has no script to rewrite.');
+      const writer = assign(await activeTeam(), 'script')?.employee;
+      if (!writer) throw new HttpsError('failed-precondition', 'No content writer on the team to rewrite it.');
+
+      await setWork(postId, 'script', {
+        state: 'working',
+        employeeId: writer.id,
+        name: writer.name,
+        role: writer.role,
+        note: 'Rewriting the caption.',
+      });
       const rewritten = await rewriteCaption({
+        employee: writer,
         settings,
         script: post.script,
         currentCaption: post.caption,
@@ -608,25 +874,33 @@ export const adminRequestSocialChanges = onCall(
         hashtags: rewritten.hashtags,
         status: 'awaiting_approval' as PostStatus,
       });
-      await setAgent(postId, 'qalam', 'done', 'Caption rewritten.');
+      await setWork(postId, 'script', {
+        state: 'done',
+        employeeId: writer.id,
+        name: writer.name,
+        role: writer.role,
+        note: 'Caption rewritten.',
+      });
+      await creditWork(writer.id);
       return { ok: true, reran: ['caption'] };
     }
 
-    const stages: Stage[] = [];
-    if (scope.includes('script')) stages.push('plan', 'script', 'design', 'video');
-    if (scope.includes('design') && !stages.includes('design')) stages.push('design');
-    if (scope.includes('video') && !stages.includes('video')) stages.push('video');
-    stages.push('distribute');
+    const stages = new Set<Stage>();
+    for (const s of scope) for (const stage of SCOPE_STAGES[s]) stages.add(stage);
+    stages.add('distribute');
 
     try {
-      await runCrew({
+      await runTeam({
         id: postId,
         date: post.date,
         format: post.format ?? 'reel',
         angle: post.angle,
-        stages,
+        stages: [...stages],
+        // A script rewrite is a new idea, so the team meets again. A design or
+        // ads note is not, so nobody's morning is interrupted for it.
+        standup: scope.includes('script'),
       });
-      return { ok: true, reran: stages };
+      return { ok: true, reran: [...stages] };
     } catch (e) {
       throw new HttpsError('internal', (e as Error).message);
     }
@@ -672,7 +946,7 @@ export const adminReviewSocialPost = onCall(
   },
 );
 
-/** Publish (or re-publish to the networks that failed) an approved post. */
+/** Publish (or re-publish to the networks that failed) an approved piece. */
 export const adminPublishSocialPost = onCall(
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '512MiB' },
   async (req) => {
@@ -720,7 +994,6 @@ export const adminAttachSocialMedia = onCall(async (req) => {
   if (!exists) throw new HttpsError('not-found', 'No file at that path.');
 
   const [bytes] = await source.download();
-
   const stored =
     kind === 'video'
       ? await storeVideo(postId, bytes)
@@ -741,7 +1014,7 @@ export const adminAttachSocialMedia = onCall(async (req) => {
     durationSec: null,
     aspect: FORMAT_SPECS[format].aspect,
     slide: kind === 'video' ? 1 : (slide ?? 1),
-    alt: alt ?? '',
+    alt: alt ?? post.seo?.altTexts[(slide ?? 1) - 1] ?? '',
   };
 
   const media = postMedia(post).filter((m) => !(m.kind === asset.kind && m.slide === asset.slide));
@@ -750,7 +1023,11 @@ export const adminAttachSocialMedia = onCall(async (req) => {
     status: 'awaiting_approval' as PostStatus,
     error: null,
   });
-  await setAgent(postId, asset.kind === 'video' ? 'raftar' : 'rang', 'done', 'File attached by hand.');
+  await setWork(postId, kind === 'video' ? 'video' : 'design', {
+    state: 'done',
+    name: 'Attached by hand',
+    note: `A ${kind} was uploaded from the queue.`,
+  });
   return { ok: true };
 });
 

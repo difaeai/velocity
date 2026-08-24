@@ -111,6 +111,12 @@ export interface PublishPayload {
   caption: string;
   title: string;
   tags: string[];
+  /**
+   * What the search desk wrote for YouTube. Used verbatim when present —
+   * a title written for search is the entire reason that job exists, and
+   * re-deriving one from the hook here would quietly throw that work away.
+   */
+  youtube?: { title: string; description: string; tags: string[] } | null;
 }
 
 export interface RawComment {
@@ -568,9 +574,9 @@ async function publishYouTube(c: PlatformCredentials, p: PublishPayload): Promis
         snippet: {
           // A vertical upload under a minute is a Short; the hashtag is what
           // tells YouTube to treat it as one.
-          title: `${p.title.slice(0, 90)}${p.format === 'reel' ? ' #Shorts' : ''}`.slice(0, 100),
-          description: p.caption.slice(0, 5000),
-          tags: p.tags.slice(0, 20),
+          title: `${(p.youtube?.title || p.title).slice(0, 90)}${p.format === 'reel' ? ' #Shorts' : ''}`.slice(0, 100),
+          description: (p.youtube?.description || p.caption).slice(0, 5000),
+          tags: (p.youtube?.tags.length ? p.youtube.tags : p.tags).slice(0, 20),
         },
         status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
       }),

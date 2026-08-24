@@ -1,98 +1,128 @@
 # Velocity — The social desk
 
-Everything behind **Manage social** in the admin console: the four agents who
-plan and make Velocity's content, the accounts they post to, the queue you
-approve everything through, and the inbox where they answer the people who
-reply.
+Everything behind **Manage social** in the admin console: the people you hire,
+the content they plan and make, the accounts they post to, the queue you approve
+everything through, and the inbox where they answer the people who reply.
 
 Companion documents: [FEATURES](FEATURES.md) · [ADMIN](ADMIN.md) ·
 [SECURITY](SECURITY.md) · [DEPLOY](DEPLOY.md)
 
 ---
 
-## 1. The crew
+## 1. It is a team you staff, not a fixed crew
 
-Four agents, each owning one stage, all running on Google Gemini through one
-key. They are named rather than numbered because the console shows the line
-running live, and *"Rang is drawing slide 3 of 5"* is something an operator can
-act on where *"stage 2/4"* is not.
+Nobody is built in. **An empty desk makes nothing.** You hire people on the
+Employees page, give them names, and from that moment each of them does the job
+their role covers — on every run, without being asked again.
 
-| | Agent | Role | What it actually does |
-|---|---|---|---|
-| قلم | **Qalam** | Content writer | Searches what is travelling on Pakistani feeds this week and what the other ride-hailing apps are publishing, brings it to standup, then writes the hook, the frames and the caption. |
-| رنگ | **Rang** | Designer | Art directs every frame — subject, light, lens, type, where the lime accent sits — then renders the carousel slides, the post image, the story frame, or the cover a video opens on. |
-| رفتار | **Raftar** | Video editor | Writes the second-by-second cut (pacing, the pattern interrupt, the sound bed) and renders it through Veo. |
-| آواز | **Awaaz** | Social media manager | Rewrites the caption per network, decides where the piece belongs, publishes once you approve, then reads and answers the comments. |
+| Role | Stage they own | What they actually do |
+|---|---|---|
+| **Research assistant** | market read | Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Reports the pages it read. |
+| **SEO expert** | search brief | Briefs the writer *before* they write: the query this piece should answer, phrases that belong in the copy, hashtags people actually search, real alt text. |
+| **Content writer** | the script | The hook, the shots or slides, the voiceover, the caption. Ruthless about the first three seconds. |
+| **Google SEO expert** | YouTube & Google | Writes the YouTube title, description and tags the video is posted with — used verbatim — and names the query velocityrides.app should try to own. |
+| **Designer** | the pictures | Art directs each frame, then renders the carousel slides, the post image, the story frame, or the cover a video opens on. |
+| **Video editor** | the cut | The second-by-second edit — pacing, the pattern interrupt, the sound bed — then the render. |
+| **YouTube ads expert** | campaign brief | The brief a human takes into Google Ads: objective, five-second hooks to test, targeting, budget range, what success looks like. |
+| **Social media manager** | where it goes | Rewrites the caption per network, picks the targets, publishes once you approve, and drafts a reply to every comment. |
 
 Code: [`backend/functions/src/social/`](../backend/functions/src/social).
 Console: `app/(app)/dashboard/social/`.
 
+### Hiring, sharing and gaps
+
+- **Hire two people into the same job and they share it.** Whoever went longest
+  without a job takes the next one; ties go to whoever has been here longest.
+  Two writers alternate, the way two writers actually would.
+- **Some jobs cover for others.** With no researcher the writer reads around the
+  subject themselves; with no SEO specialist the search desk covers, and vice
+  versa. The work log says "covering" when that happens.
+- **Some jobs have no cover.** No designer means no pictures; no video editor
+  means reels stop at the script; no ads expert means no campaign brief. The
+  stage is recorded as skipped **with the reason**, and the Employees page lists
+  every gap in plain words before it costs you a bad piece.
+- **Nobody is deleted quietly.** Removing someone takes them off the roster, but
+  every piece they worked on keeps their name — "who wrote this claim" is a
+  question you may need answered next year.
+- **Off duty** is a switch, not a deletion. An off-duty employee is skipped and
+  their work goes to whoever else can cover it.
+
+`adminSeedSocialTeam` ("Hire one of each") exists only so the first five minutes
+are not eight name fields. It is not a hidden default team — an empty desk stays
+empty until somebody presses it.
+
 ### They plan together first
 
 Every run opens with a **standup**: one model call that argues the concept out
-in all four voices and commits to it — the idea, the audience, the hook
-direction, the visual direction, the edit direction, and what Awaaz will do with
-it afterwards. Each agent then inherits that decision instead of re-deciding it.
+in the voices of everyone on shift — by name — and commits to it. Concept,
+audience, hook direction, visual direction, edit direction, distribution, plus a
+line per person about their part. Each stage then inherits that decision instead
+of re-deciding it.
 
-That is the difference between four agents and one prompt run four times: the
+That is the difference between a team and one prompt run eight times: the
 designer is not decorating a script it never saw, and the editor is not cutting
-to a hook nobody chose. The plan is stored on the post and shown in the queue,
+to a hook nobody chose. The plan is stored on the piece and shown in the queue,
 so you can veto the idea rather than the execution.
 
 ---
 
-## 2. The run
+## 2. A working day
 
 ```
  tick ──► automation on? ──no──► stop
       ──► right hour?     ──no──► stop
+      ──► anyone hired?   ──no──► stop
       ──► today has this format already? ──yes──► stop
       │
-      ├─ Qalam   market read (grounded search) ─► standup ─► script
-      ├─ Rang    art direction ─► render slides / post image / cover frame
-      ├─ Raftar  the cut ─► Veo render                    (video formats only)
-      ├─ Awaaz   caption per network ─► pick the targets
+      ├─ standup            everyone on shift agrees one concept
+      ├─ market read        research assistant (grounded Google Search)
+      ├─ search brief       SEO expert — before a word is written
+      ├─ the script         content writer
+      ├─ YouTube & Google   Google SEO expert
+      ├─ the pictures       designer
+      ├─ the cut & render   video editor            (video formats only)
+      ├─ campaign brief     YouTube ads expert      (video formats only)
+      ├─ where it goes      social media manager
       │
-      └────────────────────► THE APPROVAL QUEUE ◄──────────────────────
-                                      │
-             approve ─► publish   ask for changes ─► back to the crew
-                                  reject / delete
+      └────────────────► THE APPROVAL QUEUE ◄──────────────────
+                                 │
+        approve ─► publish   ask for changes ─► back to whoever owns that stage
+                             reject / delete
 ```
 
 **Nothing publishes itself.** There is no auto-publish switch. Every run ends at
-`awaiting_approval`, because everything the crew writes is a claim Velocity is
-making in public, and the cost of reading one post a day is nothing next to the
+`awaiting_approval`, because everything the team writes is a claim Velocity is
+making in public, and the cost of reading one piece a day is nothing next to the
 cost of the one that should not have gone out.
 
 Each stage writes its outcome to `socialPosts/{id}` before the next begins, so a
-failure halfway through leaves a post you can open, read and retry — never a
-silent gap in the calendar. The crew log on the post is what the console renders
-as four live status lights.
+failure halfway through leaves a piece you can open, read and retry — never a
+silent gap in the calendar. The work log is what the console renders live, with
+the name of the person whose turn it is.
 
 The tick is hourly rather than a fixed cron so the run hour can be changed from
 the console without a redeploy, and the post id is **the Pakistan date plus the
 format** (`2026-08-24-reel`), so a retried or duplicated tick can never produce
 a duplicate.
 
-### What stops it inventing figures
+### What stops anyone inventing figures
 
 The prompt carries a `FACTS` block (completed trips, driver payout total,
 approved drivers, last-7-day fares, commission rate) and one hard rule: every
-number in the output must come from that block. The facts are stored on the post
-alongside the script, so any published claim can be traced back to the figure it
-came from months later.
+number in the output must come from that block. The facts are stored on the
+piece alongside the script, so any published claim can be traced back to the
+figure it came from months later.
 
-Two more rules no instruction overrides: no competitor is ever named in output,
-and no guaranteed-income language ("earn X per month") — the crew describes how
-earnings work, never what someone will make.
+Two more rules nobody's own brief overrides: no competitor is ever named in
+output, and no guaranteed-income language ("earn X per month").
 
 ---
 
 ## 3. Formats
 
-The format decides who works and where it can go.
+The format decides which stages run and where the piece can go.
 
-| Format | Ratio | What the crew makes | Who takes it |
+| Format | Ratio | What is made | Who takes it |
 |---|---|---|---|
 | **Reel** | 9:16, ~20s | Cover frame + rendered video | Instagram, TikTok, Facebook, YouTube (as a Short), Threads |
 | **Video** | 16:9, ~30s | Cover frame + rendered video | YouTube, Facebook |
@@ -103,70 +133,74 @@ The format decides who works and where it can go.
 `PLATFORM_FORMATS` in [`types.ts`](../backend/functions/src/social/types.ts) is
 the matrix everything trusts: the console greys out what an adapter cannot do,
 and the pipeline filters targets through it, so a story is never quietly posted
-to YouTube.
-
-The rotation (Automation → format rotation) runs in order and repeats — reels
-appear more than once on purpose, because they are what travels, and a grid five
-videos deep is a worse channel than a mixed one.
+to YouTube. Still formats skip the editing and ads stages entirely.
 
 ---
 
 ## 4. The queue — four decisions
 
-Everything lands here. The four actions are deliberately different weights:
-
 | Action | What happens |
 |---|---|
-| **Approve & post now** | Publishes to the ticked networks, one at a time, with the per-network caption. |
+| **Approve & post now** | Publishes to the ticked networks, one at a time, with the per-network caption (and the YouTube title/description/tags verbatim). |
 | **Approve only** | Marks it ready. It goes out when you press publish. |
-| **Ask for changes** | Your note goes back to the crew, and only the stages you tick re-run. |
+| **Ask for changes** | Your note goes back to the team, and only the stages you tick re-run. |
 | **Reject** | It never goes out. It stays readable. |
 | **Delete** | Gone. |
 
-The queue shows the standup concept, the hook (with the alternatives the writer
-offered), the slides or the video, the caption — editable in place — the caption
-per network, the numbers the script was written from, the pages the market read
-came from, and every round of feedback you have already given.
+The queue shows who did what, the standup concept, the hook (with the
+alternatives the writer offered), the slides or the video, the search brief, the
+YouTube copy, the campaign brief, the caption — editable in place — the caption
+per network, the numbers, the sources, and every round of feedback so far.
 
 ### Asking for changes is scoped, and the cost is why
 
-| You tick | What re-runs |
+| You tick | Who is called back in |
 |---|---|
-| Caption | One cheap model call. No re-render. |
-| Design | Rang, then Awaaz. |
-| Video | Raftar, then Awaaz. |
-| Script | The standup, the writer, the designer and the editor. |
+| Just the caption | The writer, one cheap call. No re-render. |
+| Redraw it | The designer, then the manager. |
+| Recut it | The editor and the ads expert, then the manager. |
+| Redo the search work | The SEO and Google SEO experts. |
+| Redo the ad brief | The ads expert alone. |
+| Rewrite it | A fresh standup, then most of the team. |
 
 Re-rendering a video because someone wanted a different word in the caption is
 how you spend a month's budget in an afternoon.
 
-**Feedback is permanent.** Every note is stored on the post and fed to every
-agent on every later version of it, so "the hook is generic, open on the hands"
-does not have to be said twice.
+**Feedback is permanent.** Every note is stored on the piece and fed to everyone
+who touches it later, so "the hook is generic, open on the hands" does not have
+to be said twice.
 
 ---
 
-## 5. Telling all four of them something
+## 5. Telling them things — three different scopes
 
-Two different things, deliberately in two different places:
-
-| Where | Scope | For |
+| Where | Applies to | Example |
 |---|---|---|
-| **Crew page → standing instructions** | Every agent, every run, forever | "We are recruiting drivers in Lahore this month." "Never say cheapest." |
-| **Crew page → direction for one agent** | One agent, every run | "Rang: street light only, no studio shots." |
-| **Queue → ask for changes** | One post | "This hook is weak." |
+| **Employees → standing instructions** | everyone, every job, forever | "We are recruiting drivers in Lahore this month." "Never say cheapest." |
+| **Employees → an individual's card** | that person, until they leave | "Rang: street light only, no studio shots." |
+| **Queue → ask for changes** | one piece | "This hook is weak, open on the hands." |
 
-Putting them in one box would mean either repeating yourself every morning, or
-accidentally turning one post's note into a permanent rule.
-
-The crew page is also where the competitor list lives — the pages Qalam reads
-around before writing. Reading the market and copying it are different jobs, and
-only one of them is publishable, which is why naming a competitor in output is a
-hard rule violation.
+One box for all three would mean either repeating yourself every morning or
+accidentally turning one piece's note into a permanent rule. Personal direction
+lives on the employee record rather than in settings, so it leaves when they do.
 
 ---
 
-## 6. Connecting an account
+## 6. What the ads expert does and does not do
+
+It writes a brief. It does **not** spend money: this backend holds no Google Ads
+credential, books nothing and bids on nothing. A human takes the brief into Ads
+Manager.
+
+That is a deliberate line, not a missing feature. Connecting a spending account
+to an unattended language model is a decision about money with a different risk
+profile from a decision about a caption, and it is not one the content desk
+should make on somebody's behalf. If it is ever wired up, it belongs behind its
+own credential, its own approval step and its own budget ceiling.
+
+---
+
+## 7. Connecting an account
 
 Connecting is a **paste, not a redirect**. You give the desk a token; the backend
 immediately spends it on a read call against that network. If a profile comes
@@ -175,10 +209,10 @@ written and you see the network's own error — `(#200) requires
 pages_manage_posts` tells you what to fix in a way "connection failed" never
 would.
 
-This is deliberate: OAuth buttons look nicer but need a reviewed app per network
-before they can request publishing scopes, and until that review lands they are
-buttons that do nothing. The stored shape is identical either way, so an OAuth
-flow can be added on top later without touching the data model.
+OAuth buttons look nicer but need a reviewed app per network before they can
+request publishing scopes, and until that review lands they are buttons that do
+nothing. The stored shape is identical either way, so an OAuth flow can be added
+on top later without touching the data model.
 
 | Network | Paste | Scopes worth double-checking |
 |---|---|---|
@@ -213,20 +247,20 @@ is storing publishing credentials in the clear.
 
 ---
 
-## 7. Comments
+## 8. Comments
 
-Every two hours, Awaaz reads the comments under everything published in the last
-fortnight, classifies each one, and drafts a reply. Whether that reply is *sent*
-is a separate switch (`autoReply`), off by default.
+Every two hours, whoever holds the social-manager job reads the comments under
+everything published in the last fortnight, classifies each one, and drafts a
+reply in their own name. Whether that reply is *sent* is a separate switch
+(`autoReply`), off by default. With nobody hired into that job, nothing is
+drafted at all — an unanswered comment is better than one answered by a system
+with no name against it.
 
 Three things it will not do, whatever the settings say:
 
-- **Never auto-answers a safety comment.** Anything about a crash, harassment,
-  a woman feeling unsafe or the police is marked `escalated` and left for a
-  person. An automated "sorry to hear that!" under a comment about a driver is
-  worse than silence.
-- **Never argues.** Complaints get an acknowledgement and a route to support,
-  never a defence of the platform.
+- **Never auto-answers a safety comment.** Anything about a crash, harassment, a
+  woman feeling unsafe or the police is marked `escalated` and left for a person.
+- **Never argues.** Complaints get an acknowledgement and a route to support.
 - **Never invents a fact.** Same FACTS rule as the writer.
 
 Spam is closed without a reply. Comment reading works on Facebook, Instagram,
@@ -234,7 +268,7 @@ Threads and YouTube; TikTok, X and LinkedIn are publish-only here.
 
 ---
 
-## 8. Secrets
+## 9. Secrets
 
 Both are their own GitHub Actions secrets, assembled into the functions `.env`
 by `.github/workflows/deploy-functions.yml`. Neither goes in the
@@ -243,7 +277,7 @@ read back, so anything appended to it has to be retyped from memory.
 
 | Secret | Without it |
 |---|---|
-| `GEMINI_API_KEY` | the whole crew is dead — nothing is planned, written, drawn or rendered |
+| `GEMINI_API_KEY` | nobody can work — nothing is planned, written, drawn or rendered |
 | `SOCIAL_TOKEN_KEY` (`openssl rand -base64 32`) | accounts cannot be connected; nothing publishes |
 
 ⚠️ Rotating `SOCIAL_TOKEN_KEY` makes every stored token unreadable. Reconnect
@@ -251,19 +285,19 @@ each account afterwards.
 
 ### Model ids are settings, not code
 
-`textModel`, `imageModel` and `videoModel` are editable on the crew page.
+`textModel`, `imageModel` and `videoModel` are editable on the Employees page.
 Google renames preview models often; when `gemini-2.5-flash-image` becomes
 something else, that is a text field, not a redeploy. Defaults:
 
 | | Default | Used by |
 |---|---|---|
-| Text | `gemini-2.5-pro` | standup, Qalam, Awaaz's captions and replies |
-| Image | `gemini-2.5-flash-image` | Rang (`imagen-*` ids are also handled, on a different endpoint) |
-| Video | `veo-3.1-generate-preview` | Raftar |
+| Text | `gemini-2.5-pro` | standup, research, writing, SEO, search, ads, captions, replies |
+| Image | `gemini-2.5-flash-image` | the designer (`imagen-*` ids are also handled, on a different endpoint) |
+| Video | `veo-3.1-generate-preview` | the video editor |
 
 ---
 
-## 9. Before the first live post
+## 10. Before the first live post
 
 The API adapters were written from each platform's public documentation, the way
 the payments adapter was. Meta, TikTok, X, LinkedIn and YouTube all gate
@@ -273,30 +307,33 @@ this order:
 
 1. Add `GEMINI_API_KEY` and `SOCIAL_TOKEN_KEY`, redeploy, and connect **one**
    account.
-2. Leave automation off. Press **Brief the crew now** on the overview and pick
-   **Post** — the cheapest format, one image, no render minutes.
-3. Read what comes back in the queue. Try **ask for changes** on the caption
-   once; that is the cheapest way to see the loop work end to end.
-4. Publish that one piece by hand, to one network.
-5. Switch `videoProvider` to `veo` and brief a **reel**. Watch the function logs
+2. Hire a team — one of each is fine to start; rename them to whatever you like.
+3. Leave automation off. Press **Brief the team now** on the overview and pick
+   **Post** — the cheapest format: one image, no render minutes.
+4. Read what comes back in the queue, including who did what. Try **ask for
+   changes** on the caption once; that is the cheapest way to see the loop work
+   end to end.
+5. Publish that one piece by hand, to one network.
+6. Switch `videoProvider` to `veo` and brief a **reel**. Watch the function logs
    on that first render — that is where a wrong model name or a changed response
    shape shows up.
-6. Only then set a run hour and turn automation on.
-7. Turn the comment inbox on. Read a few dozen drafted replies before you even
+7. Only then set a run hour and turn automation on.
+8. Turn the comment inbox on. Read a few dozen drafted replies before you even
    consider `autoReply`.
 
 ---
 
-## 10. Data model
+## 11. Data model
 
 | Path | What |
 |---|---|
+| `socialEmployees/{id}` | one person: name, role, title, personal direction, status, and what they have worked on |
 | `socialAccounts/{platform}` | profile + status; admin-readable |
 | `socialAccounts/{platform}/secret/credentials` | sealed token; **no client access** |
-| `socialPosts/{YYYY-MM-DD-format}` | plan, script, media, captions, targets, per-network results, crew log, feedback history |
+| `socialPosts/{YYYY-MM-DD-format}` | the team snapshot, the work log, the plan, script, SEO, search and ads packs, media, captions, targets, results and feedback history |
 | `socialResearch/{YYYY-MM-DD}` | the day's market read and the pages it came from |
 | `socialComments/{platform}_{commentId}` | one comment, its reading, and the reply |
-| `system/socialAutomation` | the settings the scheduler and every agent read |
+| `system/socialAutomation` | the settings the scheduler and everyone reads |
 
 `system/` rather than `config/` for the settings: `config/{doc}` is readable by
 every signed-in user because fares and ride settings live there, and the
@@ -315,22 +352,27 @@ like a new one buys nothing.
 
 ---
 
-## 11. Callables
+## 12. Callables
 
 | Function | What it does |
 |---|---|
+| `adminGetSocialRoles` | the jobs you can hire for, and what each would do |
+| `adminHireSocialEmployee` | hire someone, with a name |
+| `adminUpdateSocialEmployee` | rename, retitle, re-brief, or send off duty |
+| `adminFireSocialEmployee` | remove from the roster (their credits stay) |
+| `adminSeedSocialTeam` | hire one of each, for a first run |
 | `adminGetSocialConnectSchema` | what the connect form should ask for, per network |
 | `adminConnectSocialAccount` | verify a pasted credential, then seal and store it |
 | `adminVerifySocialAccount` | re-check a stored credential |
 | `adminDisconnectSocialAccount` | delete the credential; keep the profile row |
-| `adminGetSocialSettings` | settings + which keys are actually configured |
+| `adminGetSocialSettings` | settings, which keys are configured, and what the roster cannot do |
 | `adminUpdateSocialSettings` | validated write |
-| `adminGenerateSocialPost` | run the whole crew on demand, for a date and format |
+| `adminGenerateSocialPost` | put the team on a piece, for a date and format |
 | `adminRequestSocialChanges` | send a piece back with feedback; re-runs only the scoped stages |
 | `adminReviewSocialPost` | approve / reject, optionally publish |
 | `adminPublishSocialPost` | publish, or retry the networks that failed |
 | `adminAttachSocialMedia` | attach a video or slide made outside the pipeline |
-| `adminDeleteSocialPost` | remove a post |
+| `adminDeleteSocialPost` | remove a piece |
 | `adminSyncSocialComments` | read the comments now, and draft replies |
 | `adminReplySocialComment` | send one reply |
 | `adminSetCommentStatus` | close a comment without answering it |

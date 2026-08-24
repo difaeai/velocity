@@ -280,6 +280,16 @@ service cloud.firestore {
       }
     }
 
+    // ----- socialEmployees/{id} --------------------------------------------
+    // The people hired onto the social desk: name, job, personal direction and
+    // what they have worked on. Admin-readable so the console can render the
+    // roster live; written only through the hire/update/fire callables, because
+    // who works here decides what gets published in Velocity name.
+    match /socialEmployees/{employeeId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- socialPosts/{YYYY-MM-DD-format} ---------------------------------
     // One piece the crew made: the plan, script, media, per-network results and
     // the round-by-round feedback an admin gave on it.

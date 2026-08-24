@@ -3,12 +3,12 @@
 /**
  * Manage social → Approval queue.
  *
- * The gate between four agents and the whole audience. Nothing this desk makes
- * reaches a network without passing through this screen, so everything the crew
- * produced is here in full — the concept they agreed at standup, the hook, the
- * frames, the slides or the video, the per-network captions, and the numbers
- * the script was written from. Approving a claim you cannot check is the exact
- * failure this feature has to avoid.
+ * The gate between the team and the whole audience. Nothing this desk makes
+ * reaches a network without passing through this screen, so everything they
+ * produced is here in full — who did what, the concept they agreed at standup,
+ * the hook, the slides or the video, the search work, the campaign brief, the
+ * per-network captions, and the numbers the script was written from. Approving
+ * a claim you cannot check is the exact failure this feature has to avoid.
  *
  * Four things you can do with a draft, and they are deliberately different
  * weights:
@@ -18,9 +18,9 @@
  *   Reject          — not this one. It stays readable, it just never goes out.
  *   Delete          — as if it never happened.
  *
- * The caption is editable in place, because the common case is a good post with
- * one phrase you would rather word differently, and re-running the crew for
- * that wastes a render.
+ * The caption is editable in place, because the common case is a good piece
+ * with one phrase you would rather word differently, and calling the whole team
+ * back for that wastes a render.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -35,14 +35,16 @@ import {
   type SocialPlatform,
   type SocialPostDoc,
   type SocialRevision,
+  type SocialRevisionScope,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import {
-  CrewLine,
   FormatChip,
   PLATFORM_META,
   PlatformBadge,
+  ROLE_META,
   StatusPill,
+  WorkLine,
   longDate,
 } from '@/components/social/shared';
 
@@ -50,6 +52,7 @@ const OPEN_STATES = [
   'planning',
   'researching',
   'drafting',
+  'optimising',
   'designing',
   'rendering',
   'awaiting_approval',
@@ -59,9 +62,25 @@ const OPEN_STATES = [
   'partial',
 ];
 
-const WORKING_STATES = ['planning', 'researching', 'drafting', 'designing', 'rendering', 'publishing'];
+const WORKING_STATES = [
+  'planning',
+  'researching',
+  'drafting',
+  'optimising',
+  'designing',
+  'rendering',
+  'publishing',
+];
 
-type ChangeScope = 'script' | 'design' | 'video' | 'caption';
+/** What each note costs, in who it calls back in. */
+const SCOPE_LABEL: Record<SocialRevisionScope, string> = {
+  script: 'Rewrite it',
+  design: 'Redraw it',
+  video: 'Recut it',
+  caption: 'Just the caption',
+  seo: 'Redo the search work',
+  ads: 'Redo the ad brief',
+};
 
 export default function QueuePage() {
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
@@ -89,7 +108,7 @@ export default function QueuePage() {
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
           <p style={{ color: colors.muted, margin: 0 }}>
-            Everything the crew has made. Read it, check the numbers, then approve it — or tell them what to fix.
+            Everything the team has made. Read it, check the numbers, then approve it — or tell them what to fix.
           </p>
         </div>
         <div
@@ -131,7 +150,7 @@ export default function QueuePage() {
           <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>
             {tab === 'open'
               ? 'Nothing waiting. The queue is clear.'
-              : 'The crew has not made anything yet — brief them from the overview.'}
+              : 'The team has not made anything yet — brief them from the overview.'}
           </p>
         </Card>
       ) : (
@@ -149,7 +168,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   const [caption, setCaption] = useState(post.caption);
   const [targets, setTargets] = useState<SocialPlatform[]>(post.targets ?? []);
   const [feedback, setFeedback] = useState('');
-  const [scope, setScope] = useState<ChangeScope[]>(['script']);
+  const [scope, setScope] = useState<SocialRevisionScope[]>(['script']);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +225,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
       if (!scope.length) throw new Error('Pick what should be redone.');
       const res = await socialApi.requestChanges({ postId: post.id, feedback: feedback.trim(), scope });
       setFeedback('');
-      return `Sent back to the crew. Re-running: ${res.reran.join(', ')}.`;
+      return `Sent back to the team. Re-running: ${res.reran.join(', ')}.`;
     });
 
   const reject = () => run('reject', async () => {
@@ -271,7 +290,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
           </label>
 
           <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
-            <CrewLine crew={post.crew} compact />
+            <WorkLine work={post.work} format={format} compact />
           </div>
         </div>
 
@@ -300,7 +319,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
             </div>
           ) : (
             <div style={{ fontSize: 13, color: colors.muted }}>
-              {working ? 'The crew is working on it…' : 'Nothing written yet.'}
+              {working ? 'The team is working on it…' : 'Nothing written yet.'}
             </div>
           )}
 
@@ -410,7 +429,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
 
         <div style={{ background: colors.bg, borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 6 }}>
-            ASK FOR CHANGES — the crew reads this, and keeps reading it on every later version
+            ASK FOR CHANGES — the team reads this, and keeps reading it on every later version
           </div>
           <textarea
             value={feedback}
@@ -428,9 +447,10 @@ function PostCard({ post }: { post: SocialPostDoc }) {
             }}
           />
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-            {(['script', 'design', 'video', 'caption'] as ChangeScope[]).map((s) => {
+            {(['script', 'design', 'video', 'seo', 'ads', 'caption'] as SocialRevisionScope[]).map((s) => {
               const on = scope.includes(s);
-              const disabled = s === 'video' && format !== 'reel' && format !== 'video';
+              const stillFormat = format !== 'reel' && format !== 'video';
+              const disabled = (s === 'video' || s === 'ads') && stillFormat;
               return (
                 <label
                   key={s}
@@ -450,7 +470,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
                     disabled={disabled}
                     onChange={() => setScope(on ? scope.filter((x) => x !== s) : [...scope, s])}
                   />
-                  Redo the {s}
+                  {SCOPE_LABEL[s]}
                 </label>
               );
             })}
@@ -579,8 +599,116 @@ function Working({ post }: { post: SocialPostDoc }) {
         </Section>
       ) : null}
 
+      {post.seo ? (
+        <Section title="Search brief, written before the copy">
+          <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+            {post.seo.searchIntent ? (
+              <div>
+                <span style={{ color: colors.muted }}>Answering:</span> <strong>{post.seo.searchIntent}</strong>
+              </div>
+            ) : null}
+            {post.seo.keywords.length ? <div>Keywords: {post.seo.keywords.join(', ')}</div> : null}
+            {post.seo.altTexts.length ? (
+              <div style={{ color: colors.muted }}>Alt text written for {post.seo.altTexts.length} frame(s).</div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
+
+      {post.search ? (
+        <Section title="YouTube and Google">
+          <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+            {post.search.youtube ? (
+              <>
+                <div>
+                  <span style={{ color: colors.muted }}>Title:</span> <strong>{post.search.youtube.title}</strong>
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', color: colors.muted, marginTop: 4 }}>
+                  {post.search.youtube.description}
+                </div>
+                {post.search.youtube.tags.length ? (
+                  <div style={{ marginTop: 4, color: colors.muted }}>
+                    Tags: {post.search.youtube.tags.join(', ')}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div style={{ color: colors.muted }}>Not going to YouTube.</div>
+            )}
+            {post.search.webAngle ? (
+              <div style={{ marginTop: 6 }}>
+                <span style={{ color: colors.muted }}>Web angle:</span> {post.search.webAngle}
+              </div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
+
+      {post.ads ? (
+        <Section title="Campaign brief — nothing is booked or spent by this desk">
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 4 }}>
+            <div>
+              <strong>{post.ads.campaignType}</strong> — {post.ads.objective}
+            </div>
+            {post.ads.hookVariants.length ? (
+              <div>
+                <span style={{ color: colors.muted }}>Five-second hooks to test:</span>
+                <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
+                  {post.ads.hookVariants.map((h) => (
+                    <li key={h}>{h}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div>
+              <span style={{ color: colors.muted }}>Targeting:</span>{' '}
+              {[post.ads.targeting.locations.join(', '), post.ads.targeting.ages, post.ads.targeting.interests.join(', ')]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+            {post.ads.budgetNote ? (
+              <div>
+                <span style={{ color: colors.muted }}>Budget:</span> {post.ads.budgetNote}
+              </div>
+            ) : null}
+            {post.ads.whatToTest ? (
+              <div>
+                <span style={{ color: colors.muted }}>Test first:</span> {post.ads.whatToTest}
+              </div>
+            ) : null}
+            {post.ads.successLooksLike ? (
+              <div>
+                <span style={{ color: colors.muted }}>Worked if:</span> {post.ads.successLooksLike}
+              </div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
+
+      {post.team?.length ? (
+        <Section title="Who was on it">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {post.team.map((member) => (
+              <span
+                key={member.id}
+                style={{
+                  background: colors.surface,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: 999,
+                  padding: '3px 10px',
+                  fontSize: 11.5,
+                }}
+              >
+                <strong>{member.name}</strong>{' '}
+                <span style={{ color: colors.muted }}>{ROLE_META[member.role]?.short ?? member.role}</span>
+              </span>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
       {post.cut?.prompt ? (
-        <Section title="The cut Raftar wrote">
+        <Section title="The cut">
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>
             {post.cut.prompt}
           </p>

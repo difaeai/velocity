@@ -1,31 +1,33 @@
 /**
- * Qalam — the content writer.
+ * The writing stage — whoever holds the content-writer job runs it.
  *
- * Writes one piece from the concept the crew agreed at standup, in whatever
+ * They write one piece from the concept the team agreed at standup, in whatever
  * format the rotation landed on: shots for a reel, slides for a carousel, one
  * frame for a post or a story.
  *
- * The point of feeding it live figures rather than letting it invent them is
- * not tone, it is liability: "drivers earn PKR 730,000" is a claim, and a claim
- * that came out of a language model's imagination is one an advertising
+ * The point of feeding them live figures rather than letting them invent them
+ * is not tone, it is liability: "drivers earn PKR 730,000" is a claim, and a
+ * claim that came out of a language model's imagination is one an advertising
  * regulator, a driver, or a competitor can hold against you. Everything the
  * script asserts traces back to a number in `facts`, and the facts are stored
  * on the post so any published claim can be audited later.
  *
- * Engine: Gemini, through gemini.ts. Same key as the designer and the renderer,
- * so the whole desk lives or dies on one secret rather than three.
+ * Engine: Gemini, through gemini.ts. The same key as the designer and the
+ * renderer, so the whole desk lives or dies on one secret rather than three.
  */
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';
-import { agentSystem, feedbackBlock, planBlock, researchBlock } from './crew';
+import { feedbackBlock, planBlock, researchBlock, systemFor } from './crew';
 import { generateJson } from './gemini';
 import {
   FORMAT_SPECS,
   type ContentFormat,
   type ContentPlan,
   type ContentResearch,
+  type Employee,
   type Frame,
   type PostScript,
+  type SeoPack,
   type SocialSettings,
 } from './types';
 
@@ -117,12 +119,15 @@ export interface DraftedPost {
 
 /** Write the piece. Throws with the model's own error on failure. */
 export async function draftPost(params: {
+  employee: Employee;
   settings: SocialSettings;
   format: ContentFormat;
   angle: string;
   plan: ContentPlan | null;
   facts: Record<string, number | string>;
   research: ContentResearch | null;
+  /** The SEO expert's brief, when they have already been round. */
+  seo: SeoPack | null;
   /** Hooks already used this fortnight, so the feed doesn't repeat itself. */
   recentHooks: string[];
   /** Change requests from the admin, oldest first. */
@@ -133,7 +138,7 @@ export async function draftPost(params: {
 
   const { data } = await generateJson<Record<string, unknown>>({
     model: params.settings.textModel,
-    system: `${agentSystem('qalam', params.settings)}\n\n${RESPONSE_SHAPE}`,
+    system: `${systemFor(params.employee, params.settings)}\n\n${RESPONSE_SHAPE}`,
     what: "Today's script",
     temperature: 1,
     maxOutputTokens: 3000,
@@ -141,11 +146,12 @@ export async function draftPost(params: {
       `FORMAT: ${spec.label}. ${frameBrief(params.format)}`,
       `TODAY'S ANGLE: ${params.angle} — ${brief}`,
       '',
-      planBlock(params.plan, 'qalam'),
+      planBlock(params.plan, params.employee),
       '',
       `FACTS (the only numbers you may use):\n${JSON.stringify(params.facts, null, 2)}`,
       '',
       researchBlock(params.research),
+      params.seo ? seoBrief(params.seo) : '',
       params.recentHooks.length
         ? `HOOKS ALREADY USED RECENTLY — write something different:\n- ${params.recentHooks.join('\n- ')}`
         : '',
@@ -158,6 +164,18 @@ export async function draftPost(params: {
   return parseDraft(data, params.format);
 }
 
+/** The SEO expert's words, handed to whoever is writing. */
+export function seoBrief(seo: SeoPack): string {
+  return [
+    'FROM THE SEO DESK — work these in where they sound natural, never at the cost of the sentence:',
+    seo.searchIntent ? `The query this should answer: ${seo.searchIntent}` : '',
+    seo.keywords.length ? `Phrases to use: ${seo.keywords.join(', ')}` : '',
+    seo.hashtags.length ? `Hashtags to close on: ${seo.hashtags.map((h) => `#${h}`).join(' ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function parseDraft(raw: Record<string, unknown>, format: ContentFormat): DraftedPost {
   const spec = FORMAT_SPECS[format];
   const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -167,7 +185,7 @@ function parseDraft(raw: Record<string, unknown>, format: ContentFormat): Drafte
       : [];
 
   const hook = str(raw.hook, 160);
-  if (!hook) throw new Error('The writer returned a post with no hook.');
+  if (!hook) throw new Error('The writer returned a piece with no hook.');
 
   const frames: Frame[] = Array.isArray(raw.frames)
     ? (raw.frames as unknown[])
@@ -201,6 +219,7 @@ function parseDraft(raw: Record<string, unknown>, format: ContentFormat): Drafte
 
 /** Rewrite only the caption — the common change request, and the cheapest. */
 export async function rewriteCaption(params: {
+  employee: Employee;
   settings: SocialSettings;
   script: PostScript;
   currentCaption: string;
@@ -209,7 +228,7 @@ export async function rewriteCaption(params: {
 }): Promise<{ caption: string; hashtags: string[] }> {
   const { data } = await generateJson<{ caption?: unknown; hashtags?: unknown }>({
     model: params.settings.textModel,
-    system: `${agentSystem('qalam', params.settings)}\n\nReply with one JSON object and nothing else:\n{ "caption": "the rewritten caption, no hashtags", "hashtags": ["5-8 tags, no # prefix"] }`,
+    system: `${systemFor(params.employee, params.settings)}\n\nReply with one JSON object and nothing else:\n{ "caption": "the rewritten caption, no hashtags", "hashtags": ["5-8 tags, no # prefix"] }`,
     what: 'The rewritten caption',
     temperature: 0.9,
     maxOutputTokens: 1200,

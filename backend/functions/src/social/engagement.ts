@@ -26,9 +26,10 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { loadCredentials, markAccountError } from './accounts';
-import { agentSystem } from './crew';
+import { systemFor } from './crew';
 import { generateJson } from './gemini';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
+import { activeTeam, assign, creditWork } from './employees';
 import { getSocialSettings } from './settings';
 import {
   PLATFORMS,
@@ -112,6 +113,7 @@ export async function syncComments(): Promise<{ found: number; added: number; er
           status: 'new',
           intent: null,
           draftReply: null,
+          draftedBy: null,
           sentReply: null,
           sentAtMs: null,
           error: null,
@@ -150,13 +152,21 @@ Reply with one JSON object and nothing else:
 const INTENTS: CommentIntent[] = ['praise', 'question', 'complaint', 'safety', 'spam', 'other'];
 
 /** Write replies for everything unread. Sends them only when told to. */
-export async function draftReplies(settings: SocialSettings): Promise<{ drafted: number; sent: number; failed: number }> {
+export async function draftReplies(
+  settings: SocialSettings,
+): Promise<{ drafted: number; sent: number; failed: number; by: string | null }> {
+  // Whoever is on the social desk answers. With nobody hired into it, nothing
+  // is drafted at all — an unanswered comment is better than one answered by
+  // a system with no name against it.
+  const manager = assign(await activeTeam(), 'distribute')?.employee ?? null;
+  if (!manager) return { drafted: 0, sent: 0, failed: 0, by: null };
+
   const snap = await db
     .collection('socialComments')
     .where('status', '==', 'new')
     .limit(DRAFT_BATCH * 3)
     .get();
-  if (snap.empty) return { drafted: 0, sent: 0, failed: 0 };
+  if (snap.empty) return { drafted: 0, sent: 0, failed: 0, by: manager.name };
 
   const rows = snap.docs.map((d) => d.data() as SocialComment);
   let drafted = 0;
@@ -170,7 +180,7 @@ export async function draftReplies(settings: SocialSettings): Promise<{ drafted:
     try {
       const { data } = await generateJson<{ replies?: unknown }>({
         model: settings.textModel,
-        system: `${agentSystem('awaaz', settings)}\n\n${DRAFT_SYSTEM}`,
+        system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM}`,
         what: 'The comment replies',
         temperature: 0.8,
         maxOutputTokens: 2500,
@@ -197,7 +207,13 @@ export async function draftReplies(settings: SocialSettings): Promise<{ drafted:
       else if (intent === 'safety') status = 'escalated';
 
       await commentRef(row.platform, row.commentId).set(
-        { intent, draftReply: reply || null, status, draftedAt: FieldValue.serverTimestamp() },
+        {
+          intent,
+          draftReply: reply || null,
+          draftedBy: manager.name,
+          status,
+          draftedAt: FieldValue.serverTimestamp(),
+        },
         { merge: true },
       );
       drafted++;
@@ -210,7 +226,8 @@ export async function draftReplies(settings: SocialSettings): Promise<{ drafted:
     }
   }
 
-  return { drafted, sent, failed };
+  if (drafted > 0) await creditWork(manager.id);
+  return { drafted, sent, failed, by: manager.name };
 }
 
 /** Post one reply. Used by the scheduler and by the console's Send button. */
@@ -258,7 +275,7 @@ export async function runEngagement(): Promise<string> {
 
   const summary = [
     `${sync.added} new comment${sync.added === 1 ? '' : 's'} of ${sync.found} read`,
-    `${drafts.drafted} drafted`,
+    drafts.by ? `${drafts.drafted} drafted by ${drafts.by}` : 'nobody on the social desk to draft replies',
     settings.autoReply ? `${drafts.sent} sent, ${drafts.failed} failed` : 'replies held for approval',
     sync.errors.length ? `errors: ${sync.errors.slice(0, 3).join('; ')}` : '',
   ]

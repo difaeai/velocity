@@ -57,10 +57,19 @@ describe('the format matrix', () => {
     }
   });
 
-  it('puts the editor on the video formats and nowhere else', () => {
+  it('runs the editing and ads stages on video formats and nowhere else', () => {
     for (const format of FORMATS) {
       const spec = FORMAT_SPECS[format];
-      expect(spec.crew.includes('raftar')).toBe(spec.kind === 'video');
+      expect(spec.stages.includes('video')).toBe(spec.kind === 'video');
+      expect(spec.stages.includes('ads')).toBe(spec.kind === 'video');
+    }
+  });
+
+  it('always runs the stages that every piece needs', () => {
+    for (const format of FORMATS) {
+      for (const stage of ['research', 'seo', 'script', 'search', 'design', 'distribute'] as const) {
+        expect(FORMAT_SPECS[format].stages).toContain(stage);
+      }
     }
   });
 });
