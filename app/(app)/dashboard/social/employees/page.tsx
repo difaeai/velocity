@@ -35,7 +35,7 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { Mascot, ROLE_META, StatusPill } from '@/components/social/shared';
-import { Office, type OfficeLive } from '@/components/social/office';
+import { Office, officeLive } from '@/components/social/office';
 
 export default function EmployeesPage() {
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
@@ -74,19 +74,7 @@ export default function EmployeesPage() {
     [],
   );
 
-  const live = useMemo(() => {
-    const busyNow: Record<string, OfficeLive> = {};
-    posts.forEach((post) =>
-      Object.values(post.work ?? {}).forEach((entry) => {
-        if (entry?.state === 'working' && entry.employeeId) {
-          busyNow[entry.employeeId] = { stage: entry.stage, note: entry.note };
-        }
-      }),
-    );
-    return busyNow;
-  }, [posts]);
-
-  const running = useMemo(() => posts.some((p) => IN_PROGRESS.has(p.status)), [posts]);
+  const { live, running } = useMemo(() => officeLive(posts), [posts]);
 
   const loadSettings = () =>
     socialApi
@@ -591,17 +579,6 @@ function HireCard({ filled, onDone }: { filled: Set<SocialRole>; onDone: () => v
     </Card>
   );
 }
-
-/** A piece is being made right now — the room says so at the centre of the table. */
-const IN_PROGRESS = new Set<SocialPostDoc['status']>([
-  'planning',
-  'researching',
-  'drafting',
-  'optimising',
-  'designing',
-  'rendering',
-  'publishing',
-]);
 
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };
 

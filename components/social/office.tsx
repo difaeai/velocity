@@ -26,13 +26,43 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import { colors } from '@/lib/config';
-import type { SocialEmployee, SocialRole, SocialStage } from '@/lib/api';
+import type { SocialEmployee, SocialPostDoc, SocialRole, SocialStage } from '@/lib/api';
 import { Mascot, ROLE_META, STAGE_META } from './shared';
 
 /** What one person is doing this second, when a piece is running. */
 export interface OfficeLive {
   stage: SocialStage;
   note: string | null;
+}
+
+/** A piece is being made right now, rather than sitting in the queue. */
+const IN_PROGRESS = new Set<SocialPostDoc['status']>([
+  'planning',
+  'researching',
+  'drafting',
+  'optimising',
+  'designing',
+  'rendering',
+  'publishing',
+]);
+
+/**
+ * Who is mid-job, read out of the recent posts. Lives here rather than in either
+ * page so the office says the same thing wherever it is hung.
+ */
+export function officeLive(posts: SocialPostDoc[]): {
+  live: Record<string, OfficeLive>;
+  running: boolean;
+} {
+  const live: Record<string, OfficeLive> = {};
+  posts.forEach((post) =>
+    Object.values(post.work ?? {}).forEach((entry) => {
+      if (entry?.state === 'working' && entry.employeeId) {
+        live[entry.employeeId] = { stage: entry.stage, note: entry.note };
+      }
+    }),
+  );
+  return { live, running: posts.some((p) => IN_PROGRESS.has(p.status)) };
 }
 
 /** Overheard at the table. Flavour — never dressed up as status. */

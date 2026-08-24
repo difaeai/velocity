@@ -29,15 +29,14 @@ import { Button, Card } from '@/components/ui';
 import {
   FORMAT_META,
   FormatChip,
-  Mascot,
   PlatformBadge,
   PLATFORM_META,
   Readiness,
-  ROLE_META,
   StatusPill,
   longDate,
   postSummary,
 } from '@/components/social/shared';
+import { Office, officeLive } from '@/components/social/office';
 
 export default function SocialOverview() {
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
@@ -110,7 +109,7 @@ export default function SocialOverview() {
   }, []);
 
   const onShift = staff.filter((e) => e.status === 'active');
-  const offDuty = staff.filter((e) => e.status !== 'active');
+  const { live, running } = officeLive(posts);
   const connected = accounts.filter((a) => a.status === 'connected');
   const broken = accounts.filter((a) => a.status === 'error');
   const awaiting = posts.filter((p) => p.status === 'awaiting_approval' || p.status === 'changes_requested');
@@ -184,49 +183,23 @@ export default function SocialOverview() {
           </Link>
         </div>
 
+        {/* The room, not a list: who is in today, who stepped away, and who is
+            mid-job right now — all of it visible without reading a word. */}
+        <Office staff={staff} live={live} running={running} />
+
         {onShift.length === 0 ? (
-          <p style={{ fontSize: 13.5, color: colors.muted, margin: 0, lineHeight: 1.55 }}>
+          <p style={{ fontSize: 13.5, color: colors.muted, margin: '12px 0 0', lineHeight: 1.55 }}>
             Nobody works here yet, so nothing gets made.{' '}
             <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
               Hire your first employee
             </Link>{' '}
             — a content writer is enough to see a piece written end to end.
           </p>
-        ) : (
-          <>
-            <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-              {onShift.map((person) => (
-                <div key={person.id} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <Mascot role={person.role} size={40} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 900 }}>{person.name}</div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: colors.muted,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {person.title || ROLE_META[person.role].label}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {offDuty.length ? (
-              <p style={{ fontSize: 12.5, color: colors.muted, margin: '12px 0 0' }}>
-                Off duty: {offDuty.map((p) => p.name).join(', ')}.
-              </p>
-            ) : null}
-            {coverage.length ? (
-              <p style={{ fontSize: 12.5, color: colors.warn, margin: '10px 0 0', lineHeight: 1.5 }}>
-                {coverage[0]}
-              </p>
-            ) : null}
-          </>
-        )}
+        ) : coverage.length ? (
+          <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
+            {coverage[0]}
+          </p>
+        ) : null}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
