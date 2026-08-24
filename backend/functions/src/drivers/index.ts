@@ -196,6 +196,10 @@ export const adminCreateDriver = onCall(async (req) => {
       plate: data.plate,
       cnic: data.cnic ?? null,
       franchiseId: data.franchiseId ?? null,
+      // Set even though nothing was submitted: `submittedAt` is "when this
+      // driver entered the funnel", and the dashboard's new-drivers-per-day
+      // counts on it. Without it an admin-created driver never appears.
+      submittedAt: now,
       approvedBy: admin.uid,
       approvedAt: now,
       createdAt: now,

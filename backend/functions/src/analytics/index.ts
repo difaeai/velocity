@@ -50,8 +50,9 @@ export interface DailyStats {
   freight: number;
   specialRides: number;
   scheduled: number;
-  /** Sign-ups. */
+  /** Accounts created that day (everyone starts as a passenger). */
   newPassengers: number;
+  /** Drivers who entered the onboarding funnel that day. */
   newDrivers: number;
 }
 
@@ -180,10 +181,15 @@ async function computeDays(dates: string[]): Promise<Map<string, DailyStats>> {
     bucket('freightRequests', sinceMs, buckets, (day) => { day.freight++; }),
     bucket('specialRidesBookings', sinceMs, buckets, (day) => { day.specialRides++; }),
     bucket('scheduledRides', sinceMs, buckets, (day) => { day.scheduled++; }),
+    // Everyone signs up as a passenger — `onUserCreate` writes role
+    // 'passenger' for every account, and a driver only becomes one later. So
+    // sign-ups are counted here, and drivers are counted separately from the
+    // day they entered the onboarding funnel, which is the number that actually
+    // says whether supply is keeping up.
     bucket('users', sinceMs, buckets, (day, u) => {
-      if (u.role === 'driver') day.newDrivers++;
-      else if (u.role !== 'admin') day.newPassengers++;
+      if (u.role !== 'admin') day.newPassengers++;
     }),
+    bucket('drivers', sinceMs, buckets, (day) => { day.newDrivers++; }, 'submittedAt'),
   ]);
 
   return buckets;

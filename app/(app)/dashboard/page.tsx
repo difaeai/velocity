@@ -236,18 +236,18 @@ export default function Overview() {
 
             <ChartCard
               title="Sign-ups"
-              subtitle="New riders and new drivers. Supply has to keep up with demand."
+              subtitle="New accounts against drivers entering onboarding — supply has to keep up with demand."
               series={[
-                { key: 'p', label: 'Passengers', color: SERIES[0] },
-                { key: 'd', label: 'Drivers', color: SERIES[1] },
+                { key: 'p', label: 'New accounts', color: SERIES[0] },
+                { key: 'd', label: 'Drivers onboarding', color: SERIES[1] },
               ]}
               rows={series.map((d) => ({ label: shortDate(d.date), values: [d.newPassengers, d.newDrivers] }))}
             >
               <StackedColumns
                 points={signupPoints}
                 series={[
-                  { key: 'p', label: 'Passengers', color: SERIES[0] },
-                  { key: 'd', label: 'Drivers', color: SERIES[1] },
+                  { key: 'p', label: 'New accounts', color: SERIES[0] },
+                  { key: 'd', label: 'Drivers onboarding', color: SERIES[1] },
                 ]}
               />
             </ChartCard>
