@@ -12,6 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 
+import { VelocityMark } from '@/components/BrandMark';
+
 const ANDROID_PACKAGE = 'com.velocityridzpk.app';
 const PLAY_URL = `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`;
 
@@ -62,7 +64,7 @@ export default function AppLinkPage() {
     <main style={st.page}>
       <div style={st.card}>
         <div style={st.logoRow}>
-          <span style={st.logoDot}>⚡</span>
+          <VelocityMark size={28} style={{ color: '#ccff00' }} />
           <span style={st.brand}>Velocity</span>
         </div>
 
@@ -126,7 +128,6 @@ const st: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
   logoRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  logoDot: { fontSize: 26 },
   brand: { fontSize: 22, fontWeight: 900, color: '#ccff00', letterSpacing: 0.5 },
   title: { fontSize: 20, fontWeight: 800, color: '#f2f4ec', margin: 0 },
   sub: { fontSize: 14, color: '#9aa08a', margin: 0, lineHeight: 1.5 },

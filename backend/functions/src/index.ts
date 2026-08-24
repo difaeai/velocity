@@ -269,3 +269,22 @@ export {
   confirmSpecialRidesBooking,
   cancelSpecialRidesBooking,
 } from './specialRides';
+
+// Admin dashboard analytics — daily series + live snapshot, cached per day
+export { adminGetAnalytics } from './analytics';
+
+// Social desk — connected accounts and the daily AI content pipeline
+export {
+  adminConnectSocialAccount,
+  adminDisconnectSocialAccount,
+  adminVerifySocialAccount,
+  adminGetSocialConnectSchema,
+  adminGetSocialSettings,
+  adminUpdateSocialSettings,
+  socialDailyContent,
+  adminGenerateSocialPost,
+  adminReviewSocialPost,
+  adminPublishSocialPost,
+  adminAttachSocialVideo,
+  adminDeleteSocialPost,
+} from './social';

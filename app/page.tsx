@@ -1,3 +1,4 @@
+import { VelocityMark } from '@/components/BrandMark';
 import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
 import { PhoneShowcase } from '@/components/site/PhoneShowcase';
 import { Reveal } from '@/components/site/Reveal';
@@ -712,7 +713,7 @@ export default function Home() {
           up — this is an app landing page, and the app is the conversion. */}
       <div className={styles.mobileBar}>
         <span className={styles.brandMark}>
-          <Bolt style={{ color: '#ccff00' }} />
+          <VelocityMark style={{ color: '#ccff00' }} />
         </span>
         <span className={styles.mobileBarText}>
           <strong>Get Velocity</strong>
@@ -730,7 +731,7 @@ export default function Home() {
             <div className={styles.footerBrand}>
               <a className={styles.brand} href="#top">
                 <span className={styles.brandMark}>
-                  <Bolt style={{ color: '#ccff00' }} />
+                  <VelocityMark style={{ color: '#ccff00' }} />
                 </span>
                 <span className={styles.brandName}>Velocity</span>
               </a>

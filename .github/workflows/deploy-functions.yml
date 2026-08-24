@@ -64,6 +64,8 @@ jobs:
         env:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
+          SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           : > .env.velocity-fe379
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
@@ -77,6 +79,22 @@ jobs:
             echo "· routes: server-side routing ENABLED"
           else
             echo "· routes: no key — en-route falls back to the client polyline"
+          fi
+          # The social desk's token vault. This is the one key that fails closed
+          # rather than degrading: without it, accounts cannot be connected and
+          # nothing is published — because the alternative is storing page
+          # tokens in the clear.
+          if [ -n "$SOCIAL_TOKEN_KEY" ]; then
+            printf 'SOCIAL_TOKEN_KEY=%s\n' "$SOCIAL_TOKEN_KEY" >> .env.velocity-fe379
+            echo "· social: token vault READY"
+          else
+            echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
+          fi
+          if [ -n "$GEMINI_API_KEY" ]; then
+            printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> .env.velocity-fe379
+            echo "· social: video rendering ENABLED"
+          else
+            echo "· social: no GEMINI_API_KEY — scripts are written, videos attached by hand"
           fi
           echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 

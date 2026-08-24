@@ -48,7 +48,10 @@ export const metadata: Metadata = {
     title: 'Velocity — ride-hailing built for Pakistan',
     description: 'Name your fare. Split the ride. Pay in cash.',
   },
-  icons: { icon: '/app/icon.png', apple: '/app/icon.png' },
+  // No `icons` entry on purpose: an explicit one overrides Next's file
+  // convention, and the tab then kept serving the stock app/favicon.ico. The
+  // icons now come from app/icon.png, app/apple-icon.png and app/favicon.ico,
+  // all generated from the app icon by scripts/generate-brand-assets.mjs.
 };
 
 export const viewport: Viewport = {

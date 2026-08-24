@@ -9,6 +9,7 @@ import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
+import { VelocityIcon } from '@/components/BrandMark';
 
 export default function Login() {
   const { user, isAdmin, initializing, signOut } = useAuth();
@@ -40,7 +41,7 @@ export default function Login() {
     <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
       <Card style={{ width: 380, maxWidth: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={logoStyle}>V</div>
+          <VelocityIcon size={36} />
           <strong style={{ fontSize: 20 }}>Velocity Admin</strong>
         </div>
 
@@ -99,16 +100,6 @@ function mapErr(code: string): string {
   }
 }
 
-const logoStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  borderRadius: 10,
-  background: colors.primary,
-  color: '#fff',
-  display: 'grid',
-  placeItems: 'center',
-  fontWeight: 900,
-};
 const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 700 };
 const inputStyle: React.CSSProperties = {
   height: 42,

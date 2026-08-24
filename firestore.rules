@@ -255,6 +255,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- analyticsDaily/{YYYY-MM-DD} -------------------------------------
+    // One rolled-up day of platform activity, written by adminGetAnalytics the
+    // first time anyone asks for that day. Feeds the dashboard charts.
+    match /analyticsDaily/{date} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- socialAccounts/{platform} ---------------------------------------
+    // The connected Facebook / Instagram / YouTube / TikTok accounts. The
+    // profile half is admin-readable so the console can show live status.
+    match /socialAccounts/{platform} {
+      allow read: if isAdmin();
+      allow write: if false;
+
+      // The access tokens, sealed with SOCIAL_TOKEN_KEY. Closed to every
+      // client including admins: a page token is a password that can post to
+      // the whole audience, and only Cloud Functions has any business holding
+      // one. Subcollections do not inherit the rule above, so this is the rule
+      // that actually keeps them shut.
+      match /secret/{docId} {
+        allow read, write: if false;
+      }
+    }
+
+    // ----- socialPosts/{YYYY-MM-DD} ----------------------------------------
+    // A day's generated post: script, caption, video and per-network results.
+    match /socialPosts/{postId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- platformLedger/{id} ----------------------------------------------
     // Realized platform revenue (ride commissions, subscription payments).
     // Written only by the backend inside money transactions; admin-readable.
