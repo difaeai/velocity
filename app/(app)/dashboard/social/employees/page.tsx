@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
@@ -29,17 +29,20 @@ import {
   socialApi,
   type SocialCompetitor,
   type SocialEmployee,
+  type SocialPostDoc,
   type SocialRole,
   type SocialSettings,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { Mascot, ROLE_META, StatusPill } from '@/components/social/shared';
+import { Office, type OfficeLive } from '@/components/social/office';
 
 export default function EmployeesPage() {
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [coverage, setCoverage] = useState<string[]>([]);
   const [draft, setDraft] = useState<Partial<SocialSettings>>({});
+  const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -58,6 +61,32 @@ export default function EmployeesPage() {
       ),
     [],
   );
+
+  // The office reads the same work log the queue draws: whoever holds a stage
+  // that is running right now is the person lit up at the table.
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(6)),
+        (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
+        () => setPosts([]),
+      ),
+    [],
+  );
+
+  const live = useMemo(() => {
+    const busyNow: Record<string, OfficeLive> = {};
+    posts.forEach((post) =>
+      Object.values(post.work ?? {}).forEach((entry) => {
+        if (entry?.state === 'working' && entry.employeeId) {
+          busyNow[entry.employeeId] = { stage: entry.stage, note: entry.note };
+        }
+      }),
+    );
+    return busyNow;
+  }, [posts]);
+
+  const running = useMemo(() => posts.some((p) => IN_PROGRESS.has(p.status)), [posts]);
 
   const loadSettings = () =>
     socialApi
@@ -125,6 +154,9 @@ export default function EmployeesPage() {
 
       {error ? <p style={{ color: colors.danger, margin: 0 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, margin: 0 }}>{notice}</p> : null}
+
+      {/* the same team, as a room */}
+      <Office staff={staff} live={live} running={running} />
 
       {staff.length === 0 ? (
         <Card>
@@ -559,6 +591,17 @@ function HireCard({ filled, onDone }: { filled: Set<SocialRole>; onDone: () => v
     </Card>
   );
 }
+
+/** A piece is being made right now — the room says so at the centre of the table. */
+const IN_PROGRESS = new Set<SocialPostDoc['status']>([
+  'planning',
+  'researching',
+  'drafting',
+  'optimising',
+  'designing',
+  'rendering',
+  'publishing',
+]);
 
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };
 
