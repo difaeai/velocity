@@ -13,6 +13,10 @@ on:
   push:
     branches: [main]
     paths:
+      # A change to the deploy pipeline itself deploys, so the pipeline is
+      # exercised by the commit that changes it rather than by whatever
+      # unrelated backend push happens to come next.
+      - '.github/workflows/deploy-functions.yml'
       - 'backend/functions/**'
       - 'firestore.rules'
       - 'firestore.indexes.json'
@@ -102,5 +106,52 @@ jobs:
         continue-on-error: true
         run: firebase deploy --only firestore:indexes --project velocity-fe379 --non-interactive
 
-      - name: Deploy Cloud Functions + Firestore rules + Storage rules + Hosting
-        run: firebase deploy --only functions,firestore:rules,storage,hosting --project velocity-fe379 --non-interactive --force
+      # Rules and hosting go first, on their own. They are three small writes,
+      # they cannot exhaust a function quota, and a wedged function deploy has no
+      # business holding a security-rules change hostage.
+      - name: Deploy Firestore rules + Storage rules + Hosting
+        run: firebase deploy --only firestore:rules,storage,hosting --project velocity-fe379 --non-interactive --force
+
+      # Functions, with retries — and the retries are the point.
+      #
+      # This codebase is ~216 functions in one region sharing one source bundle,
+      # so any push under backend/functions/ changes every hash and every single
+      # function is rewritten. That walks straight into two asia-south1 Cloud Run
+      # quotas: 'Write requests per minute per region' (the CLI writes 40 at a
+      # time, the limit is 60/min), and 'total allowable CPU per project per
+      # region', which the container healthcheck trips when a batch of revisions
+      # all boot at once.
+      #
+      # Neither one arrives as an HTTP 429. They come back inside a *completed*
+      # long-running operation as RESOURCE_EXHAUSTED, so the CLI's own retry —
+      # which only covers 429/409/503 on the request itself — never sees them,
+      # and the deploy just ends with a handful of functions broken. That is how
+      # 77980c1 left socialEngagement and adminSyncSocialComments in state FAILED
+      # with no Cloud Run service behind them, and adminSetCommentStatus never
+      # created at all, while the step exited 2.
+      #
+      # Retrying converges because the CLI skips a function only when it is both
+      # unchanged AND already ACTIVE: everything that landed is skipped, and the
+      # stragglers — a handful, not 216 — are all that gets written, with the
+      # per-minute window having had 90s to refill.
+      #
+      # If this needs three attempts on a regular basis, the fix is a quota
+      # increase on run.googleapis.com in asia-south1, not a fourth attempt.
+      - name: Deploy Cloud Functions
+        run: |
+          attempts=3
+          for attempt in $(seq 1 $attempts); do
+            echo "::group::functions deploy — attempt $attempt of $attempts"
+            if firebase deploy --only functions --project velocity-fe379 --non-interactive --force; then
+              echo "::endgroup::"
+              echo "Functions deployed on attempt $attempt."
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "Deploy incomplete. Waiting 90s for the Cloud Run write quota to refill, then retrying only what is left."
+              sleep 90
+            fi
+          done
+          echo "Functions still not fully deployed after $attempts attempts — this is not a flake, go read the errors above."
+          exit 1
