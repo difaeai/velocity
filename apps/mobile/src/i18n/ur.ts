@@ -337,6 +337,15 @@ export const UR: Record<string, string> = {
   'Type your destination above to search for places.':
     'مقامات تلاش کرنے کے لیے اوپر اپنی منزل لکھیں۔',
   'How do you want to ride?': 'آپ کیسے سفر کرنا چاہتے ہیں؟',
+  '1 · HOW DO YOU WANT TO RIDE?': '1 · آپ کیسے سفر کرنا چاہتے ہیں؟',
+  '2 · WHICH CAR?': '2 · کون سی گاڑی؟',
+  '3 · WHAT WILL YOU PAY?': '3 · آپ کتنا ادا کریں گے؟',
+  'The whole car to yourself. Fastest pickup, nobody joins.':
+    'پوری گاڑی صرف آپ کی۔ تیز ترین پک اپ، کوئی اور شامل نہیں ہوتا۔',
+  'Payment, promo code & more': 'ادائیگی، پرومو کوڈ اور مزید',
+  'Hide extra options': 'اضافی اختیارات چھپائیں',
+  'HOW YOU PAY': 'آپ کیسے ادائیگی کریں گے',
+  'Booking…': 'بک کی جا رہی ہے…',
   'Join a pool going your way, or book your own':
     'اپنے راستے پر جاتا پول جوائن کریں، یا اپنی سواری بک کریں',
   'Join a pool going your way — or ride solo':
