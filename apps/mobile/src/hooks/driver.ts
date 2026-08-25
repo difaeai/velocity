@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -119,22 +119,45 @@ function nearbyGeohashes(lat: number, lng: number, precision = 6): string[] {
 }
 
 /**
- * How long a request may sit in the feed before the driver stops being shown it.
+ * How long a request is worth putting in front of a driver.
  *
  * `openRequests` is a denormalised copy of a trip, deleted in the same
- * transaction that accepts or cancels one — so a doc outliving its trip means
- * the trip never reached either ending. A passenger who force-quits the app
- * leaves their trip in `requested` forever, and the feed used to keep offering
- * it: the driver taps, drives, and finds nobody. Anything this old is dead in
- * practice, so it stops being shown here while `sweepStaleOpenRequests` clears
- * it server-side.
+ * transaction that accepts or cancels one — so a request that VANISHES is
+ * already handled the instant it happens: this is a realtime listener, not a
+ * poll, and the row disappears as soon as Firestore pushes the delete.
  *
- * Matches the 30 minutes poolRideRequests already expires on.
+ * What this covers is the other failure: a request that never vanishes because
+ * nothing ended it. A passenger who force-quits leaves their trip `requested`
+ * for ever, and a driver was being offered half-hour-old rides — tap, drive
+ * out, find nobody.
+ *
+ * DELIBERATELY SHORTER than the server's abandonment TTL in
+ * backend/functions/src/trips/sweepStaleRequests.ts, and the asymmetry is the
+ * point. Hiding a request costs a passenger nothing — their trip stays open and
+ * a fresh driver coming online still sees it if it is inside the window —
+ * whereas the server's TTL CANCELS the ride, so that one has to stay generous.
+ * Showing is cheap to undo; cancelling is not.
+ *
+ * The client's must never exceed the server's, or drivers would be offered
+ * rides the sweep has already cancelled.
  */
-const REQUEST_TTL_MS = 30 * 60 * 1000;
+const REQUEST_TTL_MS = 10 * 60 * 1000;
 
-/** Re-evaluate ages this often, so a request ages out without a new snapshot. */
+/**
+ * How often the surviving set is re-checked.
+ *
+ * inDrive and Yango poll every couple of seconds because they have to. A
+ * Firestore listener already pushes removals the moment they happen, so this
+ * timer exists only to retire requests that cross the age limit while the
+ * driver is looking at them — nothing arrives from the server to trigger that.
+ * One second, so the feed is never wrong for longer than that.
+ */
 const AGE_TICK_MS = 1_000;
+
+/** Age bucket the card's "5m ago" label is drawn from — used to know when it changed. */
+function ageLabelBucket(r: OpenRequest, now: number): number {
+  return Math.floor(requestAgeMs(r, now) / 60_000);
+}
 
 function requestAgeMs(r: OpenRequest, now: number): number {
   const seconds = r.createdAt?.seconds;
@@ -148,16 +171,36 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
   // The unfiltered live feed. Ageing is applied on top of this by the ticker
   // below, so a request can drop off without Firestore sending anything.
   const liveRef = useRef<OpenRequest[]>([]);
+  // Which rows, with which age labels, were last handed to the list — so the
+  // ticker can tell "4m ago" becoming "5m ago" from a second passing with
+  // nothing to show for it.
+  const renderedSigRef = useRef<string>('');
+
+  /**
+   * Hand a set of rows to the list, and remember exactly what it drew.
+   *
+   * Both the snapshot and the ticker go through here. If only the snapshot
+   * updated the signature the ticker would repaint once more for no reason on
+   * its next beat, and if only the ticker did, every snapshot would.
+   */
+  const publish = useCallback((next: OpenRequest[], now: number) => {
+    const signature =
+      next.map((r) => r.tripId).join(',') + '|' + next.map((r) => ageLabelBucket(r, now)).join(',');
+    if (signature === renderedSigRef.current) return;
+    renderedSigRef.current = signature;
+    setRows(next);
+  }, []);
 
   useEffect(() => {
-    if (!enabled) { liveRef.current = []; setRows([]); return; }
+    if (!enabled) { liveRef.current = []; renderedSigRef.current = ''; setRows([]); return; }
     // Cap at 100 docs — geohash client-filter narrows further to ~nearby
     const q = query(collection(db, 'openRequests'), limit(100));
     return onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as OpenRequest & { pickupGeohash?: string });
       if (driverLat === undefined || driverLng === undefined) {
+        const now = Date.now();
         liveRef.current = all;
-        setRows(all.filter((r) => requestAgeMs(r, Date.now()) < REQUEST_TTL_MS));
+        publish(all.filter((r) => requestAgeMs(r, now) < REQUEST_TTL_MS), now);
         return;
       }
       const nearby = new Set(nearbyGeohashes(driverLat, driverLng, 6));
@@ -173,10 +216,11 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
       // Nearest first — a request with no pickup coords sorts last rather than
       // jumping to the top of the list.
       withDistance.sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
+      const now = Date.now();
       liveRef.current = withDistance;
-      setRows(withDistance.filter((r) => requestAgeMs(r, Date.now()) < REQUEST_TTL_MS));
+      publish(withDistance.filter((r) => requestAgeMs(r, now) < REQUEST_TTL_MS), now);
     });
-  }, [enabled, driverLat, driverLng]);
+  }, [enabled, driverLat, driverLng, publish]);
 
   // A request that crosses the age limit while the driver is looking at the
   // feed has to disappear on its own — nothing new arrives from Firestore to
@@ -188,16 +232,10 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
     if (!enabled) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      const fresh = liveRef.current.filter((r) => requestAgeMs(r, now) < REQUEST_TTL_MS);
-      setRows((prev) => {
-        if (prev.length === fresh.length && prev.every((r, i) => r.tripId === fresh[i]?.tripId)) {
-          return prev;
-        }
-        return fresh;
-      });
+      publish(liveRef.current.filter((r) => requestAgeMs(r, now) < REQUEST_TTL_MS), now);
     }, AGE_TICK_MS);
     return () => clearInterval(timer);
-  }, [enabled]);
+  }, [enabled, publish]);
 
   return rows;
 }

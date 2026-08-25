@@ -38,8 +38,12 @@ import { db, FieldValue } from '../lib/firebase';
  * driver wastes a trip) is much smaller than in the other (a passenger who
  * genuinely is waiting has their ride cancelled out from under them).
  *
- * Kept in step with REQUEST_TTL_MS in apps/mobile/src/hooks/driver.ts, which
- * hides the same requests from the feed between sweeps.
+ * The driver feed's own REQUEST_TTL_MS (apps/mobile/src/hooks/driver.ts) is
+ * deliberately SHORTER than this, not equal to it. Hiding a request costs the
+ * passenger nothing — the trip stays open, and a driver coming online inside
+ * the window still sees it — while this TTL cancels the ride outright. The
+ * client's must never grow past this one, or drivers would be shown rides the
+ * sweep has already killed.
  */
 const REQUEST_TTL_MS = 30 * 60 * 1000;
 
