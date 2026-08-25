@@ -12,6 +12,8 @@ import { Text, TextInput } from './Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 
+import { api } from '../api/client';
+
 import { db } from '../firebase';
 import { colors } from '../config';
 import { themed } from '../theme';
@@ -59,12 +61,20 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
     if (!trimmed || busy) return;
     setBusy(true);
     try {
-      await addDoc(collection(db, collPath), {
-        senderId:   myUid,
-        senderName: myName,
-        text:       trimmed,
-        sentAt:     serverTimestamp(),
-      });
+      if (isPoolRide) {
+        // Pool-ride rooms still write directly; only trip chat has a callable.
+        await addDoc(collection(db, collPath), {
+          senderId:   myUid,
+          senderName: myName,
+          text:       trimmed,
+          sentAt:     serverTimestamp(),
+        });
+      } else {
+        // Through the backend, so the other side gets a push. Writing straight
+        // to Firestore delivered the message to an open screen and to nobody
+        // else — which is most of the time, for a driver who is driving.
+        await api.sendTripMessage({ tripId: roomId, text: trimmed });
+      }
       setText('');
     } catch {
       // silently ignore — user can retry

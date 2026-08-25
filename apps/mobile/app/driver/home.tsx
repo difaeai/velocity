@@ -52,6 +52,8 @@ import { RadarScan } from '../../src/ui/RadarScan';
 import { RequestCard } from '../../src/ui/RequestCard';
 import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
+import { useUnreadChat } from '../../src/hooks/useUnreadChat';
+import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
@@ -88,6 +90,21 @@ export default function DriverHome() {
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // A push only reaches a backgrounded app. With the trip screen open —
+  // which is exactly where a driver sits while the passenger is writing —
+  // Android shows nothing, so the button has to carry the news itself.
+  const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(activeTrip?.id, uid);
+
+  // Before the passenger is aboard the driver is going to the pickup; after,
+  // to the drop-off. One button, pointed at whichever is actually next.
+  const navTarget: NavTarget | null = (() => {
+    if (!activeTrip) return null;
+    const leg = activeTrip.status === 'in_progress' ? activeTrip.dropoff : activeTrip.pickup;
+    if (!hasCoords(leg)) return null;
+    return { lat: leg.lat, lng: leg.lng, address: activeTrip.status === 'in_progress'
+      ? activeTrip.dropoff?.address ?? null
+      : activeTrip.pickup?.address ?? null };
+  })();
   const [ratingTrip, setRatingTrip] = useState<Trip | null>(null);
   const prevTripRef = useRef<Trip | null>(null);
 
@@ -486,6 +503,20 @@ export default function DriverHome() {
               dropoffCoord={activeTrip.dropoff}
             />
             <Text style={styles.tripFare}>Fare: {activeTrip.fare} PKR</Text>
+            {/* Turn-by-turn is a solved problem and this app should not pretend
+                otherwise — the in-app map shows WHERE the pickup is; getting
+                there is Google Maps' job. `google.navigation:` opens directly in
+                navigation mode; the geo: URL is the fallback any map app can
+                answer, so a driver without Google Maps still gets somewhere. */}
+            {navTarget ? (
+              <Pressable style={styles.navBtn} onPress={() => openNavigation(navTarget)}>
+                <Text style={styles.navBtnText}>
+                  🧭 {activeTrip.status === 'in_progress' ? 'Navigate to drop-off' : 'Navigate to pickup'}
+                </Text>
+                <Text style={styles.navBtnSub} numberOfLines={1}>{navTarget.address}</Text>
+              </Pressable>
+            ) : null}
+
             <View style={styles.contactRow}>
               {activeTrip.passengerPhone ? (
                 <Pressable
@@ -496,10 +527,16 @@ export default function DriverHome() {
                 </Pressable>
               ) : null}
               <Pressable
-                style={[styles.contactBtn, { backgroundColor: `${colors.primary}18` }]}
-                onPress={() => setChatOpen(true)}
+                style={[
+                  styles.contactBtn,
+                  { backgroundColor: `${colors.primary}18` },
+                  unreadChat > 0 && styles.contactBtnUnread,
+                ]}
+                onPress={() => { markChatRead(); setChatOpen(true); }}
               >
-                <Text style={styles.contactBtnText}>💬 Message</Text>
+                <Text style={styles.contactBtnText}>
+                  💬 {unreadChat > 0 ? `Message (${unreadChat > 9 ? '9+' : unreadChat})` : 'Message'}
+                </Text>
               </Pressable>
             </View>
             {(() => {
@@ -556,7 +593,9 @@ export default function DriverHome() {
                 <Text style={styles.cancelFeeNote}>
                   The passenger is waiting. Cancelling costs a{' '}
                   {Math.round(cancellation.driverFeeRate * 100)}% fee — PKR{' '}
-                  {Math.round((activeTrip.fare ?? activeTrip.offeredFare) * cancellation.driverFeeRate)}.
+                  {Math.round((activeTrip.fare ?? activeTrip.offeredFare) * cancellation.driverFeeRate)}
+                  {' '}— and anything your wallet cannot cover is added to what you owe Velocity,
+                  which has to be cleared before you can accept rides again.
                 </Text>
               </>
             )}
@@ -688,7 +727,7 @@ export default function DriverHome() {
           myUid={user?.uid ?? ''}
           myName={user?.displayName ?? 'Driver'}
           otherName="Passenger"
-          onClose={() => setChatOpen(false)}
+          onClose={() => { markChatRead(); setChatOpen(false); }}
         />
       )}
 
@@ -934,6 +973,22 @@ const styles = themed(() => StyleSheet.create({
     marginTop: 2,
   },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  navBtn: {
+    backgroundColor: `${colors.primary}18`,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    gap: 2,
+  },
+  navBtnText: { fontSize: 14, fontWeight: '900', color: colors.primary },
+  navBtnSub: { fontSize: 11, fontWeight: '600', color: colors.muted },
+  contactBtnUnread: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
   contactBtn: {
     flex: 1,
     backgroundColor: colors.card,

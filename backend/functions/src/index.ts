@@ -187,6 +187,10 @@ export {
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';
 
+// In-ride chat. Sending goes through a callable so the message and the push
+// to the other side are one action — direct writes notified nobody.
+export { sendTripMessage } from './trips/chat';
+
 // Retire ride requests nobody is waiting on — clears the driver feed of
 // rides that were cancelled, taken, or simply abandoned mid-request.
 export { sweepStaleOpenRequests } from './trips/sweepStaleRequests';

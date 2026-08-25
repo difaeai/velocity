@@ -359,6 +359,13 @@ export const api = {
   acceptBid: callable<{ tripId: string; bidId: string }, { ok: boolean; fare: number; driverId: string }>(
     'acceptBid',
   ),
+  /**
+   * Send an in-ride chat message.
+   *
+   * Goes through the backend rather than writing to Firestore directly so the
+   * other side actually gets a push — a direct write notified nobody.
+   */
+  sendTripMessage: callable<{ tripId: string; text: string }, { ok: boolean }>('sendTripMessage'),
   /** Turn down one driver's price. Every other offer stands and the trip stays open. */
   declineBid: callable<{ tripId: string; bidId: string }, { ok: boolean }>('declineBid'),
   updateTripStatus: callable<
