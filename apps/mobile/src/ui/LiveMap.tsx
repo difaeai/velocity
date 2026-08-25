@@ -7,8 +7,9 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Constants from 'expo-constants';
-import { Text } from './Text';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+
+import { BikeMarkIcon, CarMarkIcon, RiderMarkIcon } from './RideIcons';
 
 import type { Coords } from '../hooks/location';
 import { useRoute } from '../hooks/directions';
@@ -291,7 +292,7 @@ export function LiveMap({
           zIndex={1}
         >
           <View style={styles.demandOuter}>
-            <View style={styles.demandInner} />
+            <RiderMarkIcon size={11} color="#ffffff" />
           </View>
         </Marker>
       ))}
@@ -305,7 +306,9 @@ export function LiveMap({
           zIndex={2}
         >
           <View style={styles.driverChip}>
-            <Text style={styles.driverChipEmoji}>{d.vehicle === 'bike' ? '🏍️' : '🚗'}</Text>
+            {d.vehicle === 'bike'
+              ? <BikeMarkIcon size={17} color="#e6eae8" accent="#ccff00" />
+              : <CarMarkIcon  size={17} color="#e6eae8" accent="#ccff00" />}
           </View>
         </Marker>
       ))}
@@ -401,14 +404,6 @@ const styles = themed(() => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  demandInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ef4444',
-    borderWidth: 1.5,
-    borderColor: 'rgba(10,14,18,0.85)',
-  },
 
   driverChip: {
     width: 32,
@@ -421,5 +416,4 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
     elevation: 4,
   },
-  driverChipEmoji: { fontSize: 15 },
 }));

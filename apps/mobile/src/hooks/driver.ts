@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -118,16 +118,46 @@ function nearbyGeohashes(lat: number, lng: number, precision = 6): string[] {
   return [...hashes];
 }
 
+/**
+ * How long a request may sit in the feed before the driver stops being shown it.
+ *
+ * `openRequests` is a denormalised copy of a trip, deleted in the same
+ * transaction that accepts or cancels one — so a doc outliving its trip means
+ * the trip never reached either ending. A passenger who force-quits the app
+ * leaves their trip in `requested` forever, and the feed used to keep offering
+ * it: the driver taps, drives, and finds nobody. Anything this old is dead in
+ * practice, so it stops being shown here while `sweepStaleOpenRequests` clears
+ * it server-side.
+ *
+ * Matches the 30 minutes poolRideRequests already expires on.
+ */
+const REQUEST_TTL_MS = 30 * 60 * 1000;
+
+/** Re-evaluate ages this often, so a request ages out without a new snapshot. */
+const AGE_TICK_MS = 1_000;
+
+function requestAgeMs(r: OpenRequest, now: number): number {
+  const seconds = r.createdAt?.seconds;
+  // No timestamp means the write is still in flight locally — treat it as new
+  // rather than instantly expiring a request that has only just arrived.
+  return seconds ? now - seconds * 1000 : 0;
+}
+
 export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?: number): OpenRequest[] {
   const [rows, setRows] = useState<OpenRequest[]>([]);
+  // The unfiltered live feed. Ageing is applied on top of this by the ticker
+  // below, so a request can drop off without Firestore sending anything.
+  const liveRef = useRef<OpenRequest[]>([]);
+
   useEffect(() => {
-    if (!enabled) { setRows([]); return; }
+    if (!enabled) { liveRef.current = []; setRows([]); return; }
     // Cap at 100 docs — geohash client-filter narrows further to ~nearby
     const q = query(collection(db, 'openRequests'), limit(100));
     return onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as OpenRequest & { pickupGeohash?: string });
       if (driverLat === undefined || driverLng === undefined) {
-        setRows(all);
+        liveRef.current = all;
+        setRows(all.filter((r) => requestAgeMs(r, Date.now()) < REQUEST_TTL_MS));
         return;
       }
       const nearby = new Set(nearbyGeohashes(driverLat, driverLng, 6));
@@ -143,9 +173,32 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
       // Nearest first — a request with no pickup coords sorts last rather than
       // jumping to the top of the list.
       withDistance.sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
-      setRows(withDistance);
+      liveRef.current = withDistance;
+      setRows(withDistance.filter((r) => requestAgeMs(r, Date.now()) < REQUEST_TTL_MS));
     });
   }, [enabled, driverLat, driverLng]);
+
+  // A request that crosses the age limit while the driver is looking at the
+  // feed has to disappear on its own — nothing new arrives from Firestore to
+  // trigger a re-render. The tick is every second so the feed is never showing
+  // a dead request for longer than that, but it only ever calls setState when
+  // the surviving set actually changed, so a quiet feed costs one array scan a
+  // second and no renders at all.
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const fresh = liveRef.current.filter((r) => requestAgeMs(r, now) < REQUEST_TTL_MS);
+      setRows((prev) => {
+        if (prev.length === fresh.length && prev.every((r, i) => r.tripId === fresh[i]?.tripId)) {
+          return prev;
+        }
+        return fresh;
+      });
+    }, AGE_TICK_MS);
+    return () => clearInterval(timer);
+  }, [enabled]);
+
   return rows;
 }
 

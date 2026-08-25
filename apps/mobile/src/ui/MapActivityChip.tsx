@@ -2,13 +2,14 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { colors } from '../config';
+import { BikeMarkIcon, CarMarkIcon, RiderMarkIcon } from './RideIcons';
 import { themed } from '../theme';
 
 /**
  * The legend for the home map's activity layer: what is online around you, split
  * into bikes and cars, and how many other people with Velocity are around you.
  *
- * The map alone is ambiguous — a lime chip and a red dot mean nothing on first
+ * The map alone is ambiguous — a marker and a red mark mean nothing on first
  * sight, and a sparse map could equally be "nobody here" or "not loaded yet".
  * The chip names the marks and gives the totals, which also carry the part the
  * pins can't: the arrays on the map are capped, these numbers are not.
@@ -49,19 +50,19 @@ export function MapActivityChip({
       ) : (
         <>
           <View style={styles.item}>
-            <Text style={styles.vehicleGlyph}>🚗</Text>
+            <CarMarkIcon size={13} color={colors.text} accent={colors.primary} />
             <Text style={styles.count}>{carCount}</Text>
             <Text style={styles.label}>{carCount === 1 ? 'car' : 'cars'}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.item}>
-            <Text style={styles.vehicleGlyph}>🏍️</Text>
+            <BikeMarkIcon size={13} color={colors.text} accent={colors.primary} />
             <Text style={styles.count}>{bikeCount}</Text>
             <Text style={styles.label}>{bikeCount === 1 ? 'bike' : 'bikes'}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.item}>
-            <View style={styles.demandDot} />
+            <RiderMarkIcon size={12} color="#ef4444" />
             <Text style={styles.count}>{passengerCount}</Text>
             <Text style={styles.label}>{passengerCount === 1 ? 'passenger' : 'passengers'}</Text>
           </View>
@@ -101,13 +102,6 @@ const styles = themed(() => StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
   },
   item: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  vehicleGlyph: { fontSize: 11 },
-  demandDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ef4444',
-  },
   count: { fontSize: 12, fontWeight: '900', color: colors.primary },
   // Waiting passengers are the urgent number, so they take the red the dots use
   // rather than the lime everything else on this chip shares.

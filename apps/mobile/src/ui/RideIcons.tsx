@@ -129,6 +129,57 @@ export function PoolIcon({ size = 24, color = '#ffffff', accent = colors.primary
   );
 }
 
+/* ── Map marks ─────────────────────────────────────────────────────────────── */
+/*
+ * The icons above are line art on a 24×24 grid, which is right at 28px in a
+ * card and mush at the 12–15px a map legend and a marker actually get. These
+ * are the same subjects drawn as SOLID silhouettes: no interior detail to lose,
+ * no stroke to thin out, legible down to about 10px. They replace the 🚗 and
+ * 🏍️ emoji, which rendered as a different cartoon on every Android skin.
+ *
+ * No window cut-outs on purpose — a hole would have to be filled with whatever
+ * is behind the icon, and these sit on a marker chip, on a legend, and on the
+ * map itself. A silhouette is the one thing that reads correctly on all three.
+ */
+
+/** Car — solid side profile for map markers and legends. */
+export function CarMarkIcon({ size = 16, color = '#ffffff', accent = colors.primary }: RideIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M2.4 16.2v-2.5c0-.62.38-1.18.96-1.4l1.3-.5 1.94-3.2A2.7 2.7 0 0 1 8.9 7.3h6.2c.78 0 1.52.34 2.03.93l2.4 2.8 1.45.55c.58.22.96.78.96 1.4v2.72a.62.62 0 0 1-.62.62H19.9a2.7 2.7 0 0 0-5.4 0h-5a2.7 2.7 0 0 0-5.4 0H3.02a.62.62 0 0 1-.62-.62Z"
+        fill={color}
+      />
+      <Circle cx={7.2} cy={16.9} r={2.1} fill={accent} />
+      <Circle cx={16.8} cy={16.9} r={2.1} fill={accent} />
+    </Svg>
+  );
+}
+
+/** Motorbike — solid side profile, same weight as the car mark. */
+export function BikeMarkIcon({ size = 16, color = '#ffffff', accent = colors.primary }: RideIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M13.4 6.2h3.1a.85.85 0 0 1 0 1.7h-1.6l-1.1 2.05 3.5 3.95h-1.9l-3.25-3.4H8.6l-1.2 2.1H5.3l2.1-3.7c.3-.53.86-.85 1.47-.85h3.02l.9-1.6a.9.9 0 0 1 .61-.25Z"
+        fill={color}
+      />
+      <Circle cx={6} cy={16.4} r={3.05} fill={accent} />
+      <Circle cx={18} cy={16.4} r={3.05} fill={accent} />
+    </Svg>
+  );
+}
+
+/** A person nearby — solid, so it stays a person at legend size. */
+export function RiderMarkIcon({ size = 16, color = '#ffffff' }: RideIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={7.4} r={3.6} fill={color} />
+      <Path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0 .9.9 0 0 1-.9.9H5.5a.9.9 0 0 1-.9-.9Z" fill={color} />
+    </Svg>
+  );
+}
+
 /* ── Route points ──────────────────────────────────────────────────────────── */
 
 /** Pickup — a live-location ring. */

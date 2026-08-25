@@ -187,6 +187,10 @@ export {
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';
 
+// Retire ride requests nobody is waiting on — clears the driver feed of
+// rides that were cancelled, taken, or simply abandoned mid-request.
+export { sweepStaleOpenRequests } from './trips/sweepStaleRequests';
+
 // Scheduled rides — auto-book recurring rides from the Book Ride screen
 export { upsertScheduledRide, deleteScheduledRide, runScheduledRides } from './scheduledRides';
 
