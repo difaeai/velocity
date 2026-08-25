@@ -31,7 +31,7 @@ export interface GeoPoint {
 }
 
 export const RIDE_TYPE_LABELS: Record<RideType, string> = {
-  bike: 'Bike',
+  bike: 'Moto',
   auto: 'Rickshaw',
   mini: 'Mini',
   ac: 'AC Car',
@@ -43,7 +43,7 @@ export const RIDE_TYPE_LABELS: Record<RideType, string> = {
 export const COMMISSION_RATE = 0.1;
 export const MAX_SEATS = 4;
 export const BASE_FARES: Record<RideType, number> = {
-  bike: 150,
+  bike: 100,
   auto: 250,
   mini: 400,
   ac: 550,

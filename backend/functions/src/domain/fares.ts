@@ -14,7 +14,7 @@ export const COMMISSION_RATE = 0.1;
 
 /** Recommended base fare per ride type, in PKR. */
 export const BASE_FARES: Record<RideType, number> = {
-  bike: 150,
+  bike: 100,
   auto: 250,
   mini: 400,
   ac: 550,

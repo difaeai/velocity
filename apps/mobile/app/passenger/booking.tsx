@@ -186,10 +186,10 @@ const RIDE_OPTIONS: {
   seats: number;
   Icon: (props: RideIconProps) => ReactElement;
 }[] = [
-  { key: 'mini',    label: 'Mini',     desc: 'Everyday, no AC',  seats: 4, Icon: MiniIcon },
-  { key: 'bike',    label: 'Moto',     desc: 'Beat the traffic', seats: 1, Icon: MotoIcon },
-  { key: 'ac',      label: 'Ride A/C', desc: 'Cool cars, AC on', seats: 4, Icon: AcIcon },
-  { key: 'comfort', label: 'Premium',  desc: 'Top sedans, AC',   seats: 4, Icon: PremiumIcon },
+  { key: 'mini',    label: 'Mini',     desc: 'Everyday, no AC',   seats: 4, Icon: MiniIcon },
+  { key: 'bike',    label: 'Moto',     desc: 'Motorbike · Fast',  seats: 1, Icon: MotoIcon },
+  { key: 'ac',      label: 'Ride A/C', desc: 'Cool cars, AC on',  seats: 4, Icon: AcIcon },
+  { key: 'comfort', label: 'Premium',  desc: 'Top sedans, AC',    seats: 4, Icon: PremiumIcon },
 ];
 
 export default function Booking() {
@@ -397,6 +397,9 @@ export default function Booking() {
 
   function selectRide(rt: RideType) {
     setRideType(rt);
+    if (rt === 'bike' && mode === 'pool') {
+      setMode('solo');
+    }
     const base = priceFor(rt);
     setFare(base);
     setFareText(String(base));
@@ -1072,7 +1075,6 @@ export default function Booking() {
             contentContainerStyle={styles.vehicleRow}
           >
             {RIDE_OPTIONS
-              .filter((rt) => mode === 'solo' || rt.seats > 1)
               .map((rt) => {
                 const active = rideType === rt.key;
                 return (
