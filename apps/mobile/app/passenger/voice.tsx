@@ -440,7 +440,7 @@ export default function VoiceBooking() {
               </>
             ) : null}
 
-            {draft.pool ? <Text style={styles.summaryPool}>Pool ride</Text> : null}
+            {draft.pool ? <Text style={styles.summaryPool}>Shared ride</Text> : null}
             {draft.seats > 1 ? (
               <Text style={styles.summaryPool}>{draft.seats} passengers</Text>
             ) : null}

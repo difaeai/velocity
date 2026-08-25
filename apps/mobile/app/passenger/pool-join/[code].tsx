@@ -58,7 +58,7 @@ export default function PoolJoinScreen() {
         <Pressable style={styles.backBtn} onPress={goBack}>
           <Text style={styles.backTxt}>←</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Pool invite</Text>
+        <Text style={styles.headerTitle}>Shared ride invite</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -136,7 +136,7 @@ export default function PoolJoinScreen() {
 
           {info.alreadyJoined ? (
             <>
-              <Text style={styles.stateNote}>✅ You're already on this pool ride.</Text>
+              <Text style={styles.stateNote}>✅ You're already on this shared ride.</Text>
               <Pressable
                 style={styles.primaryBtn}
                 onPress={() => info.tripId && router.replace(`/passenger/trip/${info.tripId}` as Parameters<typeof router.replace>[0])}
@@ -157,8 +157,8 @@ export default function PoolJoinScreen() {
           ) : (
             <Text style={styles.stateNote}>
               {info.seatsLeft === 0
-                ? '😔 This pool ride is already full.'
-                : 'This pool ride has already departed or ended.'}
+                ? '😔 This shared ride is already full.'
+                : 'This shared ride has already departed or ended.'}
             </Text>
           )}
 

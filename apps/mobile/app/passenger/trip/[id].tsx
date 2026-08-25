@@ -190,7 +190,7 @@ export default function TripScreen() {
           `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
           `We split the fare — everyone pays less as more riders join.\n` +
           `Invite code: ${trip.shareCode}\n\nTap to join:\n${link}`,
-        title: 'Invite riders to your pool',
+        title: 'Invite riders to your shared ride',
       });
     } catch { /* user dismissed the share sheet */ }
   }
@@ -286,7 +286,7 @@ export default function TripScreen() {
           {trip.pool && (
             <View style={styles.poolRideBanner}>
               <Text style={styles.poolRideBannerText}>
-                🔀 Pool · {poolRiders}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
+                🔀 Shared · {poolRiders}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
               </Text>
             </View>
           )}
@@ -343,13 +343,13 @@ export default function TripScreen() {
           <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
             {/* Driver offers pop in here as they arrive */}
             {pendingBids.length === 0 ? (
-              <View style={styles.waitingBox}>
-                <Text style={styles.waitingEmoji}>📡</Text>
-                <Text style={styles.waitingTitle}>Your request is live</Text>
-                <Text style={styles.waitingSub}>
-                  Nearby drivers can see your offer of PKR {trip.offeredFare}. Their offers will pop up right here.
-                </Text>
-              </View>
+              // One line, not a panel. This is the state the rider spends the
+              // most time in and it says the least — the countdown above it is
+              // already saying "we are looking", so a tall card repeating that
+              // was pushing the actual content off the screen.
+              <Text style={styles.waitingLine}>
+                Your offer of PKR {trip.offeredFare} is live — driver offers appear here.
+              </Text>
             ) : (
               <View style={styles.driverBidsSection}>
                 {pendingBids.map((b) => (
@@ -514,7 +514,7 @@ export default function TripScreen() {
               </Pressable>
             ) : (
               <Text style={styles.joinerFooterNote}>
-                You've joined this pool — you'll ride along once the host picks a driver.
+                You've joined this shared ride — you'll ride along once the host picks a driver.
               </Text>
             )}
           </ScrollView>
@@ -1100,19 +1100,6 @@ const styles = themed(() => StyleSheet.create({
   },
 
   // Waiting-for-offers empty state
-  waitingBox: {
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.glassChip,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.glassStrong,
-    paddingVertical: 22,
-    paddingHorizontal: 18,
-    marginBottom: 12,
-  },
-  waitingEmoji: { fontSize: 30 },
-  waitingTitle: { color: '#ffffff', fontSize: 15, fontWeight: '900' },
   waitingSub:   { color: '#8a8c8c', fontSize: 12, textAlign: 'center', lineHeight: 17 },
 
   // Pool invite card
@@ -1220,6 +1207,15 @@ const styles = themed(() => StyleSheet.create({
     height: 1,
     backgroundColor: colors.glassStrong,
     marginLeft: 22,
+  },
+  waitingLine: {
+    color: colors.muted,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   driverBidsSection: {
     marginTop: 16,

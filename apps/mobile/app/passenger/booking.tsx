@@ -322,7 +322,14 @@ export default function Booking() {
 
   // Details state — one explicit booking mode; Solo and Pool can never be
   // "selected" at the same time, and one CTA reflects the active mode.
-  const [mode, setMode] = useState<'solo' | 'pool'>(voicePrefill?.pool ? 'pool' : 'solo');
+  // Sharing is the default. It is the cheaper ride and the one the business
+  // runs on, it costs the rider nothing to start (a share that nobody joins is
+  // simply a solo ride at the solo price), and anyone who wants the car to
+  // themselves is one tap away. A voice booking that explicitly said "alone"
+  // still gets Solo.
+  const [mode, setMode] = useState<'solo' | 'pool'>(
+    voicePrefill && !voicePrefill.pool ? 'solo' : 'pool',
+  );
   const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
   const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
@@ -904,7 +911,7 @@ export default function Booking() {
                   color={mode === 'pool' ? colors.primary : '#c9cfcc'}
                   accent={mode === 'pool' ? colors.primary : '#c9cfcc'}
                 />
-                <Text style={[styles.pickTitle, mode === 'pool' && { color: colors.primary }]}>Pool</Text>
+                <Text style={[styles.pickTitle, mode === 'pool' && { color: colors.primary }]}>Share Ride</Text>
                 <View style={{ flex: 1 }} />
                 {mode === 'pool' ? (
                   <View style={styles.pickTick}><Text style={styles.pickTickTxt}>✓</Text></View>
@@ -912,7 +919,8 @@ export default function Booking() {
               </View>
               <Text style={styles.pickPrice}>PKR {fare}</Text>
               <Text style={styles.pickSub}>
-                Share the car. Your fare drops to PKR {poolShareFare} each once it fills.
+                Share with riders going your way. Your fare drops to PKR {poolShareFare} each once
+                the car fills.
               </Text>
               <View style={styles.saveBadge}>
                 <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>
@@ -1014,7 +1022,7 @@ export default function Booking() {
             <>
               <View style={styles.goingYourWayHeader}>
                 <PoolIcon size={14} color={colors.primary} accent={colors.primary} />
-                <Text style={styles.goingYourWayLabel}>RIDES GOING YOUR WAY</Text>
+                <Text style={styles.goingYourWayLabel}>SHARED RIDES GOING YOUR WAY</Text>
                 {nearbyPools.length > 0 && (
                   <View style={styles.goingYourWayCount}>
                     <Text style={styles.goingYourWayCountText}>{nearbyPools.length}</Text>
@@ -1086,8 +1094,8 @@ export default function Booking() {
                 ))
               ) : (
                 <Text style={styles.noMatchHint}>
-                  No pools within {poolRadiusKm} km going your way — widen the search above, or just
-                  book below and let riders join yours.
+                  No shared rides within {poolRadiusKm} km going your way — widen the search above,
+                  or just book below and let riders join yours.
                 </Text>
               )}
             </>
@@ -1095,7 +1103,7 @@ export default function Booking() {
             <Pressable style={styles.widenRow} onPress={() => setRadiusOpen(true)}>
               <PoolIcon size={14} color={colors.muted} accent={colors.muted} />
               <Text style={styles.widenText}>
-                Nobody's going your way within {poolRadiusKm} km — tap to search wider
+                Nobody's sharing your way within {poolRadiusKm} km — tap to search wider
               </Text>
             </Pressable>
           )}
@@ -1229,7 +1237,7 @@ export default function Booking() {
                     })}
                   </View>
 
-                  <Text style={styles.sectionLabel}>WHO CAN JOIN YOUR POOL</Text>
+                  <Text style={styles.sectionLabel}>WHO CAN JOIN YOUR RIDE</Text>
                   <View style={styles.visRow}>
                     <Pressable
                       style={[styles.visOpt, poolVisibility === 'public' && styles.visOptActive]}
@@ -1364,7 +1372,7 @@ export default function Booking() {
           <View style={styles.bookingOverlayFareRow}>
             <Text style={styles.bookingOverlayFare}>PKR {fare}</Text>
             <Text style={styles.bookingOverlayFareUnit}>
-              {mode === 'pool' ? 'pool · drops as riders join' : 'solo'}
+              {mode === 'pool' ? 'shared · drops as riders join' : 'solo'}
             </Text>
           </View>
           <Text style={styles.bookingOverlaySub}>
@@ -1477,7 +1485,7 @@ export default function Booking() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.historyRowName} numberOfLines={1}>{h.address}</Text>
                       <Text style={styles.historyRowMeta} numberOfLines={1}>
-                        {h.date}{h.fare ? ` · PKR ${h.fare}` : ''}{h.pool ? ' · Pool' : ''}
+                        {h.date}{h.fare ? ` · PKR ${h.fare}` : ''}{h.pool ? ' · Shared' : ''}
                       </Text>
                     </View>
                     <Text style={styles.historyGo}>↺</Text>

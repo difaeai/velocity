@@ -292,7 +292,7 @@ export default function PassengerHome() {
                 {activeTrip.dropoffAddress ?? 'Your ride is still running'}
               </Text>
               <Text style={styles.activeTripMeta} numberOfLines={1}>
-                {activeTrip.pool ? 'Pool' : 'Solo'}
+                {activeTrip.pool ? 'Shared ride' : 'Solo'}
                 {activeTrip.fare != null ? ` · PKR ${activeTrip.fare}` : ''} · tap to track
               </Text>
             </View>

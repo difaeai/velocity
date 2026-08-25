@@ -365,6 +365,12 @@ export const UR: Record<string, string> = {
   'Fastest pickup': 'تیز ترین پک اپ',
   'Pay cash · drivers bid on your offer · no surge tricks':
     'نقد ادائیگی · ڈرائیور آپ کی پیشکش پر بولی لگاتے ہیں · کوئی سرچ چال نہیں',
+  'Share Ride': 'رائیڈ شیئر کریں',
+  'Shared ride': 'مشترکہ سواری',
+  'Shared': 'مشترکہ',
+  'Shared ride invite': 'مشترکہ سواری کی دعوت',
+  'SHARED RIDES GOING YOUR WAY': 'آپ کے راستے پر جاتی مشترکہ سواریاں',
+  'WHO CAN JOIN YOUR RIDE': 'آپ کی سواری میں کون شامل ہو سکتا ہے',
   'Pool': 'پول',
   'POOL': 'پول',
   'POOL RIDE': 'پول سواری',
@@ -1085,7 +1091,6 @@ export const UR: Record<string, string> = {
   "Couldn&apos;t open this invite": 'یہ دعوت نہیں کھل سکی',
 
   // ── Shared ride / split fare ────────────────────────────────────────────────
-  'Shared ride': 'مشترکہ سواری',
   "You're on a shared ride": 'آپ ایک مشترکہ سواری پر ہیں',
   'Share your active ride so partners join it and split the fare':
     'اپنی فعال سواری شیئر کریں تاکہ پارٹنرز شامل ہوں اور کرایہ بانٹیں',
