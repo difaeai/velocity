@@ -359,6 +359,8 @@ export const api = {
   acceptBid: callable<{ tripId: string; bidId: string }, { ok: boolean; fare: number; driverId: string }>(
     'acceptBid',
   ),
+  /** Turn down one driver's price. Every other offer stands and the trip stays open. */
+  declineBid: callable<{ tripId: string; bidId: string }, { ok: boolean }>('declineBid'),
   updateTripStatus: callable<
     { tripId: string; to: 'arriving' | 'arrived' | 'in_progress' },
     { ok: boolean; status: string }

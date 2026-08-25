@@ -124,9 +124,16 @@ export const createTrip = onCall(async (req) => {
   }
   const data = parsed.data;
 
+  // Two independent config reads that used to run back to back, costing the
+  // rider a whole extra round trip on the one call they are staring at a
+  // spinner through. Neither depends on the other, so they go together.
+  //
   // Pool trips offer the full solo fare too — the per-seat discount only
   // materialises as riders actually join — so the same bounds apply.
-  const { min: fareMin, max: fareMax } = await offeredFareBounds(data.rideType, data.pickup, data.dropoff);
+  const [{ min: fareMin, max: fareMax }, cancellationSettings] = await Promise.all([
+    offeredFareBounds(data.rideType, data.pickup, data.dropoff),
+    getCancellationSettings(),
+  ]);
   if (data.offeredFare < fareMin || data.offeredFare > fareMax) {
     invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
@@ -134,7 +141,6 @@ export const createTrip = onCall(async (req) => {
   const isPool = data.pool ?? false;
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;
-  const cancellationSettings = await getCancellationSettings();
 
   const tripRef = db.collection('trips').doc();
   const userRef = db.doc(`users/${ctx.uid}`);
@@ -606,6 +612,73 @@ export const acceptBid = onCall(async (req) => {
 
   logger.info('Bid accepted', { tripId, ...result });
   return { ok: true, ...result };
+});
+
+const declineBidSchema = z.object({
+  tripId: z.string().min(1).max(128),
+  bidId: z.string().min(1).max(128),
+});
+
+/**
+ * Passenger turns down one driver's offer.
+ *
+ * Accepting was the only answer the passenger had, so a fare they did not want
+ * simply sat in the list until the timer ran out. Declining retires that one
+ * bid and leaves the request open — every other driver's offer stands, and the
+ * trip stays in `requested`.
+ *
+ * A bid doc is keyed by the driver's uid, so a driver who bids again overwrites
+ * this row and lands back in the list as `pending`. That is deliberate: a
+ * decline rejects a PRICE, not a person, and the obvious next move for a driver
+ * who wants the ride is to come back cheaper.
+ */
+export const declineBid = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = declineBidSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid tripId and bidId.');
+  const { tripId, bidId } = parsed.data;
+
+  const tripRef = db.doc(`trips/${tripId}`);
+  const bidRef = db.doc(`trips/${tripId}/bids/${bidId}`);
+
+  const declined = await db.runTransaction(async (tx) => {
+    const tripSnap = await tx.get(tripRef);
+    if (!tripSnap.exists) invalid('Trip not found.');
+    // Only the passenger who owns the trip may decline. On a pool that is the
+    // host, which matches acceptBid — joiners never pick the driver.
+    if (tripSnap.get('passengerId') !== ctx.uid) {
+      throw new HttpsError('permission-denied', 'Not your trip.');
+    }
+    if (tripSnap.get('status') !== 'requested') {
+      throw new HttpsError('failed-precondition', 'Trip is no longer open.');
+    }
+    const bidSnap = await tx.get(bidRef);
+    if (!bidSnap.exists || bidSnap.get('status') !== 'pending') {
+      invalid('Bid is no longer available.');
+    }
+
+    tx.set(
+      bidRef,
+      { status: 'declined', declinedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+
+    return {
+      driverId: bidSnap.get('driverId') as string,
+      fare: bidSnap.get('fare') as number,
+    };
+  });
+
+  // Tell the driver, so they can re-offer rather than wait on a dead bid.
+  await sendToUser(
+    declined.driverId,
+    'Offer declined',
+    `The passenger declined your PKR ${declined.fare} offer. You can send a new one.`,
+    { tripId },
+  );
+
+  logger.info('Bid declined', { tripId, bidId });
+  return { ok: true };
 });
 
 const statusSchema = z.object({

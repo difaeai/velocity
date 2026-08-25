@@ -23,6 +23,7 @@ import { AdBanner } from '../../src/ads';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { poolGenderSummary } from '../../src/lib/genderAccess';
 import { usePassengerTrips, useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
 import {
@@ -209,6 +210,10 @@ export default function Booking() {
   const { coords, address: currentAddress, status: locStatus, request: requestLocation } =
     useCurrentLocation();
   const recents = useRecentDestinations(user?.uid);
+  // The backend refuses a second active trip, so without this the rider would
+  // pick a destination, tune a fare, press Book and only THEN be told they
+  // already have a ride running. Offer the ride instead of the dead end.
+  const { active: activeTrip } = useActiveTrip(user?.uid);
 
   // Full ride history — every past trip that reached a real destination, with
   // date/fare so the rider can spot the exact trip and rebook it. Tucked behind
@@ -654,6 +659,24 @@ export default function Booking() {
             <Text style={styles.closeTxt}>✕</Text>
           </Pressable>
         </View>
+
+        {activeTrip ? (
+          <Pressable
+            style={({ pressed }) => [styles.activeTripBanner, pressed && { opacity: 0.9 }]}
+            onPress={() => router.replace(`/passenger/trip/${activeTrip.id}` as Parameters<typeof router.replace>[0])}
+            accessibilityRole="button"
+            accessibilityLabel="Return to your ride in progress"
+          >
+            <View style={styles.activeTripDot} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeTripBannerTitle}>You already have a ride running</Text>
+              <Text style={styles.activeTripBannerSub} numberOfLines={1}>
+                {activeTrip.dropoffAddress ?? 'Your ride is still going'} · tap to track
+              </Text>
+            </View>
+            <Text style={styles.activeTripBannerGo}>→</Text>
+          </Pressable>
+        ) : null}
 
         {/* Route rail — pickup dot, dashed leg, destination pin */}
         <View style={styles.routeInputsCard}>
@@ -1323,6 +1346,33 @@ export default function Booking() {
         </Text>
       </View>
 
+      {/* ══ Instant hand-off ══
+           createTrip is a callable: a cold function in asia-south1 can take a
+           couple of seconds to answer, and for all of that time the rider was
+           left looking at the same sheet with a button that said "Booking…".
+           It read as a dead tap, and riders pressed it again. This covers the
+           screen the moment the press lands — before the network is touched —
+           so the ride visibly starts immediately and the real trip screen
+           replaces it as soon as the id comes back. ══ */}
+      {loading ? (
+        <View style={[styles.bookingOverlay, { paddingBottom: insets.bottom }]} pointerEvents="auto">
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.bookingOverlayTitle}>Requesting your ride…</Text>
+          <Text style={styles.bookingOverlayRoute} numberOfLines={2}>
+            {(pickup.trim() || currentAddress || 'Current location')} → {dropoff.trim() || 'Destination'}
+          </Text>
+          <View style={styles.bookingOverlayFareRow}>
+            <Text style={styles.bookingOverlayFare}>PKR {fare}</Text>
+            <Text style={styles.bookingOverlayFareUnit}>
+              {mode === 'pool' ? 'pool · drops as riders join' : 'solo'}
+            </Text>
+          </View>
+          <Text style={styles.bookingOverlaySub}>
+            {"Telling nearby drivers — they'll offer in a moment."}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Schedule-ride modal */}
       <Modal visible={scheduleOpen} transparent animationType="slide" onRequestClose={() => setScheduleOpen(false)}>
         <View style={styles.schedOverlay}>
@@ -1462,6 +1512,43 @@ const styles = themed(() => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+
+  /* A live ride, surfaced before the rider spends effort on one they cannot book. */
+  activeTripBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: colors.glassLime,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  activeTripDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  activeTripBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  activeTripBannerSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.muted,
+    marginTop: 2,
+  },
+  activeTripBannerGo: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.primary,
   },
 
   /* ════════ Stage 1 — route entry ════════ */
@@ -2560,6 +2647,56 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     letterSpacing: 0.2,
+  },
+  bookingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 10,
+  },
+  bookingOverlayTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 6,
+  },
+  bookingOverlayRoute: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: colors.muted,
+    textAlign: 'center',
+  },
+  bookingOverlayFareRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 4,
+  },
+  bookingOverlayFare: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  bookingOverlayFareUnit: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  bookingOverlaySub: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#8f9694',
+    textAlign: 'center',
+    marginTop: 2,
   },
   bookCaption: {
     fontSize: 11,

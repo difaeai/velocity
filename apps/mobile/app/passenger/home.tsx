@@ -21,6 +21,7 @@ import { useCurrentLocation } from '../../src/hooks/location';
 import { useNearbyActivity } from '../../src/hooks/nearbyActivity';
 import { usePresenceBeacon } from '../../src/hooks/presence';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
+import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
@@ -52,8 +53,21 @@ const { width } = Dimensions.get('window');
  */
 const SHEET_INITIAL_INDEX = 1;
 
+/** What the live ride is doing, in the rider's words rather than the schema's. */
+const ACTIVE_TRIP_LABEL: Record<string, string> = {
+  requested:   'Finding you a driver',
+  matched:     'Driver assigned',
+  arriving:    'Driver is on the way',
+  arrived:     'Your driver has arrived',
+  in_progress: 'On your way',
+};
+
 export default function PassengerHome() {
   const { user, role, signOut } = useAuth();
+  // A ride the rider is already on. Backing out of the trip screen or killing
+  // the app used to lose it entirely — the driver was still coming, the map
+  // just wasn't reachable any more.
+  const { active: activeTrip } = useActiveTrip(user?.uid);
   const router = useRouter();
   const walletLabel = useWalletLabel('Wallet & payments');
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
@@ -255,6 +269,36 @@ export default function PassengerHome() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+
+        {/* ── The ride already in progress, if there is one.
+             Above "Where to?" because it outranks it: a rider with a driver on
+             the way is not looking to book, they are looking for the ride they
+             lost. Booking is blocked while this is live anyway (the backend
+             refuses a second active trip), so this is also the only honest
+             thing to show them. ── */}
+        {activeTrip ? (
+          <Pressable
+            style={({ pressed }) => [styles.activeTripCard, pressed && { opacity: 0.9 }]}
+            onPress={() => router.push(`/passenger/trip/${activeTrip.id}` as Parameters<typeof router.push>[0])}
+            accessibilityRole="button"
+            accessibilityLabel="Return to your ride in progress"
+          >
+            <View style={styles.activeTripPulse} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeTripLabel}>
+                {ACTIVE_TRIP_LABEL[activeTrip.status] ?? 'Ride in progress'}
+              </Text>
+              <Text style={styles.activeTripDest} numberOfLines={1}>
+                {activeTrip.dropoffAddress ?? 'Your ride is still running'}
+              </Text>
+              <Text style={styles.activeTripMeta} numberOfLines={1}>
+                {activeTrip.pool ? 'Pool' : 'Solo'}
+                {activeTrip.fare != null ? ` · PKR ${activeTrip.fare}` : ''} · tap to track
+              </Text>
+            </View>
+            <Text style={styles.activeTripGo}>→</Text>
+          </Pressable>
+        ) : null}
 
         {/* ── Where to? — the ONE way into a city ride.
              Pool discovery ("rides going your way") used to sit here as a second
@@ -727,6 +771,50 @@ const styles = themed(() => StyleSheet.create({
     marginLeft: 6,
     fontWeight: '800',
   },
+  /* ── Live-ride banner: outranks everything else on the sheet ── */
+  activeTripCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.glassLime,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 12,
+  },
+  activeTripPulse: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  activeTripLabel: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  activeTripDest: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 2,
+  },
+  activeTripMeta: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.muted,
+    marginTop: 1,
+  },
+  activeTripGo: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+
   /* ── "Where to?" hero — the sheet's primary action ── */
   searchHero: {
     flexDirection: 'row',

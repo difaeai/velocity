@@ -48,6 +48,7 @@ export {
   placeBid,
   raiseTripFare,
   acceptBid,
+  declineBid,
   updateTripStatus,
   cancelTrip,
   completeTrip,

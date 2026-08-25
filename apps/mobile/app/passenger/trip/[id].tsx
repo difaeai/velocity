@@ -364,13 +364,30 @@ export default function TripScreen() {
                       <Text style={styles.bidFarePKR}>{b.fare} PKR</Text>
                     </View>
                     {isHost ? (
-                      <Pressable
-                        style={styles.acceptBidBtn}
-                        disabled={busy}
-                        onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
-                      >
-                        <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
-                      </Pressable>
+                      // Two answers, not one. A driver who counter-offers above
+                      // what the rider will pay used to have to be waited out —
+                      // the card sat there until the timer expired. Declining
+                      // clears just that offer; every other driver's still stands.
+                      <View style={styles.bidActionRow}>
+                        <Pressable
+                          style={({ pressed }) => [styles.rejectBidBtn, pressed && { opacity: 0.7 }]}
+                          disabled={busy}
+                          onPress={() => run(() => api.declineBid({ tripId: trip.id, bidId: b.id }))}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Reject ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
+                        >
+                          <Text style={styles.rejectBidBtnText}>Reject</Text>
+                        </Pressable>
+                        <Pressable
+                          style={({ pressed }) => [styles.acceptBidBtn, pressed && { opacity: 0.85 }]}
+                          disabled={busy}
+                          onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Accept ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
+                        >
+                          <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
+                        </Pressable>
+                      </View>
                     ) : (
                       <Text style={styles.joinerNote}>The pool host picks the driver</Text>
                     )}
@@ -378,40 +395,6 @@ export default function TripScreen() {
                 ))}
               </View>
             )}
-
-            {/* Pool: invite riders + visibility */}
-            {trip.pool && trip.shareCode ? (
-              <View style={styles.poolShareCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>🔗</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.poolShareTitle}>Invite riders — everyone pays less</Text>
-                    <Text style={styles.poolShareCodeTxt}>Invite code: {trip.shareCode}</Text>
-                  </View>
-                  <Pressable
-                    style={styles.poolVisChip}
-                    onPress={togglePoolVisibility}
-                    disabled={busy || !isHost}
-                  >
-                    <Text style={styles.poolVisChipTxt}>
-                      {trip.poolVisibility === 'private' ? '🔒 Private' : '🌍 Public'}
-                    </Text>
-                    {isHost && <Text style={styles.poolVisChipSub}>tap to switch</Text>}
-                  </Pressable>
-                </View>
-                <Pressable
-                  style={({ pressed }) => [styles.poolShareBtn, pressed && { opacity: 0.85 }]}
-                  onPress={sharePoolInvite}
-                >
-                  <Text style={styles.poolShareBtnTxt}>📤 Share invite link</Text>
-                </Pressable>
-                <Text style={styles.poolVisHint}>
-                  {trip.poolVisibility === 'private'
-                    ? 'Private: only people with your link can see and join this ride.'
-                    : 'Public: riders nearby can also discover and join this ride.'}
-                </Text>
-              </View>
-            ) : null}
 
             {/* Route */}
             <View style={styles.routePillCard}>
@@ -474,24 +457,67 @@ export default function TripScreen() {
                 <Text style={styles.travelMateShareBtnText}>🤝 Ride together — share with Travel Partners</Text>
               </Pressable>
             )}
-          </ScrollView>
+            {/* Pool: invite riders. Deliberately LAST — while drivers are
+                 bidding, picking one is the job; inviting riders is the thing
+                 you do once that's settled. It used to sit directly under the
+                 offers and take more height than they did. Now it is one row
+                 plus a button, and the visibility hint lives on the chip. */}
+            {trip.pool && trip.shareCode ? (
+              <View style={styles.poolShareCard}>
+                <View style={styles.poolShareTopRow}>
+                  <Text style={{ fontSize: 17 }}>🔗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.poolShareTitle} numberOfLines={1}>
+                      Invite riders — everyone pays less
+                    </Text>
+                    <Text style={styles.poolShareCodeTxt} numberOfLines={1}>
+                      Code {trip.shareCode} · {trip.poolVisibility === 'private' ? 'private' : 'public'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.poolVisChip}
+                    onPress={togglePoolVisibility}
+                    disabled={busy || !isHost}
+                  >
+                    <Text style={styles.poolVisChipTxt}>
+                      {trip.poolVisibility === 'private' ? '🔒' : '🌍'}
+                    </Text>
+                    {isHost && <Text style={styles.poolVisChipSub}>switch</Text>}
+                  </Pressable>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.poolShareBtn, pressed && { opacity: 0.85 }]}
+                  onPress={sharePoolInvite}
+                >
+                  <Text style={styles.poolShareBtnTxt}>📤 Share invite link</Text>
+                </Pressable>
+              </View>
+            ) : null}
 
-          {/* Cancel Request Button (host only — the backend rejects others).
-              Free at this stage: no driver has committed to the ride yet. */}
-          {isHost ? (
-            <Pressable
-              style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
-              onPress={confirmCancel}
-              disabled={busy}
-            >
-              <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
-              <Text style={styles.cancelRequestBtnSub}>Free — no driver has accepted yet</Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.joinerFooterNote}>
-              You've joined this pool — you'll ride along once the host picks a driver.
-            </Text>
-          )}
+            {/* Cancel Request (host only — the backend rejects others).
+                Free at this stage: no driver has committed to the ride yet.
+
+                INSIDE the scroll on purpose. It used to sit after it, as a
+                direct child of the sheet — and the sheet is as tall as its
+                tallest snap point and slides DOWN to shrink, so at the height
+                this screen actually opens at, this button was below the bottom
+                edge of the display with no way to reach it. Same defect that
+                hid the Book button on the booking screen. */}
+            {isHost ? (
+              <Pressable
+                style={({ pressed }) => [styles.cancelRequestBtn, pressed && { opacity: 0.85 }]}
+                onPress={confirmCancel}
+                disabled={busy}
+              >
+                <Text style={styles.cancelRequestBtnText}>Cancel request</Text>
+                <Text style={styles.cancelRequestBtnSub}>Free — no driver has accepted yet</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.joinerFooterNote}>
+                You've joined this pool — you'll ride along once the host picks a driver.
+              </Text>
+            )}
+          </ScrollView>
         </DraggableSheet>
       </View>
     );
@@ -1112,15 +1138,19 @@ const styles = themed(() => StyleSheet.create({
   },
   poolVisChipTxt: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
   poolVisChipSub: { color: '#8a8c8c', fontSize: 8, fontWeight: '700', marginTop: 1 },
+  poolShareTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   poolShareBtn: {
-    height: 44,
+    height: 40,
     borderRadius: 12,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   poolShareBtnTxt: { color: '#000', fontSize: 14, fontWeight: '900' },
-  poolVisHint:     { color: '#8a8c8c', fontSize: 10, lineHeight: 14 },
 
   joinerNote: {
     color: '#8a8c8c',
@@ -1228,7 +1258,28 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
+  // Accept carries the weight; Reject is present and pressable but never
+  // competes with it — this is a choice with an obvious default.
+  bidActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  rejectBidBtn: {
+    width: 96,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectBidBtnText: {
+    color: '#c9cfcc',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   acceptBidBtn: {
+    flex: 1,
     height: 38,
     borderRadius: 10,
     backgroundColor: '#ccff00',
