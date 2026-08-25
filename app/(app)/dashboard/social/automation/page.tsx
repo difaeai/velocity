@@ -3,8 +3,8 @@
 /**
  * Manage social → Automation.
  *
- * When the crew works and what they work on. What they *say* lives on the crew
- * page; this screen is the timetable.
+ * When the team works and what they work on. Who they are and what they *say*
+ * lives on the Employees page; this screen is the timetable.
  *
  * There is no auto-publish switch. Every run ends in the approval queue, by
  * design — see the header of the backend's pipeline.ts. The one switch on this
@@ -33,6 +33,8 @@ import { FORMAT_META, PLATFORM_META, PlatformBadge, Readiness } from '@/componen
 export default function AutomationPage() {
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [readiness, setReadiness] = useState<SocialReadiness | null>(null);
+  const [staffed, setStaffed] = useState(0);
+  const [coverage, setCoverage] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,8 @@ export default function AutomationPage() {
       .then((r) => {
         setSettings(r.settings);
         setReadiness(r.readiness);
+        setStaffed(r.staffed);
+        setCoverage(r.coverage);
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the settings.'));
   }, []);
@@ -106,9 +110,10 @@ export default function AutomationPage() {
       <header>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Automation</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          When the crew works, what they make, and where it goes. What they say is on the{' '}
-          <Link href="/dashboard/social/crew" style={{ color: colors.secondary, fontWeight: 700 }}>
-            crew page
+          When the team works, what they make, and where it goes. Who does the work, and what they
+          are told, is on the{' '}
+          <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
+            Employees page
           </Link>
           .
         </p>
@@ -120,7 +125,20 @@ export default function AutomationPage() {
       {readiness ? (
         <Card>
           <h2 style={h2}>Before it can run</h2>
-          <Readiness readiness={readiness} connectedCount={settings.platforms.length} />
+          <Readiness
+            readiness={readiness}
+            connectedCount={settings.platforms.length}
+            staffed={staffed}
+            providers={{ image: settings.imageProvider, video: settings.videoProvider }}
+          />
+          {coverage.length ? (
+            <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
+              {coverage[0]}{' '}
+              <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
+                Hire someone →
+              </Link>
+            </p>
+          ) : null}
         </Card>
       ) : null}
 
@@ -207,7 +225,8 @@ export default function AutomationPage() {
       <Card>
         <h2 style={h2}>Where it goes</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px' }}>
-          The default targets. Awaaz narrows them per piece — a story never goes to YouTube, whatever is ticked here.
+          The default targets. The social manager narrows them per piece — a story never goes to YouTube, whatever is
+          ticked here.
         </p>
         <div style={{ display: 'grid', gap: 10 }}>
           {SOCIAL_PLATFORMS.map((platform) => {

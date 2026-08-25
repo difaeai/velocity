@@ -7,21 +7,22 @@
  * brief does not. Every field is validated on write: the daily job runs
  * unattended, so a bad value here is a bad post in front of the whole audience.
  *
- * This document is also where "tell all four of them something" lives:
- * `crewInstructions` is prepended to every agent's system prompt on every run,
- * and `agentNotes` does the same for one agent. They are settings rather than
- * per-post fields because the point of them is that they keep applying.
+ * This document is also where "tell all of them something" lives:
+ * `crewInstructions` is prepended to every employee's system prompt on every
+ * job. Direction for one *person* is not here — it lives on that employee's own
+ * record, because it should follow them and disappear when they do.
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
+import { activeTeam, coverageGaps } from './employees';
+import { claudeReady } from './claude';
 import { geminiReady } from './gemini';
 import { tokenVaultReady } from './secrets';
 import { videoConfigured } from './video';
 import {
-  AGENTS,
   DEFAULT_SETTINGS,
   FORMATS,
   PLATFORMS,
@@ -34,13 +35,7 @@ const SETTINGS_PATH = 'system/socialAutomation';
 export async function getSocialSettings(): Promise<SocialSettings> {
   const snap = await db.doc(SETTINGS_PATH).get();
   const stored = (snap.data() as Partial<SocialSettings> | undefined) ?? {};
-  return {
-    ...DEFAULT_SETTINGS,
-    ...stored,
-    // Merged one level deeper: a settings document written before an agent
-    // existed must not leave that agent's note undefined at prompt time.
-    agentNotes: { ...DEFAULT_SETTINGS.agentNotes, ...(stored.agentNotes ?? {}) },
-  };
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export async function recordRun(status: string): Promise<void> {
@@ -66,13 +61,6 @@ export async function nextFormat(settings: SocialSettings): Promise<ContentForma
   return formats[index];
 }
 
-const agentNotesSchema = z.object(
-  Object.fromEntries(AGENTS.map((a) => [a, z.string().max(1500).optional()])) as Record<
-    (typeof AGENTS)[number],
-    z.ZodOptional<z.ZodString>
-  >,
-);
-
 const settingsSchema = z.object({
   enabled: z.boolean().optional(),
   runHour: z.number().int().min(0).max(23).optional(),
@@ -83,7 +71,6 @@ const settingsSchema = z.object({
   formats: z.array(z.enum(FORMATS)).min(1).max(20).optional(),
 
   crewInstructions: z.string().max(4000).optional(),
-  agentNotes: agentNotesSchema.optional(),
 
   researchEnabled: z.boolean().optional(),
   competitors: z
@@ -112,11 +99,14 @@ export const adminGetSocialSettings = onCall(async (req) => {
      * key was ever added.
      */
     readiness: {
-      writer: geminiReady(),
+      writer: claudeReady(),
       designer: settings.imageProvider === 'none' || geminiReady(),
       video: videoConfigured(settings.videoProvider),
       tokenVault: tokenVaultReady(),
     },
+    /** What the current roster can and cannot do, in words. */
+    coverage: coverageGaps(await activeTeam()),
+    staffed: (await activeTeam()).length,
   };
 });
 
@@ -128,10 +118,18 @@ export const adminUpdateSocialSettings = onCall(async (req) => {
   // Turning automation on is the one change worth guarding: without a key the
   // crew cannot produce anything, and a schedule that fails every morning is
   // worse than one that was never switched on.
-  if (parsed.data.enabled === true && !geminiReady()) {
+  if (parsed.data.enabled === true && !claudeReady()) {
     throw new HttpsError(
       'failed-precondition',
-      'Automation cannot be enabled: GEMINI_API_KEY is not configured, so nothing can be written.',
+      'Automation cannot be enabled: ANTHROPIC_API_KEY is not configured, so nobody can work.',
+    );
+  }
+
+  // A schedule with an empty office produces one failed run a day, forever.
+  if (parsed.data.enabled === true && !(await activeTeam()).length) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Automation cannot be enabled: nobody works here yet. Hire at least a content writer first.',
     );
   }
 

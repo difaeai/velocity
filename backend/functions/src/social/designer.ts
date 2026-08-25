@@ -1,9 +1,8 @@
 /**
- * Rang — the designer.
+ * The design stage — whoever holds the designer job runs it.
  *
- * Takes the script's frames and draws them: one image per carousel slide, one
- * for a post or a story, and a cover frame for the video formats that Raftar
- * can open on.
+ * They take the script's frames and draw them: one image per carousel slide,
+ * one for a post or a story, and a cover frame the editor can open a video on.
  *
  * Two passes rather than one, on purpose. The first asks Rang to *art direct* —
  * to turn "a driver counts cash on his bonnet" into a prompt with a lens, a
@@ -12,26 +11,34 @@
  * slides that look like one campaign and five unrelated stock images, because
  * the direction pass sees all the frames at once and the render pass never does.
  *
- * When `imageProvider` is `none`, Rang still writes the direction and stops.
- * The prompts are stored on the post, so someone designing by hand gets the
- * brief instead of a blank page.
+ * When `imageProvider` is `none`, the designer still writes the direction and
+ * stops. The prompts are stored on the post, so someone designing by hand gets
+ * the brief instead of a blank page.
  */
 import { logger } from 'firebase-functions';
 
-import { agentSystem, feedbackBlock, planBlock } from './crew';
-import { generateImage, generateJson } from './gemini';
+import { feedbackBlock, planBlock, systemFor } from './crew';
+import { generateImage } from './gemini';
+import { generateJson } from './claude';
 import { postFolder, storeFile } from './assets';
 import {
   FORMAT_SPECS,
   type ContentFormat,
   type ContentPlan,
+  type Employee,
   type MediaAsset,
   type PostScript,
+  type SeoPack,
   type SocialSettings,
 } from './types';
 
 export class DesignError extends Error {}
 
+/**
+ * Rang writes the art direction with Claude either way; this is only about
+ * whether anything is *rendered* from it. Pictures are Google's — Claude does
+ * not draw — so this stays on the Gemini key.
+ */
 export function designerConfigured(settings: SocialSettings): boolean {
   return settings.imageProvider === 'none' || typeof process.env.GEMINI_API_KEY === 'string';
 }
@@ -52,20 +59,23 @@ interface DirectedFrame {
   alt: string;
 }
 
-/** Ask Rang for the art direction: one render-ready prompt per frame. */
+/** Ask the designer for the art direction: one render-ready prompt per frame. */
 async function directFrames(params: {
+  employee: Employee;
   settings: SocialSettings;
   format: ContentFormat;
   script: PostScript;
   plan: ContentPlan | null;
   count: number;
+  /** Alt text the SEO desk already wrote, if they were round before us. */
+  seo: SeoPack | null;
   feedback: string[];
 }): Promise<DirectedFrame[]> {
   const spec = FORMAT_SPECS[params.format];
 
   const { data } = await generateJson<{ frames?: unknown }>({
     model: params.settings.textModel,
-    system: `${agentSystem('rang', params.settings)}
+    system: `${systemFor(params.employee, params.settings)}
 
 You are writing prompts for an image model, not describing a mood. Each prompt names: the subject and what they are doing, the setting, the time of day and light, the lens and framing, and where the lime accent sits. One sentence of story, then the craft.
 
@@ -74,11 +84,9 @@ The overlay text is burned on afterwards by the image model — keep it to the w
 Reply with one JSON object and nothing else:
 { "frames": [{ "prompt": "the full image prompt", "overlay": "the words on this frame", "alt": "one-line alt text for a screen reader" }] }`,
     what: 'The art direction',
-    temperature: 0.95,
-    maxOutputTokens: 2500,
     prompt: [
       `FORMAT: ${spec.label}, ${spec.aspect}. Give me exactly ${params.count} frame${params.count === 1 ? '' : 's'}, in order.`,
-      planBlock(params.plan, 'rang'),
+      planBlock(params.plan, params.employee),
       '',
       `HOOK: ${params.script.hook}`,
       params.script.cta ? `CLOSES ON: ${params.script.cta}` : '',
@@ -88,6 +96,11 @@ Reply with one JSON object and nothing else:
       '',
       params.format === 'carousel'
         ? 'These are swiped in sequence: they must look like one set — same light, same treatment, same type — while each says something new.'
+        : '',
+      params.seo?.altTexts.length
+        ? `The SEO desk has written alt text for these frames — keep the pictures true to it:\n${params.seo.altTexts
+            .map((a, i) => `${i + 1}. ${a}`)
+            .join('\n')}`
         : '',
       feedbackBlock(params.feedback),
     ]
@@ -176,11 +189,13 @@ export interface DesignResult {
  * network wants one.
  */
 export async function design(params: {
+  employee: Employee;
   settings: SocialSettings;
   postId: string;
   format: ContentFormat;
   script: PostScript;
   plan: ContentPlan | null;
+  seo: SeoPack | null;
   feedback: string[];
   onProgress?: (note: string) => Promise<void>;
 }): Promise<DesignResult> {
@@ -189,11 +204,13 @@ export async function design(params: {
   const count = isVideo ? 1 : spec.slides;
 
   const direction = await directFrames({
+    employee: params.employee,
     settings: params.settings,
     format: params.format,
     script: params.script,
     plan: params.plan,
     count,
+    seo: params.seo,
     feedback: params.feedback,
   });
 
@@ -217,7 +234,7 @@ export async function design(params: {
           postId: params.postId,
           name: isVideo ? 'cover' : `slide-${index + 1}`,
           slide: index + 1,
-          frame,
+          frame: { ...frame, alt: params.seo?.altTexts[index] || frame.alt },
           aspect: spec.aspect,
         }),
       );

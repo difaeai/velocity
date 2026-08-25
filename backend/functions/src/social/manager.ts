@@ -1,5 +1,6 @@
 /**
- * Awaaz — the part of the manager's job that happens before anything is posted.
+ * The distribution stage — the part of the manager's job that happens before
+ * anything is posted.
  *
  * One caption does not work on five networks. The same idea wants a hook and a
  * line break on Instagram, a title and a description on YouTube, 280 characters
@@ -12,16 +13,18 @@
  */
 import { logger } from 'firebase-functions';
 
-import { agentSystem, feedbackBlock, planBlock } from './crew';
-import { generateJson } from './gemini';
+import { feedbackBlock, planBlock, systemFor } from './crew';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   PLATFORMS,
   supports,
   type ContentFormat,
   type ContentPlan,
+  type Employee,
   type Platform,
   type PostScript,
+  type SearchPack,
   type SocialSettings,
 } from './types';
 
@@ -51,12 +54,15 @@ export interface Distribution {
  * goes out with one caption on five networks is a worse post, not a broken one.
  */
 export async function planDistribution(params: {
+  employee: Employee;
   settings: SocialSettings;
   format: ContentFormat;
   script: PostScript;
   plan: ContentPlan | null;
   caption: string;
   hashtags: string[];
+  /** The search desk's YouTube copy, when they have written it. */
+  search: SearchPack | null;
   /** Connected networks that can take this format. */
   candidates: Platform[];
   feedback: string[];
@@ -75,7 +81,7 @@ export async function planDistribution(params: {
   try {
     const { data } = await generateJson<{ captions?: Record<string, unknown>; targets?: unknown; note?: unknown }>({
       model: params.settings.textModel,
-      system: `${agentSystem('awaaz', params.settings)}
+      system: `${systemFor(params.employee, params.settings)}
 
 You are adapting one finished piece for each network it is going to, and deciding where it belongs.
 
@@ -93,17 +99,18 @@ Drop a network from targets if the piece genuinely does not belong there. Do not
 Reply with one JSON object and nothing else:
 { "captions": { "instagram": "...", "facebook": "..." }, "targets": ["instagram", "facebook"], "note": "one line on the call you made" }`,
       what: 'The distribution plan',
-      temperature: 0.85,
-      maxOutputTokens: 2500,
       prompt: [
         `FORMAT: ${FORMAT_SPECS[params.format].label}`,
         `CANDIDATE NETWORKS (only these): ${candidates.join(', ')}`,
-        planBlock(params.plan, 'awaaz'),
+        planBlock(params.plan, params.employee),
         '',
         `HOOK: ${params.script.hook}`,
         params.script.cta ? `CTA: ${params.script.cta}` : '',
         '',
         `MASTER CAPTION:\n${params.caption}`,
+        params.search?.youtube
+          ? `THE SEARCH DESK HAS ALREADY WRITTEN THE YOUTUBE COPY — do not rewrite it, it is used verbatim:\n${params.search.youtube.title}`
+          : '',
         params.hashtags.length ? `HASHTAGS: ${params.hashtags.map((h) => `#${h}`).join(' ')}` : '',
         feedbackBlock(params.feedback),
       ]

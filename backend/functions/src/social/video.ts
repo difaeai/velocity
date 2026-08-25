@@ -1,14 +1,14 @@
 /**
- * Raftar — the video editor.
+ * The editing stage — whoever holds the video-editor job runs it.
  *
- * Two jobs, in order. First the cut: a model call in Raftar's voice that turns
- * the writer's shots and the designer's frame into a second-by-second edit —
- * what moves, where the interrupt lands, what the audio is doing. Then the
- * render: Veo, through the Gemini API, one long-running operation, an MP4 at
+ * Two jobs, in order. First the cut: a model call in the editor's own voice
+ * that turns the writer's shots and the designer's frame into a second-by-second
+ * edit — what moves, where the interrupt lands, what the audio is doing. Then
+ * the render: Veo, through the Gemini API, one long-running operation, an MP4 at
  * the end.
  *
  * The cut is a separate call rather than a template because a video prompt is
- * where a post is won or lost. "Driver counts cash" renders as a man holding
+ * where a piece is won or lost. "Driver counts cash" renders as a man holding
  * money; "hold on his hands for 1.5s, cut wide as the note count lands, lime
  * text stamps in on the beat" renders as something someone watches twice.
  *
@@ -17,20 +17,23 @@
  *
  * ⚠️ Like the payments adapter, the Veo calls here were written from Google's
  * published API shape. Render one video from the console and watch the logs
- * before switching the daily job on — that first render is the real test of the
+ * before switching the daily run on — that first render is the real test of the
  * endpoint, the model name and the response shape.
  */
 import { logger } from 'firebase-functions';
 
-import { agentSystem, feedbackBlock, planBlock } from './crew';
+import { feedbackBlock, planBlock, systemFor } from './crew';
 import { downloadAsset, postFolder, storeFile } from './assets';
-import { GEMINI_BASE, geminiKey, generateJson } from './gemini';
+import { GEMINI_BASE, geminiKey } from './gemini';
+import { generateJson } from './claude';
 import {
   FORMAT_SPECS,
   type ContentFormat,
   type ContentPlan,
+  type Employee,
   type MediaAsset,
   type PostScript,
+  type SearchPack,
   type SocialSettings,
 } from './types';
 
@@ -57,14 +60,17 @@ export interface Cut {
 }
 
 /**
- * Raftar writes the edit. Falls back to assembling the script directly if the
- * model call fails — a plainer video is a better outcome than no video.
+ * The editor writes the edit. Falls back to assembling the script directly if
+ * the model call fails — a plainer video is a better outcome than no video.
  */
 export async function planCut(params: {
+  employee: Employee;
   settings: SocialSettings;
   format: ContentFormat;
   script: PostScript;
   plan: ContentPlan | null;
+  /** The YouTube title, when the search desk has already written one. */
+  search: SearchPack | null;
   feedback: string[];
 }): Promise<Cut> {
   const spec = FORMAT_SPECS[params.format];
@@ -72,7 +78,7 @@ export async function planCut(params: {
   try {
     const { data } = await generateJson<{ prompt?: unknown; note?: unknown }>({
       model: params.settings.textModel,
-      system: `${agentSystem('raftar', params.settings)}
+      system: `${systemFor(params.employee, params.settings)}
 
 You are writing a single prompt for a text-to-video model that renders picture and sound in one pass. It has no memory and no second take, so the prompt carries everything: the shot order with rough timings, camera movement, lighting, wardrobe, the spoken voiceover verbatim, the on-screen text verbatim, and what the audio bed is doing.
 
@@ -81,18 +87,21 @@ Write it as directions, not as prose. Never ask for more than the seconds allow.
 Reply with one JSON object and nothing else:
 { "prompt": "the full video prompt", "note": "one line describing the cut, for the console" }`,
       what: 'The cut',
-      temperature: 0.9,
-      maxOutputTokens: 2000,
       prompt: [
         `FORMAT: ${spec.label}, ${spec.aspect}, ${spec.seconds} seconds.`,
-        planBlock(params.plan, 'raftar'),
+        planBlock(params.plan, params.employee),
         '',
         `HOOK (this is second zero): ${params.script.hook}`,
         'SHOTS:',
-        ...params.script.frames.map((f, i) => `${i + 1}. ${f.scene}${f.overlay ? ` — on screen: "${f.overlay}"` : ''}`),
+        ...params.script.frames.map(
+          (f, i) => `${i + 1}. ${f.scene}${f.overlay ? ` — on screen: "${f.overlay}"` : ''}`,
+        ),
         '',
         params.script.voiceover ? `VOICEOVER, spoken exactly:\n"${params.script.voiceover}"` : '',
         params.script.cta ? `ENDS ON: ${params.script.cta}` : '',
+        params.search?.youtube?.title
+          ? `This is going out on YouTube as: "${params.search.youtube.title}" — the opening has to deliver that promise.`
+          : '',
         feedbackBlock(params.feedback),
       ]
         .filter(Boolean)
@@ -230,11 +239,14 @@ async function renderWithVeo(params: {
 }
 
 /** Put a finished MP4 in the bucket under the post it belongs to. */
-export async function storeVideo(postId: string, bytes: Buffer): Promise<{ path: string; url: string; expiresAtMs: number }> {
+export async function storeVideo(
+  postId: string,
+  bytes: Buffer,
+): Promise<{ path: string; url: string; expiresAtMs: number }> {
   return storeFile({ path: `${postFolder(postId)}/video.mp4`, bytes, contentType: 'video/mp4' });
 }
 
-/** Render one video for one post, or return null when no provider is configured. */
+/** Render one video for one piece, or return null when no provider is configured. */
 export async function renderVideo(params: {
   postId: string;
   cut: Cut;

@@ -3,10 +3,10 @@
 /**
  * Manage social → Overview.
  *
- * The one screen that answers "is the marketing machine actually running?" —
- * who is on shift, what is wired up, which accounts are live, when the next
- * piece gets planned, and what is waiting for a decision. Everything else in
- * this section is a detail view of one of those.
+ * The one screen that answers "is the marketing desk actually running?" — who
+ * is on shift, what is wired up, which accounts are live, when the next piece
+ * gets planned, and what is waiting for a decision. Everything else in this
+ * section is a detail view of one of those.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -16,10 +16,10 @@ import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/fir
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import {
-  SOCIAL_AGENTS,
   SOCIAL_FORMATS,
   socialApi,
   type SocialAccountDoc,
+  type SocialEmployee,
   type SocialFormat,
   type SocialPostDoc,
   type SocialReadiness,
@@ -27,10 +27,8 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import {
-  AGENT_META,
   FORMAT_META,
   FormatChip,
-  Mascot,
   PlatformBadge,
   PLATFORM_META,
   Readiness,
@@ -38,12 +36,15 @@ import {
   longDate,
   postSummary,
 } from '@/components/social/shared';
+import { Office, officeLive } from '@/components/social/office';
 
 export default function SocialOverview() {
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [readiness, setReadiness] = useState<SocialReadiness | null>(null);
+  const [staff, setStaff] = useState<SocialEmployee[]>([]);
+  const [coverage, setCoverage] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -68,6 +69,21 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
+        collection(db, 'socialEmployees'),
+        (snap) =>
+          setStaff(
+            snap.docs
+              .map((d) => ({ ...(d.data() as SocialEmployee), id: d.id }))
+              .sort((a, b) => a.hiredAtMs - b.hiredAtMs),
+          ),
+        (e) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      onSnapshot(
         query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(6)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
@@ -83,6 +99,7 @@ export default function SocialOverview() {
       .then((r) => {
         setSettings(r.settings);
         setReadiness(r.readiness);
+        setCoverage(r.coverage);
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the automation settings.'));
 
@@ -91,6 +108,8 @@ export default function SocialOverview() {
     });
   }, []);
 
+  const onShift = staff.filter((e) => e.status === 'active');
+  const { live, running } = officeLive(posts);
   const connected = accounts.filter((a) => a.status === 'connected');
   const broken = accounts.filter((a) => a.status === 'error');
   const awaiting = posts.filter((p) => p.status === 'awaiting_approval' || p.status === 'changes_requested');
@@ -125,15 +144,15 @@ export default function SocialOverview() {
     return settings.formats[(settings.lastFormatIndex + 1) % settings.formats.length];
   }, [settings]);
 
-  async function briefCrew() {
+  async function briefTeam() {
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
       const res = await socialApi.generate({ replace: true, ...(format ? { format } : {}) });
-      setNotice(`The crew made a ${FORMAT_META[res.format].label.toLowerCase()}. It is in the approval queue.`);
+      setNotice(`The team made a ${FORMAT_META[res.format].label.toLowerCase()}. It is in the approval queue.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The crew could not produce anything.');
+      setError(e instanceof Error ? e.message : 'The team could not produce anything.');
     } finally {
       setBusy(false);
     }
@@ -144,8 +163,8 @@ export default function SocialOverview() {
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          Four agents who plan, write, design, cut and post Velocity’s content — and stop at your approval, every
-          time.
+          The team you hired plans, writes, designs, cuts and posts Velocity’s content — and stops at your approval,
+          every time.
         </p>
       </header>
 
@@ -154,30 +173,47 @@ export default function SocialOverview() {
 
       {/* who is on shift */}
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
           <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>On shift</h2>
-          <Link href="/dashboard/social/crew" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
-            Brief them
+          <Link
+            href="/dashboard/social/employees"
+            style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+          >
+            {onShift.length ? 'Manage the team' : 'Hire someone'}
           </Link>
         </div>
-        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-          {SOCIAL_AGENTS.map((agent) => (
-            <div key={agent} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <Mascot agent={agent} size={40} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 900 }}>{AGENT_META[agent].name}</div>
-                <div style={{ fontSize: 12, color: colors.muted }}>{AGENT_META[agent].role}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+
+        {/* The room, not a list: who is in today, who stepped away, and who is
+            mid-job right now — all of it visible without reading a word. */}
+        <Office staff={staff} live={live} running={running} />
+
+        {onShift.length === 0 ? (
+          <p style={{ fontSize: 13.5, color: colors.muted, margin: '12px 0 0', lineHeight: 1.55 }}>
+            Nobody works here yet, so nothing gets made.{' '}
+            <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
+              Hire your first employee
+            </Link>{' '}
+            — a content writer is enough to see a piece written end to end.
+          </p>
+        ) : coverage.length ? (
+          <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
+            {coverage[0]}
+          </p>
+        ) : null}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         <Card>
           <h2 style={h2}>Before it can run</h2>
           {readiness ? (
-            <Readiness readiness={readiness} connectedCount={connected.length} />
+            <Readiness
+              readiness={readiness}
+              connectedCount={connected.length}
+              staffed={onShift.length}
+              {...(settings
+                ? { providers: { image: settings.imageProvider, video: settings.videoProvider } }
+                : {})}
+            />
           ) : (
             <p style={{ color: colors.muted, fontSize: 13 }}>Checking…</p>
           )}
@@ -197,7 +233,7 @@ export default function SocialOverview() {
                     ? `${settings.postsPerDay} piece${settings.postsPerDay === 1 ? '' : 's'} a day at ${String(
                         settings.runHour,
                       ).padStart(2, '0')}:00 PKT`
-                    : 'Paused — the crew only works when you ask'
+                    : 'Paused — the team only works when you ask'
                 }
               />
               {nextRun ? (
@@ -259,8 +295,8 @@ export default function SocialOverview() {
                 </option>
               ))}
             </select>
-            <Button onClick={briefCrew} disabled={busy}>
-              {busy ? 'The crew is working…' : 'Brief the crew now'}
+            <Button onClick={briefTeam} disabled={busy || onShift.length === 0}>
+              {busy ? 'The team is working…' : 'Brief the team now'}
             </Button>
             <Link href="/dashboard/social/automation">
               <Button variant="ghost">Settings</Button>

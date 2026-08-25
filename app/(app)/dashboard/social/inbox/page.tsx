@@ -3,10 +3,10 @@
 /**
  * Manage social → Comments.
  *
- * The second half of Awaaz's job. Every couple of hours it reads the comments
- * under everything the desk has published, works out what each one is, and
- * writes the reply — but the reply sits here until someone sends it, unless
- * auto-reply has been switched on deliberately.
+ * The second half of the social manager's job. Every couple of hours whoever
+ * holds that job reads the comments under everything the desk has published,
+ * works out what each one is, and writes the reply — but the reply sits here
+ * until someone sends it, unless auto-reply has been switched on deliberately.
  *
  * Two categories never auto-send, whatever the setting says: anything read as a
  * safety issue (marked "for a human"), and spam (closed without a reply). An
@@ -84,7 +84,7 @@ export default function InboxPage() {
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Comments</h1>
           <p style={{ color: colors.muted, margin: 0 }}>
-            What people said back, and what Awaaz would say to them.
+            What people said back, and what your social manager would say to them.
           </p>
         </div>
         <Button onClick={sync} disabled={busy}>
@@ -96,7 +96,7 @@ export default function InboxPage() {
         <Card style={{ marginBottom: 14 }}>
           <p style={{ margin: 0, fontSize: 13, color: colors.warn }}>
             The comment inbox is switched off, so nothing is pulled automatically. Turn it on under Automation — or use
-            <strong> Check now</strong> to read them once.
+            <strong> Check now</strong> to read them once. Replies need somebody hired as a social media manager.
           </p>
         </Card>
       ) : null}
@@ -216,8 +216,8 @@ function CommentCard({ comment }: { comment: SocialCommentDoc }) {
 
           {comment.status === 'escalated' ? (
             <p style={{ margin: '0 0 8px', fontSize: 12.5, color: colors.danger }}>
-              Read as a safety issue. Awaaz will not send anything here on its own — answer it yourself, and get the
-              trip details.
+              Read as a safety issue. Nothing is sent here automatically — answer it yourself, and get the trip
+              details.
             </p>
           ) : null}
 
@@ -228,6 +228,11 @@ function CommentCard({ comment }: { comment: SocialCommentDoc }) {
             </div>
           ) : (
             <>
+              {comment.draftedBy ? (
+                <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 4 }}>
+                  DRAFTED BY {comment.draftedBy.toUpperCase()}
+                </div>
+              ) : null}
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}

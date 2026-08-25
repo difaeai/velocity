@@ -1,7 +1,12 @@
 /**
- * Shared shapes for the social desk — the crew of four agents, the connected
- * accounts, the content they plan and make in every format a network accepts,
- * and the settings that drive all of it.
+ * Shared shapes for the social desk — the people you hire, the work they do,
+ * the accounts they post to, and the settings that drive all of it.
+ *
+ * The organising idea: **there is no fixed crew.** The desk is a team you
+ * staff. You hire a content writer, name them, and from that moment the writing
+ * stage has someone to run it; hire a second one and the two share the work.
+ * Hire nobody who designs and the design stage honestly reports that there is
+ * no designer, rather than silently producing nothing.
  */
 
 /** Every network the desk knows about. The doc id in `socialAccounts` is this. */
@@ -59,73 +64,187 @@ export interface SocialAccount extends PlatformProfile {
   connectedBy: string | null;
 }
 
-// ── the crew ────────────────────────────────────────────────────────────────
+// ── the staff ───────────────────────────────────────────────────────────────
+
+/** The jobs you can hire for. */
+export const ROLES = [
+  'research-assistant',
+  'content-writer',
+  'seo-expert',
+  'google-seo-expert',
+  'designer',
+  'video-editor',
+  'youtube-ads-expert',
+  'social-manager',
+] as const;
+
+export type Role = (typeof ROLES)[number];
+
+/** The stages of one piece of work, in the order they happen. */
+export const STAGES = [
+  'research',
+  'seo',
+  'script',
+  'search',
+  'design',
+  'video',
+  'ads',
+  'distribute',
+] as const;
+
+export type Stage = (typeof STAGES)[number];
+
+export interface RoleSpec {
+  label: string;
+  /** What this person is for, in one line, for the console. */
+  blurb: string;
+  /** The stage they own. */
+  stage: Stage;
+  /** Job titles that make sense, offered when hiring. */
+  titles: string[];
+  /** Their voice and standards, prepended to every prompt they run. */
+  charter: string;
+}
+
+export const ROLE_SPECS: Record<Role, RoleSpec> = {
+  'research-assistant': {
+    label: 'Research assistant',
+    blurb: 'Reads the market every morning — what is travelling, and what the other apps are doing.',
+    stage: 'research',
+    titles: ['Research assistant', 'Market researcher', 'Insights analyst'],
+    charter:
+      'You are the research assistant. Every morning you search: what short-form content about transport, commuting, fuel prices, driver income and city life in Pakistan is getting traction right now, and what the other ride-hailing and delivery apps are publishing. You report what you actually found, never what sounds plausible — an empty list is a usable answer and an invented one is not. You never suggest copying anyone; you report patterns and gaps.',
+  },
+  'content-writer': {
+    label: 'Content writer',
+    blurb: 'Writes the hook, the frames and the caption. Ruthless about the first three seconds.',
+    stage: 'script',
+    titles: ['Content writer', 'Senior copywriter', 'Creative lead'],
+    charter:
+      'You are the content writer. You write the hook, the shot or slide list, the voiceover and the caption. You are ruthless about the first three seconds, you write the way people in Pakistan actually speak, and you never write a number you were not given.',
+  },
+  'seo-expert': {
+    label: 'SEO expert',
+    blurb: 'Makes a piece findable: search intent, keywords, hashtags people actually search, alt text.',
+    stage: 'seo',
+    titles: ['SEO expert', 'Organic growth lead', 'Discovery specialist'],
+    charter:
+      'You are the SEO expert, working on in-platform search rather than Google. Instagram, TikTok and YouTube are search engines now: people type "sasti ride Lahore" into them. Your job is the words that make a piece findable weeks after it is posted — the search intent it should answer, keywords that belong in the spoken and on-screen copy, hashtags chosen because people search them rather than because they are popular, and alt text that is a real description. You never keyword-stuff; a caption that reads like a human wrote it outranks one that does not, because people finish it.',
+  },
+  'google-seo-expert': {
+    label: 'Google SEO expert',
+    blurb: 'Google and YouTube search: the title, the description, the tags, and what the site should rank for.',
+    stage: 'search',
+    titles: ['Google SEO expert', 'Search lead', 'YouTube SEO specialist'],
+    charter:
+      'You are the Google SEO expert. Two surfaces: YouTube search (the second largest search engine, and where a Short lives for years), and Google itself. For YouTube you write the title, the description and the tags — the title front-loads the phrase someone would actually type, under 60 characters, no clickbait a viewer would resent; the description opens with two lines that answer the query, then the links. For Google you name the one query velocityrides.app should be trying to own with this piece, and you say honestly when there is not one.',
+  },
+  designer: {
+    label: 'Designer',
+    blurb: 'Turns the script into pictures — slides, post images, story frames, video covers.',
+    stage: 'design',
+    titles: ['Designer', 'Art director', 'Senior graphic designer'],
+    charter:
+      'You are the designer. You turn a script into pictures: what is in the frame, what the light is doing, what words are burned onto it. You think in thumbnails — the picture has to work at 40 pixels wide, in a feed, with the sound off.',
+  },
+  'video-editor': {
+    label: 'Video editor',
+    blurb: 'Decides the cut — pacing, the pattern interrupt, the sound bed — and renders it.',
+    stage: 'video',
+    titles: ['Video editor', 'Senior editor', 'Motion lead'],
+    charter:
+      'You are the video editor. You decide the cut: what happens in each second, where the pattern interrupt lands, what the camera does, what the audio is doing under it. You are the reason someone is still watching at second seven.',
+  },
+  'youtube-ads-expert': {
+    label: 'YouTube ads expert',
+    blurb: 'Writes the campaign brief: objective, hooks to test, targeting, what success looks like.',
+    stage: 'ads',
+    titles: ['YouTube ads expert', 'Paid media lead', 'Performance marketer'],
+    charter:
+      'You are the YouTube ads expert. You do not spend money and you do not pretend to — you write the brief a human takes into Google Ads: the objective, the campaign type, the first five seconds that have to survive the skip button, the targeting (Pakistani cities, ages, and interest or in-market segments that actually exist), what to test against what, and what result would mean it worked. You are specific about this market: data costs, phone-first viewing, and the fact that most of the audience skips at second five.',
+  },
+  'social-manager': {
+    label: 'Social media manager',
+    blurb: 'Rewrites per network, decides where it goes, posts it, and answers the comments.',
+    stage: 'distribute',
+    titles: ['Social media manager', 'Community lead', 'Head of social'],
+    charter:
+      'You are the social media manager. You decide where a piece goes and how it is worded on each network. Once it is up, you are the one talking to the people in the comments — in their language, briefly, and like a human who works here.',
+  },
+};
 
 /**
- * Four agents, each owning one stage of the line. They are named rather than
- * numbered because the console shows the line running live, and "Rang is
- * drawing slide 3 of 5" is something an operator can act on where "stage 2/4"
- * is not.
+ * Who covers a stage when the person who owns it has not been hired.
  *
- *   qalam  (قلم, the pen)    — reads the market and writes
- *   rang   (رنگ, the colour) — designs the frames
- *   raftar (رفتار, the pace) — cuts the video
- *   awaaz  (آواز, the voice) — posts, and answers the people who reply
- *
- * Every run starts with all four agreeing a concept (see `ContentPlan`), so
- * the designer is not decorating a script it never saw and the editor is not
- * cutting to a hook nobody chose.
+ * Small teams really do work like this: with no researcher the writer reads
+ * around the subject themselves, and with no SEO specialist the writer does
+ * what they can. What has no fallback simply does not happen, and the run says
+ * so rather than pretending.
  */
-export const AGENTS = ['qalam', 'rang', 'raftar', 'awaaz'] as const;
-export type AgentId = (typeof AGENTS)[number];
-
-export const AGENT_NAMES: Record<AgentId, string> = {
-  qalam: 'Qalam',
-  rang: 'Rang',
-  raftar: 'Raftar',
-  awaaz: 'Awaaz',
+export const STAGE_COVER: Record<Stage, { primary: Role; fallbacks: Role[] }> = {
+  research: {
+    primary: 'research-assistant',
+    fallbacks: ['seo-expert', 'google-seo-expert', 'content-writer'],
+  },
+  script: { primary: 'content-writer', fallbacks: [] },
+  seo: { primary: 'seo-expert', fallbacks: ['google-seo-expert'] },
+  search: { primary: 'google-seo-expert', fallbacks: ['seo-expert'] },
+  design: { primary: 'designer', fallbacks: [] },
+  video: { primary: 'video-editor', fallbacks: [] },
+  ads: { primary: 'youtube-ads-expert', fallbacks: [] },
+  distribute: { primary: 'social-manager', fallbacks: ['content-writer'] },
 };
 
-export const AGENT_ROLES: Record<AgentId, string> = {
-  qalam: 'Content writer',
-  rang: 'Designer',
-  raftar: 'Video editor',
-  awaaz: 'Social media manager',
-};
+export type EmployeeStatus = 'active' | 'off_duty';
 
-export type AgentState = 'idle' | 'working' | 'done' | 'skipped' | 'failed';
+/** One person on the team. Hired, named and briefed by an admin. */
+export interface Employee {
+  id: string;
+  /** Whatever the admin called them. */
+  name: string;
+  role: Role;
+  /** Free text — "Senior reel editor", "Karachi copy lead". */
+  title: string;
+  status: EmployeeStatus;
+  /** Direction for this person only, read on every job they run. */
+  instructions: string;
+  /** Console colour, for the roster and the work log. */
+  colour: string;
+  hiredAtMs: number;
+  hiredBy: string | null;
+  lastWorkedAtMs: number | null;
+  piecesWorked: number;
+}
 
-export interface AgentRun {
-  state: AgentState;
-  /** One line, written for a human watching the line run. */
+/** How the team is credited on a finished piece — kept even if someone leaves. */
+export interface TeamMemberRef {
+  id: string;
+  name: string;
+  role: Role;
+  title: string;
+}
+
+export type WorkState = 'working' | 'done' | 'skipped' | 'failed';
+
+/** One person's turn on one piece. This is what the console renders live. */
+export interface WorkEntry {
+  stage: Stage;
+  employeeId: string | null;
+  name: string;
+  role: Role | null;
+  state: WorkState;
+  /** One line, written for a human watching the work happen. */
   note: string | null;
   error: string | null;
   startedAtMs: number | null;
   finishedAtMs: number | null;
 }
 
-export const IDLE_RUN: AgentRun = {
-  state: 'idle',
-  note: null,
-  error: null,
-  startedAtMs: null,
-  finishedAtMs: null,
-};
-
-export type CrewLog = Record<AgentId, AgentRun>;
-
-export function freshCrewLog(): CrewLog {
-  return {
-    qalam: { ...IDLE_RUN },
-    rang: { ...IDLE_RUN },
-    raftar: { ...IDLE_RUN },
-    awaaz: { ...IDLE_RUN },
-  };
-}
+export type WorkLog = Partial<Record<Stage, WorkEntry>>;
 
 // ── formats ─────────────────────────────────────────────────────────────────
 
-/** Everything the desk can make. The format decides who on the crew works. */
+/** Everything the desk can make. The format decides which stages run. */
 export const FORMATS = ['reel', 'video', 'carousel', 'post', 'story'] as const;
 export type ContentFormat = (typeof FORMATS)[number];
 
@@ -141,11 +260,23 @@ export interface FormatSpec {
   slides: number;
   /** Seconds of video, where there is video. */
   seconds: number | null;
-  /** Which of the crew this format needs. */
-  crew: AgentId[];
+  /** Which stages this format needs at all. */
+  stages: Stage[];
   /** What the writer is being asked for, in one line. */
   brief: string;
 }
+
+const STILL_STAGES: Stage[] = ['research', 'seo', 'script', 'search', 'design', 'distribute'];
+const VIDEO_STAGES: Stage[] = [
+  'research',
+  'seo',
+  'script',
+  'search',
+  'design',
+  'video',
+  'ads',
+  'distribute',
+];
 
 export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
   reel: {
@@ -154,7 +285,7 @@ export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
     aspect: '9:16',
     slides: 1,
     seconds: 20,
-    crew: ['qalam', 'rang', 'raftar', 'awaaz'],
+    stages: VIDEO_STAGES,
     brief:
       'A vertical short. The first three seconds decide everything; the rest pays off what they promised.',
   },
@@ -164,7 +295,7 @@ export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
     aspect: '16:9',
     slides: 1,
     seconds: 30,
-    crew: ['qalam', 'rang', 'raftar', 'awaaz'],
+    stages: VIDEO_STAGES,
     brief:
       'A landscape video for YouTube and the Facebook feed. Room for one idea, explained properly.',
   },
@@ -174,7 +305,7 @@ export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
     aspect: '4:5',
     slides: 5,
     seconds: null,
-    crew: ['qalam', 'rang', 'awaaz'],
+    stages: STILL_STAGES,
     brief:
       'A swipeable set. Slide one is the hook, the middle slides carry one idea each, the last one asks for the tap.',
   },
@@ -184,7 +315,7 @@ export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
     aspect: '4:5',
     slides: 1,
     seconds: null,
-    crew: ['qalam', 'rang', 'awaaz'],
+    stages: STILL_STAGES,
     brief: 'One image and a caption. The image has to work alone in a feed with the sound off.',
   },
   story: {
@@ -193,7 +324,7 @@ export const FORMAT_SPECS: Record<ContentFormat, FormatSpec> = {
     aspect: '9:16',
     slides: 1,
     seconds: null,
-    crew: ['qalam', 'rang', 'awaaz'],
+    stages: STILL_STAGES,
     brief: 'A 24-hour vertical frame. One line, one image, one tap — nothing that needs reading twice.',
   },
 };
@@ -221,12 +352,13 @@ export function supports(platform: Platform, format: ContentFormat): boolean {
   return PLATFORM_FORMATS[platform].includes(format);
 }
 
-// ── what the crew produces ──────────────────────────────────────────────────
+// ── what the team produces ──────────────────────────────────────────────────
 
 export type PostStatus =
   | 'planning'
   | 'researching'
   | 'drafting'
+  | 'optimising'
   | 'designing'
   | 'rendering'
   | 'awaiting_approval'
@@ -238,11 +370,12 @@ export type PostStatus =
   | 'failed'
   | 'rejected';
 
-/** Statuses where the crew is still working and nobody should be editing. */
+/** Statuses where the team is still working and nobody should be editing. */
 export const WORKING_STATUSES: readonly PostStatus[] = [
   'planning',
   'researching',
   'drafting',
+  'optimising',
   'designing',
   'rendering',
   'publishing',
@@ -274,9 +407,9 @@ export interface PostScript {
 }
 
 /**
- * What the four of them agreed before any of them started. Written by one
- * model call that argues the concept out in the voices of all four agents, so
- * each stage inherits a decision rather than re-deciding it.
+ * What the team agreed at standup, before any of them started. Written by one
+ * model call that argues the concept out in the voices of everyone on shift,
+ * so each stage inherits a decision rather than re-deciding it.
  */
 export interface ContentPlan {
   atMs: number;
@@ -285,16 +418,16 @@ export interface ContentPlan {
   audience: string;
   /** Why this, today. */
   why: string;
-  /** The shape of the hook, not the hook itself — Qalam still writes that. */
+  /** The shape of the hook, not the hook itself — the writer still writes that. */
   hookDirection: string;
-  /** The look Rang is going for. */
+  /** The look the designer is going for. */
   visualDirection: string;
-  /** How Raftar cuts it. Empty for still formats. */
+  /** How the editor cuts it. Empty for still formats. */
   editDirection: string;
-  /** What Awaaz will do with it once it is up. */
+  /** What the manager will do with it once it is up. */
   distribution: string;
-  /** One line per agent, in their own voice, for the console. */
-  notes: Partial<Record<AgentId, string>>;
+  /** One line per person who was at standup, in their own voice, keyed by id. */
+  notes: Record<string, string>;
 }
 
 export interface MediaAsset {
@@ -331,7 +464,7 @@ export interface ResearchSource {
   url: string;
 }
 
-/** What the writer found before it wrote anything. Stored, so claims trace back. */
+/** What the researcher found before anyone wrote anything. */
 export interface ContentResearch {
   atMs: number;
   /** What is working on Pakistani feeds this week. */
@@ -348,17 +481,55 @@ export interface ContentResearch {
   error: string | null;
 }
 
-/** A round of admin feedback, and what the crew did about it. */
+/** The SEO expert's work: the words that make this findable later. */
+export interface SeoPack {
+  /** The query this piece should answer. */
+  searchIntent: string;
+  /** Phrases that belong in the spoken and on-screen copy. */
+  keywords: string[];
+  /** Chosen because they are searched, not because they are popular. */
+  hashtags: string[];
+  /** One per slide, in order. Real descriptions, not keyword lists. */
+  altTexts: string[];
+  note: string;
+}
+
+/** The Google SEO expert's work: YouTube metadata, and the web angle. */
+export interface SearchPack {
+  youtube: { title: string; description: string; tags: string[] } | null;
+  /** The one query velocityrides.app should try to own with this. */
+  webAngle: string;
+  note: string;
+}
+
+/**
+ * The YouTube ads expert's brief. Deliberately a *brief*: this backend holds no
+ * Google Ads credential and does not spend money. A human takes this into Ads
+ * Manager, which is also the only way anyone stays accountable for the budget.
+ */
+export interface AdPlan {
+  objective: string;
+  campaignType: string;
+  /** The first five seconds, in versions, because that is what gets tested. */
+  hookVariants: string[];
+  targeting: { locations: string[]; ages: string; interests: string[] };
+  budgetNote: string;
+  cta: string;
+  whatToTest: string;
+  successLooksLike: string;
+}
+
+/** A round of admin feedback, and what the team did about it. */
 export interface Revision {
   atMs: number;
   by: string;
-  /** What the admin actually wrote. Fed to every agent that re-runs. */
+  /** What the admin actually wrote. Fed to everyone who re-runs. */
   feedback: string;
   /** Which stages were asked to run again. */
   scope: RevisionScope[];
 }
 
-export const REVISION_SCOPES = ['script', 'design', 'video', 'caption'] as const;
+export const REVISION_SCOPES = ['script', 'design', 'video', 'caption', 'seo', 'ads'] as const;
 export type RevisionScope = (typeof REVISION_SCOPES)[number];
 
 export interface SocialPost {
@@ -368,6 +539,10 @@ export interface SocialPost {
   format: ContentFormat;
   angle: string;
   status: PostStatus;
+  /** Who was on shift for this piece, as they were at the time. */
+  team: TeamMemberRef[];
+  /** Stage → who did it and how it went. */
+  work: WorkLog;
   plan: ContentPlan | null;
   script: PostScript | null;
   caption: string;
@@ -377,15 +552,17 @@ export interface SocialPost {
   /** The live platform numbers the script was written from, for the audit trail. */
   facts: Record<string, number | string>;
   research: ContentResearch | null;
+  seo: SeoPack | null;
+  search: SearchPack | null;
+  ads: AdPlan | null;
   /** The designer's art direction, kept whether or not anything was rendered. */
   direction: { prompt: string; overlay: string; alt: string }[] | null;
   /** The editor's cut. The prompt the renderer was given, and a line about it. */
   cut: { prompt: string; note: string } | null;
-  /** Everything the crew made, in publish order. Slides 1..n for a carousel. */
+  /** Everything the team made, in publish order. Slides 1..n for a carousel. */
   media: MediaAsset[];
   targets: Platform[];
   results: Partial<Record<Platform, PublishResult>>;
-  crew: CrewLog;
   /** Every round of feedback this post has been through. */
   revisions: Revision[];
   error: string | null;
@@ -431,11 +608,11 @@ export const DEFAULT_FORMATS: ContentFormat[] = ['reel', 'carousel', 'reel', 'po
 
 export interface Competitor {
   name: string;
-  /** A page the writer can point its research at. */
+  /** A page the researcher can point at. */
   url: string;
 }
 
-/** Who else is in this market. The writer reads around these, never copies them. */
+/** Who else is in this market. The team reads around these, never copies them. */
 export const DEFAULT_COMPETITORS: Competitor[] = [
   { name: 'Careem', url: 'https://www.careem.com/pk' },
   { name: 'inDrive', url: 'https://indrive.com/en-pk/' },
@@ -447,7 +624,7 @@ export const DEFAULT_COMPETITORS: Competitor[] = [
 
 export type CommentStatus = 'new' | 'drafted' | 'replied' | 'ignored' | 'escalated';
 
-/** How the manager read a comment, before it decided what to say back. */
+/** How the manager read a comment, before deciding what to say back. */
 export type CommentIntent = 'praise' | 'question' | 'complaint' | 'safety' | 'spam' | 'other';
 
 export interface SocialComment {
@@ -464,8 +641,10 @@ export interface SocialComment {
   createdAtMs: number;
   status: CommentStatus;
   intent: CommentIntent | null;
-  /** What Awaaz would say. Editable before it is sent. */
+  /** What the manager would say. Editable before it is sent. */
   draftReply: string | null;
+  /** Who drafted it, so the inbox can say whose words these are. */
+  draftedBy: string | null;
   sentReply: string | null;
   sentAtMs: number | null;
   error: string | null;
@@ -476,9 +655,9 @@ export interface SocialComment {
 export interface SocialSettings {
   /** Master switch. Off means the scheduler does nothing at all. */
   enabled: boolean;
-  /** Hour of the Pakistan day the daily job runs (0–23). */
+  /** Hour of the Pakistan day the team starts (0–23). */
   runHour: number;
-  /** How many posts a day the crew plans, each the next format up. */
+  /** How many pieces a day, each the next format up. */
   postsPerDay: number;
   /** Where a finished post goes — filtered per format by what each takes. */
   platforms: Platform[];
@@ -490,30 +669,32 @@ export interface SocialSettings {
   lastFormatIndex: number;
 
   /**
-   * Standing instructions every agent reads, on every run — tone, claims to
+   * Standing instructions every employee reads, on every job — tone, claims to
    * avoid, this month's promotion, words you never want to see again.
    */
   crewInstructions: string;
-  /** Extra direction for one agent only. */
-  agentNotes: Record<AgentId, string>;
 
-  /** Qalam: read around the market before writing. */
+  /** The researcher reads around these. */
   researchEnabled: boolean;
   competitors: Competitor[];
 
-  /** Rang: draw the frames, or leave them to be attached by hand. */
+  /** The designer draws, or leaves the frames to be attached by hand. */
   imageProvider: 'gemini' | 'none';
-  /** Raftar: cut the video, or leave it to be attached by hand. */
+  /** The editor renders, or leaves the file to be attached by hand. */
   videoProvider: 'veo' | 'none';
 
-  /** Model ids, editable so a Google rename is a settings change, not a deploy. */
+  /**
+   * Model ids, editable so a rename is a settings change and not a deploy.
+   * `textModel` is a Claude model (everything written or decided); the other
+   * two are Google's, because Claude renders neither pictures nor video.
+   */
   textModel: string;
   imageModel: string;
   videoModel: string;
 
-  /** Awaaz: watch the comments. */
+  /** The manager watches the comments. */
   engagementEnabled: boolean;
-  /** Send replies without a human reading them first. Off by default, and it should stay off. */
+  /** Send replies without a human reading them first. Off by default. */
   autoReply: boolean;
 
   lastRunAtMs: number | null;
@@ -521,6 +702,9 @@ export interface SocialSettings {
   lastEngagementAtMs: number | null;
   lastEngagementStatus: string | null;
 }
+
+/** What the desk writes and decides with unless the console says otherwise. */
+export const DEFAULT_TEXT_MODEL = 'claude-opus-5';
 
 export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
@@ -534,7 +718,6 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   lastFormatIndex: -1,
 
   crewInstructions: '',
-  agentNotes: { qalam: '', rang: '', raftar: '', awaaz: '' },
 
   researchEnabled: true,
   competitors: [...DEFAULT_COMPETITORS],
@@ -542,7 +725,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   imageProvider: 'gemini',
   videoProvider: 'none',
 
-  textModel: 'gemini-2.5-pro',
+  textModel: DEFAULT_TEXT_MODEL,
   imageModel: 'gemini-2.5-flash-image',
   videoModel: 'veo-3.1-generate-preview',
 
