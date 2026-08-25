@@ -116,7 +116,25 @@ service cloud.firestore {
                   || (isSignedIn()
                       && 'poolMembers' in resource.data
                       && uid() in resource.data.poolMembers);
-      allow write: if false;
+      // Everything that matters about a trip — status, fare, who is driving —
+      // is server-only and stays that way.
+      //
+      // The one exception is the driver's own position while they are the
+      // assigned driver. The passenger cannot read `drivers/{id}` (that document
+      // is the driver's alone), so without a copy on the trip there is no way to
+      // show "4 min away" — the rider is left watching a static map wondering if
+      // anyone is coming. Relaying it through a callable would mean a function
+      // invocation every few seconds for every driver on the road, which is a
+      // lot of money to spend on a coordinate.
+      //
+      // Scoped as tightly as it can be: only the assigned driver, only while the
+      // ride is live, and only these two fields — so it cannot be used to touch
+      // a fare, a status, or anyone else's trip.
+      allow update: if isSignedIn()
+                    && resource.data.driverId == uid()
+                    && resource.data.status in ['matched', 'arriving', 'arrived', 'in_progress']
+                    && onlyChanges(['driverLocation', 'driverLocationAt']);
+      allow create, delete: if false;
 
       // Bids placed by drivers (created server-side via placeBid). The passenger
       // who owns the parent trip and the bidding driver may read.

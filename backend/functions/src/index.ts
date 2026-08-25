@@ -187,6 +187,9 @@ export {
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export { upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand } from './commute';
 
+// Shared rides stop more than once. Dropping one rider is not ending the trip.
+export { dropOffRider } from './trips/dropOff';
+
 // In-ride chat. Sending goes through a callable so the message and the push
 // to the other side are one action — direct writes notified nobody.
 export { sendTripMessage } from './trips/chat';

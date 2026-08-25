@@ -115,6 +115,16 @@ export interface Trip {
   seats: number;
   passengerGender: Gender;
   paymentMethod?: 'cash' | 'wallet';
+  /**
+   * Where the driver was, last time they reported it.
+   *
+   * A copy, kept on the trip because the passenger cannot read `drivers/{uid}`
+   * — that document is the driver's own. Without it a rider watching the screen
+   * has no way to tell whether the car is around the corner or across the city.
+   * Written by the assigned driver only, and only while the ride is live.
+   */
+  driverLocation?: { lat: number; lng: number } | null;
+  driverLocationAt?: { seconds: number } | null;
   pool?: boolean;
   /** Pool rides only — share-link invite code + rider roster. */
   poolVisibility?: PoolVisibility;

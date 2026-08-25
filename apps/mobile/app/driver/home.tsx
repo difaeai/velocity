@@ -54,13 +54,16 @@ import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
+import { DropOffPanel } from '../../src/ui/DropOffPanel';
+import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
   matched: { label: 'Head to pickup', to: 'arriving' },
   arriving: { label: 'Arrived at pickup', to: 'arrived' },
   arrived: { label: 'Start trip', to: 'in_progress' },
-  in_progress: { label: 'Complete trip' },
+  // 'in_progress' deliberately has no entry: ending a ride is DropOffPanel's
+  // job, because a shared car ends it once per passenger, not once per trip.
 };
 
 /** How long the radar sweeps after the driver goes online, before the feed opens. */
@@ -80,6 +83,9 @@ export default function DriverHome() {
   const online = profile?.online ?? false;
 
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // Read by the location publisher, which is built once when the driver goes
+  // online and would otherwise capture whatever trip existed at that moment.
+  const activeTripRef = useRef<string | null>(null);
   const liveRequests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
   const commission = useCommissionStatus(profile);
   const commissionLocked = commission.locked;
@@ -97,6 +103,19 @@ export default function DriverHome() {
 
   // Before the passenger is aboard the driver is going to the pickup; after,
   // to the drop-off. One button, pointed at whichever is actually next.
+  // Keep the location publisher pointed at the trip that is actually live.
+  useEffect(() => {
+    activeTripRef.current = activeTrip?.id ?? null;
+  }, [activeTrip?.id]);
+
+  // Straight-line distance to the pickup. Not a route length and not sold as
+  // one — it answers "are they around the corner or across town", which is the
+  // question a driver on the way actually has.
+  const pickupAwayM = (() => {
+    if (!activeTrip || !driverCoords || !hasCoords(activeTrip.pickup)) return null;
+    return distanceMeters(driverCoords.lat, driverCoords.lng, activeTrip.pickup.lat, activeTrip.pickup.lng);
+  })();
+
   const navTarget: NavTarget | null = (() => {
     if (!activeTrip) return null;
     const leg = activeTrip.status === 'in_progress' ? activeTrip.dropoff : activeTrip.pickup;
@@ -326,6 +345,17 @@ export default function DriverHome() {
             lastSeenAt: serverTimestamp(),
           }, { merge: true }).catch(() => {});
         }
+        // Relay the same fix onto the live trip. The passenger cannot read
+        // drivers/{uid} — that document is the driver's own — so this copy is
+        // the only way their screen can say how far away the car is. The rules
+        // let the assigned driver write these two fields and nothing else.
+        const liveTripId = activeTripRef.current;
+        if (liveTripId) {
+          setDoc(doc(db, 'trips', liveTripId), {
+            driverLocation: { lat, lng },
+            driverLocationAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {});
+        }
       };
       const updateLocation = () => {
         if (ExpoLocation) {
@@ -502,7 +532,14 @@ export default function DriverHome() {
               pickupCoord={activeTrip.pickup}
               dropoffCoord={activeTrip.dropoff}
             />
-            <Text style={styles.tripFare}>Fare: {activeTrip.fare} PKR</Text>
+            <View style={styles.fareRow}>
+              <Text style={styles.tripFare}>Fare: {activeTrip.fare} PKR</Text>
+              {pickupAwayM != null && activeTrip.status !== 'in_progress' ? (
+                <Text style={styles.awayPill}>
+                  Passenger {formatDistance(pickupAwayM)} away
+                </Text>
+              ) : null}
+            </View>
             {/* Turn-by-turn is a solved problem and this app should not pretend
                 otherwise — the in-app map shows WHERE the pickup is; getting
                 there is Google Maps' job. `google.navigation:` opens directly in
@@ -539,16 +576,25 @@ export default function DriverHome() {
                 </Text>
               </Pressable>
             </View>
-            {(() => {
+            {activeTrip.status === 'in_progress' ? (
+              <DropOffPanel
+                tripId={activeTrip.id}
+                fallbackFare={activeTrip.fare ?? activeTrip.offeredFare}
+                isPool={activeTrip.pool === true}
+                paymentMethod={(activeTrip.paymentMethod ?? 'cash') as 'cash' | 'wallet'}
+                driverCoords={driverCoords}
+                onCompleted={() => { /* the trip subscription clears the card */ }}
+                busy={busy}
+                setBusy={setBusy}
+              />
+            ) : (() => {
               const next = NEXT_ACTION[activeTrip.status];
-              if (!next) return null;
+              if (!next?.to) return null;
               return (
                 <PrimaryButton
                   label={next.label}
                   disabled={busy}
-                  onPress={() => run(() => next.to
-                    ? api.updateTripStatus({ tripId: activeTrip.id, to: next.to })
-                    : api.completeTrip({ tripId: activeTrip.id }))}
+                  onPress={() => run(() => api.updateTripStatus({ tripId: activeTrip.id, to: next.to! }))}
                 />
               );
             })()}
@@ -971,6 +1017,17 @@ const styles = themed(() => StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
     marginTop: 2,
+  },
+  fareRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  awayPill: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.primary,
+    backgroundColor: `${colors.primary}18`,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    overflow: 'hidden',
   },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   navBtn: {

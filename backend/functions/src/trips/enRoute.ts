@@ -1117,21 +1117,30 @@ export const getPoolRiders = onCall(async (req) => {
     throw new HttpsError('permission-denied', 'You are not on this ride.');
   }
 
-  const riders = (snap.get('poolRiders') as PoolRider[] | undefined) ?? [];
-  // Co-riders see a first name, a gender and where the person gets on and off —
-  // enough to know who is in the car with them, and nothing more.
+  const riders = (snap.get('poolRiders') as (PoolRider & { droppedAt?: unknown })[] | undefined) ?? [];
+  // The driver has to collect the money, so they see every fare and the full
+  // drop-off address. Co-riders see a first name, a gender and where the person
+  // gets on and off — enough to know who is in the car, and nothing more.
+  const isDriver = snap.get('driverId') === ctx.uid;
   return {
     riders: riders.map((r) => ({
       uid: r.uid,
-      name: r.name.split(' ')[0],
+      name: isDriver ? r.name : (r.name.split(' ')[0] ?? r.name),
       gender: r.gender,
       pickupAddress: r.pickup?.address ?? null,
       dropoffAddress: r.dropoff?.address ?? null,
+      dropoffLat: isDriver ? (r.dropoff?.lat ?? null) : null,
+      dropoffLng: isDriver ? (r.dropoff?.lng ?? null) : null,
       kind: r.kind,
-      /** Their own fare is theirs alone; you only ever see yours. */
-      fare: r.uid === ctx.uid ? r.fare : null,
+      /**
+       * Their own fare is theirs alone — except to the driver, who cannot ask
+       * the right person for the right amount without knowing it.
+       */
+      fare: isDriver || r.uid === ctx.uid ? r.fare : null,
+      /** Already let out. The driver's remaining-stops list is built from this. */
+      droppedOff: !!r.droppedAt,
     })),
     yourFare: riders.find((r) => r.uid === ctx.uid)?.fare ?? null,
-    driverGross: snap.get('driverId') === ctx.uid ? snap.get('poolDriverGross') : null,
+    driverGross: isDriver ? snap.get('poolDriverGross') : null,
   };
 });

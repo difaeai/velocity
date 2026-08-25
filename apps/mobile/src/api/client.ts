@@ -189,9 +189,18 @@ export interface PoolRiderView {
   gender: Gender;
   pickupAddress: string | null;
   dropoffAddress: string | null;
+  /** Drop-off coordinates, so the driver can navigate to each stop. Driver only. */
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
   kind: 'host' | 'share' | 'enroute';
-  /** Your own fare. Null for everybody else's — that is theirs, not yours. */
+  /**
+   * Your own fare. Null for everybody else's — that is theirs, not yours. The
+   * driver is the exception: they cannot collect the right cash from the right
+   * person without seeing every fare.
+   */
   fare: number | null;
+  /** Already let out — the driver's remaining-stops list is what is left. */
+  droppedOff?: boolean;
 }
 
 /** One chat attachment — a photo or a document uploaded to Velocity storage. */
@@ -351,6 +360,18 @@ export const api = {
     { tripId: string },
     { riders: PoolRiderView[]; yourFare: number | null; driverGross: number | null }
   >('getPoolRiders'),
+
+  /**
+   * Let one rider out of a shared car.
+   *
+   * Answers with how many are still aboard. At zero the ride is over and the
+   * client calls completeTrip — this deliberately does not end the trip itself,
+   * so the money logic lives in exactly one place.
+   */
+  dropOffRider: callable<
+    { tripId: string; riderUid: string },
+    { ok: boolean; remaining: number; fare: number; name: string }
+  >('dropOffRider'),
 
   placeBid: callable<{ tripId: string; fare: number }, { ok: boolean; bidId: string }>('placeBid'),
   raiseTripFare: callable<{ tripId: string; fare: number }, { ok: boolean; offeredFare: number }>(

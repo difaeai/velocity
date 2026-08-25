@@ -37,6 +37,8 @@ import { RatingModal } from '../../../src/ui/RatingModal';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { PoolRidersCard } from '../../../src/ui/PoolRidersCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
+import { distanceMeters, formatDistance } from '../../../src/lib/geo';
+import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
 
 const STATUS_LABEL: Record<TripStatus, string> = {
   requested:   'Finding you a driver…',
@@ -68,6 +70,9 @@ export default function TripScreen() {
   const [adjustedFare, setAdjustedFare] = useState(0);
   const [showRating,   setShowRating]   = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
+  // Same reason as the driver side: a push is invisible to an app already in
+  // the foreground, and the rider is usually watching this very screen.
+  const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(tripId, user?.uid);
   const [reportOpen,   setReportOpen]   = useState(false);
   const sharePromptShown = useRef(false);
 
@@ -253,6 +258,50 @@ export default function TripScreen() {
 
   const goHome = () => router.replace('/passenger/home');
   const pendingBids = bids.filter((b) => b.status === 'pending');
+
+  /**
+   * "4 min away · 1.2 km" — or nothing at all.
+   *
+   * The distance is straight-line and the time is derived from it at a blunt
+   * city average, so this is deliberately phrased as an estimate. Showing a
+   * confident "3 min" that a real road turns into eleven is worse than showing
+   * a range, and far worse than the silence this replaces.
+   *
+   * Nothing is shown before a driver exists, or once the trip is under way and
+   * the question has changed from "where are they" to "when do I arrive".
+   */
+  const etaLine = (() => {
+    if (!trip?.driverId) return null;
+    const loc = trip.driverLocation;
+    if (!loc) return null;
+    const heading = trip.status === 'in_progress' ? trip.dropoff : trip.pickup;
+    if (!heading || heading.lat == null || heading.lng == null) return null;
+
+    const metres = distanceMeters(loc.lat, loc.lng, heading.lat, heading.lng);
+    // 18 km/h — a deliberately pessimistic city average that accounts for
+    // traffic and the fact that this is a straight line, not a road.
+    const minutes = Math.max(1, Math.round((metres / 1000) / 18 * 60));
+    const arriving = trip.status === 'in_progress';
+
+    // A fix that stopped updating is not an ETA any more; say so rather than
+    // counting down from a position the car left ten minutes ago.
+    const fixAge = trip.driverLocationAt?.seconds
+      ? Date.now() - trip.driverLocationAt.seconds * 1000
+      : 0;
+    if (fixAge > 3 * 60 * 1000) {
+      return {
+        headline: arriving ? 'On the way to your destination' : 'Your driver is on the way',
+        detail: 'Waiting for a fresh location from your driver…',
+      };
+    }
+
+    return {
+      headline: arriving
+        ? `About ${minutes} min to your destination`
+        : `Your driver is about ${minutes} min away`,
+      detail: `${formatDistance(metres)} away${arriving ? '' : ' · they are coming to you now'}`,
+    };
+  })();
   // Pool joiners ride along but only the host picks the driver, raises the
   // fare or cancels — the backend rejects anyone else, so hide those controls.
   const isHost = trip.passengerId === user?.uid;
@@ -531,6 +580,18 @@ export default function TripScreen() {
           <Badge label={RIDE_TYPE_LABELS[trip.rideType]} />
         </View>
 
+        {/* The two things a rider actually wants once a driver is assigned:
+            how far away the car is, and how long until it is here. Both come
+            from the driver's own position, relayed onto the trip — before this
+            the screen said "Driver is on the way" and nothing else, which is
+            indistinguishable from nothing happening. */}
+        {etaLine ? (
+          <View style={styles.etaCard}>
+            <Text style={styles.etaBig}>{etaLine.headline}</Text>
+            <Text style={styles.etaSub}>{etaLine.detail}</Text>
+          </View>
+        ) : null}
+
         <MapPlaceholder
           pickup={trip.pickup?.address}
           dropoff={trip.dropoff?.address}
@@ -567,10 +628,16 @@ export default function TripScreen() {
                 </Pressable>
               ) : null}
               <Pressable
-                style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]}
-                onPress={() => setChatOpen(true)}
+                style={[
+                  styles.contactBtn,
+                  { backgroundColor: colors.primary + '18' },
+                  unreadChat > 0 && { borderColor: colors.primary, borderWidth: 1.5 },
+                ]}
+                onPress={() => { markChatRead(); setChatOpen(true); }}
               >
-                <Text style={styles.contactBtnText}>💬 Message</Text>
+                <Text style={styles.contactBtnText}>
+                  💬 {unreadChat > 0 ? `Message (${unreadChat > 9 ? '9+' : unreadChat})` : 'Message'}
+                </Text>
               </Pressable>
             </View>
 
@@ -711,7 +778,7 @@ export default function TripScreen() {
         myUid={user?.uid ?? ''}
         myName={user?.displayName ?? 'Passenger'}
         otherName={trip.driverInfo?.displayName ?? 'Driver'}
-        onClose={() => setChatOpen(false)}
+        onClose={() => { markChatRead(); setChatOpen(false); }}
       />
     </SafeAreaView>
   );
@@ -1207,6 +1274,27 @@ const styles = themed(() => StyleSheet.create({
     height: 1,
     backgroundColor: colors.glassStrong,
     marginLeft: 22,
+  },
+  etaCard: {
+    backgroundColor: `${colors.primary}14`,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 3,
+    marginBottom: 12,
+  },
+  etaBig: {
+    color: colors.text,
+    fontSize: 16.5,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  etaSub: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '700',
   },
   waitingLine: {
     color: colors.muted,
