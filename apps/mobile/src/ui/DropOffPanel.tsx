@@ -17,7 +17,7 @@
  * and reading a list while pulling over is not.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { api, type PoolRiderView } from '../api/client';
@@ -28,6 +28,8 @@ import { hasCoords, openNavigation } from '../lib/navigate';
 
 /** Close enough to a stop that the driver is deciding about it right now. */
 const ARRIVAL_RADIUS_M = 250;
+
+const GENDER_MARK: Record<string, string> = { male: '♂', female: '♀' };
 
 interface Props {
   tripId: string;
@@ -194,9 +196,16 @@ export function DropOffPanel({
         </View>
       ) : null}
 
-      <Text style={styles.sectionLabel}>
-        {remaining.length} STOP{remaining.length === 1 ? '' : 'S'} LEFT
-      </Text>
+      <View style={styles.summaryRow}>
+        <Text style={styles.sectionLabel}>
+          {remaining.length} PASSENGER{remaining.length === 1 ? '' : 'S'} STILL ABOARD
+        </Text>
+        {paymentMethod === 'cash' ? (
+          <Text style={styles.summaryTotal}>
+            PKR {remaining.reduce((sum, r) => sum + (r.fare ?? fallbackFare), 0)} still to collect
+          </Text>
+        ) : null}
+      </View>
 
       {remaining.map((r) => {
         const away =
@@ -207,7 +216,9 @@ export function DropOffPanel({
         return (
           <View key={r.uid} style={styles.riderRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.riderName}>{r.name}</Text>
+              <Text style={styles.riderName}>
+                {r.name} {GENDER_MARK[r.gender] ?? ''}
+              </Text>
               <Text style={styles.riderDrop} numberOfLines={1}>
                 {r.dropoffAddress ?? 'Drop-off point'}
               </Text>
@@ -217,6 +228,17 @@ export function DropOffPanel({
               </Text>
             </View>
             <View style={styles.riderActions}>
+              {/* The passenger who is not at the kerb when you get there. Their
+                  number is on the driver's copy of the manifest for exactly
+                  this moment. */}
+              {r.phone ? (
+                <Pressable
+                  style={styles.riderNavBtn}
+                  onPress={() => Linking.openURL(`tel:${r.phone}`)}
+                >
+                  <Text style={styles.riderNavText}>📞</Text>
+                </Pressable>
+              ) : null}
               {r.dropoffLat != null && r.dropoffLng != null ? (
                 <Pressable
                   style={styles.riderNavBtn}
@@ -302,13 +324,20 @@ const styles = themed(() => StyleSheet.create({
   },
   dropBtnText: { color: '#0b0d0c', fontSize: 13, fontWeight: '900' },
 
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+    gap: 8,
+  },
   sectionLabel: {
     color: colors.muted,
     fontSize: 10.5,
     fontWeight: '900',
     letterSpacing: 1,
-    marginTop: 2,
   },
+  summaryTotal: { color: colors.primary, fontSize: 11.5, fontWeight: '900' },
   riderRow: {
     flexDirection: 'row',
     alignItems: 'center',

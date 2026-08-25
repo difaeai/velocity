@@ -55,6 +55,7 @@ import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
 import { DropOffPanel } from '../../src/ui/DropOffPanel';
+import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
@@ -533,7 +534,14 @@ export default function DriverHome() {
               dropoffCoord={activeTrip.dropoff}
             />
             <View style={styles.fareRow}>
-              <Text style={styles.tripFare}>Fare: {activeTrip.fare} PKR</Text>
+              {/* On a shared ride the locked fare is what ONE seat was priced
+                  at, not what the drive is worth — the manifest below adds up
+                  what is actually being collected. */}
+              <Text style={styles.tripFare}>
+                {activeTrip.pool === true
+                  ? `Shared ride · PKR ${activeTrip.poolPerSeatFare ?? activeTrip.fare} per seat`
+                  : `Fare: ${activeTrip.fare} PKR`}
+              </Text>
               {pickupAwayM != null && activeTrip.status !== 'in_progress' ? (
                 <Text style={styles.awayPill}>
                   Passenger {formatDistance(pickupAwayM)} away
@@ -576,6 +584,23 @@ export default function DriverHome() {
                 </Text>
               </Pressable>
             </View>
+            {/* Who the driver is actually picking up. Before this the card said
+                "passenger" in the singular however many people were in the
+                pool, so a driver could not tell how many to wait for, who they
+                were, or what each of them owed. Once the ride is running the
+                drop-off panel takes over the same job. */}
+            {activeTrip.pool === true && activeTrip.status !== 'in_progress' ? (
+              <DriverPoolManifest
+                tripId={activeTrip.id}
+                paymentMethod={(activeTrip.paymentMethod ?? 'cash') as 'cash' | 'wallet'}
+                seatsFree={Math.max(
+                  0,
+                  (activeTrip.maxPoolRiders ?? 4) - (activeTrip.poolMembers?.length ?? 1),
+                )}
+                refreshKey={activeTrip.poolMembers?.length ?? 1}
+              />
+            ) : null}
+
             {activeTrip.status === 'in_progress' ? (
               <DropOffPanel
                 tripId={activeTrip.id}

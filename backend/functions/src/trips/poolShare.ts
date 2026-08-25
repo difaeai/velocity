@@ -22,18 +22,50 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { sendToUsers } from '../lib/fcm';
+import { sendToUser, sendToUsers } from '../lib/fcm';
 import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { ACTIVE_STATUSES, haversineKm } from './index';
+import { firstNameOf, joinerRosterEntry, rosterForTrip } from './poolRoster';
 
-/** Riders can hop on until the car actually departs. */
+/**
+ * When a pool may be offered to a stranger.
+ * ---------------------------------------------------------------------------
+ * NOT while it is `requested`. A requested pool is a wish: the host has named a
+ * price and is still haggling with drivers, and nothing about it is settled —
+ * the fare can still move, no driver has agreed to carry anyone, and the host
+ * may cancel it or have it expire out from under them. Letting a second rider
+ * join at that point sold them a seat in a car that did not exist, and tied
+ * their `activeTripId` to a trip that could evaporate.
+ *
+ * `matched` is the first status where BOTH sides have agreed: a driver bid, and
+ * the host accepted it (see `acceptBid`). From there until the car departs the
+ * ride is real, the fare is locked, and a seat in it is a seat worth selling.
+ * ---------------------------------------------------------------------------
+ */
 const JOINABLE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
-  'requested',
   'matched',
   'arriving',
   'arrived',
 ]);
+
+/**
+ * A pool still waiting on a driver. Nobody may join one, but the host can still
+ * change its visibility — those are the minutes they are deciding whether to
+ * make the ride public at all.
+ */
+const AWAITING_DRIVER: TripStatus = 'requested';
+
+/** Statuses in which the host may still change their pool's settings. */
+const HOST_EDITABLE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
+  AWAITING_DRIVER,
+  ...JOINABLE_STATUSES,
+]);
+
+/** Said to anyone who reaches a pool that has not found its driver yet. */
+const AWAITING_DRIVER_MESSAGE =
+  'This shared ride is still agreeing a fare with a driver. You can join as soon '
+  + 'as a driver is confirmed — try again in a minute.';
 
 const codeSchema = z.object({ code: z.string().trim().min(4).max(16) });
 
@@ -68,6 +100,19 @@ export const getPoolTripByCode = onCall(async (req) => {
   const pickup   = snap.get('pickup')  as { address?: string } | undefined;
   const dropoff  = snap.get('dropoff') as { address?: string } | undefined;
   const genders  = (snap.get('poolGenders') as { male?: number; female?: number } | undefined) ?? {};
+  const driver   = snap.get('driverInfo') as
+    | { displayName?: string; vehicleLabel?: string; plate?: string; rating?: number }
+    | undefined;
+
+  // Deciding whether to get in this particular car is the whole job of this
+  // screen, so it answers the two questions riders actually ask before they
+  // tap Join: who else is aboard, and who is driving. Names are first names —
+  // the roster is deliberately not a directory of the people in the car.
+  const companions = rosterForTrip(snap.data() ?? {})
+    .filter((r) => r.uid !== ctx.uid)
+    .map((r) => ({ firstName: r.firstName, gender: r.gender, kind: r.kind }));
+
+  const awaitingDriver = status === AWAITING_DRIVER;
 
   return {
     code,
@@ -80,11 +125,23 @@ export const getPoolTripByCode = onCall(async (req) => {
     riders:     members.length,
     males:      genders.male   ?? 0,
     females:    genders.female ?? 0,
+    companions,
     maxRiders,
     seatsLeft:  Math.max(0, maxRiders - members.length),
     perSeatFareNow:       poolPerSeatFare(soloFare, members.length),
     perSeatFareIfYouJoin: poolPerSeatFare(soloFare, members.length + 1),
     joinable: JOINABLE_STATUSES.has(status) && members.length < maxRiders && !alreadyJoined,
+    /**
+     * The ride is real but has not settled with a driver yet, so it cannot be
+     * joined *yet* — a different thing from a full or departed ride, and the
+     * join screen says so rather than showing a dead end.
+     */
+    awaitingDriver,
+    /** Who is driving, once there is one. Null while the fare is still open. */
+    driverName:    driver?.displayName  ?? null,
+    driverVehicle: driver?.vehicleLabel ?? null,
+    driverPlate:   driver?.plate        ?? null,
+    driverRating:  typeof driver?.rating === 'number' ? driver.rating : null,
     alreadyJoined,
     // The trip itself is only revealed to people already on the ride.
     tripId: alreadyJoined ? tripRef.id : null,
@@ -115,8 +172,13 @@ export const joinPoolTrip = onCall(async (req) => {
         riders: members.length,
         perSeatFare: poolPerSeatFare(soloFare, members.length),
         members,
+        driverId: (snap.get('driverId') as string | null) ?? null,
         alreadyJoined: true,
       };
+    }
+    if (status === AWAITING_DRIVER) {
+      // Not a failure of this ride — it just is not ready to be shared yet.
+      throw new HttpsError('failed-precondition', AWAITING_DRIVER_MESSAGE);
     }
     if (!JOINABLE_STATUSES.has(status)) {
       throw new HttpsError('failed-precondition', 'This pool ride has already departed or ended.');
@@ -139,6 +201,23 @@ export const joinPoolTrip = onCall(async (req) => {
     const newMembers  = [...members, ctx.uid];
     const perSeatFare = poolPerSeatFare(soloFare, newMembers.length);
 
+    // Write them into the roster as well as the member list. The uid alone told
+    // nobody anything: the driver could not name the person they were picking
+    // up or say what to collect from them, and the riders already in the car
+    // were never told a stranger had been added to it.
+    const roster = rosterForTrip(snap.data() ?? {});
+    const newRoster = [
+      ...roster,
+      joinerRosterEntry({
+        uid: ctx.uid,
+        name: (userSnap.get('name') as string | undefined)
+          ?? (userSnap.get('displayName') as string | undefined),
+        gender: joinerGender,
+        pickup: snap.get('pickup'),
+        dropoff: snap.get('dropoff'),
+      }),
+    ];
+
     // Bump the running gender tally so the nearby feed reflects who's aboard.
     // Merge keeps the existing map and only touches the joiner's bucket.
     const genderBump =
@@ -150,6 +229,7 @@ export const joinPoolTrip = onCall(async (req) => {
       tripRef,
       {
         poolMembers: newMembers,
+        poolRoster: newRoster,
         seats: newMembers.length,
         poolPerSeatFare: perSeatFare,
         ...(genderBump ? { poolGenders: genderBump } : {}),
@@ -157,33 +237,43 @@ export const joinPoolTrip = onCall(async (req) => {
       },
       { merge: true },
     );
-    // Keep the drivers' feed in sync while the request is still open.
-    if (status === 'requested') {
-      tx.set(
-        db.doc(`openRequests/${tripRef.id}`),
-        {
-          seats: newMembers.length,
-          poolRiders: newMembers.length,
-          poolPerSeatFare: perSeatFare,
-          ...(genderBump ? { poolGenders: genderBump } : {}),
-        },
-        { merge: true },
-      );
-    }
+    // No openRequests mirror to keep in sync: a join is only possible from
+    // `matched` onwards, and acceptBid deletes that document when it matches.
     tx.set(db.doc(`users/${ctx.uid}`), { activeTripId: tripRef.id }, { merge: true });
 
-    return { tripId: tripRef.id, riders: newMembers.length, perSeatFare, members: newMembers, alreadyJoined: false };
+    return {
+      tripId: tripRef.id,
+      riders: newMembers.length,
+      perSeatFare,
+      members: newMembers,
+      driverId: (snap.get('driverId') as string | null) ?? null,
+      alreadyJoined: false,
+    };
   });
 
   if (!result.alreadyJoined) {
     const joinerSnap = await db.doc(`users/${ctx.uid}`).get();
-    const joinerName = (joinerSnap.get('displayName') as string | undefined) ?? 'A rider';
+    // Same lookup order the roster uses, so the push and the passenger list
+    // never disagree about what this person is called.
+    const joinerName = (joinerSnap.get('name') as string | undefined)
+      ?? (joinerSnap.get('displayName') as string | undefined)
+      ?? 'A rider';
     await sendToUsers(
       result.members.filter((m) => m !== ctx.uid),
-      '🎉 New rider joined your pool',
-      `${joinerName} joined — everyone now pays PKR ${result.perSeatFare}.`,
+      `👤 ${firstNameOf(joinerName)} is sharing your ride`,
+      `${result.riders} riders in the car now — everyone pays PKR ${result.perSeatFare} each.`,
       { tripId: result.tripId },
     );
+    // The driver has to pick this person up and collect from them, so they are
+    // told by name too — they used to find out by counting heads at the kerb.
+    if (result.driverId) {
+      await sendToUser(
+        result.driverId,
+        `👤 ${firstNameOf(joinerName)} joined your shared ride`,
+        `${result.riders} passengers now — PKR ${result.perSeatFare} from each.`,
+        { tripId: result.tripId },
+      );
+    }
     logger.info('Pool joined', { tripId: result.tripId, joiner: ctx.uid, riders: result.riders });
   }
 
@@ -213,7 +303,10 @@ export const setPoolVisibility = onCall(async (req) => {
       throw new HttpsError('permission-denied', 'Only the ride host can change visibility.');
     }
     const status = snap.get('status') as TripStatus;
-    if (!JOINABLE_STATUSES.has(status)) {
+    // Wider than JOINABLE on purpose: a pool waiting on a driver cannot be
+    // joined, but the host is still allowed to decide whether it will be
+    // public once it is.
+    if (!HOST_EDITABLE_STATUSES.has(status)) {
       throw new HttpsError('failed-precondition', 'This ride can no longer be changed.');
     }
     tx.set(tripRef, { poolVisibility: visibility, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -242,7 +335,7 @@ const nearbySchema = z.object({
   destRadiusKm: z.number().min(0.5).max(25).default(5),
 });
 
-/** Pools that already have a driver but have not departed — still joinable. */
+/** Exactly the statuses a stranger may be offered a seat in. See JOINABLE_STATUSES. */
 const MATCHED_JOINABLE: TripStatus[] = ['matched', 'arriving', 'arrived'];
 
 /** One row of the discovery feed. Carries areas and counts, never identities. */
@@ -257,25 +350,37 @@ interface PoolFeedRow {
   seatsLeft: number;
   perSeatFareIfYouJoin: number;
   distanceKm: number;
-  /** True when a driver has already accepted — the ride is on its way. */
+  /**
+   * Always true now — a pool without a confirmed driver is not in this feed at
+   * all. Kept so an older install still renders "driver on the way".
+   */
   hasDriver: boolean;
+  /** Who is driving, so the rider is choosing a car and not just a price. */
+  driverName: string | null;
+  driverVehicle: string | null;
+  /** First names of the people already aboard. Never full names, never uids. */
+  companions: { firstName: string; gender: string }[];
+  /** Where the ride is in its journey, for "picking up now" vs "on the way". */
+  status: TripStatus;
 }
 
 /**
- * Public pool trips near the caller that still have seats — shown on the
- * booking screen so a rider can join an existing pool instead of starting one.
+ * Public pool trips near the caller that still have seats — shown at the top of
+ * the booking screen so a rider sees the cheaper option before they price their
+ * own ride.
  *
  * With destLat/destLng the feed narrows to pools going the rider's way: the
  * pickup must be within radiusKm of the rider and the drop-off within
  * destRadiusKm of where they want to go.
  *
- * "Public" means public to everyone, so the feed spans BOTH sources a joinable
- * pool can live in:
- *   • openRequests — the driver feed, which exists only while status is
- *     'requested' and is deleted the moment a driver accepts;
- *   • trips        — pools that already have a driver but haven't departed.
- * Reading only the first made a public pool disappear from discovery as soon as
- * a driver accepted it, even though riders may still join until it departs.
+ * ONLY CONFIRMED RIDES APPEAR HERE. The feed used to include `openRequests` —
+ * pools whose host was still haggling with drivers — which meant a rider could
+ * be shown a seat, tap Join, and be attached to a ride nobody had agreed to
+ * drive: the fare could still move under them, and the whole thing could expire
+ * or be cancelled while they waited. A pool enters this feed at `matched`, when
+ * the driver has bid and the host has accepted, and leaves it when the car
+ * departs. Everything in this list is a real car with a real driver and a
+ * settled price.
  */
 export const getNearbyPublicPoolTrips = onCall(async (req) => {
   const ctx = requireAuth(req);
@@ -324,6 +429,7 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
     }
 
     const genders = (d.poolGenders as { male?: number; female?: number } | undefined) ?? {};
+    const driver = d.driverInfo as { displayName?: string; vehicleLabel?: string } | undefined;
 
     seenCodes.add(code);
     pools.push({
@@ -337,23 +443,21 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
       seatsLeft: MAX_POOL_RIDERS - riders,
       perSeatFareIfYouJoin: poolPerSeatFare(soloFare, riders + 1),
       distanceKm: Math.round(distanceKm * 10) / 10,
-      // Lets the joiner see they'd be hopping onto a ride that already has a
-      // driver on the way, rather than one still waiting for bids.
       hasDriver,
+      driverName:    driver?.displayName  ?? null,
+      driverVehicle: driver?.vehicleLabel ?? null,
+      // First names only. Enough to know a car has two women and a man in it
+      // and decide whether to get in; not enough to identify anybody.
+      companions: rosterForTrip(d)
+        .filter((r) => r.uid !== ctx.uid)
+        .map((r) => ({ firstName: r.firstName, gender: r.gender })),
+      status: (d.status as TripStatus) ?? 'matched',
     });
   };
 
-  const openSnap = await db.collection('openRequests')
-    .where('pool', '==', true)
-    .limit(100)
-    .get();
-  for (const doc of openSnap.docs) {
-    const d = doc.data();
-    consider(doc.id, d, (d.poolRiders as number | undefined) ?? 1, d.offeredFare as number, false);
-  }
-
-  // Matched-but-not-departed pools. Best-effort: if the composite index is not
-  // in place yet, discovery still returns the open requests above.
+  // One source, deliberately: trips that a driver has already agreed to carry.
+  // Best-effort — if the composite index is missing, discovery comes back empty
+  // rather than falling back to unconfirmed requests.
   try {
     const matchedSnap = await db.collection('trips')
       .where('pool', '==', true)
@@ -367,7 +471,7 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
       consider(doc.id, d, members.length, soloFare, true);
     }
   } catch (err) {
-    logger.warn('getNearbyPublicPoolTrips: matched-pool scan skipped', err);
+    logger.warn('getNearbyPublicPoolTrips: matched-pool scan failed', err);
   }
 
   pools.sort((a, b) => a.distanceKm - b.distanceKm);

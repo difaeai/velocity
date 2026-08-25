@@ -5,8 +5,11 @@
  *  - createTrip(pool): full solo fare validated (never the discounted per-seat
  *    fare), share code generated + mapped, poolMembers seeded, feed mirrored
  *  - getPoolTripByCode: join snapshot with correct per-seat tier maths
- *  - joinPoolTrip: adds rider, recomputes everyone's per-seat fare, updates
- *    the drivers' feed, idempotent for existing members, rejects when full
+ *  - joinPoolTrip: adds rider, recomputes everyone's per-seat fare, records the
+ *    roster, idempotent for existing members, rejects when full
+ *  - CONFIRMED-ONLY: a pool still haggling with drivers ('requested') is never
+ *    discoverable and cannot be joined — only a matched ride can be shared
+ *  - the roster names everyone in the car, for the driver and the riders both
  *  - visibility: private pools never appear in nearby discovery; the host's
  *    own pool is excluded; setPoolVisibility is host-only
  *  SECURITY: a rider with an active trip cannot join a second pool
@@ -47,6 +50,31 @@ async function createPool(uid = HOST, overrides: Record<string, unknown> = {}) {
   return res as { tripId: string; shareCode: string | null };
 }
 
+/**
+ * What `acceptBid` leaves behind: a driver assigned, a locked fare, and the
+ * open-request mirror gone. A pool is only shareable from this point on, so
+ * almost every test here has to get the ride to it first.
+ */
+async function confirmWithDriver(tripId: string, fare = 400) {
+  await db().doc(`openRequests/${tripId}`).delete();
+  await db().doc(`trips/${tripId}`).set(
+    {
+      status: 'matched',
+      fare,
+      driverId: 'pool-driver',
+      driverInfo: { driverId: 'pool-driver', displayName: 'Bilal Khan', vehicleLabel: 'Toyota Corolla', plate: 'ABC-123', rating: 4.8 },
+    },
+    { merge: true },
+  );
+}
+
+/** A pool that already has its driver — the only kind anyone may join. */
+async function createConfirmedPool(uid = HOST, overrides: Record<string, unknown> = {}) {
+  const res = await createPool(uid, overrides);
+  await confirmWithDriver(res.tripId);
+  return res;
+}
+
 beforeEach(async () => {
   await clearFirestore();
   for (const uid of [HOST, JOINER, JOINER2, JOINER3, LATE]) {
@@ -79,6 +107,11 @@ describe('createTrip (pool)', () => {
     expect(trip.poolVisibility).toBe('public');
     expect(trip.poolMembers).toEqual([HOST]);
     expect(trip.poolPerSeatFare).toBe(400);
+    // The host is on the roster from the moment the pool exists — otherwise
+    // they are invisible on their own ride until somebody else joins it.
+    expect(trip.poolRoster).toHaveLength(1);
+    expect(trip.poolRoster[0].uid).toBe(HOST);
+    expect(trip.poolRoster[0].kind).toBe('host');
 
     const mapping = await db().doc(`poolShareCodes/${shareCode}`).get();
     expect(mapping.exists).toBe(true);
@@ -105,7 +138,7 @@ describe('createTrip (pool)', () => {
 
 describe('getPoolTripByCode', () => {
   it('returns a joinable snapshot with tier maths for an outsider', async () => {
-    const { shareCode } = await createPool();
+    const { shareCode } = await createConfirmedPool();
     const info = await getPoolTripByCode.run(makeReq({ code: shareCode! }, JOINER));
     expect(info.joinable).toBe(true);
     expect(info.alreadyJoined).toBe(false);
@@ -115,6 +148,18 @@ describe('getPoolTripByCode', () => {
     expect(info.perSeatFareNow).toBe(400);
     expect(info.perSeatFareIfYouJoin).toBe(240);
     expect(info.pickupAddress).toBe(PICKUP.address);
+    // Choosing this car, not just this price: who is driving and who is in it.
+    expect(info.driverName).toBe('Bilal Khan');
+    expect(info.driverVehicle).toBe('Toyota Corolla');
+    expect(info.companions.map((c: { firstName: string }) => c.firstName)).toEqual(['User']);
+  });
+
+  it('says a pool is still finding a driver rather than offering a seat in it', async () => {
+    const { shareCode } = await createPool(); // still 'requested'
+    const info = await getPoolTripByCode.run(makeReq({ code: shareCode! }, JOINER));
+    expect(info.awaitingDriver).toBe(true);
+    expect(info.joinable).toBe(false);
+    expect(info.driverName).toBeNull();
   });
 
   it('rejects unknown codes', async () => {
@@ -125,7 +170,7 @@ describe('getPoolTripByCode', () => {
 
 describe('joinPoolTrip', () => {
   it('adds the rider and drops everyone to the tier fare', async () => {
-    const { tripId, shareCode } = await createPool();
+    const { tripId, shareCode } = await createConfirmedPool();
     const res = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     expect(res.alreadyJoined).toBe(false);
     expect(res.riders).toBe(2);
@@ -137,17 +182,45 @@ describe('joinPoolTrip', () => {
     expect(trip.seats).toBe(2);
     expect(trip.poolPerSeatFare).toBe(240);
 
-    const feed = (await db().doc(`openRequests/${tripId}`).get()).data()!;
-    expect(feed.poolRiders).toBe(2);
-    expect(feed.poolPerSeatFare).toBe(240);
-
     // Joiner now tracks the pool as their active trip.
     const joiner = (await db().doc(`users/${JOINER}`).get()).data()!;
     expect(joiner.activeTripId).toBe(tripId);
   });
 
-  it('is idempotent for existing members', async () => {
+  it('REFUSES a pool that has not agreed a fare with a driver yet', async () => {
+    // The bug this closes: a rider could be sold a seat on a ride that was
+    // still being haggled over, and could then be left holding an activeTripId
+    // for a trip that expired or was cancelled out from under them.
     const { shareCode } = await createPool();
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
+      .rejects.toThrow(/still agreeing a fare with a driver/);
+
+    // …and goes through the moment the driver is confirmed.
+    const { tripId } = await createPool(JOINER2);
+    await db().doc(`users/${JOINER}`).set({ displayName: 'User pool-joiner' });
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    await confirmWithDriver(tripId);
+    const ok = await joinPoolTrip.run(makeReq({ code: trip.shareCode as string }, JOINER));
+    expect(ok.riders).toBe(2);
+  });
+
+  it('writes the joiner onto the roster so everybody knows who is in the car', async () => {
+    await db().doc(`users/${JOINER}`).set({ name: 'Ayesha Malik', gender: 'female' });
+    const { tripId, shareCode } = await createConfirmedPool();
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolRoster).toHaveLength(2);
+    const joined = (trip.poolRoster as { uid: string; firstName: string; gender: string; kind: string }[])[1];
+    expect(joined.uid).toBe(JOINER);
+    expect(joined.kind).toBe('share');
+    expect(joined.gender).toBe('female');
+    // First name only: the trip document is readable by every co-rider.
+    expect(joined.firstName).toBe('Ayesha');
+  });
+
+  it('is idempotent for existing members', async () => {
+    const { shareCode } = await createConfirmedPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     const again = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     expect(again.alreadyJoined).toBe(true);
@@ -155,7 +228,7 @@ describe('joinPoolTrip', () => {
   });
 
   it('rejects when the pool is full', async () => {
-    const { shareCode } = await createPool();
+    const { shareCode } = await createConfirmedPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER2));
     const full = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER3));
@@ -166,7 +239,7 @@ describe('joinPoolTrip', () => {
   });
 
   it('SECURITY: a rider with their own active trip cannot join', async () => {
-    const { shareCode } = await createPool();
+    const { shareCode } = await createConfirmedPool();
     await createPool(JOINER); // joiner hosts their own active pool
     await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
       .rejects.toThrow(/already have an active trip/);
@@ -175,8 +248,8 @@ describe('joinPoolTrip', () => {
 
 describe('visibility', () => {
   it('private pools are invisible in nearby discovery; public ones appear', async () => {
-    await createPool(HOST, { poolVisibility: 'private' });
-    const { tripId: publicTripId } = await createPool(JOINER); // defaults public
+    await createConfirmedPool(HOST, { poolVisibility: 'private' });
+    const { tripId: publicTripId } = await createConfirmedPool(JOINER); // defaults public
 
     const res = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER2),
@@ -189,34 +262,60 @@ describe('visibility', () => {
   });
 
   it("excludes the caller's own pool from discovery", async () => {
-    await createPool(HOST);
+    await createConfirmedPool(HOST);
     const res = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, HOST),
     );
     expect(res.pools).toHaveLength(0);
   });
 
-  it('keeps a public pool discoverable after a driver accepts it', async () => {
-    // A matched pool leaves the drivers' open feed but is still joinable until
-    // it departs — discovery must pick it up from the trip itself.
-    const { tripId } = await createPool(HOST);
-    await db().doc(`openRequests/${tripId}`).delete();
-    await db().doc(`trips/${tripId}`).set({ status: 'matched', fare: 400 }, { merge: true });
+  it('NEVER surfaces a pool that is still haggling with drivers', async () => {
+    // The whole point of the confirmed-only rule: a rider must not be offered a
+    // seat in a car nobody has agreed to drive yet, at a price that can still
+    // move. The identical pool becomes discoverable once its driver is locked.
+    const { tripId } = await createPool(HOST); // status 'requested'
+    const hidden = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
+    );
+    expect(hidden.pools).toHaveLength(0);
+
+    await confirmWithDriver(tripId);
+    const shown = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
+    );
+    expect(shown.pools).toHaveLength(1);
+  });
+
+  it('carries the driver and the people already aboard, so the rider picks a car', async () => {
+    await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq' });
+    // The host's gender on the roster is the one they BOOKED with, not whatever
+    // their profile says — that is the figure the pool's tally is built from.
+    const { tripId } = await createPool(HOST, { passengerGender: 'male' });
+    await confirmWithDriver(tripId);
 
     const res = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
     );
-    const pools = res.pools as { code: string; riders: number; hasDriver: boolean; perSeatFareIfYouJoin: number }[];
-    expect(pools).toHaveLength(1);
-    expect(pools[0].hasDriver).toBe(true);
-    expect(pools[0].riders).toBe(1);
-    expect(pools[0].perSeatFareIfYouJoin).toBe(240); // 2 riders → 60% of 400
+    const pool = (res.pools as {
+      hasDriver: boolean;
+      driverName: string | null;
+      driverVehicle: string | null;
+      companions: { firstName: string; gender: string }[];
+      riders: number;
+      perSeatFareIfYouJoin: number;
+      status: string;
+    }[])[0];
+    expect(pool.hasDriver).toBe(true);
+    expect(pool.driverName).toBe('Bilal Khan');
+    expect(pool.driverVehicle).toBe('Toyota Corolla');
+    expect(pool.status).toBe('matched');
+    expect(pool.companions).toEqual([{ firstName: 'Usman', gender: 'male' }]);
+    expect(pool.riders).toBe(1);
+    expect(pool.perSeatFareIfYouJoin).toBe(240); // 2 riders → 60% of 400
   });
 
   it('a private pool stays hidden even after a driver accepts it', async () => {
-    const { tripId } = await createPool(HOST, { poolVisibility: 'private' });
-    await db().doc(`openRequests/${tripId}`).delete();
-    await db().doc(`trips/${tripId}`).set({ status: 'matched' }, { merge: true });
+    await createConfirmedPool(HOST, { poolVisibility: 'private' });
 
     const res = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
@@ -244,7 +343,7 @@ describe('gender tally', () => {
     await db().doc(`users/${JOINER}`).set({ displayName: 'J1', gender: 'male' });
     await db().doc(`users/${JOINER2}`).set({ displayName: 'J2', gender: 'female' });
 
-    const { tripId, shareCode } = await createPool(HOST, { passengerGender: 'female' });
+    const { tripId, shareCode } = await createConfirmedPool(HOST, { passengerGender: 'female' });
     let trip = (await db().doc(`trips/${tripId}`).get()).data()!;
     expect(trip.poolGenders).toEqual({ male: 0, female: 1 });
 
@@ -267,7 +366,7 @@ describe('gender tally', () => {
 
 describe('destination filter', () => {
   it('only surfaces pools whose drop-off is near the searched destination', async () => {
-    const { tripId } = await createPool(JOINER); // drops at G-9 Markaz (DROPOFF)
+    const { tripId } = await createConfirmedPool(JOINER); // drops at G-9 Markaz (DROPOFF)
 
     // Searching toward the pool's actual destination finds it…
     const near = await getNearbyPublicPoolTrips.run(

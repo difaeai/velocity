@@ -74,6 +74,15 @@ export interface CreateTripInput {
   dropoff: GeoPoint;
 }
 
+/** One person already in a shared car, as a stranger is allowed to see them. */
+export interface PoolCompanion {
+  /** First name only. Never a full name, never a uid. */
+  firstName: string;
+  gender: Gender | string;
+  /** How they came to be aboard — 'host' booked it, 'share' joined it. */
+  kind?: 'host' | 'share';
+}
+
 export interface PoolTripByCode {
   code: string;
   status: TripStatus;
@@ -85,11 +94,24 @@ export interface PoolTripByCode {
   riders: number;
   males: number;
   females: number;
+  /** Who is already in the car, by first name and gender. */
+  companions: PoolCompanion[];
   maxRiders: number;
   seatsLeft: number;
   perSeatFareNow: number;
   perSeatFareIfYouJoin: number;
   joinable: boolean;
+  /**
+   * The ride exists but has not settled a fare with a driver yet, so it cannot
+   * be joined *yet* — which is a different thing from full or departed, and the
+   * invite screen says so rather than showing a dead end.
+   */
+  awaitingDriver?: boolean;
+  /** Who is driving. Null only while the ride is still awaiting a driver. */
+  driverName: string | null;
+  driverVehicle: string | null;
+  driverPlate: string | null;
+  driverRating: number | null;
   alreadyJoined: boolean;
   tripId: string | null;
 }
@@ -106,8 +128,18 @@ export interface NearbyPublicPool {
   seatsLeft: number;
   perSeatFareIfYouJoin: number;
   distanceKm: number;
-  /** A driver has already accepted this pool — it's on the way, not waiting. */
+  /**
+   * Always true: only pools whose driver is confirmed reach this feed at all.
+   * A ride still haggling over its fare is not something to sell a seat in.
+   */
   hasDriver?: boolean;
+  /** Who is driving, so the rider is choosing a car and not just a price. */
+  driverName?: string | null;
+  driverVehicle?: string | null;
+  /** Who is already aboard, by first name and gender. */
+  companions?: PoolCompanion[];
+  /** 'matched' · 'arriving' · 'arrived' — how far along the ride already is. */
+  status?: TripStatus;
 }
 
 /** One blurred map pin — an opaque key and a coordinate, and nothing else. */
@@ -193,6 +225,11 @@ export interface PoolRiderView {
   dropoffLat?: number | null;
   dropoffLng?: number | null;
   kind: 'host' | 'share' | 'enroute';
+  /**
+   * A number to ring when a passenger is not where they said they'd be. Driver
+   * only — co-riders never see each other's phone numbers.
+   */
+  phone?: string | null;
   /**
    * Your own fare. Null for everybody else's — that is theirs, not yours. The
    * driver is the exception: they cannot collect the right cash from the right

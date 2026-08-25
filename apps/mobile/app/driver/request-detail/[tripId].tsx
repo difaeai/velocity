@@ -206,15 +206,23 @@ export default function RequestDetailScreen() {
           contentContainerStyle={[styles.sheetBody, { paddingBottom: 16 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* What kind of job this is, before anything else: a pool means the
-              car makes several pickups and several drop-offs, a solo is one of
-              each. Same fare figure, very different drive. */}
+          {/* What kind of job this is, before anything else.
+              A pool is offered to other riders only ONCE THIS DRIVER HAS
+              ACCEPTED — nobody can take a seat in a car that has not agreed a
+              fare yet — so at this moment it is always one rider, and what the
+              driver is really being told is that more may follow and that each
+              one adds to what they take home. The old wording ("N riders now,
+              several pickups and several drop-offs on this one fare") was wrong
+              on all three counts: the count could only ever be 1 here, everyone
+              shares the host's route, and the fare is per seat, not for the car. */}
           {request.pool === true ? (
             <View style={[styles.jobBanner, styles.jobBannerPool]}>
-              <Text style={styles.jobBannerTag}>POOL RIDE</Text>
+              <Text style={styles.jobBannerTag}>SHARED RIDE</Text>
               <Text style={styles.jobBannerTxt}>
-                {request.poolRiders ?? 1} rider{(request.poolRiders ?? 1) === 1 ? '' : 's'} now, up to{' '}
-                {request.maxPoolRiders ?? 4} — several pickups and several drop-offs on this one fare.
+                Accept and this ride is offered to other riders going the same way — up to{' '}
+                {request.maxPoolRiders ?? 4} in the car, all to the same drop-off. Each of them
+                pays their own share, so every rider who joins adds to what you earn for the
+                same drive. You let them out one at a time and collect from each.
               </Text>
             </View>
           ) : (

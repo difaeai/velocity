@@ -25,7 +25,7 @@ import { useEffect } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
-import { checkForAppUpdate, type AvailableUpdate } from '../lib/appUpdate';
+import { checkForAppUpdate, describeUpdate, type AvailableUpdate } from '../lib/appUpdate';
 
 /** One prompt per app process. Survives the root layout's theme/language remounts. */
 let promptedThisLaunch = false;
@@ -57,7 +57,9 @@ async function openStore(url: string): Promise<void> {
 
 function prompt(update: AvailableUpdate): void {
   const body = [
-    `Version ${update.latestVersion} is available on the Play Store — you're on ${update.currentVersion}.`,
+    // Not composed here: a release that keeps the version string and only bumps
+    // the build has to read as an update rather than as "1.5.0 → 1.5.0".
+    describeUpdate(update),
     update.releaseNotes,
     update.mandatory
       ? 'This update is required to keep using Velocity.'

@@ -26,10 +26,38 @@ const LONGEST_COOLDOWN_S = Math.max(...COOLDOWN_LADDER_S);
 export const MAX_SENDS_PER_NUMBER = 5;
 
 /**
- * Sends allowed per device per hour across *all* numbers. Without this, "maybe my
- * other SIM works" turns one throttled number into a throttled device.
+ * RETRIES allowed per device per hour, across all numbers. This is the brake on
+ * "maybe my other SIM works" — one number that has already been throttled being
+ * chased around a handful of SIMs until the whole device is banned.
+ *
+ * It deliberately does NOT count a number's first code (see FIRST_CODE_EXEMPT
+ * below), so it can never be the reason a new person is turned away.
  */
-export const MAX_SENDS_PER_DEVICE = 10;
+export const MAX_SENDS_PER_DEVICE = 40;
+
+/**
+ * The one device ceiling that nothing is exempt from.
+ *
+ * A signup drive runs one phone past a hundred people, and every one of them is
+ * a first code that must go through. That is the whole point of the exemption —
+ * but an exemption with no ceiling at all is a free SMS pump, so this is the
+ * hard stop, set well above any real queue of people and well below anything
+ * that would cost money to sit through.
+ */
+export const MAX_SENDS_PER_DEVICE_HARD = 150;
+
+/**
+ * A number nobody has asked for a code for on this device in the last hour is a
+ * NEW PERSON, not a retry. Their first code skips the per-device retry cap and
+ * the per-device block entirely.
+ *
+ * Without this, ten people signing up on the same phone — a driver onboarding
+ * desk, a family sharing a handset, a demo — locked the eleventh out for an
+ * hour over a queue they had nothing to do with. Firebase throttles per number
+ * as well as per device, and the per-number ladder below is untouched, so the
+ * one thing this loosens is precisely the one thing that punished a stranger.
+ */
+const FIRST_CODE_EXEMPT = true;
 
 export const WINDOW_MS = 60 * 60 * 1000;
 
@@ -78,21 +106,32 @@ export function pruneLog(log: OtpSendLog, now: number): OtpSendLog {
 
 /** May we ask Firebase for a code for `phoneKey` right now? */
 export function evaluateSend(log: OtpSendLog, phoneKey: string, now: number): OtpDecision {
+  const mine = recent(log, phoneKey, now);
+  const device = recent(log, DEVICE_KEY, now);
+  // Nobody has asked for a code for this number on this phone in the last hour,
+  // so this is somebody new rather than somebody retrying. Everything keyed to
+  // the DEVICE — the block and the retry cap — steps aside for them; everything
+  // keyed to the NUMBER still applies, because that is what Firebase counts.
+  const firstCodeForThisNumber = FIRST_CODE_EXEMPT && mine.length === 0;
+
   // A server-side throttle outranks everything else: retrying during it is what
   // extends it.
-  for (const key of [phoneKey, DEVICE_KEY]) {
+  const blockedKeys = firstCodeForThisNumber ? [phoneKey] : [phoneKey, DEVICE_KEY];
+  for (const key of blockedKeys) {
     const until = log.blockedUntil?.[key] ?? 0;
     if (until > now) return { allowed: false, reason: 'throttled', waitMs: until - now };
   }
-
-  const mine = recent(log, phoneKey, now);
-  const device = recent(log, DEVICE_KEY, now);
 
   if (mine.length >= MAX_SENDS_PER_NUMBER) {
     const oldest = Math.min(...mine);
     return { allowed: false, reason: 'capped', waitMs: oldest + WINDOW_MS - now };
   }
-  if (device.length >= MAX_SENDS_PER_DEVICE) {
+  // The hard ceiling binds everyone, exempt or not.
+  if (device.length >= MAX_SENDS_PER_DEVICE_HARD) {
+    const oldest = Math.min(...device);
+    return { allowed: false, reason: 'capped', waitMs: oldest + WINDOW_MS - now };
+  }
+  if (!firstCodeForThisNumber && device.length >= MAX_SENDS_PER_DEVICE) {
     const oldest = Math.min(...device);
     return { allowed: false, reason: 'capped', waitMs: oldest + WINDOW_MS - now };
   }

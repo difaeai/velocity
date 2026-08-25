@@ -23,6 +23,8 @@ import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireRole, invalid } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 import type { PoolRider } from './enRoute';
+import { poolPerSeatFare } from '../domain/fares';
+import { rosterForTrip, type PoolRosterEntry } from './poolRoster';
 
 /** A rider who has been let out. Stored on their entry in `poolRiders`. */
 type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue };
@@ -50,7 +52,17 @@ export const dropOffRider = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'The trip is not running.');
     }
 
-    const riders = (snap.get('poolRiders') as DroppedRider[] | undefined) ?? [];
+    // Which array holds the riders depends on how the pool was formed: an
+    // en-route pickup writes the priced `poolRiders`, a destination pool writes
+    // `poolRoster` (see trips/poolRoster). Both are lists of people to let out
+    // one at a time, and the field that is present is the one we update — a
+    // destination pool used to have neither, which is why its driver had only
+    // "Complete trip" and the first passenger out ended everyone's ride.
+    const enRouteRiders = (snap.get('poolRiders') as DroppedRider[] | undefined) ?? [];
+    const usingRoster = enRouteRiders.length === 0;
+    const field = usingRoster ? 'poolRoster' : 'poolRiders';
+    const riders = usingRoster ? rosterForTrip(snap.data() ?? {}) : enRouteRiders;
+
     const index = riders.findIndex((r) => r.uid === riderUid);
     if (index < 0) invalid('That rider is not on this ride.');
 
@@ -65,15 +77,27 @@ export const dropOffRider = onCall(async (req) => {
     );
     tx.set(
       tripRef,
-      { poolRiders: updated, updatedAt: FieldValue.serverTimestamp() },
+      { [field]: updated, updatedAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
 
     const remaining = updated.filter((r) => !r.droppedAt).length;
+    // A destination pool prices everyone the same, so what this rider owes is
+    // the tier fare — the driver's panel shows it and the rider is told it in
+    // the push below, so the amount never rests on the driver's word alone.
+    const soloFare = (snap.get('fare') as number | null) ?? (snap.get('offeredFare') as number) ?? 0;
+    const fare = usingRoster
+      ? ((snap.get('poolFares') as Record<string, number> | undefined)?.[riderUid]
+        ?? poolPerSeatFare(soloFare, Math.max(1, riders.length)))
+      : (rider as DroppedRider).fare;
+    const name = usingRoster
+      ? (rider as PoolRosterEntry).firstName
+      : (rider as DroppedRider).name;
+
     return {
       remaining,
-      fare: rider.fare,
-      name: rider.name,
+      fare,
+      name,
       paymentMethod: (snap.get('paymentMethod') as string | undefined) ?? 'cash',
     };
   });
