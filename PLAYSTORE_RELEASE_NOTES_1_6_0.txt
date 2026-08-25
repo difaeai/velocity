@@ -1,0 +1,79 @@
+🔀 SHARING A RIDE, WHERE YOU CAN ACTUALLY SEE IT
+
+Sharing a ride has always been the cheapest way to travel on Velocity. It was
+also the hardest thing in the app to find, and once you were in a shared car
+neither you nor your driver was told much about it. This release fixes all of
+that.
+
+✨ WHAT'S NEW
+
+🔀 SHARED RIDES NOW COME FIRST
+- Rides already heading your way appear at the TOP of the booking screen, before
+  you price anything
+- They used to sit below the fare — you had to scroll past every decision you
+  were making to find the option that cost less
+- Every ride in the list shows the driver, the car, who is already aboard and
+  what your seat would cost
+
+✅ ONLY REAL RIDES, WITH A REAL DRIVER
+- A shared ride is offered to you only after its driver is confirmed and the
+  fare is agreed
+- No more joining a ride that was still being haggled over, at a price that
+  could still move, that could disappear before it started
+- Open an invite too early and Velocity tells you it is still finding a driver,
+  and lets you check back — instead of pretending the ride has gone
+
+👥 YOU KNOW WHO IS IN THE CAR
+- A "Sharing this car" card shows everyone in the ride: their first name,
+  whether they are a man or a woman, and where they get in and out
+- It appears the moment somebody joins, so you hear it from us rather than
+  finding a stranger in the back seat
+- The invite screen shows the same before you decide, along with your driver's
+  name, car and plate
+- Something not right? The driver is one tap away
+
+💵 YOUR FARE, NOT THE WHOLE CAR'S
+- Your ride screen now shows what YOU pay, not the fare for the whole car
+- A shared-ride banner tells you how many are aboard, how many seats are free,
+  and that your share falls as more people join
+
+🚗 FOR DRIVERS — YOU FINALLY KNOW YOUR CAR
+- A passenger list before pickup: who you are collecting, how many, and what
+  each of them owes
+- Every passenger who joins after you accept is pushed to you by name
+- During the ride you drop people off ONE AT A TIME, each by name, with their
+  own fare and a running total of what is still to collect
+- Can't find someone at the kerb? Call them from the list
+- Before this, the first passenger you dropped ended everybody's ride
+
+📊 WHAT ELSE IMPROVED
+- Signing up on a shared phone no longer makes people wait behind each other —
+  a new number's first code always goes through
+- The update notice now tells you what actually changed instead of offering you
+  the version you are already running
+
+🚀 NEXT UP
+- Driver voice booking
+- App-wide security attestation (App Check)
+- More payment options
+
+Available now in your Velocity app! 🎉
+
+Questions? Tap Support from Settings for help.
+
+---
+
+SHORT VERSION — paste this into Play Console's "What's new" (500-char limit):
+
+Sharing a ride just got a lot clearer. Rides already going your way now appear
+at the top of the booking screen, and only once a real driver is confirmed at an
+agreed fare. You can see who is in the car before you join and while you ride —
+names, genders, and your own share of the fare. Drivers get a passenger list,
+and drop people off one at a time by name. Signing up on a shared phone no
+longer makes anyone wait their turn.
+
+---
+
+Version: 1.6.0
+Version code: 26
+Last Updated: August 25, 2026
