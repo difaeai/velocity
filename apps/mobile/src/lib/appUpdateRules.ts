@@ -24,6 +24,20 @@ export interface AvailableUpdate {
   latestVersion: string;
   /** The version this install is running, for "1.1.0 → 1.2.0" copy. */
   currentVersion: string;
+  /**
+   * Build numbers, when both sides know them.
+   *
+   * Our releases repeatedly ship under an UNCHANGED version string (1.5.0 as
+   * vc25, vc26, …), and on those the version string is identical on both sides
+   * — so a prompt written only in version strings says "1.5.0 is available,
+   * you're on 1.5.0", which reads as a bug and teaches users to dismiss the
+   * prompt. The build numbers are the only thing that actually differs, so the
+   * copy has to be able to reach for them. See `describeUpdate`.
+   */
+  latestBuild: number | null;
+  currentBuild: number | null;
+  /** True when the only difference is the build number, not the version string. */
+  sameVersion: boolean;
   /** Optional admin-written "what's new" blurb. */
   releaseNotes: string | null;
   /** Where the Update button sends the user. */
@@ -121,6 +135,11 @@ export function evaluateUpdate(
   return {
     latestVersion: latestVersion || version,
     currentVersion: version,
+    latestBuild,
+    currentBuild: build,
+    // `versionBehind` is the only way the version strings can differ here:
+    // reaching this line without it means the build gap is the whole story.
+    sameVersion: !versionBehind,
     releaseNotes:
       typeof cfg.releaseNotes === 'string' && cfg.releaseNotes.trim()
         ? cfg.releaseNotes.trim()
@@ -128,4 +147,29 @@ export function evaluateUpdate(
     storeUrl,
     mandatory: !!minVersion && compareVersions(minVersion, version) > 0,
   };
+}
+
+/**
+ * The sentence the prompt leads with.
+ *
+ * Pure and here, rather than inline in the Alert, because getting it wrong is
+ * how the prompt stopped making sense: a same-version release told people that
+ * "1.5.0 is available" while they were already on 1.5.0, which is not an update
+ * notice, it is a contradiction. Whatever actually moved is what the sentence
+ * names — the version when the version moved, the build when only the build did.
+ */
+export function describeUpdate(update: AvailableUpdate): string {
+  if (!update.sameVersion) {
+    return `Version ${update.latestVersion} is available on the Play Store — you're on ${update.currentVersion}.`;
+  }
+  // Same version string, so the build numbers are the difference. `evaluateUpdate`
+  // only returns a same-version update when both builds are known, but the
+  // fallback keeps a malformed config from producing "you're on null".
+  if (update.latestBuild !== null && update.currentBuild !== null) {
+    return (
+      `A newer build of Velocity ${update.latestVersion} is on the Play Store — ` +
+      `update ${update.currentBuild} → ${update.latestBuild}.`
+    );
+  }
+  return `A newer build of Velocity ${update.latestVersion} is available on the Play Store.`;
 }

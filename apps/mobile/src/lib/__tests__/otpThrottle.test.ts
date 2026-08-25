@@ -4,6 +4,7 @@ import {
   DEVICE_KEY,
   EMPTY_LOG,
   MAX_SENDS_PER_DEVICE,
+  MAX_SENDS_PER_DEVICE_HARD,
   MAX_SENDS_PER_NUMBER,
   WINDOW_MS,
   describeDecision,
@@ -78,9 +79,43 @@ describe('evaluateSend', () => {
       log = recordSend(log, `30012345${String(i).padStart(2, '0')}`, now);
       now += 60_000;
     }
+    // A RETRY — this number has already been through the device today, so the
+    // device cap is exactly the thing that should stop it.
+    const d = evaluateSend(log, `30012345${String(MAX_SENDS_PER_DEVICE - 1).padStart(2, '0')}`, now);
+    expect(d.allowed).toBe(false);
+    if (!d.allowed) expect(d.reason).toBe('capped');
+  });
+
+  it('never makes a new person wait behind somebody else queue', () => {
+    // A signup desk: one handset, MAX_SENDS_PER_DEVICE people already served
+    // this hour. The next person in the queue is not a retry and must not be
+    // treated as one — their first code goes out.
+    let log = EMPTY_LOG;
+    let now = T0;
+    for (let i = 0; i < MAX_SENDS_PER_DEVICE; i++) {
+      log = recordSend(log, `30012345${String(i).padStart(2, '0')}`, now);
+      now += 10_000;
+    }
+    expect(evaluateSend(log, '3009999999', now)).toEqual({ allowed: true });
+  });
+
+  it('still refuses everyone once the hard device ceiling is reached', () => {
+    let log = EMPTY_LOG;
+    let now = T0;
+    for (let i = 0; i < MAX_SENDS_PER_DEVICE_HARD; i++) {
+      log = recordSend(log, `3001${String(i).padStart(6, '0')}`, now);
+      now += 10_000;
+    }
     const d = evaluateSend(log, '3009999999', now);
     expect(d.allowed).toBe(false);
     if (!d.allowed) expect(d.reason).toBe('capped');
+  });
+
+  it('a Firebase throttle on one number never blocks a different one', () => {
+    // The device-wide block is what used to spread one number punishment across
+    // everybody sharing the handset.
+    const log = recordThrottle(EMPTY_LOG, NUM, T0, 60 * 60_000);
+    expect(evaluateSend(log, '3009999999', T0 + 60_000)).toEqual({ allowed: true });
   });
 
   it('forgets everything once the hour is up', () => {

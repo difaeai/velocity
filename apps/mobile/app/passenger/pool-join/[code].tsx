@@ -26,6 +26,7 @@ export default function PoolJoinScreen() {
   const [info, setInfo]       = useState<PoolTripByCode | null>(null);
   const [error, setError]     = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!code) return;
@@ -37,6 +38,22 @@ export default function PoolJoinScreen() {
       });
     return () => { alive = false; };
   }, [code]);
+
+  /**
+   * Re-read the invite. Only reachable from the awaiting-driver state, where
+   * the thing the rider is waiting on happens on somebody else's screen —
+   * without this their only move is to back out and open the link again.
+   */
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      setInfo(await api.getPoolTripByCode({ code }));
+    } catch {
+      // Leave the last good snapshot up rather than blanking the screen.
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function join() {
     setJoining(true);
@@ -123,6 +140,40 @@ export default function PoolJoinScreen() {
               </Text>
             </View>
 
+            {/* Who is driving. A pool only becomes joinable once a driver has
+                agreed a fare with the host, so from here on this is always a
+                real car — and naming it is what turns "join a pool" from an
+                abstraction into a decision somebody can actually make. */}
+            {info.driverName ? (
+              <View style={styles.driverBox}>
+                <Text style={styles.driverLabel}>YOUR DRIVER</Text>
+                <Text style={styles.driverName}>
+                  {info.driverName}
+                  {info.driverRating ? `  ★ ${info.driverRating.toFixed(1)}` : ''}
+                </Text>
+                {info.driverVehicle || info.driverPlate ? (
+                  <Text style={styles.driverVehicle}>
+                    {[info.driverVehicle, info.driverPlate].filter(Boolean).join(' · ')}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* And who you would be sharing it with, by first name. This is the
+                question riders actually weigh before tapping Join, and a bare
+                head-count never answered it. */}
+            {info.companions && info.companions.length > 0 ? (
+              <View style={styles.companionBox}>
+                <Text style={styles.driverLabel}>ALREADY IN THE CAR</Text>
+                {info.companions.map((c, i) => (
+                  <Text key={`${c.firstName}-${i}`} style={styles.companionRow}>
+                    {c.gender === 'female' ? '♀' : c.gender === 'male' ? '♂' : '•'} {c.firstName}
+                    {c.kind === 'host' ? '  · started this ride' : ''}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+
             {info.joinable && (
               <View style={styles.fareBox}>
                 <Text style={styles.fareLabel}>YOU'D PAY</Text>
@@ -154,6 +205,23 @@ export default function PoolJoinScreen() {
                 {joining ? 'Joining…' : `Join pool · PKR ${info.perSeatFareIfYouJoin}`}
               </Text>
             </Pressable>
+          ) : info.awaitingDriver ? (
+            <>
+              {/* Not a dead end — a "not yet". The host is still agreeing a
+                  fare with drivers, and a seat is only real once that is
+                  settled, so the screen says which of the two it is instead of
+                  claiming the ride has departed. */}
+              <Text style={styles.stateNote}>
+                ⏳ This ride is still agreeing a fare with a driver.
+              </Text>
+              <Text style={styles.finePrint}>
+                You can join the moment a driver is confirmed — that is when the fare stops moving
+                and the seat becomes real. Check back in a minute, or book your own ride now.
+              </Text>
+              <Pressable style={styles.secondaryBtn} onPress={() => void refresh()}>
+                <Text style={styles.secondaryBtnTxt}>{refreshing ? 'Checking…' : 'Check again'}</Text>
+              </Pressable>
+            </>
           ) : (
             <Text style={styles.stateNote}>
               {info.seatsLeft === 0
@@ -193,6 +261,27 @@ const styles = themed(() => StyleSheet.create({
   },
   backTxt:     { color: '#fff', fontSize: 20, fontWeight: 'bold' },
   headerTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+
+  driverBox: {
+    backgroundColor: colors.glassLime,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    padding: 12,
+    gap: 2,
+  },
+  driverLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1, color: colors.muted },
+  driverName: { fontSize: 15, fontWeight: '900', color: colors.text },
+  driverVehicle: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  companionBox: {
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 3,
+  },
+  companionRow: { fontSize: 13, fontWeight: '700', color: colors.text },
 
   body: { padding: 16, gap: 14 },
   card: {

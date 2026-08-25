@@ -104,6 +104,21 @@ export interface PoolRider {
   kind: 'host' | 'share' | 'enroute';
 }
 
+/** One rider on a destination pool, as recorded on the trip document. */
+export interface PoolRosterEntry {
+  uid: string;
+  /** First name only — this document is readable by every other rider. */
+  firstName: string;
+  gender: Gender | string;
+  /** 'host' booked the ride · 'share' joined it by link or from discovery. */
+  kind: 'host' | 'share';
+  pickupAddress: string | null;
+  dropoffAddress: string | null;
+  joinedAt?: { seconds: number } | null;
+  /** Set once the driver has let them out. Absent while they are still aboard. */
+  droppedAt?: { seconds: number } | null;
+}
+
 export interface Trip {
   id: string;
   status: TripStatus;
@@ -139,6 +154,22 @@ export interface Trip {
    * everyone actually owes.
    */
   poolRiders?: PoolRider[];
+  /**
+   * Who is in a DESTINATION pool — one booked on the booking screen and joined
+   * by invite code or from nearby discovery.
+   *
+   * A separate field from `poolRiders` on purpose: that one carries the
+   * en-route leg-split (boarding offsets along the driver's road, a per-rider
+   * billable distance) and the fare engine reads its presence as "already
+   * priced against a route". A destination pool has none of that — everyone
+   * rides the same road for the same flat tier fare — so it records only who is
+   * aboard. See the backend's trips/poolRoster.
+   *
+   * Every co-rider can read the trip document, so this deliberately carries
+   * first names and nothing more; full names and fares reach the driver through
+   * the `getPoolRiders` callable instead.
+   */
+  poolRoster?: PoolRosterEntry[];
   poolFares?: Record<string, number>;
   /** The corridor the driver is running, once en-route pickups are in play. */
   enRoute?: {

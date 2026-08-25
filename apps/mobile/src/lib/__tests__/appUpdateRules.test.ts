@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compareVersions, evaluateUpdate, parseBuildNumber } from '../appUpdateRules';
+import { compareVersions, describeUpdate, evaluateUpdate, parseBuildNumber } from '../appUpdateRules';
 
 const URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 
@@ -148,5 +148,35 @@ describe('evaluateUpdate — mandatory updates', () => {
 
   it('a minimum alone never conjures an update out of nothing', () => {
     expect(evaluateUpdate({ minSupportedVersion: '9.0.0' }, '1.1.0', 12, URL)).toBeNull();
+  });
+});
+
+describe('describeUpdate — what the prompt actually says', () => {
+  it('names the versions when the version moved', () => {
+    const res = evaluateUpdate({ latestVersion: '1.6.0', latestBuild: 30 }, '1.5.0', 25, URL)!;
+    expect(res.sameVersion).toBe(false);
+    expect(describeUpdate(res)).toBe(
+      "Version 1.6.0 is available on the Play Store — you're on 1.5.0.",
+    );
+  });
+
+  it('names the BUILDS when only the build moved — never "1.5.0 → 1.5.0"', () => {
+    // The bug this exists for: a new AAB under an unchanged version string told
+    // the user an update to the version they were already running was available.
+    const res = evaluateUpdate({ latestVersion: '1.5.0', latestBuild: 26 }, '1.5.0', 25, URL)!;
+    expect(res.sameVersion).toBe(true);
+    expect(res.latestBuild).toBe(26);
+    expect(res.currentBuild).toBe(25);
+    const sentence = describeUpdate(res);
+    expect(sentence).toBe(
+      'A newer build of Velocity 1.5.0 is on the Play Store — update 25 → 26.',
+    );
+    expect(sentence).not.toContain('1.5.0 — ');
+  });
+
+  it('still reads sensibly when the config published no version string at all', () => {
+    const res = evaluateUpdate({ latestBuild: 26 }, '1.5.0', 25, URL)!;
+    expect(res.sameVersion).toBe(true);
+    expect(describeUpdate(res)).toContain('update 25 → 26');
   });
 });

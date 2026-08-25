@@ -44,7 +44,7 @@ import {
 } from './appUpdateRules';
 
 export type { AvailableUpdate, VersionConfig } from './appUpdateRules';
-export { compareVersions, evaluateUpdate, parseBuildNumber } from './appUpdateRules';
+export { compareVersions, describeUpdate, evaluateUpdate, parseBuildNumber } from './appUpdateRules';
 
 /** Play Store listing for the Android package (matches app.json android.package). */
 const ANDROID_PACKAGE = 'com.velocityridzpk.app';

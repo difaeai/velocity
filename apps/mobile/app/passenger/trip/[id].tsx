@@ -35,7 +35,7 @@ import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
 import { LiveMap } from '../../../src/ui/LiveMap';
 import { RatingModal } from '../../../src/ui/RatingModal';
 import { ChatModal } from '../../../src/ui/ChatModal';
-import { PoolRidersCard } from '../../../src/ui/PoolRidersCard';
+import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
@@ -305,6 +305,8 @@ export default function TripScreen() {
   // Pool joiners ride along but only the host picks the driver, raises the
   // fare or cancels — the backend rejects anyone else, so hide those controls.
   const isHost = trip.passengerId === user?.uid;
+  const poolRiderCount = trip.poolMembers?.length ?? 1;
+  const poolSeatsFree = Math.max(0, (trip.maxPoolRiders ?? 4) - poolRiderCount);
 
   if (trip.status === 'requested') {
     const formatTime = (seconds: number) => {
@@ -313,7 +315,6 @@ export default function TripScreen() {
       return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
-    const poolRiders = trip.poolMembers?.length ?? 1;
     const driverPins = pendingBids
       .filter((b) => b.driverLocation)
       .map((b) => ({ id: b.id, lat: b.driverLocation!.lat, lng: b.driverLocation!.lng }));
@@ -335,7 +336,7 @@ export default function TripScreen() {
           {trip.pool && (
             <View style={styles.poolRideBanner}>
               <Text style={styles.poolRideBannerText}>
-                🔀 Shared · {poolRiders}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
+                🔀 Shared · {poolRiderCount}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
               </Text>
             </View>
           )}
@@ -540,6 +541,15 @@ export default function TripScreen() {
                 >
                   <Text style={styles.poolShareBtnTxt}>📤 Share invite link</Text>
                 </Pressable>
+                {/* Sharing the link now is fine, but joining it is not yet, so
+                    say so rather than letting the host wonder why nobody came.
+                    Riders can only take a seat once a driver has agreed the
+                    fare — before that the price is still moving and the ride
+                    could still be cancelled under them. */}
+                <Text style={styles.poolShareHint}>
+                  Send it now — riders can join the moment your driver is confirmed. Every rider who
+                  joins brings everyone&apos;s fare down.
+                </Text>
               </View>
             ) : null}
 
@@ -580,6 +590,25 @@ export default function TripScreen() {
           <Badge label={RIDE_TYPE_LABELS[trip.rideType]} />
         </View>
 
+        {/* The first thing a rider needs to know about this ride, said once and
+            said plainly. A shared ride looks exactly like a solo one from here
+            otherwise — same map, same driver card — and people were getting
+            into cars with strangers having never been told the ride was
+            shared at all. */}
+        {trip.pool && (
+          <View style={styles.sharedBanner}>
+            <Text style={styles.sharedBannerTitle}>
+              🔀 This is a shared ride
+            </Text>
+            <Text style={styles.sharedBannerBody}>
+              {poolRiderCount > 1
+                ? `${poolRiderCount} passengers in this car${poolSeatsFree > 0 ? ` · ${poolSeatsFree} seat${poolSeatsFree === 1 ? '' : 's'} still free` : ' · full'}. `
+                : `Just you so far — ${poolSeatsFree} seat${poolSeatsFree === 1 ? '' : 's'} free, and your fare drops if somebody joins. `}
+              You pay PKR {trip.poolPerSeatFare ?? trip.fare ?? trip.offeredFare}, not the whole fare.
+            </Text>
+          </View>
+        )}
+
         {/* The two things a rider actually wants once a driver is assigned:
             how far away the car is, and how long until it is here. Both come
             from the driver's own position, relayed onto the trip — before this
@@ -610,7 +639,14 @@ export default function TripScreen() {
             <Text style={styles.muted}>
               {trip.driverInfo.vehicleLabel} · {trip.driverInfo.plate} · {trip.driverInfo.rating}★
             </Text>
-            <Text style={[styles.fare, { marginTop: 6 }]}>Fare: {trip.fare} PKR</Text>
+            {/* On a pool this must be the rider's OWN share, not the whole-car
+                fare the driver locked — a rider shown "550 PKR" who owes 330 is
+                being told the wrong number about their own money. */}
+            <Text style={[styles.fare, { marginTop: 6 }]}>
+              {trip.pool
+                ? `Your fare: ${trip.poolPerSeatFare ?? trip.fare} PKR${poolRiderCount > 1 ? ` · shared ${poolRiderCount} ways` : ''}`
+                : `Fare: ${trip.fare} PKR`}
+            </Text>
 
             {/* Driver arrived — 5-min boarding countdown */}
             {trip.status === 'arrived' && (
@@ -668,15 +704,22 @@ export default function TripScreen() {
           </Card>
         )}
 
-        {/* Who else is in the car. Appears the moment the driver picks somebody
-            up along the route — the passenger hears it from us, not from the
-            back seat. */}
+        {/* Who else is in the car. Appears the moment anybody joins — whether
+            they were picked up along the route or joined the pool from the
+            booking screen — so the passenger hears it from us, not from the
+            back seat. It used to read `trip.poolRiders`, which only an en-route
+            trip ever has, so on an ordinary shared booking it never rendered
+            at all and nobody was told they were sharing. */}
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status)
-          && (trip.poolRiders?.length ?? 0) > 1 && (
+          && trip.pool && (
           <PoolRidersCard
-            riders={trip.poolRiders!}
+            riders={sharedRidersFrom(trip, user?.uid)}
             youUid={user?.uid}
             driverPhone={trip.driverPhone}
+            seatsLeft={Math.max(
+              0,
+              (trip.maxPoolRiders ?? 4) - (trip.poolMembers?.length ?? 1),
+            )}
           />
         )}
 
@@ -1033,6 +1076,20 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  // The live-ride version of the banner above: a full card rather than a pill,
+  // because by this point it has to carry the rider count, the free seats and
+  // what this rider personally owes — not just the word "shared".
+  sharedBanner: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 16,
+    padding: 14,
+    gap: 4,
+  },
+  poolShareHint: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 6 },
+  sharedBannerTitle: { color: colors.primary, fontSize: 14, fontWeight: '900' },
+  sharedBannerBody: { color: colors.text, fontSize: 12.5, lineHeight: 18 },
   viewersBanner: {
     marginHorizontal: 16,
     marginTop: 6,

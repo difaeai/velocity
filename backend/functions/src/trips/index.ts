@@ -35,6 +35,7 @@ import {
 } from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
+import { hostRosterEntry } from './poolRoster';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -205,6 +206,21 @@ export const createTrip = onCall(async (req) => {
             poolVisibility,
             shareCode,
             poolMembers: [ctx.uid],
+            // Who is in the car, by name. Seeded here so a pool has a roster
+            // from the moment it exists — the drop-off list and the "sharing
+            // this car" card both read it, and a pool whose first entry only
+            // appeared when somebody joined left the host invisible on their
+            // own ride. See trips/poolRoster.
+            poolRoster: [
+              hostRosterEntry({
+                uid: ctx.uid,
+                name: (userSnap.get('name') as string | undefined)
+                  ?? (userSnap.get('displayName') as string | undefined),
+                gender: data.passengerGender,
+                pickup: data.pickup,
+                dropoff: data.dropoff,
+              }),
+            ],
             poolPerSeatFare: finalFare, // just the host so far → full fare
             maxPoolRiders: MAX_POOL_RIDERS,
             // Running gender tally so nearby riders can see the make-up of a

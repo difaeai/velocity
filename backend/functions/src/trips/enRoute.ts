@@ -63,6 +63,7 @@ import {
   validateRoutePolyline,
 } from '../lib/corridor';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
+import { rosterForTrip } from './poolRoster';
 import {
   CORRIDOR_REJECTION_MESSAGE,
   CorridorFit,
@@ -242,10 +243,22 @@ function ridersOnTrip(
   const rideType = (trip.rideType as string) ?? 'mini';
   const soloFare = soloFareFor(cfg, rideType, pickup, dropoff);
 
+  // Names and genders come from the destination-pool roster where there is one,
+  // so an en-route pickup onto a shared booking does not wipe out the identities
+  // the riders and the driver were already being shown. The geometry below is
+  // unchanged: the roster records who is aboard, never where they sit on the road.
+  const roster = new Map(
+    rosterForTrip(trip).map((r) => [r.uid, r] as const),
+  );
+
   return members.map((uid) => ({
     uid,
-    name: uid === hostId ? ((trip.passengerName as string) ?? 'Rider') : 'Rider',
-    gender: uid === hostId ? ((trip.passengerGender as string) ?? 'unspecified') : 'unspecified',
+    name:
+      roster.get(uid)?.firstName
+      ?? (uid === hostId ? ((trip.passengerName as string) ?? 'Rider') : 'Rider'),
+    gender:
+      roster.get(uid)?.gender
+      ?? (uid === hostId ? ((trip.passengerGender as string) ?? 'unspecified') : 'unspecified'),
     seats: 1,
     rideType,
     pickup,
@@ -1103,7 +1116,27 @@ export const acceptEnRouteRider = onCall(async (req) => {
   return { ok: true, ...result };
 });
 
-/** Riders on a trip — used by the passenger screen to show who else is in the car. */
+/**
+ * Riders on a trip — who is in the car, for everybody in it.
+ *
+ * Two kinds of shared ride reach this, and the difference is where the roster
+ * lives:
+ *
+ *   • EN-ROUTE trips carry `poolRiders`: every rider priced against their own
+ *     slice of the driver's road. That array is the full picture and is used
+ *     as-is.
+ *   • DESTINATION pools (booked, then joined by invite or from discovery) carry
+ *     `poolRoster` instead — same people, one shared route, one flat tier fare
+ *     each. Before this existed the answer here was an empty list, which is why
+ *     the driver's drop-off panel collapsed to a single "Complete trip" button
+ *     and no passenger was ever told their ride was being shared.
+ *
+ * What each caller is allowed to see is the same either way. The driver has to
+ * collect the right money from the right person and drive to their stop, so
+ * they get full names, phone numbers, fares and coordinates. Co-riders get a
+ * first name, a gender and the ends of the journey — enough to know who is in
+ * the car with them, and nothing more.
+ */
 export const getPoolRiders = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = z.object({ tripId: z.string().min(1).max(128) }).safeParse(req.data);
@@ -1113,34 +1146,87 @@ export const getPoolRiders = onCall(async (req) => {
   if (!snap.exists) throw new HttpsError('not-found', 'Trip not found.');
 
   const members = (snap.get('poolMembers') as string[] | undefined) ?? [];
-  if (!members.includes(ctx.uid) && snap.get('driverId') !== ctx.uid) {
+  const isDriver = snap.get('driverId') === ctx.uid;
+  if (!members.includes(ctx.uid) && !isDriver) {
     throw new HttpsError('permission-denied', 'You are not on this ride.');
   }
 
-  const riders = (snap.get('poolRiders') as (PoolRider & { droppedAt?: unknown })[] | undefined) ?? [];
-  // The driver has to collect the money, so they see every fare and the full
-  // drop-off address. Co-riders see a first name, a gender and where the person
-  // gets on and off — enough to know who is in the car, and nothing more.
-  const isDriver = snap.get('driverId') === ctx.uid;
-  return {
-    riders: riders.map((r) => ({
+  const trip = snap.data() ?? {};
+  const enRouteRiders =
+    (snap.get('poolRiders') as (PoolRider & { droppedAt?: unknown })[] | undefined) ?? [];
+
+  interface RiderRow {
+    uid: string;
+    name: string;
+    gender: string;
+    pickup?: { lat?: number; lng?: number; address?: string };
+    dropoff?: { lat?: number; lng?: number; address?: string };
+    kind: string;
+    fare: number;
+    droppedAt?: unknown;
+  }
+
+  let riders: RiderRow[];
+  if (enRouteRiders.length > 0) {
+    riders = enRouteRiders;
+  } else {
+    // Destination pool. Everyone rode the same road, so everyone owes the same
+    // tier fare — unless a leg-split already recorded something more specific.
+    const roster = rosterForTrip(trip);
+    const soloFare = (trip.fare as number | null) ?? (trip.offeredFare as number) ?? 0;
+    const perSeat = poolPerSeatFare(soloFare, Math.max(1, roster.length));
+    const poolFares = (trip.poolFares as Record<string, number> | undefined) ?? {};
+    riders = roster.map((r) => ({
       uid: r.uid,
-      name: isDriver ? r.name : (r.name.split(' ')[0] ?? r.name),
+      name: r.firstName,
       gender: r.gender,
-      pickupAddress: r.pickup?.address ?? null,
-      dropoffAddress: r.dropoff?.address ?? null,
-      dropoffLat: isDriver ? (r.dropoff?.lat ?? null) : null,
-      dropoffLng: isDriver ? (r.dropoff?.lng ?? null) : null,
+      pickup:  { ...(trip.pickup  as object ?? {}), address: r.pickupAddress  ?? undefined },
+      dropoff: { ...(trip.dropoff as object ?? {}), address: r.dropoffAddress ?? undefined },
       kind: r.kind,
-      /**
-       * Their own fare is theirs alone — except to the driver, who cannot ask
-       * the right person for the right amount without knowing it.
-       */
-      fare: isDriver || r.uid === ctx.uid ? r.fare : null,
-      /** Already let out. The driver's remaining-stops list is built from this. */
-      droppedOff: !!r.droppedAt,
-    })),
+      fare: poolFares[r.uid] ?? perSeat,
+      droppedAt: r.droppedAt ?? undefined,
+    }));
+  }
+
+  // The driver's list is the one they work from at the kerb, so it carries the
+  // full name and a number to ring when somebody is not where they said.
+  const contacts = new Map<string, { name: string; phone: string | null }>();
+  if (isDriver && riders.length > 0) {
+    const snaps = await db.getAll(...riders.map((r) => db.doc(`users/${r.uid}`)));
+    for (const u of snaps) {
+      contacts.set(u.id, {
+        name: (u.get('name') as string | undefined)
+          ?? (u.get('displayName') as string | undefined)
+          ?? '',
+        phone: (u.get('phoneNumber') as string | null | undefined) ?? null,
+      });
+    }
+  }
+
+  return {
+    riders: riders.map((r) => {
+      const contact = contacts.get(r.uid);
+      return {
+        uid: r.uid,
+        name: isDriver ? (contact?.name || r.name) : (r.name.split(' ')[0] ?? r.name),
+        gender: r.gender,
+        pickupAddress: r.pickup?.address ?? null,
+        dropoffAddress: r.dropoff?.address ?? null,
+        dropoffLat: isDriver ? (r.dropoff?.lat ?? null) : null,
+        dropoffLng: isDriver ? (r.dropoff?.lng ?? null) : null,
+        /** So the driver can ring the passenger they cannot find. Driver only. */
+        phone: isDriver ? (contact?.phone ?? null) : null,
+        kind: r.kind,
+        /**
+         * Their own fare is theirs alone — except to the driver, who cannot ask
+         * the right person for the right amount without knowing it.
+         */
+        fare: isDriver || r.uid === ctx.uid ? r.fare : null,
+        /** Already let out. The driver's remaining-stops list is built from this. */
+        droppedOff: !!r.droppedAt,
+      };
+    }),
     yourFare: riders.find((r) => r.uid === ctx.uid)?.fare ?? null,
-    driverGross: isDriver ? snap.get('poolDriverGross') : null,
+    driverGross: isDriver ? (snap.get('poolDriverGross') ?? null) : null,
   };
 });
