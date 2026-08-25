@@ -55,3 +55,9 @@ coverage/
 velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json
 *.json.key
 *-firebase-adminsdk-*.json
+
+# Play bundles. The newest build is kept at the repo root so it is obvious which
+# artifact is current, but these are ~90MB binaries and have no business in git
+# history — one accidental `git add .` would bloat the repo permanently.
+*.aab
+*.apk
