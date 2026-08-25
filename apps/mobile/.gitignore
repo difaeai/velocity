@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Local signing material. The debug keystore lives inside /android, which is
+# prebuild output and gets wiped by `expo prebuild --clean` — and its SHA-256 is
+# registered on the production Firebase app for phone auth, so losing it means
+# re-registering a fresh fingerprint by hand. Backed up here so a rebuild cannot
+# destroy it. NEVER commit it: anyone holding it can sign an app Firebase trusts.
+/.local-signing

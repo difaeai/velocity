@@ -58,6 +58,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "63950615894-2hhan949bct8htqid1h26me6plhputfa.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocityridzpk.app",
+            "certificate_hash": "6b1c405899b47b8d465f3cee764c2a29b38533a7"
+          }
+        },
+        {
           "client_id": "63950615894-85quritlg1t08efokudl3jh6gijg7fd3.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
