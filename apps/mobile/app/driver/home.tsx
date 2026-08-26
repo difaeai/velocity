@@ -447,12 +447,16 @@ export default function DriverHome() {
   }
 
   /**
-   * One-time ask for WhatsApp ride alerts.
+   * One-time pointer to WhatsApp ride alerts.
    *
-   * Consent has to be given knowingly, so this explains what will arrive and
-   * how often before it asks — and the answer is recorded locally either way so
-   * nobody is asked twice. Drivers who already opted in, or who the backend has
-   * blocked, are never shown it.
+   * It offers, it does not switch anything on. Consent for a WhatsApp message
+   * has to be given knowingly and against the right number — a driver's
+   * WhatsApp is very often a different SIM from the one they drive on — so the
+   * "Set it up" path goes to the screen that states what will arrive and lets
+   * them correct the number, rather than silently enabling alerts to whatever
+   * onboarding happened to capture.
+   *
+   * Shown once ever, and never to a driver who has already opted in.
    */
   async function offerWhatsAppAlerts() {
     if (profile?.whatsappAlerts?.optIn === true) return;
@@ -466,23 +470,10 @@ export default function DriverHome() {
     }
     Alert.alert(
       'Get rides on WhatsApp?',
-      "You're offline now, so we can't notify you in the app. Want a WhatsApp message when a ride comes up near you? A few a day at most, never between 10pm and 7am, and you can stop any time.",
+      "You're offline now, so we can't notify you in the app. We can WhatsApp you instead when a ride comes up near you — a few a day at most, never between 10pm and 7am.",
       [
-        { text: 'No thanks', style: 'cancel' },
-        {
-          text: 'Yes, WhatsApp me',
-          onPress: () => {
-            api
-              .setWhatsAppAlerts({ enabled: true })
-              .then(() => Alert.alert('Done ✅', "We'll WhatsApp you when a ride comes up nearby."))
-              .catch((e: unknown) =>
-                Alert.alert(
-                  'Could not turn alerts on',
-                  (e as { message?: string })?.message ?? 'Try again from Settings.',
-                ),
-              );
-          },
-        },
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Set it up', onPress: () => router.push('/driver/whatsapp-alerts') },
       ],
     );
   }

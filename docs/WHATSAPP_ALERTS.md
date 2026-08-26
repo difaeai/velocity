@@ -141,7 +141,28 @@ Meta disables a webhook that keeps returning non-2xx, and a disabled webhook
 means opt-outs stop arriving — the worst possible thing to break. The handler
 therefore answers `200` even when its own processing throws.
 
-### 5. Arm it
+### 5. What the driver sees
+
+**Driver drawer → 💬 WhatsApp ride alerts** (also reachable from Settings, and
+offered once the first time a driver goes offline).
+
+The screen does two jobs on purpose:
+
+- **The number.** A driver's WhatsApp is very often *not* the number they drive
+  on — a second SIM, a family handset, the number their own customers already
+  have. They can correct it here, and the corrected number then outranks the
+  profile number for every later opt-in, so a toggle from Settings can never
+  silently redirect alerts back to a phone with no WhatsApp on it. Alerts sent
+  to a number that is not on WhatsApp bounce, and bounces count against the
+  sender — so letting drivers fix this is a rating measure, not a convenience.
+- **The consent**, stated in full *before* the switch: a few a day at most,
+  nothing between 10pm and 7am, only real rides, and STOP works any time.
+
+The masked number comes back from `setWhatsAppAlerts` and is shown in the
+confirmation, so a mistyped digit is caught immediately rather than by an alert
+that never arrives.
+
+### 6. Arm it
 
 Nothing sends until someone deliberately turns it on. From the admin console
 (or a direct call to `adminSetWhatsAppAlertSettings`):
