@@ -70,26 +70,11 @@ export default function Settings() {
   // than whatever the user last tapped here.
   const driverProfile = useDriverProfile(role === 'driver' ? user?.uid : undefined);
   const waOptIn = driverProfile?.whatsappAlerts?.optIn === true;
-  const waBlocked = driverProfile?.whatsappAlerts?.blocked === true;
-  const [waBusy, setWaBusy] = useState(false);
-
-  async function handleWhatsAppToggle(next: boolean) {
-    if (waBusy) return;
-    setWaBusy(true);
-    try {
-      await api.setWhatsAppAlerts({ enabled: next });
-      // No local state to set — the driver document is the source of truth and
-      // its snapshot listener re-renders this row.
-    } catch (e) {
-      // The one failure a driver can actually fix is "we have no valid mobile
-      // number for you", so the backend's own sentence is worth showing.
-      const message =
-        (e as { message?: string })?.message ?? 'Could not change that right now.';
-      Alert.alert(next ? 'Could not turn alerts on' : 'Could not turn alerts off', message);
-    } finally {
-      setWaBusy(false);
-    }
-  }
+  // Last four digits only. Enough for a driver to recognise which of their SIMs
+  // the alerts are going to, without printing the whole number on a screen
+  // somebody may well be showing to a passenger.
+  const waNumber = driverProfile?.whatsappAlerts?.number;
+  const waNumberLabel = waNumber ? `…${waNumber.slice(-4)}` : 'no number';
 
   async function handleThemeToggle() {
     setDark((d) => !d);
@@ -205,33 +190,26 @@ export default function Settings() {
         </View>
         <Text style={styles.hint}>Tap Language to switch the whole app instantly.</Text>
 
-        {/* Drivers only. WhatsApp is the one way to reach a driver whose app
-            is closed — which is exactly when they are missing fares. Opt-in,
-            never on by default, and never turned on for anyone from the admin
-            side: an unrequested WhatsApp message is what gets a business
-            number reported, and there is no coming back from that. */}
+        {/* Drivers only. WhatsApp is the one way to reach a driver whose app is
+            closed — which is exactly when they are missing fares. This row
+            navigates rather than toggling in place: the number matters as much
+            as the switch (a driver's WhatsApp is often a different SIM), and
+            one screen owning both is what stops the two from disagreeing. */}
         {role === 'driver' && (
           <>
             <Text style={styles.sectionLabel}>RIDE ALERTS</Text>
             <View style={styles.card}>
-              <View style={styles.row}>
-                <Text style={styles.rowIcon}>💬</Text>
-                <Text style={styles.rowLabel}>WhatsApp me new rides</Text>
-                <Switch
-                  value={waOptIn}
-                  disabled={waBusy}
-                  onValueChange={handleWhatsAppToggle}
-                  trackColor={{ true: colors.primary, false: colors.border }}
-                  thumbColor="#fff"
-                />
-              </View>
+              <Row
+                icon="💬"
+                label="WhatsApp ride alerts"
+                value={waOptIn ? `On · ${waNumberLabel}` : 'Off'}
+                onPress={() => router.push('/driver/whatsapp-alerts')}
+              />
             </View>
             <Text style={styles.hint}>
               {waOptIn
-                ? 'When you are offline and a ride comes up near you, we will send one WhatsApp message so you can open the app. A few a day at most, never between 10pm and 7am. Reply STOP any time.'
-                : waBlocked
-                  ? 'Alerts are off. Turn them back on to start receiving them again on your registered number.'
-                  : 'Offline drivers get no notifications — the app is closed. Turn this on and we will WhatsApp you when a ride comes up nearby.'}
+                ? 'When you are offline and a ride comes up near you, we send one WhatsApp message so you can open the app. A few a day at most, never between 10pm and 7am.'
+                : 'Offline drivers get no notifications — the app is closed. Turn this on and we will WhatsApp you when a ride comes up nearby.'}
             </Text>
           </>
         )}

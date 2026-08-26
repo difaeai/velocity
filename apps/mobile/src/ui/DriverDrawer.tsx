@@ -146,6 +146,12 @@ export function DriverDrawer({
               screen rather than being mixed into the incoming solo requests. */}
           <NavItem icon="👥" label="Sharing ride requests"  onPress={() => go('/driver/pool-requests')} />
           <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
+          {/* The only channel that reaches a driver with the app closed — which
+              is exactly when they are missing fares and have no idea. Its own
+              drawer entry because a driver who never opens Settings would
+              otherwise never find it, and a number nobody corrects is a number
+              the alerts bounce off. */}
+          <NavItem icon="💬" label="WhatsApp ride alerts"   onPress={() => go('/driver/whatsapp-alerts')} />
           {/* Where a driver recruited by a Velocity partner enters their code. */}
           <NavItem icon="🎁" label="Referral code"          onPress={() => go('/referral-code')} />
         </View>

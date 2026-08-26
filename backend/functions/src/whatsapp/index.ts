@@ -70,12 +70,25 @@ export const setWhatsAppAlerts = onCall(async (req) => {
     return { ok: true, enabled: false };
   }
 
-  // Three places a number can come from, in descending order of how
-  // deliberately the driver chose it. The last fallback matters: a driver who
-  // signed in with a phone number and never typed one into the onboarding form
-  // has a perfectly good number on their user record, and telling them to "add
-  // a mobile number" would be nonsense to somebody who signed up with one.
-  let phone = toWhatsAppNumber(parsed.data.phone ?? (snap.get('phone') as string | undefined));
+  // Four places a number can come from, in descending order of how deliberately
+  // the driver chose it.
+  //
+  // The second one is load-bearing. A driver's WhatsApp is very often NOT the
+  // number they drive on — a second SIM, a family handset, the number their
+  // customers already have. Once they have corrected it on the alerts screen,
+  // a later toggle from Settings (which sends no `phone`) must not silently
+  // fall back to the profile number and start messaging a phone that has no
+  // WhatsApp on it. So a previously consented number outranks the profile.
+  //
+  // The last fallback matters too: somebody who signed in with a phone number
+  // and never typed one into the onboarding form has a perfectly good number on
+  // their user record, and telling them to "add a mobile number" would be
+  // nonsense to a person who signed up with one.
+  const stored = (snap.get('whatsappAlerts') as { number?: string } | undefined)?.number;
+  let phone =
+    toWhatsAppNumber(parsed.data.phone) ??
+    toWhatsAppNumber(stored) ??
+    toWhatsAppNumber(snap.get('phone') as string | undefined);
   if (!phone) {
     const userSnap = await db.doc(`users/${ctx.uid}`).get();
     phone = toWhatsAppNumber(userSnap.get('phoneNumber') as string | undefined);
@@ -103,6 +116,9 @@ export const setWhatsAppAlerts = onCall(async (req) => {
     },
     { merge: true },
   );
+  // The masked number goes back so the screen can confirm what we actually
+  // recorded — "we will WhatsApp +92 300 ****567" is the only way a driver can
+  // catch a digit they typed wrong before the first alert fails to arrive.
   return { ok: true, enabled: true, number: maskNumber(phone) };
 });
 
