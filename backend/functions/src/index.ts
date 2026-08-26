@@ -180,6 +180,7 @@ export {
   leaderRespondToOffer,
   joinPoolRideRequest,
   cancelPoolRideRequest,
+  respondToPoolGoAnyway,
   getNearbyPoolRequests,
   getNearbyActiveRides,
 } from './poolRideRequests';

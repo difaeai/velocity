@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
   View,
 } from 'react-native';
-import { Text, TextInput } from '../../src/ui/Text';
+import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { api } from '../../src/api/client';
 import type { NearbyPoolRequest } from '../../src/api/client';
@@ -25,14 +25,19 @@ const GENDER_LABEL: Record<string, string> = {
   any:         '👥 Open to all',
 };
 
+// Shared with the home-screen Sharing feed, so a pool rejected in one place
+// stays hidden in the other.
+const REJECT_KEY = 'driver_rejected_pools';
+const REJECT_TTL = 60 * 60 * 1000;
+
 function RequestCard({
   req,
   onAccept,
-  onCounter,
+  onReject,
 }: {
   req: NearbyPoolRequest;
   onAccept: () => void;
-  onCounter: () => void;
+  onReject: () => void;
 }) {
   const slotsAvail = req.totalSlots - req.filledSlots;
 
@@ -57,31 +62,39 @@ function RequestCard({
         </View>
       </View>
 
-      <View style={styles.fareRow}>
-        <View>
-          <Text style={styles.fareLabel}>Proposed per seat</Text>
-          <Text style={styles.fareAmt}>{req.proposedFarePerSeat} PKR</Text>
+      {/* The whole pool: each rider's first name and what they pay. */}
+      <View style={styles.memberList}>
+        {(req.members ?? []).map((m, i) => (
+          <View key={`${m.name}-${i}`} style={styles.memberRow}>
+            <Text style={styles.memberName} numberOfLines={1}>
+              {m.name}{i === 0 ? ' · leader' : ''}
+            </Text>
+            <Text style={styles.memberFare}>{m.farePerSeat} PKR</Text>
+            {m.dropoffAreaName !== req.destinationAreaName ? (
+              <Text style={styles.memberDrop} numberOfLines={1}>↳ {m.dropoffAreaName}</Text>
+            ) : null}
+          </View>
+        ))}
+        {slotsAvail > 0 && (
+          <Text style={styles.openSeatsNote}>
+            + {slotsAvail} open seat{slotsAvail > 1 ? 's' : ''} · {req.totalFareIfFull} PKR if full
+          </Text>
+        )}
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Total now · {req.filledSlots}/{req.totalSlots} seats</Text>
+          <Text style={styles.totalAmt}>{req.totalFare} PKR</Text>
         </View>
-        <View style={styles.slotsInfo}>
-          <Text style={styles.slotsNum}>{slotsAvail}</Text>
-          <Text style={styles.slotsLabel}>seat{slotsAvail > 1 ? 's' : ''}{'\n'}needed</Text>
-        </View>
-      </View>
-
-      <View style={styles.totalNote}>
-        <Text style={styles.totalNoteText}>
-          Total: {req.proposedFarePerSeat * req.totalSlots} PKR for {req.totalSlots} seats
-        </Text>
       </View>
 
       <View style={styles.actionRow}>
         <Pressable style={styles.acceptBtn} onPress={onAccept}>
-          <Text style={styles.acceptBtnText}>Accept Fare</Text>
+          <Text style={styles.acceptBtnText}>Accept · {req.farePerSeat} PKR/seat</Text>
         </Pressable>
-        <Pressable style={styles.counterBtn} onPress={onCounter}>
-          <Text style={styles.counterBtnText}>Counter Offer</Text>
+        <Pressable style={styles.rejectBtn} onPress={onReject}>
+          <Text style={styles.rejectBtnText}>Reject</Text>
         </Pressable>
       </View>
+      <Text style={styles.fixedFareNote}>Pool fares are fixed — no counter offers.</Text>
     </View>
   );
 }
@@ -94,9 +107,20 @@ export default function PoolRequestsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing]         = useState<string | null>(null);
 
-  // Counter-offer modal (Alert.prompt is iOS-only, so we use our own modal)
-  const [counterTarget, setCounterTarget] = useState<NearbyPoolRequest | null>(null);
-  const [counterValue, setCounterValue]   = useState('');
+  // Pools this driver rejected — hidden for an hour, shared with the home feed.
+  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    AsyncStorage.getItem(REJECT_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const entries: { id: string; at: number }[] = JSON.parse(raw);
+        const now = Date.now();
+        const valid = entries.filter((e) => now - e.at < REJECT_TTL);
+        setRejectedIds(new Set(valid.map((e) => e.id)));
+        if (valid.length !== entries.length) AsyncStorage.setItem(REJECT_KEY, JSON.stringify(valid));
+      } catch { /* corrupted — start fresh */ }
+    }).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     // Requests are matched around the driver's real position — without GPS
@@ -125,7 +149,8 @@ export default function PoolRequestsScreen() {
       await api.driverRespondToRequest({ requestId: req.requestId, action: 'accept' });
       Alert.alert(
         'Ride Accepted!',
-        `You agreed to ${req.proposedFarePerSeat} PKR/seat. The passenger will be notified. Pick up from ${req.pickupAreaName}.`,
+        `${req.filledSlots} rider${req.filledSlots > 1 ? 's' : ''} at ${req.farePerSeat} PKR each. ` +
+        `The passengers will be notified. Pick up from ${req.pickupAreaName}.`,
         [{ text: 'OK', onPress: load }],
       );
     } catch (e: any) {
@@ -136,38 +161,19 @@ export default function PoolRequestsScreen() {
     }
   }
 
-  function promptCounter(req: NearbyPoolRequest) {
-    // Alert.prompt is iOS-only — on Android it silently does nothing, which
-    // would make countering impossible. Use our own modal on all platforms.
-    setCounterValue(String(req.proposedFarePerSeat + 50));
-    setCounterTarget(req);
+  function reject(requestId: string) {
+    setRejectedIds((prev) => new Set([...prev, requestId]));
+    AsyncStorage.getItem(REJECT_KEY).then((raw) => {
+      const existing: { id: string; at: number }[] = raw ? JSON.parse(raw) : [];
+      const updated = [...existing.filter((e) => e.id !== requestId), { id: requestId, at: Date.now() }];
+      AsyncStorage.setItem(REJECT_KEY, JSON.stringify(updated));
+    }).catch(() => {});
   }
 
-  async function sendCounter() {
-    const req = counterTarget;
-    if (!req) return;
-    const fareNum = parseInt(counterValue, 10);
-    if (!fareNum || fareNum <= req.proposedFarePerSeat) {
-      Alert.alert('Invalid', 'Counter fare must be higher than the proposed fare.');
-      return;
-    }
-    setCounterTarget(null);
-    setActing(req.requestId);
-    try {
-      await api.driverRespondToRequest({
-        requestId:          req.requestId,
-        action:             'counter',
-        counterFarePerSeat: fareNum,
-      });
-      Alert.alert('Counter Sent!', `The passenger will see your offer of ${fareNum} PKR/seat.`, [
-        { text: 'OK', onPress: load },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Failed', e?.message ?? 'Could not send counter.');
-    } finally {
-      setActing(null);
-    }
-  }
+  const visible = useMemo(
+    () => requests.filter((r) => !rejectedIds.has(r.requestId)),
+    [requests, rejectedIds],
+  );
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -181,7 +187,7 @@ export default function PoolRequestsScreen() {
 
       <View style={styles.infoBanner}>
         <Text style={styles.infoText}>
-          Passengers are looking for shared rides. Accept their fare or send a counter offer.
+          Passengers sharing a ride, with every rider's name and fare. Pool fares are fixed — accept or reject.
         </Text>
       </View>
 
@@ -189,7 +195,7 @@ export default function PoolRequestsScreen() {
         <ActivityIndicator style={{ flex: 1 }} color={colors.primary} />
       ) : (
         <FlatList
-          data={requests}
+          data={visible}
           keyExtractor={(r) => r.requestId}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
@@ -219,7 +225,7 @@ export default function PoolRequestsScreen() {
             <RequestCard
               req={item}
               onAccept={() => accept(item)}
-              onCounter={() => promptCounter(item)}
+              onReject={() => reject(item.requestId)}
             />
           )}
         />
@@ -231,39 +237,6 @@ export default function PoolRequestsScreen() {
           <Text style={styles.actingText}>Responding...</Text>
         </View>
       )}
-
-      {/* Counter-offer modal (cross-platform) */}
-      <Modal
-        visible={counterTarget !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCounterTarget(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Counter Offer</Text>
-            <Text style={styles.modalSub}>
-              Passenger proposed {counterTarget?.proposedFarePerSeat} PKR/seat. Enter your counter fare per seat:
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              value={counterValue}
-              onChangeText={(t) => setCounterValue(t.replace(/\D/g, ''))}
-              keyboardType="number-pad"
-              autoFocus
-              maxLength={5}
-            />
-            <View style={styles.modalBtns}>
-              <Pressable style={styles.modalCancelBtn} onPress={() => setCounterTarget(null)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalSendBtn} onPress={sendCounter}>
-                <Text style={styles.modalSendText}>Send Counter</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -296,36 +269,26 @@ const styles = themed(() => StyleSheet.create({
   routeText:      { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
   connector:      { height: 8, width: 1, backgroundColor: colors.border, marginLeft: 3 },
 
-  fareRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 8 },
-  fareLabel:      { fontSize: 11, color: colors.muted, fontWeight: '600' },
-  fareAmt:        { fontSize: 22, fontWeight: '900', color: colors.text },
-  slotsInfo:      { alignItems: 'center', backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8 },
-  slotsNum:       { fontSize: 24, fontWeight: '900', color: colors.primary },
-  slotsLabel:     { fontSize: 10, color: colors.muted, textAlign: 'center', lineHeight: 14 },
+  memberList:     { margin: 14, marginBottom: 10, backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 8 },
+  memberRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  memberName:     { fontSize: 13, fontWeight: '800', color: colors.text, flexShrink: 1 },
+  memberFare:     { fontSize: 13, fontWeight: '900', color: colors.primary, marginLeft: 'auto' },
+  memberDrop:     { fontSize: 11, color: colors.muted, width: '100%' },
+  openSeatsNote:  { fontSize: 11, color: colors.muted, fontStyle: 'italic' },
+  totalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
+  totalLabel:     { fontSize: 12, color: colors.muted, fontWeight: '700' },
+  totalAmt:       { fontSize: 17, fontWeight: '900', color: colors.text },
 
-  totalNote:      { paddingHorizontal: 14, paddingBottom: 12 },
-  totalNoteText:  { fontSize: 12, color: colors.muted, fontWeight: '600' },
-
-  actionRow:      { flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: colors.border },
-  acceptBtn:      { flex: 1, height: 44, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  actionRow:      { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 6, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  acceptBtn:      { flex: 2, height: 44, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   acceptBtnText:  { color: '#000', fontWeight: '900', fontSize: 14 },
-  counterBtn:     { flex: 1, height: 44, backgroundColor: '#0d1a3a', borderRadius: 12, borderWidth: 1, borderColor: '#3b82f640', alignItems: 'center', justifyContent: 'center' },
-  counterBtnText: { color: '#60a5fa', fontWeight: '800', fontSize: 14 },
+  rejectBtn:      { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#ef444440', alignItems: 'center', justifyContent: 'center' },
+  rejectBtnText:  { color: '#ef4444', fontWeight: '800', fontSize: 14 },
+  fixedFareNote:  { fontSize: 10, color: colors.muted, textAlign: 'center', paddingBottom: 10, paddingTop: 4 },
 
   actingOverlay:  { position: 'absolute', bottom: 32, left: 32, right: 32, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, elevation: 10 },
   actingText:     { fontSize: 14, color: colors.text, fontWeight: '700' },
 
   enableLocBtn:   { marginTop: 8, backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 22, paddingVertical: 11 },
   enableLocText:  { color: '#000', fontWeight: '900', fontSize: 13 },
-
-  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalBox:        { backgroundColor: colors.glassPanel, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },
-  modalTitle:      { fontSize: 18, fontWeight: '900', color: colors.text },
-  modalSub:        { fontSize: 13, color: colors.muted, lineHeight: 18 },
-  modalInput:      { height: 56, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, paddingHorizontal: 16, fontSize: 24, fontWeight: '900', color: colors.text, backgroundColor: colors.surface, textAlign: 'center' },
-  modalBtns:       { flexDirection: 'row', gap: 12, marginTop: 4 },
-  modalCancelBtn:  { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  modalCancelText: { fontSize: 14, fontWeight: '700', color: colors.muted },
-  modalSendBtn:    { flex: 1, height: 48, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  modalSendText:   { fontSize: 14, fontWeight: '900', color: '#000' },
 }));

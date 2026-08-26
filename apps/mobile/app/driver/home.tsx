@@ -56,6 +56,7 @@ import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
 import { DropOffPanel } from '../../src/ui/DropOffPanel';
 import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
+import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
@@ -73,6 +74,9 @@ const SCAN_MS = 3500;
 /** Skipped/hidden request ids, persisted for an hour so they don't come back. */
 const SKIP_KEY = 'driver_skipped_requests';
 const SKIP_TTL = 60 * 60 * 1000;
+
+/** Which feed the driver last worked: solo requests or shared-ride pools. */
+const RIDE_MODE_KEY = 'driver_ride_mode';
 
 export default function DriverHome() {
   const { user, signOut } = useAuth();
@@ -97,6 +101,20 @@ export default function DriverHome() {
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+
+  // Solo | Sharing rides — which feed the body shows while online. Solo is the
+  // classic open-requests list; Sharing lays out nearby pools box by box with
+  // every rider's name and fare so the driver can pick a pool on its numbers.
+  const [rideMode, setRideMode] = useState<'solo' | 'sharing'>('solo');
+  useEffect(() => {
+    AsyncStorage.getItem(RIDE_MODE_KEY).then((v) => {
+      if (v === 'sharing' || v === 'solo') setRideMode(v);
+    }).catch(() => {});
+  }, []);
+  const switchRideMode = useCallback((m: 'solo' | 'sharing') => {
+    setRideMode(m);
+    AsyncStorage.setItem(RIDE_MODE_KEY, m).catch(() => {});
+  }, []);
   // A push only reaches a backgrounded app. With the trip screen open —
   // which is exactly where a driver sits while the passenger is writing —
   // Android shows nothing, so the button has to carry the news itself.
@@ -509,6 +527,26 @@ export default function DriverHome() {
         </Pressable>
       </View>
 
+      {/* ── Solo | Sharing rides ── right below Offline/Online: which kind of
+          work this driver wants. Solo keeps the classic feed; Sharing shows
+          whole pools (names, fares, totals) to accept or reject. */}
+      <View style={styles.modeRow}>
+        <View style={styles.modeToggle}>
+          <Pressable
+            style={[styles.modeHalf, rideMode === 'solo' && styles.modeActive]}
+            onPress={() => switchRideMode('solo')}
+          >
+            <Text style={[styles.modeTxt, rideMode === 'solo' && styles.modeTxtActive]}>Solo</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeHalf, rideMode === 'sharing' && styles.modeActive]}
+            onPress={() => switchRideMode('sharing')}
+          >
+            <Text style={[styles.modeTxt, rideMode === 'sharing' && styles.modeTxtActive]}>Sharing rides</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* ── Body ── */}
       {activeTrip ? (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -698,6 +736,10 @@ export default function DriverHome() {
             subtitle="Go online to start receiving ride requests from passengers near you."
           />
         </View>
+      ) : rideMode === 'sharing' && uid ? (
+        <View style={styles.flex}>
+          <SharingRidesFeed uid={uid} coords={driverCoords} />
+        </View>
       ) : scanning || shown.length === 0 ? (
         <View style={styles.flex}>
           <RadarScan
@@ -735,10 +777,10 @@ export default function DriverHome() {
                     asked for a shared ride and named their own fare live in a
                     separate queue — surfaced here because a driver who never
                     opens the drawer would otherwise never find that work. */}
-                <Pressable style={styles.poolCta} onPress={() => router.push('/driver/pool-requests')}>
-                  <Text style={styles.routeCtaTitle}>👥 Pool ride requests</Text>
+                <Pressable style={styles.poolCta} onPress={() => switchRideMode('sharing')}>
+                  <Text style={styles.routeCtaTitle}>👥 Sharing rides</Text>
                   <Text style={styles.routeCtaBody}>
-                    Passengers looking to share a ride. Accept their fare or counter it.
+                    See whole pools — every rider's name and fare. Their fare is fixed: accept or reject.
                   </Text>
                 </Pressable>
                 {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
@@ -975,6 +1017,21 @@ const styles = themed(() => StyleSheet.create({
   toggleTxt: { fontSize: 15, fontWeight: '600', color: colors.muted },
   toggleOffTxt: { color: '#1a1a1a', fontWeight: '700' },
   toggleOnTxt: { color: '#1a1a1a', fontWeight: '700' },
+
+  // ── Solo | Sharing rides selector ──
+  modeRow: { alignItems: 'center', paddingBottom: 8 },
+  modeToggle: {
+    flexDirection: 'row',
+    width: 260,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.glassStrong,
+    padding: 3,
+  },
+  modeHalf: { flex: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  modeActive: { backgroundColor: colors.glassLime, borderWidth: 1, borderColor: `${colors.primary}60` },
+  modeTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  modeTxtActive: { color: colors.primary, fontWeight: '800' },
 
   // ── "Show new requests" pill ──
   pillWrap: { alignItems: 'center', paddingVertical: 10 },

@@ -2,11 +2,14 @@
  * Integration tests for pool ride request CFs.
  *
  * Verified invariants:
- *  - createPoolRideRequest: persists correct structure, gender check
- *  - driverRespondToRequest: accept sets active + agreedFare; counter sets negotiating
- *  - leaderRespondToOffer: accept/reject state machine
- *  - joinPoolRideRequest: only on active, gender enforced, fare locked, fills slots
+ *  - createPoolRideRequest: persists correct structure, gender check, first name recorded
+ *  - driverRespondToRequest: accept-only (fares fixed, counters refused), starts no-joiner window
+ *  - leaderRespondToOffer: accept/reject state machine for legacy negotiating docs
+ *  - joinPoolRideRequest: open + active joinable, gender enforced, fare locked,
+ *    2 km drop radius, driverless pools stay open when full
+ *  - respondToPoolGoAnyway: both must agree to go, either cancels, window enforced
  *  - cancelPoolRideRequest: leader-only
+ *  - getNearbyPoolRequests: members (first name + fare) and totals per pool
  *  SECURITY: non-leader cannot call leaderRespondToOffer
  *  SECURITY: joining when negotiating is blocked
  *  SECURITY: joining gender-restricted ride as wrong gender is blocked
@@ -21,6 +24,9 @@ import {
   leaderRespondToOffer,
   joinPoolRideRequest,
   cancelPoolRideRequest,
+  respondToPoolGoAnyway,
+  getNearbyPoolRequests,
+  POOL_NO_JOINER_WINDOW_MS,
 } from '../index';
 
 // Build a minimal CallableRequest with optional role claim.
@@ -135,16 +141,40 @@ describe('driverRespondToRequest', () => {
     expect(snap.data()!.driverName).toBe('Test Driver');
   });
 
-  it('counter sets status=negotiating and counterFarePerSeat', async () => {
+  it('accept records first names, starts the no-joiner window', async () => {
     const id = await createRequest();
-    await driverRespondToRequest.run(
-      driverReq({ requestId: id, action: 'counter', counterFarePerSeat: 300 }, DRIVER),
-    );
+    await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.activatedAt).toBeTruthy();
+    expect(d.goAnyway).toEqual({ leader: null, driver: null });
+    expect(d.goAnywayConfirmed).toBe(false);
+    // Leader's first name was recorded at creation (displayName seeded as uid).
+    expect(d.passengerNames?.[LEADER]).toBe(LEADER);
+  });
+
+  it('counter is refused — pool fares are fixed', async () => {
+    const id = await createRequest();
+    await expect(
+      driverRespondToRequest.run(
+        driverReq({ requestId: id, action: 'counter', counterFarePerSeat: 300 }, DRIVER),
+      ),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+
+    // Request untouched — still open for any driver to accept.
+    const snap = await db().doc(`poolRideRequests/${id}`).get();
+    expect(snap.data()!.status).toBe('open');
+    expect(snap.data()!.counterFarePerSeat).toBeNull();
+  });
+
+  it('accepting a driverless pool that already filled goes straight to full', async () => {
+    const id = await createRequest(LEADER, { totalSlots: 2 });
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER)); // fills, stays open
+    await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
 
     const snap = await db().doc(`poolRideRequests/${id}`).get();
-    expect(snap.data()!.status).toBe('negotiating');
-    expect(snap.data()!.counterFarePerSeat).toBe(300);
-    expect(snap.data()!.agreedFarePerSeat).toBeNull();
+    expect(snap.data()!.status).toBe('full');
+    expect(snap.data()!.agreedFarePerSeat).toBe(200);
   });
 
   it('rejects if request is already taken by another driver', async () => {
@@ -157,22 +187,25 @@ describe('driverRespondToRequest', () => {
     ).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
-  it('counter without counterFarePerSeat is invalid', async () => {
-    const id = await createRequest();
-    await expect(
-      driverRespondToRequest.run(driverReq({ requestId: id, action: 'counter' }, DRIVER)),
-    ).rejects.toMatchObject({ code: 'invalid-argument' });
-  });
 });
 
 // ── leaderRespondToOffer ──────────────────────────────────────────────────────
 
 describe('leaderRespondToOffer', () => {
+  // Counters can no longer be created, but requests negotiated before the
+  // fixed-fare change may still sit in this state — the leader's accept/reject
+  // must keep working for them. Seed the legacy state directly.
   async function setupNegotiating() {
     const id = await createRequest();
-    await driverRespondToRequest.run(
-      driverReq({ requestId: id, action: 'counter', counterFarePerSeat: 300 }, DRIVER),
-    );
+    await db().doc(`poolRideRequests/${id}`).update({
+      status:             'negotiating',
+      driverId:           DRIVER,
+      driverName:         'Test Driver',
+      driverVehicle:      'Toyota Corolla',
+      driverPlate:        'ABC-123',
+      driverGender:       'male',
+      counterFarePerSeat: 300,
+    });
     return id;
   }
 
@@ -249,11 +282,62 @@ describe('joinPoolRideRequest', () => {
     expect(snap.data()!.filledSlots).toBe(2);
   });
 
-  it('SECURITY: joining a negotiating (not yet active) request is blocked', async () => {
+  it('joins an open (driverless) request at the proposed fare — pool forms before a driver', async () => {
     const id = await createRequest();
-    await driverRespondToRequest.run(
-      driverReq({ requestId: id, action: 'counter', counterFarePerSeat: 300 }, DRIVER),
-    );
+    const res = await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    expect(res.farePerSeat).toBe(200);
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.status).toBe('open'); // still needs a driver
+    expect(d.filledSlots).toBe(2);
+    expect(d.passengers).toContain(JOINER);
+    expect(d.passengerNames?.[JOINER]).toBe(JOINER);
+  });
+
+  it('a driverless pool that fills every seat stays open so drivers can still take it', async () => {
+    const id = await createRequest(LEADER, { totalSlots: 2 });
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.status).toBe('open');
+    expect(d.filledSlots).toBe(2);
+
+    // ...but no further passengers fit.
+    await seedUser('third-uid', 'male');
+    await expect(
+      joinPoolRideRequest.run(makeReq({ requestId: id }, 'third-uid')),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('accepts a drop-off within 2 km of the pool destination', async () => {
+    const id = await setupActive();
+    // ~1.5 km north of the destination — outside the old 1 km default,
+    // inside the 2 km joiner choice.
+    const res = await joinPoolRideRequest.run(makeReq({
+      requestId: id,
+      dropoffLat: 33.735,
+      dropoffLng: 73.0433,
+      dropoffAreaName: 'G-8, Islamabad',
+    }, JOINER));
+    expect(res.farePerSeat).toBe(200);
+  });
+
+  it('rejects a drop-off beyond 2 km of the pool destination', async () => {
+    const id = await setupActive();
+    // ~2.5 km north — outside the joiner radius.
+    await expect(
+      joinPoolRideRequest.run(makeReq({
+        requestId: id,
+        dropoffLat: 33.744,
+        dropoffLng: 73.0433,
+        dropoffAreaName: 'Too far',
+      }, JOINER)),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('SECURITY: joining a negotiating (legacy) request is blocked', async () => {
+    const id = await createRequest();
+    await db().doc(`poolRideRequests/${id}`).update({ status: 'negotiating', counterFarePerSeat: 300 });
 
     await expect(
       joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER)),
@@ -321,5 +405,103 @@ describe('cancelPoolRideRequest', () => {
     await expect(
       cancelPoolRideRequest.run(makeReq({ requestId: id }, LEADER)),
     ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+});
+
+// ── respondToPoolGoAnyway ─────────────────────────────────────────────────────
+// 10 minutes with no co-rider: both sides asked; going needs both, either cancels.
+
+describe('respondToPoolGoAnyway', () => {
+  /** Driver-accepted request with the no-joiner window already elapsed. */
+  async function setupElapsed() {
+    const id = await createRequest();
+    await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
+    await db().doc(`poolRideRequests/${id}`).update({
+      activatedAt: admin.firestore.Timestamp.fromMillis(Date.now() - POOL_NO_JOINER_WINDOW_MS - 60_000),
+    });
+    return id;
+  }
+
+  it('is blocked while the waiting window is still running', async () => {
+    const id = await createRequest();
+    await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
+    await expect(
+      respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'go' }, LEADER)),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('going needs BOTH: leader alone does not confirm, driver completes it', async () => {
+    const id = await setupElapsed();
+
+    const first = await respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'go' }, LEADER));
+    expect(first.confirmed).toBe(false);
+    let d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.goAnyway).toEqual({ leader: true, driver: null });
+    expect(d.goAnywayConfirmed).toBe(false);
+    expect(d.status).toBe('active');
+
+    const second = await respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'go' }, DRIVER));
+    expect(second.confirmed).toBe(true);
+    d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.goAnywayConfirmed).toBe(true);
+    expect(d.status).toBe('active');
+  });
+
+  it('either side can cancel — driver', async () => {
+    const id = await setupElapsed();
+    await respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'cancel' }, DRIVER));
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.status).toBe('cancelled');
+    expect(d.cancelledBy).toBe('driver');
+  });
+
+  it('either side can cancel — leader', async () => {
+    const id = await setupElapsed();
+    await respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'cancel' }, LEADER));
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.status).toBe('cancelled');
+    expect(d.cancelledBy).toBe('leader');
+  });
+
+  it('no longer applies once a co-rider has joined', async () => {
+    const id = await setupElapsed();
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await expect(
+      respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'cancel' }, DRIVER)),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('SECURITY: only the leader or the assigned driver can respond', async () => {
+    const id = await setupElapsed();
+    await expect(
+      respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'go' }, INTRUDER)),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+});
+
+// ── getNearbyPoolRequests ─────────────────────────────────────────────────────
+
+describe('getNearbyPoolRequests', () => {
+  it('lists the whole pool: each rider by first name with their fare, plus totals', async () => {
+    const id = await createRequest();
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+
+    const res = await getNearbyPoolRequests.run(driverReq({
+      lat: BASE_REQUEST.pickupLat,
+      lng: BASE_REQUEST.pickupLng,
+      radiusKm: 3,
+    }, DRIVER));
+
+    const req = (res.requests as any[]).find((r) => r.requestId === id);
+    expect(req).toBeTruthy();
+    expect(req.members).toEqual([
+      { name: LEADER, farePerSeat: 200, dropoffAreaName: BASE_REQUEST.destinationAreaName },
+      { name: JOINER, farePerSeat: 200, dropoffAreaName: BASE_REQUEST.destinationAreaName },
+    ]);
+    expect(req.totalFare).toBe(400);        // 2 riders aboard
+    expect(req.totalFareIfFull).toBe(600);  // 3 seats
+    expect(req.farePerSeat).toBe(200);
   });
 });

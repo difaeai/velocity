@@ -673,6 +673,12 @@ export const api = {
     { requestId: string },
     { ok: boolean }
   >('cancelPoolRideRequest'),
+  // Ten minutes with no co-rider: leader and driver each say "go" (both needed)
+  // or either one cancels.
+  respondToPoolGoAnyway: callable<
+    { requestId: string; action: 'go' | 'cancel' },
+    { ok: boolean; status: string; confirmed: boolean }
+  >('respondToPoolGoAnyway'),
   joinPoolRide: callable<
     {
       rideId: string; pickupLat: number; pickupLng: number; pickupAddress: string;
@@ -1269,21 +1275,40 @@ export type PoolGenderPref     = 'male_only' | 'female_only' | 'any';
 export type GenderComposition  = 'all' | 'male' | 'female' | 'none';
 export type CommuteDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
+/** One rider in a pool: first name, what they pay, where they get off. */
+export interface PoolMember {
+  name: string;
+  farePerSeat: number;
+  dropoffAreaName: string;
+}
+
 export interface NearbyPoolRequest {
   requestId: string;
   pickupAreaName: string;
   destinationAreaName: string;
   proposedFarePerSeat: number;
+  /** The fare each rider actually pays (fixed — pools are not negotiable). */
+  farePerSeat: number;
   totalSlots: number;
   filledSlots: number;
   slotsAvailable: number;
   genderPref: PoolGenderPref;
+  /** Everyone in the pool, leader first, in join order. */
+  members: PoolMember[];
+  /** farePerSeat × riders currently aboard. */
+  totalFare: number;
+  /** farePerSeat × totalSlots — what the pool pays if every seat fills. */
+  totalFareIfFull: number;
   distanceKm: number;
 }
 
 export interface NearbyActiveRide {
   type: 'request' | 'ride';
   id: string;
+  /** Requests only: 'open' (still finding a driver), 'active' or 'full'. */
+  status?: string;
+  /** Requests only: whether a driver has already taken this pool. */
+  hasDriver?: boolean;
   pickupAreaName: string;
   destinationAreaName: string;
   /** Pool destination pin + drop zone — joiner drop-offs must fall inside it. */
