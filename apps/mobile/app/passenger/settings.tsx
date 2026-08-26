@@ -18,6 +18,7 @@ import { api } from '../../src/api/client';
 import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
+import { useDriverProfile } from '../../src/hooks/driver';
 import { DELETE_ACCOUNT_URL, PRIVACY_URL, TERMS_URL } from '../../src/share/links';
 import { otherLanguageLabel, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
@@ -61,6 +62,34 @@ export default function Settings() {
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
   const [dark, setDark] = useState(getThemeMode() === 'dark');
+
+  // ── WhatsApp ride alerts (drivers only) ──
+  // The switch reads its truth from the driver document, because the backend
+  // owns this flag: it can turn itself off when Meta refuses the number or the
+  // driver replies STOP on WhatsApp, and the screen has to show that rather
+  // than whatever the user last tapped here.
+  const driverProfile = useDriverProfile(role === 'driver' ? user?.uid : undefined);
+  const waOptIn = driverProfile?.whatsappAlerts?.optIn === true;
+  const waBlocked = driverProfile?.whatsappAlerts?.blocked === true;
+  const [waBusy, setWaBusy] = useState(false);
+
+  async function handleWhatsAppToggle(next: boolean) {
+    if (waBusy) return;
+    setWaBusy(true);
+    try {
+      await api.setWhatsAppAlerts({ enabled: next });
+      // No local state to set — the driver document is the source of truth and
+      // its snapshot listener re-renders this row.
+    } catch (e) {
+      // The one failure a driver can actually fix is "we have no valid mobile
+      // number for you", so the backend's own sentence is worth showing.
+      const message =
+        (e as { message?: string })?.message ?? 'Could not change that right now.';
+      Alert.alert(next ? 'Could not turn alerts on' : 'Could not turn alerts off', message);
+    } finally {
+      setWaBusy(false);
+    }
+  }
 
   async function handleThemeToggle() {
     setDark((d) => !d);
@@ -175,6 +204,37 @@ export default function Settings() {
           </Pressable>
         </View>
         <Text style={styles.hint}>Tap Language to switch the whole app instantly.</Text>
+
+        {/* Drivers only. WhatsApp is the one way to reach a driver whose app
+            is closed — which is exactly when they are missing fares. Opt-in,
+            never on by default, and never turned on for anyone from the admin
+            side: an unrequested WhatsApp message is what gets a business
+            number reported, and there is no coming back from that. */}
+        {role === 'driver' && (
+          <>
+            <Text style={styles.sectionLabel}>RIDE ALERTS</Text>
+            <View style={styles.card}>
+              <View style={styles.row}>
+                <Text style={styles.rowIcon}>💬</Text>
+                <Text style={styles.rowLabel}>WhatsApp me new rides</Text>
+                <Switch
+                  value={waOptIn}
+                  disabled={waBusy}
+                  onValueChange={handleWhatsAppToggle}
+                  trackColor={{ true: colors.primary, false: colors.border }}
+                  thumbColor="#fff"
+                />
+              </View>
+            </View>
+            <Text style={styles.hint}>
+              {waOptIn
+                ? 'When you are offline and a ride comes up near you, we will send one WhatsApp message so you can open the app. A few a day at most, never between 10pm and 7am. Reply STOP any time.'
+                : waBlocked
+                  ? 'Alerts are off. Turn them back on to start receiving them again on your registered number.'
+                  : 'Offline drivers get no notifications — the app is closed. Turn this on and we will WhatsApp you when a ride comes up nearby.'}
+            </Text>
+          </>
+        )}
 
         <Text style={styles.sectionLabel}>SUPPORT</Text>
         <View style={styles.card}>

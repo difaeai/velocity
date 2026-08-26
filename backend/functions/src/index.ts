@@ -246,6 +246,12 @@ export {
 // Admin: broadcast push notification
 export { adminSendPushNotification } from './users';
 
+// WhatsApp alerts for OFFLINE drivers — the one channel that reaches a driver
+// whose app is closed. Opt-in only, capped, and with a circuit breaker that
+// stops every send the moment Meta pushes back (see whatsapp/policy.ts).
+export { setWhatsAppAlerts, whatsappWebhook } from './whatsapp';
+export { adminGetWhatsAppStatus, adminSetWhatsAppAlertSettings } from './whatsapp/admin';
+
 // Earn with Velocity — the Partner Program (fleets, referrals, commission)
 export {
   submitPartnerApplication,

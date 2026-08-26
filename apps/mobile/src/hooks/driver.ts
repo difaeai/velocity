@@ -17,6 +17,19 @@ export interface DriverProfile {
   cycleGrossFare?: number;
   /** Cash-only portion of the cycle — what the settle amount is computed from. */
   cycleCashFare?: number;
+  /**
+   * WhatsApp ride alerts for when the app is closed. Server-owned: the driver
+   * changes it through the `setWhatsAppAlerts` callable, never by writing here
+   * (the security rules forbid it), so that consent has exactly one origin.
+   */
+  whatsappAlerts?: {
+    optIn?: boolean;
+    /** Set when Meta refused the number, or when the driver replied STOP. */
+    blocked?: boolean;
+    blockedReason?: string;
+    /** The normalised number consent was given for. */
+    number?: string;
+  };
   // ── Submitted application details — used to re-fill the onboarding forms on
   //    resubmission so a rejection only costs the driver the rejected sections.
   cnic?: string;

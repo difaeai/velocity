@@ -70,6 +70,7 @@ jobs:
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
         run: |
           : > .env.velocity-fe379
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
@@ -99,6 +100,18 @@ jobs:
             echo "· social: the content crew is READY"
           else
             echo "· social: no GEMINI_API_KEY — the crew cannot plan, write, draw or render"
+          fi
+          # WhatsApp Cloud API — its own block (WHATSAPP_TOKEN, _PHONE_NUMBER_ID,
+          # _TEMPLATE_NAME, _TEMPLATE_LANG, _VERIFY_TOKEN, _APP_SECRET), kept
+          # apart from the payments block so the token can be rotated without
+          # anyone having to reconstruct a set of credentials they cannot read
+          # back out of GitHub. Absent → offline-driver alerts stay dark; the
+          # rides themselves are unaffected.
+          if [ -n "$WHATSAPP_ENV" ]; then
+            printf '%s\n' "$WHATSAPP_ENV" >> .env.velocity-fe379
+            echo "· whatsapp: offline-driver alerts CONFIGURED"
+          else
+            echo "· whatsapp: no WHATSAPP_ENV — offline-driver alerts stay off"
           fi
           echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 

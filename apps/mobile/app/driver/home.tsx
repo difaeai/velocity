@@ -68,6 +68,9 @@ const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' |
   // job, because a shared car ends it once per passenger, not once per trip.
 };
 
+/** Remembers that the WhatsApp-alerts offer has been made, so it is made once. */
+const WHATSAPP_ASK_KEY = 'velocity.driver.whatsappAsked.v1';
+
 /** How long the radar sweeps after the driver goes online, before the feed opens. */
 const SCAN_MS = 3500;
 
@@ -436,6 +439,52 @@ export default function DriverHome() {
     // Sweep the radar on the way online — never on the way offline.
     if (next) setScanning(true);
     run(() => setDoc(doc(db, 'drivers', uid), { online: next, lastSeenAt: serverTimestamp() }, { merge: true }));
+    // Going offline is the exact moment the offer means something: from here on
+    // there are no notifications, because the app will be closed. Asked once,
+    // ever — a second prompt would be nagging, and the switch lives in Settings
+    // for anyone who says no now and changes their mind later.
+    if (!next) offerWhatsAppAlerts();
+  }
+
+  /**
+   * One-time ask for WhatsApp ride alerts.
+   *
+   * Consent has to be given knowingly, so this explains what will arrive and
+   * how often before it asks — and the answer is recorded locally either way so
+   * nobody is asked twice. Drivers who already opted in, or who the backend has
+   * blocked, are never shown it.
+   */
+  async function offerWhatsAppAlerts() {
+    if (profile?.whatsappAlerts?.optIn === true) return;
+    try {
+      if (await AsyncStorage.getItem(WHATSAPP_ASK_KEY)) return;
+      await AsyncStorage.setItem(WHATSAPP_ASK_KEY, '1');
+    } catch {
+      // Storage is unavailable — better to skip the prompt than to risk showing
+      // it on every single toggle.
+      return;
+    }
+    Alert.alert(
+      'Get rides on WhatsApp?',
+      "You're offline now, so we can't notify you in the app. Want a WhatsApp message when a ride comes up near you? A few a day at most, never between 10pm and 7am, and you can stop any time.",
+      [
+        { text: 'No thanks', style: 'cancel' },
+        {
+          text: 'Yes, WhatsApp me',
+          onPress: () => {
+            api
+              .setWhatsAppAlerts({ enabled: true })
+              .then(() => Alert.alert('Done ✅', "We'll WhatsApp you when a ride comes up nearby."))
+              .catch((e: unknown) =>
+                Alert.alert(
+                  'Could not turn alerts on',
+                  (e as { message?: string })?.message ?? 'Try again from Settings.',
+                ),
+              );
+          },
+        },
+      ],
+    );
   }
 
   function openRequest(tripId: string) {

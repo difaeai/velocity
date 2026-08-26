@@ -16,14 +16,42 @@
  * AsyncStorage persistence.
  */
 
-/** Minimum gap before the Nth send of the same number, in seconds. */
-const COOLDOWN_LADDER_S = [0, 30, 60, 120, 300];
+/**
+ * Minimum gap before the Nth send of the same number, in seconds.
+ *
+ * Loosened at the front, where honest users live. The old ladder charged 30s
+ * for a second code and 5 minutes by the fourth, which on a Pakistani network
+ * is indistinguishable from the app being broken: the first SMS genuinely does
+ * arrive two minutes late sometimes, and the person waiting has no way to tell
+ * a slow SMS from a lost one. The gap still grows — a bot hammering the button
+ * hits real friction — it just no longer punishes the third honest retry.
+ */
+const COOLDOWN_LADDER_S = [0, 15, 30, 45, 60, 90, 120];
+
+/**
+ * What the sign-in screen counts down before re-enabling Resend.
+ *
+ * Kept in step with the *second* rung of the ladder above, so the button turns
+ * live exactly when a send would actually be allowed. It must stay under 60 so
+ * the screen's `0:SS` countdown stays honest.
+ */
+export const RESEND_UI_COOLDOWN_S = COOLDOWN_LADDER_S[1] ?? 15;
 
 /** Fallback gap, so an out-of-range index can only ever be *more* cautious. */
 const LONGEST_COOLDOWN_S = Math.max(...COOLDOWN_LADDER_S);
 
-/** Sends allowed per number per hour, comfortably under Firebase's own ceiling. */
-export const MAX_SENDS_PER_NUMBER = 5;
+/**
+ * Sends allowed per number per hour.
+ *
+ * Five was chosen to sit comfortably under Firebase's own per-number ceiling,
+ * and it did — but it also meant a user whose first three codes were eaten by
+ * the network had two left before the app itself locked them out for an hour,
+ * with a working number and nothing wrong on their end. Ten leaves real room
+ * for a bad SMS night while still being a ceiling; if Firebase throttles us
+ * first, `noteOtpThrottled` takes over and serves that penalty locally, which
+ * is the backstop this number no longer has to be.
+ */
+export const MAX_SENDS_PER_NUMBER = 10;
 
 /**
  * RETRIES allowed per device per hour, across all numbers. This is the brake on
@@ -33,7 +61,7 @@ export const MAX_SENDS_PER_NUMBER = 5;
  * It deliberately does NOT count a number's first code (see FIRST_CODE_EXEMPT
  * below), so it can never be the reason a new person is turned away.
  */
-export const MAX_SENDS_PER_DEVICE = 40;
+export const MAX_SENDS_PER_DEVICE = 100;
 
 /**
  * The one device ceiling that nothing is exempt from.
@@ -44,7 +72,7 @@ export const MAX_SENDS_PER_DEVICE = 40;
  * hard stop, set well above any real queue of people and well below anything
  * that would cost money to sit through.
  */
-export const MAX_SENDS_PER_DEVICE_HARD = 150;
+export const MAX_SENDS_PER_DEVICE_HARD = 400;
 
 /**
  * A number nobody has asked for a code for on this device in the last hour is a

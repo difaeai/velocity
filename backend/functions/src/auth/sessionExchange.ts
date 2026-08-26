@@ -98,7 +98,14 @@ export const exchangePhoneSession = onCall(async (req) => {
 
   // Keyed on the verified uid, so the limit is per phone number and cannot be
   // dodged by reconnecting. Well above any honest retry loop.
-  await rateLimit(decoded.uid, 'exchangePhoneSession', 10, 600);
+  //
+  // Raised from 10 alongside the client-side OTP ladder: this counts EXCHANGES,
+  // not codes, and a flaky connection turns one successful verification into
+  // several exchange attempts. Being refused here after proving your number is
+  // the worst possible place to be stopped — the SMS is already spent — so the
+  // ceiling sits far above any honest loop and exists only to stop a leaked
+  // token being replayed in bulk.
+  await rateLimit(decoded.uid, 'exchangePhoneSession', 30, 600);
 
   // No developer claims: `role` and friends live on the user record, set only by
   // the backend, and are picked up by every ID token minted afterwards. Passing

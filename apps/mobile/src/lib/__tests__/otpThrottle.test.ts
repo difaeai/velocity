@@ -19,6 +19,14 @@ import {
 const T0 = 1_800_000_000_000;
 const NUM = '3341015013';
 
+/**
+ * A gap wide enough that the cooldown ladder is always satisfied, yet narrow
+ * enough that a full hour's worth of sends still lands inside WINDOW_MS. The
+ * caps are counted over a sliding hour, so a test that spaces its sends too
+ * far apart stops testing the cap and starts testing the window.
+ */
+const SPACED_MS = 4 * 60_000;
+
 /** Sends `n` codes for `key`, each `gapMs` apart, starting at `start`. */
 function sendTimes(log: OtpSendLog, key: string, n: number, start: number, gapMs: number) {
   let out = log;
@@ -60,9 +68,9 @@ describe('evaluateSend', () => {
   });
 
   it('caps a single number for the rest of the hour', () => {
-    // Spaced 10 minutes apart so the ladder is satisfied and only the cap can bite.
-    const log = sendTimes(EMPTY_LOG, NUM, MAX_SENDS_PER_NUMBER, T0, 10 * 60_000);
-    const now = T0 + MAX_SENDS_PER_NUMBER * 10 * 60_000;
+    // Spaced so the ladder is satisfied and only the cap can bite.
+    const log = sendTimes(EMPTY_LOG, NUM, MAX_SENDS_PER_NUMBER, T0, SPACED_MS);
+    const now = T0 + MAX_SENDS_PER_NUMBER * SPACED_MS;
     const d = evaluateSend(log, NUM, now);
     expect(d.allowed).toBe(false);
     if (!d.allowed) {
@@ -77,7 +85,7 @@ describe('evaluateSend', () => {
     // A different number every time, so the per-number cap can never fire.
     for (let i = 0; i < MAX_SENDS_PER_DEVICE; i++) {
       log = recordSend(log, `30012345${String(i).padStart(2, '0')}`, now);
-      now += 60_000;
+      now += 10_000;
     }
     // A RETRY — this number has already been through the device today, so the
     // device cap is exactly the thing that should stop it.
@@ -104,7 +112,7 @@ describe('evaluateSend', () => {
     let now = T0;
     for (let i = 0; i < MAX_SENDS_PER_DEVICE_HARD; i++) {
       log = recordSend(log, `3001${String(i).padStart(6, '0')}`, now);
-      now += 10_000;
+      now += 5_000;
     }
     const d = evaluateSend(log, '3009999999', now);
     expect(d.allowed).toBe(false);
@@ -119,9 +127,36 @@ describe('evaluateSend', () => {
   });
 
   it('forgets everything once the hour is up', () => {
-    const log = sendTimes(EMPTY_LOG, NUM, MAX_SENDS_PER_NUMBER, T0, 10 * 60_000);
-    const wellAfter = T0 + MAX_SENDS_PER_NUMBER * 10 * 60_000 + WINDOW_MS;
+    const log = sendTimes(EMPTY_LOG, NUM, MAX_SENDS_PER_NUMBER, T0, SPACED_MS);
+    const wellAfter = T0 + MAX_SENDS_PER_NUMBER * SPACED_MS + WINDOW_MS;
     expect(evaluateSend(log, NUM, wellAfter)).toEqual({ allowed: true });
+  });
+
+  it('leaves room for a genuinely bad SMS night', () => {
+    // The complaint the raised ceiling answers: five codes were gone before the
+    // network had delivered one, and the app — not Firebase — was what said no.
+    // Six honest, ladder-respecting retries must still get through.
+    let log = EMPTY_LOG;
+    let now = T0;
+    for (let i = 0; i < 6; i++) {
+      expect(evaluateSend(log, NUM, now).allowed).toBe(true);
+      log = recordSend(log, NUM, now);
+      now += SPACED_MS;
+    }
+  });
+
+  it('never asks an honest user to wait more than two minutes between codes', () => {
+    // The ladder may grow, but not past the point where a real person decides
+    // the app is broken and uninstalls it.
+    let log = EMPTY_LOG;
+    let now = T0;
+    for (let i = 0; i < MAX_SENDS_PER_NUMBER - 1; i++) {
+      log = recordSend(log, NUM, now);
+      let wait = 0;
+      while (!evaluateSend(log, NUM, now + wait).allowed && wait < WINDOW_MS) wait += 1_000;
+      expect(wait).toBeLessThanOrEqual(120_000);
+      now += wait;
+    }
   });
 });
 
