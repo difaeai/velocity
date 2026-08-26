@@ -14,7 +14,9 @@ import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
-import { whatsAppConfig } from './client';
+import { rateLimit } from '../lib/ratelimit';
+import { sendTemplate, toWhatsAppNumber, whatsAppConfig } from './client';
+import { driverDeepLink } from './alerts';
 import { pktDayKey, readAlertSettings } from './policy';
 
 const SETTINGS_DOC = 'config/whatsappAlerts';
@@ -115,4 +117,93 @@ export const adminSetWhatsAppAlertSettings = onCall(async (req) => {
 
   const snap = await db.doc(SETTINGS_DOC).get();
   return { ok: true, settings: readAlertSettings(snap.data()) };
+});
+
+const testSchema = z.object({
+  /** The tester's own WhatsApp number. Never a driver's. */
+  phone: z.string().min(6).max(24),
+});
+
+/**
+ * Sends one real template message to a number the admin types, and reports
+ * exactly what Meta said.
+ *
+ * This exists because of what setup day looks like without it. The template
+ * name, its language code, the token, the phone-number id and the parameter
+ * count all have to agree, and every way they can disagree comes back as a
+ * `halt` — which is the correct response for a live system (every send would
+ * fail identically) but a terrible first experience: one wrong character in
+ * WHATSAPP_TEMPLATE_LANG and the feature switches itself off platform-wide
+ * before it has ever delivered a message.
+ *
+ * So this path deliberately does NOT trip the breaker and does NOT touch any
+ * driver record or the daily budget. It is a wiring check, and it hands back
+ * the raw error code so the mismatch names itself.
+ *
+ * The consent rules still apply in spirit: admin-only, rate-limited, logged,
+ * and pointed at a number the person running it typed in themselves — the same
+ * thing Meta's own API Setup page does. It is not a way to message drivers.
+ */
+export const adminSendWhatsAppTest = onCall(async (req) => {
+  const ctx = requireAdmin(req);
+  const parsed = testSchema.safeParse(req.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Provide a phone number to test.');
+
+  // Low enough that this can never become a way to send real volume, high
+  // enough to iterate on a template mismatch without waiting.
+  await rateLimit(ctx.uid, 'adminSendWhatsAppTest', 10, 3600);
+
+  const cfg = whatsAppConfig();
+  if (!cfg) {
+    return {
+      ok: false,
+      stage: 'config' as const,
+      detail:
+        'No WhatsApp credentials on the backend. WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID and ' +
+        'WHATSAPP_TEMPLATE_NAME must all be set (see docs/WHATSAPP_ALERTS.md).',
+    };
+  }
+
+  const to = toWhatsAppNumber(parsed.data.phone);
+  if (!to) {
+    return {
+      ok: false,
+      stage: 'number' as const,
+      detail: 'Not a valid Pakistani mobile. Use 03XX XXXXXXX or +92 3XX XXXXXXX.',
+    };
+  }
+
+  logger.info('WhatsApp: admin test send', { by: ctx.uid, template: cfg.templateName });
+
+  // The same four parameters and the same URL suffix a real alert uses, so a
+  // parameter-count or format mismatch shows up here rather than in production.
+  const res = await sendTemplate(cfg, to, ['Tester', 'Moto', '250', 'F-10 Markaz'], 'TEST123');
+
+  if (res.ok) {
+    return {
+      ok: true,
+      messageId: res.messageId,
+      template: cfg.templateName,
+      language: cfg.templateLang,
+      buttonUrl: driverDeepLink('TEST123'),
+    };
+  }
+
+  return {
+    ok: false,
+    stage: 'send' as const,
+    code: res.code,
+    detail: res.detail,
+    // The two mismatches that account for almost every failed first attempt,
+    // named rather than left to be inferred from a numeric code.
+    hint:
+      res.code === 132001
+        ? `Meta has no template "${cfg.templateName}" in language "${cfg.templateLang}". ` +
+          'Check the exact name and the language code shown in WhatsApp Manager — ' +
+          'a template created as en_US will not answer to en.'
+        : res.code === 132000
+          ? 'The template expects a different number of variables than the four this sends. ' +
+            'The body must have exactly {{1}}–{{4}} and the URL button exactly one variable.'
+          : null,
+  };
 });
