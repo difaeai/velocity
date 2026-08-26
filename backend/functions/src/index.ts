@@ -250,7 +250,7 @@ export { adminSendPushNotification } from './users';
 // whose app is closed. Opt-in only, capped, and with a circuit breaker that
 // stops every send the moment Meta pushes back (see whatsapp/policy.ts).
 export { setWhatsAppAlerts, whatsappWebhook } from './whatsapp';
-export { adminGetWhatsAppStatus, adminSetWhatsAppAlertSettings } from './whatsapp/admin';
+export { adminGetWhatsAppStatus, adminSetWhatsAppAlertSettings, adminSendWhatsAppTest } from './whatsapp/admin';
 
 // Earn with Velocity — the Partner Program (fleets, referrals, commission)
 export {

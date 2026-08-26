@@ -122,6 +122,13 @@ dark — rides are unaffected.
 request, because a public endpoint that edits driver consent and cannot tell
 Meta from anyone else is worse than one that does nothing.
 
+> **The one that catches everyone: the language code.** Whatever WhatsApp
+> Manager shows next to the template — `en` or `en_US` — must be exactly what
+> `WHATSAPP_TEMPLATE_LANG` says. They are different templates as far as the API
+> is concerned, and a mismatch comes back as error 132001, which is classified
+> `halt` and switches the whole feature off before it has ever delivered a
+> message. Verify with `adminSendWhatsAppTest` (below) before arming anything.
+
 ### 4. Webhook
 
 After the first deploy, the webhook lives at:
@@ -162,7 +169,23 @@ The masked number comes back from `setWhatsAppAlerts` and is shown in the
 confirmation, so a mistyped digit is caught immediately rather than by an alert
 that never arrives.
 
-### 6. Arm it
+### 6. Check the wiring before arming it
+
+`adminSendWhatsAppTest({ phone: '03XX XXXXXXX' })` sends one real template
+message to a number you type — your own handset — and reports exactly what Meta
+said.
+
+It deliberately does **not** trip the circuit breaker, touch any driver record,
+or spend the daily budget. Setup has five things that all have to agree (token,
+phone-number id, template name, language code, parameter count) and every way
+they can disagree arrives as a `halt`, which is right for a live system and
+awful for a first attempt. This is the wiring check that keeps those separate,
+and it names the two mismatches that account for almost every failed first try.
+
+A `messages` array back from Meta and a message on your phone means everything
+is correct. Then, and only then:
+
+### 7. Arm it
 
 Nothing sends until someone deliberately turns it on. From the admin console
 (or a direct call to `adminSetWhatsAppAlertSettings`):
@@ -171,8 +194,26 @@ Nothing sends until someone deliberately turns it on. From the admin console
 adminSetWhatsAppAlertSettings({ enabled: true })
 ```
 
-Start with the defaults. Watch `adminGetWhatsAppStatus` and the quality rating
-in WhatsApp Manager for a week before loosening anything.
+Start with the defaults, with one exception. **An unverified Meta business is
+capped at roughly 250 business-initiated conversations per 24 hours**, and the
+default `dailyGlobalCap` is 400 — so until Business Verification clears, set it
+below the tier limit or sends will start failing against Meta's ceiling rather
+than ours:
+
+```js
+adminSetWhatsAppAlertSettings({ dailyGlobalCap: 200 })
+```
+
+Watch `adminGetWhatsAppStatus` and the quality rating in WhatsApp Manager for a
+week before loosening anything.
+
+### A note on where the values live
+
+The Phone Number ID and WABA ID are identifiers, not credentials — but this
+repository is public, so none of the six values belong in it. They live in the
+`WHATSAPP_ENV` GitHub secret and nowhere else. The WABA ID is not among them:
+no code path calls it. It is what you need for WhatsApp Manager URLs and for
+querying template status by hand, so keep it with your notes rather than here.
 
 ---
 
