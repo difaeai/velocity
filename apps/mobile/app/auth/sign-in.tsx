@@ -23,6 +23,7 @@ import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
 import { describePhoneAuthError, SMS_THROTTLE_COOLDOWN_MS } from '../../src/lib/phoneAuthErrors';
 import { checkOtpSendAllowed, noteOtpSendAttempt, noteOtpThrottled } from '../../src/auth/otpGuard';
+import { RESEND_UI_COOLDOWN_S } from '../../src/lib/otpThrottle';
 
 type Step = 'enter_phone' | 'enter_otp';
 
@@ -185,7 +186,7 @@ export default function SignIn() {
     if (step !== 'enter_otp' || sentAt === null) return;
     timerRef.current = setInterval(() => {
       const s = Math.floor((Date.now() - sentAt) / 1000);
-      setResendCooldown(Math.max(0, 60 - s));
+      setResendCooldown(Math.max(0, RESEND_UI_COOLDOWN_S - s));
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [step, sentAt]);
@@ -203,7 +204,7 @@ export default function SignIn() {
     setConfirmation(result);
     setStep('enter_otp');
     setSentAt(Date.now());
-    setResendCooldown(60);
+    setResendCooldown(RESEND_UI_COOLDOWN_S);
     if (isResend) setOtp('');
   }
 

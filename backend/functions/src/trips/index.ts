@@ -35,6 +35,7 @@ import {
 } from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
+import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
 import { hostRosterEntry } from './poolRoster';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
@@ -142,6 +143,11 @@ export const createTrip = onCall(async (req) => {
   const isPool = data.pool ?? false;
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;
+  // The fare after any promo discount, lifted out of the transaction so the
+  // broadcast below can quote the number the driver will actually be offered.
+  // Assigned inside the transaction, which may retry — last write wins, and a
+  // retry recomputes it from the same inputs.
+  let broadcastFare = data.offeredFare;
 
   const tripRef = db.collection('trips').doc();
   const userRef = db.doc(`users/${ctx.uid}`);
@@ -182,6 +188,7 @@ export const createTrip = onCall(async (req) => {
     }
 
     const finalFare = Math.max(50, data.offeredFare - promoDiscount);
+    broadcastFare = finalFare;
 
     if (data.paymentMethod === 'wallet' && walletBalance < finalFare) {
       throw new HttpsError(
@@ -294,6 +301,7 @@ export const createTrip = onCall(async (req) => {
     data.pickup,
     data.pool ?? false,
     data.rideType,
+    { fare: broadcastFare },
   ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
 
   // Public pools go out to riders whose saved daily route matches this one on
@@ -332,9 +340,10 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
 
 export async function broadcastTripToNearbyDrivers(
   tripId: string,
-  pickup: { lat: number; lng: number },
+  pickup: { lat: number; lng: number; address?: string },
   isPool: boolean,
   rideType: string,
+  opts: { fare?: number } = {},
 ): Promise<void> {
   const settingsSnap = await db.doc('config/rideSettings').get();
   const radiusKm = (settingsSnap.get('searchRadiusKm') as number) ?? 2;
@@ -352,6 +361,18 @@ export async function broadcastTripToNearbyDrivers(
       nearbyUids.push(d.id);
     }
   }
+
+  // Drivers with the app CLOSED get no push — there is nothing to push to. They
+  // are reached, if at all, on WhatsApp, and only when the online drivers above
+  // are too few to serve this ride. Deliberately fired before the early return
+  // below: no online drivers at all is the case where it matters most.
+  alertOfflineDriversOnWhatsApp({
+    tripId,
+    pickup,
+    rideType,
+    fare: opts.fare ?? 0,
+    onlineNearby: nearbyUids.length,
+  }).catch((err) => logger.error('WhatsApp alerts failed', { tripId, err }));
 
   if (nearbyUids.length === 0) {
     logger.info('No nearby drivers for broadcast', { tripId });

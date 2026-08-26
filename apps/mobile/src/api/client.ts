@@ -332,6 +332,18 @@ export const api = {
     'submitDriverOnboarding',
   ),
   createTrip: callable<CreateTripInput, { ok: boolean; tripId: string; shareCode: string | null }>('createTrip'),
+
+  /**
+   * The driver's consent switch for WhatsApp ride alerts.
+   *
+   * This callable is the only way `optIn` is ever set — the backend refuses to
+   * turn it on any other way, because a WhatsApp message nobody asked for is
+   * what gets a business number reported and eventually restricted.
+   */
+  setWhatsAppAlerts: callable<
+    { enabled: boolean; phone?: string },
+    { ok: boolean; enabled: boolean; number?: string }
+  >('setWhatsAppAlerts'),
   // Pool share links — invite codes on booking-flow pool trips
   getPoolTripByCode: callable<{ code: string }, PoolTripByCode>('getPoolTripByCode'),
   joinPoolTrip: callable<
