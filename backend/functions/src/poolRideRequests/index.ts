@@ -7,8 +7,25 @@ import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
+import { firstNameOf } from '../trips/poolRoster';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
+
+/**
+ * How long a driver-accepted pool waits for co-riders before both sides are
+ * asked whether they still want to go with just the leader aboard.
+ */
+export const POOL_NO_JOINER_WINDOW_MS = 10 * 60 * 1000;
+// Client countdowns drift a little against server time — accept a response a
+// few seconds early rather than bounce a tap made at the visible 0:00 mark.
+const NO_JOINER_WINDOW_SLACK_MS = 20 * 1000;
+
+/**
+ * Joiners choose either the pool's exact destination ("same area") or their own
+ * drop-off within 2 km of it. The leader/admin drop radius still applies when
+ * it is wider, but a joiner is never held to less than the 2 km choice.
+ */
+export const POOL_JOIN_RADIUS_M = 2000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,7 +70,11 @@ export const createPoolRideRequest = onCall(async (req) => {
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const d = p.data;
 
-  const leaderGender = await getUserGender(ctx.uid);
+  const leaderSnap = await db.doc(`users/${ctx.uid}`).get();
+  const leaderData = leaderSnap.exists ? leaderSnap.data()! : {};
+  const leaderGender: string = (leaderData.gender as string) ?? 'unspecified';
+  // First name only — the whole pool (and browsing drivers) can see this.
+  const leaderFirstName = firstNameOf(leaderData.displayName ?? leaderData.fullName);
 
   // Enforce gender: if requesting male_only/female_only the leader must match.
   if (!genderAllowed(leaderGender, d.genderPref)) {
@@ -92,6 +113,9 @@ export const createPoolRideRequest = onCall(async (req) => {
     totalSlots:          d.totalSlots,
     filledSlots:         1,
     passengers:          [ctx.uid],
+    // First names only, keyed by uid — what drivers browsing pools and
+    // co-riders are allowed to see of each other.
+    passengerNames:      { [ctx.uid]: leaderFirstName },
     dropRadiusM,
     passengerDropoffs:   {},
     genderPref:          d.genderPref,
@@ -124,10 +148,15 @@ export const driverRespondToRequest = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
   const p = DriverRespondSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
-  const { requestId, action, counterFarePerSeat } = p.data;
+  const { requestId, action } = p.data;
 
-  if (action === 'counter' && !counterFarePerSeat) {
-    invalid('counterFarePerSeat is required when action is counter.');
+  // Pool fares are set by the pool, take-it-or-leave-it. 'counter' stays in the
+  // schema so older app builds get this sentence instead of a validation error.
+  if (action === 'counter') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Pool fares are fixed — counter offers are no longer available. Accept the fare or skip this pool.',
+    );
   }
 
   // Fetch driver profile for name/vehicle info.
@@ -162,7 +191,9 @@ export const driverRespondToRequest = onCall(async (req) => {
       throw new HttpsError('failed-precondition', 'Your gender does not match this ride request preference.');
     }
 
-    newStatus = action === 'accept' ? 'active' : 'negotiating';
+    // A pool can fill up with passengers before any driver takes it — accepting
+    // one of those goes straight to 'full' so no further joiners slip in.
+    newStatus = (data.filledSlots as number) >= (data.totalSlots as number) ? 'full' : 'active';
 
     tx.update(reqRef, {
       driverId:           ctx.uid,
@@ -171,8 +202,13 @@ export const driverRespondToRequest = onCall(async (req) => {
       driverPlate:        driverData.plate ?? 'N/A',
       driverGender,
       status:             newStatus,
-      agreedFarePerSeat:  action === 'accept' ? data.proposedFarePerSeat : null,
-      counterFarePerSeat: action === 'counter' ? counterFarePerSeat! : null,
+      agreedFarePerSeat:  data.proposedFarePerSeat,
+      counterFarePerSeat: null,
+      // Starts the no-joiner clock: if the pool is still just the leader after
+      // POOL_NO_JOINER_WINDOW_MS, both sides get asked whether to go anyway.
+      activatedAt:        FieldValue.serverTimestamp(),
+      goAnyway:           { leader: null, driver: null },
+      goAnywayConfirmed:  false,
       updatedAt:          FieldValue.serverTimestamp(),
     });
   });
@@ -269,13 +305,20 @@ export const joinPoolRideRequest = onCall(async (req) => {
     if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
     const data = snap.data()!;
 
-    // Only join active (fare agreed) requests.
-    if (data.status !== 'active') {
-      throw new HttpsError('failed-precondition', 'This ride is not yet active. Wait for the leader to finalize the fare.');
+    // Joinable while the pool is looking for a driver ('open') and after one
+    // accepted ('active'). The fare is fixed either way — drivers cannot
+    // negotiate a pool, so the proposed fare IS the fare.
+    if (data.status !== 'active' && data.status !== 'open') {
+      throw new HttpsError('failed-precondition', 'This ride can no longer be joined.');
+    }
+    if (data.status === 'open'
+        && data.expiresAt && typeof (data.expiresAt as { toDate?: () => Date }).toDate === 'function'
+        && (data.expiresAt as { toDate: () => Date }).toDate() < new Date()) {
+      throw new HttpsError('failed-precondition', 'This ride request has expired.');
     }
     if ((data.passengers as string[]).includes(ctx.uid)) {
       // Already a member — return silently.
-      farePerSeat = data.agreedFarePerSeat as number;
+      farePerSeat = (data.agreedFarePerSeat ?? data.proposedFarePerSeat) as number;
       return;
     }
     if (data.filledSlots >= data.totalSlots) {
@@ -291,7 +334,12 @@ export const joinPoolRideRequest = onCall(async (req) => {
     // drop radius of the leader's destination (the pool destination decided
     // when the ride was created). Omitted coords mean "same destination".
     if (typeof dropoffLat === 'number' && typeof dropoffLng === 'number') {
-      const dropRadiusM = effectiveDropRadiusM(data.dropRadiusM as number | undefined, adminDropRadiusM);
+      // Joiners always get at least the 2 km choice; a wider leader/admin
+      // radius still counts when one was set.
+      const dropRadiusM = Math.max(
+        effectiveDropRadiusM(data.dropRadiusM as number | undefined, adminDropRadiusM),
+        POOL_JOIN_RADIUS_M,
+      );
       const distM = distanceM(
         data.destinationLat as number, data.destinationLng as number,
         dropoffLat, dropoffLng,
@@ -300,8 +348,8 @@ export const joinPoolRideRequest = onCall(async (req) => {
         throw new HttpsError(
           'failed-precondition',
           `Your drop-off is ${(distM / 1000).toFixed(1)} km from the pool destination. ` +
-          `It must be within ${dropRadiusM} m of "${data.destinationAreaName}" — ` +
-          'pick the same destination, a point inside the drop zone, or ask the driver to drop you within it.',
+          `It must be within ${(dropRadiusM / 1000).toFixed(1)} km of "${data.destinationAreaName}" — ` +
+          'pick the same area, a point inside that radius, or ask the driver to drop you within it.',
         );
       }
     }
@@ -330,8 +378,15 @@ export const joinPoolRideRequest = onCall(async (req) => {
       newMale, newFemale, data.totalSlots as number, data.genderPref as GenderPref,
     );
 
-    farePerSeat = data.agreedFarePerSeat as number;
+    farePerSeat = (data.agreedFarePerSeat ?? data.proposedFarePerSeat) as number;
     const newFilledSlots = (data.filledSlots as number) + 1;
+
+    // A driverless pool that fills up stays 'open' — it still needs a driver,
+    // and drivers browse open requests (fullness comes from filledSlots).
+    // Once a driver holds it, filling the last seat closes it as 'full'.
+    const newStatus = newFilledSlots >= (data.totalSlots as number)
+      ? (data.driverId ? 'full' : 'open')
+      : data.status;
 
     tx.update(reqRef, {
       passengers:        FieldValue.arrayUnion(ctx.uid),
@@ -339,7 +394,10 @@ export const joinPoolRideRequest = onCall(async (req) => {
       maleSeats:         newMale,
       femaleSeats:       newFemale,
       genderComposition: newComposition,
-      status:            newFilledSlots >= data.totalSlots ? 'full' : 'active',
+      status:            newStatus,
+      [`passengerNames.${ctx.uid}`]: firstNameOf(
+        userSnap.exists ? (userSnap.data()!.displayName ?? userSnap.data()!.fullName) : null,
+      ),
       // Record where this joiner wants to be dropped (leader/driver can see
       // every stop stays inside the drop zone). Null coords = same destination.
       [`passengerDropoffs.${ctx.uid}`]: {
@@ -377,6 +435,79 @@ export const cancelPoolRideRequest = onCall(async (req) => {
 
   await reqRef.update({ status: 'cancelled', updatedAt: FieldValue.serverTimestamp() });
   return { ok: true };
+});
+
+// ── respondToPoolGoAnyway ─────────────────────────────────────────────────────
+// Ten minutes after a driver takes a pool, if the leader is still riding alone,
+// BOTH sides are asked whether they want to go anyway. Going needs both to say
+// yes; either one can cancel instead.
+
+const GoAnywaySchema = z.object({
+  requestId: z.string().min(1).max(128),
+  action:    z.enum(['go', 'cancel']),
+});
+
+export const respondToPoolGoAnyway = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const p = GoAnywaySchema.safeParse(req.data);
+  if (!p.success) invalid('Invalid request.');
+  const { requestId, action } = p.data;
+
+  const reqRef = db.doc(`poolRideRequests/${requestId}`);
+
+  let confirmed = false;
+  let status = '';
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(reqRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
+    const data = snap.data()!;
+
+    const role: 'leader' | 'driver' | null =
+      data.leaderId === ctx.uid ? 'leader'
+      : data.driverId === ctx.uid ? 'driver'
+      : null;
+    if (!role) {
+      throw new HttpsError('permission-denied', 'Only the ride leader or the assigned driver can respond.');
+    }
+    if (data.status !== 'active') {
+      throw new HttpsError('failed-precondition', `This ride is not waiting on a decision (status: ${data.status}).`);
+    }
+    if ((data.filledSlots as number) > 1) {
+      // Someone joined after the prompt appeared — the question no longer applies.
+      throw new HttpsError('failed-precondition', 'A co-rider has joined — the ride goes ahead as a shared pool.');
+    }
+
+    // The question only opens once the no-joiner window has actually elapsed.
+    const activatedAt = data.activatedAt as { toDate?: () => Date } | null;
+    const activatedMs = activatedAt?.toDate?.()?.getTime();
+    if (typeof activatedMs !== 'number'
+        || Date.now() - activatedMs < POOL_NO_JOINER_WINDOW_MS - NO_JOINER_WINDOW_SLACK_MS) {
+      throw new HttpsError('failed-precondition', 'The waiting window for co-riders is still running.');
+    }
+
+    if (action === 'cancel') {
+      status = 'cancelled';
+      tx.update(reqRef, {
+        status:      'cancelled',
+        cancelledBy: role,
+        updatedAt:   FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    const goAnyway = { leader: null, driver: null, ...(data.goAnyway ?? {}) } as
+      { leader: boolean | null; driver: boolean | null };
+    goAnyway[role] = true;
+    confirmed = goAnyway.leader === true && goAnyway.driver === true;
+    status = 'active';
+    tx.update(reqRef, {
+      goAnyway,
+      goAnywayConfirmed: confirmed,
+      updatedAt:         FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { ok: true, status, confirmed };
 });
 
 // ── getNearbyPoolRequests (driver) ────────────────────────────────────────────
@@ -432,15 +563,32 @@ export const getNearbyPoolRequests = onCall(async (req) => {
       // Gender match: driver must match the request's pref.
       if (!genderAllowed(driverGender, d.genderPref as GenderPref)) continue;
 
+      // Who is in the pool — first name and what each of them pays, in join
+      // order, so the driver can weigh the whole pool before accepting.
+      const farePerSeat = (d.agreedFarePerSeat ?? d.proposedFarePerSeat) as number;
+      const names    = (d.passengerNames ?? {}) as Record<string, string>;
+      const dropoffs = (d.passengerDropoffs ?? {}) as Record<string, { areaName?: string } | undefined>;
+      const members  = ((d.passengers ?? []) as string[]).map((uid) => ({
+        name:            names[uid] ?? 'Rider',
+        farePerSeat,
+        // The leader rides to the pool destination; joiners may have their own
+        // drop-off inside the radius.
+        dropoffAreaName: dropoffs[uid]?.areaName ?? (d.destinationAreaName as string),
+      }));
+
       results.push({
         requestId:           doc.id,
         pickupAreaName:      d.pickupAreaName,
         destinationAreaName: d.destinationAreaName,
         proposedFarePerSeat: d.proposedFarePerSeat,
+        farePerSeat,
         totalSlots:          d.totalSlots,
         filledSlots:         d.filledSlots,
         slotsAvailable:      (d.totalSlots as number) - (d.filledSlots as number),
         genderPref:          d.genderPref,
+        members,
+        totalFare:           farePerSeat * (d.filledSlots as number),
+        totalFareIfFull:     farePerSeat * (d.totalSlots as number),
         distanceKm:          Math.round(distKmVal * 10) / 10,
       });
     }
@@ -476,7 +624,9 @@ export const getNearbyActiveRides = onCall(async (req) => {
     Promise.all(
       bounds.map((b) =>
         db.collection('poolRideRequests')
-          .where('status', 'in', ['active', 'full'])
+          // 'open' too: pools are joinable while still looking for a driver, so
+          // riders can gather before one accepts.
+          .where('status', 'in', ['open', 'active', 'full'])
           .where('pickupGeohash', '>=', b[0])
           .where('pickupGeohash', '<=', b[1])
           .get()
@@ -502,9 +652,16 @@ export const getNearbyActiveRides = onCall(async (req) => {
       const distKmVal = distKm(lat, lng, d.pickupLat as number, d.pickupLng as number);
       if (distKmVal > radiusKm) continue;
 
+      // Driverless requests expire — don't advertise a pool nobody can ride.
+      if (d.status === 'open'
+          && d.expiresAt && typeof (d.expiresAt as { toDate?: () => Date }).toDate === 'function'
+          && (d.expiresAt as { toDate: () => Date }).toDate() < new Date()) continue;
+
       rides.push({
         type:                'request',
         id:                  doc.id,
+        status:              d.status,
+        hasDriver:           d.driverId != null,
         pickupAreaName:      d.pickupAreaName,
         destinationAreaName: d.destinationAreaName,
         // Destination pin + drop zone so joiners can pick a drop-off inside it.

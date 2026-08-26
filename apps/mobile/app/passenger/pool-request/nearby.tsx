@@ -41,6 +41,16 @@ const GENDER_LABEL: Record<string, string> = {
   any:         '👥 Open to all',
 };
 
+/**
+ * Joiners choose the pool's exact destination ("same area") or their own
+ * drop-off within 2 km of it. Mirrors POOL_JOIN_RADIUS_M on the backend; a
+ * wider leader-set radius still counts when the pool carries one.
+ */
+const JOIN_RADIUS_M = 2000;
+
+const joinRadiusM = (ride: NearbyActiveRide | null) =>
+  Math.max(ride?.dropRadiusM ?? 1000, JOIN_RADIUS_M);
+
 function RideCard({ ride, onJoin }: { ride: NearbyActiveRide; onJoin: () => void }) {
   const slotsLeft = ride.slotsAvailable;
   const isFull = slotsLeft === 0;
@@ -51,6 +61,14 @@ function RideCard({ ride, onJoin }: { ride: NearbyActiveRide; onJoin: () => void
         <View style={[styles.typeBadge, ride.type === 'request' ? styles.typeBadgeReq : styles.typeBadgeRide]}>
           <Text style={styles.typeBadgeText}>{ride.type === 'request' ? 'Passenger ride' : 'Driver ride'}</Text>
         </View>
+        {/* Pools gather riders before a driver takes them — say which phase this one is in. */}
+        {ride.type === 'request' && (
+          <View style={[styles.typeBadge, ride.hasDriver ? styles.typeBadgeReq : styles.typeBadgeRide]}>
+            <Text style={[styles.typeBadgeText, ride.hasDriver && { color: '#22c55e' }]}>
+              {ride.hasDriver ? '🚗 Driver assigned' : '🔍 Finding driver'}
+            </Text>
+          </View>
+        )}
         <Text style={styles.distLabel}>{ride.distanceKm} km away</Text>
       </View>
 
@@ -228,15 +246,15 @@ export default function NearbyRidesScreen() {
       Alert.alert('Could not load place', 'Please try another suggestion.');
       return;
     }
-    const radiusM = joinTarget.dropRadiusM ?? 1000;
+    const radiusM = joinRadiusM(joinTarget);
     if (typeof joinTarget.destinationLat === 'number' && typeof joinTarget.destinationLng === 'number') {
       const distM = haversineM(joinTarget.destinationLat, joinTarget.destinationLng, detail.lat, detail.lng);
       if (distM > radiusM) {
         Alert.alert(
-          'Outside the drop zone',
+          'Outside the drop area',
           `That spot is ${(distM / 1000).toFixed(1)} km from the pool destination. Your drop-off must be ` +
-          `within ${radiusM} m of "${joinTarget.destinationAreaName}" — pick a closer point, choose the ` +
-          'same destination, or ask the driver to drop you inside the zone.',
+          `within ${(radiusM / 1000).toFixed(1)} km of "${joinTarget.destinationAreaName}" — pick a closer point, ` +
+          'choose the same area, or ask the driver to drop you inside it.',
         );
         return;
       }
@@ -249,7 +267,7 @@ export default function NearbyRidesScreen() {
     const ride = joinTarget;
     if (!ride) return;
     if (!sameDestination && !dropChoice) {
-      Alert.alert('Pick a drop-off', 'Choose the same destination, or search a spot inside the drop zone.');
+      Alert.alert('Pick a drop-off', 'Choose the same area, or search a spot within 2 km of the pool destination.');
       return;
     }
     setJoinTarget(null);
@@ -369,19 +387,22 @@ export default function NearbyRidesScreen() {
           <View style={styles.dropBox}>
             <Text style={styles.dropTitle}>Where should we drop you?</Text>
             <Text style={styles.dropSub}>
-              Pool rule: all passengers are dropped within{' '}
-              {(joinTarget?.dropRadiusM ?? 1000)} m of the pool destination
-              {joinTarget ? ` "${joinTarget.destinationAreaName}"` : ''} — the spot the first
-              rider set. You can also ask the driver to drop you anywhere inside that zone.
+              This pool is going to
+              {joinTarget ? ` "${joinTarget.destinationAreaName}"` : ' the same location'}. Ride to the
+              same area, or pick your own drop-off within{' '}
+              {(joinRadiusM(joinTarget) / 1000).toFixed(0)} km of it. Once you join, the fare is
+              fixed — the driver only accepts or rejects the pool, there is no negotiation.
             </Text>
 
             <Pressable style={styles.dropSameBtn} onPress={() => confirmJoin(true)}>
               <Text style={styles.dropSameBtnText}>
-                🏁 Same destination — {joinTarget?.destinationAreaName ?? ''}
+                🏁 Same area — {joinTarget?.destinationAreaName ?? ''}
               </Text>
             </Pressable>
 
-            <Text style={styles.dropOrText}>or pick a spot inside the drop zone</Text>
+            <Text style={styles.dropOrText}>
+              or pick a spot within {(joinRadiusM(joinTarget) / 1000).toFixed(0)} km
+            </Text>
 
             <TextInput
               style={styles.dropInput}

@@ -31,15 +31,43 @@ interface PoolRequest {
   totalSlots: number;
   filledSlots: number;
   genderPref: string;
+  passengers?: string[];
+  /** First names only, keyed by uid — all a co-rider sees of the others. */
+  passengerNames?: Record<string, string>;
+  passengerDropoffs?: Record<string, { areaName?: string } | undefined>;
   driverId: string | null;
   driverName: string | null;
   driverVehicle: string | null;
   driverPlate: string | null;
   status: Status;
+  /** Set when a driver accepts — starts the 10-minute no-joiner window. */
+  activatedAt?: { toDate?: () => Date } | null;
+  goAnyway?: { leader: boolean | null; driver: boolean | null } | null;
+  goAnywayConfirmed?: boolean;
+  cancelledBy?: 'leader' | 'driver';
+}
+
+/** Mirrors POOL_NO_JOINER_WINDOW_MS on the backend. */
+const NO_JOINER_WINDOW_MS = 10 * 60 * 1000;
+
+/** Ticks once a second while `on`, so the waiting countdown moves. */
+function useNowTick(on: boolean): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!on) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
+}
+
+function mmss(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 const STATUS_META: Record<Status, { label: string; color: string; desc: string }> = {
-  open:        { label: 'Waiting for driver',     color: '#f59e0b', desc: 'A driver will respond shortly.' },
+  open:        { label: 'Waiting for driver',     color: '#f59e0b', desc: 'Riders can join your pool while we find a driver.' },
   negotiating: { label: 'Counter offer received', color: '#3b82f6', desc: 'Driver has proposed a higher fare.' },
   active:      { label: 'Ride confirmed',         color: '#22c55e', desc: 'Fare agreed. Other passengers can join.' },
   full:        { label: 'Ride full',              color: '#6b7280', desc: 'All seats are taken.' },
@@ -68,6 +96,43 @@ export default function PoolRequestDetailScreen() {
   }, [id]);
 
   const isLeader = user?.uid === request?.leaderId;
+
+  // No-joiner window: a driver accepted but the leader is still riding alone.
+  // Ten minutes after acceptance both sides get asked whether to go anyway —
+  // going needs both, either one can cancel. (Hook stays above the early
+  // returns below.)
+  const activatedMs = request?.activatedAt?.toDate?.()?.getTime();
+  const aloneActive =
+    request?.status === 'active' && request?.filledSlots === 1 && !request?.goAnywayConfirmed;
+  const now = useNowTick(!!aloneActive && typeof activatedMs === 'number');
+
+  async function handleGoAnyway(action: 'go' | 'cancel') {
+    if (!id) return;
+    if (action === 'cancel') {
+      const sure = await new Promise<boolean>((resolve) =>
+        Alert.alert(
+          'Cancel this ride?',
+          'Nobody joined your pool. Cancel instead of going with just the driver?',
+          [
+            { text: 'Keep it', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Cancel ride', style: 'destructive', onPress: () => resolve(true) },
+          ],
+        ),
+      );
+      if (!sure) return;
+    }
+    setActing(true);
+    try {
+      const res = await api.respondToPoolGoAnyway({ requestId: id, action });
+      if (action === 'go' && res.confirmed) {
+        Alert.alert('Ride confirmed', 'The driver also agreed — they are on their way.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to respond. Try again.');
+    } finally {
+      setActing(false);
+    }
+  }
 
   async function handleLeaderResponse(action: 'accept' | 'reject') {
     if (!id) return;
@@ -232,6 +297,85 @@ export default function PoolRequestDetailScreen() {
           </View>
         </View>
 
+        {/* Who's in the pool — first names, what each pays, and the total. */}
+        {(request.passengers?.length ?? 0) > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>WHO'S IN THIS POOL</Text>
+            {(request.passengers ?? []).map((uid, i) => {
+              const drop = request.passengerDropoffs?.[uid]?.areaName;
+              return (
+                <View key={uid} style={styles.memberRow}>
+                  <Text style={styles.memberName} numberOfLines={1}>
+                    {request.passengerNames?.[uid] ?? 'Rider'}
+                    {i === 0 ? ' · leader' : ''}{uid === user?.uid ? ' (you)' : ''}
+                  </Text>
+                  <Text style={styles.memberFare}>{activeFare} PKR</Text>
+                  {drop && drop !== request.destinationAreaName ? (
+                    <Text style={styles.memberDrop} numberOfLines={1}>↳ {drop}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total · {request.filledSlots}/{request.totalSlots} seats</Text>
+              <Text style={styles.totalAmt}>{activeFare * request.filledSlots} PKR</Text>
+            </View>
+          </View>
+        )}
+
+        {/* No-joiner window — driver aboard, leader still alone. */}
+        {aloneActive && typeof activatedMs === 'number' && (
+          activatedMs + NO_JOINER_WINDOW_MS - now > 0 ? (
+            <View style={styles.waitBox}>
+              <Text style={styles.waitText}>
+                ⏳ Waiting for co-riders · {mmss(activatedMs + NO_JOINER_WINDOW_MS - now)} — if nobody
+                joins, you and the driver both decide whether to go anyway.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.decideBox}>
+              <Text style={styles.decideTitle}>Nobody joined your pool</Text>
+              <Text style={styles.decideText}>
+                {request.goAnyway?.driver === true
+                  ? `${request.driverName ?? 'The driver'} is ready to go with just you at ${activeFare} PKR.`
+                  : `Go with just you and the driver at ${activeFare} PKR? Both of you must agree — either of you can cancel.`}
+              </Text>
+              {isLeader ? (
+                request.goAnyway?.leader === true ? (
+                  <Text style={styles.readyText}>✓ You said go — waiting for the driver…</Text>
+                ) : (
+                  <View style={styles.decideBtns}>
+                    <Pressable
+                      style={[styles.goBtn, acting && { opacity: 0.5 }]}
+                      disabled={acting}
+                      onPress={() => handleGoAnyway('go')}
+                    >
+                      <Text style={styles.goBtnText}>Go anyway</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.goCancelBtn, acting && { opacity: 0.5 }]}
+                      disabled={acting}
+                      onPress={() => handleGoAnyway('cancel')}
+                    >
+                      <Text style={styles.goCancelText}>Cancel ride</Text>
+                    </Pressable>
+                  </View>
+                )
+              ) : (
+                <Text style={styles.decideText}>Waiting for the leader and driver to decide.</Text>
+              )}
+            </View>
+          )
+        )}
+        {request.status === 'active' && request.filledSlots === 1 && request.goAnywayConfirmed && (
+          <View style={styles.confirmedBox}>
+            <Text style={styles.confirmedText}>
+              ✅ You and the driver both agreed — the ride is on. {request.driverName ?? 'Your driver'} is
+              heading to {request.pickupAreaName}.
+            </Text>
+          </View>
+        )}
+
         {/* Driver info (when assigned) */}
         {request.driverId && (
           <View style={styles.card}>
@@ -313,6 +457,28 @@ const styles = themed(() => StyleSheet.create({
 
   waitingChip:     { backgroundColor: '#1a1200', borderRadius: 10, borderWidth: 1, borderColor: '#f59e0b40', padding: 12 },
   waitingText:     { fontSize: 12, color: '#f59e0b' },
+
+  memberRow:       { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  memberName:      { fontSize: 13, fontWeight: '800', color: colors.text, flexShrink: 1 },
+  memberFare:      { fontSize: 13, fontWeight: '900', color: colors.primary, marginLeft: 'auto' },
+  memberDrop:      { fontSize: 11, color: colors.muted, width: '100%' },
+  totalRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
+  totalLabel:      { fontSize: 12, color: colors.muted, fontWeight: '700' },
+  totalAmt:        { fontSize: 17, fontWeight: '900', color: colors.text },
+
+  waitBox:         { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
+  waitText:        { fontSize: 12, color: colors.muted, lineHeight: 18 },
+  decideBox:       { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: '#f59e0b50', padding: 14, gap: 8 },
+  decideTitle:     { fontSize: 14, fontWeight: '900', color: '#f59e0b' },
+  decideText:      { fontSize: 12, color: colors.text, lineHeight: 18 },
+  decideBtns:      { flexDirection: 'row', gap: 8 },
+  goBtn:           { flex: 1, height: 42, backgroundColor: colors.primary, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  goBtnText:       { color: '#000', fontWeight: '900', fontSize: 13 },
+  goCancelBtn:     { flex: 1, height: 42, borderRadius: 10, borderWidth: 1, borderColor: '#ef444440', alignItems: 'center', justifyContent: 'center' },
+  goCancelText:    { color: '#ef4444', fontWeight: '800', fontSize: 13 },
+  readyText:       { fontSize: 12, fontWeight: '800', color: colors.primary },
+  confirmedBox:    { backgroundColor: colors.glassLime, borderRadius: 12, borderWidth: 1, borderColor: `${colors.primary}40`, padding: 12 },
+  confirmedText:   { fontSize: 12, fontWeight: '800', color: colors.primary, lineHeight: 18 },
 
   seatsRow:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
   seatDot:         { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.border },
