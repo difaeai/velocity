@@ -382,7 +382,7 @@ export default function DriverHome() {
     }
     Alert.alert(
       'Get rides on WhatsApp?',
-      "You're offline now, so we can't notify you in the app. We can WhatsApp you instead when a ride comes up near you — a few a day at most, never between 10pm and 7am.",
+      "Once you close the app we can't notify you at all. We can WhatsApp you instead when a ride comes up near you — only while the app is fully closed, a few a day at most, and never between 10pm and 7am.",
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Set it up', onPress: () => router.push('/driver/whatsapp-alerts') },

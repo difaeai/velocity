@@ -55,6 +55,18 @@ export interface WhatsAppAlertSettings {
   onlineDriverThreshold: number;
   /** A driver unseen for this many days is presumed gone; do not message them. */
   staleDriverDays: number;
+  /**
+   * How long after the driver's last sign of life in the app we are willing to
+   * call the app CLOSED.
+   *
+   * This is the difference between "offline" and "not there". A driver can be
+   * toggled Offline while sitting in the app — deciding whether to start a
+   * shift, checking their earnings, reading the feed. Messaging that person
+   * costs real money for a message they are watching arrive next to the screen
+   * that already shows the ride, and it is exactly the kind of pointless
+   * interruption that makes somebody reach for Block.
+   */
+  appClosedAfterMinutes: number;
   /** Fares below this are not worth waking anyone for. */
   minFare: number;
 }
@@ -70,6 +82,7 @@ export const DEFAULT_ALERT_SETTINGS: WhatsAppAlertSettings = {
   quietEndHour: 7,
   onlineDriverThreshold: 3,
   staleDriverDays: 21,
+  appClosedAfterMinutes: 5,
   minFare: 0,
 };
 
@@ -99,6 +112,7 @@ export function readAlertSettings(raw: unknown): WhatsAppAlertSettings {
     quietEndHour: num('quietEndHour', 0, 23),
     onlineDriverThreshold: num('onlineDriverThreshold', 0, 50),
     staleDriverDays: num('staleDriverDays', 1, 365),
+    appClosedAfterMinutes: num('appClosedAfterMinutes', 1, 180),
     minFare: num('minFare', 0, 100_000),
   };
 }
@@ -202,6 +216,16 @@ export interface CandidateDriver {
   distanceKm: number;
   /** Epoch ms the driver was last seen in the app, or null if never recorded. */
   lastSeenAt: number | null;
+  /**
+   * Epoch ms of the driver app's last foreground heartbeat, or null when the
+   * app has never sent one (an install predating the heartbeat, or one that has
+   * not been opened since).
+   *
+   * This is the only positive evidence that the app is actually on screen.
+   * `lastSeenAt` cannot answer it: for an offline driver it records when they
+   * went offline, which is a moment in the past, not a state.
+   */
+  appActiveAt: number | null;
   alerts: DriverAlertState;
 }
 
@@ -213,6 +237,7 @@ export type SkipReason =
   | 'too-soon'
   | 'driver-daily-cap'
   | 'stale'
+  | 'app-open'
   | 'fanout-cap'
   | 'global-cap';
 
@@ -241,13 +266,14 @@ export function planFanout<T extends CandidateDriver>(
   const today = pktDayKey(nowMs);
   const minGapMs = s.minGapMinutes * 60_000;
   const staleMs = s.staleDriverDays * 24 * 60 * 60_000;
+  const appClosedMs = s.appClosedAfterMinutes * 60_000;
 
   const picked: T[] = [];
   const skipped: { uid: string; reason: SkipReason }[] = [];
   const budget = Math.max(0, Math.min(s.maxRecipientsPerTrip, remainingGlobal));
 
   for (const c of [...candidates].sort((a, b) => a.distanceKm - b.distanceKm)) {
-    const reason = skipReasonFor(c, s, nowMs, today, minGapMs, staleMs);
+    const reason = skipReasonFor(c, s, nowMs, today, minGapMs, staleMs, appClosedMs);
     if (reason) {
       skipped.push({ uid: c.uid, reason });
       continue;
@@ -271,6 +297,7 @@ function skipReasonFor(
   today: string,
   minGapMs: number,
   staleMs: number,
+  appClosedMs: number,
 ): SkipReason | null {
   // Consent first, so nothing downstream can accidentally message a driver who
   // never asked to hear from us.
@@ -279,6 +306,7 @@ function skipReasonFor(
   if (!c.phone) return 'no-phone';
   if (c.distanceKm > s.radiusKm) return 'too-far';
   if (c.lastSeenAt !== null && nowMs - c.lastSeenAt > staleMs) return 'stale';
+  if (!appLooksClosed(c, nowMs, appClosedMs)) return 'app-open';
 
   const last = c.alerts.lastSentAt ?? null;
   if (last !== null && nowMs - last < minGapMs) return 'too-soon';
@@ -337,3 +365,33 @@ const START_WORDS = new Set([
   'start', 'subscribe', 'on', 'resume', 'chalu', 'shuru',
   'شروع', 'چالو',
 ]);
+
+/**
+ * Is the driver's app actually shut, rather than merely toggled Offline?
+ *
+ * The whole point of this channel is to reach somebody the app cannot. A driver
+ * who is sitting in the app with the toggle set to Offline is not that person:
+ * the ride is already one tap away on their screen, so a WhatsApp message buys
+ * nothing, costs a paid conversation, and reads as the app pestering them about
+ * something they are already looking at. That is how a useful alert turns into
+ * a blocked sender.
+ *
+ * Two signals, and BOTH have to be quiet:
+ *
+ *  - `appActiveAt` is the driver app's foreground heartbeat. It is the direct
+ *    evidence, and while the app is on screen it is never more than a couple of
+ *    minutes old.
+ *  - `lastSeenAt` is stamped when they flip the Offline switch. It is what
+ *    catches the exact case above on an install that predates the heartbeat:
+ *    somebody who went offline thirty seconds ago is still holding the phone.
+ *
+ * A missing `appActiveAt` counts as quiet rather than as unknown. Treating it
+ * as "app might be open" would silence the feature for every install that has
+ * not updated yet — the drivers it was built for — and `lastSeenAt` still
+ * covers the case that actually costs money.
+ */
+export function appLooksClosed(c: CandidateDriver, nowMs: number, appClosedMs: number): boolean {
+  if (c.appActiveAt !== null && nowMs - c.appActiveAt < appClosedMs) return false;
+  if (c.lastSeenAt !== null && nowMs - c.lastSeenAt < appClosedMs) return false;
+  return true;
+}

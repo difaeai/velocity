@@ -208,8 +208,8 @@ export default function Settings() {
             </View>
             <Text style={styles.hint}>
               {waOptIn
-                ? 'When you are offline and a ride comes up near you, we send one WhatsApp message so you can open the app. A few a day at most, never between 10pm and 7am.'
-                : 'Offline drivers get no notifications — the app is closed. Turn this on and we will WhatsApp you when a ride comes up nearby.'}
+                ? 'When the app is closed and a ride comes up near you, we send one WhatsApp message so you can open it. Never while you are already in the app. A few a day at most, and nothing between 10pm and 7am.'
+                : 'A closed app receives no notifications. Turn this on and we will WhatsApp you instead when a ride comes up nearby.'}
             </Text>
           </>
         )}

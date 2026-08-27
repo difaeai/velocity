@@ -97,7 +97,7 @@ export default function WhatsAppAlerts() {
       if (enabled) {
         Alert.alert(
           'WhatsApp alerts are on ✅',
-          `We'll message ${res.number ?? 'your number'} when a ride comes up near you while you're offline.`,
+          `We'll message ${res.number ?? 'your number'} when a ride comes up near you while the app is closed.`,
         );
       }
     } catch (e) {
@@ -138,8 +138,9 @@ export default function WhatsAppAlerts() {
             <Text style={styles.heroIcon}>💬</Text>
             <Text style={styles.heroTitle}>Get rides even with the app closed</Text>
             <Text style={styles.heroBody}>
-              When you are offline we cannot send you a notification — the app is not running. Add
-              your WhatsApp number and we will message you instead when a ride comes up near you.
+              When the app is closed we cannot send you a notification — there is nothing running to
+              receive it. Add your WhatsApp number and we will message you instead when a ride comes
+              up near you.
             </Text>
           </View>
 
@@ -193,6 +194,9 @@ export default function WhatsAppAlerts() {
             <Text style={styles.promise}>• A few messages a day at most — never a flood.</Text>
             <Text style={styles.promise}>• Nothing between 10pm and 7am.</Text>
             <Text style={styles.promise}>• Only real rides near you, never ads or offers.</Text>
+            <Text style={styles.promise}>
+              • Never while you have the app open — only when it is fully closed.
+            </Text>
             <Text style={styles.promise}>• Reply STOP on WhatsApp any time to end them.</Text>
           </View>
 

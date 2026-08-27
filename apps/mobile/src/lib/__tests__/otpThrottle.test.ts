@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  COOLDOWN_LADDER_S,
   DEVICE_KEY,
+  LONGEST_COOLDOWN_S,
   EMPTY_LOG,
   MAX_SENDS_PER_DEVICE,
   MAX_SENDS_PER_DEVICE_HARD,
@@ -47,8 +49,13 @@ describe('evaluateSend', () => {
   });
 
   it('opens up again once the ladder gap has passed', () => {
+    // Read off the ladder rather than copied from it: the second rung is a
+    // product decision that gets retuned, and a test that hardcodes today's
+    // value fails on the next tuning without anything actually being wrong.
+    const secondRungMs = (COOLDOWN_LADDER_S[1] ?? 0) * 1000;
     const log = recordSend(EMPTY_LOG, NUM, T0);
-    expect(evaluateSend(log, NUM, T0 + 30_000)).toEqual({ allowed: true });
+    expect(evaluateSend(log, NUM, T0 + secondRungMs - 1).allowed).toBe(false);
+    expect(evaluateSend(log, NUM, T0 + secondRungMs)).toEqual({ allowed: true });
   });
 
   it('demands a longer gap each time, so retries get slower not faster', () => {
@@ -145,16 +152,18 @@ describe('evaluateSend', () => {
     }
   });
 
-  it('never asks an honest user to wait more than two minutes between codes', () => {
-    // The ladder may grow, but not past the point where a real person decides
-    // the app is broken and uninstalls it.
+  it('never makes anyone wait longer than the ladder itself promises', () => {
+    // The ladder is allowed to be retuned; what must stay true is that no
+    // retry is ever charged MORE than its own top rung. A bug in the index
+    // arithmetic is exactly how a user ends up waiting an hour for a code the
+    // ladder says costs five minutes.
     let log = EMPTY_LOG;
     let now = T0;
     for (let i = 0; i < MAX_SENDS_PER_NUMBER - 1; i++) {
       log = recordSend(log, NUM, now);
       let wait = 0;
       while (!evaluateSend(log, NUM, now + wait).allowed && wait < WINDOW_MS) wait += 1_000;
-      expect(wait).toBeLessThanOrEqual(120_000);
+      expect(wait).toBeLessThanOrEqual(LONGEST_COOLDOWN_S * 1000);
       now += wait;
     }
   });

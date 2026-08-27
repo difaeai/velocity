@@ -312,6 +312,10 @@ async function findOfflineCandidates(
     const alerts = (doc.get('whatsappAlerts') as DriverAlertState | undefined) ?? {};
 
     const lastSeen = doc.get('lastSeenAt') as Timestamp | undefined;
+    // The driver app's foreground heartbeat. Its absence is meaningful and is
+    // handled by `appLooksClosed` — it means an install that has never sent
+    // one, not an app we are entitled to assume is open.
+    const appActive = doc.get('appActiveAt') as Timestamp | undefined;
     out.push({
       uid: doc.id,
       name: doc.get('fullName') as string | undefined,
@@ -321,6 +325,7 @@ async function findOfflineCandidates(
       phone: toWhatsAppNumber(alerts.number ?? (doc.get('phone') as string | undefined)),
       distanceKm,
       lastSeenAt: lastSeen ? lastSeen.toMillis() : null,
+      appActiveAt: appActive ? appActive.toMillis() : null,
       alerts: {
         ...alerts,
         // Stored as a Timestamp, compared as epoch ms.

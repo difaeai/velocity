@@ -1,0 +1,98 @@
+🔀 SHARED RIDES THAT ACTUALLY GET PICKED UP
+
+Sharing a ride only saves you money if a driver takes it. Until now a shared
+ride sat in the same feed as everything else, described in a single line, at a
+fare the driver had to haggle over — so most of them were skipped. This release
+rebuilds the driver's side of sharing, lets a pool form before it has a driver,
+and drops the price of the cheapest ride on Velocity.
+
+✨ WHAT'S NEW
+
+🏍️ MOTO RIDES, AND A LOWER PRICE
+- Bike rides are now called Moto
+- A Moto starts at Rs 100 instead of Rs 150
+- Fares across every vehicle have been recalibrated against what Yango and
+  inDrive charge for the same journey, so what you see quoted is in line with
+  the rest of the market
+
+🔀 DRIVERS GET A SHARING RIDES MODE
+- Right below Offline/Online, drivers now choose between Sharing Rides and
+  Solo Rides — and Sharing Rides is where the app starts
+- Sharing Rides lays every nearby pool out as a box a driver can actually
+  judge: each rider by first name with their fare, what the pool pays now, what
+  it pays if it fills, the pickup and destination areas, and where each joiner
+  gets out
+- The driver picks the radius they want to see — 2 km, 5 km or 10 km
+- Pool fares are fixed. The driver accepts or rejects; there is no counter-offer
+  and no haggling over your seat
+
+👥 JOIN A POOL BEFORE IT HAS A DRIVER
+- You no longer have to wait for a driver to be assigned before you can join a
+  shared ride — you can join at the proposed fare while the pool is still
+  looking
+- The ride shows you which stage it is at: finding a driver, or driver assigned
+- A pool that fills up without a driver stays open, so a driver can still take it
+- When you join you get exactly two choices for where you get out: the same area
+  as the pool's destination, or your own drop-off within 2 km of it
+
+⏱️ TEN MINUTES, THEN YOU BOTH DECIDE
+- If ten minutes pass after a driver accepts and nobody else has joined, you and
+  the driver are asked the same question at the same time: go anyway, or cancel
+- Going ahead needs both of you to agree. Either one of you can cancel
+- Both screens count the ten minutes down live, so nobody is left guessing
+
+💬 WHATSAPP RIDE ALERTS FOR DRIVERS
+- A driver with the app closed gets no notification, so ride requests go unseen
+  by drivers two streets away. Drivers can now opt in to a WhatsApp alert instead
+- Strictly opt-in, from the new "WhatsApp ride alerts" screen in the driver
+  drawer. Nothing is switched on for anybody automatically
+- Drivers set the number the alerts go to, which is often not the number they
+  drive on, and see the masked number we recorded so a mistyped digit is caught
+  straight away
+- A few a day at most, never between 10pm and 7am, only for real rides, and
+  STOP works at any time — in English, Roman Urdu or Urdu
+
+📊 WHAT ELSE IMPROVED
+- The code resend timer now runs a full 59 seconds, so the app stops offering a
+  new code before the network has had time to deliver the first one
+- The driver menu scrolls, and its header takes up less room, so every entry is
+  reachable on a small phone
+- Tidied up the driver screens: the voice-command button has been removed from
+  the driver side, where it got in the way. Voice booking is unchanged for
+  passengers
+
+🚀 NEXT UP
+- App-wide security attestation (App Check)
+- More payment options
+
+Available now in your Velocity app! 🎉
+
+Questions? Tap Support from Settings for help.
+
+---
+
+SHORT VERSION — paste this into Play Console's "What's new" (500-char limit):
+
+Moto rides (formerly Bike) now start at Rs 100 instead of Rs 150, with fares
+recalibrated across every vehicle. Shared rides finally get picked up: drivers
+have a new Sharing Rides mode showing every nearby pool at a fixed fare, and you
+can now join a pool before it has a driver. If nobody else joins, ten minutes
+after a driver accepts you both choose — go anyway, or cancel. Drivers can also
+opt in to WhatsApp ride alerts for when the app is closed.
+
+---
+
+SHORT VERSION (alternate, no WhatsApp mention):
+
+Moto rides (formerly Bike) now start at Rs 100 instead of Rs 150, with fares
+recalibrated across every vehicle to match the market. Shared rides finally get
+picked up: drivers have a new Sharing Rides mode that shows every nearby pool at
+a fixed fare, with no haggling over your seat. You can now join a pool before it
+has a driver, and pick your own drop-off. If nobody else joins, ten minutes after
+a driver accepts you and the driver both choose — go anyway, or cancel.
+
+---
+
+Version: 1.7.1
+Version code: 28
+Last Updated: August 27, 2026
