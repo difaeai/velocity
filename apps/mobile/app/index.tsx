@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { Text } from '../src/ui/Text';
 import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
 import { colors } from '../src/config';

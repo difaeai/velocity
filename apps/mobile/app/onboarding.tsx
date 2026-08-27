@@ -8,8 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +18,7 @@ import { httpsCallable } from 'firebase/functions';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { Text, TextInput } from '../src/ui/Text';
 import { db, functions } from '../src/firebase';
 import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';

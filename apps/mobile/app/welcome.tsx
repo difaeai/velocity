@@ -3,7 +3,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -25,6 +24,7 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 
+import { Text } from '../src/ui/Text';
 import { themed } from '../src/theme';
 
 /**

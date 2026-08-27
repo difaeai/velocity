@@ -9,13 +9,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
+
+import { Text, TextInput } from '../../src/ui/Text';
 
 import { startPhoneVerification, type PhoneVerification } from '../../src/auth/phoneSignIn';
 import { colors } from '../../src/config';

@@ -19,11 +19,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Text, TextInput } from '../src/ui/Text';
 
 import { api } from '../src/api/client';
 import type { MyReferral } from '../src/api/client';
