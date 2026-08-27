@@ -7,7 +7,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text as RNText,
   View,
 } from 'react-native';
 import { Text } from '../../src/ui/Text';
@@ -23,7 +22,7 @@ import Svg, { Path } from 'react-native-svg';
 const ExpoLocation =
   Platform.OS === 'web' ? null : (require('expo-location') as typeof import('expo-location'));
 
-import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
+
 import { useAuth } from '../../src/auth/AuthContext';
 import { registerForPushNotifications } from '../../src/lib/notifications';
 import { db } from '../../src/firebase';
@@ -470,7 +469,6 @@ export default function DriverHome() {
           </Pressable>
         </View>
 
-        <View style={styles.headerRightGroup}>
           <Pressable onPress={() => router.push('/passenger/settings')} hitSlop={8} style={styles.headerBtn}>
             <Svg width={22} height={22} viewBox="0 0 24 24">
               <Path
@@ -479,20 +477,6 @@ export default function DriverHome() {
               />
             </Svg>
           </Pressable>
-
-          {/* Language switch — one tap flips English ⇄ اردو live */}
-          <Pressable
-            style={styles.langButton}
-            onPress={() => {
-              toggleLanguage().catch(() => {});
-            }}
-            accessibilityLabel={`Switch to ${otherLanguageLabel()}`}
-            hitSlop={8}
-          >
-            <Text style={styles.langIconText}>🌐</Text>
-            <RNText style={styles.langTagText}>{otherLanguageTag()}</RNText>
-          </Pressable>
-        </View>
       </View>
 
       {/* ── Solo | Sharing rides ── right below Offline/Online: which kind of
@@ -965,34 +949,6 @@ const styles = themed(() => StyleSheet.create({
     gap: 10,
   },
   headerBtn: { padding: 4 },
-  headerRightGroup: {
-    alignItems: 'center',
-    gap: 3,
-  },
-  langButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(18,21,20,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  langIconText: {
-    fontSize: 13,
-  },
-  langTagText: {
-    fontSize: 7,
-    fontWeight: '800',
-    color: colors.primary,
-    marginTop: -1,
-  },
   toggle: {
     flex: 1,
     maxWidth: 260,
