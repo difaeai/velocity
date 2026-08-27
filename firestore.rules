@@ -97,9 +97,16 @@ service cloud.firestore {
     match /drivers/{driverId} {
       allow read: if isOwner(driverId) || isAdmin();
       allow create: if false;
+      // `appActiveAt` is the driver app's foreground heartbeat, written every
+      // couple of minutes while any driver screen is on screen. The backend
+      // reads it to tell "offline" apart from "app closed" before spending a
+      // paid WhatsApp message on somebody who is looking at the app already.
+      // Self-reported and therefore only ever used to send LESS: a driver who
+      // lied about it would only suppress their own alerts.
       allow update: if isOwner(driverId)
                     && isDriver()
                     && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
+                                    'appActiveAt',
                                     'poolPickupRadiusM', 'poolDropoffRadiusM']);
       allow update: if isAdmin();
       allow delete: if false;

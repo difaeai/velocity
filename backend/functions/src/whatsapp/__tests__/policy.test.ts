@@ -42,7 +42,10 @@ function driver(over: Partial<CandidateDriver> = {}): CandidateDriver {
     uid: over.uid ?? 'd1',
     phone: '923001234567',
     distanceKm: 1,
-    lastSeenAt: NOON - 60_000,
+    // Went offline an hour ago, no heartbeat since: the shape of a driver
+    // whose app is genuinely shut, which is the only kind this channel is for.
+    lastSeenAt: NOON - 60 * 60_000,
+    appActiveAt: null,
     alerts: { optIn: true },
     ...over,
   };
@@ -161,6 +164,52 @@ describe('planFanout — who actually gets a message', () => {
     const many = Array.from({ length: 30 }, (_, i) => driver({ uid: `d${i}`, distanceKm: i * 0.1 }));
     const plan = planFanout(many, ON, NOON, 3);
     expect(plan.picked).toHaveLength(3);
+  });
+});
+
+describe('the app-is-closed gate — the one that costs money to get wrong', () => {
+  const MIN = 60_000;
+
+  it('says nothing to a driver sitting in the app with the toggle set to Offline', () => {
+    // The exact case: they flipped Offline thirty seconds ago and are still
+    // holding the phone. The ride is already one tap away on their screen, so a
+    // paid WhatsApp message buys nothing and reads as pestering.
+    const inApp = driver({ lastSeenAt: NOON - 30_000, appActiveAt: NOON - 20_000 });
+    expect(planFanout([inApp], ON, NOON, 10).skipped[0]?.reason).toBe('app-open');
+  });
+
+  it('trusts a live heartbeat even when the offline toggle is ancient', () => {
+    // Went offline this morning but has the app open right now — browsing
+    // earnings, say. Still nothing to tell them.
+    const browsing = driver({ lastSeenAt: NOON - 6 * 60 * MIN, appActiveAt: NOON - MIN });
+    expect(planFanout([browsing], ON, NOON, 10).skipped[0]?.reason).toBe('app-open');
+  });
+
+  it('catches a just-went-offline driver on an app too old to send heartbeats', () => {
+    // No appActiveAt at all, but lastSeenAt is stamped by the Offline toggle —
+    // which is why both signals are checked rather than only the new one.
+    const legacy = driver({ lastSeenAt: NOON - 30_000, appActiveAt: null });
+    expect(planFanout([legacy], ON, NOON, 10).skipped[0]?.reason).toBe('app-open');
+  });
+
+  it('messages a driver whose app has genuinely been shut a while', () => {
+    const gone = driver({ lastSeenAt: NOON - 40 * MIN, appActiveAt: NOON - 40 * MIN });
+    expect(planFanout([gone], ON, NOON, 10).picked).toHaveLength(1);
+  });
+
+  it('does not silence itself for installs that have never sent a heartbeat', () => {
+    // A missing heartbeat must read as "app closed", not as "unknown, stay
+    // quiet" — otherwise the feature does nothing for precisely the drivers on
+    // older builds it was written for.
+    const noHeartbeat = driver({ lastSeenAt: NOON - 3 * 60 * MIN, appActiveAt: null });
+    expect(planFanout([noHeartbeat], ON, NOON, 10).picked).toHaveLength(1);
+  });
+
+  it('lets the grace period be widened without a deploy', () => {
+    const patient = { ...ON, appClosedAfterMinutes: 60 };
+    const halfHourAgo = driver({ lastSeenAt: NOON - 30 * MIN, appActiveAt: NOON - 30 * MIN });
+    expect(planFanout([halfHourAgo], ON, NOON, 10).picked).toHaveLength(1);
+    expect(planFanout([halfHourAgo], patient, NOON, 10).skipped[0]?.reason).toBe('app-open');
   });
 });
 

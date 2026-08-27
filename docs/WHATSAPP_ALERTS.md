@@ -26,19 +26,20 @@ Every rule below exists for that reason. None of them are style preferences.
 
 ---
 
-## The nine rules the code enforces
+## The ten rules the code enforces
 
 | # | Rule | Where |
 |---|------|-------|
 | 1 | **Opt-in only.** A driver is never messaged until they switch alerts on themselves. `setWhatsAppAlerts` is the only code path in the repo that can set `optIn: true` — no admin tool, no migration, no script. | `whatsapp/index.ts` |
 | 2 | **Templates only.** Business-initiated messages are pre-approved templates. Free-form text outside the 24-hour service window is both refused by the API and the fastest way to get flagged. | `whatsapp/client.ts` |
 | 3 | **Instant STOP.** A driver replying STOP (English, Roman Urdu or Urdu) or tapping the template's *Stop alerts* button is opted out and blocked within the same second the webhook lands. | `whatsapp/index.ts` |
-| 4 | **Scarcity.** Alerts only go out when fewer than `onlineDriverThreshold` approved drivers are already online nearby. If the ride will be taken anyway, the message is noise. | `whatsapp/policy.ts` |
-| 5 | **Quiet hours.** Nothing between 22:00 and 07:00 PKT. An ignored 3am message is a block waiting to happen. | `whatsapp/policy.ts` |
-| 6 | **Frequency caps.** Minimum 45 minutes between messages to one driver; at most 4 per driver per day; at most 10 drivers woken per ride; at most 400 messages platform-wide per day. | `whatsapp/policy.ts` |
-| 7 | **Liveness.** Drivers not seen in the app for 21 days are skipped, and any number Meta reports as undeliverable is blocked permanently. Dead numbers generate undeliverables, and undeliverables are themselves a spam signal. | `whatsapp/alerts.ts` |
-| 8 | **Circuit breaker.** The first time Meta returns a code meaning the *account* is in trouble — spam rate limit, policy block, template paused or disabled — every send on the platform stops and stays stopped until a human clears it in the admin console. | `whatsapp/alerts.ts` |
-| 9 | **Strict number validation.** Only `92 3XX XXXXXXX` mobiles are ever attempted. Landlines and malformed numbers are dropped before they reach the API. | `whatsapp/client.ts` |
+| 4 | **App must be closed, not merely offline.** A driver toggled Offline while sitting in the app is skipped. The ride is already one tap away on their screen, so the message buys nothing, costs a paid conversation, and reads as pestering. Requires both the foreground heartbeat *and* the offline-toggle stamp to be quiet for `appClosedAfterMinutes`. | `whatsapp/policy.ts` |
+| 5 | **Scarcity.** Alerts only go out when fewer than `onlineDriverThreshold` approved drivers are already online nearby. If the ride will be taken anyway, the message is noise. | `whatsapp/policy.ts` |
+| 6 | **Quiet hours.** Nothing between 22:00 and 07:00 PKT. An ignored 3am message is a block waiting to happen. | `whatsapp/policy.ts` |
+| 7 | **Frequency caps.** Minimum 45 minutes between messages to one driver; at most 4 per driver per day; at most 10 drivers woken per ride; at most 400 messages platform-wide per day. | `whatsapp/policy.ts` |
+| 8 | **Liveness.** Drivers not seen in the app for 21 days are skipped, and any number Meta reports as undeliverable is blocked permanently. Dead numbers generate undeliverables, and undeliverables are themselves a spam signal. | `whatsapp/alerts.ts` |
+| 9 | **Circuit breaker.** The first time Meta returns a code meaning the *account* is in trouble — spam rate limit, policy block, template paused or disabled — every send on the platform stops and stays stopped until a human clears it in the admin console. | `whatsapp/alerts.ts` |
+| 10 | **Strict number validation.** Only `92 3XX XXXXXXX` mobiles are ever attempted. Landlines and malformed numbers are dropped before they reach the API. | `whatsapp/client.ts` |
 
 The breaker never resets itself. That asymmetry is deliberate: a day of not
 sending costs some drivers some rides, while not stopping costs the number.
@@ -233,6 +234,7 @@ become a bad send:
 | `quietStartHour` / `quietEndHour` | `22` / `7` | Silent window, PKT |
 | `onlineDriverThreshold` | `3` | Only alert when fewer than this are online nearby |
 | `staleDriverDays` | `21` | Skip drivers not seen in this long |
+| `appClosedAfterMinutes` | `5` | How quiet the app must be before it counts as closed |
 | `minFare` | `0` | Do not wake anyone for less than this |
 
 `config/whatsappHealth.circuitOpen` is the breaker. Clear it with
@@ -256,6 +258,35 @@ A rising opt-out rate is the earliest visible proxy for the quality rating, and
 it shows up days before the rating itself moves. If it climbs, the answer is
 always the same: send less. Raise `minGapMinutes`, lower `maxPerDriverPerDay`,
 raise `onlineDriverThreshold`. Never explain it away.
+
+---
+
+## How "app closed" is decided
+
+Offline is a toggle. Closed is a state. Confusing the two is the difference
+between a message that helps and one that is billed for annoying somebody.
+
+Two signals, and **both** must be quiet for `appClosedAfterMinutes`:
+
+- **`drivers/{uid}.appActiveAt`** — the driver app's foreground heartbeat, from
+  `src/hooks/appHeartbeat.ts`. It is written on entering the foreground and
+  every two minutes after, from the driver *layout*, so it covers every driver
+  screen rather than just Home. Backgrounding stops it; a killed app stops it by
+  definition, which is precisely the signal that makes a driver eligible again.
+- **`drivers/{uid}.lastSeenAt`** — stamped when the Offline toggle is flipped.
+  This is what catches the exact problem case on an install that predates the
+  heartbeat: somebody who went offline thirty seconds ago is still holding
+  their phone.
+
+A **missing** `appActiveAt` counts as *closed*, not as unknown. Reading it as
+"the app might be open" would silence the feature for every install that has not
+updated yet — the drivers it was built for — and `lastSeenAt` still covers the
+case that actually costs money.
+
+The heartbeat is self-reported, so it is only ever used to send **less**. A
+driver who somehow faked it would suppress nothing but their own alerts. It is
+allowed by name in `firestore.rules` alongside the other presence fields; the
+write is rejected without that entry, which would silently disable the gate.
 
 ---
 
