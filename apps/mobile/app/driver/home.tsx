@@ -108,7 +108,7 @@ export default function DriverHome() {
   // Solo | Sharing rides — which feed the body shows while online. Solo is the
   // classic open-requests list; Sharing lays out nearby pools box by box with
   // every rider's name and fare so the driver can pick a pool on its numbers.
-  const [rideMode, setRideMode] = useState<'solo' | 'sharing'>('solo');
+  const [rideMode, setRideMode] = useState<'solo' | 'sharing'>('sharing');
   useEffect(() => {
     AsyncStorage.getItem(RIDE_MODE_KEY).then((v) => {
       if (v === 'sharing' || v === 'solo') setRideMode(v);

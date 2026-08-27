@@ -26,7 +26,7 @@
  * a slow SMS from a lost one. The gap still grows — a bot hammering the button
  * hits real friction — it just no longer punishes the third honest retry.
  */
-const COOLDOWN_LADDER_S = [0, 15, 30, 45, 60, 90, 120];
+const COOLDOWN_LADDER_S = [0, 59, 90, 120, 180, 240, 300];
 
 /**
  * What the sign-in screen counts down before re-enabling Resend.
@@ -35,7 +35,7 @@ const COOLDOWN_LADDER_S = [0, 15, 30, 45, 60, 90, 120];
  * live exactly when a send would actually be allowed. It must stay under 60 so
  * the screen's `0:SS` countdown stays honest.
  */
-export const RESEND_UI_COOLDOWN_S = COOLDOWN_LADDER_S[1] ?? 15;
+export const RESEND_UI_COOLDOWN_S = COOLDOWN_LADDER_S[1] ?? 59;
 
 /** Fallback gap, so an out-of-range index can only ever be *more* cautious. */
 const LONGEST_COOLDOWN_S = Math.max(...COOLDOWN_LADDER_S);
