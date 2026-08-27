@@ -1,0 +1,44 @@
+VELOCITY 1.7.2  ·  versionCode 29
+=================================
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Drivers can now get new ride alerts on WhatsApp when the app is closed — add
+your number under Menu > WhatsApp ride alerts. Alerts only arrive while the app
+is fully closed, never while you are using it, and never between 10pm and 7am.
+Reply STOP any time.
+
+Also: fewer sign-in code problems on slow networks.
+
+
+WHAT CHANGED SINCE 1.7.1
+------------------------
+
+WhatsApp ride alerts — only when the app is genuinely closed
+  1.7.1 introduced WhatsApp alerts for offline drivers, but the gate was the
+  Offline toggle. That is not the same thing as a closed app: a driver sitting
+  in the app with the toggle set to Offline would have been sent a paid
+  WhatsApp message about a ride already visible one tap away on their screen.
+
+  The app now sends a lightweight foreground heartbeat while any driver screen
+  is open, and the backend requires both that heartbeat and the offline-toggle
+  stamp to have been quiet for several minutes before it will message anyone.
+  Drivers using the app are never messaged.
+
+  This is the only functional change from 1.7.1, and it is the reason 1.7.1
+  (versionCode 28) should not be rolled out.
+
+Sign-in
+  Codes-per-hour ceiling raised so a slow SMS night no longer locks a user out
+  of their own account with a working number.
+
+
+ROLLOUT CHECKLIST
+-----------------
+[ ] Upload velocity-1.7.2-vc29.aab (NOT versionCode 28)
+[ ] Publish admin -> App version as 1.7.2 INCLUDING build number 29,
+    or no one is prompted to update
+[ ] WhatsApp alerts stay dark until WHATSAPP_ENV + an approved Meta template
+    exist; see docs/WHATSAPP_ALERTS.md. The driver-facing screen works either
+    way, so opting in before then records consent for messages that will only
+    start once the channel is armed.
