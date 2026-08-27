@@ -501,16 +501,16 @@ export default function DriverHome() {
       <View style={styles.modeRow}>
         <View style={styles.modeToggle}>
           <Pressable
-            style={[styles.modeHalf, rideMode === 'solo' && styles.modeActive]}
-            onPress={() => switchRideMode('solo')}
-          >
-            <Text style={[styles.modeTxt, rideMode === 'solo' && styles.modeTxtActive]}>Solo</Text>
-          </Pressable>
-          <Pressable
             style={[styles.modeHalf, rideMode === 'sharing' && styles.modeActive]}
             onPress={() => switchRideMode('sharing')}
           >
-            <Text style={[styles.modeTxt, rideMode === 'sharing' && styles.modeTxtActive]}>Sharing rides</Text>
+            <Text style={[styles.modeTxt, rideMode === 'sharing' && styles.modeTxtActive]}>Sharing Rides</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeHalf, rideMode === 'solo' && styles.modeActive]}
+            onPress={() => switchRideMode('solo')}
+          >
+            <Text style={[styles.modeTxt, rideMode === 'solo' && styles.modeTxtActive]}>Solo Rides</Text>
           </Pressable>
         </View>
       </View>
