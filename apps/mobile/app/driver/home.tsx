@@ -39,9 +39,7 @@ import {
   type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
-import { DriverVoiceButton } from '../../src/ui/DriverVoiceButton';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
-import type { DriverCommand } from '../../src/voice/commands';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { PrimaryButton } from '../../src/ui/components';
@@ -230,93 +228,6 @@ export default function DriverHome() {
     setShown(visible);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, [visible]);
-
-  // ── Voice commands ────────────────────────────────────────────────────────
-
-  /**
-   * Run a spoken driver command against this screen's current state.
-   *
-   * Returns false when the command is understood but doesn't apply right now —
-   * "accept" with an empty feed, "online" when already online — so the driver
-   * hears why nothing happened instead of wondering whether the app heard them.
-   *
-   * Deliberately narrow. Everything here maps to a control already on this
-   * screen; nothing touches money, and a locked account still routes through
-   * openRequest()'s existing checks rather than bypassing them.
-   */
-  const handleVoiceCommand = useCallback(
-    (command: DriverCommand): boolean => {
-      switch (command) {
-        case 'goOnline':
-          if (online) return false;
-          setOnline(true);
-          return true;
-
-        case 'goOffline':
-          if (!online) return false;
-          setOnline(false);
-          return true;
-
-        case 'nextRequest':
-          if (!pendingCount) return false;
-          showNewRequests();
-          return true;
-
-        case 'acceptRide': {
-          // Opens the top request's detail screen — where the existing accept
-          // flow, fare and passenger details live. Voice never books a job
-          // sight-unseen.
-          const top = shown[0];
-          if (!top || activeTrip) return false;
-          openRequest(top.tripId);
-          return true;
-        }
-
-        case 'declineRide': {
-          const top = shown[0];
-          if (!top) return false;
-          setShown((current) => current.filter((r) => r.tripId !== top.tripId));
-          return true;
-        }
-
-        case 'readRequest': {
-          const top = shown[0];
-          if (!top) return false;
-          setExpandedId(top.tripId);
-          return true;
-        }
-
-        case 'endRoute':
-          router.push('/driver/en-route');
-          return true;
-
-        // Both need a trip in progress, which lives on the trip screen rather
-        // than this feed.
-        case 'navigate':
-        case 'callPassenger':
-          if (!activeTrip) return false;
-          router.push(`/driver/trip/${activeTrip.id}`);
-          return true;
-
-        default:
-          return false;
-      }
-    },
-    // commissionLocked and outstanding are here because openRequest() closes
-    // over them for its lock checks. Without them this callback could keep an
-    // openRequest() captured before the account was locked, and a spoken
-    // "accept" would walk straight past a lock the buttons still enforce.
-    [
-      online,
-      pendingCount,
-      shown,
-      activeTrip,
-      showNewRequests,
-      router,
-      commissionLocked,
-      outstanding,
-    ],
-  );
 
   // ── Swipe actions + report ───────────────────────────────────────────────
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -912,11 +823,6 @@ export default function DriverHome() {
         onSignOut={signOut}
       />
 
-      {/* Hands-free control for a driver who is already moving. Deliberately
-          limited to the actions on this screen — nothing here can touch the
-          wallet, commission, or cancellations, which keep their on-screen
-          two-tap paths. */}
-      <DriverVoiceButton onCommand={handleVoiceCommand} />
     </SafeAreaView>
   );
 }
