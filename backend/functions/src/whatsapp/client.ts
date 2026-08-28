@@ -50,6 +50,11 @@ export interface WhatsAppConfig {
   templateName: string;
   /** Language code the template was approved in, e.g. `en` or `en_US`. */
   templateLang: string;
+  /**
+   * Position of the dynamic URL button in the approved template, or null when
+   * the template has no dynamic URL button to fill.
+   */
+  urlButtonIndex: string | null;
   /** Shared secret echoed back to Meta during webhook verification. */
   verifyToken: string;
   /** App secret, used to verify the X-Hub-Signature-256 on incoming webhooks. */
@@ -58,6 +63,31 @@ export interface WhatsAppConfig {
 
 function env(name: string): string {
   return (process.env[name] ?? '').trim();
+}
+
+/**
+ * Which button in the approved template carries the dynamic URL, or null when
+ * there is no dynamic URL button to fill.
+ *
+ * Meta indexes a template's buttons by their position in the template itself,
+ * so a template that lists `Stop alerts` before `View ride` puts the URL button
+ * at index 1 — and a `sub_type: 'url'` component sent against index 0 comes
+ * back as `(#100) Invalid parameter`. A URL button approved WITHOUT a trailing
+ * `{{1}}` is static, takes no parameter at all, and rejects the same way.
+ *
+ * Neither is knowable from here: they are properties of what Meta approved, not
+ * of this code. Hardcoding index 0 assumed the documented layout and gave no
+ * way to correct it without a deploy, so both are configuration now. Default
+ * stays 0 — the layout in docs/WHATSAPP_ALERTS.md — so nothing changes for a
+ * template that already matches.
+ */
+function resolveUrlButtonIndex(): string | null {
+  const raw = env('WHATSAPP_TEMPLATE_BUTTON_INDEX');
+  if (!raw) return '0';
+  if (/^(none|off|static)$/i.test(raw)) return null;
+  // A typo must not silently move the button somewhere Meta will reject; fall
+  // back to the documented position rather than sending garbage as an index.
+  return /^\d+$/.test(raw) ? raw : '0';
 }
 
 /**
@@ -77,6 +107,7 @@ export function whatsAppConfig(): WhatsAppConfig | null {
     phoneNumberId,
     templateName,
     templateLang: env('WHATSAPP_TEMPLATE_LANG') || 'en',
+    urlButtonIndex: resolveUrlButtonIndex(),
     verifyToken: env('WHATSAPP_VERIFY_TOKEN'),
     appSecret: env('WHATSAPP_APP_SECRET'),
   };
@@ -160,6 +191,18 @@ const ERROR_ACTIONS: ReadonlyMap<number, SendFailureAction> = new Map<number, Se
   [133004, 'halt'],           // Server/number unavailable for sending
   [133010, 'halt'],           // Number not registered
 
+  // ── Our own request is malformed. Stop everything. ──
+  // An unrecognised code deliberately falls through to `ignore` rather than
+  // guessing (see above), and `(#100) Invalid parameter` is as generic as codes
+  // get. It is the one exception, because of what earns it: the payload is
+  // byte-identical for every recipient in a fanout, so a parameter that is
+  // invalid for one is invalid for all of them. Continuing past it cannot
+  // deliver anything and spends the number's quality rating trying. Meta also
+  // reports most template *shape* faults here rather than under 132xxx, under a
+  // subcode this map does not list — which is exactly how a malformed template
+  // reached every driver instead of stopping at the first.
+  [100, 'halt'],
+
   // ── Template problems. Sending more of them makes it worse. ──
   [132000, 'halt'],           // Parameter count mismatch
   [132001, 'halt'],           // Template does not exist in this language
@@ -222,11 +265,13 @@ export async function sendTemplate(
       parameters: bodyParams.map((text) => ({ type: 'text', text })),
     },
   ];
-  if (urlSuffix) {
+  // No dynamic URL button in the approved template means no button component:
+  // sending one against a static button is itself an `(#100) Invalid parameter`.
+  if (urlSuffix && cfg.urlButtonIndex !== null) {
     components.push({
       type: 'button',
       sub_type: 'url',
-      index: '0',
+      index: cfg.urlButtonIndex,
       parameters: [{ type: 'text', text: urlSuffix }],
     });
   }

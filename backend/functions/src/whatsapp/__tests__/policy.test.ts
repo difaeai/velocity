@@ -7,7 +7,7 @@
  * are written from that angle rather than from the code's: each names the
  * mistake it is there to prevent.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import {
   afterSend,
@@ -21,7 +21,13 @@ import {
   type CandidateDriver,
   type WhatsAppAlertSettings,
 } from '../policy';
-import { classifySendError, extractErrorCode, toWhatsAppNumber } from '../client';
+import {
+  classifySendError,
+  extractErrorCode,
+  sendTemplate,
+  toWhatsAppNumber,
+  whatsAppConfig,
+} from '../client';
 
 /** A live configuration: the feature armed, with the shipped defaults. */
 const ON: WhatsAppAlertSettings = { ...DEFAULT_ALERT_SETTINGS, enabled: true };
@@ -302,5 +308,105 @@ describe('classifySendError — what Meta is really telling us', () => {
     const body = { error: { code: 100, error_subcode: 131048, message: 'nope' } };
     expect(extractErrorCode(body)).toBe(131048);
     expect(classifySendError(extractErrorCode(body))).toBe('halt');
+  });
+
+  it('halts on a malformed request even when the subcode is unrecognised', () => {
+    // The regression this exists for: Meta reports most template shape faults
+    // as (#100) under a subcode this map does not list. That fell through to
+    // `ignore`, so the fanout carried on and sent the same rejected template to
+    // every driver in the plan. The payload is identical for all of them, so an
+    // invalid parameter is invalid for all of them.
+    const body = { error: { code: 100, error_subcode: 2494010, message: 'Invalid parameter' } };
+    expect(classifySendError(extractErrorCode(body))).toBe('halt');
+  });
+
+  it('still lets a recipient-specific subcode outrank the generic 100', () => {
+    // 100 halting must not swallow the codes that mean "this ONE person", or a
+    // single unreachable driver would switch the feature off for everybody.
+    const body = { error: { code: 100, error_subcode: 131026, message: 'nope' } };
+    expect(classifySendError(extractErrorCode(body))).toBe('drop-recipient');
+  });
+});
+
+describe('the dynamic URL button', () => {
+  const ENV_KEYS = [
+    'WHATSAPP_TOKEN',
+    'WHATSAPP_PHONE_NUMBER_ID',
+    'WHATSAPP_TEMPLATE_NAME',
+    'WHATSAPP_TEMPLATE_BUTTON_INDEX',
+  ];
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    vi.unstubAllGlobals();
+  });
+
+  function configure(buttonIndex?: string) {
+    process.env.WHATSAPP_TOKEN = 'tok';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '123';
+    process.env.WHATSAPP_TEMPLATE_NAME = 'offline_driver_ride_alert';
+    if (buttonIndex !== undefined) process.env.WHATSAPP_TEMPLATE_BUTTON_INDEX = buttonIndex;
+    const cfg = whatsAppConfig();
+    if (!cfg) throw new Error('config should be present');
+    return cfg;
+  }
+
+  /** Captures the body of the single Graph API call `sendTemplate` makes. */
+  async function capturePayload(buttonIndex?: string) {
+    const cfg = configure(buttonIndex);
+    const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [{ id: 'wamid.TEST' }] }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await sendTemplate(cfg, '923001234567', ['A', 'B', 'C', 'D'], 'TRIP1');
+    expect(res.ok).toBe(true);
+
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error('sendTemplate made no request');
+    return JSON.parse(call[1].body).template.components as Record<string, unknown>[];
+  }
+
+  it('defaults to index 0 — the layout in the setup guide', async () => {
+    const components = await capturePayload();
+    expect(components).toHaveLength(2);
+    expect(components[1]).toEqual({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: 'TRIP1' }],
+    });
+  });
+
+  it('sends the button at the configured index', async () => {
+    // A quick reply listed before the URL button pushes it to 1, and index 0
+    // is then rejected as (#100) Invalid parameter.
+    const components = await capturePayload('1');
+    expect(components[1].index).toBe('1');
+  });
+
+  it('omits the button component entirely when the button is static', async () => {
+    // A URL button approved without a trailing {{1}} takes no parameter at all;
+    // sending one is the same (#100).
+    const components = await capturePayload('none');
+    expect(components).toHaveLength(1);
+    expect(components[0].type).toBe('body');
+  });
+
+  it('falls back to the documented index rather than sending a junk one', async () => {
+    const components = await capturePayload('second');
+    expect(components[1].index).toBe('0');
+  });
+
+  it('never touches the four body parameters', async () => {
+    for (const idx of [undefined, '1', 'none']) {
+      const components = await capturePayload(idx);
+      expect(components[0]).toEqual({
+        type: 'body',
+        parameters: ['A', 'B', 'C', 'D'].map((text) => ({ type: 'text', text })),
+      });
+    }
   });
 });

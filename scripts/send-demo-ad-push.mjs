@@ -23,10 +23,20 @@
  * you name on the command line.
  */
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 
+// firebase-admin lives in the functions workspace, the key lives at the repo
+// root — two different anchors, so resolve them separately. Reusing the one
+// `require` for both looked for the key inside backend/ and threw
+// MODULE_NOT_FOUND before the script did anything.
 const require = createRequire(new URL('../backend/functions/', import.meta.url));
 const admin = require('firebase-admin');
-const serviceAccount = require('../velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json');
+const serviceAccount = JSON.parse(
+  readFileSync(
+    new URL('../velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json', import.meta.url),
+    'utf8',
+  ),
+);
 
 const WEB_API_KEY =
   process.env.FIREBASE_WEB_API_KEY ?? 'AIzaSyCymN-ML5eHNVrI7fGbLD9QSAzeWyJZyII';

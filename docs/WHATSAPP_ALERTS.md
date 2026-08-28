@@ -111,6 +111,7 @@ WHATSAPP_TOKEN=EAAG...the permanent System User token
 WHATSAPP_PHONE_NUMBER_ID=123456789012345
 WHATSAPP_TEMPLATE_NAME=offline_driver_ride_alert
 WHATSAPP_TEMPLATE_LANG=en
+WHATSAPP_TEMPLATE_BUTTON_INDEX=0
 WHATSAPP_VERIFY_TOKEN=any-long-random-string-you-choose
 WHATSAPP_APP_SECRET=the App Secret from Meta app settings → Basic
 ```
@@ -118,6 +119,15 @@ WHATSAPP_APP_SECRET=the App Secret from Meta app settings → Basic
 `deploy-functions.yml` appends the block to the functions `.env` on deploy.
 With the secret absent, `whatsAppConfig()` returns null and the feature stays
 dark — rides are unaffected.
+
+`WHATSAPP_TEMPLATE_BUTTON_INDEX` is optional and defaults to `0`, the layout
+above. Meta indexes a template's buttons by their position in the template, so
+if the approved template lists **Stop alerts** before **View ride**, the URL
+button is at index `1` and a send against index `0` is rejected as
+`(#100) Invalid parameter`. Set it to `none` if the URL button turned out to be
+static — a button whose URL does **not** end in `{{1}}` accepts no parameter at
+all, and sending one is the same error. Both are properties of what Meta
+approved rather than of the code, which is why they are configuration.
 
 `WHATSAPP_APP_SECRET` is load-bearing: without it the webhook rejects every
 request, because a public endpoint that edits driver consent and cannot tell
