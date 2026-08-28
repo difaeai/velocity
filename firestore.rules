@@ -274,6 +274,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- adminConfig/{doc} -----------------------------------------------
+    // Console-only configuration, admin-readable AND admin-writable. Distinct
+    // from config/{doc}, which every signed-in app user can read: the one doc
+    // here (platformCosts) is what Velocity pays its vendors, and no passenger
+    // or driver has any business seeing the company's bill.
+    match /adminConfig/{docId} {
+      allow read, write: if isAdmin();
+    }
+
     // ----- auditLogs/{id} --------------------------------------------------
     match /auditLogs/{logId} {
       allow read: if isAdmin();
