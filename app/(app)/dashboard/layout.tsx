@@ -81,6 +81,7 @@ const APP_NAV: NavGroup[] = [
     items: [
       { href: '/dashboard/features', label: '🚦 Feature flags' },
       { href: '/dashboard/app-version', label: '⬆️ App version' },
+      { href: '/dashboard/costs', label: '💸 Cost of Velocity' },
     ],
   },
 ];

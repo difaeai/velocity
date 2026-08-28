@@ -30,6 +30,7 @@ import {
   compact,
   shortDate,
 } from '@/components/charts';
+import { CostOfVelocityTile } from '@/components/CostOfVelocity';
 
 const RANGES = [7, 30, 90] as const;
 
@@ -194,6 +195,11 @@ export default function Overview() {
               value={completionRate === null ? '—' : `${completionRate}%`}
               hint={`${compact(totals!.tripsCancelled)} cancelled of ${compact(totals!.tripsRequested)} requested`}
             />
+          </div>
+
+          {/* The other side of the ledger: what the platform costs to run. */}
+          <div style={{ marginBottom: 18 }}>
+            <CostOfVelocityTile />
           </div>
 
           <div style={grid2}>
