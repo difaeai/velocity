@@ -371,6 +371,25 @@ export const analyticsApi = {
   get: callable<{ days?: number }, AnalyticsPayload>('adminGetAnalytics'),
 };
 
+// ── Cost of Velocity ────────────────────────────────────────────────────────
+
+/** What one refresh run found, per vendor. Mirrors backend costs/index.ts. */
+export interface CostRefreshOutcome {
+  /** The month every fetched amount covers — `2026-07`. */
+  window: string;
+  fetchedAt: number;
+  sources: Record<
+    'googleCloud' | 'anthropic' | 'meta',
+    { state: 'ok' | 'not-configured' | 'error'; detail?: string; lines?: number; unmapped?: string[] }
+  >;
+  lines: number;
+}
+
+export const costsApi = {
+  /** Pull last month's spend from Google Cloud, Anthropic and Meta, now. */
+  refresh: callable<Record<string, never>, CostRefreshOutcome>('adminRefreshPlatformCosts'),
+};
+
 // ── Social desk ─────────────────────────────────────────────────────────────
 
 export const SOCIAL_PLATFORMS = [
