@@ -204,6 +204,14 @@ export const adminSendWhatsAppTest = onCall(async (req) => {
         : res.code === 132000
           ? 'The template expects a different number of variables than the four this sends. ' +
             'The body must have exactly {{1}}–{{4}} and the URL button exactly one variable.'
-          : null,
+          : res.code === 100
+            ? 'Meta rejected the shape of the request, which is almost always the URL button. ' +
+              `This sent sub_type "url" at index ${cfg.urlButtonIndex ?? '(no button component)'}. ` +
+              'Open the template in WhatsApp Manager → View details and check two things: that ' +
+              'the "View ride" button really sits at that index (a quick reply listed first ' +
+              'pushes it to 1), and that its URL ends in {{1}}. Set ' +
+              'WHATSAPP_TEMPLATE_BUTTON_INDEX to the right index, or to "none" if the button ' +
+              'turned out to be static.'
+            : null,
   };
 });
