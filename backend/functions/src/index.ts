@@ -317,3 +317,6 @@ export {
   adminReplySocialComment,
   adminSetCommentStatus,
 } from './social';
+
+// What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta
+export { refreshPlatformCosts, adminRefreshPlatformCosts } from './costs';

@@ -71,6 +71,7 @@ jobs:
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
+          COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
         run: |
           : > .env.velocity-fe379
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
@@ -112,6 +113,19 @@ jobs:
             echo "· whatsapp: offline-driver alerts CONFIGURED"
           else
             echo "· whatsapp: no WHATSAPP_ENV — offline-driver alerts stay off"
+          fi
+          # Vendor billing credentials, so the Cost of Velocity page fills itself
+          # in instead of being typed from invoices: BILLING_BQ_TABLE (the
+          # BigQuery billing export), ANTHROPIC_ADMIN_KEY (org cost report — a
+          # DIFFERENT key from the one the social desk writes with), and
+          # WHATSAPP_WABA_ID / META_AD_ACCOUNT_ID / META_COST_TOKEN. Each source
+          # is independent and each is optional: absent → that vendor reads
+          # "not connected" in the console and its lines stay hand-entered.
+          if [ -n "$COST_SOURCES_ENV" ]; then
+            printf '%s\n' "$COST_SOURCES_ENV" >> .env.velocity-fe379
+            echo "· costs: vendor billing CONFIGURED"
+          else
+            echo "· costs: no COST_SOURCES_ENV — the cost page stays hand-entered"
           fi
           echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 

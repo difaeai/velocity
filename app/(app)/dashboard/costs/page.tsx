@@ -4,26 +4,33 @@
  * Cost of Velocity — the third-party bill, line by line.
  *
  * The catalogue of vendors comes from `lib/costs.ts` (it is a fact about the
- * codebase), and this page is where somebody says what each one actually costs.
- * Two things it deliberately does not do:
+ * codebase). An amount reaches a line one of three ways, and the page is built
+ * around keeping them distinguishable:
  *
- *  · It does not pretend to read anyone's billing API. Every figure is typed in
- *    from a real invoice, and lines nobody has priced are counted and called out
- *    rather than hidden behind a total that looks complete.
- *  · It does not let you rename a service. An override changes what a line
- *    costs, never what it is, so the catalogue stays the single description of
- *    what Velocity is plugged into.
+ *  · **Fetched** — the backend pulled it from Google Cloud, Anthropic or Meta.
+ *  · **Typed** — somebody read it off an invoice.
+ *  · **Catalogue** — a published list price nobody has confirmed yet.
+ *
+ * A fetched figure beats a typed one, because it *is* the invoice — but only
+ * until an admin pins the line, and pinning is one click. That is the safety
+ * property worth protecting: no number a person entered is ever silently
+ * replaced by whatever a vendor's API returned at 6am.
+ *
+ * It also does not let you rename a service. An override changes what a line
+ * costs, never what it is, so the catalogue stays the single description of
+ * what Velocity is plugged into.
  *
  * Amounts are stored in `adminConfig/platformCosts`, which — unlike `config/` —
- * no app user can read. What the company spends is not passenger-facing data.
+ * no app user can read. What the company spends is not passenger-facing.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
+import { costsApi } from '@/lib/api';
 import { Badge, Button, Card } from '@/components/ui';
 import { CategoryBars, ChartCard, compact } from '@/components/charts';
 import {
@@ -38,6 +45,7 @@ import {
   type CostCurrency,
   type CostItem,
   type CostStatus,
+  type FetchStatus,
   type StoredCostConfig,
   monthlyPkr,
   overrideFor,
@@ -48,8 +56,8 @@ import {
 } from '@/lib/costs';
 
 /** One grid, used by the header and every row, so the columns line up. */
-const COLS = 'minmax(260px, 2.4fr) 104px 84px 116px 120px 108px';
-const TABLE_MIN_WIDTH = 900;
+const COLS = 'minmax(260px, 2.4fr) 128px 84px 116px 120px 108px';
+const TABLE_MIN_WIDTH = 940;
 
 const STATUS_COLOR: Record<CostStatus, string> = {
   active: colors.success,
@@ -58,30 +66,62 @@ const STATUS_COLOR: Record<CostStatus, string> = {
   paused: colors.warn,
 };
 
+/** What each fetch source is called, and what it covers. */
+const SOURCES: { key: 'googleCloud' | 'anthropic' | 'meta'; label: string; covers: string }[] = [
+  { key: 'googleCloud', label: 'Google Cloud', covers: 'Firebase, Maps, Gemini' },
+  { key: 'anthropic', label: 'Anthropic', covers: 'Claude' },
+  { key: 'meta', label: 'Meta', covers: 'WhatsApp, ad spend' },
+];
+
+const SOURCE_NAMES: Record<string, string> = {
+  'google-cloud': 'Google Cloud billing',
+  anthropic: 'Anthropic',
+  meta: 'Meta',
+};
+
 export default function CostsPage() {
   const { user, isAdmin } = useAuth();
 
   const [items, setItems] = useState<CostItem[]>([]);
   const [rate, setRate] = useState(DEFAULT_USD_TO_PKR);
+  const [stored, setStored] = useState<StoredCostConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+
+  const readCosts = useCallback(async (): Promise<StoredCostConfig | null> => {
+    const snap = await getDoc(doc(db, COST_COLLECTION, COST_DOC));
+    return (snap.data() as StoredCostConfig | undefined) ?? null;
+  }, []);
+
+  /** Reading is separate from applying so the effect never sets state inline. */
+  const applyStored = useCallback((data: StoredCostConfig | null) => {
+    const resolved = resolveCosts(data);
+    setItems(resolved.items);
+    setRate(resolved.usdToPkr);
+    setStored(data);
+    setDirty(false);
+  }, []);
 
   useEffect(() => {
-    getDoc(doc(db, COST_COLLECTION, COST_DOC))
-      .then((snap) => {
-        const stored = snap.data() as StoredCostConfig | undefined;
-        const resolved = resolveCosts(stored ?? null);
-        setItems(resolved.items);
-        setRate(resolved.usdToPkr);
-        setUpdatedAt(typeof stored?.updatedAt === 'number' ? stored.updatedAt : null);
+    let cancelled = false;
+    readCosts()
+      .then((data) => {
+        if (!cancelled) applyStored(data);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load costs.'))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load costs.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readCosts, applyStored]);
 
   const summary = useMemo(() => summarise(items, rate), [items, rate]);
 
@@ -95,7 +135,7 @@ export default function CostsPage() {
   function setAmount(id: string, raw: string) {
     const value = Number(raw);
     if (Number.isNaN(value) || value < 0) return;
-    patch(id, { amount: value, estimate: false });
+    patch(id, { amount: value, estimate: false, origin: 'manual' });
   }
 
   function addLine() {
@@ -146,15 +186,19 @@ export default function CostsPage() {
         const diff = overrideFor(item);
         if (diff) overrides[item.id] = diff;
       }
-      const payload: StoredCostConfig = {
-        usdToPkr: rate,
-        overrides,
-        custom: items.filter((i) => i.custom),
-        updatedAt: Date.now(),
-        updatedBy: user?.email ?? null,
-      };
-      await setDoc(doc(db, COST_COLLECTION, COST_DOC), payload);
-      setUpdatedAt(payload.updatedAt ?? null);
+      // mergeFields, so the backend's `fetched` map and its status survive a
+      // save from here untouched — the two writers never share a field.
+      await setDoc(
+        doc(db, COST_COLLECTION, COST_DOC),
+        {
+          usdToPkr: rate,
+          overrides,
+          custom: items.filter((i) => i.custom),
+          updatedAt: Date.now(),
+          updatedBy: user?.email ?? null,
+        },
+        { mergeFields: ['usdToPkr', 'overrides', 'custom', 'updatedAt', 'updatedBy'] },
+      );
       setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -162,6 +206,19 @@ export default function CostsPage() {
       setError(e instanceof Error ? e.message : 'Failed to save.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refresh() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      await costsApi.refresh({});
+      applyStored(await readCosts());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not refresh from the vendors.');
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -180,7 +237,8 @@ export default function CostsPage() {
           <p style={{ color: colors.muted, margin: 0, maxWidth: 720 }}>
             Everything Velocity pays somebody else to exist — the cloud under the apps, the AI on
             the social desk, Meta&rsquo;s WhatsApp numbers, Maps, the Play account, the blue tick.
-            The list of services comes from the code; the amounts come from your invoices.
+            The list of services comes from the code; the amounts come from the vendors, or from
+            your invoices.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -194,6 +252,16 @@ export default function CostsPage() {
       {error ? (
         <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>
       ) : null}
+
+      <SourceStrip
+        status={stored?.fetchStatus}
+        window={stored?.fetchWindow}
+        fetchedAt={stored?.fetchedAt}
+        onRefresh={refresh}
+        refreshing={refreshing}
+        disabled={!isAdmin || dirty}
+        dirty={dirty}
+      />
 
       {/* ── the four numbers ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -280,8 +348,8 @@ export default function CostsPage() {
         <div style={{ flex: 1, minWidth: 260 }}>
           <div style={{ fontWeight: 800, fontSize: 14 }}>Dollar rate</div>
           <div style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
-            Every foreign vendor here bills in USD. This is what the rupee total above converts
-            them at — set it to the rate your card was actually charged.
+            Google and Anthropic both bill in USD, and neither reports what your card was charged
+            at. This is the rate the rupee total above converts them with.
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -368,16 +436,107 @@ export default function CostsPage() {
       </div>
 
       <p style={{ color: colors.muted, fontSize: 12, marginTop: 18, maxWidth: 760, lineHeight: 1.6 }}>
-        Nothing on this page talks to a billing API — Google, Meta and Anthropic all keep spend
-        behind credentials this console does not hold. For a <strong>per use</strong> line, enter
-        what last month&rsquo;s invoice came to and it is treated as that month&rsquo;s cost.
-        {updatedAt ? ` Last edited ${new Date(updatedAt).toLocaleString('en-PK')}.` : ''}
+        A <strong>per use</strong> line holds one month of usage. Where a vendor reports its own
+        spend that number is fetched nightly; everywhere else, enter what the invoice came to. See{' '}
+        <code>docs/COST_SOURCES.md</code> for what each source needs before it can answer.
+        {stored?.updatedAt
+          ? ` Last edited by hand ${new Date(stored.updatedAt).toLocaleString('en-PK')}.`
+          : ''}
       </p>
     </div>
   );
 }
 
 // ── pieces ──────────────────────────────────────────────────────────────────
+
+/**
+ * Which vendors are answering. A source that was never configured is not a
+ * failure and does not get an alarming colour — it is simply a credential
+ * nobody has added yet, and the page works without it.
+ */
+function SourceStrip({
+  status,
+  window,
+  fetchedAt,
+  onRefresh,
+  refreshing,
+  disabled,
+  dirty,
+}: {
+  status?: Record<'googleCloud' | 'anthropic' | 'meta', FetchStatus>;
+  window?: string;
+  fetchedAt?: number;
+  onRefresh: () => void;
+  refreshing: boolean;
+  disabled: boolean;
+  dirty: boolean;
+}) {
+  const connected = SOURCES.filter((s) => status?.[s.key]?.state === 'ok').length;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 280 }}>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>
+            Fetched from the vendors
+            {window ? (
+              <span style={{ color: colors.muted, fontWeight: 600 }}> · {window}</span>
+            ) : null}
+          </div>
+          <div style={{ color: colors.muted, fontSize: 12.5, marginTop: 2 }}>
+            {status
+              ? `${connected} of 3 sources answering. Checked ${
+                  fetchedAt ? new Date(fetchedAt).toLocaleString('en-PK') : 'never'
+                }.`
+              : 'Nothing has been fetched yet. Add a vendor credential and every line it covers fills itself in nightly.'}
+          </div>
+        </div>
+        <Button variant="secondary" onClick={onRefresh} disabled={disabled || refreshing}>
+          {refreshing ? 'Fetching…' : 'Refresh now'}
+        </Button>
+      </div>
+
+      {dirty ? (
+        <div style={{ color: colors.warn, fontSize: 12, fontWeight: 600, marginTop: 8 }}>
+          Save your changes first — a refresh reloads the page and would discard them.
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {SOURCES.map((s) => {
+          const state = status?.[s.key];
+          const tone =
+            state?.state === 'ok'
+              ? colors.success
+              : state?.state === 'error'
+                ? colors.danger
+                : colors.muted;
+          return (
+            <div key={s.key} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5 }}>
+              <span style={{ minWidth: 120, fontWeight: 700 }}>{s.label}</span>
+              <Badge
+                label={
+                  state?.state === 'ok'
+                    ? `${state.lines ?? 0} lines`
+                    : state?.state === 'error'
+                      ? 'error'
+                      : 'not connected'
+                }
+                color={tone}
+              />
+              <span style={{ color: colors.muted, flex: 1 }}>
+                {state?.detail ?? s.covers}
+                {state?.unmapped?.length
+                  ? ` — ${state.unmapped.join(', ')}`
+                  : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 function Figure({
   label,
@@ -436,6 +595,7 @@ function Row({
 }) {
   const perMonth = monthlyPkr(item, rate);
   const counted = item.status === 'active';
+  const auto = item.origin === 'fetched';
 
   return (
     <div
@@ -445,7 +605,7 @@ function Row({
         gap: 10,
         alignItems: 'start',
         background: colors.surface,
-        border: `1px solid ${colors.border}`,
+        border: `1px solid ${auto ? `${colors.success}44` : colors.border}`,
         borderRadius: 14,
         padding: 14,
         opacity: counted ? 1 : 0.72,
@@ -493,8 +653,10 @@ function Row({
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 13.5 }}>{item.platform}</strong>
+              {auto ? <Badge label="automatic" color={colors.success} /> : null}
+              {item.pinned ? <Badge label="pinned" color={colors.secondary} /> : null}
               {item.estimate && item.amount > 0 ? <Badge label="estimate" color={colors.warn} /> : null}
-              {item.status === 'active' && item.amount === 0 ? (
+              {item.status === 'active' && item.amount === 0 && !item.autoOnly ? (
                 <Badge label="no amount yet" color={colors.danger} />
               ) : null}
             </div>
@@ -521,20 +683,36 @@ function Row({
         )}
       </div>
 
-      {/* what it costs */}
-      <input
-        type="number"
-        min={0}
-        step="any"
-        value={item.amount}
-        disabled={!editable}
-        onChange={(e) => onAmount(e.target.value)}
-        style={{ ...inputStyle, fontWeight: 800, textAlign: 'right' }}
-      />
+      {/* what it costs — read-only while a vendor is answering for it */}
+      <div style={{ display: 'grid', gap: 5 }}>
+        <input
+          type="number"
+          min={0}
+          step="any"
+          value={auto ? Number(item.amount.toFixed(2)) : item.amount}
+          disabled={!editable || auto}
+          onChange={(e) => onAmount(e.target.value)}
+          style={{
+            ...inputStyle,
+            fontWeight: 800,
+            textAlign: 'right',
+            background: auto ? `${colors.success}0F` : colors.bg,
+          }}
+        />
+        {item.fetchedFrom ? (
+          <button
+            onClick={() => onPatch({ pinned: !item.pinned })}
+            disabled={!editable}
+            style={{ ...linkButtonStyle, color: colors.secondary }}
+          >
+            {item.pinned ? 'Use the fetched number' : 'Type my own'}
+          </button>
+        ) : null}
+      </div>
 
       <select
         value={item.currency}
-        disabled={!editable}
+        disabled={!editable || auto}
         onChange={(e) => onPatch({ currency: e.target.value as CostCurrency })}
         style={inputStyle}
       >
@@ -569,7 +747,7 @@ function Row({
           ))}
         </select>
         {onRemove ? (
-          <button onClick={onRemove} disabled={!editable} style={removeStyle}>
+          <button onClick={onRemove} disabled={!editable} style={{ ...linkButtonStyle, color: colors.danger }}>
             Remove
           </button>
         ) : null}
@@ -594,6 +772,12 @@ function Row({
             </div>
           </>
         )}
+        {auto && item.fetchedFrom ? (
+          <div style={{ color: colors.muted, fontSize: 11, marginTop: 4, lineHeight: 1.4 }}>
+            from {SOURCE_NAMES[item.fetchedFrom]}
+            {item.fetchedWindow ? ` · ${item.fetchedWindow}` : ''}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -616,10 +800,9 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
-const removeStyle: React.CSSProperties = {
+const linkButtonStyle: React.CSSProperties = {
   border: 'none',
   background: 'none',
-  color: colors.danger,
   fontSize: 11.5,
   fontWeight: 700,
   cursor: 'pointer',

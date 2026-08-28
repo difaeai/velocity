@@ -63,6 +63,21 @@ export interface CostItem {
   billingUrl?: string;
   /** Added from the console rather than shipped in the catalogue. */
   custom?: boolean;
+  /**
+   * A line that only ever carries a number when a fetch supplies one, so a zero
+   * on it is not somebody forgetting to type an invoice in.
+   */
+  autoOnly?: boolean;
+
+  // ── resolved at read time, never stored ───────────────────────────────────
+  /** Where the amount on this line came from. */
+  origin?: 'catalogue' | 'manual' | 'fetched';
+  /** Which vendor answered, when the amount was fetched. */
+  fetchedFrom?: FetchSource;
+  /** The month a fetched amount covers — `2026-07`. */
+  fetchedWindow?: string;
+  /** True when a fetched amount exists but a typed one is being shown instead. */
+  pinned?: boolean;
 }
 
 /**
@@ -148,6 +163,22 @@ export const CATALOGUE: CostItem[] = [
     estimate: true,
     note: 'Billed per successful verification once the free monthly allowance is used up. This is the line most likely to grow with sign-ups.',
     billingUrl: 'https://console.firebase.google.com/project/velocity-fe379/authentication/usage',
+  },
+  {
+    id: 'google-cloud-other',
+    platform: 'Google Firebase',
+    service: 'Everything else on the Cloud bill',
+    category: 'Cloud & infrastructure',
+    purpose:
+      'Logging, networking, BigQuery and anything else the automatic fetch could not attribute to a line above.',
+    amount: 0,
+    currency: 'USD',
+    billing: 'usage',
+    status: 'active',
+    estimate: false,
+    autoOnly: true,
+    note: 'Exists so the fetched total always adds up to the real Google bill. A cost tool that silently drops line items is worse than none.',
+    billingUrl: 'https://console.cloud.google.com/billing',
   },
   {
     id: 'firebase-fcm',
@@ -350,8 +381,31 @@ export const COST_DOC = 'platformCosts';
 
 /** The half of a line an admin can change. */
 export type CostOverride = Partial<
-  Pick<CostItem, 'amount' | 'currency' | 'billing' | 'status' | 'estimate' | 'note'>
+  Pick<CostItem, 'amount' | 'currency' | 'billing' | 'status' | 'estimate' | 'note' | 'pinned'>
 >;
+
+/** Which vendor's API an amount came back from. */
+export type FetchSource = 'google-cloud' | 'anthropic' | 'meta';
+
+/** One line as a vendor reported it, written by the backend refresh job. */
+export interface FetchedCost {
+  amount: number;
+  currency: string;
+  source: FetchSource;
+  /** The month it covers — `2026-07`. */
+  window: string;
+  fetchedAt: number;
+}
+
+export type FetchState = 'ok' | 'not-configured' | 'error';
+
+export interface FetchStatus {
+  state: FetchState;
+  detail?: string;
+  lines?: number;
+  /** Cloud services that landed on the catch-all line. */
+  unmapped?: string[];
+}
 
 export interface StoredCostConfig {
   usdToPkr?: number;
@@ -359,6 +413,12 @@ export interface StoredCostConfig {
   custom?: CostItem[];
   updatedAt?: number;
   updatedBy?: string | null;
+
+  // ── written by the backend refresh job, never by the console ─────────────
+  fetched?: Record<string, FetchedCost>;
+  fetchedAt?: number;
+  fetchWindow?: string;
+  fetchStatus?: Record<'googleCloud' | 'anthropic' | 'meta', FetchStatus>;
 }
 
 const BILLINGS: Billing[] = ['monthly', 'yearly', 'one-time', 'usage'];
@@ -374,7 +434,52 @@ function clean(raw: unknown): CostOverride {
   if (STATUSES.includes(o.status as CostStatus)) out.status = o.status as CostStatus;
   if (typeof o.estimate === 'boolean') out.estimate = o.estimate;
   if (typeof o.note === 'string') out.note = o.note;
+  if (typeof o.pinned === 'boolean') out.pinned = o.pinned;
   return out;
+}
+
+/** A vendor-reported amount, or null if the stored shape is not one. */
+function cleanFetched(raw: unknown): FetchedCost | null {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  if (typeof o.amount !== 'number' || !isFinite(o.amount) || o.amount < 0) return null;
+  const source = o.source;
+  if (source !== 'google-cloud' && source !== 'anthropic' && source !== 'meta') return null;
+  return {
+    amount: o.amount,
+    currency: typeof o.currency === 'string' && o.currency ? o.currency : 'USD',
+    source,
+    window: typeof o.window === 'string' ? o.window : '',
+    fetchedAt: typeof o.fetchedAt === 'number' ? o.fetchedAt : 0,
+  };
+}
+
+/**
+ * One line, with the three possible sources of its amount resolved in order.
+ *
+ * A vendor-reported figure wins over a typed one, because it is the invoice and
+ * the typed one is somebody's memory of an invoice — but only until an admin
+ * pins the line. Pinning is what makes this safe to switch on: nothing a person
+ * entered is ever silently replaced by whatever an API returned at 6am.
+ */
+function resolveOne(base: CostItem, override: CostOverride, fetched: FetchedCost | null): CostItem {
+  const item: CostItem = { ...base, ...override };
+  item.origin = override.amount !== undefined ? 'manual' : 'catalogue';
+
+  if (fetched) {
+    item.fetchedFrom = fetched.source;
+    item.fetchedWindow = fetched.window;
+    item.pinned = override.pinned === true;
+    if (!item.pinned) {
+      item.amount = fetched.amount;
+      // Google and Anthropic bill in USD; Meta bills in the WABA's own currency,
+      // which for a Pakistan business is PKR or USD. Anything else would be a
+      // surprise, and treating a surprise as dollars is the conservative read.
+      item.currency = fetched.currency === 'PKR' ? 'PKR' : 'USD';
+      item.estimate = false;
+      item.origin = 'fetched';
+    }
+  }
+  return item;
 }
 
 /**
@@ -387,7 +492,10 @@ export function resolveCosts(stored: StoredCostConfig | undefined | null): {
   usdToPkr: number;
 } {
   const overrides = stored?.overrides ?? {};
-  const items: CostItem[] = CATALOGUE.map((base) => ({ ...base, ...clean(overrides[base.id]) }));
+  const fetched = stored?.fetched ?? {};
+  const items: CostItem[] = CATALOGUE.map((base) =>
+    resolveOne(base, clean(overrides[base.id]), cleanFetched(fetched[base.id])),
+  );
 
   for (const raw of Array.isArray(stored?.custom) ? stored.custom : []) {
     if (!raw || typeof raw.id !== 'string' || !raw.id) continue;
@@ -430,6 +538,7 @@ export function overrideFor(item: CostItem): CostOverride | null {
   if (item.status !== base.status) diff.status = item.status;
   if (item.estimate !== base.estimate) diff.estimate = item.estimate;
   if ((item.note ?? '') !== (base.note ?? '')) diff.note = item.note ?? '';
+  if (item.pinned === true) diff.pinned = true;
   return Object.keys(diff).length ? diff : null;
 }
 
@@ -485,7 +594,9 @@ export function summarise(items: CostItem[], usdToPkr: number): CostSummary {
       activeCount += 1;
       monthly += perMonth;
       if (item.billing === 'one-time') oneTime += toPkr(item.amount, item.currency, usdToPkr);
-      if (item.amount === 0) unpriced.push(item);
+      // An auto-only line at zero is a fetch that found nothing, not a person
+      // who forgot — nagging about it would be noise on every clean month.
+      if (item.amount === 0 && !item.autoOnly) unpriced.push(item);
       else if (item.estimate) estimated.push(item);
       if (perMonth > 0) {
         platform.set(item.platform, (platform.get(item.platform) ?? 0) + perMonth);
