@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>63950615894-d2tpqt2im7i6kdgt8teqstdjj4ti2rb3.apps.googleusercontent.com</string>
+	<string>63950615894-hbh7q0p0upr3i2kk35kvcofo89f589r6.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.63950615894-d2tpqt2im7i6kdgt8teqstdjj4ti2rb3</string>
+	<string>com.googleusercontent.apps.63950615894-hbh7q0p0upr3i2kk35kvcofo89f589r6</string>
 	<key>ANDROID_CLIENT_ID</key>
-	<string>63950615894-p9j1hme33kh1l7dcfqgadi0q6b7d0s5m.apps.googleusercontent.com</string>
+	<string>63950615894-2hhan949bct8htqid1h26me6plhputfa.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyAzU-CA9jOViI3nQYXfbNYuP4NpcaPpVmE</string>
 	<key>GCM_SENDER_ID</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.velocity.app</string>
+	<string>com.velocityridzpk.app</string>
 	<key>PROJECT_ID</key>
 	<string>velocity-fe379</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:63950615894:ios:9248b4bedf8e37ab7052f7</string>
+	<string>1:63950615894:ios:34a93a8c0657f12a7052f7</string>
 </dict>
 </plist>
