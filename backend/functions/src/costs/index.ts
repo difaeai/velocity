@@ -21,7 +21,7 @@ import { db } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import {
   anthropicAdminConfig,
-  cloudBillingConfig,
+  cloudBillingSetting,
   lastCompleteMonth,
   metaCostConfig,
 } from './config';
@@ -99,10 +99,14 @@ export async function refreshCosts(): Promise<RefreshOutcome> {
     return n;
   };
 
-  const cloud = cloudBillingConfig();
-  if (cloud) {
+  const cloud = cloudBillingSetting();
+  if (cloud.state === 'invalid') {
+    // A typo must never read as "nobody set this up" — that is the one state
+    // an admin would look at and correctly decide there is nothing to do.
+    sources.googleCloud = { state: 'error', detail: cloud.detail };
+  } else if (cloud.state === 'ok') {
     try {
-      const result = await fetchCloudCosts(cloud, window);
+      const result = await fetchCloudCosts(cloud.config, window);
       const lines = absorb(result.amounts, 'google-cloud');
       sources.googleCloud = {
         state: 'ok',
