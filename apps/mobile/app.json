@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.velocityridzpk.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
         "NSCameraUsageDescription": "Velocity needs camera access so you can take and share a photo in chat and capture verification documents.",
         "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
