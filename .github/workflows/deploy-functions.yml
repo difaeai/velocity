@@ -127,6 +127,28 @@ jobs:
           else
             echo "· costs: no COST_SOURCES_ENV — the cost page stays hand-entered"
           fi
+          # Which cost sources will actually answer once deployed.
+          #
+          # Read from the ASSEMBLED env rather than from the secrets, because
+          # that is the only place the answer exists: WHATSAPP_TOKEN arrives
+          # inside the WHATSAPP_ENV block, so whether Meta can authenticate is
+          # not knowable from any single secret. Presence only — no values are
+          # ever printed here.
+          have() { grep -q "^$1=." .env.velocity-fe379; }
+          if have BILLING_BQ_TABLE; then echo "· costs: Google Cloud READY"; else echo "· costs: Google Cloud not configured"; fi
+          if have ANTHROPIC_ADMIN_KEY; then echo "· costs: Anthropic READY"; else echo "· costs: Anthropic not configured"; fi
+          meta_token=no; meta_id=no
+          have META_COST_TOKEN && meta_token=yes || true
+          have WHATSAPP_TOKEN && meta_token=yes || true
+          have WHATSAPP_WABA_ID && meta_id=yes || true
+          have META_AD_ACCOUNT_ID && meta_id=yes || true
+          if [ "$meta_token" = yes ] && [ "$meta_id" = yes ]; then
+            echo "· costs: Meta READY"
+          elif [ "$meta_id" = yes ]; then
+            echo "· costs: Meta has an account id but NO TOKEN — add META_COST_TOKEN to COST_SOURCES_ENV"
+          else
+            echo "· costs: Meta not configured"
+          fi
           echo "Backend env assembled ($(grep -c '=' .env.velocity-fe379) vars)."
 
       - name: Deploy Firestore indexes
