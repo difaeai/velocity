@@ -17,6 +17,11 @@ export const WEB_ORIGIN =
 
 /** Legal pages shown from Settings and sign-in, and listed in Play Console. */
 export const PRIVACY_URL = `${WEB_ORIGIN}/privacy`;
+/**
+ * The web deletion page. Both stores require a deletion URL on the listing for
+ * people who can no longer sign in — it is NOT the in-app path any more, which
+ * lives at /passenger/delete-account (App Store guideline 5.1.1(v)).
+ */
 export const DELETE_ACCOUNT_URL = `${WEB_ORIGIN}/delete-account`;
 export const TERMS_URL = `${WEB_ORIGIN}/terms`;
 

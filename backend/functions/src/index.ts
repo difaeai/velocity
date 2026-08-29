@@ -19,6 +19,10 @@ export {
   uploadUserPhoto,
 } from './users';
 
+// The user deletes their own account — App Store guideline 5.1.1(v) requires
+// this to exist inside the app, not behind a link to the website.
+export { deleteMyAccount } from './users/deleteAccount';
+
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
 
