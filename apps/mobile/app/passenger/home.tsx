@@ -322,7 +322,7 @@ export default function PassengerHome() {
         <View style={styles.heroRow}>
           <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
             <View style={styles.searchHeroIcon}>
-              <SearchIcon size={18} color="#0b0d0c" />
+              <SearchIcon size={22} color="#0b0d0c" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.searchHeroTitle}>Where to?</Text>
@@ -840,24 +840,28 @@ const styles = themed(() => StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    /* 15 + a 46px icon + 15 puts this card at 76px — deliberately just under
+       the voice tile's ~85px, so all of this extra size is slack the row was
+       already carrying. The row is as tall as its tallest child, so growing
+       this card costs the features below it nothing until it passes the tile. */
+    paddingVertical: 15,
   },
   searchHeroIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchHeroTitle: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: -0.2,
@@ -906,7 +910,7 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: -0.2,
   },
   searchHeroSub: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#8f9694',
     marginTop: 2,
   },
