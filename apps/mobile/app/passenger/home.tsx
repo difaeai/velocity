@@ -313,12 +313,12 @@ export default function PassengerHome() {
              row they cost roughly half that, which is what lifts Services and
              the cards under it into view without a scroll.
 
-             "Where to?" keeps the larger share of the row because it is the
-             primary action; the voice card only needs enough width to name
-             itself. When there is no speech recogniser (typically no-GMS
-             handsets) the voice card is not rendered at all and "Where to?"
-             grows back to the full width on its own — a lone flex child takes
-             all the space there is. ── */}
+             "Where to?" takes every pixel the voice tile does not, because it
+             is the primary action; the voice side shrinks to a fixed-width mic
+             with its name under it, which is all it needs to be recognised and
+             tapped. When there is no speech recogniser (typically no-GMS
+             handsets) it is not rendered at all and "Where to?" fills the row
+             on its own. ── */}
         <View style={styles.heroRow}>
           <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
             <View style={styles.searchHeroIcon}>
@@ -832,13 +832,12 @@ const styles = themed(() => StyleSheet.create({
     gap: 10,
   },
   /* ── "Where to?" hero — the sheet's primary action ──
-     1.4 against the voice card's 1: clearly the bigger of the two, while still
-     leaving the voice card enough width to keep its label on one line on a
-     normal-width handset. Pushing this higher buys "Where to?" space it has no
-     use for and spends it wrapping the other card's label onto a second line,
-     which makes the whole row taller — the opposite of the point. */
+     Takes every pixel the voice tile does not. The two are no longer split by
+     ratio: the voice side is a fixed-width icon tile (see below), so this grows
+     with the screen instead of being pegged to a share of it — the wider the
+     handset, the more of it goes to the thing people actually came to tap. */
   searchHero: {
-    flex: 1.4,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -864,32 +863,43 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: -0.2,
   },
   /* ── "Bol kar book karein" — the voice route into the same booking flow ──
-     Stacked rather than icon-beside-text: at a third of the row there is no
-     width for a label sitting next to a circle, and the mic is what makes the
-     card recognisable at a glance. The old subtitle is gone with the width. */
+     A mic with its name under it, and nothing else. Fixed width rather than a
+     flex share: this tile has one job — be recognisable and be tappable — and
+     it needs the same small amount of room to do it on every handset. Letting
+     it grow with the screen would only pad the space around the icon while
+     taking that width off "Where to?", which can use it.
+
+     88 is the floor that keeps the label readable: the longest line it has to
+     hold is "book karein", which fits the 72px inside the padding at 11px. Go
+     much narrower and the label breaks to three lines and the tile gets TALLER
+     than the card beside it, which is what this row exists to avoid. */
   voiceHero: {
-    flex: 1,
+    width: 88,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: 'rgba(204,255,0,0.10)',
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(204,255,0,0.35)',
-    paddingHorizontal: 10,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
   },
   voiceHeroIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(204,255,0,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   voiceHeroTitle: {
-    fontSize: 13,
+    fontSize: 11,
+    /* Pinned, not left to the font: the label wraps to two lines and the
+       default line height would make the tile taller than the card it sits
+       beside. */
+    lineHeight: 13,
     fontWeight: '800',
     color: '#ffffff',
     textAlign: 'center',
