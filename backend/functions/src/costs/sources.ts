@@ -74,6 +74,50 @@ export interface CloudCostResult {
   unmapped: string[];
 }
 
+/** Standard export first, then the detailed one — the query works on either. */
+const EXPORT_TABLE_PREFIXES = ['gcp_billing_export_v1_', 'gcp_billing_export_resource_v1_'];
+
+/**
+ * Find the billing export table inside a dataset.
+ *
+ * Google names it after the billing account and does not create it until the
+ * first export lands — hours after the console says the export is on. So the
+ * common failure here is not a wrong name, it is asking too early, and that
+ * deserves to say so rather than surfacing as a 404 on a table nobody typed.
+ */
+async function discoverExportTable(
+  projectId: string,
+  dataset: string,
+  token: string,
+): Promise<string> {
+  const res = await fetch(
+    `https://bigquery.googleapis.com/bigquery/v2/projects/${projectId}/datasets/${dataset}/tables?maxResults=200`,
+    { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
+  const body = (await res.json()) as {
+    error?: { message?: string };
+    tables?: { tableReference?: { tableId?: string } }[];
+  };
+  if (!res.ok) {
+    throw new Error(body.error?.message ?? `BigQuery returned HTTP ${res.status} listing tables.`);
+  }
+
+  const ids = (body.tables ?? [])
+    .map((t) => t.tableReference?.tableId ?? '')
+    .filter((id) => /^[A-Za-z0-9_]+$/.test(id));
+
+  for (const prefix of EXPORT_TABLE_PREFIXES) {
+    const hit = ids.find((id) => id.startsWith(prefix));
+    if (hit) return `${projectId}.${dataset}.${hit}`;
+  }
+
+  throw new Error(
+    ids.length
+      ? `No billing export table in ${projectId}.${dataset} — found ${ids.join(', ')}.`
+      : `${projectId}.${dataset} is still empty. Google creates the export table a few hours after the export is switched on; this will start working on its own once it appears.`,
+  );
+}
+
 /**
  * A month of Cloud spend, grouped by service, net of credits.
  *
@@ -91,6 +135,9 @@ export async function fetchCloudCosts(
   const token = await auth.getAccessToken();
   if (!token) throw new Error('No Google credentials available for BigQuery.');
 
+  const table =
+    cfg.kind === 'table' ? cfg.table : await discoverExportTable(cfg.projectId, cfg.dataset, token);
+
   // The table identifier cannot be a query parameter; config.ts is what makes
   // interpolating it safe, and it is the only reason that regex is so strict.
   const sql = `
@@ -98,7 +145,7 @@ export async function fetchCloudCosts(
       service.description AS service,
       SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net,
       ANY_VALUE(currency) AS currency
-    FROM \`${cfg.table}\`
+    FROM \`${table}\`
     WHERE usage_start_time >= @start AND usage_start_time < @end
     GROUP BY service
     HAVING net != 0

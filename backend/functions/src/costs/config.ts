@@ -23,12 +23,28 @@ function env(name: string): string {
 
 // ── Google Cloud ────────────────────────────────────────────────────────────
 
-export interface CloudBillingConfig {
-  /** The project the BigQuery job runs in — the one that owns the dataset. */
-  projectId: string;
-  /** Fully-qualified `project.dataset.table` of the billing export. */
-  table: string;
-}
+/**
+ * Where the billing export lives. Either the exact table, or the dataset it is
+ * in — see `cloudBillingSetting` for why both are accepted.
+ */
+export type CloudBillingConfig =
+  | { kind: 'table'; projectId: string; table: string }
+  | { kind: 'dataset'; projectId: string; dataset: string };
+
+/**
+ * A setting can be absent, wrong, or usable, and the three are different
+ * things. Treating a typo as "absent" — which this did originally — makes a
+ * misconfigured deploy indistinguishable from one nobody has set up yet, which
+ * is the worst possible diagnostic for the one field most likely to be
+ * mistyped.
+ */
+export type CloudBillingSetting =
+  | { state: 'unset' }
+  | { state: 'invalid'; detail: string }
+  | { state: 'ok'; config: CloudBillingConfig };
+
+const ID = '[A-Za-z0-9_]+';
+const PROJECT = '[A-Za-z0-9][A-Za-z0-9\\-_]*';
 
 /**
  * Google Cloud does not have an API that returns what you spent. The Cloud
@@ -38,18 +54,37 @@ export interface CloudBillingConfig {
  * US/EU multi-region dataset backfills the previous month; a single-region one
  * backfills nothing). See docs/COST_SOURCES.md.
  *
- * The table name is interpolated into SQL — BigQuery has no parameter form for
- * an identifier — so it is validated to death here rather than at the query.
+ * `BILLING_BQ_TABLE` takes either form:
+ *
+ *  · `project.dataset.table` — exact, used as given.
+ *  · `project.dataset` — the table is discovered inside the dataset.
+ *
+ * The two-part form exists because Google generates the table name from the
+ * billing account id (`gcp_billing_export_v1_014B6E_34746E_99D11B`), it does
+ * not appear for hours after the export is enabled, and nobody transcribes it
+ * correctly the first time. Naming the dataset is something a person can do
+ * from memory the moment they create it.
+ *
+ * Either way the value is interpolated into SQL — BigQuery has no parameter
+ * form for an identifier — so it is validated to death here rather than at the
+ * query.
  */
-export function cloudBillingConfig(): CloudBillingConfig | null {
-  const table = env('BILLING_BQ_TABLE');
-  if (!table) return null;
+export function cloudBillingSetting(): CloudBillingSetting {
+  const raw = env('BILLING_BQ_TABLE');
+  if (!raw) return { state: 'unset' };
 
-  // project.dataset.table — Google's own identifier charset, nothing else.
-  if (!/^[A-Za-z0-9][A-Za-z0-9\-_]*\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(table)) {
-    return null;
+  if (new RegExp(`^${PROJECT}\\.${ID}\\.${ID}$`).test(raw)) {
+    return { state: 'ok', config: { kind: 'table', projectId: raw.split('.')[0], table: raw } };
   }
-  return { projectId: table.split('.')[0], table };
+  if (new RegExp(`^${PROJECT}\\.${ID}$`).test(raw)) {
+    const [projectId, dataset] = raw.split('.');
+    return { state: 'ok', config: { kind: 'dataset', projectId, dataset } };
+  }
+  return {
+    state: 'invalid',
+    detail:
+      'BILLING_BQ_TABLE is not a BigQuery identifier. Give it `project.dataset.table`, or just `project.dataset` to have the export table found for you.',
+  };
 }
 
 // ── Anthropic ───────────────────────────────────────────────────────────────
