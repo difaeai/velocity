@@ -314,6 +314,7 @@ export const UR: Record<string, string> = {
   "Booking…": "بک کی جا رہی ہے…",
   "Join a pool going your way, or book your own": "اپنے راستے پر جاتا پول جوائن کریں، یا اپنی سواری بک کریں",
   "Join a pool going your way — or ride solo": "اپنے راستے پر جاتا پول جوائن کریں — یا اکیلے سفر کریں",
+  "Pool or ride solo": "پول یا اکیلے سواری",
   "RIDES GOING YOUR WAY": "آپ کے راستے پر جاتی سواریاں",
   "Looking for rides going your way…": "آپ کے راستے پر جاتی سواریاں تلاش کی جا رہی ہیں…",
   "Finding rides near you…": "آپ کے قریب سواریاں تلاش کی جا رہی ہیں…",

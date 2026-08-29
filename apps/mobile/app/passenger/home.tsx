@@ -300,49 +300,56 @@ export default function PassengerHome() {
           </Pressable>
         ) : null}
 
-        {/* ── Where to? — the ONE way into a city ride.
-             Pool discovery ("rides going your way") used to sit here as a second
-             entry point doing the same job; it now lives inside this flow, right
-             after the destination is set, so there is only one path to follow. ── */}
-        {/* The wrapper exists so the mascot's tooltip can sit ABOVE the card,
-            outside it. Nothing else: it has no styling and no height of its own.
-            Mascot hidden for later releases. */}
-        <View>
+        {/* ── The two ways into a ride, side by side.
+             "Where to?" is the ONE way into a city ride — pool discovery
+             ("rides going your way") used to sit here as a second entry point
+             doing the same job; it now lives inside this flow, right after the
+             destination is set, so there is only one path to follow.
+
+             Speaking is that same job by a different route — the one that works
+             for riders who cannot comfortably read or type. It used to sit in
+             its own full-width card UNDER "Where to?", and the pair cost the
+             sheet ~165px before a single feature below them was visible. On one
+             row they cost roughly half that, which is what lifts Services and
+             the cards under it into view without a scroll.
+
+             "Where to?" keeps the larger share of the row because it is the
+             primary action; the voice card only needs enough width to name
+             itself. When there is no speech recogniser (typically no-GMS
+             handsets) the voice card is not rendered at all and "Where to?"
+             grows back to the full width on its own — a lone flex child takes
+             all the space there is. ── */}
+        <View style={styles.heroRow}>
           <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
             <View style={styles.searchHeroIcon}>
-              <SearchIcon size={20} color="#0b0d0c" />
+              <SearchIcon size={18} color="#0b0d0c" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.searchHeroTitle}>Where to?</Text>
               <Text style={styles.searchHeroSub} numberOfLines={1}>
-                Join a pool — or ride solo
+                Pool or ride solo
               </Text>
             </View>
           </Pressable>
-        </View>
 
-        {/* ── Speak instead of typing.
-             Sits directly under "Where to?" because it is the same job by a
-             different route — the one that works for riders who cannot
-             comfortably read or type. Hidden on handsets with no speech
-             recogniser (typically no-GMS devices), where tapping it could only
-             lead to an apology. ── */}
-        {voiceAvailable ? (
-          <Pressable
-            style={styles.voiceHero}
-            onPress={() => router.push('/passenger/voice')}
-            accessibilityRole="button"
-            accessibilityLabel="Book a ride by speaking"
-          >
-            <View style={styles.voiceHeroIcon}>
-              <MicIcon size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.voiceHeroTitle}>Bol kar book karein</Text>
-              <Text style={styles.voiceHeroSub}>Tap and just say where you want to go</Text>
-            </View>
-          </Pressable>
-        ) : null}
+          {voiceAvailable ? (
+            <Pressable
+              style={styles.voiceHero}
+              onPress={() => router.push('/passenger/voice')}
+              accessibilityRole="button"
+              accessibilityLabel="Book a ride by speaking"
+            >
+              <View style={styles.voiceHeroIcon}>
+                <MicIcon size={20} color={colors.primary} />
+              </View>
+              {/* Two lines allowed: at this width the label wraps rather than
+                  ellipsing away the word that says what the button does. */}
+              <Text style={styles.voiceHeroTitle} numberOfLines={2}>
+                Bol kar book karein
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         {/* ── Services — city rides live in "Where to?", so only the two
              services that are NOT plain city rides get tiles ── */}
@@ -815,63 +822,78 @@ const styles = themed(() => StyleSheet.create({
     color: colors.primary,
   },
 
-  /* ── "Where to?" hero — the sheet's primary action ── */
+  /* ── "Where to?" + "Bol kar book karein", one row ──
+     `stretch` is the point of the row: the two cards have different content
+     heights (one is icon-beside-text, the other icon-above-text) and without it
+     the shorter one would float with a ragged bottom edge next to the taller. */
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  /* ── "Where to?" hero — the sheet's primary action ──
+     1.4 against the voice card's 1: clearly the bigger of the two, while still
+     leaving the voice card enough width to keep its label on one line on a
+     normal-width handset. Pushing this higher buys "Where to?" space it has no
+     use for and spends it wrapping the other card's label onto a second line,
+     which makes the whole row taller — the opposite of the point. */
   searchHero: {
+    flex: 1.4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   searchHeroIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchHeroTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: -0.2,
-  },
-  /* ── "Bol kar book karein" — the voice route into the same booking flow ── */
-  voiceHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: 'rgba(204,255,0,0.10)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(204,255,0,0.35)',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    marginTop: 10,
-  },
-  voiceHeroIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(204,255,0,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceHeroTitle: {
     fontSize: 17,
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: -0.2,
   },
-  voiceHeroSub: {
+  /* ── "Bol kar book karein" — the voice route into the same booking flow ──
+     Stacked rather than icon-beside-text: at a third of the row there is no
+     width for a label sitting next to a circle, and the mic is what makes the
+     card recognisable at a glance. The old subtitle is gone with the width. */
+  voiceHero: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(204,255,0,0.10)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(204,255,0,0.35)',
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  voiceHeroIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(204,255,0,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceHeroTitle: {
     fontSize: 13,
-    color: colors.muted,
-    marginTop: 2,
+    fontWeight: '800',
+    color: '#ffffff',
+    textAlign: 'center',
+    letterSpacing: -0.2,
   },
   searchHeroSub: {
     fontSize: 12,
