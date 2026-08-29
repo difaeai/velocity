@@ -6,8 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import Constants from 'expo-constants';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 
 import { BikeMarkIcon, CarMarkIcon, RiderMarkIcon } from './RideIcons';
 
@@ -69,20 +68,13 @@ const MAX_BOTTOM_INSET_FRACTION = 0.62;
 
 /**
  * Google Maps only authenticates in a real dev-client / release build compiled
- * with the Android Maps API key (see app.config.ts). In Expo Go — or any build
- * where the key is absent — the native map paints an ugly grey tile grid with
- * concentric rings and never loads real tiles. We detect that up front and show
- * a clean dark surface instead, so users never see that broken grid.
+ * with the platform's Maps API key (see app.config.ts). In Expo Go — or any
+ * build where the key is absent — the native map paints an ugly grey tile grid
+ * with concentric rings and never loads real tiles. `MAPS_AVAILABLE` detects
+ * that up front so we can show a clean dark surface instead. It also decides,
+ * on iOS, whether we get Google Maps or fall back to Apple's.
  */
-const IS_EXPO_GO = Constants.appOwnership === 'expo';
-const MAPS_KEY =
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ??
-  (Constants.expoConfig as { android?: { config?: { googleMaps?: { apiKey?: string } } } } | null)
-    ?.android?.config?.googleMaps?.apiKey ??
-  '';
-const MAPS_AVAILABLE = !IS_EXPO_GO && !!MAPS_KEY;
-
-import { DARK_MAP_STYLE } from './mapStyle';
+import { MAPS_AVAILABLE, mapBaseProps } from './mapProvider';
 import { themed } from '../theme';
 
 /**
@@ -195,8 +187,7 @@ export function LiveMap({
     <MapView
       ref={mapRef}
       style={[StyleSheet.absoluteFill, style]}
-      provider={PROVIDER_GOOGLE}
-      customMapStyle={DARK_MAP_STYLE}
+      {...mapBaseProps}
       // While the native map spins up, show our dark base + brand spinner — not
       // the default white grid that flashes on every open.
       loadingEnabled

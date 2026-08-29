@@ -10,13 +10,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 
 import { colors } from '../config';
 import { themed } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { useRouteInfo, type MapPoint } from '../hooks/directions';
-import { DARK_MAP_STYLE } from './mapStyle';
+import { mapBaseProps } from './mapProvider';
 
 /** "4 min", "21 min", "1 h 05" — the badge over each leg. */
 function formatEta(seconds: number): string {
@@ -78,8 +78,7 @@ export function RequestRouteMap({ pickup, dropoff, driver }: Props) {
       <MapView
         ref={mapRef}
         style={styles.fill}
-        provider={PROVIDER_GOOGLE}
-        customMapStyle={DARK_MAP_STYLE}
+        {...mapBaseProps}
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
