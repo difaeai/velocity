@@ -19,7 +19,7 @@ import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { useDriverProfile } from '../../src/hooks/driver';
-import { DELETE_ACCOUNT_URL, PRIVACY_URL, TERMS_URL } from '../../src/share/links';
+import { PRIVACY_URL, TERMS_URL } from '../../src/share/links';
 import { otherLanguageLabel, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
 
@@ -222,7 +222,10 @@ export default function Settings() {
           <View style={styles.divider} />
           <Row icon="📜" label="Terms of Service" onPress={() => openLegal(TERMS_URL)} />
           <View style={styles.divider} />
-          <Row icon="🗑️" label="Delete my account" onPress={() => openLegal(DELETE_ACCOUNT_URL)} />
+          {/* In-app, not a link out: App Store guideline 5.1.1(v) treats a web
+              page as no deletion path at all. Drivers reach this same screen —
+              the header cog on /driver/home routes here. */}
+          <Row icon="🗑️" label="Delete my account" danger onPress={() => router.push('/passenger/delete-account')} />
         </View>
 
         <View style={[styles.card, { marginTop: 16 }]}>

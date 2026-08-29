@@ -328,6 +328,14 @@ export const api = {
    */
   exchangePhoneSession: callable<{ idToken: string }, { customToken: string }>('exchangePhoneSession'),
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
+  /**
+   * Irreversible. Deletes the caller's own account, purges their personal data
+   * and anonymises the records other people still need (a driver's trip
+   * history, the money ledger). Takes no uid — the backend only ever deletes
+   * the caller. Rejects with `failed-precondition` and a readable reason when
+   * a ride is still running or money is owed in either direction.
+   */
+  deleteMyAccount: callable<{ confirm: 'DELETE' }, { ok: boolean }>('deleteMyAccount'),
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',
   ),
