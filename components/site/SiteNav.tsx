@@ -74,7 +74,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
           </div>
 
           <div className={styles.navCta}>
-            <a className={`${styles.btn} ${styles.btnPrimary}`} href={playUrl} target="_blank" rel="noreferrer">
+            <a className={`${styles.btn} ${styles.btnLime}`} href={playUrl} target="_blank" rel="noreferrer">
               <GooglePlay />
               Get the app
             </a>
@@ -100,7 +100,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
               </a>
             ))}
             <a
-              className={`${styles.btn} ${styles.btnPrimary}`}
+              className={`${styles.btn} ${styles.btnLime}`}
               href={playUrl}
               target="_blank"
               rel="noreferrer"

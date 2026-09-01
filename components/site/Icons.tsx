@@ -218,6 +218,26 @@ export const Megaphone = (p: IconProps) => (
   </Icon>
 );
 
+/** Right arrow — used on inline "keep reading" links. */
+export function ArrowRight(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </Icon>
+  );
+}
+
+/** A single occupant — one seat in the fare splitter. */
+export function Person(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+    </Icon>
+  );
+}
+
 /** The Google Play triangle — filled, brand-coloured, not on the 24px stroke grid. */
 export function GooglePlay(props: SVGProps<SVGSVGElement>) {
   return (

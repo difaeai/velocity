@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Outfit, Work_Sans } from 'next/font/google';
+import { JetBrains_Mono, Outfit, Work_Sans } from 'next/font/google';
 
 import { SITE_URL as SITE } from '@/lib/site';
 
@@ -16,6 +16,17 @@ const workSans = Work_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-body',
+  display: 'swap',
+});
+
+// Telemetry face. Every figure on the marketing site — fares, percentages,
+// chapter numbers, the speed readout on the supercar stage — is set in this,
+// which is what gives the page its instrument-cluster character. Two weights
+// only: it is never used for running text.
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-mono',
   display: 'swap',
 });
 
@@ -55,14 +66,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#04231A',
+  themeColor: '#04120C',
   width: 'device-width',
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${outfit.variable} ${workSans.variable}`}>
+    <html lang="en" className={`${outfit.variable} ${workSans.variable} ${jetBrainsMono.variable}`}>
       <body>{children}</body>
     </html>
   );

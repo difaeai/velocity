@@ -1,5 +1,8 @@
 import { VelocityMark } from '@/components/BrandMark';
 import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
+import { Counter } from '@/components/site/Counter';
+import { FareSplit } from '@/components/site/FareSplit';
+import { Marquee } from '@/components/site/Marquee';
 import { PhoneShowcase } from '@/components/site/PhoneShowcase';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
@@ -66,18 +69,24 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   );
 }
 
+/**
+ * The six services, in the ticker under the hero and again in the bento grid.
+ * One list, so the two can never disagree about what Velocity actually does.
+ */
 const SERVICES = [
   {
     icon: MapPin,
     tag: 'Everyday',
     title: 'City rides',
     body: 'Point to point across your city. Choose your vehicle, offer your fare, and pay in cash or from your wallet.',
+    wide: true,
   },
   {
     icon: Users,
     tag: 'Save up to 65%',
     title: 'Pooled rides',
     body: 'Share the car with people already going your way. Two riders pay 60% of the solo fare each, three pay 40%, four pay 35%.',
+    wide: true,
   },
   {
     icon: Route,
@@ -102,6 +111,29 @@ const SERVICES = [
     tag: 'Community',
     title: 'Travel Partner',
     body: 'Find people who make the same commute you do, form groups, split the cost, and follow what is happening in your city.',
+  },
+];
+
+/**
+ * The launch argument, stated as a change rather than a feature: what the
+ * reader does today, and what they do instead once the app is installed. Every
+ * "after" is something the product actually does — no aspirational copy.
+ */
+const CHANGES = [
+  {
+    before: 'Rs 480 out of your pocket, every single morning, for the same commute.',
+    after: 'Rs 168 each, four of you, one car.',
+    note: 'A four-person pool costs each rider 35% of the solo fare. Same road, same driver, a third of the money.',
+  },
+  {
+    before: 'Standing on the road arguing the fare through a car window.',
+    after: 'The price is agreed before the car moves.',
+    note: 'You offer what the trip is worth to you. Drivers nearby accept or they do not. Nothing is negotiated at the kerb.',
+  },
+  {
+    before: 'No card, no bank account, so no ride-hailing app at all.',
+    after: 'Cash is a full payment method.',
+    note: 'Not a fallback and not a penalty. Book, ride, hand the driver the fare. A wallet exists if you want one.',
   },
 ];
 
@@ -157,6 +189,29 @@ const EARN = [
     body: 'Find your Customers puts your offer on the phones of people who pass your door — and you can send yourself a sample notification before you spend a rupee.',
     points: ['Paid radius around your shop', 'See the ad on your own phone first', 'No daily-limit cost to test'],
   },
+];
+
+const SAFETY = [
+  [
+    'Documents checked by a person',
+    'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a ride.',
+  ],
+  [
+    'SOS that reaches somebody',
+    'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.',
+  ],
+  [
+    'Route deviation flagging',
+    'If the trip stops making sense, you can say so from the same screen, and it lands in the same place.',
+  ],
+  [
+    'Who is in the car, always',
+    'Every co-rider added to a pool mid-trip is shown to you, and pools carry gender rules you set before you join.',
+  ],
+  [
+    'Ratings both ways',
+    'Passengers rate drivers and drivers rate passengers, and repeated reports are acted on.',
+  ],
 ];
 
 const FAQS = [
@@ -236,25 +291,36 @@ export default function Home() {
       <main>
         {/* ── hero ──────────────────────────────────────────────────────── */}
         <section className={styles.hero}>
+          <span className={styles.heroAurora} aria-hidden="true" />
+          <span className={styles.heroGrid} aria-hidden="true" />
+
           <div className={styles.wrap}>
-            <div className={styles.heroGrid}>
-              <Reveal className={styles.heroCopy}>
-                <span className={styles.eyebrow}>
-                  <Bolt />
-                  Built for Pakistan
+            <div className={styles.heroLayout}>
+              <div className={styles.heroCopy}>
+                <span className={styles.launchPill}>
+                  <span className={styles.pulse} aria-hidden="true" />
+                  Now live on Google Play
                 </span>
 
+                {/* Each line rises out of its own mask. The text is real text —
+                    no per-character spans — so it stays selectable and legible
+                    to a crawler with JavaScript switched off. */}
                 <h1 className={styles.heroTitle}>
-                  Your city.
-                  <br />
-                  <em>Your fare.</em>
-                  <br />
-                  Your Velocity.
+                  <span className={styles.line}>
+                    <span style={{ ['--line-delay' as string]: '80ms' }}>Name your fare.</span>
+                  </span>
+                  <span className={styles.line}>
+                    <span style={{ ['--line-delay' as string]: '200ms' }}>Split the ride.</span>
+                  </span>
+                  <span className={styles.line}>
+                    <em style={{ ['--line-delay' as string]: '320ms' }}>Keep the change.</em>
+                  </span>
                 </h1>
 
-                <p className={styles.lead}>
-                  Offer what the ride is worth to you, split it with people going the same way, and
-                  pay in cash. City rides, intercity seats and couriers — one app, one account.
+                <p className={styles.heroLead}>
+                  Velocity is a ride-hailing app built for how Pakistan actually travels and actually
+                  pays. City rides, pooled seats, intercity trips and couriers — one app, one
+                  account, cash accepted everywhere.
                 </p>
 
                 <div className={styles.heroActions}>
@@ -280,12 +346,31 @@ export default function Home() {
                     <Shield />
                     In-app SOS
                   </span>
+                  <span className={styles.trustItem}>
+                    <Mic />
+                    Book by voice
+                  </span>
                 </div>
-              </Reveal>
+              </div>
 
               <div className={styles.heroArt}>
                 <span className={styles.heroGlow} aria-hidden="true" />
-                <div className={styles.heroPhoneStack}>
+
+                {/* A radar sweep, not decoration for its own sake: it is the
+                    same idea as the live supply map inside the app. */}
+                <span className={styles.heroRings} aria-hidden="true">
+                  <span className={styles.ring} style={{ ['--size' as string]: '300px' }} />
+                  <span
+                    className={styles.ring}
+                    style={{ ['--size' as string]: '420px', ['--ring-delay' as string]: '1.1s' }}
+                  />
+                  <span
+                    className={styles.ring}
+                    style={{ ['--size' as string]: '560px', ['--ring-delay' as string]: '2.2s' }}
+                  />
+                </span>
+
+                <div className={styles.phoneStack}>
                   <div
                     className={styles.phone}
                     role="img"
@@ -322,35 +407,103 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── services ticker ───────────────────────────────────────────── */}
+        <Marquee items={SERVICES.map((s) => ({ icon: s.icon, label: s.title }))} />
+
         {/* ── facts strip ───────────────────────────────────────────────── */}
         <section className={styles.sectionTight}>
           <div className={styles.wrap}>
             <Reveal className={styles.statStrip}>
               <div className={styles.stat}>
-                <span className={styles.statNum}>35%</span>
-                <span className={styles.statLabel}>of the solo fare, each, in a four-person pool</span>
+                <Counter to={35} suffix="%" className={styles.statNum} />
+                <span className={styles.statLabel}>
+                  of the solo fare, each, in a four-person pool
+                </span>
               </div>
               <div className={styles.stat}>
-                <span className={styles.statNum}>6</span>
+                <Counter to={6} className={styles.statNum} />
                 <span className={styles.statLabel}>ways to travel or send something in one app</span>
               </div>
               <div className={styles.stat}>
-                <span className={styles.statNum}>0</span>
-                <span className={styles.statLabel}>cards required — cash is a full payment method</span>
+                <Counter to={0} className={styles.statNum} />
+                <span className={styles.statLabel}>
+                  cards required — cash is a full payment method
+                </span>
               </div>
               <div className={styles.stat}>
                 <span className={styles.statNum}>24/7</span>
-                <span className={styles.statLabel}>SOS and route-deviation alerts to a staffed desk</span>
+                <span className={styles.statLabel}>
+                  SOS and route-deviation alerts to a staffed desk
+                </span>
               </div>
             </Reveal>
           </div>
         </section>
 
-        {/* ── the scroll story ──────────────────────────────────────────── */}
+        {/* ── what changes ──────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.light}`} id="change">
+          <div className={styles.wrap}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>
+                <Sparkle />
+                Why it matters
+              </span>
+              <h2 className={styles.h2}>
+                What actually changes on <span className={styles.mark}>Monday morning</span>
+              </h2>
+              <p className={styles.lead} style={{ marginInline: 'auto' }}>
+                Not features — consequences. Three things about getting around that stop being true
+                the day you install it.
+              </p>
+            </Reveal>
+
+            <div className={styles.changeGrid}>
+              {CHANGES.map((c, i) => (
+                <Reveal key={c.after} delay={i * 110} className={styles.changeCard}>
+                  <div className={styles.changeBefore}>
+                    <span className={styles.changeTag}>Today</span>
+                    <p>{c.before}</p>
+                  </div>
+                  <div className={styles.changeAfter}>
+                    <span className={styles.changeTag}>With Velocity</span>
+                    <p>{c.after}</p>
+                    <small>{c.note}</small>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── the interactive fare splitter ─────────────────────────────── */}
+        <section className={`${styles.section} ${styles.deep}`} id="pool">
+          <div className={styles.wrap}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>
+                <Users />
+                Try it
+              </span>
+              <h2 className={styles.h2}>
+                Fill the car. <span className={styles.accent}>Watch the fare fall.</span>
+              </h2>
+              <p className={styles.lead} style={{ marginInline: 'auto' }}>
+                This is the real split the fare engine applies — tap a number and see what a Rs 480
+                trip costs each person.
+              </p>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <FareSplit />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ── the scroll story — the supercar stage, kept from the launch
+            build because nothing else on the page conveys speed as well ── */}
         <SpeedStage />
 
         {/* ── how it works ──────────────────────────────────────────────── */}
-        <section className={`${styles.section} ${styles.mistBg}`} id="how">
+        <section className={styles.section} id="how">
           <div className={styles.wrap}>
             <Reveal className={`${styles.sectionHead} ${styles.center}`}>
               <span className={styles.eyebrow}>
@@ -360,9 +513,9 @@ export default function Home() {
               <h2 className={styles.h2}>
                 From <span className={styles.accent}>&ldquo;where to?&rdquo;</span> to on your way
               </h2>
-              <p className={styles.lead}>
-                No haggling on the street, no waiting to find out the price. The whole trip is decided
-                before the car moves.
+              <p className={styles.lead} style={{ marginInline: 'auto' }}>
+                No haggling on the street, no waiting to find out the price. The whole trip is
+                decided before the car moves.
               </p>
             </Reveal>
 
@@ -390,8 +543,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── services ──────────────────────────────────────────────────── */}
-        <section className={styles.section} id="services">
+        {/* ── services bento ────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.light}`} id="services">
           <div className={styles.wrap}>
             <Reveal className={styles.sectionHead}>
               <span className={styles.eyebrow}>
@@ -399,9 +552,7 @@ export default function Home() {
                 One app, six ways to move
               </span>
               <h2 className={styles.h2}>
-                Everything that needs to get
-                <br />
-                across town — or across the country
+                Everything that needs to get across town — or across the country
               </h2>
               <p className={styles.lead}>
                 Velocity is not only a taxi app. The same account books your morning commute, your
@@ -409,12 +560,16 @@ export default function Home() {
               </p>
             </Reveal>
 
-            <div className={styles.cardGrid}>
+            <div className={styles.bento}>
               {SERVICES.map((s, i) => {
                 const Ico = s.icon;
                 return (
-                  <Reveal key={s.title} delay={(i % 3) * 80} className={styles.card}>
-                    <span className={styles.cardIcon}>
+                  <Reveal
+                    key={s.title}
+                    delay={(i % 3) * 80}
+                    className={`${styles.tile} ${s.wide ? styles.tileWide : styles.tileThird}`}
+                  >
+                    <span className={styles.tileIcon}>
                       <Ico />
                     </span>
                     <span className={styles.tag}>{s.tag}</span>
@@ -428,7 +583,7 @@ export default function Home() {
         </section>
 
         {/* ── the app itself ────────────────────────────────────────────── */}
-        <section className={`${styles.section} ${styles.dark}`} id="app">
+        <section className={`${styles.section} ${styles.deep}`} id="app">
           <div className={styles.wrap}>
             <Reveal className={styles.sectionHead}>
               <span className={styles.eyebrow}>
@@ -457,14 +612,18 @@ export default function Home() {
                 Why it feels different
               </span>
               <h2 className={styles.h2}>Small things, done properly</h2>
+              <p className={styles.lead}>
+                The decisions that do not show up in a feature list, but are the reason the app is
+                usable on a slow connection, in a real city, with cash in your hand.
+              </p>
             </Reveal>
 
-            <div className={styles.cardGrid}>
+            <div className={styles.featureGrid}>
               {FEATURES.map((f, i) => {
                 const Ico = f.icon;
                 return (
-                  <Reveal key={f.title} delay={(i % 3) * 80} className={styles.card}>
-                    <span className={styles.cardIcon}>
+                  <Reveal key={f.title} delay={(i % 3) * 80} className={styles.feature}>
+                    <span className={styles.featureIcon}>
                       <Ico />
                     </span>
                     <h3>{f.title}</h3>
@@ -476,8 +635,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Earn with Velocity — the partner program, as its own feature ── */}
-        <section className={`${styles.section} ${styles.dark}`} id="earn">
+        {/* ── Earn with Velocity — the partner program ───────────────────── */}
+        <section className={`${styles.section} ${styles.deep}`} id="earn">
           <div className={styles.wrap}>
             <div className={`${styles.split} ${styles.splitReverse}`}>
               <Reveal className={styles.splitCopy}>
@@ -486,9 +645,7 @@ export default function Home() {
                   Earn with Velocity
                 </span>
                 <h2 className={styles.h2}>
-                  Build a transport business
-                  <br />
-                  without <span className={styles.accent}>owning a car</span>
+                  Build a transport business without <span className={styles.accent}>owning a car</span>
                 </h2>
                 <p className={styles.lead}>
                   Recruit drivers and riders onto Velocity, run them as your fleet, and take a share
@@ -544,7 +701,12 @@ export default function Home() {
                   ))}
                 </div>
 
-                <a className={`${styles.btn} ${styles.btnLime}`} href={PLAY_URL} target="_blank" rel="noreferrer">
+                <a
+                  className={`${styles.btn} ${styles.btnLime}`}
+                  href={PLAY_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <GooglePlay />
                   Start earning
                 </a>
@@ -567,7 +729,7 @@ export default function Home() {
         </section>
 
         {/* ── the other routes to income ────────────────────────────────── */}
-        <section className={`${styles.section} ${styles.dark}`}>
+        <section className={styles.section}>
           <div className={styles.wrap}>
             <Reveal className={styles.sectionHead}>
               <span className={styles.eyebrow}>
@@ -575,18 +737,16 @@ export default function Home() {
                 Other ways to earn
               </span>
               <h2 className={styles.h2}>
-                Velocity is not only for
-                <br />
-                the people <span className={styles.accent}>taking rides</span>
+                Velocity is not only for the people <span className={styles.accent}>taking rides</span>
               </h2>
             </Reveal>
 
-            <div className={styles.cardGrid}>
+            <div className={styles.featureGrid}>
               {EARN.map((e, i) => {
                 const Ico = e.icon;
                 return (
-                  <Reveal key={e.title} delay={i * 90} className={styles.card}>
-                    <span className={styles.cardIcon}>
+                  <Reveal key={e.title} delay={i * 90} className={styles.feature}>
+                    <span className={styles.featureIcon}>
                       <Ico />
                     </span>
                     <h3>{e.title}</h3>
@@ -607,7 +767,7 @@ export default function Home() {
         </section>
 
         {/* ── safety ────────────────────────────────────────────────────── */}
-        <section className={`${styles.section} ${styles.mistBg}`} id="safety">
+        <section className={`${styles.section} ${styles.light}`} id="safety">
           <div className={styles.wrap}>
             <div className={styles.split}>
               <Reveal className={styles.splitCopy}>
@@ -615,24 +775,14 @@ export default function Home() {
                   <Shield />
                   Safety
                 </span>
-                <h2 className={styles.h2}>
-                  Nobody gets in a car
-                  <br />
-                  they know nothing about
-                </h2>
+                <h2 className={styles.h2}>Nobody gets in a car they know nothing about</h2>
                 <p className={styles.lead}>
                   Safety on Velocity is not a page in the settings. It is a set of checks that run
                   before the ride, during it, and after it.
                 </p>
 
                 <div className={styles.checkList}>
-                  {[
-                    ['Documents checked by a person', 'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a ride.'],
-                    ['SOS that reaches somebody', 'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.'],
-                    ['Route deviation flagging', 'If the trip stops making sense, you can say so from the same screen, and it lands in the same place.'],
-                    ['Who is in the car, always', 'Every co-rider added to a pool mid-trip is shown to you, and pools carry gender rules you set before you join.'],
-                    ['Ratings both ways', 'Passengers rate drivers and drivers rate passengers, and repeated reports are acted on.'],
-                  ].map(([b, s]) => (
+                  {SAFETY.map(([b, s]) => (
                     <span key={b} className={styles.checkItem}>
                       <Shield />
                       <span>
@@ -697,8 +847,8 @@ export default function Home() {
               </span>
               <h2>Your next ride is one download away</h2>
               <p>
-                Velocity is free to install and free to join as a driver. Scan the store, sign in with
-                your phone number, and book the first thing you need today.
+                Velocity is free to install and free to join as a driver. Sign in with your phone
+                number and book the first thing you need today.
               </p>
               <div className={styles.ctaActions}>
                 <StoreBadge variant="play" />
@@ -719,7 +869,12 @@ export default function Home() {
           <strong>Get Velocity</strong>
           <span>Free on Google Play</span>
         </span>
-        <a className={`${styles.btn} ${styles.btnLime}`} href={PLAY_URL} target="_blank" rel="noreferrer">
+        <a
+          className={`${styles.btn} ${styles.btnLime}`}
+          href={PLAY_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
           Install
         </a>
       </div>
@@ -735,56 +890,52 @@ export default function Home() {
                 </span>
                 <span className={styles.brandName}>Velocity</span>
               </a>
-              <p style={{ fontSize: 15.5, lineHeight: 1.6 }}>
+              <p>
                 Ride-hailing, pooling, intercity seats and couriers, built for Pakistan. Available on
                 Google Play.
               </p>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <StoreBadge variant="play" />
-              </div>
+              <StoreBadge variant="play" />
             </div>
 
             <div className={styles.footerCol}>
               <h3>Ride</h3>
               <a href="#how">How it works</a>
-              <a href="#services">City rides</a>
-              <a href="#services">Pooled rides</a>
+              <a href="#pool">Pooled fares</a>
               <a href="#services">City to City</a>
               <a href="#services">Couriers</a>
+              <a href="#services">Special Rides</a>
             </div>
 
             <div className={styles.footerCol}>
               <h3>Earn</h3>
               <a href="#earn">Drive with Velocity</a>
               <a href="#earn">Partner Program</a>
-              <a href="#earn">Special Rides</a>
+              <a href="#earn">Rent out your car</a>
               <a href="#earn">Advertise your shop</a>
             </div>
 
             <div className={styles.footerCol}>
               <h3>Company</h3>
               <a href="#safety">Safety</a>
-              <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
-                Privacy policy
-              </a>
-              <a href={TERMS_URL} target="_blank" rel="noreferrer">
-                Terms of service
-              </a>
-              <a href={DELETE_ACCOUNT_URL} target="_blank" rel="noreferrer">
-                Delete your account
-              </a>
               <a href={FACEBOOK_URL} target="_blank" rel="noreferrer">
                 Facebook
               </a>
               <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer">
                 Instagram
               </a>
+              <a href={PLAY_URL} target="_blank" rel="noreferrer">
+                Google Play
+              </a>
             </div>
           </div>
 
-          <div className={styles.footerBottom}>
-            <span>© {new Date().getFullYear()} Velocity. All rights reserved.</span>
-            <span>Made in Pakistan.</span>
+          <div className={styles.footerBase}>
+            <span>© {new Date().getFullYear()} Velocity. Built for Pakistan.</span>
+            <span className={styles.footerLegal}>
+              <a href={PRIVACY_URL}>Privacy</a>
+              <a href={TERMS_URL}>Terms</a>
+              <a href={DELETE_ACCOUNT_URL}>Delete your account</a>
+            </span>
           </div>
         </div>
       </footer>
