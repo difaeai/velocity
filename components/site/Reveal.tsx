@@ -16,11 +16,15 @@ export function Reveal({
   delay = 0,
   as: Tag = 'div',
   className = '',
+  ...rest
 }: {
   children: ReactNode;
   delay?: number;
   as?: ElementType;
   className?: string;
+  // Anything else — `data-tile` for the spotlight grid, an id, an aria
+  // attribute — lands on the rendered element rather than being dropped.
+  [key: string]: unknown;
 }) {
   const ref = useRef<HTMLElement | null>(null);
   const [shown, setShown] = useState(false);
@@ -46,6 +50,7 @@ export function Reveal({
       ref={ref}
       className={`${styles.reveal} ${shown ? styles.revealIn : ''} ${className}`.trim()}
       style={{ ['--reveal-delay' as string]: `${delay}ms` }}
+      {...rest}
     >
       {children}
     </Tag>
