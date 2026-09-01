@@ -4,11 +4,14 @@ import { Counter } from '@/components/site/Counter';
 import { FareSplit } from '@/components/site/FareSplit';
 import { Marquee } from '@/components/site/Marquee';
 import { PhoneShowcase } from '@/components/site/PhoneShowcase';
+import { RouteMap } from '@/components/site/RouteMap';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
+import { SpotlightGrid } from '@/components/site/Spotlight';
 import { SpeedStage } from '@/components/site/SpeedStage';
 import {
   AppleMark,
+  ArrowRight,
   BadgeCheck,
   Banknote,
   Bell,
@@ -93,6 +96,7 @@ const SERVICES = [
     tag: 'Intercity',
     title: 'City to City',
     body: 'Book a seat on a scheduled intercity trip — AC, business, coaster or Hiace — with pickup and drop-off points published up front.',
+    map: true,
   },
   {
     icon: Package,
@@ -110,7 +114,8 @@ const SERVICES = [
     icon: Handshake,
     tag: 'Community',
     title: 'Travel Partner',
-    body: 'Find people who make the same commute you do, form groups, split the cost, and follow what is happening in your city.',
+    body: 'Find people who make the same commute you do, form groups, split the cost, and follow what is happening in your city. Ask a question, post a route, or just see who else is heading your way tomorrow morning.',
+    full: true,
   },
 ];
 
@@ -191,27 +196,52 @@ const EARN = [
   },
 ];
 
+/**
+ * Safety, ordered by when it happens rather than by what it is. A flat list of
+ * five features says "we have five features"; the same five on the timeline of
+ * an actual trip say "you are covered the whole way", which is the claim the
+ * section is making.
+ */
 const SAFETY = [
-  [
-    'Documents checked by a person',
-    'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a ride.',
-  ],
-  [
-    'SOS that reaches somebody',
-    'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.',
-  ],
-  [
-    'Route deviation flagging',
-    'If the trip stops making sense, you can say so from the same screen, and it lands in the same place.',
-  ],
-  [
-    'Who is in the car, always',
-    'Every co-rider added to a pool mid-trip is shown to you, and pools carry gender rules you set before you join.',
-  ],
-  [
-    'Ratings both ways',
-    'Passengers rate drivers and drivers rate passengers, and repeated reports are acted on.',
-  ],
+  {
+    phase: 'Before you book',
+    items: [
+      [
+        'Documents checked by a person',
+        'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a single ride.',
+      ],
+      [
+        'Pools you set the rules for',
+        'Gender rules are chosen before you join, and every co-rider added mid-trip is shown to you.',
+      ],
+    ],
+  },
+  {
+    phase: 'While you are moving',
+    items: [
+      [
+        'SOS that reaches somebody',
+        'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.',
+      ],
+      [
+        'Route deviation flagging',
+        'If the trip stops making sense, you can say so from the same screen, and it lands in the same place.',
+      ],
+    ],
+  },
+  {
+    phase: 'After you arrive',
+    items: [
+      [
+        'Ratings both ways',
+        'Passengers rate drivers and drivers rate passengers, and repeated reports are acted on.',
+      ],
+      [
+        'A dispute goes to a human',
+        'Fare and conduct disputes open a case on the same desk, and the settlement is written by the backend.',
+      ],
+    ],
+  },
 ];
 
 const FAQS = [
@@ -407,8 +437,22 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── services ticker ───────────────────────────────────────────── */}
-        <Marquee items={SERVICES.map((s) => ({ icon: s.icon, label: s.title }))} />
+        {/* ── the scroll story ──────────────────────────────────────────────
+            The supercar stage is the second thing on the page, always. It is
+            the one set piece carried over untouched, and it earns the slot: it
+            is where the product's argument gets made at speed, before the
+            reader has been asked to read anything. ─────────────────────────── */}
+        <SpeedStage />
+
+        {/* ── services ticker, two rows running against each other ──────── */}
+        <div className={styles.marqueeStack}>
+          <Marquee items={SERVICES.map((s) => ({ icon: s.icon, label: s.title }))} />
+          <Marquee
+            items={[...SERVICES].reverse().map((s) => ({ icon: s.icon, label: s.tag }))}
+            reverse
+            muted
+          />
+        </div>
 
         {/* ── facts strip ───────────────────────────────────────────────── */}
         <section className={styles.sectionTight}>
@@ -498,47 +542,72 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── the scroll story — the supercar stage, kept from the launch
-            build because nothing else on the page conveys speed as well ── */}
-        <SpeedStage />
-
-        {/* ── how it works ──────────────────────────────────────────────── */}
+        {/* ── how it works — a route that draws itself as you scroll ─────
+            The connector above each step is a child of that step, so it fills
+            when the step reveals. The whole journey animates in sequence with
+            no scroll listener and no measurement. ────────────────────────── */}
         <section className={styles.section} id="how">
           <div className={styles.wrap}>
-            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
-              <span className={styles.eyebrow}>
-                <Gauge />
-                How it works
-              </span>
-              <h2 className={styles.h2}>
-                From <span className={styles.accent}>&ldquo;where to?&rdquo;</span> to on your way
-              </h2>
-              <p className={styles.lead} style={{ marginInline: 'auto' }}>
-                No haggling on the street, no waiting to find out the price. The whole trip is
-                decided before the car moves.
-              </p>
-            </Reveal>
-
-            <div className={styles.steps}>
-              {[
-                {
-                  t: 'Say where you are going',
-                  b: 'Type it, pick it off the map, or just say it out loud. Saved places and your recent trips are one tap away.',
-                },
-                {
-                  t: 'Choose solo or pooled, and name your fare',
-                  b: 'See what a pool would save you before you commit, then offer the fare you think the trip is worth.',
-                },
-                {
-                  t: 'Ride, tracked the whole way',
-                  b: 'Your driver appears on the map, the trip is shareable, and the fare settles the moment you arrive.',
-                },
-              ].map((s, i) => (
-                <Reveal key={s.t} delay={i * 90} className={styles.step}>
-                  <h3>{s.t}</h3>
-                  <p>{s.b}</p>
+            <div className={styles.howLayout}>
+              <div className={styles.howAside}>
+                <Reveal className={styles.sectionHead}>
+                  <span className={styles.eyebrow}>
+                    <Gauge />
+                    How it works
+                  </span>
+                  <h2 className={styles.h2}>
+                    From <span className={styles.accent}>&ldquo;where to?&rdquo;</span> to on your
+                    way
+                  </h2>
+                  <p className={styles.lead}>
+                    No haggling on the street, no waiting to find out the price. The whole trip is
+                    decided before the car moves.
+                  </p>
+                  <a
+                    className={`${styles.btn} ${styles.btnGhost}`}
+                    href={PLAY_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Try it yourself
+                    <ArrowRight />
+                  </a>
                 </Reveal>
-              ))}
+              </div>
+
+              <ol className={styles.route}>
+                {[
+                  {
+                    t: 'Say where you are going',
+                    b: 'Type it, pick it off the map, or just say it out loud in Urdu-English. Saved places and your recent trips are one tap away.',
+                    m: 'About 10 seconds',
+                  },
+                  {
+                    t: 'Choose solo or pooled, and name your fare',
+                    b: 'See what a pool would save you before you commit, then offer the fare you think the trip is worth. Drivers nearby decide.',
+                    m: 'You set the price',
+                  },
+                  {
+                    t: 'Ride, tracked the whole way',
+                    b: 'Your driver appears on the map, the trip is shareable with someone you trust, and the fare settles the moment you arrive.',
+                    m: 'Pay in cash at the end',
+                  },
+                ].map((st, i) => (
+                  <Reveal key={st.t} as="li" delay={i * 140} className={styles.routeStep}>
+                    <span className={styles.routeLeg} aria-hidden="true" />
+                    <span className={styles.routePin} aria-hidden="true">
+                      <MapPin />
+                    </span>
+                    <span className={styles.routeIndex}>Step {i + 1}</span>
+                    <h3>{st.t}</h3>
+                    <p>{st.b}</p>
+                    <span className={styles.routeMetric}>
+                      <Clock />
+                      {st.m}
+                    </span>
+                  </Reveal>
+                ))}
+              </ol>
             </div>
           </div>
         </section>
@@ -560,25 +629,30 @@ export default function Home() {
               </p>
             </Reveal>
 
-            <div className={styles.bento}>
+            <SpotlightGrid className={styles.bento}>
               {SERVICES.map((s, i) => {
                 const Ico = s.icon;
                 return (
                   <Reveal
                     key={s.title}
                     delay={(i % 3) * 80}
-                    className={`${styles.tile} ${s.wide ? styles.tileWide : styles.tileThird}`}
+                    data-tile=""
+                    className={`${styles.tile} ${
+                      s.full ? styles.tileFull : s.wide ? styles.tileWide : styles.tileThird
+                    }`}
                   >
+                    <span className={styles.tileGlow} aria-hidden="true" />
                     <span className={styles.tileIcon}>
                       <Ico />
                     </span>
                     <span className={styles.tag}>{s.tag}</span>
                     <h3>{s.title}</h3>
                     <p>{s.body}</p>
+                    {s.map ? <RouteMap /> : null}
                   </Reveal>
                 );
               })}
-            </div>
+            </SpotlightGrid>
           </div>
         </section>
 
@@ -618,11 +692,20 @@ export default function Home() {
               </p>
             </Reveal>
 
-            <div className={styles.featureGrid}>
+            <SpotlightGrid className={styles.featureGrid}>
               {FEATURES.map((f, i) => {
                 const Ico = f.icon;
                 return (
-                  <Reveal key={f.title} delay={(i % 3) * 80} className={styles.feature}>
+                  <Reveal
+                    key={f.title}
+                    delay={(i % 3) * 80}
+                    data-tile=""
+                    className={styles.feature}
+                  >
+                    <span className={styles.tileGlow} aria-hidden="true" />
+                    <span className={styles.featureNo}>
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
                     <span className={styles.featureIcon}>
                       <Ico />
                     </span>
@@ -631,7 +714,7 @@ export default function Home() {
                   </Reveal>
                 );
               })}
-            </div>
+            </SpotlightGrid>
           </div>
         </section>
 
@@ -781,16 +864,25 @@ export default function Home() {
                   before the ride, during it, and after it.
                 </p>
 
-                <div className={styles.checkList}>
-                  {SAFETY.map(([b, s]) => (
-                    <span key={b} className={styles.checkItem}>
-                      <Shield />
-                      <span>
-                        <b>{b}</b> — <span>{s}</span>
+                <ol className={styles.timeline}>
+                  {SAFETY.map((group, gi) => (
+                    <Reveal key={group.phase} as="li" delay={gi * 110} className={styles.phase}>
+                      <span className={styles.phaseLeg} aria-hidden="true" />
+                      <span className={styles.phaseDot} aria-hidden="true">
+                        <Shield />
                       </span>
-                    </span>
+                      <span className={styles.phaseName}>{group.phase}</span>
+                      <div className={styles.phaseItems}>
+                        {group.items.map(([b, d]) => (
+                          <span key={b} className={styles.phaseItem}>
+                            <b>{b}</b>
+                            <span>{d}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </Reveal>
                   ))}
-                </div>
+                </ol>
               </Reveal>
 
               <Reveal delay={120} className={styles.splitArt}>

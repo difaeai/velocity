@@ -865,6 +865,37 @@
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 
+.marqueeStack {
+  display: flex;
+  flex-direction: column;
+}
+
+.marqueeStack .marquee + .marquee {
+  border-top: 0;
+}
+
+/* The second row is set back so the pair reads as depth rather than as two
+   banners competing for the same attention. */
+.marqueeMuted {
+  background: var(--void);
+  padding-block: 13px;
+}
+
+.marqueeMuted .marqueeItem {
+  font-size: clamp(13px, 1.1vw, 15px);
+  font-family: var(--font-mono), monospace;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.marqueeMuted .marqueeItem svg {
+  color: var(--brand-hi);
+  width: 15px;
+  height: 15px;
+}
+
 .marqueeTrack {
   display: flex;
   align-items: center;
@@ -872,6 +903,20 @@
   flex: none;
   padding-right: 44px;
   animation: slide 42s linear infinite;
+}
+
+.marqueeReverse {
+  animation-name: slideBack;
+  animation-duration: 54s;
+}
+
+@keyframes slideBack {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
 }
 
 .marquee:hover .marqueeTrack,
@@ -1266,6 +1311,152 @@
 }
 
 /* ==========================================================================
+   ROUTE — how it works, drawn as a journey
+
+   The leg above each step is a child of that step, so it fills when the step
+   reveals. The whole route draws itself in sequence with no scroll listener,
+   no measurement and no layout reads.
+   ========================================================================== */
+.howLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(32px, 5vw, 80px);
+  align-items: start;
+}
+
+.howAside {
+  position: sticky;
+  top: 116px;
+}
+
+.howAside .sectionHead {
+  margin-bottom: 0;
+}
+
+.howAside .lead {
+  margin-bottom: var(--s-5);
+}
+
+.route {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 2.6vw, 30px);
+}
+
+.routeStep {
+  position: relative;
+  padding: clamp(24px, 2.8vw, 32px);
+  padding-left: clamp(62px, 6vw, 78px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  transition:
+    border-color 340ms var(--ease),
+    background 340ms var(--ease),
+    opacity 760ms var(--ease-out) var(--reveal-delay, 0ms),
+    transform 760ms var(--ease-out) var(--reveal-delay, 0ms);
+}
+
+.routeStep:hover {
+  border-color: rgba(204, 255, 0, 0.3);
+  background: var(--card-hi);
+}
+
+/* the leg of road connecting this step to the one above */
+.routeLeg {
+  position: absolute;
+  left: clamp(31px, 3vw, 39px);
+  bottom: 100%;
+  width: 2px;
+  height: clamp(20px, 2.6vw, 30px);
+  background: linear-gradient(180deg, transparent, var(--lime));
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 620ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 120ms);
+}
+
+.revealIn.routeStep .routeLeg {
+  transform: scaleY(1);
+}
+
+.route > .routeStep:first-child .routeLeg {
+  display: none;
+}
+
+.routePin {
+  position: absolute;
+  left: clamp(18px, 2vw, 26px);
+  top: clamp(24px, 2.8vw, 32px);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(204, 255, 0, 0.12);
+  border: 1px solid rgba(204, 255, 0, 0.4);
+  color: var(--lime);
+  transform: scale(0.5);
+  opacity: 0;
+  transition:
+    transform 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 240ms),
+    opacity 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 240ms);
+}
+
+.revealIn.routeStep .routePin {
+  transform: none;
+  opacity: 1;
+}
+
+.routePin svg {
+  width: 15px;
+  height: 15px;
+}
+
+.routeIndex {
+  display: block;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.routeStep h3 {
+  font-size: clamp(20px, 2.1vw, 25px);
+  margin-bottom: 9px;
+}
+
+.routeStep p {
+  font-size: 15.5px;
+  color: var(--text-mut);
+  max-width: 54ch;
+}
+
+.routeMetric {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--s-3);
+  padding: 6px 13px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+}
+
+.routeMetric svg {
+  width: 14px;
+  height: 14px;
+  color: var(--lime);
+}
+
+/* ==========================================================================
    BENTO — the six services, deliberately unequal
    ========================================================================== */
 .bento {
@@ -1291,14 +1482,21 @@
     background 320ms var(--ease);
 }
 
-.tile::before {
-  content: "";
+/* The spotlight. <SpotlightGrid> writes --mx/--my on whichever tile the
+   pointer is over; everything else here is CSS. Falls back to a static corner
+   wash when the properties are unset, which is what touch devices get. */
+.tileGlow {
   position: absolute;
   inset: -1px;
   z-index: -1;
-  background: radial-gradient(60% 60% at 100% 0%, rgba(204, 255, 0, 0.12), transparent 70%);
+  border-radius: inherit;
+  background: radial-gradient(
+    260px circle at var(--mx, 100%) var(--my, 0%),
+    rgba(204, 255, 0, 0.16),
+    transparent 72%
+  );
   opacity: 0;
-  transition: opacity 320ms var(--ease);
+  transition: opacity 340ms var(--ease);
 }
 
 .tile:hover {
@@ -1306,17 +1504,68 @@
   border-color: rgba(204, 255, 0, 0.32);
 }
 
-.tile:hover::before {
+.tile:hover .tileGlow,
+.feature:hover .tileGlow {
   opacity: 1;
 }
 
-/* 3 + 3 across six columns, with the two lead services taking the wide slots. */
+.light .tileGlow {
+  background: radial-gradient(
+    260px circle at var(--mx, 100%) var(--my, 0%),
+    rgba(4, 107, 65, 0.13),
+    transparent 72%
+  );
+}
+
+/* Six tiles across six columns: 3 + 3, then 2 + 2 + 2, then one full-width
+   band. Six equal cards would be a table; this is a rhythm. */
 .tileWide {
   grid-column: span 3;
 }
 
 .tileThird {
   grid-column: span 2;
+}
+
+.tileFull {
+  grid-column: span 6;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "icon tag"
+    "icon title"
+    "icon body";
+  column-gap: clamp(20px, 2.5vw, 30px);
+  row-gap: 8px;
+  align-items: start;
+}
+
+.tileFull .tileIcon {
+  grid-area: icon;
+  align-self: center;
+  width: 60px;
+  height: 60px;
+}
+
+.tileFull .tileIcon svg {
+  width: 27px;
+  height: 27px;
+}
+
+.tileFull .tag {
+  grid-area: tag;
+  /* `align-self: flex-start` on .tag is a flex property and does nothing in
+     this grid, so the pill stretched the full column width. */
+  justify-self: start;
+}
+
+.tileFull h3 {
+  grid-area: title;
+}
+
+.tileFull p {
+  grid-area: body;
+  max-width: 84ch;
 }
 
 .tileIcon {
@@ -1362,6 +1611,89 @@
   color: var(--text-mut);
 }
 
+/* ── the intercity route diagram, inside the City to City tile ─────────── */
+.routeMap {
+  position: absolute;
+  right: -6px;
+  bottom: -8px;
+  width: min(52%, 170px);
+  height: auto;
+  z-index: -1;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* The tile that carries the diagram keeps its text clear of it. */
+.tile:has(.routeMap) {
+  padding-bottom: clamp(84px, 8vw, 104px);
+}
+
+.tile:has(.routeMap) p {
+  max-width: 30ch;
+}
+
+.routeGhost {
+  fill: none;
+  stroke: var(--line-hi);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.routeLine {
+  fill: none;
+  stroke: var(--lime);
+  stroke-width: 2;
+  stroke-linecap: round;
+  /* one dash the length of the longest leg, offset out of sight and pulled
+     back to zero — the line travels rather than fading in */
+  stroke-dasharray: 220;
+  stroke-dashoffset: 220;
+  animation: draw 4.4s var(--ease-out) infinite;
+}
+
+.light .routeLine {
+  stroke: var(--brand-hi);
+}
+
+@keyframes draw {
+  0% {
+    stroke-dashoffset: 220;
+  }
+  45%,
+  70% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -220;
+  }
+}
+
+.routeNode {
+  fill: var(--lime);
+}
+
+.light .routeNode {
+  fill: var(--brand);
+}
+
+.routeHalo {
+  fill: none;
+  stroke: var(--lime);
+  stroke-width: 1;
+  opacity: 0.28;
+}
+
+.light .routeHalo {
+  stroke: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routeLine {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* ==========================================================================
    FEATURE ROWS
    ========================================================================== */
@@ -1376,12 +1708,36 @@
 }
 
 .feature {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: clamp(26px, 3vw, 38px);
   background: var(--ink);
+  overflow: hidden;
+  isolation: isolate;
   transition: background 300ms var(--ease);
+}
+
+/* The index sits behind the content as a watermark rather than beside it —
+   it numbers the set without competing with the heading for the eye. */
+.featureNo {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  font-family: var(--font-mono), monospace;
+  font-size: clamp(38px, 4vw, 52px);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text);
+  opacity: 0.055;
+  pointer-events: none;
+  transition: opacity 340ms var(--ease), transform 340ms var(--ease-out);
+}
+
+.feature:hover .featureNo {
+  opacity: 0.12;
+  transform: translateY(-3px);
 }
 
 .light .feature {
@@ -1561,6 +1917,106 @@
 
 .tierPro {
   color: var(--lime) !important;
+}
+
+/* ==========================================================================
+   SAFETY TIMELINE — the same guarantees, ordered by when they happen
+   ========================================================================== */
+.timeline {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(22px, 2.6vw, 32px);
+  margin-top: var(--s-5);
+}
+
+.phase {
+  position: relative;
+  padding-left: 46px;
+  transition:
+    opacity 760ms var(--ease-out) var(--reveal-delay, 0ms),
+    transform 760ms var(--ease-out) var(--reveal-delay, 0ms);
+}
+
+.phaseLeg {
+  position: absolute;
+  left: 15px;
+  bottom: 100%;
+  width: 2px;
+  height: clamp(22px, 2.6vw, 32px);
+  background: linear-gradient(180deg, transparent, var(--brand-hi));
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 620ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 120ms);
+}
+
+.revealIn.phase .phaseLeg {
+  transform: scaleY(1);
+}
+
+.timeline > .phase:first-child .phaseLeg {
+  display: none;
+}
+
+.phaseDot {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(4, 107, 65, 0.14);
+  border: 1px solid rgba(4, 107, 65, 0.4);
+  color: var(--brand);
+}
+
+.phaseDot svg {
+  width: 16px;
+  height: 16px;
+}
+
+.phaseName {
+  display: block;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand);
+  padding-top: 8px;
+  margin-bottom: var(--s-3);
+}
+
+.phaseItems {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.phaseItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--brand-hi);
+  border-radius: var(--r-sm);
+  background: var(--card);
+}
+
+.phaseItem b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.phaseItem span {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-mut);
 }
 
 /* ==========================================================================
@@ -2017,9 +2473,29 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .howLayout {
+    grid-template-columns: 1fr;
+    gap: var(--s-6);
+  }
+
+  .howAside {
+    position: static;
+  }
+
   .tileWide,
-  .tileThird {
+  .tileThird,
+  .tileFull {
     grid-column: span 3;
+  }
+
+  .tileFull {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tileFull .tileIcon {
+    width: 48px;
+    height: 48px;
   }
 }
 
@@ -2066,7 +2542,8 @@
   }
 
   .tileWide,
-  .tileThird {
+  .tileThird,
+  .tileFull {
     grid-column: span 1;
   }
 
