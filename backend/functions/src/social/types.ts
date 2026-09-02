@@ -141,15 +141,15 @@ export const ROLE_SPECS: Record<Role, RoleSpec> = {
   },
   designer: {
     label: 'Designer',
-    blurb: 'Turns the script into pictures — slides, post images, story frames, video covers.',
+    blurb: 'Briefs the pictures — slides, post images, story frames, video covers. You make them.',
     stage: 'design',
     titles: ['Designer', 'Art director', 'Senior graphic designer'],
     charter:
-      'You are the designer. You turn a script into pictures: what is in the frame, what the light is doing, what words are burned onto it. You think in thumbnails — the picture has to work at 40 pixels wide, in a feed, with the sound off.',
+      'You are the designer. You turn a script into pictures: what is in the frame, what the light is doing, what words sit on it. You are briefing somebody else to make it, so leave nothing to be guessed at. You think in thumbnails — the picture has to work at 40 pixels wide, in a feed, with the sound off.',
   },
   'video-editor': {
     label: 'Video editor',
-    blurb: 'Decides the cut — pacing, the pattern interrupt, the sound bed — and renders it.',
+    blurb: 'Decides the cut — pacing, the pattern interrupt, the sound bed. You shoot or render it.',
     stage: 'video',
     titles: ['Video editor', 'Senior editor', 'Motion lead'],
     charter:
@@ -224,7 +224,13 @@ export interface TeamMemberRef {
   title: string;
 }
 
-export type WorkState = 'working' | 'done' | 'skipped' | 'failed';
+/**
+ * `briefed` is not `done` and it is not `skipped`: the stage ran and produced
+ * its deliverable — a brief — and the piece still cannot go out until somebody
+ * makes the file from it. Collapsing it into either one loses the only thing
+ * the operator needs to know from this row.
+ */
+export type WorkState = 'working' | 'done' | 'briefed' | 'skipped' | 'failed';
 
 /** One person's turn on one piece. This is what the console renders live. */
 export interface WorkEntry {
@@ -432,7 +438,11 @@ export interface ContentPlan {
 
 export interface MediaAsset {
   kind: MediaKind;
-  /** `veo`, `gemini-image`, or `manual` for a file someone attached. */
+  /**
+   * `manual` for a file someone attached — which is all of them now. Older
+   * posts still carry `gemini-image` or `veo` from when this backend rendered
+   * its own, and they publish exactly the same way.
+   */
   provider: string;
   model: string | null;
   /** Provider-side long-running operation, kept for support tickets. */
@@ -555,9 +565,9 @@ export interface SocialPost {
   seo: SeoPack | null;
   search: SearchPack | null;
   ads: AdPlan | null;
-  /** The designer's art direction, kept whether or not anything was rendered. */
+  /** The designer's brief — one render-ready prompt per frame. The deliverable. */
   direction: { prompt: string; overlay: string; alt: string }[] | null;
-  /** The editor's cut. The prompt the renderer was given, and a line about it. */
+  /** The editor's cut — the brief the video is made from, and a line about it. */
   cut: { prompt: string; note: string } | null;
   /** Everything the team made, in publish order. Slides 1..n for a carousel. */
   media: MediaAsset[];
@@ -678,19 +688,14 @@ export interface SocialSettings {
   researchEnabled: boolean;
   competitors: Competitor[];
 
-  /** The designer draws, or leaves the frames to be attached by hand. */
-  imageProvider: 'gemini' | 'none';
-  /** The editor renders, or leaves the file to be attached by hand. */
-  videoProvider: 'veo' | 'none';
-
   /**
-   * Model ids, editable so a rename is a settings change and not a deploy.
-   * `textModel` is a Claude model (everything written or decided); the other
-   * two are Google's, because Claude renders neither pictures nor video.
+   * The Claude model everything is written and decided with, editable so a
+   * rename is a settings change and not a deploy. There is no image or video
+   * model here: nothing is rendered by this backend — the designer and the
+   * editor write briefs, and the files are made by hand and attached from the
+   * queue.
    */
   textModel: string;
-  imageModel: string;
-  videoModel: string;
 
   /** The manager watches the comments. */
   engagementEnabled: boolean;
@@ -722,12 +727,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   researchEnabled: true,
   competitors: [...DEFAULT_COMPETITORS],
 
-  imageProvider: 'gemini',
-  videoProvider: 'none',
-
   textModel: DEFAULT_TEXT_MODEL,
-  imageModel: 'gemini-2.5-flash-image',
-  videoModel: 'veo-3.1-generate-preview',
 
   engagementEnabled: false,
   autoReply: false,

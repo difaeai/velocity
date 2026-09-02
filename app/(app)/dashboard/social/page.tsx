@@ -206,14 +206,7 @@ export default function SocialOverview() {
         <Card>
           <h2 style={h2}>Before it can run</h2>
           {readiness ? (
-            <Readiness
-              readiness={readiness}
-              connectedCount={connected.length}
-              staffed={onShift.length}
-              {...(settings
-                ? { providers: { image: settings.imageProvider, video: settings.videoProvider } }
-                : {})}
-            />
+            <Readiness readiness={readiness} connectedCount={connected.length} staffed={onShift.length} />
           ) : (
             <p style={{ color: colors.muted, fontSize: 13 }}>Checking…</p>
           )}
@@ -243,13 +236,7 @@ export default function SocialOverview() {
                 />
               ) : null}
               <Row label="Up next" value={upNext ? FORMAT_META[upNext].label : '—'} />
-              <Row
-                label="Rendering"
-                value={[
-                  settings.imageProvider === 'none' ? 'images by hand' : 'images on',
-                  settings.videoProvider === 'none' ? 'video by hand' : `video on (${settings.videoModel})`,
-                ].join(' · ')}
-              />
+              <Row label="Pictures and video" value="Briefed here, made by you" />
               <Row label="Approval" value="Always — nothing posts itself" />
               <Row
                 label="Comments"

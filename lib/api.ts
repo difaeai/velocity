@@ -525,7 +525,7 @@ export interface SocialWorkEntry {
   employeeId: string | null;
   name: string;
   role: SocialRole | null;
-  state: 'working' | 'done' | 'skipped' | 'failed';
+  state: 'working' | 'done' | 'briefed' | 'skipped' | 'failed';
   note: string | null;
   error: string | null;
   startedAtMs: number | null;
@@ -554,11 +554,12 @@ export interface SocialSettings {
   researchEnabled: boolean;
   competitors: SocialCompetitor[];
 
-  imageProvider: 'gemini' | 'none';
-  videoProvider: 'veo' | 'none';
+  /**
+   * The Claude model the desk writes and decides with. There is no image or
+   * video model: nothing is rendered by the backend — the designer and the
+   * editor write briefs, and you make the files and attach them from the queue.
+   */
   textModel: string;
-  imageModel: string;
-  videoModel: string;
 
   engagementEnabled: boolean;
   autoReply: boolean;
@@ -571,8 +572,6 @@ export interface SocialSettings {
 
 export interface SocialReadiness {
   writer: boolean;
-  designer: boolean;
-  video: boolean;
   tokenVault: boolean;
 }
 

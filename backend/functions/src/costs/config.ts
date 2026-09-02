@@ -3,7 +3,7 @@
  *
  * Three vendors between them send Velocity almost every bill that moves month
  * to month: Google Cloud (Firestore, Functions, Storage, App Hosting,
- * phone-auth SMS, Maps, Gemini), Anthropic (the social desk), and Meta
+ * phone-auth SMS, Maps), Anthropic (the social desk), and Meta
  * (WhatsApp conversations, and ad spend once there is any). Each exposes its
  * own spend, and each needs a credential this repository does not ship.
  *

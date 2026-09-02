@@ -12,8 +12,8 @@
  * script asserts traces back to a number in `facts`, and the facts are stored
  * on the post so any published claim can be audited later.
  *
- * Engine: Gemini, through gemini.ts. The same key as the designer and the
- * renderer, so the whole desk lives or dies on one secret rather than three.
+ * Engine: Claude, through claude.ts — the same key the whole desk runs on, and
+ * since the renderer was removed, the only one it needs.
  */
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';

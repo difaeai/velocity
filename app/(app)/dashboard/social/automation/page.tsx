@@ -129,7 +129,6 @@ export default function AutomationPage() {
             readiness={readiness}
             connectedCount={settings.platforms.length}
             staffed={staffed}
-            providers={{ image: settings.imageProvider, video: settings.videoProvider }}
           />
           {coverage.length ? (
             <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>

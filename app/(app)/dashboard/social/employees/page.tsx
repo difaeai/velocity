@@ -293,9 +293,10 @@ export default function EmployeesPage() {
         <h2 style={{ ...h2, marginBottom: 4 }}>The tools</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
           Everyone <strong>thinks and writes with Claude</strong>, on the <code>ANTHROPIC_API_KEY</code> this backend
-          already uses. <strong>Pictures and video are Google&rsquo;s</strong> — Claude renders neither — so the
-          designer and the editor need <code>GEMINI_API_KEY</code> as well, and only for the rendering. Model ids are
-          editable because model names change; when one does, this is the fix, not a redeploy.
+          already uses — and that is the only paid model on the desk. <strong>Nothing is rendered here.</strong> The
+          designer writes a brief for every frame and the editor writes the cut; you make the pictures and the video
+          however you like and attach them to the piece from the queue. The model id is editable because model names
+          change; when one does, this is the fix, not a redeploy.
         </p>
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -317,36 +318,6 @@ export default function EmployeesPage() {
                 here to change that.
               </p>
             ) : null}
-          </Field>
-          <Field label="Pictures (Google)" hint="Carousel slides, post images, story frames, video covers.">
-            <input
-              value={(value('imageModel') as string) ?? ''}
-              onChange={(e) => set('imageModel', e.target.value)}
-              style={inputStyle}
-            />
-            <select
-              value={(value('imageProvider') as string) ?? 'gemini'}
-              onChange={(e) => set('imageProvider', e.target.value as 'gemini' | 'none')}
-              style={{ ...inputStyle, marginTop: 6 }}
-            >
-              <option value="gemini">Render pictures</option>
-              <option value="none">Direction only — I will attach files</option>
-            </select>
-          </Field>
-          <Field label="Video (Google)" hint="Veo, on the same Gemini key as the pictures.">
-            <input
-              value={(value('videoModel') as string) ?? ''}
-              onChange={(e) => set('videoModel', e.target.value)}
-              style={inputStyle}
-            />
-            <select
-              value={(value('videoProvider') as string) ?? 'none'}
-              onChange={(e) => set('videoProvider', e.target.value as 'veo' | 'none')}
-              style={{ ...inputStyle, marginTop: 6 }}
-            >
-              <option value="veo">Render video</option>
-              <option value="none">Cut only — I will attach the file</option>
-            </select>
           </Field>
         </div>
       </Card>
