@@ -3,8 +3,8 @@
  *
  * Every other money screen in this console answers "what did we take in".
  * This one answers the other half — the third-party bill behind the product:
- * Firebase under all of it, Meta's WhatsApp numbers, Claude and Gemini on the
- * social desk, Maps behind every fare estimate, the Play account, the blue tick.
+ * Firebase under all of it, Meta's WhatsApp numbers, Claude on the social desk,
+ * Maps behind every fare estimate, the Play account, the blue tick.
  *
  * WHY THE CATALOGUE LIVES IN CODE AND THE MONEY LIVES IN FIRESTORE
  * ---------------------------------------------------------------
@@ -212,15 +212,19 @@ export const CATALOGUE: CostItem[] = [
   {
     id: 'google-gemini',
     platform: 'Google AI',
-    service: 'Gemini API — images and Veo video',
+    service: 'Gemini API — retired',
     category: 'AI',
-    purpose: 'Draws the social posts and renders the video cuts — the pixels Claude cannot make.',
+    purpose:
+      'Drew the social posts and rendered the video cuts until the renderer was removed. The desk writes briefs now and the pictures are made by hand.',
     amount: 0,
     currency: 'USD',
     billing: 'usage',
-    status: 'active',
+    status: 'paused',
     estimate: true,
-    note: 'Billed per image and per second of rendered video. Video is far and away the expensive half.',
+    // Kept on the catalogue rather than deleted: the historical spend is still
+    // on the Google bill, and a fetched line with nowhere to land silently
+    // becomes "everything else". It should go to zero and stay there.
+    note: 'No longer called. The key is gone from the deploy and nothing in the backend reads it — anything landing here now is history, not usage.',
     billingUrl: 'https://aistudio.google.com/app/billing',
   },
 

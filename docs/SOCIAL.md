@@ -21,8 +21,8 @@ their role covers — on every run, without being asked again.
 | **SEO expert** | search brief | Briefs the writer *before* they write: the query this piece should answer, phrases that belong in the copy, hashtags people actually search, real alt text. |
 | **Content writer** | the script | The hook, the shots or slides, the voiceover, the caption. Ruthless about the first three seconds. |
 | **Google SEO expert** | YouTube & Google | Writes the YouTube title, description and tags the video is posted with — used verbatim — and names the query velocityrides.app should try to own. |
-| **Designer** | the pictures | Art directs each frame, then renders the carousel slides, the post image, the story frame, or the cover a video opens on. |
-| **Video editor** | the cut | The second-by-second edit — pacing, the pattern interrupt, the sound bed — then the render. |
+| **Designer** | the pictures | Art directs each frame and writes the brief it is made from: the carousel slides, the post image, the story frame, or the cover a video opens on. Nothing is rendered here — you make the file and attach it. |
+| **Video editor** | the cut | The second-by-second edit — pacing, the pattern interrupt, the sound bed — written as a brief you shoot, edit or render from. |
 | **YouTube ads expert** | campaign brief | The brief a human takes into Google Ads: objective, five-second hooks to test, targeting, budget range, what success looks like. |
 | **Social media manager** | where it goes | Rewrites the caption per network, picks the targets, publishes once you approve, and drafts a reply to every comment. |
 
@@ -80,7 +80,7 @@ so you can veto the idea rather than the execution.
       ├─ the script         content writer
       ├─ YouTube & Google   Google SEO expert
       ├─ the pictures       designer
-      ├─ the cut & render   video editor            (video formats only)
+      ├─ the cut           video editor            (video formats only)
       ├─ campaign brief     YouTube ads expert      (video formats only)
       ├─ where it goes      social media manager
       │
@@ -124,11 +124,11 @@ The format decides which stages run and where the piece can go.
 
 | Format | Ratio | What is made | Who takes it |
 |---|---|---|---|
-| **Reel** | 9:16, ~20s | Cover frame + rendered video | Instagram, TikTok, Facebook, YouTube (as a Short), Threads |
-| **Video** | 16:9, ~30s | Cover frame + rendered video | YouTube, Facebook |
-| **Carousel** | 4:5 ×5 | Five designed slides in one set | Instagram, Facebook, Threads |
-| **Post** | 4:5 | One designed image | Instagram, Facebook, Threads, X, LinkedIn |
-| **Story** | 9:16 | One designed frame | Instagram, Facebook |
+| **Reel** | 9:16, ~20s | A cover-frame brief and a cut | Instagram, TikTok, Facebook, YouTube (as a Short), Threads |
+| **Video** | 16:9, ~30s | A cover-frame brief and a cut | YouTube, Facebook |
+| **Carousel** | 4:5 ×5 | Five slide briefs, art-directed as one set | Instagram, Facebook, Threads |
+| **Post** | 4:5 | One image brief | Instagram, Facebook, Threads, X, LinkedIn |
+| **Story** | 9:16 | One frame brief | Instagram, Facebook |
 
 `PLATFORM_FORMATS` in [`types.ts`](../backend/functions/src/social/types.ts) is
 the matrix everything trusts: the console greys out what an adapter cannot do,
@@ -156,15 +156,15 @@ per network, the numbers, the sources, and every round of feedback so far.
 
 | You tick | Who is called back in |
 |---|---|
-| Just the caption | The writer, one cheap call. No re-render. |
-| Redraw it | The designer, then the manager. |
+| Just the caption | The writer, one cheap call. Your files are untouched. |
+| Redraw it | The designer rewrites the brief, then the manager. Files you already attached stay put — upload a replacement to change one. |
 | Recut it | The editor and the ads expert, then the manager. |
 | Redo the search work | The SEO and Google SEO experts. |
 | Redo the ad brief | The ads expert alone. |
 | Rewrite it | A fresh standup, then most of the team. |
 
-Re-rendering a video because someone wanted a different word in the caption is
-how you spend a month's budget in an afternoon.
+Rebriefing the whole team because someone wanted a different word in the caption
+is how you spend a month's budget in an afternoon.
 
 **Feedback is permanent.** Every note is stored on the piece and fed to everyone
 who touches it later, so "the hook is generic, open on the hands" does not have
@@ -277,23 +277,35 @@ read back, so anything appended to it has to be retyped from memory.
 
 | Secret | Without it |
 |---|---|
-| `GEMINI_API_KEY` | nobody can work — nothing is planned, written, drawn or rendered |
+| `ANTHROPIC_API_KEY` | nobody can work — nothing is planned, written, briefed or replied to |
 | `SOCIAL_TOKEN_KEY` (`openssl rand -base64 32`) | accounts cannot be connected; nothing publishes |
 
 ⚠️ Rotating `SOCIAL_TOKEN_KEY` makes every stored token unreadable. Reconnect
 each account afterwards.
 
-### Model ids are settings, not code
+### There is no image or video key
 
-`textModel`, `imageModel` and `videoModel` are editable on the Employees page.
-Google renames preview models often; when `gemini-2.5-flash-image` becomes
-something else, that is a text field, not a redeploy. Defaults:
+There used to be. `GEMINI_API_KEY` was removed along with the renderer: this
+backend draws nothing and renders nothing, and Claude is the only model it pays
+for. The designer and the editor write briefs instead, the briefs are stored on
+the piece, and the console shows them with a copy button next to the upload
+control. You make the file however you like and attach it from the queue — it
+then publishes through exactly the same path a rendered one did.
+
+The trade is deliberate: the renders were the entire Google AI line on the bill,
+Veo by far the largest part of it, and a picture nobody looked at before it went
+out was never the point of the desk.
+
+### The model id is a setting, not code
+
+`textModel` is editable on the Employees page, so a rename is a settings change
+and not a redeploy. It must be a Claude model — a Gemini id left in that field
+from before the desk moved is ignored rather than sent to fail, and the console
+says so under the field.
 
 | | Default | Used by |
 |---|---|---|
-| Text | `gemini-2.5-pro` | standup, research, writing, SEO, search, ads, captions, replies |
-| Image | `gemini-2.5-flash-image` | the designer (`imagen-*` ids are also handled, on a different endpoint) |
-| Video | `veo-3.1-generate-preview` | the video editor |
+| Text | `claude-opus-5` | standup, research, writing, SEO, search, ads, captions, briefs, replies |
 
 ---
 
@@ -305,18 +317,16 @@ publishing behind app review and scopes that only exist on an approved app, so
 **the first successful post from a new app is the real test**. Work through it in
 this order:
 
-1. Add `GEMINI_API_KEY` and `SOCIAL_TOKEN_KEY`, redeploy, and connect **one**
-   account.
+1. Add `SOCIAL_TOKEN_KEY`, redeploy, and connect **one** account.
 2. Hire a team — one of each is fine to start; rename them to whatever you like.
 3. Leave automation off. Press **Brief the team now** on the overview and pick
-   **Post** — the cheapest format: one image, no render minutes.
+   **Post** — the cheapest format: one frame to make.
 4. Read what comes back in the queue, including who did what. Try **ask for
    changes** on the caption once; that is the cheapest way to see the loop work
    end to end.
 5. Publish that one piece by hand, to one network.
-6. Switch `videoProvider` to `veo` and brief a **reel**. Watch the function logs
-   on that first render — that is where a wrong model name or a changed response
-   shape shows up.
+6. Brief a **reel** and read the cut. It is the brief you shoot or render from
+   somewhere else; attach the file and publish that one by hand too.
 7. Only then set a run hour and turn automation on.
 8. Turn the comment inbox on. Read a few dozen drafted replies before you even
    consider `autoReply`.

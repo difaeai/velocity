@@ -3,8 +3,8 @@
  *
  * Before anything is written, the research assistant searches: what is
  * travelling on Pakistani feeds this week, what the other ride-hailing apps are
- * posting, and which hook shapes keep coming back. Gemini's own Google Search
- * grounding does the looking, which matters for two reasons — the model reports
+ * posting, and which hook shapes keep coming back. Claude's own server-side
+ * search does the looking, which matters for two reasons — the model reports
  * the pages it actually read, and we are not scraping anyone's site or app to
  * get it.
  *

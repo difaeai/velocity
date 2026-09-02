@@ -69,7 +69,6 @@ jobs:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
         run: |
@@ -95,12 +94,6 @@ jobs:
             echo "· social: token vault READY"
           else
             echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
-          fi
-          if [ -n "$GEMINI_API_KEY" ]; then
-            printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> .env.velocity-fe379
-            echo "· social: the content crew is READY"
-          else
-            echo "· social: no GEMINI_API_KEY — the crew cannot plan, write, draw or render"
           fi
           # WhatsApp Cloud API — its own block (WHATSAPP_TOKEN, _PHONE_NUMBER_ID,
           # _TEMPLATE_NAME, _TEMPLATE_LANG, _VERIFY_TOKEN, _APP_SECRET), kept

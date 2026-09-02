@@ -95,14 +95,14 @@ export const ROLE_META: Record<
     short: 'Design',
     colour: '#ff8a3d',
     stage: 'design',
-    does: 'Art directs every frame — subject, light, lens, type, where the lime sits — then renders the slides, the post image, the story frame or the video cover.',
+    does: 'Art directs every frame — subject, light, lens, type, where the lime sits — and writes the brief each one is made from. Nothing is rendered here; you make the file and attach it.',
   },
   'video-editor': {
     label: 'Video editor',
     short: 'Editing',
     colour: '#b07dff',
     stage: 'video',
-    does: 'Writes the second-by-second cut — pacing, the pattern interrupt, the sound bed — and renders it. The reason someone is still watching at second seven.',
+    does: 'Writes the second-by-second cut — pacing, the pattern interrupt, the sound bed — for you to shoot or render from. The reason someone is still watching at second seven.',
   },
   'youtube-ads-expert': {
     label: 'YouTube ads expert',
@@ -255,6 +255,7 @@ const WORK_STATE_STYLE: Record<SocialWorkEntry['state'] | 'idle', { dot: string;
   idle: { dot: '#c8d0cb', label: 'Not started' },
   working: { dot: '#2a78d6', label: 'Working' },
   done: { dot: '#0ca30c', label: 'Done' },
+  briefed: { dot: '#fab219', label: 'Briefed — needs a file' },
   skipped: { dot: '#9aa5a0', label: 'Skipped' },
   failed: { dot: '#d03b3b', label: 'Failed' },
 };
@@ -366,7 +367,8 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   drafting: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Writing' },
   optimising: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Optimising' },
   designing: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Designing' },
-  rendering: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Rendering' },
+  // The stored status is still `rendering`; what happens in it is the cut.
+  rendering: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Cutting' },
   awaiting_approval: { bg: '#fab2192e', fg: '#8a6100', label: 'Needs approval' },
   changes_requested: { bg: '#eb68341f', fg: '#a8461f', label: 'Changes asked for' },
   ready: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'Approved' },
@@ -409,22 +411,20 @@ export function StatusPill({ status }: { status: string }) {
  * the desk, because the failure everyone hits is switching automation on and
  * finding out at 10am that a key was never added — or that nobody was hired.
  *
- * Three states, not two. A row that is **off by choice** — video rendering you
- * deliberately left switched off — is not a green tick, because a tick reads as
- * "this is working" and would be a lie; and it is not a warning either, because
- * nothing is wrong. It gets a dash and says what it means for the work.
+ * Three states, not two. A row that is **off by choice** — the pictures, which
+ * this backend deliberately does not render — is not a green tick, because a
+ * tick reads as "this is working" and would be a lie; and it is not a warning
+ * either, because nothing is wrong. It gets a dash and says what it means for
+ * the work.
  */
 export function Readiness({
   readiness,
   connectedCount,
   staffed,
-  providers,
 }: {
-  readiness: { writer: boolean; designer: boolean; video: boolean; tokenVault: boolean };
+  readiness: { writer: boolean; tokenVault: boolean };
   connectedCount: number;
   staffed?: number;
-  /** What the console has rendering switched to, when the caller knows. */
-  providers?: { image: 'gemini' | 'none'; video: 'veo' | 'none' };
 }) {
   type Row = { state: 'ok' | 'warn' | 'off'; label: string; note: string };
 
@@ -452,26 +452,13 @@ export function Readiness({
         : 'SOCIAL_TOKEN_KEY is missing. Generate one with `openssl rand -base64 32`, add it as a GitHub Actions secret and redeploy. Accounts cannot be connected until then.',
     },
     {
-      // Claude writes the art direction; it does not draw. The pictures are
-      // Google's, on the Gemini key, which is why this row names a different one.
-      state: providers && providers.image === 'none' ? 'off' : readiness.designer ? 'ok' : 'warn',
-      label: 'Pictures (Google)',
-      note:
-        providers && providers.image === 'none'
-          ? 'Switched off. The designer still writes the art direction — attach the files yourself from the queue.'
-          : readiness.designer
-            ? 'Slides, post images and covers are drawn on the Gemini key.'
-            : 'GEMINI_API_KEY is missing, so nothing can be drawn. Add it, or switch pictures off and attach them yourself.',
-    },
-    {
-      state: providers && providers.video === 'none' ? 'off' : readiness.video ? 'ok' : 'warn',
-      label: 'Video (Google Veo)',
-      note:
-        providers && providers.video === 'none'
-          ? 'Switched off — the most expensive thing here. The editor still writes the cut; attach the file yourself.'
-          : readiness.video
-            ? 'Videos are rendered by Veo on the Gemini key.'
-            : 'GEMINI_API_KEY is missing, so nothing can be rendered. Add it, or switch video off and attach the file yourself.',
+      // Not a warning: nothing is broken and nothing is missing. This backend
+      // renders no pictures and no video by design — the desk writes the brief
+      // and a person makes the file. The row stays on the checklist so that is
+      // read as a decision rather than discovered at 10am as a blank post.
+      state: 'off',
+      label: 'Pictures and video',
+      note: 'Made by hand. The designer writes the brief for every frame and the editor writes the cut — open a piece in the queue, read what it needs, and attach the files there.',
     },
     {
       state: connectedCount > 0 ? 'ok' : 'warn',

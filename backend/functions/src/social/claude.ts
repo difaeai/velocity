@@ -11,10 +11,10 @@
  *
  * Four things are worth knowing before changing anything:
  *
- * 1. **The official SDK, not raw REST.** Unlike `gemini.ts` (four endpoints,
- *    hand-rolled), the parts of this API worth having — adaptive thinking,
- *    server-side search, refusal fallbacks — are typed, versioned and change
- *    shape. That is exactly what an SDK is for.
+ * 1. **The official SDK, not raw REST.** The parts of this API worth having —
+ *    adaptive thinking, server-side search, refusal fallbacks — are typed,
+ *    versioned and change shape. That is exactly what an SDK is for, and it is
+ *    why this is the one vendor call in the desk that is not hand-rolled.
  * 2. **There is no temperature.** Current Claude models reject sampling
  *    parameters outright (HTTP 400). Variety comes from the prompt and from
  *    what each employee was told, not from a dial.

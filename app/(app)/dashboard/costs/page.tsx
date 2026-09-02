@@ -68,7 +68,7 @@ const STATUS_COLOR: Record<CostStatus, string> = {
 
 /** What each fetch source is called, and what it covers. */
 const SOURCES: { key: 'googleCloud' | 'anthropic' | 'meta'; label: string; covers: string }[] = [
-  { key: 'googleCloud', label: 'Google Cloud', covers: 'Firebase, Maps, Gemini' },
+  { key: 'googleCloud', label: 'Google Cloud', covers: 'Firebase, Maps, Cloud Run' },
   { key: 'anthropic', label: 'Anthropic', covers: 'Claude' },
   { key: 'meta', label: 'Meta', covers: 'WhatsApp, ad spend' },
 ];

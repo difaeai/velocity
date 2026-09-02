@@ -1,8 +1,8 @@
 /**
  * The three vendors that will tell us what we spent, and how to ask each one.
  *
- * Raw REST throughout, on the same reasoning as `social/gemini.ts`: the surface
- * used here is one endpoint per vendor, and a client library that ships
+ * Raw REST throughout: the surface used here is one endpoint per vendor, and a
+ * client library that ships
  * breaking changes on somebody else's schedule is a bad trade for a job that
  * has to still work unattended next quarter. The one exception is Google's
  * auth, which is a signed-JWT exchange nobody should hand-roll — that comes
@@ -62,6 +62,8 @@ const GCP_SERVICE_MAP: [RegExp, string][] = [
   [/cloud storage/i, 'firebase-storage'],
   [/identity platform|firebase authentication/i, 'firebase-auth-phone'],
   [/maps|places|geocoding|directions|distance matrix|routes api/i, 'google-maps'],
+  // Retired — the backend calls no Google model any more. Kept so the
+  // historical spend still lands on its own line instead of in "everything else".
   [/generative language|gemini|vertex ai/i, 'google-gemini'],
   [/app hosting/i, 'firebase-app-hosting'],
   [/cloud functions|cloud run functions/i, 'firebase-functions'],

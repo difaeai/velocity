@@ -49,7 +49,7 @@ import { runResearch } from './research';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
 import { adPass, searchPass, seoPass } from './seo';
 import { getSocialSettings, nextAngle, nextFormat, recordRun } from './settings';
-import { planCut, renderVideo, storeVideo, VideoError } from './video';
+import { planCut, storeVideo } from './video';
 import {
   FORMATS,
   FORMAT_SPECS,
@@ -234,7 +234,6 @@ async function runTeam(params: {
   let script = existing?.script ?? null;
   let caption = existing?.caption ?? '';
   let hashtags = existing?.hashtags ?? [];
-  let media: MediaAsset[] = existing ? postMedia(existing) : [];
   let facts = existing?.facts ?? {};
   let research = existing?.research ?? null;
   let seo = existing?.seo ?? null;
@@ -380,25 +379,29 @@ async function runTeam(params: {
           plan,
           seo,
           feedback,
-          onProgress: (note) =>
-            setWork(params.id, 'design', {
-              state: 'working',
-              employeeId: designer.id,
-              name: designer.name,
-              role: designer.role,
-              note,
-            }),
         });
-        // Replace this format's images; a re-run should not leave slide 6 of a
-        // five-slide carousel lying around from the previous version.
-        media = [...media.filter((m) => m.kind !== 'image'), ...result.media];
-        await patch(params.id, { media, direction: result.direction });
-        await done('design', designer, result.note);
+        await patch(params.id, { direction: result.direction });
+        // 'briefed', not 'done': the brief is written and the pictures are not
+        // made yet, and a green tick on a stage nobody has finished is how a
+        // piece reaches the queue looking ready when it is waiting on you.
+        //
+        // Anything already attached by hand is deliberately left alone. A
+        // re-brief does not delete the slides you made against the last one —
+        // uploading a replacement does, slide by slide.
+        await setWork(params.id, 'design', {
+          state: 'briefed',
+          employeeId: designer.id,
+          name: designer.name,
+          role: designer.role,
+          note: result.note,
+        });
+        await creditWork(designer.id);
       } catch (e) {
         const message = e instanceof DesignError ? e.message : (e as Error).message;
         await failed('design', designer, message);
-        // A failed design is fatal for an image format and survivable for a
-        // video one, where the cover frame is a nicety.
+        // A missing brief is fatal for an image format — there is nothing for
+        // anyone to make — and survivable for a video one, where the cover
+        // frame is a nicety next to the cut.
         if (spec.kind === 'image') {
           await patch(params.id, { status: 'failed' as PostStatus, error: `Design: ${message}` });
           throw e;
@@ -407,7 +410,7 @@ async function runTeam(params: {
     }
   }
 
-  // ── the cut and the render ────────────────────────────────────────────────
+  // ── the cut ─────────────────────────────────────────────────────────────
   if (wanted.includes('video')) {
     await patch(params.id, { status: 'rendering' as PostStatus });
     const editor = await who('video');
@@ -423,39 +426,16 @@ async function runTeam(params: {
           feedback,
         });
         await patch(params.id, { cut });
-
-        if (settings.videoProvider === 'none') {
-          await setWork(params.id, 'video', {
-            state: 'skipped',
-            employeeId: editor.id,
-            name: editor.name,
-            role: editor.role,
-            note: `${cut.note} Rendering is switched off — attach a file.`,
-          });
-        } else {
-          await setWork(params.id, 'video', {
-            state: 'working',
-            employeeId: editor.id,
-            name: editor.name,
-            role: editor.role,
-            note: 'Rendering. This takes a few minutes.',
-          });
-          const cover = media.find((m) => m.kind === 'image') ?? null;
-          const video = await renderVideo({
-            postId: params.id,
-            cut,
-            settings,
-            format: params.format,
-            cover,
-          });
-          if (video) {
-            media = [...media.filter((m) => m.kind !== 'video'), video];
-            await patch(params.id, { media });
-          }
-          await done('video', editor, cut.note);
-        }
+        await setWork(params.id, 'video', {
+          state: 'briefed',
+          employeeId: editor.id,
+          name: editor.name,
+          role: editor.role,
+          note: `${cut.note} Make the video and attach it from the queue.`,
+        });
+        await creditWork(editor.id);
       } catch (e) {
-        const message = e instanceof VideoError ? e.message : (e as Error).message;
+        const message = (e as Error).message;
         await failed('video', editor, message);
         // Not fatal: the script and the frames survive, and a file can be
         // attached by hand from the queue.
@@ -847,7 +827,7 @@ export const adminRequestSocialChanges = onCall(
       error: null,
     });
 
-    // A caption-only note never touches the media, and never re-runs a render.
+    // A caption-only note never touches the media, and never re-briefs a stage.
     if (scope.length === 1 && scope[0] === 'caption') {
       const settings = await getSocialSettings();
       if (!post.script) throw new HttpsError('failed-precondition', 'That piece has no script to rewrite.');

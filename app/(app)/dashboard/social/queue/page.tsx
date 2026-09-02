@@ -194,6 +194,23 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   }
 
   const assets = postAssets(post);
+  /**
+   * Nothing is rendered by this backend, so every piece reaches the queue
+   * needing files. Say which ones out loud: a disabled Approve button is a
+   * symptom, not an instruction, and the brief that answers it is one click
+   * away under "Show the working".
+   */
+  const briefCount = post.direction?.length ?? 0;
+  const slidesAttached = assets.filter((a) => a.kind === 'image').length;
+  const missing = (() => {
+    const isVideo = (post.format ?? 'reel') === 'reel' || post.format === 'video';
+    if (isVideo) return assets.some((a) => a.kind === 'video') ? '' : 'the video';
+    if (briefCount > slidesAttached) {
+      const left = briefCount - slidesAttached;
+      return `${left} of ${briefCount} image${briefCount === 1 ? '' : 's'}`;
+    }
+    return assets.length ? '' : 'an image';
+  })();
   const working = WORKING_STATES.includes(post.status);
   const format = post.format ?? 'reel';
 
@@ -288,6 +305,11 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               }}
             />
           </label>
+          {missing ? (
+            <p style={{ margin: 0, fontSize: 11.5, color: colors.warn, lineHeight: 1.45 }}>
+              Still needs {missing}. The brief is under &ldquo;Show the working&rdquo;.
+            </p>
+          ) : null}
 
           <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
             <WorkLine work={post.work} format={format} compact />
@@ -707,6 +729,21 @@ function Working({ post }: { post: SocialPostDoc }) {
         </Section>
       ) : null}
 
+      {post.direction?.length ? (
+        <Section title={post.direction.length === 1 ? 'The picture to make' : 'The pictures to make'}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {post.direction.map((frame, i) => (
+              <Brief
+                key={i}
+                label={post.direction!.length === 1 ? 'The frame' : `Frame ${i + 1}`}
+                overlay={frame.overlay}
+                text={frame.prompt}
+              />
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
       {post.cut?.prompt ? (
         <Section title="The cut">
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>
@@ -784,6 +821,52 @@ function Working({ post }: { post: SocialPostDoc }) {
           </div>
         </Section>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One brief, ready to be used.
+ *
+ * The copy button is the whole point of the block: this text is written to be
+ * pasted somewhere else — into an image tool, or into a message to whoever is
+ * making the picture — and a prompt you have to select by hand across four
+ * lines of wrapped text is a prompt that gets half-copied.
+ */
+function Brief({ label, overlay, text }: { label: string; overlay: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 5 }}>
+        <span style={{ fontSize: 11, fontWeight: 800 }}>{label}</span>
+        {overlay ? (
+          <span style={{ fontSize: 11.5, color: colors.muted }}>on screen: &ldquo;{overlay}&rdquo;</span>
+        ) : null}
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard.writeText(text).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          style={{
+            border: `1px solid ${colors.border}`,
+            background: 'transparent',
+            borderRadius: 6,
+            padding: '2px 8px',
+            fontSize: 11,
+            fontWeight: 700,
+            color: copied ? colors.success : colors.muted,
+            cursor: 'pointer',
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>{text}</p>
     </div>
   );
 }

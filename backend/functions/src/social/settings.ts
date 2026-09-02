@@ -19,9 +19,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { activeTeam, coverageGaps } from './employees';
 import { claudeReady } from './claude';
-import { geminiReady } from './gemini';
 import { tokenVaultReady } from './secrets';
-import { videoConfigured } from './video';
 import {
   DEFAULT_SETTINGS,
   FORMATS,
@@ -78,11 +76,7 @@ const settingsSchema = z.object({
     .max(12)
     .optional(),
 
-  imageProvider: z.enum(['gemini', 'none']).optional(),
-  videoProvider: z.enum(['veo', 'none']).optional(),
   textModel: z.string().min(1).max(120).optional(),
-  imageModel: z.string().min(1).max(120).optional(),
-  videoModel: z.string().min(1).max(120).optional(),
 
   engagementEnabled: z.boolean().optional(),
   autoReply: z.boolean().optional(),
@@ -100,8 +94,6 @@ export const adminGetSocialSettings = onCall(async (req) => {
      */
     readiness: {
       writer: claudeReady(),
-      designer: settings.imageProvider === 'none' || geminiReady(),
-      video: videoConfigured(settings.videoProvider),
       tokenVault: tokenVaultReady(),
     },
     /** What the current roster can and cannot do, in words. */
