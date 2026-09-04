@@ -15,6 +15,8 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
+import { sendToUser } from '../lib/fcm';
+
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
@@ -52,34 +54,31 @@ function matchIdFor(a: string, b: string): string {
   return [a, b].sort().join('_');
 }
 
-// ----- FCM: reads tokens from the users/{uid}/fcmTokens subcollection -----
-// Tokens are stored by registerFcmToken callable as:
-//   users/{uid}/fcmTokens/{token.slice(-20)} → { token, platform, updatedAt }
+/**
+ * Tell both sides they matched.
+ *
+ * Goes through lib/fcm rather than the Admin SDK directly. The app registers
+ * with expo-notifications, which returns an Expo push token on some installs
+ * and a native FCM token on others, and the Admin SDK cannot deliver to an Expo
+ * token. Handing them all to sendEachForMulticast failed per token and logged a
+ * warning nobody read — so the single most important notification in Travel
+ * Partner was silently going nowhere for those users while the match itself was
+ * created correctly. sendToUser picks the transport per token by its shape.
+ */
 async function notifyMatch(uidA: string, uidB: string, matchId: string,
                            nameA: string, nameB: string) {
   const targets: Array<{ uid: string; otherName: string }> = [
     { uid: uidA, otherName: nameB },
     { uid: uidB, otherName: nameA },
   ];
-  await Promise.all(targets.map(async ({ uid, otherName }) => {
-    try {
-      const tokensSnap = await db.collection(`users/${uid}/fcmTokens`).get();
-      const tokens: string[] = tokensSnap.docs
-        .map(d => (d.data() as { token: string }).token)
-        .filter(Boolean);
-      if (!tokens.length) return;
-      await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: {
-          title: "It's a match! 🎉",
-          body: `You and ${otherName} both want to travel together. Say hi!`,
-        },
-        data: { type: 'travelMate.match', matchId },
-      });
-    } catch (e) {
-      console.error(`notifyMatch failed for ${uid}`, e);
-    }
-  }));
+  await Promise.all(targets.map(({ uid, otherName }) =>
+    sendToUser(
+      uid,
+      "It's a match! 🎉",
+      `You and ${otherName} both want to travel together. Say hi!`,
+      { type: 'travelMate.match', matchId },
+    ).catch((e) => console.error(`notifyMatch failed for ${uid}`, e)),
+  ));
 }
 
 export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRequest) => {

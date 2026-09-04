@@ -53,6 +53,21 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     passengerId: 'passenger1', driverId: null, status: 'requested',
     pool: true, poolMembers: ['passenger1', 'joiner1'],
   });
+  // A pool a driver is carrying, with somebody asking for its last seat.
+  await setDoc(doc(db, 'trips/poolTrip2'), {
+    passengerId: 'passenger1', driverId: 'driver1', status: 'matched',
+    pool: true, poolMembers: ['passenger1'],
+  });
+  await setDoc(doc(db, 'trips/poolTrip2/joinRequests/asker1'), {
+    riderId: 'asker1', riderName: 'Asker', status: 'pending', farePerSeat: 240,
+  });
+  await setDoc(doc(db, 'poolRideRequests/poolReq1'), {
+    leaderId: 'passenger1', driverId: 'driver1', status: 'active',
+    passengers: ['passenger1'],
+  });
+  await setDoc(doc(db, 'poolRideRequests/poolReq1/joinRequests/asker1'), {
+    riderId: 'asker1', riderName: 'Asker', status: 'pending', farePerSeat: 200,
+  });
   await setDoc(doc(db, 'wallets/passenger1'), { uid: 'passenger1', balance: 0 });
   await setDoc(doc(db, 'openRequests/trip1'), { tripId: 'trip1', rideType: 'ac', offeredFare: 500 });
   await setDoc(doc(db, 'payouts/payout1'), { driverId: 'driver1', amount: 500, status: 'pending' });
@@ -328,4 +343,38 @@ test('social access tokens are unreadable by everyone, admins included', async (
   // "any signed-in user may read" does not apply to it.
   await assertSucceeds(getDoc(doc(admin, 'system/socialAutomation')));
   await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
+});
+
+test('a seat request is visible to its rider and to the driver deciding it, and nobody else', async () => {
+  const asker = testEnv.authenticatedContext('asker1', { role: 'passenger' }).firestore();
+  const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
+
+  // The rider watching for an answer, and the driver who owes them one.
+  await assertSucceeds(getDoc(doc(asker, 'trips/poolTrip2/joinRequests/asker1')));
+  await assertSucceeds(getDoc(doc(driver, 'trips/poolTrip2/joinRequests/asker1')));
+  await assertSucceeds(getDoc(doc(admin, 'trips/poolTrip2/joinRequests/asker1')));
+
+  // Not the pool's host: the leader owns the fare, the driver owns the car, and
+  // who else is asking to get in is the driver's business.
+  await assertFails(getDoc(doc(passenger, 'trips/poolTrip2/joinRequests/asker1')));
+  await assertFails(getDoc(doc(stranger, 'trips/poolTrip2/joinRequests/asker1')));
+
+  // Every write goes through joinPoolTrip / driverRespondToPoolJoin. A client
+  // that could write here could seat itself in a stranger's car, or answer a
+  // request on the driver's behalf.
+  await assertFails(setDoc(doc(asker, 'trips/poolTrip2/joinRequests/asker1'), { status: 'accepted' }));
+  await assertFails(updateDoc(doc(driver, 'trips/poolTrip2/joinRequests/asker1'), { status: 'accepted' }));
+  await assertFails(setDoc(doc(stranger, 'trips/poolTrip2/joinRequests/stranger1'), { status: 'pending' }));
+});
+
+test('the same rule holds for seat requests on pool ride requests', async () => {
+  const asker = testEnv.authenticatedContext('asker1', { role: 'passenger' }).firestore();
+  const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
+
+  await assertSucceeds(getDoc(doc(asker, 'poolRideRequests/poolReq1/joinRequests/asker1')));
+  await assertSucceeds(getDoc(doc(driver, 'poolRideRequests/poolReq1/joinRequests/asker1')));
+  await assertFails(getDoc(doc(stranger, 'poolRideRequests/poolReq1/joinRequests/asker1')));
+  await assertFails(
+    setDoc(doc(asker, 'poolRideRequests/poolReq1/joinRequests/asker1'), { status: 'accepted' }),
+  );
 });
