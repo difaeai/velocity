@@ -8,6 +8,10 @@
  *     running total, and the 10-minute no-joiner window. If nobody joins the
  *     leader in 10 minutes, driver and leader are BOTH asked whether to go
  *     anyway — going needs both, either one may cancel.
+ *     Riders who ask for one of the free seats after the driver has taken the
+ *     pool land in this card too: the driver accepts or rejects each of them,
+ *     because a car somebody already agreed to drive does not quietly gain
+ *     passengers. The fare is not part of that decision — the leader set it.
  *  2. Nearby pool requests as boxes: who is in each pool (name + fare each),
  *     the total fare, pickup/destination areas, inside a radius the driver
  *     picks. Pool fares are fixed — the driver accepts or rejects, never
@@ -29,7 +33,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { db } from '../firebase';
-import { api, type NearbyPoolRequest } from '../api/client';
+import { api, type NearbyPoolRequest, type PoolJoinRequest } from '../api/client';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { DRIVER_TAB_BAR_HEIGHT } from './DriverTabBar';
@@ -89,6 +93,35 @@ function mmss(ms: number): string {
 
 function MyPoolCard({ pool }: { pool: MyPool }) {
   const [busy, setBusy] = useState(false);
+  /** Riders asking for one of this pool's free seats. */
+  const [pending, setPending] = useState<PoolJoinRequest[]>([]);
+  const [deciding, setDeciding] = useState<string | null>(null);
+
+  // Polled, not streamed: a request already arrives as a push, and this card is
+  // on a screen a driver glances at between fares.
+  useEffect(() => {
+    let alive = true;
+    const read = () => {
+      api.getPoolRequestJoinRequests({ requestId: pool.id })
+        .then((r) => { if (alive) setPending(r.requests); })
+        .catch(() => { if (alive) setPending([]); });
+    };
+    read();
+    const t = setInterval(read, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, [pool.id, pool.filledSlots]);
+
+  async function decideJoin(riderId: string, action: 'accept' | 'reject') {
+    setDeciding(riderId);
+    try {
+      await api.driverRespondToPoolRequestJoin({ requestId: pool.id, riderId, action });
+      setPending((list) => list.filter((r) => r.riderId !== riderId));
+    } catch (e) {
+      Alert.alert('Could not answer that request', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setDeciding(null);
+    }
+  }
 
   const farePerSeat = pool.agreedFarePerSeat ?? pool.proposedFarePerSeat;
   const names = pool.passengerNames ?? {};
@@ -224,8 +257,45 @@ function MyPoolCard({ pool }: { pool: MyPool }) {
       )}
       {!alone && (
         <Text style={styles.pickupHint}>
-          Pick up your riders at {pool.pickupAreaName}. More can join until every seat is taken.
+          Pick up your riders at {pool.pickupAreaName}. More can ask to join until every seat is taken.
         </Text>
+      )}
+
+      {/* Riders asking to get in. Last in the card because it is the only part
+          that is a decision rather than a fact — and it is the driver's alone. */}
+      {pending.length > 0 && (
+        <View style={styles.joinReqBox}>
+          <Text style={styles.joinReqTitle}>
+            {pending.length === 1 ? 'A rider wants a seat' : `${pending.length} riders want a seat`}
+          </Text>
+          {pending.map((r) => (
+            <View key={r.riderId} style={styles.joinReqRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.memberName} numberOfLines={1}>{r.riderName}</Text>
+                <Text style={styles.joinReqFare}>
+                  + {r.farePerSeat} PKR
+                  {r.dropoffAreaName && r.dropoffAreaName !== pool.destinationAreaName
+                    ? ` · drops at ${r.dropoffAreaName}`
+                    : ''}
+                </Text>
+              </View>
+              <Pressable
+                style={[styles.cancelBtn, styles.joinReqBtn, deciding !== null && styles.btnDisabled]}
+                disabled={deciding !== null}
+                onPress={() => decideJoin(r.riderId, 'reject')}
+              >
+                <Text style={styles.cancelBtnText}>No</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.goBtn, styles.joinReqBtn, deciding !== null && styles.btnDisabled]}
+                disabled={deciding !== null}
+                onPress={() => decideJoin(r.riderId, 'accept')}
+              >
+                <Text style={styles.goBtnText}>Take them</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -525,6 +595,19 @@ const styles = themed(() => StyleSheet.create({
   myPoolCard:   { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: `${colors.primary}50`, padding: 14, gap: 6 },
   myPoolHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   myPoolTitle:  { fontSize: 15, fontWeight: '900', color: colors.text },
+  joinReqBox: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    gap: 8,
+  },
+  joinReqTitle: { color: colors.text, fontSize: 13.5, fontWeight: '900' },
+  joinReqRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  joinReqFare: { color: colors.primary, fontSize: 11.5, fontWeight: '800', marginTop: 1 },
+  /* The shared goBtn/cancelBtn are full-width row buttons; in this row they sit
+     beside a name, so the flex has to come back off them. */
+  joinReqBtn: { flex: 0, height: 38, paddingHorizontal: 14 },
   pickupHint:   { fontSize: 12, color: colors.muted, lineHeight: 18 },
 
   waitBox:      { backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10 },

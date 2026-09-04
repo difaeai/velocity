@@ -40,6 +40,19 @@ import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
 
+/**
+ * How long a pool stays visible to riders going the same way while it looks for
+ * a driver. Mirrors POOL_JOIN_WINDOW_MS in the backend's trips/poolShare — the
+ * server is the one that enforces it; this only draws the clock.
+ */
+const POOL_JOIN_WINDOW_MS = 10 * 60 * 1000;
+
+/** "7:12" from milliseconds. */
+function mmss(ms: number): string {
+  const secs = Math.ceil(ms / 1000);
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+}
+
 const STATUS_LABEL: Record<TripStatus, string> = {
   requested:   'Finding you a driver…',
   matched:     'Driver assigned',
@@ -67,6 +80,7 @@ export default function TripScreen() {
   const cancellation = useCancellationSettings();
   const [busy,         setBusy]        = useState(false);
   const [timeLeft,     setTimeLeft]     = useState(54);
+  const [nowMs,        setNowMs]        = useState(() => Date.now());
   const [adjustedFare, setAdjustedFare] = useState(0);
   const [showRating,   setShowRating]   = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
@@ -86,11 +100,14 @@ export default function TripScreen() {
     if (trip?.status === 'completed' && !trip.passengerRated) setShowRating(true);
   }, [trip?.status, trip?.passengerRated]);
 
-  // Countdown timer
+  // Countdown timer. The same beat drives the pool joining window, so a rider
+  // watching their shared ride fill up sees the clock move rather than a
+  // number that only refreshes when something else happens to re-render.
   useEffect(() => {
     if (!trip || trip.status !== 'requested') return;
     const timer = setInterval(() => {
       setTimeLeft((t) => (t > 0 ? t - 1 : 59));
+      setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(timer);
   }, [trip?.status]);
@@ -308,6 +325,18 @@ export default function TripScreen() {
   const poolRiderCount = trip.poolMembers?.length ?? 1;
   const poolSeatsFree = Math.max(0, (trip.maxPoolRiders ?? 4) - poolRiderCount);
 
+  // The ten minutes a pool spends visible to riders going the same way. It runs
+  // from the moment the ride is booked, alongside the search for a driver — the
+  // ride is being offered to drivers and to co-riders at the same time, which
+  // is the whole reason a pool ever fills up.
+  const poolWindowEndsAt =
+    trip.pool && trip.status === 'requested' && trip.createdAt?.seconds
+      ? trip.createdAt.seconds * 1000 + POOL_JOIN_WINDOW_MS
+      : null;
+  const poolWindowLeft = poolWindowEndsAt != null
+    ? Math.max(0, poolWindowEndsAt - nowMs)
+    : null;
+
   if (trip.status === 'requested') {
     const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
@@ -338,6 +367,18 @@ export default function TripScreen() {
               <Text style={styles.poolRideBannerText}>
                 🔀 Shared · {poolRiderCount}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
               </Text>
+              {/* Nobody could tell whether "shared" meant anything was actually
+                  happening. It does: for these ten minutes the ride is on other
+                  riders' screens, and each one who gets in cuts everybody's
+                  fare. Saying so is the difference between waiting and being
+                  ignored. */}
+              {poolWindowLeft != null ? (
+                <Text style={styles.poolRideBannerSub}>
+                  {poolWindowLeft > 0
+                    ? `Riders going your way can join for ${mmss(poolWindowLeft)} — each one who does cuts everyone's fare`
+                    : 'Still looking for a driver — the joining window has closed'}
+                </Text>
+              ) : null}
             </View>
           )}
           <View style={styles.viewersBanner}>
@@ -1075,6 +1116,12 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  poolRideBannerSub: {
+    color: colors.muted,
+    fontSize: 10.5,
+    fontWeight: '700',
+    marginTop: 2,
   },
   // The live-ride version of the banner above: a full card rather than a pill,
   // because by this point it has to carry the rider count, the free seats and

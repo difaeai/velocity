@@ -1,11 +1,22 @@
 /**
  * Pool invite landing screen — /passenger/pool-join/{code}
  *
- * Opened from a pool share link (or by tapping a nearby public pool on the
- * booking screen). Resolves the invite code, shows the ride and the per-seat
- * fare after joining, and books the caller onto the pool.
+ * Opened from a pool share link, from Suggested Rides, or by tapping a pool on
+ * the booking screen. Resolves the invite code, shows the ride and the per-seat
+ * fare after joining, and gets the caller into the car.
+ *
+ * There are two ways in, and the screen says which one this is BEFORE the tap:
+ *
+ *  - The pool is still gathering riders (no driver yet). Joining is instant,
+ *    and a countdown shows how long that window has left.
+ *  - A driver has already agreed to carry it. Joining sends that driver a
+ *    request, and the rider waits here for their answer.
+ *
+ * What never happens on this screen is a negotiation. The fare shown is the
+ * pool's own per-seat tier, set by the rider who started it; a joiner takes it
+ * or does not join.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,6 +38,21 @@ export default function PoolJoinScreen() {
   const [error, setError]     = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  /** Ticks the gathering countdown. Only runs while there is one to show. */
+  const [now, setNow] = useState(() => Date.now());
+
+  const windowEndsAt = info?.gathering ? info.joinWindowEndsAt ?? null : null;
+  useEffect(() => {
+    if (windowEndsAt == null) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [windowEndsAt]);
+
+  const windowLeft = useMemo(() => {
+    if (windowEndsAt == null) return null;
+    const secs = Math.ceil(Math.max(0, windowEndsAt - now) / 1000);
+    return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  }, [windowEndsAt, now]);
 
   useEffect(() => {
     if (!code) return;
@@ -59,9 +85,34 @@ export default function PoolJoinScreen() {
     setJoining(true);
     try {
       const res = await api.joinPoolTrip({ code });
+      // A pool with a driver does not seat anyone on a tap — the driver decides.
+      // Sending the rider to a trip screen for a seat they do not have yet
+      // would be the app telling them they are in a car they are not in.
+      if (res.pending) {
+        await refresh();
+        Alert.alert(
+          'Asked the driver',
+          'The driver has to agree before you take this seat — you will get a notification either way. '
+            + 'Nothing about the fare changes: it is set by the rider who started this pool.',
+        );
+        return;
+      }
       router.replace(`/passenger/trip/${res.tripId}` as Parameters<typeof router.replace>[0]);
     } catch (e) {
       Alert.alert('Could not join', e instanceof FirebaseError ? e.message : 'Please try again.');
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  async function withdraw() {
+    if (!info?.tripId) return;
+    setJoining(true);
+    try {
+      await api.cancelPoolTripJoinRequest({ tripId: info.tripId });
+      await refresh();
+    } catch (e) {
+      Alert.alert('Could not withdraw', e instanceof FirebaseError ? e.message : 'Please try again.');
     } finally {
       setJoining(false);
     }
@@ -140,10 +191,27 @@ export default function PoolJoinScreen() {
               </Text>
             </View>
 
-            {/* Who is driving. A pool only becomes joinable once a driver has
-                agreed a fare with the host, so from here on this is always a
-                real car — and naming it is what turns "join a pool" from an
-                abstraction into a decision somebody can actually make. */}
+            {/* A pool still gathering riders has no driver to name yet, so it
+                says what it IS instead — riders collecting, and how long is
+                left to get in. A rider deciding between this and booking their
+                own ride is choosing between a cheaper seat and a certain one,
+                and they can only make that call if we say which is which. */}
+            {info.gathering ? (
+              <View style={styles.driverBox}>
+                <Text style={styles.driverLabel}>GATHERING RIDERS</Text>
+                <Text style={styles.driverName}>
+                  {windowLeft ? `${windowLeft} left to join` : 'Looking for a driver'}
+                </Text>
+                <Text style={styles.driverVehicle}>
+                  No driver yet — you get in straight away, and the whole pool goes to drivers
+                  together. More riders means a better fare for everyone in it.
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Who is driving, once somebody has agreed to carry this ride.
+                Naming the car is what turns "join a pool" from an abstraction
+                into a decision somebody can actually make. */}
             {info.driverName ? (
               <View style={styles.driverBox}>
                 <Text style={styles.driverLabel}>YOUR DRIVER</Text>
@@ -181,6 +249,10 @@ export default function PoolJoinScreen() {
                 <Text style={styles.fareSub}>
                   Riders currently pay PKR {info.perSeatFareNow} each — everyone's fare drops when you join
                 </Text>
+                <Text style={styles.fareSub}>
+                  This price is set by the rider who started the pool. Joining takes it as it
+                  stands — there is nothing to haggle over on the way in.
+                </Text>
               </View>
             )}
           </View>
@@ -195,28 +267,66 @@ export default function PoolJoinScreen() {
                 <Text style={styles.primaryBtnTxt}>View ride</Text>
               </Pressable>
             </>
-          ) : info.joinable ? (
-            <Pressable
-              style={[styles.primaryBtn, joining && { opacity: 0.6 }]}
-              onPress={join}
-              disabled={joining}
-            >
-              <Text style={styles.primaryBtnTxt}>
-                {joining ? 'Joining…' : `Join pool · PKR ${info.perSeatFareIfYouJoin}`}
+          ) : info.requestStatus === 'pending' ? (
+            <>
+              {/* The tap has happened and the answer is somebody else's to
+                  give. Saying so — and offering the way out — is the whole
+                  difference between waiting and being stuck. */}
+              <Text style={styles.stateNote}>⏳ Waiting for the driver to accept you.</Text>
+              <Text style={styles.finePrint}>
+                The driver decides who else rides in their car. You'll get a notification the
+                moment they answer — you don't have to keep this screen open.
               </Text>
-            </Pressable>
+              <Pressable style={styles.secondaryBtn} onPress={() => void refresh()}>
+                <Text style={styles.secondaryBtnTxt}>{refreshing ? 'Checking…' : 'Check again'}</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryBtn} onPress={() => void withdraw()} disabled={joining}>
+                <Text style={styles.secondaryBtnTxt}>Withdraw my request</Text>
+              </Pressable>
+            </>
+          ) : info.requestStatus === 'rejected' ? (
+            <>
+              <Text style={styles.stateNote}>The driver could not take you on this ride.</Text>
+              <Text style={styles.finePrint}>
+                Nothing to do with you — a driver may already have a fuller car, or a route that
+                no longer suits. Book your own shared ride and let others join you instead.
+              </Text>
+              <Pressable style={styles.primaryBtn} onPress={() => router.replace('/passenger/booking')}>
+                <Text style={styles.primaryBtnTxt}>Book my own shared ride</Text>
+              </Pressable>
+            </>
+          ) : info.joinable ? (
+            <>
+              <Pressable
+                style={[styles.primaryBtn, joining && { opacity: 0.6 }]}
+                onPress={join}
+                disabled={joining}
+              >
+                <Text style={styles.primaryBtnTxt}>
+                  {joining
+                    ? (info.needsDriverApproval ? 'Asking the driver…' : 'Joining…')
+                    : info.needsDriverApproval
+                      ? `Ask the driver for a seat · PKR ${info.perSeatFareIfYouJoin}`
+                      : `Join pool · PKR ${info.perSeatFareIfYouJoin}`}
+                </Text>
+              </Pressable>
+              {/* Which of the two taps this is, said before it is tapped. */}
+              <Text style={styles.finePrint}>
+                {info.needsDriverApproval
+                  ? 'A driver has already agreed to carry this ride, so they decide who else gets in. Your request goes to them.'
+                  : 'No driver yet, so you get in straight away — and the pool goes looking for a car with you already in it.'}
+              </Text>
+            </>
           ) : info.awaitingDriver ? (
             <>
-              {/* Not a dead end — a "not yet". The host is still agreeing a
-                  fare with drivers, and a seat is only real once that is
-                  settled, so the screen says which of the two it is instead of
-                  claiming the ride has departed. */}
+              {/* A pool whose gathering window has run out. Not a dead end for
+                  the rider — just not this car. */}
               <Text style={styles.stateNote}>
-                ⏳ This ride is still agreeing a fare with a driver.
+                ⏳ This ride has stopped taking riders while it waits for a driver.
               </Text>
               <Text style={styles.finePrint}>
-                You can join the moment a driver is confirmed — that is when the fare stops moving
-                and the seat becomes real. Check back in a minute, or book your own ride now.
+                It gathered riders for ten minutes and is now looking for a car. Book your own
+                shared ride — riders going your way can join you the same way.
               </Text>
               <Pressable style={styles.secondaryBtn} onPress={() => void refresh()}>
                 <Text style={styles.secondaryBtnTxt}>{refreshing ? 'Checking…' : 'Check again'}</Text>

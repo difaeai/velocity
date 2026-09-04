@@ -279,9 +279,17 @@ export default function NearbyRidesScreen() {
           ? { dropoffLat: dropChoice.lat, dropoffLng: dropChoice.lng, dropoffAreaName: dropChoice.label }
           : {}),
       });
+      // A pool that already has a driver does not seat anyone on a tap: that
+      // driver agreed to a particular car-load, and they decide who else is in
+      // it. Saying "Joined!" here would be the app promising a seat nobody has
+      // given yet.
       Alert.alert(
-        'Joined!',
-        `You have joined this pool ride at ${res.farePerSeat} PKR/seat. Open "My Requests" to track your ride.`,
+        res.pending ? 'Asked the driver' : 'Joined!',
+        res.pending
+          ? `The driver has to agree before you take this seat at ${res.farePerSeat} PKR. `
+            + 'You will get a notification either way — the fare does not change, it was set by '
+            + 'the rider who started this pool.'
+          : `You have joined this pool ride at ${res.farePerSeat} PKR/seat. Open "My Requests" to track your ride.`,
         [
           {
             text: 'View Request',

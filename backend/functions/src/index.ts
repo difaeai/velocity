@@ -6,7 +6,32 @@
  */
 import { setGlobalOptions } from 'firebase-functions/v2';
 
-setGlobalOptions({ region: 'asia-south1', maxInstances: 20 });
+/**
+ * maxInstances is a CEILING, not a reservation: an instance that is not serving
+ * a request costs nothing, so this number does not change the bill at today's
+ * traffic. What it changes is what happens at a spike.
+ *
+ * It was 20. A 2nd-gen function running on the default 256 MiB gets less than a
+ * full vCPU, and Cloud Run forces concurrency to 1 below 1 CPU — so 20 was 20
+ * requests in flight across the WHOLE backend. That is fine for a handful of
+ * people and wrong for a launch: a hundred riders opening the app at once are
+ * already most of it, and everything past the cap queues and then times out.
+ *
+ * Sign-in is where that hurts most and is least forgivable. `exchangePhoneSession`
+ * is on this path — every OTP that is typed correctly ends here — and it makes a
+ * network round trip of its own (`verifyIdToken` with checkRevoked), so it holds
+ * an instance for a few hundred milliseconds. A queue in front of it turns a
+ * correct code into an error on the screen of somebody who did nothing wrong and
+ * has already spent their SMS.
+ *
+ * 100 leaves room for a thousand people signing up in the same hour while still
+ * being a hard stop against a runaway loop.
+ *
+ * If sign-ups ever outgrow this, the next lever is CPU rather than instances:
+ * `cpu: 1` on the callables lets Cloud Run put concurrency back to 80, which is
+ * far cheaper per request than 80 single-request instances.
+ */
+setGlobalOptions({ region: 'asia-south1', maxInstances: 100 });
 
 // Sign-in bridge: native (Play Integrity attested) phone verification → JS SDK session
 export { exchangePhoneSession } from './auth/sessionExchange';
@@ -77,9 +102,16 @@ export {
 export {
   getPoolTripByCode,
   joinPoolTrip,
+  driverRespondToPoolJoin,
+  cancelPoolTripJoinRequest,
+  getPoolJoinRequests,
   setPoolVisibility,
   getNearbyPublicPoolTrips,
 } from './trips/poolShare';
+
+// One feed for every shared car near you that still has a seat, whichever of
+// the three pooling subsystems that seat happens to live in.
+export { getSuggestedRides } from './trips/suggestedRides';
 
 // Ratings (post-trip)
 export { submitRating } from './ratings';
@@ -183,6 +215,8 @@ export {
   driverRespondToRequest,
   leaderRespondToOffer,
   joinPoolRideRequest,
+  driverRespondToPoolRequestJoin,
+  getPoolRequestJoinRequests,
   cancelPoolRideRequest,
   respondToPoolGoAnyway,
   getNearbyPoolRequests,

@@ -107,6 +107,17 @@ export interface PoolTripByCode {
    * invite screen says so rather than showing a dead end.
    */
   awaitingDriver?: boolean;
+  /**
+   * Still inside the ten minutes in which a driverless pool gathers riders.
+   * Joining one of these is instant — there is no driver to ask yet.
+   */
+  gathering?: boolean;
+  /** Epoch-ms the gathering window closes, so the screen can count it down. */
+  joinWindowEndsAt?: number | null;
+  /** 'pending' | 'rejected' | 'accepted' | 'cancelled' — this rider's own ask. */
+  requestStatus?: string | null;
+  /** True when Join asks the driver rather than seating the rider outright. */
+  needsDriverApproval?: boolean;
   /** Who is driving. Null only while the ride is still awaiting a driver. */
   driverName: string | null;
   driverVehicle: string | null;
@@ -114,6 +125,55 @@ export interface PoolTripByCode {
   driverRating: number | null;
   alreadyJoined: boolean;
   tripId: string | null;
+}
+
+/** One rider waiting on a driver's yes or no for a seat. */
+export interface PoolJoinRequest {
+  riderId: string;
+  riderName: string;
+  riderGender: string;
+  /** What the driver collects from them if taken on. Fixed by the pool. */
+  farePerSeat: number;
+  /** Where they get out — pool requests only; null on booking-flow pools. */
+  dropoffAreaName?: string | null;
+}
+
+/** Which pooling subsystem a suggested seat lives in. */
+export type SuggestedRideKind = 'trip' | 'request' | 'ride';
+
+/**
+ * One shared car with a seat going spare, in the one shape the Suggested Rides
+ * list renders. `kind` decides which join call the screen makes:
+ *   'trip'    → joinPoolTrip({ code: id })
+ *   'request' → joinPoolRideRequest({ requestId: id })
+ *   'ride'    → joinPoolRide({ rideId: id, ... })
+ */
+export interface SuggestedRide {
+  kind: SuggestedRideKind;
+  id: string;
+  pickupAreaName: string;
+  destinationAreaName: string;
+  destinationLat: number | null;
+  destinationLng: number | null;
+  dropRadiusM: number;
+  /** What THIS rider pays. Set by whoever started the pool — never negotiable. */
+  farePerSeat: number;
+  seatsTotal: number;
+  seatsLeft: number;
+  riders: number;
+  males: number;
+  females: number;
+  genderPref: string;
+  distanceKm: number;
+  hasDriver: boolean;
+  driverName: string | null;
+  driverVehicle: string | null;
+  companions: PoolCompanion[];
+  /** Epoch-ms a driverless pool stops gathering riders. */
+  joinWindowEndsAt: number | null;
+  /** True when Join sends a request to the driver instead of taking the seat. */
+  needsDriverApproval: boolean;
+  rideType: string | null;
 }
 
 export interface NearbyPublicPool {
@@ -129,10 +189,14 @@ export interface NearbyPublicPool {
   perSeatFareIfYouJoin: number;
   distanceKm: number;
   /**
-   * Always true: only pools whose driver is confirmed reach this feed at all.
-   * A ride still haggling over its fare is not something to sell a seat in.
+   * Whether a driver has already agreed to carry this ride. False means the
+   * pool is still gathering riders and joining is instant.
    */
   hasDriver?: boolean;
+  /** Epoch-ms a driverless pool stops gathering. Null once it has a driver. */
+  joinWindowEndsAt?: number | null;
+  /** True when Join asks the driver rather than seating the rider outright. */
+  needsDriverApproval?: boolean;
   /** Who is driving, so the rider is choosing a car and not just a price. */
   driverName?: string | null;
   driverVehicle?: string | null;
@@ -354,10 +418,50 @@ export const api = {
   >('setWhatsAppAlerts'),
   // Pool share links — invite codes on booking-flow pool trips
   getPoolTripByCode: callable<{ code: string }, PoolTripByCode>('getPoolTripByCode'),
+  /**
+   * Take a seat on a pool, or ask its driver for one.
+   *
+   * `pending: true` means the pool already has a driver and the request is now
+   * with them — the rider is NOT in the car until that driver accepts.
+   */
   joinPoolTrip: callable<
     { code: string },
-    { ok: boolean; tripId: string; riders: number; perSeatFare: number; alreadyJoined: boolean }
+    {
+      ok: boolean;
+      tripId: string;
+      riders: number;
+      perSeatFare: number;
+      alreadyJoined: boolean;
+      pending?: boolean;
+    }
   >('joinPoolTrip'),
+  /** The driver's yes or no on somebody asking for a seat in their pool. */
+  driverRespondToPoolJoin: callable<
+    { tripId: string; riderId: string; action: 'accept' | 'reject' },
+    { ok: boolean; accepted: boolean }
+  >('driverRespondToPoolJoin'),
+  /** The rider withdraws a seat request the driver has not answered. */
+  cancelPoolTripJoinRequest: callable<{ tripId: string }, { ok: boolean }>('cancelPoolTripJoinRequest'),
+  /** The queue of riders waiting on this driver's answer. */
+  getPoolJoinRequests: callable<
+    { tripId: string },
+    { requests: PoolJoinRequest[] }
+  >('getPoolJoinRequests'),
+  /**
+   * Every shared car near the caller that still has a seat — pool trips, pool
+   * requests and driver-posted rides in one list. Full cars never appear.
+   */
+  getSuggestedRides: callable<
+    {
+      lat: number;
+      lng: number;
+      radiusKm?: number;
+      destLat?: number;
+      destLng?: number;
+      destRadiusKm?: number;
+    },
+    { rides: SuggestedRide[] }
+  >('getSuggestedRides'),
   setPoolVisibility: callable<
     { tripId: string; visibility: PoolVisibility },
     { ok: boolean; visibility: PoolVisibility }
@@ -681,13 +785,23 @@ export const api = {
     { requestId: string; action: 'accept' | 'reject' },
     { ok: boolean; status: string }
   >('leaderRespondToOffer'),
+  /** The driver's yes or no on a rider asking to join the pool they hold. */
+  driverRespondToPoolRequestJoin: callable<
+    { requestId: string; riderId: string; action: 'accept' | 'reject' },
+    { ok: boolean; accepted: boolean }
+  >('driverRespondToPoolRequestJoin'),
+  /** The queue of riders waiting on this driver's answer, for a pool request. */
+  getPoolRequestJoinRequests: callable<
+    { requestId: string },
+    { requests: PoolJoinRequest[] }
+  >('getPoolRequestJoinRequests'),
   joinPoolRideRequest: callable<
     {
       requestId: string;
       // Optional drop-off inside the pool's drop zone; omitted = same destination.
       dropoffLat?: number; dropoffLng?: number; dropoffAreaName?: string;
     },
-    { ok: boolean; farePerSeat: number }
+    { ok: boolean; farePerSeat: number; pending?: boolean }
   >('joinPoolRideRequest'),
   cancelPoolRideRequest: callable<
     { requestId: string },

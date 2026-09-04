@@ -917,16 +917,17 @@ export const cancelTrip = onCall(async (req) => {
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
-    for (const member of (snap.get('poolMembers') as string[] | undefined) ?? []) {
-      if (member !== passengerId) {
-        tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
-      }
+    const coRiders = ((snap.get('poolMembers') as string[] | undefined) ?? [])
+      .filter((member) => member !== passengerId);
+    for (const member of coRiders) {
+      tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
     }
     tx.delete(db.doc(`openRequests/${tripId}`));
 
     return {
       passengerId,
       driverId,
+      coRiders,
       cancelledByRole,
       fee,
       rate,
@@ -936,7 +937,21 @@ export const cancelTrip = onCall(async (req) => {
     };
   });
 
-  const { passengerId, driverId, cancelledByRole, fee, paidFromWallet, addedToOutstanding } = outcome;
+  const { passengerId, driverId, coRiders, cancelledByRole, fee, paidFromWallet, addedToOutstanding } = outcome;
+
+  // Everybody else who was in this car. They are released above — their
+  // activeTripId is already cleared — but nobody was telling them, so a rider
+  // who joined somebody's shared ride would stand at their pickup waiting for a
+  // car that had been called off. Now that a pool gathers riders before it even
+  // has a driver, that is no longer a rare corner.
+  if (coRiders.length > 0) {
+    await sendToUsers(
+      coRiders,
+      '❌ Your shared ride was cancelled',
+      'The ride you joined is no longer running. Book another — you have not been charged.',
+      { tripId },
+    );
+  }
 
   // Tell the wronged party what happened, and the canceller what it cost them.
   if (cancelledByRole === 'driver') {

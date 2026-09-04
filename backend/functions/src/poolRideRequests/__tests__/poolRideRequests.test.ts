@@ -5,8 +5,10 @@
  *  - createPoolRideRequest: persists correct structure, gender check, first name recorded
  *  - driverRespondToRequest: accept-only (fares fixed, counters refused), starts no-joiner window
  *  - leaderRespondToOffer: accept/reject state machine for legacy negotiating docs
- *  - joinPoolRideRequest: open + active joinable, gender enforced, fare locked,
- *    2 km drop radius, driverless pools stay open when full
+ *  - joinPoolRideRequest: a driverless pool seats you outright; once a driver
+ *    holds the pool the join is QUEUED for them to accept or reject. Gender
+ *    enforced, fare locked, 2 km drop radius, driverless pools stay open when full
+ *  - driverRespondToPoolRequestJoin: the driver's yes or no, and only theirs
  *  - respondToPoolGoAnyway: both must agree to go, either cancels, window enforced
  *  - cancelPoolRideRequest: leader-only
  *  - getNearbyPoolRequests: members (first name + fare) and totals per pool
@@ -23,6 +25,8 @@ import {
   driverRespondToRequest,
   leaderRespondToOffer,
   joinPoolRideRequest,
+  driverRespondToPoolRequestJoin,
+  getPoolRequestJoinRequests,
   cancelPoolRideRequest,
   respondToPoolGoAnyway,
   getNearbyPoolRequests,
@@ -257,15 +261,29 @@ describe('joinPoolRideRequest', () => {
     return id;
   }
 
-  it('joiner receives the agreed fare per seat', async () => {
+  it('joiner is quoted the agreed fare per seat, and is queued for the driver', async () => {
     const id = await setupActive();
     const res = await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
     expect(res.farePerSeat).toBe(200);
+    // A driver already agreed to carry a specific car-load. Another person in
+    // it is a change to THEIR job, so they are the one who says yes.
+    expect(res.pending).toBe(true);
+
+    const snap = await db().doc(`poolRideRequests/${id}`).get();
+    expect(snap.data()!.filledSlots).toBe(1);      // not seated yet
+    expect(snap.data()!.passengers).not.toContain(JOINER);
+
+    const q = (await db().doc(`poolRideRequests/${id}/joinRequests/${JOINER}`).get()).data()!;
+    expect(q.status).toBe('pending');
+    expect(q.farePerSeat).toBe(200);
   });
 
-  it('filledSlots increments and passenger is added', async () => {
+  it('filledSlots increments and passenger is added once the driver accepts', async () => {
     const id = await setupActive();
     await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
 
     const snap = await db().doc(`poolRideRequests/${id}`).get();
     expect(snap.data()!.filledSlots).toBe(2);
@@ -276,6 +294,9 @@ describe('joinPoolRideRequest', () => {
     const id = await createRequest(LEADER, { totalSlots: 2 });
     await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
     await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
 
     const snap = await db().doc(`poolRideRequests/${id}`).get();
     expect(snap.data()!.status).toBe('full');
@@ -348,6 +369,9 @@ describe('joinPoolRideRequest', () => {
     const id = await createRequest(LEADER, { totalSlots: 2 });
     await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
     await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
     // Ride is now full
     await seedUser('third-uid', 'male');
     await expect(
@@ -370,9 +394,75 @@ describe('joinPoolRideRequest', () => {
 
   it('joiner cannot supply a custom fare (farePerSeat is always the agreed amount)', async () => {
     const id = await setupActive();
-    // joinPoolRideRequest takes no fare input — the response always returns the agreed fare
+    // joinPoolRideRequest takes no fare input — the response always returns the
+    // agreed fare. The leader set it; nobody joining gets to move it.
     const res = await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
     expect(res.farePerSeat).toBe(200); // locked to agreed fare
+  });
+});
+
+// ── driverRespondToPoolRequestJoin ────────────────────────────────────────────
+
+describe('driverRespondToPoolRequestJoin', () => {
+  async function poolWithRequest() {
+    const id = await createRequest();
+    await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    return id;
+  }
+
+  it('seats the rider on accept at the pool fare', async () => {
+    const id = await poolWithRequest();
+    const res = await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
+    expect(res.accepted).toBe(true);
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.passengers).toContain(JOINER);
+    expect(d.filledSlots).toBe(2);
+  });
+
+  it('leaves the car untouched on reject, and one refusal is final', async () => {
+    const id = await poolWithRequest();
+    const res = await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'reject' }, DRIVER),
+    );
+    expect(res.accepted).toBe(false);
+
+    const d = (await db().doc(`poolRideRequests/${id}`).get()).data()!;
+    expect(d.passengers).not.toContain(JOINER);
+    await expect(joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER)))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('answers each request exactly once', async () => {
+    const id = await poolWithRequest();
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
+    await expect(
+      driverRespondToPoolRequestJoin.run(
+        driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+      ),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('shows the holding driver the queue they have to answer', async () => {
+    const id = await poolWithRequest();
+    const q = await getPoolRequestJoinRequests.run(driverReq({ requestId: id }, DRIVER));
+    expect(q.requests).toHaveLength(1);
+    expect(q.requests[0].riderId).toBe(JOINER);
+    expect(q.requests[0].farePerSeat).toBe(200);
+  });
+
+  it('SECURITY: a driver who does not hold this pool cannot answer for it', async () => {
+    const id = await poolWithRequest();
+    await expect(
+      driverRespondToPoolRequestJoin.run(
+        driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, 'other-driver'),
+      ),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
   });
 });
 
