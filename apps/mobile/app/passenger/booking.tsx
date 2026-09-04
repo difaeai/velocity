@@ -16,7 +16,7 @@ import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
-import { api, type CommuteDay, type NearbyPublicPool } from '../../src/api/client';
+import { api, type CommuteDay, type SuggestedRide } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { AdBanner } from '../../src/ads';
@@ -144,6 +144,12 @@ const ANCHOR_FACTOR = 0.8;
 function anchorFare(est: { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number }): number {
   const target = est.recommendedFare * ANCHOR_FACTOR;
   return round5(Math.min(est.suggestedMaxBid, Math.max(est.minAcceptableBid, target)));
+}
+
+/** "7:12" — how long a pool still gathering riders has left to take them. */
+function poolCountdown(endsAt: number, now: number): string {
+  const secs = Math.ceil(Math.max(0, endsAt - now) / 1000);
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -342,8 +348,10 @@ export default function Booking() {
   // Pool rides: public → nearby riders can discover and join; private → only
   // people with the share link can join.
   const [poolVisibility, setPoolVisibility] = useState<PoolVisibility>('public');
-  const [nearbyPools, setNearbyPools] = useState<NearbyPublicPool[]>([]);
+  const [nearbyPools, setNearbyPools] = useState<SuggestedRide[]>([]);
   const [poolsLoading, setPoolsLoading] = useState(false);
+  /** Ticks the "gathering riders" countdowns on the rows below. */
+  const [poolNow, setPoolNow] = useState(() => Date.now());
   const [poolRadiusKm, setPoolRadiusKm] = useState<number>(DEFAULT_POOL_RADIUS_KM);
   const [joinCode, setJoinCode] = useState('');
   // Wallet ride payments depend on wallet top-ups, which are "Coming Soon" for
@@ -422,7 +430,7 @@ export default function Booking() {
     if (stage === 'route' || !coords) return;
     let alive = true;
     setPoolsLoading(true);
-    api.getNearbyPublicPoolTrips({
+    api.getSuggestedRides({
       lat: coords.lat,
       lng: coords.lng,
       radiusKm: poolRadiusKm,
@@ -430,11 +438,20 @@ export default function Booking() {
         ? { destLat: dropoffCoords.lat, destLng: dropoffCoords.lng, destRadiusKm: poolRadiusKm }
         : {}),
     })
-      .then((r) => { if (alive) setNearbyPools(r.pools); })
+      .then((r) => { if (alive) setNearbyPools(r.rides); })
       .catch(() => { if (alive) setNearbyPools([]); /* discovery is best-effort */ })
       .finally(() => { if (alive) setPoolsLoading(false); });
     return () => { alive = false; };
   }, [stage, poolRadiusKm, coords?.lat, coords?.lng, dropoffCoords?.lat, dropoffCoords?.lng]);
+
+  // One ticker for every countdown in the list, and only while there is one to
+  // count: a pool still gathering riders is the only row with a clock on it.
+  const hasGatheringPool = nearbyPools.some((p) => !p.hasDriver && p.joinWindowEndsAt != null);
+  useEffect(() => {
+    if (!hasGatheringPool) return;
+    const t = setInterval(() => setPoolNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [hasGatheringPool]);
 
   // Remembered search radius, restored before the first lookup runs.
   useEffect(() => {
@@ -445,6 +462,23 @@ export default function Booking() {
       })
       .catch(() => {});
   }, []);
+
+  /**
+   * Open one of the suggested rides.
+   *
+   * The three pooling subsystems have three different join surfaces, and the
+   * rider is not required to know that. A booking-flow pool has a proper join
+   * screen — driver, companions, gender mix, fare breakdown — so it goes there.
+   * The other two are joined from the Suggested Rides list, which knows how to
+   * call each of them and how to report a request that needs a driver's yes.
+   */
+  function openSuggestedRide(ride: SuggestedRide) {
+    if (ride.kind === 'trip') {
+      router.push(`/passenger/pool-join/${ride.id}` as Parameters<typeof router.push>[0]);
+      return;
+    }
+    router.push('/passenger/suggested-rides');
+  }
 
   function changePoolRadius(km: number) {
     setPoolRadiusKm(km);
@@ -959,48 +993,54 @@ export default function Booking() {
                   <Text style={styles.poolFindText}>Looking for rides going your way…</Text>
                 </View>
               ) : nearbyPools.length > 0 ? (
-                nearbyPools.slice(0, 3).map((p) => (
+                nearbyPools.slice(0, 4).map((p) => (
                   <Pressable
-                    key={p.code}
+                    key={`${p.kind}:${p.id}`}
                     style={({ pressed }) => [styles.matchRow, pressed && { opacity: 0.75 }]}
-                    onPress={() => router.push(`/passenger/pool-join/${p.code}` as Parameters<typeof router.push>[0])}
+                    onPress={() => openSuggestedRide(p)}
                   >
                     <View style={styles.matchIcon}>
                       <PoolIcon size={17} color={colors.primary} accent={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.matchDest} numberOfLines={1}>{p.dropoffAddress}</Text>
+                      <Text style={styles.matchDest} numberOfLines={1}>{p.destinationAreaName}</Text>
                       <Text style={styles.matchMeta} numberOfLines={1}>
-                        {p.distanceKm} km away · {RIDE_TYPE_LABELS[p.rideType] ?? p.rideType} · {p.seatsLeft} seat{p.seatsLeft !== 1 ? 's' : ''} left
+                        {p.distanceKm} km away · {p.seatsLeft} seat{p.seatsLeft !== 1 ? 's' : ''} left of {p.seatsTotal}
                       </Text>
-                      {/* Who's already in the car, and who is driving it. Riders
-                          decide on this before fare — sharing with the opposite
-                          gender is a real consideration here, and so is knowing
-                          this is a real car with a real driver rather than a
-                          request somebody has posted. */}
+                      {/* Who's already in the car. Riders decide on this before
+                          fare — sharing with the opposite gender is a real
+                          consideration here. */}
                       <Text style={styles.matchGender} numberOfLines={1}>
                         {poolGenderSummary(p.males, p.females)}
                         {p.companions && p.companions.length > 0
                           ? ` · with ${p.companions.map((c) => c.firstName).join(', ')}`
                           : ''}
                       </Text>
+                      {/* The one line that decides it: a car that is coming, or
+                          a pool still filling up that you get into instantly.
+                          Both are worth joining; they are worth joining for
+                          different reasons, and the row has to say which. */}
                       <Text style={styles.matchDriver} numberOfLines={1}>
-                        {p.driverName
-                          ? `🚗 ${p.driverName}${p.driverVehicle ? ` · ${p.driverVehicle}` : ''} — on the way`
-                          : '🚗 Driver confirmed — on the way'}
+                        {p.hasDriver
+                          ? `🚗 ${p.driverName ?? 'Driver confirmed'}${p.driverVehicle ? ` · ${p.driverVehicle}` : ''} — on the way`
+                          : p.joinWindowEndsAt != null
+                            ? `⏳ Gathering riders · ${poolCountdown(p.joinWindowEndsAt, poolNow)} left to join`
+                            : '⏳ Looking for a driver'}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.matchFare}>PKR {p.perSeatFareIfYouJoin}</Text>
-                      <Text style={styles.matchJoin}>Join →</Text>
+                      <Text style={styles.matchFare}>PKR {p.farePerSeat}</Text>
+                      <Text style={styles.matchJoin}>
+                        {p.needsDriverApproval ? 'Ask →' : 'Join →'}
+                      </Text>
                     </View>
                   </Pressable>
                 ))
               ) : (
                 <Text style={styles.noMatchHint}>
-                  No confirmed shared rides within {poolRadiusKm} km going your way yet — widen the
-                  search above, or book your own below as a Share Ride and let others join you once
-                  your driver is confirmed.
+                  No shared ride within {poolRadiusKm} km going your way has a seat free — widen the
+                  search above, or book your own below as a Share Ride. Yours then shows up here for
+                  everyone else for ten minutes, which is how these fill up.
                 </Text>
               )}
             </>
@@ -1008,7 +1048,7 @@ export default function Booking() {
             <Pressable style={styles.widenRow} onPress={() => setRadiusOpen(true)}>
               <PoolIcon size={14} color={colors.muted} accent={colors.muted} />
               <Text style={styles.widenText}>
-                No confirmed shared ride within {poolRadiusKm} km yet — tap to search wider
+                No shared ride with a free seat within {poolRadiusKm} km — tap to search wider
               </Text>
             </Pressable>
           )}
@@ -1017,7 +1057,12 @@ export default function Booking() {
                Two taps' worth of screen, not two screens. Both cards show the
                same price on purpose — a pool IS the full fare until someone
                actually joins, and pretending otherwise is the one thing riders
-               get wrong about pooling. */}
+               get wrong about pooling.
+
+               The fare you name here is yours to name, and it stays yours: you
+               are the one who offers it to drivers and the one who can raise
+               it. Riders who join afterwards take the per-seat share of it as
+               it stands — there is no second negotiation inside a pool. */}
           <Text style={styles.stepLabel}>OR BOOK YOUR OWN · HOW DO YOU WANT TO RIDE?</Text>
           <View style={styles.pickRow}>
             <Pressable
@@ -1038,8 +1083,9 @@ export default function Booking() {
               </View>
               <Text style={styles.pickPrice}>PKR {fare}</Text>
               <Text style={styles.pickSub}>
-                Once your driver is confirmed, riders going your way can join — and your fare drops
-                to PKR {poolShareFare} each as they do.
+                For 10 minutes your ride shows up for riders going your way, and they can hop in
+                straight away — your fare drops to PKR {poolShareFare} each as they do. After a
+                driver takes it, you decide nothing more: they do.
               </Text>
               <View style={styles.saveBadge}>
                 <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>

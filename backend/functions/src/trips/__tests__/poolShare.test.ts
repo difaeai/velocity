@@ -7,8 +7,9 @@
  *  - getPoolTripByCode: join snapshot with correct per-seat tier maths
  *  - joinPoolTrip: adds rider, recomputes everyone's per-seat fare, records the
  *    roster, idempotent for existing members, rejects when full
- *  - CONFIRMED-ONLY: a pool still haggling with drivers ('requested') is never
- *    discoverable and cannot be joined — only a matched ride can be shared
+ *  - TWO WAYS IN: a pool still looking for a driver gathers riders for ten
+ *    minutes (joining is instant); once a driver holds it, a joiner is queued
+ *    and that driver accepts or rejects them
  *  - the roster names everyone in the car, for the driver and the riders both
  *  - visibility: private pools never appear in nearby discovery; the host's
  *    own pool is excluded; setPoolVisibility is host-only
@@ -21,6 +22,9 @@ import { createTrip } from '../index';
 import {
   getPoolTripByCode,
   joinPoolTrip,
+  driverRespondToPoolJoin,
+  cancelPoolTripJoinRequest,
+  getPoolJoinRequests,
   setPoolVisibility,
   getNearbyPublicPoolTrips,
 } from '../poolShare';
@@ -68,7 +72,7 @@ async function confirmWithDriver(tripId: string, fare = 400) {
   );
 }
 
-/** A pool that already has its driver — the only kind anyone may join. */
+/** A pool a driver has agreed to carry — joining one of these has to be asked. */
 async function createConfirmedPool(uid = HOST, overrides: Record<string, unknown> = {}) {
   const res = await createPool(uid, overrides);
   await confirmWithDriver(res.tripId);
@@ -154,12 +158,27 @@ describe('getPoolTripByCode', () => {
     expect(info.companions.map((c: { firstName: string }) => c.firstName)).toEqual(['User']);
   });
 
-  it('says a pool is still finding a driver rather than offering a seat in it', async () => {
+  it('offers a seat in a pool that is still gathering riders, and names it as such', async () => {
     const { shareCode } = await createPool(); // still 'requested'
     const info = await getPoolTripByCode.run(makeReq({ code: shareCode! }, JOINER));
+    // No driver yet — which is exactly why joining is instant rather than a
+    // request: there is nobody to ask, and the extra rider is what makes the
+    // job worth taking when a driver does look at it.
     expect(info.awaitingDriver).toBe(true);
-    expect(info.joinable).toBe(false);
+    expect(info.gathering).toBe(true);
+    expect(info.joinable).toBe(true);
+    expect(info.needsDriverApproval).toBe(false);
     expect(info.driverName).toBeNull();
+  });
+
+  it('closes the gathering window ten minutes after the pool was booked', async () => {
+    const { tripId, shareCode } = await createPool();
+    await db().doc(`trips/${tripId}`).update({
+      createdAt: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    const info = await getPoolTripByCode.run(makeReq({ code: shareCode! }, JOINER));
+    expect(info.gathering).toBe(false);
+    expect(info.joinable).toBe(false);
   });
 
   it('rejects unknown codes', async () => {
@@ -170,7 +189,7 @@ describe('getPoolTripByCode', () => {
 
 describe('joinPoolTrip', () => {
   it('adds the rider and drops everyone to the tier fare', async () => {
-    const { tripId, shareCode } = await createConfirmedPool();
+    const { tripId, shareCode } = await createPool();
     const res = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     expect(res.alreadyJoined).toBe(false);
     expect(res.riders).toBe(2);
@@ -187,26 +206,56 @@ describe('joinPoolTrip', () => {
     expect(joiner.activeTripId).toBe(tripId);
   });
 
-  it('REFUSES a pool that has not agreed a fare with a driver yet', async () => {
-    // The bug this closes: a rider could be sold a seat on a ride that was
-    // still being haggled over, and could then be left holding an activeTripId
-    // for a trip that expired or was cancelled out from under them.
-    const { shareCode } = await createPool();
-    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
-      .rejects.toThrow(/still agreeing a fare with a driver/);
+  it('seats a rider outright on a pool that has no driver to ask', async () => {
+    // A pool nobody can see until a driver takes it is a pool nobody joins —
+    // the rider who booked it rides alone and everyone on the same road never
+    // finds out it existed. Ten minutes of visibility is what fills these cars.
+    const { tripId, shareCode } = await createPool();
+    const res = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+    expect(res.pending).toBe(false);
+    expect(res.riders).toBe(2);
 
-    // …and goes through the moment the driver is confirmed.
-    const { tripId } = await createPool(JOINER2);
-    await db().doc(`users/${JOINER}`).set({ displayName: 'User pool-joiner' });
     const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
-    await confirmWithDriver(tripId);
-    const ok = await joinPoolTrip.run(makeReq({ code: trip.shareCode as string }, JOINER));
-    expect(ok.riders).toBe(2);
+    expect(trip.poolMembers).toEqual([HOST, JOINER]);
+    // The driver feed has to learn the job grew: a driver deciding on this ride
+    // must see two riders and two fares, not the one that was posted.
+    const mirror = (await db().doc(`openRequests/${tripId}`).get()).data()!;
+    expect(mirror.poolRiders).toBe(2);
+  });
+
+  it('refuses a pool whose ten-minute gathering window has closed', async () => {
+    const { tripId, shareCode } = await createPool();
+    await db().doc(`trips/${tripId}`).update({
+      createdAt: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
+      .rejects.toThrow(/stopped taking new riders/);
+  });
+
+  it('QUEUES the rider for the driver once one has agreed to carry the pool', async () => {
+    // A car somebody already agreed to drive does not silently acquire
+    // passengers: the driver took a specific job, and a fourth person in it is
+    // a change to THEIR work. So the tap asks rather than seats.
+    const { tripId, shareCode } = await createConfirmedPool();
+    const res = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+    expect(res.pending).toBe(true);
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolMembers).toEqual([HOST]); // not seated yet
+
+    const reqDoc = (await db().doc(`trips/${tripId}/joinRequests/${JOINER}`).get()).data()!;
+    expect(reqDoc.status).toBe('pending');
+    // Quoted at the pool's own tier — the joiner never named this number.
+    expect(reqDoc.farePerSeat).toBe(240);
+
+    // Asking twice is not a second request.
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
+      .rejects.toThrow(/already with the driver/);
   });
 
   it('writes the joiner onto the roster so everybody knows who is in the car', async () => {
     await db().doc(`users/${JOINER}`).set({ name: 'Ayesha Malik', gender: 'female' });
-    const { tripId, shareCode } = await createConfirmedPool();
+    const { tripId, shareCode } = await createPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
 
     const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
@@ -220,7 +269,7 @@ describe('joinPoolTrip', () => {
   });
 
   it('is idempotent for existing members', async () => {
-    const { shareCode } = await createConfirmedPool();
+    const { shareCode } = await createPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     const again = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     expect(again.alreadyJoined).toBe(true);
@@ -228,7 +277,7 @@ describe('joinPoolTrip', () => {
   });
 
   it('rejects when the pool is full', async () => {
-    const { shareCode } = await createConfirmedPool();
+    const { shareCode } = await createPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER2));
     const full = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER3));
@@ -241,8 +290,79 @@ describe('joinPoolTrip', () => {
   it('SECURITY: a rider with their own active trip cannot join', async () => {
     const { shareCode } = await createConfirmedPool();
     await createPool(JOINER); // joiner hosts their own active pool
+    // Refused at the ASK, not at approval: being told this is useful now, and
+    // useless after a driver has held a seat for you.
     await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
       .rejects.toThrow(/already have an active trip/);
+  });
+});
+
+describe('driverRespondToPoolJoin', () => {
+  const DRIVER = 'pool-driver';
+
+  /** A confirmed pool with one rider waiting on the driver's answer. */
+  async function poolWithRequest() {
+    const { tripId, shareCode } = await createConfirmedPool();
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+    return { tripId, shareCode };
+  }
+
+  it('seats the rider on accept, at exactly the fare they were quoted', async () => {
+    const { tripId } = await poolWithRequest();
+    const res = await driverRespondToPoolJoin.run(
+      makeReq({ tripId, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
+    expect(res.accepted).toBe(true);
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolMembers).toEqual([HOST, JOINER]);
+    expect(trip.poolPerSeatFare).toBe(240);
+    expect((await db().doc(`users/${JOINER}`).get()).get('activeTripId')).toBe(tripId);
+  });
+
+  it('closes the request on reject and leaves the car as it was', async () => {
+    const { tripId } = await poolWithRequest();
+    const res = await driverRespondToPoolJoin.run(
+      makeReq({ tripId, riderId: JOINER, action: 'reject' }, DRIVER),
+    );
+    expect(res.accepted).toBe(false);
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolMembers).toEqual([HOST]);
+    // One refusal is an answer — the same rider cannot re-ask their way in.
+    const { shareCode } = trip as { shareCode: string };
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode }, JOINER)))
+      .rejects.toThrow(/could not take you/);
+  });
+
+  it('answers each request once', async () => {
+    const { tripId } = await poolWithRequest();
+    await driverRespondToPoolJoin.run(makeReq({ tripId, riderId: JOINER, action: 'accept' }, DRIVER));
+    await expect(
+      driverRespondToPoolJoin.run(makeReq({ tripId, riderId: JOINER, action: 'accept' }, DRIVER)),
+    ).rejects.toThrow(/already been answered/);
+  });
+
+  it('SECURITY: only the assigned driver decides who rides in their car', async () => {
+    const { tripId } = await poolWithRequest();
+    // Not the host either — the leader owns the fare, the driver owns the car.
+    await expect(
+      driverRespondToPoolJoin.run(makeReq({ tripId, riderId: JOINER, action: 'accept' }, HOST)),
+    ).rejects.toThrow(/driver can answer/);
+    await expect(getPoolJoinRequests.run(makeReq({ tripId }, HOST)))
+      .rejects.toThrow(/driver can see/);
+  });
+
+  it('shows the driver the queue, and lets the rider withdraw from it', async () => {
+    const { tripId } = await poolWithRequest();
+    const queue = await getPoolJoinRequests.run(makeReq({ tripId }, DRIVER));
+    expect(queue.requests).toHaveLength(1);
+    expect(queue.requests[0].riderId).toBe(JOINER);
+    expect(queue.requests[0].farePerSeat).toBe(240);
+
+    await cancelPoolTripJoinRequest.run(makeReq({ tripId }, JOINER));
+    const after = await getPoolJoinRequests.run(makeReq({ tripId }, DRIVER));
+    expect(after.requests).toHaveLength(0);
   });
 });
 
@@ -269,21 +389,35 @@ describe('visibility', () => {
     expect(res.pools).toHaveLength(0);
   });
 
-  it('NEVER surfaces a pool that is still haggling with drivers', async () => {
-    // The whole point of the confirmed-only rule: a rider must not be offered a
-    // seat in a car nobody has agreed to drive yet, at a price that can still
-    // move. The identical pool becomes discoverable once its driver is locked.
+  it('surfaces a pool still gathering riders, and says it has no driver yet', async () => {
     const { tripId } = await createPool(HOST); // status 'requested'
-    const hidden = await getNearbyPublicPoolTrips.run(
+    const gathering = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
     );
-    expect(hidden.pools).toHaveLength(0);
+    expect(gathering.pools).toHaveLength(1);
+    expect(gathering.pools[0].hasDriver).toBe(false);
+    // Instant to join, and the row can count the window down.
+    expect(gathering.pools[0].needsDriverApproval).toBe(false);
+    expect(typeof gathering.pools[0].joinWindowEndsAt).toBe('number');
 
     await confirmWithDriver(tripId);
-    const shown = await getNearbyPublicPoolTrips.run(
+    const confirmed = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
     );
-    expect(shown.pools).toHaveLength(1);
+    expect(confirmed.pools).toHaveLength(1);
+    expect(confirmed.pools[0].hasDriver).toBe(true);
+    expect(confirmed.pools[0].needsDriverApproval).toBe(true);
+  });
+
+  it('drops a driverless pool out of discovery once its window has closed', async () => {
+    const { tripId } = await createPool(HOST);
+    await db().doc(`trips/${tripId}`).update({
+      createdAt: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    const res = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER),
+    );
+    expect(res.pools).toHaveLength(0);
   });
 
   it('carries the driver and the people already aboard, so the rider picks a car', async () => {

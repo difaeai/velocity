@@ -148,6 +148,11 @@ export interface Trip {
   poolPerSeatFare?: number;
   maxPoolRiders?: number;
   /**
+   * When the trip was created. Present on pools so the screen can count down
+   * the ten minutes in which riders going the same way may still hop in.
+   */
+  createdAt?: { seconds: number } | null;
+  /**
    * Riders picked up along the driver's route each rode a different piece of it,
    * so they each have their own fare — see the leg-split in the backend's
    * lib/enRouteFare. When this is present it, not `poolPerSeatFare`, is what

@@ -25,6 +25,7 @@ import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
+import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/suggestedRides';
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
@@ -42,6 +43,7 @@ import {
   SearchIcon,
   type ServiceIconProps,
 } from '../../src/ui/ServiceIcons';
+import { PoolIcon } from '../../src/ui/RideIcons';
 import { isRecognitionAvailable } from '../../src/voice/speech';
 
 const { width } = Dimensions.get('window');
@@ -100,6 +102,13 @@ export default function PassengerHome() {
   // enforces the real limits (once per offer per 12 hours, capped per day).
   // Nothing renders from it — the offer arrives as a push.
   useNearbyBusinessAdCheck(coords);
+
+  // Shared cars around this rider that still have a seat — every pooling
+  // subsystem merged into one count. This is the number behind the Suggested
+  // Rides row below "Where to?": it is the difference between "tap to find out"
+  // and "three cars are going your way right now", and only the second one is
+  // worth a tap.
+  const suggested = useSuggestedRides(coords);
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -350,6 +359,52 @@ export default function PassengerHome() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* ── Suggested Rides ──────────────────────────────────────────────
+             Shared cars near this rider that still have a seat, whichever way
+             they were created — a pool somebody booked, riders clubbing
+             together, or a driver selling seats on a route they are already
+             driving.
+
+             It sits here, under the two ways of STARTING a ride, because it is
+             the third one: not "where do you want to go" but "somebody is
+             already going, do you want in". That question only used to be
+             askable from inside the booking flow, after a destination had been
+             typed — which is no use at all to the rider who has not decided
+             anything yet and simply wants to know if a cheap seat exists.
+
+             Full cars never appear (the server drops them), so every row here
+             is a seat that can actually be taken. ── */}
+        <Pressable
+          style={({ pressed }) => [styles.suggestedRow, pressed && { opacity: 0.85 }]}
+          onPress={() => router.push('/passenger/suggested-rides')}
+          accessibilityRole="button"
+          accessibilityLabel="Suggested Rides — shared cars near you with a seat free"
+        >
+          <View style={styles.suggestedIcon}>
+            <PoolIcon size={19} color={colors.primary} accent={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.suggestedTitle}>Suggested Rides</Text>
+            <Text style={styles.suggestedSub} numberOfLines={1}>
+              {!suggested.loaded
+                ? 'Looking for shared rides around you…'
+                : suggested.count === 0
+                  ? `No shared seats within ${HOME_SUGGESTED_RADIUS_KM} km right now — tap to search wider`
+                  : suggested.nearestDestination
+                    ? `${suggested.count} going your way · ${suggested.nearestDestination}`
+                      + (suggested.cheapestFare ? ` · from PKR ${suggested.cheapestFare}` : '')
+                    : `${suggested.count} shared ride${suggested.count === 1 ? '' : 's'} with a seat free`}
+            </Text>
+          </View>
+          {suggested.count > 0 ? (
+            <View style={styles.suggestedCount}>
+              <Text style={styles.suggestedCountTxt}>{suggested.count}</Text>
+            </View>
+          ) : (
+            <Text style={styles.suggestedArrow}>→</Text>
+          )}
+        </Pressable>
 
         {/* ── Services — city rides live in "Where to?", so only the two
              services that are NOT plain city rides get tiles ── */}
@@ -924,6 +979,41 @@ const styles = themed(() => StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: 2,
   },
+  /* Suggested Rides — one row, lime-edged, directly under the hero pair. A
+     card here would have cost the sheet another 90px and pushed Services off
+     the first screen; a row earns its place at a third of that. */
+  suggestedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: 'rgba(204,255,0,0.07)',
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  suggestedIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(204,255,0,0.12)',
+  },
+  suggestedTitle: { color: '#ffffff', fontSize: 14.5, fontWeight: '900' },
+  suggestedSub: { color: '#9aa2a0', fontSize: 11.5, fontWeight: '600', marginTop: 1 },
+  suggestedCount: {
+    minWidth: 26,
+    height: 26,
+    paddingHorizontal: 7,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestedCountTxt: { color: '#0b0d0c', fontSize: 12.5, fontWeight: '900' },
+  suggestedArrow: { color: '#7d8482', fontSize: 16, fontWeight: '800' },
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

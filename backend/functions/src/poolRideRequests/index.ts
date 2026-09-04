@@ -5,6 +5,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 import { db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 import { firstNameOf } from '../trips/poolRoster';
@@ -300,6 +301,8 @@ export const joinPoolRideRequest = onCall(async (req) => {
   const reqRef = db.doc(`poolRideRequests/${requestId}`);
 
   let farePerSeat: number;
+  /** Set when the join went to a driver for approval instead of taking a seat. */
+  let pendingDriverId: string | null = null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(reqRef);
     if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
@@ -379,6 +382,44 @@ export const joinPoolRideRequest = onCall(async (req) => {
     );
 
     farePerSeat = (data.agreedFarePerSeat ?? data.proposedFarePerSeat) as number;
+
+    // ── Once a driver holds the pool, the driver decides who else gets in ────
+    // A driver accepted a specific car-load at a specific total. Adding a
+    // fourth person to it is a change to their job, not to the leader's — so
+    // the joiner is queued and the driver accepts or rejects them. Nothing
+    // about the fare is up for discussion either way: the pool's per-seat
+    // price is the price, and only the leader ever set it.
+    if (data.driverId) {
+      const joinReqRef = reqRef.collection('joinRequests').doc(ctx.uid);
+      const joinReqSnap = await tx.get(joinReqRef);
+      const prior = joinReqSnap.exists ? (joinReqSnap.get('status') as string) : null;
+      if (prior === 'pending') {
+        throw new HttpsError('already-exists', 'Your request is already with the driver.');
+      }
+      if (prior === 'rejected') {
+        throw new HttpsError(
+          'failed-precondition',
+          'The driver could not take you on this ride. Start your own shared ride instead.',
+        );
+      }
+      tx.set(joinReqRef, {
+        requestId,
+        riderId:     ctx.uid,
+        riderName:   firstNameOf(
+          userSnap.exists ? (userSnap.data()!.displayName ?? userSnap.data()!.fullName) : null,
+        ),
+        riderGender: passengerGender,
+        farePerSeat,
+        dropoffLat:      dropoffLat ?? null,
+        dropoffLng:      dropoffLng ?? null,
+        dropoffAreaName: dropoffAreaName ?? (data.destinationAreaName as string),
+        status:      'pending',
+        createdAt:   FieldValue.serverTimestamp(),
+      });
+      pendingDriverId = data.driverId as string;
+      return;
+    }
+
     const newFilledSlots = (data.filledSlots as number) + 1;
 
     // A driverless pool that fills up stays 'open' — it still needs a driver,
@@ -409,7 +450,159 @@ export const joinPoolRideRequest = onCall(async (req) => {
     });
   });
 
-  return { ok: true, farePerSeat: farePerSeat! };
+  if (pendingDriverId) {
+    await notifyUser(
+      pendingDriverId,
+      '🙋 A rider wants to join your shared ride',
+      `PKR ${farePerSeat!} more if you take them. Open the pool to accept or decline.`,
+      'ride',
+    ).catch(() => {});
+    return { ok: true, farePerSeat: farePerSeat!, pending: true };
+  }
+
+  return { ok: true, farePerSeat: farePerSeat!, pending: false };
+});
+
+// ── driverRespondToPoolRequestJoin ────────────────────────────────────────────
+// The driver holding a pool answers somebody asking for one of its free seats.
+// Accepting seats them on the pool's own fixed fare; rejecting closes the
+// request so the rider is not left waiting on a seat that is not coming.
+
+const RespondJoinSchema = z.object({
+  requestId: z.string().min(1).max(128),
+  riderId:   z.string().min(1).max(128),
+  action:    z.enum(['accept', 'reject']),
+});
+
+export const driverRespondToPoolRequestJoin = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const p = RespondJoinSchema.safeParse(req.data);
+  if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
+  const { requestId, riderId, action } = p.data;
+
+  const reqRef     = db.doc(`poolRideRequests/${requestId}`);
+  const joinReqRef = reqRef.collection('joinRequests').doc(riderId);
+
+  let accepted = false;
+  let farePerSeat = 0;
+  await db.runTransaction(async (tx) => {
+    const snap     = await tx.get(reqRef);
+    const joinSnap = await tx.get(joinReqRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
+    const data = snap.data()!;
+    if (data.driverId !== ctx.uid) {
+      throw new HttpsError('permission-denied', 'Only this pool\'s driver can answer join requests.');
+    }
+    if (!joinSnap.exists || joinSnap.get('status') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'That request has already been answered.');
+    }
+    if (data.status !== 'active') {
+      tx.set(joinReqRef, { status: 'expired', decidedAt: FieldValue.serverTimestamp() }, { merge: true });
+      throw new HttpsError('failed-precondition', 'This pool is no longer taking riders.');
+    }
+
+    if (action === 'reject') {
+      tx.set(joinReqRef, { status: 'rejected', decidedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return;
+    }
+
+    if ((data.passengers as string[]).includes(riderId)) {
+      tx.set(joinReqRef, { status: 'accepted', decidedAt: FieldValue.serverTimestamp() }, { merge: true });
+      accepted = true;
+      farePerSeat = (data.agreedFarePerSeat ?? data.proposedFarePerSeat) as number;
+      return;
+    }
+    if ((data.filledSlots as number) >= (data.totalSlots as number)) {
+      throw new HttpsError('failed-precondition', 'This ride is full.');
+    }
+
+    // Re-check the gender mix at approval time: other riders may have joined
+    // between the request and this tap, and the seating rule is about the car
+    // as it will actually be, not as it was when somebody asked.
+    const riderGender = (joinSnap.get('riderGender') as string | undefined) ?? 'unspecified';
+    const maleSeats   = (data.maleSeats   as number) ?? 0;
+    const femaleSeats = (data.femaleSeats as number) ?? 0;
+    const currentComposition = computeGenderAccess(
+      maleSeats, femaleSeats, data.totalSlots as number, data.genderPref as GenderPref,
+    );
+    const check = canJoinPool({
+      currentComposition,
+      maleSeats,
+      femaleSeats,
+      joinerGender: riderGender,
+      joinerMixedRideOk: await getUserMixedRideOk(riderId),
+    });
+    if (!check.allowed) throw new HttpsError('failed-precondition', check.reason);
+
+    const newMale   = maleSeats   + (riderGender === 'male'   ? 1 : 0);
+    const newFemale = femaleSeats + (riderGender === 'female' ? 1 : 0);
+    const newFilled = (data.filledSlots as number) + 1;
+    farePerSeat = (data.agreedFarePerSeat ?? data.proposedFarePerSeat) as number;
+
+    tx.update(reqRef, {
+      passengers:        FieldValue.arrayUnion(riderId),
+      filledSlots:       newFilled,
+      maleSeats:         newMale,
+      femaleSeats:       newFemale,
+      genderComposition: computeGenderAccess(
+        newMale, newFemale, data.totalSlots as number, data.genderPref as GenderPref,
+      ),
+      status:            newFilled >= (data.totalSlots as number) ? 'full' : data.status,
+      [`passengerNames.${riderId}`]: (joinSnap.get('riderName') as string | undefined) ?? 'Rider',
+      [`passengerDropoffs.${riderId}`]: {
+        lat:      (joinSnap.get('dropoffLat') as number | null) ?? null,
+        lng:      (joinSnap.get('dropoffLng') as number | null) ?? null,
+        areaName: (joinSnap.get('dropoffAreaName') as string | undefined)
+          ?? (data.destinationAreaName as string),
+      },
+      updatedAt:         FieldValue.serverTimestamp(),
+    });
+    tx.set(joinReqRef, {
+      status: 'accepted',
+      decidedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    accepted = true;
+  });
+
+  await notifyUser(
+    riderId,
+    accepted ? '✅ The driver took you on board' : 'That shared ride could not take you',
+    accepted
+      ? `You have a seat — PKR ${farePerSeat} to pay the driver.`
+      : 'The driver has declined. Start your own shared ride and let others join you.',
+    'ride',
+  ).catch(() => {});
+
+  return { ok: true, accepted };
+});
+
+// ── getPoolRequestJoinRequests ────────────────────────────────────────────────
+// The queue of riders waiting on the driver's answer, for the driver.
+
+const PoolJoinQueueSchema = z.object({ requestId: z.string().min(1).max(128) });
+
+export const getPoolRequestJoinRequests = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const p = PoolJoinQueueSchema.safeParse(req.data);
+  if (!p.success) invalid('Invalid request.');
+
+  const reqRef = db.doc(`poolRideRequests/${p.data.requestId}`);
+  const snap = await reqRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Ride request not found.');
+  if (snap.data()!.driverId !== ctx.uid) {
+    throw new HttpsError('permission-denied', 'Only this pool\'s driver can see join requests.');
+  }
+
+  const rows = await reqRef.collection('joinRequests').where('status', '==', 'pending').get();
+  return {
+    requests: rows.docs.map((d) => ({
+      riderId:     d.get('riderId') as string,
+      riderName:   (d.get('riderName') as string | undefined) ?? 'Rider',
+      riderGender: (d.get('riderGender') as string | undefined) ?? 'unspecified',
+      farePerSeat: (d.get('farePerSeat') as number | undefined) ?? 0,
+      dropoffAreaName: (d.get('dropoffAreaName') as string | undefined) ?? null,
+    })),
+  };
 });
 
 // ── cancelPoolRideRequest ─────────────────────────────────────────────────────
@@ -657,6 +850,11 @@ export const getNearbyActiveRides = onCall(async (req) => {
           && d.expiresAt && typeof (d.expiresAt as { toDate?: () => Date }).toDate === 'function'
           && (d.expiresAt as { toDate: () => Date }).toDate() < new Date()) continue;
 
+      // A car with no seat left is not a suggestion, it is a disappointment.
+      // Full pools used to come back so the list could grey them out; nobody
+      // reads a list of rides they cannot take, so they leave the feed instead.
+      if ((d.totalSlots as number) - (d.filledSlots as number) <= 0) continue;
+
       rides.push({
         type:                'request',
         id:                  doc.id,
@@ -690,6 +888,7 @@ export const getNearbyActiveRides = onCall(async (req) => {
     if (pLat === 0 && pLng === 0) continue; // No coordinates stored (text-only offer).
     const distKmVal = distKm(lat, lng, pLat, pLng);
     if (distKmVal > radiusKm) continue;
+    if ((d.maxSeats as number) - (d.takenSeats as number) <= 0) continue; // full
 
     rides.push({
       type:                'ride',

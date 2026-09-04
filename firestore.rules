@@ -170,6 +170,18 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // Riders asking the driver for one of this pool's free seats. Written
+      // only by joinPoolTrip / driverRespondToPoolJoin (Admin SDK). The rider
+      // watches their own request go from pending to accepted or rejected; the
+      // driver reads the queue they have to answer.
+      match /joinRequests/{riderId} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && riderId == uid())
+                    || (isSignedIn()
+                        && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+        allow write: if false;
+      }
+
       // Who was picked up along the way, and when. Everyone in the car may read
       // it — knowing exactly who got in is the point of the feature, not a
       // detail of it. Written only by acceptEnRouteRider (Admin SDK).
@@ -646,6 +658,16 @@ service cloud.firestore {
         || isAdmin()
       );
       allow write: if false;
+
+      // Riders waiting on the driver's yes or no for one of the free seats.
+      // Written only by joinPoolRideRequest / driverRespondToPoolRequestJoin.
+      match /joinRequests/{riderId} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && riderId == uid())
+                    || (isSignedIn()
+                        && get(/databases/$(database)/documents/poolRideRequests/$(requestId)).data.driverId == uid());
+        allow write: if false;
+      }
     }
 
     // ----- commuteSchedules/{uid} -------------------------------------------
