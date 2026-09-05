@@ -70,6 +70,7 @@ jobs:
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
+          WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
         run: |
           : > .env.velocity-fe379
@@ -107,11 +108,21 @@ jobs:
           else
             echo "· whatsapp: no WHATSAPP_ENV — offline-driver alerts stay off"
           fi
-          # Sign-in codes ride the same block but a DIFFERENT template, because
-          # Meta will not let one template serve two categories. Absent → every
-          # login falls back to Firebase SMS, which works and costs several times
-          # as much per code. Worth printing: the failure mode is a silently
-          # larger bill rather than anything breaking.
+          # Sign-in codes go out on the SAME number and token but a DIFFERENT
+          # template, because Meta will not let one template serve two
+          # categories. Its own secret rather than three more lines inside
+          # WHATSAPP_ENV, for the reason every block here is split: GitHub
+          # overwrites a secret wholesale and will not read one back, so
+          # "just add a line" means retyping a permanent access token nobody
+          # can see. Appended after the block, so it also wins over a stale
+          # duplicate left inside it.
+          #
+          # Absent → every login falls back to Firebase SMS, which works and
+          # costs several times as much per code. Worth printing: the failure
+          # mode is a silently larger bill, not anything breaking.
+          if [ -n "$WHATSAPP_OTP_ENV" ]; then
+            printf '%s\n' "$WHATSAPP_OTP_ENV" >> .env.velocity-fe379
+          fi
           if grep -q "^WHATSAPP_OTP_TEMPLATE_NAME=." .env.velocity-fe379; then
             echo "· whatsapp: sign-in OTP CONFIGURED"
           else

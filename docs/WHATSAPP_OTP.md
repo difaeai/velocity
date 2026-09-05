@@ -83,7 +83,31 @@ changed.
 
 The token, the phone-number id and the webhook are already done if
 [WHATSAPP_ALERTS.md](WHATSAPP_ALERTS.md) has been followed. This feature adds one
-template and two environment variables.
+template and one small secret.
+
+### 0. Which WABA — do this before anything else
+
+There are **two WhatsApp Business Accounts on this Meta business, both named
+"Velocity Rides"**, and that is the single most expensive mistake available here.
+A template lives inside one WABA. A template created in the WABA your
+`WHATSAPP_PHONE_NUMBER_ID` does *not* belong to does not exist as far as the API
+is concerned — that is error 132001, which suppresses WhatsApp OTP for half an
+hour and bills every login in that window to Firebase. A System User token scoped
+to the other WABA returns `(#100)` instead, which is the error that has been
+blocking the alerts template.
+
+Two more things follow from it:
+
+- **An "In review" WABA with no payment method cannot send paid templates at
+  all**, and authentication templates are paid. Whichever WABA is the one with a
+  card on file and business verification is the one to use.
+- Whatever you decide, `WHATSAPP_PHONE_NUMBER_ID`, the System User token, and
+  the template must all belong to **the same WABA**. Confirm the pairing before
+  creating anything.
+
+In WhatsApp Manager, the WABA ID is in the URL and under Account tools →
+Settings. Compare it against the account that lists your
+`WHATSAPP_PHONE_NUMBER_ID` under Phone numbers.
 
 ### 1. The template
 
@@ -127,9 +151,7 @@ That shape is pinned by `src/whatsapp/__tests__/otpTemplate.test.ts`.
 
 ### 2. Backend secrets
 
-Add these lines to the **existing `WHATSAPP_ENV`** GitHub Actions secret (the
-same block the alert credentials live in — `deploy-functions.yml` appends the
-whole block, so no workflow change is needed):
+Add **one new** GitHub Actions secret named `WHATSAPP_OTP_ENV`:
 
 ```
 WHATSAPP_OTP_TEMPLATE_NAME=velocity_login_code
@@ -137,16 +159,22 @@ WHATSAPP_OTP_TEMPLATE_LANG=en
 WHATSAPP_OTP_BUTTON=copy_code
 ```
 
+Its own secret rather than three more lines inside `WHATSAPP_ENV`, for the
+reason every block here is split: GitHub overwrites a secret wholesale and never
+reads one back, so "just add a line" would mean retyping a permanent access
+token nobody can see. `deploy-functions.yml` appends it *after* the alerts
+block, so it also wins over a stale duplicate left inside one.
+
 `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are shared with the alerts and
-must already be there. **`WHATSAPP_OTP_TEMPLATE_NAME` is the switch**: without
-it, `whatsAppOtpConfig()` returns null and every login goes by SMS.
+must already be set there. **`WHATSAPP_OTP_TEMPLATE_NAME` is the switch**:
+without it, `whatsAppOtpConfig()` returns null and every login goes by SMS.
 
 > **The one that catches everyone, again: the language code.** `en` and `en_US`
 > are different templates as far as the API is concerned, and a mismatch is error
 > 132001 — which suppresses WhatsApp OTP for half an hour and quietly bills every
 > login in that window to Firebase. Check the code shown in WhatsApp Manager.
 
-Optional hardening:
+Optional hardening — a fourth line in the same new secret:
 
 ```
 OTP_PEPPER=any-long-random-string
