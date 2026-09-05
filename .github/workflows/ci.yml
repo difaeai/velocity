@@ -52,8 +52,48 @@ jobs:
       - name: Run security-rules test suite (emulator)
         run: firebase emulators:exec --only firestore --project demo-velocity "node --test tests/firestore.rules.test.mjs"
 
+  # The backend's own test suite — the one that actually exercises the callables
+  # against a Firestore emulator: pool joining and the driver's decision, fares,
+  # gender seating rules, quotas, partner commission, the lot.
+  #
+  # It existed long before this job and was only ever run by hand, on whichever
+  # machine happened to have Java installed. That meant the invariants it
+  # encodes were verified at the moment somebody remembered to run it and never
+  # again — a rule could be inverted in a refactor and every check here would
+  # still be green, because none of them were being asked. The `backend` job
+  # above proves the code COMPILES; this one proves it still does what it says.
+  backend-tests:
+    name: Backend · emulator test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/functions/package-lock.json
+      # The Firestore and Auth emulators are Java processes. Without this the
+      # whole suite dies on "Could not spawn `java -version`".
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      # `npm test` is `firebase emulators:exec --only auth,firestore --project
+      # demo-velocity "vitest run"`. The project id is load-bearing: the helpers
+      # clear state through the emulator's REST endpoint for `demo-velocity`
+      # specifically, so a different id leaves data behind between files and the
+      # failures come back as fake rate-limit errors that look like real bugs.
+      - name: Run backend test suite (emulator)
+        working-directory: backend/functions
+        run: npm test
+
   mobile:
-    name: Mobile · typecheck + bundle
+    name: Mobile · typecheck + tests + bundle
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +107,10 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      # Pure unit tests, no emulator: the OTP send ladder, fare maths, gender
+      # seating rules. Cheap, and they cover the one path where being wrong
+      # means locking a real person out of their own account.
+      - run: npm test
       - name: Bundle (iOS + Android)
         run: npx expo export -p ios -p android
 
