@@ -477,7 +477,10 @@ describe('gender tally', () => {
     await db().doc(`users/${JOINER}`).set({ displayName: 'J1', gender: 'male' });
     await db().doc(`users/${JOINER2}`).set({ displayName: 'J2', gender: 'female' });
 
-    const { tripId, shareCode } = await createConfirmedPool(HOST, { passengerGender: 'female' });
+    // Gathering, not confirmed: these two get in on their own tap. The tally
+    // has to be right at exactly this moment, because it is what a third rider
+    // looking at the feed decides on — before any driver is involved.
+    const { tripId, shareCode } = await createPool(HOST, { passengerGender: 'female' });
     let trip = (await db().doc(`trips/${tripId}`).get()).data()!;
     expect(trip.poolGenders).toEqual({ male: 0, female: 1 });
 
