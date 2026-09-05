@@ -1,10 +1,17 @@
 /**
  * WhatsApp Cloud API transport — the wire, and nothing else.
  *
- * Velocity uses WhatsApp for exactly one thing: telling an OFFLINE driver that
- * there is a fare waiting a few streets away, so they can open the app. That is
- * a genuinely useful message and a legitimate one — but WhatsApp is not SMS, and
- * the difference is the whole reason this file is shaped the way it is.
+ * Velocity sends two kinds of message on this number, and they are not alike:
+ *
+ *  • The **offline-driver alert** — telling a driver with the app closed that
+ *    there is a fare waiting a few streets away. Nobody asked for it, so it is
+ *    hedged about with consent, caps and quiet hours (`alerts.ts`, `policy.ts`).
+ *  • The **sign-in code** — the OTP somebody is actively waiting for, sent here
+ *    instead of by Firebase SMS because Firebase charges several times as much
+ *    per code (`auth/whatsappOtp.ts`).
+ *
+ * WhatsApp is not SMS, and the difference is the whole reason this file is
+ * shaped the way it is.
  *
  * WHY THIS IS SO CAREFUL
  * ---------------------
@@ -20,7 +27,8 @@
  *  1. TEMPLATES ONLY. A business-initiated message must be a template Meta has
  *     already approved. Free-form text outside the 24-hour service window is
  *     refused by the API (131047) and, worse, is exactly the pattern that gets
- *     numbers flagged. `sendTemplate` is the only send this file exposes.
+ *     numbers flagged. `sendTemplate` and `sendOtpTemplate` are the only sends
+ *     this file exposes, and both take a template name Meta has approved.
  *  2. ERRORS ARE SIGNALS, NOT NOISE. Meta tells you when a recipient cannot or
  *     should not be messaged again. `classifySendError` turns those codes into
  *     an instruction the caller must act on — the codes that mean "stop" are
@@ -276,7 +284,7 @@ export async function sendTemplate(
     });
   }
 
-  const payload = {
+  return postMessage(cfg, {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to,
@@ -286,8 +294,21 @@ export async function sendTemplate(
       language: { code: cfg.templateLang },
       components,
     },
-  };
+  });
+}
 
+/**
+ * Puts one already-built payload on the wire and reads Meta's answer.
+ *
+ * Shared by the alert template and the sign-in OTP template because the *answer*
+ * is the part that matters and must be read identically for both: the same error
+ * codes carry the same meaning about the same number, whichever template
+ * provoked them. Only the components differ, and those are built by the callers.
+ */
+async function postMessage(
+  cfg: { token: string; phoneNumberId: string },
+  payload: Record<string, unknown>,
+): Promise<SendResult> {
   try {
     const res = await fetch(
       `https://graph.facebook.com/${GRAPH_VERSION}/${cfg.phoneNumberId}/messages`,
@@ -328,4 +349,135 @@ export async function sendTemplate(
     logger.warn('WhatsApp: transport error', { err });
     return { ok: false, code: null, action: 'ignore', detail: String(err) };
   }
+}
+
+/* ───────────────────────── Sign-in codes (AUTHENTICATION) ────────────────────
+ *
+ * The second thing this number sends, and a different animal from the alert.
+ *
+ * An offline-driver alert is business-initiated: nobody asked for it, so every
+ * rule in this file exists to keep it welcome. A sign-in code is the opposite —
+ * the person is holding the phone, tapped Continue, and is waiting for it. It
+ * cannot annoy anybody, and it is not what puts a quality rating at risk.
+ *
+ * What it does put at risk is the *login*, which is why it is wired to fail
+ * differently: an alert that cannot be sent is a ride nobody hears about, while
+ * a code that cannot be sent is a customer who cannot get in. Every refusal here
+ * therefore has to be answerable, and the answer is Firebase's SMS — slower and
+ * several times dearer, but always there. See `auth/whatsappOtp.ts`.
+ *
+ * Meta treats AUTHENTICATION as its own template category with its own rules:
+ * the body text is theirs, not ours (`{{1}} is your verification code`), the
+ * category is cheaper than Marketing and dearer than Utility, and the button —
+ * if the template has one — carries the code a second time so the recipient can
+ * copy or autofill it rather than retype it.
+ */
+
+/** Which OTP button the approved template carries. */
+export type OtpButtonKind =
+  /** `Copy code` — works on every platform, needs no app registration. */
+  | 'copy_code'
+  /**
+   * One-tap autofill. Android only, and only after the app's package name and
+   * signing-certificate hash are registered *on the template* in WhatsApp
+   * Manager. Registered against the wrong signing key it degrades to a button
+   * that does nothing, which is worse than Copy code.
+   */
+  | 'one_tap'
+  /** The template has no button at all. */
+  | 'none';
+
+export interface WhatsAppOtpConfig {
+  token: string;
+  phoneNumberId: string;
+  /** Approved AUTHENTICATION-category template used for sign-in codes. */
+  templateName: string;
+  /** Language code the template was approved in, e.g. `en` or `en_US`. */
+  templateLang: string;
+  button: OtpButtonKind;
+}
+
+/**
+ * The two send payloads differ, and getting it wrong is `(#100) Invalid
+ * parameter` — the same trap `resolveUrlButtonIndex` exists for. Copy-code
+ * buttons take a `coupon_code` parameter under `sub_type: 'copy_code'`;
+ * one-tap buttons take a plain text parameter under `sub_type: 'url'`. Neither
+ * is inferable from here: it is a property of what Meta approved.
+ */
+function resolveOtpButton(): OtpButtonKind {
+  const raw = env('WHATSAPP_OTP_BUTTON').toLowerCase();
+  if (raw === 'one_tap' || raw === 'url' || raw === 'autofill') return 'one_tap';
+  if (raw === 'none' || raw === 'off') return 'none';
+  // Default to the button that works everywhere and needs nothing registered.
+  return 'copy_code';
+}
+
+/**
+ * Sign-in OTP configuration, or null when it is not set up.
+ *
+ * Deliberately shares `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` with the
+ * alerts — same business number, same credentials — but has its OWN template
+ * name, because Meta will not let one template serve two categories. A missing
+ * `WHATSAPP_OTP_TEMPLATE_NAME` is how this feature stays dark: sign-in falls
+ * back to Firebase SMS and nobody is locked out.
+ */
+export function whatsAppOtpConfig(): WhatsAppOtpConfig | null {
+  const token = env('WHATSAPP_TOKEN');
+  const phoneNumberId = env('WHATSAPP_PHONE_NUMBER_ID');
+  const templateName = env('WHATSAPP_OTP_TEMPLATE_NAME');
+  if (!token || !phoneNumberId || !templateName) return null;
+  return {
+    token,
+    phoneNumberId,
+    templateName,
+    templateLang: env('WHATSAPP_OTP_TEMPLATE_LANG') || 'en',
+    button: resolveOtpButton(),
+  };
+}
+
+/**
+ * Builds the components for one authentication template send.
+ *
+ * Pure and exported so the payload shape — the part that earns `(#100)` when it
+ * is wrong — is unit-testable without a token or a network.
+ */
+export function otpComponents(code: string, button: OtpButtonKind): Record<string, unknown>[] {
+  const components: Record<string, unknown>[] = [
+    { type: 'body', parameters: [{ type: 'text', text: code }] },
+  ];
+  if (button === 'copy_code') {
+    components.push({
+      type: 'button',
+      sub_type: 'copy_code',
+      index: '0',
+      parameters: [{ type: 'coupon_code', coupon_code: code }],
+    });
+  } else if (button === 'one_tap') {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: code }],
+    });
+  }
+  return components;
+}
+
+/** One sign-in code. Never throws — see `postMessage`. */
+export async function sendOtpTemplate(
+  cfg: WhatsAppOtpConfig,
+  to: string,
+  code: string,
+): Promise<SendResult> {
+  return postMessage(cfg, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'template',
+    template: {
+      name: cfg.templateName,
+      language: { code: cfg.templateLang },
+      components: otpComponents(code, cfg.button),
+    },
+  });
 }

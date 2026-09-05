@@ -1006,6 +1006,20 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    // ----- otpChallenges/{challengeId} --------------------------------------
+    // Live sign-in codes. The catch-all below would deny these anyway; they are
+    // named here because of what one read would be worth. A client that could
+    // read this collection could read the hash of a code being sent to somebody
+    // else's phone right now, and six digits do not survive an offline attack —
+    // which would turn "log in as anyone" into a query. Only server code with
+    // the Admin SDK, which bypasses these rules, ever touches them.
+    //
+    // Docs self-delete via a Firestore TTL policy on `expireAt` (see
+    // docs/HARDENING.md); the code itself is dead five minutes in regardless.
+    match /otpChallenges/{challengeId} {
+      allow read, write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

@@ -36,6 +36,12 @@ setGlobalOptions({ region: 'asia-south1', maxInstances: 100 });
 // Sign-in bridge: native (Play Integrity attested) phone verification → JS SDK session
 export { exchangePhoneSession } from './auth/sessionExchange';
 
+// Sign-in codes over WhatsApp — the cheap channel, tried first. Every refusal
+// answers "use SMS", so the bridge above stays the fallback rather than dead
+// code: Meta can pause a template or the recipient may not be on WhatsApp, and
+// neither may be able to lock somebody out of the app.
+export { startWhatsAppOtp, verifyWhatsAppOtp } from './auth/whatsappOtp';
+
 // Users & roles
 export {
   onUserCreate, onUserDelete,
@@ -288,7 +294,12 @@ export { adminSendPushNotification } from './users';
 // whose app is closed. Opt-in only, capped, and with a circuit breaker that
 // stops every send the moment Meta pushes back (see whatsapp/policy.ts).
 export { setWhatsAppAlerts, whatsappWebhook } from './whatsapp';
-export { adminGetWhatsAppStatus, adminSetWhatsAppAlertSettings, adminSendWhatsAppTest } from './whatsapp/admin';
+export {
+  adminGetWhatsAppStatus,
+  adminSetWhatsAppAlertSettings,
+  adminSetWhatsAppOtpSettings,
+  adminSendWhatsAppTest,
+} from './whatsapp/admin';
 
 // Earn with Velocity — the Partner Program (fleets, referrals, commission)
 export {

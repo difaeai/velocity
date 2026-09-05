@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,7 +10,6 @@ import {
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { auth, db } from '../../../src/firebase';
@@ -214,17 +214,33 @@ export default function DriverLogin() {
       await confirmation.confirm(code);
       await routeVerifiedDriver();
     } catch (e) {
-      const failCode = e instanceof FirebaseError ? e.code : '';
+      // Read `code` off the error rather than requiring a FirebaseError: a
+      // WhatsApp code is checked by our own backend, and its refusals arrive as
+      // plain errors carrying the same `auth/*` vocabulary (see
+      // src/auth/whatsappOtpSignIn.ts). Insisting on the class sent every wrong
+      // WhatsApp code to the "Sign-in failed" branch, which tells a driver
+      // nothing about the one thing they can fix.
+      const failCode = (e as { code?: string } | null)?.code ?? '';
       if (failCode === 'auth/code-expired' || failCode === 'auth/session-expired')
         setError('That code has expired. Tap Resend OTP for a new one.');
+      else if (failCode === 'auth/too-many-requests')
+        setError('Too many attempts. Tap Resend OTP for a new code.');
       else if (failCode.startsWith('functions/') || failCode === 'auth/network-request-failed')
         setError('Your code was accepted but sign-in did not finish. Check your connection and tap Verify again.');
-      else if (e instanceof FirebaseError) setError('Incorrect code — please try again.');
+      else if (failCode) setError('Incorrect code — please try again.');
       else setError('Sign-in failed — please try again.');
     } finally {
       verifyingRef.current = false;
       setVerifying(false);
     }
+  }
+
+  /** Set by the backend at send time — see the banner below. */
+  const onWhatsApp = confirmation?.channel === 'whatsapp';
+
+  function openWhatsApp() {
+    // Bare scheme: opens the driver's own WhatsApp, not a chat with anybody.
+    Linking.openURL('whatsapp://').catch(() => {});
   }
 
   function goBack() {
@@ -297,20 +313,37 @@ export default function DriverLogin() {
                 <Text style={{ color: colors.primary, fontWeight: '800' }}>+92{phone}</Text>
               </Text>
 
-              <View style={elapsed >= 60 ? styles.bannerOk : styles.bannerWaiting}>
-                <Text style={styles.bannerText}>
-                  {elapsed < 30
-                    ? `⏳  Waiting for SMS…  (${elapsed}s)`
-                    : elapsed < 60
-                    ? `⏳  Still waiting…  (${elapsed}s) — check your messages`
-                    : '✅  SMS should have arrived — enter the code below'}
-                </Text>
-                {elapsed < 60 && (
+              {/*
+                A WhatsApp code has usually landed by the time this screen
+                renders, so the SMS countdown would be telling a driver to wait
+                for something already sitting in their chat list. Which channel
+                carried it is the backend's decision at send time — WhatsApp
+                first because it costs a fraction of an SMS, SMS whenever it
+                cannot.
+              */}
+              {onWhatsApp ? (
+                <Pressable style={styles.bannerOk} onPress={openWhatsApp}>
+                  <Text style={styles.bannerText}>💬  Code sent on WhatsApp</Text>
                   <Text style={styles.bannerSub}>
-                    Pakistani networks can take up to 60 seconds.
+                    Tap here to open WhatsApp, copy the code and come back.
                   </Text>
-                )}
-              </View>
+                </Pressable>
+              ) : (
+                <View style={elapsed >= 60 ? styles.bannerOk : styles.bannerWaiting}>
+                  <Text style={styles.bannerText}>
+                    {elapsed < 30
+                      ? `⏳  Waiting for SMS…  (${elapsed}s)`
+                      : elapsed < 60
+                      ? `⏳  Still waiting…  (${elapsed}s) — check your messages`
+                      : '✅  SMS should have arrived — enter the code below'}
+                  </Text>
+                  {elapsed < 60 && (
+                    <Text style={styles.bannerSub}>
+                      Pakistani networks can take up to 60 seconds.
+                    </Text>
+                  )}
+                </View>
+              )}
 
               <TextInput
                 ref={otpRef}
