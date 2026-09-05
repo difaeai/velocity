@@ -490,7 +490,11 @@ describe('cancelPoolRideRequest', () => {
   it('cannot cancel a full ride', async () => {
     const id = await createRequest(LEADER, { totalSlots: 2 });
     await driverRespondToRequest.run(driverReq({ requestId: id, action: 'accept' }, DRIVER));
-    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER)); // fills → 'full'
+    // Asking is not boarding — the driver's yes is what fills the last seat.
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    ); // fills → 'full'
 
     await expect(
       cancelPoolRideRequest.run(makeReq({ requestId: id }, LEADER)),
@@ -555,9 +559,24 @@ describe('respondToPoolGoAnyway', () => {
     expect(d.cancelledBy).toBe('leader');
   });
 
-  it('no longer applies once a co-rider has joined', async () => {
+  it('still applies while a co-rider is only ASKING to join', async () => {
+    // The leader is still riding alone until the driver says yes, so the
+    // "nobody joined — go anyway?" question is still the right one to ask.
+    // Treating a pending request as a passenger would strand the leader
+    // waiting on a seat that may never be granted.
     const id = await setupElapsed();
     await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await expect(
+      respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'go' }, DRIVER)),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('no longer applies once a co-rider is actually aboard', async () => {
+    const id = await setupElapsed();
+    await joinPoolRideRequest.run(makeReq({ requestId: id }, JOINER));
+    await driverRespondToPoolRequestJoin.run(
+      driverReq({ requestId: id, riderId: JOINER, action: 'accept' }, DRIVER),
+    );
     await expect(
       respondToPoolGoAnyway.run(makeReq({ requestId: id, action: 'cancel' }, DRIVER)),
     ).rejects.toMatchObject({ code: 'failed-precondition' });

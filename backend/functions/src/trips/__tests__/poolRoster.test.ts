@@ -70,8 +70,11 @@ async function confirmWithDriver(tripId: string) {
 async function runningPool() {
   const res = await createTrip.run(makeReq(BASE_TRIP, HOST));
   const { tripId, shareCode } = res as { tripId: string; shareCode: string };
-  await confirmWithDriver(tripId);
+  // The rider gets in while the pool is still gathering — before a driver has
+  // taken it. That is the order it happens in now: joining a pool a driver has
+  // already agreed to carry is a request for that driver to answer, not a seat.
   await joinPoolTrip.run(makeReq({ code: shareCode }, RIDER));
+  await confirmWithDriver(tripId);
   await db().doc(`trips/${tripId}`).set({ status: 'in_progress' }, { merge: true });
   return tripId;
 }
