@@ -22,22 +22,26 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
+import { sendToUser } from '../lib/fcm';
+
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
 
 function pairId(a: string, b: string): string { return [a, b].sort().join('_'); }
 
-/** Best-effort push. Same token layout as social.ts. */
+/** Best-effort push, over whichever transport this user's token needs. */
 async function pushTo(uid: string, title: string, body: string, data: Record<string, string>) {
-  try {
-    const tokensSnap = await db.collection(`users/${uid}/fcmTokens`).get();
-    const tokens: string[] = tokensSnap.docs
-      .map(d => (d.data() as { token: string }).token)
-      .filter(Boolean);
-    if (!tokens.length) return;
-    await admin.messaging().sendEachForMulticast({ tokens, notification: { title, body }, data });
-  } catch (e) { console.error('pushTo failed', uid, e); }
+  // Routed through lib/fcm, NOT the Admin SDK directly. The app registers with
+  // expo-notifications, which hands back an Expo token on some installs and a
+  // native FCM token on others — and the Admin SDK cannot deliver to an Expo
+  // token. Sending them all through sendEachForMulticast failed per token and
+  // logged a warning nobody read, so every Travel Partner notification was
+  // quietly going nowhere on those installs while the feature itself worked.
+  // sendToUser picks the transport per token by its shape.
+  await sendToUser(uid, title, body, data).catch((e) => {
+    console.error('pushTo failed', uid, e);
+  });
 }
 
 // ---------------------------------------------------------------------------
