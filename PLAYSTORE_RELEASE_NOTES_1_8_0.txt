@@ -1,0 +1,78 @@
+VELOCITY 1.8.0  ·  versionCode 30
+=================================
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Shared rides now work end to end: start a pool and other riders can find and
+join it while it is still looking for a driver, and once a driver takes the
+ride they approve anyone new before the car changes.
+
+Also: a bigger, easier "Where to?" on the home screen, you can delete your
+account from inside the app, and Travel Partner notifications now actually
+arrive.
+
+
+WHAT CHANGED SINCE 1.7.2
+------------------------
+
+Shared rides finally have a whole journey
+  A pool used to be invisible until a driver took it, so the rider who started
+  one rode alone while everybody on the same road never learned it existed.
+  Then, once a driver did take it, anyone could be added to their car without
+  being asked.
+
+  Both ends are fixed, and who decides what is now stated once and enforced
+  everywhere:
+
+    - The rider who STARTS a pool owns the fare. They name the offer and take
+      or refuse a driver's bid. Everyone who joins later takes the per-seat
+      price as it stands — there is no second negotiation inside a pool.
+    - The DRIVER owns the car. Before one is confirmed there is nobody to ask,
+      so joining is instant. After a driver has agreed to carry the ride, a new
+      passenger is a change to THEIR work, so they accept or reject it from
+      their trip card.
+
+  A pool now also stays discoverable for ten minutes after booking while it
+  hunts for a driver, and you no longer have to type a destination before you
+  can see whether a cheap seat exists nearby.
+
+Home screen
+  "Where to?" is bigger — both the heading and the box — and voice booking has
+  become a mic tile beside it instead of a full row of its own.
+
+Delete your account from inside the app
+  Settings now carries account deletion, rather than sending people to a web
+  page to ask for it.
+
+Travel Partner notifications were going nowhere
+  Travel Partner had been writing notifications that were never delivered.
+  They arrive now.
+
+Sign-in codes can come over WhatsApp
+  Verification codes are sent as a WhatsApp message where that is possible, and
+  as an SMS everywhere it is not. Nothing about signing in changes for anyone —
+  same six digits, same screen — and the app says which one it used so nobody
+  is left watching the wrong inbox.
+
+  This is a cost change rather than a feature: an SMS to a Pakistani number
+  costs several times what the same code costs on WhatsApp. SMS is not going
+  away and is not behind a switch; it is what carries every login WhatsApp
+  cannot.
+
+iOS
+  Groundwork only, invisible on Android: the app now builds and passes review
+  on iOS.
+
+
+ROLLOUT CHECKLIST
+-----------------
+[ ] Upload velocity-1.8.0-vc30.aab
+[ ] Publish admin -> App version as 1.8.0 INCLUDING build number 30,
+    or no one is prompted to update
+[ ] WhatsApp sign-in codes stay dark until an approved Meta AUTHENTICATION
+    template and the WHATSAPP_OTP_ENV secret both exist; see
+    docs/WHATSAPP_OTP.md. Until then every login goes by SMS exactly as it does
+    today, so this build is safe to ship ahead of that work.
+[ ] WhatsApp driver alerts are still blocked on the Meta side (two WABAs both
+    named "Velocity Rides" — see docs/WHATSAPP_OTP.md step 0). Unrelated to
+    this build.
