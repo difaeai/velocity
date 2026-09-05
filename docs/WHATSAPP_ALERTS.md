@@ -8,6 +8,12 @@ looking at while an approved driver, two streets away, has no idea it exists.
 WhatsApp reaches that person. This document is how the feature is set up, and —
 more importantly — the rules it runs under.
 
+> The same business number also carries **sign-in codes**, which are a different
+> feature with different rules — see [WHATSAPP_OTP.md](WHATSAPP_OTP.md). They
+> share the token, the phone-number id and the webhook, and nothing else: an
+> alert is business-initiated and governed by consent, a code is asked for and
+> governed by cost. Neither can switch the other off.
+
 ---
 
 ## The thing to understand first

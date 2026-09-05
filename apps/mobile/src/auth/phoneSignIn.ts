@@ -1,6 +1,25 @@
 /**
- * Phone sign-in — verified natively, consumed by the Firebase JS SDK.
+ * Phone sign-in: which channel carries the code, and what happens after it is
+ * typed.
  *
+ * TWO CHANNELS, ONE INTERFACE
+ * ---------------------------
+ * Codes go over **WhatsApp** first and fall back to **Firebase SMS**. The reason
+ * is money: Firebase bills every verification SMS to a Pakistani number at
+ * several US cents, while Meta bills an approved authentication template to the
+ * same number at roughly a fifth of that — on a business number Velocity already
+ * runs for offline-driver alerts.
+ *
+ * The fallback is not a nicety. Not everybody's SIM is on WhatsApp, Meta can
+ * pause a template without warning, and the backend may simply have no template
+ * configured yet. Any of those must cost a login exactly nothing, so
+ * `startWhatsAppVerification` answers `null` for all of them and the native flow
+ * below picks the person up. Both channels hand back the same
+ * `PhoneVerification`, so the screens do not branch on anything except the words
+ * they print.
+ *
+ * WHY THE SMS PATH LOOKS LIKE THIS
+ * --------------------------------
  * The app used to verify numbers through the JS SDK's reCAPTCHA flow, which on
  * React Native meant `expo-firebase-recaptcha`: an unmaintained package that
  * rendered a hidden WebView and loaded firebase 8.0.0 off gstatic to solve a
@@ -32,12 +51,19 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { auth as jsAuth } from '../firebase';
 import { api } from '../api/client';
 import { clearResourceCache } from '../lib/cachedResource';
+import { resetWhatsAppOtpMemory, startWhatsAppVerification } from './whatsappOtpSignIn';
+
+/** Which channel actually carried the code. Screens use it for their wording. */
+export type VerificationChannel = 'whatsapp' | 'sms';
 
 export interface PhoneVerification {
+  /** Where the user should go looking for the code. */
+  channel: VerificationChannel;
   /**
-   * Hands the SMS code to Firebase and, on success, leaves the JS SDK signed in.
-   * Rejects with the underlying Firebase error so callers can run it through
-   * `describePhoneAuthError`.
+   * Hands the code over and, on success, leaves the JS SDK signed in. Rejects
+   * with an error carrying an `auth/*` code so callers can run it through
+   * `describePhoneAuthError` — the WhatsApp path translates its own failures
+   * into the same vocabulary rather than inventing a second one.
    */
   confirm(code: string): Promise<void>;
   /**
@@ -74,11 +100,34 @@ async function bridgeToJsSdk(nativeUser: NativeUser): Promise<void> {
 /**
  * Starts verification for an E.164 number (e.g. "+923001234567").
  *
+ * Tries WhatsApp, then SMS. The order is the whole point — WhatsApp is the cheap
+ * channel — but the fallback is what makes trying it safe, so anything short of
+ * "the message is on its way" drops through to the native flow rather than
+ * becoming a login failure. The one refusal that does NOT fall through is a
+ * number that has asked for too many codes; handing that one a dearer SMS would
+ * reward exactly what the limit is there to stop.
+ *
  * `onAutoVerified` fires when Android verified the number on its own — the code
  * never reaches the user, so the screen should move on without waiting for input.
- * It receives an error instead if the automatic path failed mid-bridge.
+ * It receives an error instead if the automatic path failed mid-bridge. It is
+ * only ever called on the SMS path: a WhatsApp code lands in a chat, and nothing
+ * but the user can read it across.
  */
 export async function startPhoneVerification(
+  e164: string,
+  onAutoVerified?: (error?: unknown) => void,
+): Promise<PhoneVerification> {
+  const viaWhatsApp = await startWhatsAppVerification(e164);
+  if (viaWhatsApp) return viaWhatsApp;
+
+  return startSmsVerification(e164, onAutoVerified);
+}
+
+/**
+ * The native, Play-Integrity-attested SMS flow. Kept whole and unchanged as the
+ * fallback: it is the path that works when Meta cannot help us.
+ */
+async function startSmsVerification(
   e164: string,
   onAutoVerified?: (error?: unknown) => void,
 ): Promise<PhoneVerification> {
@@ -132,6 +181,7 @@ export async function startPhoneVerification(
   }
 
   return {
+    channel: 'sms',
     cancel,
     // A native session outliving the bridge can only mean the verification
     // succeeded and the exchange did not: bridgeToJsSdk signs out natively as
@@ -185,6 +235,11 @@ export async function startPhoneVerification(
 export async function signOutEverywhere(): Promise<void> {
   await nativeSignOut(getNativeAuth()).catch(() => {});
   await jsAuth.signOut();
+  // Whatever this session learned about WhatsApp being unavailable was learned
+  // for the person signing out — most often on a number that is not on WhatsApp.
+  // Carrying it into the next sign-in would quietly bill the next person's login
+  // to Firebase.
+  resetWhatsAppOtpMemory();
   // Cached dashboard payloads are uid-scoped, so the next account could never
   // read them — but there is no reason to leave someone's earnings sitting on a
   // handset they have signed out of.

@@ -107,6 +107,16 @@ jobs:
           else
             echo "· whatsapp: no WHATSAPP_ENV — offline-driver alerts stay off"
           fi
+          # Sign-in codes ride the same block but a DIFFERENT template, because
+          # Meta will not let one template serve two categories. Absent → every
+          # login falls back to Firebase SMS, which works and costs several times
+          # as much per code. Worth printing: the failure mode is a silently
+          # larger bill rather than anything breaking.
+          if grep -q "^WHATSAPP_OTP_TEMPLATE_NAME=." .env.velocity-fe379; then
+            echo "· whatsapp: sign-in OTP CONFIGURED"
+          else
+            echo "· whatsapp: no WHATSAPP_OTP_TEMPLATE_NAME — logins stay on Firebase SMS"
+          fi
           # Vendor billing credentials, so the Cost of Velocity page fills itself
           # in instead of being typed from invoices: BILLING_BQ_TABLE (the
           # BigQuery billing export), ANTHROPIC_ADMIN_KEY (org cost report — a

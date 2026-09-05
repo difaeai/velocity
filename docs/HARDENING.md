@@ -29,6 +29,12 @@ Add the same policy on **`userPresence.expireAt`**. This one is not just tidying
 the TTL is what makes presence lapse when somebody stops opening the app. Without
 it, a location written once stays in the collection indefinitely.
 
+Add it on **`otpChallenges.expireAt`** too. These are the WhatsApp sign-in
+challenges (see [WHATSAPP_OTP.md](WHATSAPP_OTP.md)). The TTL is housekeeping
+rather than security — a challenge is dead five minutes in by its own
+`validUntilMs`, and single-use besides — but without the policy every login the
+platform has ever served accumulates as a document nobody reads.
+
 ### Firebase App Check **(you + code)**
 Stops traffic from anything other than your genuine apps.
 1. Register providers: **Play Integrity** (Android), **App Attest** (iOS),

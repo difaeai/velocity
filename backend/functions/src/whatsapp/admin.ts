@@ -12,15 +12,18 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { sendTemplate, toWhatsAppNumber, whatsAppConfig } from './client';
+import { sendTemplate, toWhatsAppNumber, whatsAppConfig, whatsAppOtpConfig } from './client';
 import { driverDeepLink } from './alerts';
 import { pktDayKey, readAlertSettings } from './policy';
+import { readOtpSettings } from '../auth/whatsappOtp';
 
 const SETTINGS_DOC = 'config/whatsappAlerts';
 const HEALTH_DOC = 'config/whatsappHealth';
+const OTP_SETTINGS_DOC = 'config/whatsappOtp';
+const OTP_HEALTH_DOC = 'config/whatsappOtpHealth';
 
 /**
  * Everything the admin console needs to answer "is this working, and is it
@@ -31,12 +34,15 @@ export const adminGetWhatsAppStatus = onCall(async (req) => {
   const now = Date.now();
   const day = pktDayKey(now);
 
-  const [settingsSnap, healthSnap, usageSnap, optedInSnap] = await Promise.all([
-    db.doc(SETTINGS_DOC).get(),
-    db.doc(HEALTH_DOC).get(),
-    db.doc(`whatsappUsage/${day}`).get(),
-    db.collection('drivers').where('whatsappAlerts.optIn', '==', true).count().get(),
-  ]);
+  const [settingsSnap, healthSnap, usageSnap, optedInSnap, otpSettingsSnap, otpHealthSnap] =
+    await Promise.all([
+      db.doc(SETTINGS_DOC).get(),
+      db.doc(HEALTH_DOC).get(),
+      db.doc(`whatsappUsage/${day}`).get(),
+      db.collection('drivers').where('whatsappAlerts.optIn', '==', true).count().get(),
+      db.doc(OTP_SETTINGS_DOC).get(),
+      db.doc(OTP_HEALTH_DOC).get(),
+    ]);
 
   const settings = readAlertSettings(settingsSnap.exists ? settingsSnap.data() : null);
   const sent = (usageSnap.get('sent') as number | undefined) ?? 0;
@@ -65,6 +71,21 @@ export const adminGetWhatsAppStatus = onCall(async (req) => {
        * rating drop does.
        */
       optOutRate: sent > 0 ? Number((optOuts / sent).toFixed(3)) : 0,
+      /**
+       * Sign-in codes, counted separately from alerts because they answer a
+       * different question. Alert counters are about consent; these are about
+       * the bill — every `otpFailed` is a login that fell back to a Firebase
+       * SMS costing several times as much, so a number climbing here is money
+       * leaking, not a quality problem.
+       */
+      otpSent: (usageSnap.get('otpSent') as number | undefined) ?? 0,
+      otpFailed: (usageSnap.get('otpFailed') as number | undefined) ?? 0,
+    },
+    otp: {
+      configured: whatsAppOtpConfig() !== null,
+      settings: readOtpSettings(otpSettingsSnap.data()),
+      suppressedUntil: (otpHealthSnap.get('suppressedUntil') as Timestamp | undefined)?.toMillis() ?? null,
+      suppressedReason: (otpHealthSnap.get('reason') as string | undefined) ?? null,
     },
     optedInDrivers: optedInSnap.data().count,
   };
@@ -117,6 +138,55 @@ export const adminSetWhatsAppAlertSettings = onCall(async (req) => {
 
   const snap = await db.doc(SETTINGS_DOC).get();
   return { ok: true, settings: readAlertSettings(snap.data()) };
+});
+
+const otpSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  dailyCap: z.number().optional(),
+  maxSendsPerNumberPerHour: z.number().optional(),
+  /**
+   * Lifts an automatic suppression early. Unlike the alerts breaker this one
+   * expires on its own after half an hour, so this is a "we fixed the template,
+   * stop paying Firebase for the next twenty minutes" lever rather than the
+   * deliberate human re-arm that `clearCircuitBreaker` is.
+   */
+  clearSuppression: z.boolean().optional(),
+});
+
+/**
+ * The sign-in OTP levers: the kill switch, the daily budget, and the per-number
+ * ceiling.
+ *
+ * Separate from the alerts settings on purpose. The two features share a phone
+ * number and nothing else — one messages people who did not ask and is governed
+ * by consent, the other answers people who just tapped Continue and is governed
+ * by cost. Folding them into one settings call would make it possible to switch
+ * off logins while meaning to quieten alerts.
+ */
+export const adminSetWhatsAppOtpSettings = onCall(async (req) => {
+  const ctx = requireAdmin(req);
+  const parsed = otpSettingsSchema.safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid settings.');
+  const { clearSuppression, ...fields } = parsed.data;
+
+  const patch = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+  if (Object.keys(patch).length > 0) {
+    // Written raw; `readOtpSettings` clamps on read, so an out-of-range value
+    // here can never become an out-of-range spend.
+    await db
+      .doc(OTP_SETTINGS_DOC)
+      .set({ ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  if (clearSuppression) {
+    logger.info('WhatsApp OTP: suppression cleared by admin', { by: ctx.uid });
+    await db
+      .doc(OTP_HEALTH_DOC)
+      .set({ suppressedUntil: null, clearedBy: ctx.uid, clearedAt: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  const snap = await db.doc(OTP_SETTINGS_DOC).get();
+  return { ok: true, settings: readOtpSettings(snap.data()), configured: whatsAppOtpConfig() !== null };
 });
 
 const testSchema = z.object({

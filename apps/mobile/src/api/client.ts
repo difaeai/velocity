@@ -391,6 +391,22 @@ export const api = {
    * SDK can sign in with. See src/auth/phoneSignIn.ts.
    */
   exchangePhoneSession: callable<{ idToken: string }, { customToken: string }>('exchangePhoneSession'),
+  /**
+   * Sign-in codes over WhatsApp — the cheap channel, tried before Firebase SMS.
+   *
+   * `startWhatsAppOtp` answers `sent: false` rather than throwing whenever the
+   * message could not go out, because the caller has to be free to fall back to
+   * SMS; the only throw is the per-number ceiling. See src/auth/phoneSignIn.ts.
+   */
+  startWhatsAppOtp: callable<
+    { phone: string },
+    | { sent: true; via: 'whatsapp'; challengeId: string; expiresInSec: number }
+    | { sent: false; via: 'sms'; reason: string }
+  >('startWhatsAppOtp'),
+  verifyWhatsAppOtp: callable<
+    { challengeId: string; code: string },
+    { customToken: string }
+  >('verifyWhatsAppOtp'),
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   /**
    * Irreversible. Deletes the caller's own account, purges their personal data

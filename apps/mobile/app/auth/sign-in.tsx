@@ -73,6 +73,24 @@ function SmsIcon({ size = 26 }: { size?: number }) {
   );
 }
 
+function WhatsAppIcon({ size = 26 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 2.2a9.6 9.6 0 0 0-8.3 14.4L2.4 21.8l5.3-1.4A9.6 9.6 0 1 0 12 2.2Z"
+        fill="none"
+        stroke={LIME}
+        strokeWidth={1.8}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M8.9 7.4c.3 0 .5.1.6.4l.7 1.6c.1.3 0 .5-.2.7l-.5.5c-.2.2-.2.4-.1.6a7 7 0 0 0 3.1 3c.2.1.5.1.6-.1l.5-.6c.2-.2.4-.3.7-.2l1.6.7c.3.1.4.4.3.7-.2 1-1.1 1.7-2.1 1.7-3.2 0-6.6-3.4-6.6-6.6 0-1 .7-1.9 1.7-2.1a1 1 0 0 1 .2 0Z"
+        fill={LIME}
+      />
+    </Svg>
+  );
+}
+
 /**
  * The red failure line, with the native diagnostic hidden behind a long-press.
  *
@@ -364,6 +382,23 @@ export default function SignIn() {
     Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
   }
 
+  /**
+   * Which channel actually carried the code. Decided by the backend at send
+   * time, not by the app: WhatsApp is tried first because it costs a fraction of
+   * an SMS, and anything that stops it — no approved template, a number that is
+   * not on WhatsApp, Meta pausing us — silently becomes an SMS instead. The
+   * screen must say which one happened, or half the users are told to check an
+   * app the code never reached.
+   */
+  const onWhatsApp = confirmation?.channel === 'whatsapp';
+
+  function openWhatsApp() {
+    // Bare scheme, not a wa.me link: this opens the user's own WhatsApp rather
+    // than starting a chat with anybody. Failing silently is right — the code is
+    // already sitting in their notification shade either way.
+    Linking.openURL('whatsapp://').catch(() => {});
+  }
+
   const cooldownLabel = `0:${String(resendCooldown % 60).padStart(2, '0')}`;
 
   /* ─────────────────────────── Phone step UI ──────────────────────────── */
@@ -472,7 +507,9 @@ export default function SignIn() {
       </View>
 
       <Text style={styles.otpTitle}>Verify your number</Text>
-      <Text style={styles.otpSub}>We've sent a 6-digit code to</Text>
+      <Text style={styles.otpSub}>
+        {onWhatsApp ? "We've sent a 6-digit code on WhatsApp to" : "We've sent a 6-digit code to"}
+      </Text>
       <Text style={styles.otpPhone}>+92 {prettyPhone(phone)}</Text>
 
       {/* 6 code cells over an invisible input */}
@@ -519,18 +556,35 @@ export default function SignIn() {
       />
 
 
-      {/* Auto-read card */}
-      <View style={styles.autoReadCard}>
-        <SmsIcon />
+      {/*
+        What to expect while waiting. The SMS wording promises auto-detection,
+        which is true on Android and only on Android — a WhatsApp code lands in a
+        chat and nothing can read it across for the user, so promising it there
+        would leave somebody staring at an empty field waiting for magic.
+      */}
+      <Pressable
+        style={styles.autoReadCard}
+        onPress={onWhatsApp ? openWhatsApp : undefined}
+        disabled={!onWhatsApp}
+      >
+        {onWhatsApp ? <WhatsAppIcon /> : <SmsIcon />}
         <View style={styles.flex}>
-          <Text style={styles.autoReadTitle}>{verifying ? 'Verifying your code…' : 'Auto-reading SMS'}</Text>
+          <Text style={styles.autoReadTitle}>
+            {verifying
+              ? 'Verifying your code…'
+              : onWhatsApp
+                ? 'Sent on WhatsApp'
+                : 'Auto-reading SMS'}
+          </Text>
           <Text style={styles.autoReadSub}>
             {verifying
               ? 'Hang on — checking the code you entered.'
-              : "We'll detect the code once it arrives and verify it for you."}
+              : onWhatsApp
+                ? 'Tap here to open WhatsApp, copy the code and come back.'
+                : "We'll detect the code once it arrives and verify it for you."}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       <View style={styles.flexSpacer} />
 
