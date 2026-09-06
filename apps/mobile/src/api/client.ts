@@ -59,6 +59,33 @@ export interface DriverOnboardingInput {
   vehicleDocExpiry?: string;
 }
 
+/** One car on the driver's account, as the backend hands it back. */
+export interface DriverVehicleDto {
+  vehicleId: string;
+  vehicleType: RideType;
+  make: string;
+  color: string;
+  plate: string;
+  label: string;
+  photoUrl?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewReason?: string | null;
+}
+
+/** A new car, with the two documents that let an admin judge it. */
+export interface AddVehicleInput {
+  vehicleType: RideType;
+  make: string;
+  color: string;
+  plate: string;
+  /** Certificate of registration. */
+  docPath: string;
+  docUrl?: string;
+  /** Front of the car, plate legible. */
+  photoPath: string;
+  photoUrl?: string;
+}
+
 export interface CreateTripInput {
   rideType: RideType;
   offeredFare: number;
@@ -419,6 +446,42 @@ export const api = {
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',
   ),
+
+  // ── The driver's cars ─────────────────────────────────────────────────────
+  /**
+   * Lift the onboarding car into `drivers/{uid}/vehicles` if it isn't there yet.
+   *
+   * Idempotent and cheap, called when a car screen opens. Drivers approved
+   * before this feature existed have their car only in flat fields on the driver
+   * document; without this their car list would look empty even though they are
+   * plainly driving something.
+   */
+  ensureDriverVehicles: callable<
+    Record<string, never>,
+    { ok: boolean; activeVehicleId: string | null; vehicles: DriverVehicleDto[] }
+  >('ensureDriverVehicles'),
+  /** Register another car. Starts `pending` — an admin has to see its papers. */
+  addDriverVehicle: callable<AddVehicleInput, { ok: boolean; vehicleId: string; status: string }>(
+    'addDriverVehicle',
+  ),
+  /**
+   * Switch cars. Mirrors the new car onto the driver document, clears the car
+   * photo check and drops the driver offline, so the next shift starts with a
+   * photo of the car they are actually in.
+   */
+  setActiveVehicle: callable<{ vehicleId: string }, { ok: boolean; activeVehicleId: string }>(
+    'setActiveVehicle',
+  ),
+  deleteDriverVehicle: callable<{ vehicleId: string }, { ok: boolean }>('deleteDriverVehicle'),
+  /**
+   * "This is the car I'm driving right now." Satisfies the go-online gate
+   * immediately; an admin reviews the picture afterwards.
+   */
+  confirmVehiclePhoto: callable<
+    { photoPath: string; photoUrl?: string },
+    { ok: boolean; vehicleId: string; validForDays: number }
+  >('confirmVehiclePhoto'),
+
   createTrip: callable<CreateTripInput, { ok: boolean; tripId: string; shareCode: string | null }>('createTrip'),
 
   /**

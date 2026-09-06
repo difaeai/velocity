@@ -35,6 +35,7 @@ import {
   useDriverProfile,
   useOpenRequests,
   useOutstanding,
+  vehicleCheckStatus,
   type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
@@ -99,6 +100,10 @@ export default function DriverHome() {
   // Unpaid cancellation fees — past the limit, the backend rejects new bids.
   const outstanding = useOutstanding(uid);
   const cancellation = useCancellationSettings();
+  // Has this driver photographed the car they are about to drive? The security
+  // rules refuse the `online` write without it, so the toggle has to know too —
+  // otherwise the button would just fail with nothing on screen to explain it.
+  const carCheck = vehicleCheckStatus(profile);
 
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -163,6 +168,16 @@ export default function DriverHome() {
   useEffect(() => {
     if (!online || activeTrip) setScanning(false);
   }, [online, activeTrip]);
+  // …and a driver who went online somewhere else — the car photo screen finishes
+  // the job when they were sent there by the toggle — still gets the sweep, so
+  // the two routes into "online" look identical from here. `null` until the
+  // first snapshot lands, so reopening the app already online doesn't sweep.
+  const prevOnlineRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!profile) return;
+    if (prevOnlineRef.current === false && online) setScanning(true);
+    prevOnlineRef.current = online;
+  }, [profile, online]);
 
   // ── Hidden requests ──────────────────────────────────────────────────────
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
@@ -348,6 +363,14 @@ export default function DriverHome() {
 
   function setOnline(next: boolean) {
     if (!uid || next === online) return;
+    // No live photo of the car? The Firestore rules will bounce this write, so
+    // send the driver to the camera rather than letting the toggle die quietly.
+    // `intent=online` tells that screen to finish the job they actually asked
+    // for — going online — the moment the photo is accepted.
+    if (next && carCheck.needsPhoto) {
+      router.push('/driver/car-verification?intent=online');
+      return;
+    }
     // Sweep the radar on the way online — never on the way offline.
     if (next) setScanning(true);
     run(() => setDoc(doc(db, 'drivers', uid), { online: next, lastSeenAt: serverTimestamp() }, { merge: true }));
@@ -478,6 +501,35 @@ export default function DriverHome() {
             </Svg>
           </Pressable>
       </View>
+
+      {/* ── Car not confirmed ── The one thing standing between this driver and
+          work, said before they press Online rather than after. Hidden mid-trip:
+          they are plainly in the car, and there is nothing useful to do about it
+          until they drop off. */}
+      {profile && carCheck.needsPhoto && !activeTrip ? (
+        <Pressable
+          style={styles.carBanner}
+          onPress={() => router.push('/driver/car-verification')}
+        >
+          <Text style={styles.carBannerIcon}>📸</Text>
+          <View style={styles.carBannerBody}>
+            <Text style={styles.carBannerTitle}>
+              {carCheck.reason === 'rejected'
+                ? 'Your car photo was not accepted'
+                : carCheck.reason === 'car_changed'
+                ? 'Confirm the car you switched to'
+                : carCheck.reason === 'expired'
+                ? 'Time for a fresh photo of your car'
+                : 'Confirm your car to start getting requests'}
+            </Text>
+            <Text style={styles.carBannerBody2}>
+              Take a quick photo of {profile?.vehicleLabel ?? 'your car'}
+              {profile?.plate ? ` (${profile.plate})` : ''} — it takes a few seconds.
+            </Text>
+          </View>
+          <Text style={styles.carBannerChevron}>›</Text>
+        </Pressable>
+      ) : null}
 
       {/* ── Solo | Sharing rides ── right below Offline/Online: which kind of
           work this driver wants. Solo keeps the classic feed; Sharing shows
@@ -966,6 +1018,26 @@ const styles = themed(() => StyleSheet.create({
   toggleOnTxt: { color: '#1a1a1a', fontWeight: '700' },
 
   // ── Solo | Sharing rides selector ──
+  // Amber, not red: nothing is broken and nothing is lost — there is simply one
+  // short thing to do before requests can arrive.
+  carBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(245,158,11,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.35)',
+  },
+  carBannerIcon: { fontSize: 20 },
+  carBannerBody: { flex: 1, gap: 2 },
+  carBannerTitle: { fontSize: 14, fontWeight: '800', color: '#f59e0b' },
+  carBannerBody2: { fontSize: 12, lineHeight: 17, color: colors.muted },
+  carBannerChevron: { fontSize: 22, color: '#f59e0b', fontWeight: '700' },
+
   modeRow: { alignItems: 'center', paddingBottom: 8 },
   modeToggle: {
     flexDirection: 'row',

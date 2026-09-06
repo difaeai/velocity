@@ -97,6 +97,46 @@ service cloud.firestore {
     match /drivers/{driverId} {
       allow read: if isOwner(driverId) || isAdmin();
       allow create: if false;
+
+      // ── The car photo gate ────────────────────────────────────────────────
+      // A driver may only go online in a car they have just photographed. The
+      // check is written by the confirmVehiclePhoto callable (drivers/vehicles.ts)
+      // and cleared whenever they switch cars, so it answers "is the car about
+      // to arrive the car we think it is?" rather than "did their papers pass
+      // review last spring".
+      //
+      // It lives HERE and not only in the app because `online` is one of the
+      // very few fields a client writes directly: a patched build could
+      // otherwise flip it and start taking rides in an unphotographed car.
+
+      // 'primary' is the id drivers/vehicles.ts seeds the onboarding car under,
+      // and the fallback for a driver who has never opened the car screens — the
+      // backend guard and the app both default to the same string, and a
+      // disagreement would lock an existing driver out of going online.
+      function activeVehicle(driver) {
+        return driver.get('activeVehicleId', 'primary');
+      }
+      // Every field is tested for presence before it is read: a half-written
+      // check reads as no check, never as a pass. confirmVehiclePhoto always
+      // writes all three together, so a live check always has them.
+      function carPhotoIsLive() {
+        return 'vehicleCheck' in resource.data
+               && 'status' in resource.data.vehicleCheck
+               && 'vehicleId' in resource.data.vehicleCheck
+               && 'confirmedAt' in resource.data.vehicleCheck
+               && resource.data.vehicleCheck.status != 'rejected'
+               && resource.data.vehicleCheck.vehicleId == activeVehicle(resource.data)
+               && resource.data.vehicleCheck.confirmedAt > request.time - duration.value(30, 'd');
+      }
+      // Only the TRANSITION is gated. A driver already online keeps beaconing
+      // their position even if the 30 days lapse mid-shift — silently killing
+      // location updates on a driver carrying a passenger would be far worse
+      // than one stale check — and they are stopped at the next go-online.
+      function goingOnline() {
+        return request.resource.data.get('online', false) == true
+               && resource.data.get('online', false) != true;
+      }
+
       // `appActiveAt` is the driver app's foreground heartbeat, written every
       // couple of minutes while any driver screen is on screen. The backend
       // reads it to tell "offline" apart from "app closed" before spending a
@@ -107,9 +147,19 @@ service cloud.firestore {
                     && isDriver()
                     && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
                                     'appActiveAt',
-                                    'poolPickupRadiusM', 'poolDropoffRadiusM']);
+                                    'poolPickupRadiusM', 'poolDropoffRadiusM'])
+                    && (!goingOnline() || carPhotoIsLive());
       allow update: if isAdmin();
       allow delete: if false;
+
+      // ── drivers/{uid}/vehicles/{vehicleId} ────────────────────────────────
+      // Every car this driver may drive, one document each, with its own review
+      // state. Written only by the callables in drivers/vehicles.ts — a client
+      // that could write here could approve its own unvetted car.
+      match /vehicles/{vehicleId} {
+        allow read: if isOwner(driverId) || isAdmin();
+        allow write: if false;
+      }
     }
 
     // ----- trips/{tripId} --------------------------------------------------

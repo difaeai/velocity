@@ -41,6 +41,32 @@ interface DriverRow {
   licenseExpiry?: string;
   cnicExpiry?: string;
   vehicleDocExpiry?: string;
+  /** Which car in drivers/{id}/vehicles the flat fields above are a copy of. */
+  activeVehicleId?: string;
+  /** True while one of this driver's cars is waiting on a review here. */
+  vehicleReviewPending?: boolean;
+  /** The photo the driver took of the car they are driving right now. */
+  vehicleCheck?: {
+    status?: 'pending' | 'approved' | 'rejected';
+    vehicleId?: string;
+    plate?: string | null;
+    photoUrl?: string | null;
+    confirmedAt?: { seconds: number };
+    reason?: string | null;
+  };
+}
+
+interface VehicleRow {
+  id: string;
+  vehicleType?: string;
+  make?: string;
+  color?: string;
+  plate?: string;
+  label?: string;
+  docUrl?: string | null;
+  photoUrl?: string | null;
+  status?: 'pending' | 'approved' | 'rejected';
+  reviewReason?: string | null;
 }
 
 interface CreateForm {
@@ -460,6 +486,12 @@ export default function DriversPage() {
                         )}
                         {tab === 'pending'  && <Badge label="Pending"   color={colors.warn} />}
                         {tab === 'rejected' && <Badge label={d.verificationStatus === 'suspended' ? 'Suspended' : 'Rejected'} color={colors.danger} />}
+                        {/* Something about this driver's car is waiting on a
+                            human. Surfaced on the collapsed row so a queue of
+                            them is visible without opening every card. */}
+                        {(d.vehicleReviewPending || d.vehicleCheck?.status === 'pending') && (
+                          <Badge label="🚗 Car review" color={colors.warn} />
+                        )}
                       </div>
                       <div style={{ color: colors.muted, fontSize: 13 }}>
                         {(d.vehicleType ?? '').toUpperCase()} · {d.vehicleLabel ?? '—'} · {d.plate ?? '—'}
@@ -515,6 +547,16 @@ export default function DriversPage() {
                         <InfoCell label="Plate"  value={d.plate} />
                       </InfoGrid>
                     </Section>
+
+                    {/* The car photo the driver took before their last shift.
+                        This is what the passenger's plate is actually backed by,
+                        so it gets judged here rather than being filed away. */}
+                    <CarPhotoCheck driver={d} />
+
+                    {/* Every car on the account. A car added after signup cannot
+                        be driven until it is approved here — that review is the
+                        only thing standing between a driver and an unvetted car. */}
+                    <DriverCars driverId={d.id} activeVehicleId={d.activeVehicleId} />
 
                     {/* Stats for active drivers */}
                     {tab === 'active' && (
@@ -654,6 +696,203 @@ export default function DriversPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── The driver's car ───────────────────────────────────────────────────────────
+
+/** How long a car photo stands — mirrors VEHICLE_CHECK_TTL_DAYS on the backend. */
+const CAR_PHOTO_TTL_DAYS = 30;
+
+/**
+ * The photo the driver took of the car they are driving right now.
+ *
+ * Approving is a formality; REJECTING is the point. It takes the driver offline
+ * on the spot and forces a new photo before they can go back on, which is the
+ * only fast lever there is when the car in the picture is not the car on file.
+ */
+function CarPhotoCheck({ driver }: { driver: DriverRow }) {
+  const [busy, setBusy] = useState(false);
+  // Read the clock once, when the card opens. "How old is this photo" is a
+  // question about the world rather than about props, so it must not be
+  // recomputed on every re-render.
+  const [openedAt] = useState(() => Date.now());
+  const check = driver.vehicleCheck;
+
+  if (!check?.confirmedAt) {
+    return (
+      <Section title="Car photo verification">
+        <div style={{ background: colors.bg, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: colors.muted }}>
+          No photo submitted yet — this driver cannot go online until they take one.
+        </div>
+      </Section>
+    );
+  }
+
+  const takenAt = new Date(check.confirmedAt.seconds * 1000);
+  const ageDays = Math.floor((openedAt - takenAt.getTime()) / 86_400_000);
+  const stale = ageDays >= CAR_PHOTO_TTL_DAYS;
+  const statusColor =
+    check.status === 'rejected' ? colors.danger
+    : check.status === 'approved' ? colors.success
+    : colors.warn;
+
+  async function review(approve: boolean) {
+    let reason: string | undefined;
+    if (!approve) {
+      const entered = prompt('Why is this photo being rejected? The driver will see this.');
+      if (entered === null) return;
+      if (!entered.trim()) { alert('Please give a reason so the driver knows what to fix.'); return; }
+      reason = entered.trim();
+    }
+    setBusy(true);
+    try {
+      await adminApi.adminReviewVehiclePhoto({ driverId: driver.id, approve, reason });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Action failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Car photo verification">
+      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {check.photoUrl ? (
+          <a href={check.photoUrl} target="_blank" rel="noopener noreferrer">
+            <img
+              src={check.photoUrl}
+              alt="Car photo"
+              style={{ width: 200, height: 140, objectFit: 'cover', borderRadius: 10, border: `1px solid ${colors.border}`, display: 'block' }}
+            />
+          </a>
+        ) : null}
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Badge label={check.status ?? 'pending'} color={statusColor} />
+            {stale && <Badge label="Expired" color={colors.muted} />}
+          </div>
+          <div style={{ fontSize: 13, color: colors.muted, marginBottom: 4 }}>
+            Taken {takenAt.toLocaleString('en-PK')} ({ageDays === 0 ? 'today' : `${ageDays}d ago`})
+          </div>
+          <div style={{ fontSize: 13, color: colors.muted, marginBottom: 4 }}>
+            Declared plate: <strong style={{ color: colors.text }}>{check.plate ?? driver.plate ?? '—'}</strong>
+          </div>
+          {check.reason && (
+            <div style={{ fontSize: 13, color: colors.danger, marginBottom: 8 }}>{check.reason}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <Button disabled={busy || check.status === 'approved'} onClick={() => review(true)}>
+              {busy ? '…' : '✓ Photo matches'}
+            </Button>
+            <Button variant="danger" disabled={busy || check.status === 'rejected'} onClick={() => review(false)}>
+              {busy ? '…' : '✕ Reject & take offline'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * Every car on this driver's account.
+ *
+ * Subscribed only while the card is expanded — one listener per open driver,
+ * not one per driver in the list.
+ */
+function DriverCars({ driverId, activeVehicleId }: { driverId: string; activeVehicleId?: string }) {
+  const [cars, setCars] = useState<VehicleRow[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, 'drivers', driverId, 'vehicles'),
+      (snap) => setCars(snap.docs.map((v) => ({ id: v.id, ...(v.data() as Omit<VehicleRow, 'id'>) }))),
+      () => setCars([]),
+    );
+  }, [driverId]);
+
+  // 'primary' is the id the onboarding car is seeded under, and the fallback the
+  // security rules use when a driver has no activeVehicleId yet.
+  const activeId = activeVehicleId ?? 'primary';
+
+  async function review(vehicleId: string, approve: boolean) {
+    let reason: string | undefined;
+    if (!approve) {
+      const entered = prompt('Why is this car being rejected? The driver will see this.');
+      if (entered === null) return;
+      if (!entered.trim()) { alert('Please give a reason so the driver knows what to fix.'); return; }
+      reason = entered.trim();
+    }
+    setBusy(vehicleId);
+    try {
+      await adminApi.adminReviewDriverVehicle({ driverId, vehicleId, approve, reason });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Action failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (cars.length === 0) return null;
+
+  return (
+    <Section title={`Cars on this account (${cars.length})`}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {cars.map((v) => {
+          const isActive = v.id === activeId;
+          const statusColor =
+            v.status === 'approved' ? colors.success
+            : v.status === 'rejected' ? colors.danger
+            : colors.warn;
+          return (
+            <div
+              key={v.id}
+              style={{
+                display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+                background: colors.bg, borderRadius: 10, padding: 12,
+                border: `1px solid ${isActive ? colors.primary : colors.border}`,
+              }}
+            >
+              {v.photoUrl ? (
+                <a href={v.photoUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={v.photoUrl} alt={v.label ?? 'Car'} style={{ width: 92, height: 68, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+                </a>
+              ) : (
+                <div style={{ width: 92, height: 68, borderRadius: 8, display: 'grid', placeItems: 'center', border: `1px solid ${colors.border}`, fontSize: 22 }}>🚗</div>
+              )}
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <strong style={{ fontSize: 14 }}>{v.label ?? v.make ?? 'Car'}</strong>
+                  <Badge label={v.status ?? 'pending'} color={statusColor} />
+                  {isActive && <Badge label="Driving now" color={colors.primary} />}
+                </div>
+                <div style={{ fontSize: 13, color: colors.muted }}>
+                  {(v.vehicleType ?? '').toUpperCase()} · {v.plate ?? '—'}
+                </div>
+                {v.reviewReason && (
+                  <div style={{ fontSize: 12, color: colors.danger, marginTop: 3 }}>{v.reviewReason}</div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {v.docUrl && (
+                  <a href={v.docUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 700, color: colors.primary, alignSelf: 'center' }}>
+                    Registration ↗
+                  </a>
+                )}
+                <Button disabled={busy === v.id || v.status === 'approved'} onClick={() => review(v.id, true)}>
+                  {busy === v.id ? '…' : '✓ Approve'}
+                </Button>
+                <Button variant="danger" disabled={busy === v.id || v.status === 'rejected'} onClick={() => review(v.id, false)}>
+                  {busy === v.id ? '…' : '✕ Reject'}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
   );
 }
 

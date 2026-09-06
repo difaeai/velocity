@@ -30,6 +30,21 @@ export function makeReq<T>(data: T, uid: string): CallableRequest<T> {
   } as unknown as CallableRequest<T>;
 }
 
+/**
+ * The car-photo fields a driver document needs to be allowed to take work.
+ *
+ * Every callable that hands a driver a passenger runs `assertVehicleConfirmed`
+ * (see domain/vehicleCheck.ts), so a driver seeded without these is refused —
+ * correctly, but it has nothing to do with whatever the test is actually about.
+ * Spread this into the seed to say "this driver photographed their car today".
+ */
+export function confirmedCar(vehicleId = 'primary'): Record<string, unknown> {
+  return {
+    activeVehicleId: vehicleId,
+    vehicleCheck: { status: 'approved', vehicleId, confirmedAt: new Date() },
+  };
+}
+
 /** Seed a travelMateProfile. */
 export async function seedProfile(uid: string, overrides: Record<string, unknown> = {}) {
   await db().doc(`travelMateProfiles/${uid}`).set({

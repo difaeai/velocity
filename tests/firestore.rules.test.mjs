@@ -40,6 +40,22 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   });
   await setDoc(doc(db, 'drivers/driver1'), {
     driverId: 'driver1', verificationStatus: 'pending', online: false, rating: 4.5,
+    // Photographed their car a minute ago, so they are allowed to go online.
+    activeVehicleId: 'primary',
+    vehicleCheck: { status: 'pending', vehicleId: 'primary', confirmedAt: new Date() },
+  });
+  await setDoc(doc(db, 'drivers/driver1/vehicles/primary'), {
+    vehicleId: 'primary', plate: 'ABC-123', status: 'approved',
+  });
+  // A second driver who has never photographed their car.
+  await setDoc(doc(db, 'drivers/driver2'), {
+    driverId: 'driver2', verificationStatus: 'approved', online: false, rating: 5,
+  });
+  // …and a third whose photo is of the car they used to drive.
+  await setDoc(doc(db, 'drivers/driver3'), {
+    driverId: 'driver3', verificationStatus: 'approved', online: false, rating: 5,
+    activeVehicleId: 'vehicle-b',
+    vehicleCheck: { status: 'approved', vehicleId: 'vehicle-a', confirmedAt: new Date() },
   });
   await setDoc(doc(db, 'system/counters'), { totalRevenue: 0 });
   await setDoc(doc(db, 'driver_submissions/sub1'), {
@@ -130,6 +146,60 @@ test('driver may toggle presence but not self-verify', async () => {
   await assertSucceeds(updateDoc(doc(driver, 'drivers/driver1'), { online: true }));
   await assertFails(updateDoc(doc(driver, 'drivers/driver1'), { verificationStatus: 'approved' }));
   await assertFails(updateDoc(doc(driver, 'drivers/driver1'), { rating: 5 }));
+});
+
+test('going online requires a live photo of the car being driven', async () => {
+  const unphotographed = testEnv.authenticatedContext('driver2', { role: 'driver' }).firestore();
+  const switchedCars   = testEnv.authenticatedContext('driver3', { role: 'driver' }).firestore();
+
+  // Never photographed their car, and photographed a car they no longer drive.
+  await assertFails(updateDoc(doc(unphotographed, 'drivers/driver2'), { online: true }));
+  await assertFails(updateDoc(doc(switchedCars,   'drivers/driver3'), { online: true }));
+  // The gate is on going online only — everything else still works offline, and
+  // going offline must never be blocked by it.
+  await assertSucceeds(updateDoc(doc(unphotographed, 'drivers/driver2'), { online: false }));
+  await assertSucceeds(
+    updateDoc(doc(unphotographed, 'drivers/driver2'), { lastLocation: { lat: 33.6, lng: 73.0 } }),
+  );
+
+  // A stale check is no check: the same driver, 40 days later.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(ctx.firestore(), 'drivers/driver2'),
+      {
+        activeVehicleId: 'primary',
+        vehicleCheck: {
+          status: 'approved',
+          vehicleId: 'primary',
+          confirmedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+        },
+      },
+      { merge: true },
+    );
+  });
+  await assertFails(updateDoc(doc(unphotographed, 'drivers/driver2'), { online: true }));
+
+  // Fresh photo of the car they actually drive → through.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(ctx.firestore(), 'drivers/driver2'),
+      { vehicleCheck: { status: 'pending', vehicleId: 'primary', confirmedAt: new Date() } },
+      { merge: true },
+    );
+  });
+  await assertSucceeds(updateDoc(doc(unphotographed, 'drivers/driver2'), { online: true }));
+});
+
+test('a driver reads their own cars but can never write one', async () => {
+  await assertSucceeds(getDoc(doc(driver, 'drivers/driver1/vehicles/primary')));
+  await assertFails(getDoc(doc(passenger, 'drivers/driver1/vehicles/primary')));
+  // Self-approving an unvetted car is the whole thing the review exists to stop.
+  await assertFails(
+    setDoc(doc(driver, 'drivers/driver1/vehicles/mine'), { plate: 'XYZ-999', status: 'approved' }),
+  );
+  await assertFails(
+    updateDoc(doc(driver, 'drivers/driver1/vehicles/primary'), { status: 'approved' }),
+  );
 });
 
 test('wallets are not client-writable', async () => {

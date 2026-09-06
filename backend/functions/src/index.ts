@@ -57,6 +57,20 @@ export { deleteMyAccount } from './users/deleteAccount';
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
 
+// The driver's cars, and the photo that says which one they are driving today.
+// Adding a car needs an admin's eyes on its papers; photographing the active car
+// counts immediately and is reviewed afterwards, so a shift is never lost to a
+// queue. Going online without a live photo is blocked by the security rules.
+export {
+  ensureDriverVehicles,
+  addDriverVehicle,
+  setActiveVehicle,
+  deleteDriverVehicle,
+  confirmVehiclePhoto,
+  adminReviewDriverVehicle,
+  adminReviewVehiclePhoto,
+} from './drivers/vehicles';
+
 // Commission settlement (manual bank transfer + AI-verified screenshot)
 export { submitCommissionSettlement, adminReviewCommissionSettlement } from './drivers/commissionSettlement';
 

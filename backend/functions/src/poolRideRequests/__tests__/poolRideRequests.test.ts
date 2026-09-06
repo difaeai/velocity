@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { clearFirestore, confirmedCar, db } from '../../travelMate/__tests__/helpers';
 import {
   createPoolRideRequest,
   driverRespondToRequest,
@@ -64,6 +64,7 @@ async function seedDriver(uid: string, gender: string) {
     vehicleLabel: 'Toyota Corolla',
     plate: 'ABC-123',
     rating: 4.8,
+    ...confirmedCar(),
   });
 }
 

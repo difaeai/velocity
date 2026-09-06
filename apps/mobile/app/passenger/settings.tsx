@@ -18,7 +18,7 @@ import { api } from '../../src/api/client';
 import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
-import { useDriverProfile } from '../../src/hooks/driver';
+import { useDriverProfile, vehicleCheckStatus } from '../../src/hooks/driver';
 import { PRIVACY_URL, TERMS_URL } from '../../src/share/links';
 import { otherLanguageLabel, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, toggleTheme, themed } from '../../src/theme';
@@ -75,6 +75,8 @@ export default function Settings() {
   // somebody may well be showing to a passenger.
   const waNumber = driverProfile?.whatsappAlerts?.number;
   const waNumberLabel = waNumber ? `…${waNumber.slice(-4)}` : 'no number';
+  // Whether the car photo behind this driver's plate is still live.
+  const carCheck = vehicleCheckStatus(driverProfile);
 
   async function handleThemeToggle() {
     setDark((d) => !d);
@@ -189,6 +191,36 @@ export default function Settings() {
           </Pressable>
         </View>
         <Text style={styles.hint}>Tap Language to switch the whole app instantly.</Text>
+
+        {/* Drivers only. The car a driver is in today is not a signup detail —
+            it changes, and when it does the plate on the passenger's screen has
+            to change with it. The cog on /driver/home lands here, so this is
+            where a driver looks for it. */}
+        {role === 'driver' && (
+          <>
+            <Text style={styles.sectionLabel}>YOUR CAR</Text>
+            <View style={styles.card}>
+              <Row
+                icon="🚗"
+                label={driverProfile?.vehicleLabel ?? 'Your cars'}
+                value={driverProfile?.plate ?? undefined}
+                onPress={() => router.push('/driver/vehicles')}
+              />
+              <View style={styles.divider} />
+              <Row
+                icon="📸"
+                label="Car photo verification"
+                value={carCheck.needsPhoto ? 'Needed' : 'Confirmed'}
+                onPress={() => router.push('/driver/car-verification')}
+              />
+            </View>
+            <Text style={styles.hint}>
+              {carCheck.needsPhoto
+                ? 'Take a photo of the car you are driving before you go online — it is what stands behind the plate your passenger is watching for.'
+                : `Confirmed. We will ask again in ${carCheck.daysLeft} day${carCheck.daysLeft === 1 ? '' : 's'}, or straight away if you switch cars.`}
+            </Text>
+          </>
+        )}
 
         {/* Drivers only. WhatsApp is the one way to reach a driver whose app is
             closed — which is exactly when they are missing fares. This row
