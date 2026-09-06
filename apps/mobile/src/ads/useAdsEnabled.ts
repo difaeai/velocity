@@ -14,10 +14,29 @@
  * onSnapshot is a real cost on a low-end handset on mobile data.
  */
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { collection, doc, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { useAuth } from '../auth/AuthContext';
+
+/**
+ * Whether this platform serves ads at all.
+ *
+ * iOS ships with ads OFF, and not as a product decision. The ad UNIT ids come
+ * from EXPO_PUBLIC_ADMOB_* secrets that are live and shared across platforms,
+ * but the ad APP id — which the native SDK reads out of Info.plist at process
+ * start — has no iOS value to read: the AdMob account was closed, so no iOS
+ * AdMob app exists to create one from, and app.config.ts falls back to Google's
+ * published SAMPLE app id. Live units under a sample app id request real
+ * inventory against an account the request does not belong to. Serving nothing
+ * is strictly better than serving that.
+ *
+ * To turn iOS ads on once the AdMob appeal succeeds: create the iOS app in
+ * AdMob, set EXPO_PUBLIC_ADMOB_IOS_APP_ID as an EAS secret, add iOS ad units,
+ * then delete this constant.
+ */
+const ADS_SUPPORTED = Platform.OS !== 'ios';
 
 /** Undefined while unknown — callers must treat that as "no ads yet". */
 type Entitlement = boolean | undefined;
@@ -116,7 +135,7 @@ export function useAdsEnabled(): boolean {
   const [, force] = useState(0);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !ADS_SUPPORTED) return;
 
     if (current?.uid !== uid) {
       current?.store.stop();
@@ -137,6 +156,8 @@ export function useAdsEnabled(): boolean {
     };
   }, [uid]);
 
+  // After every hook, so the hook order is identical on both platforms.
+  if (!ADS_SUPPORTED) return false;
   if (!uid) return true;
   const paid = current?.uid === uid ? current.store.paid : undefined;
   const enabled = paid === false;
