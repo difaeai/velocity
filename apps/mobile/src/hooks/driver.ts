@@ -3,6 +3,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'fireb
 
 import { db } from '../firebase';
 import { distanceMeters } from '../lib/geo';
+import { evaluateVehicleCheck, type VehicleCheckStatus } from '../domain/vehicleCheck';
 import type { RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
@@ -30,6 +31,28 @@ export interface DriverProfile {
     /** The normalised number consent was given for. */
     number?: string;
   };
+  /**
+   * Which car in `drivers/{uid}/vehicles` the flat vehicle fields below are a
+   * copy of. Absent on drivers who registered before multiple cars existed —
+   * they are driving PRIMARY_VEHICLE_ID, which is what the security rules
+   * assume too.
+   */
+  activeVehicleId?: string;
+  /**
+   * The photo that says "this is the car I am driving today". Written by the
+   * confirmVehiclePhoto callable and cleared on every car switch; the security
+   * rules refuse to let the driver go online without a live one.
+   */
+  vehicleCheck?: {
+    status?: 'pending' | 'approved' | 'rejected';
+    vehicleId?: string;
+    plate?: string | null;
+    photoUrl?: string | null;
+    confirmedAt?: { seconds: number };
+    reason?: string | null;
+  };
+  /** True while one of this driver's cars is waiting on an admin's review. */
+  vehicleReviewPending?: boolean;
   // ── Submitted application details — used to re-fill the onboarding forms on
   //    resubmission so a rejection only costs the driver the rejected sections.
   cnic?: string;
@@ -66,6 +89,71 @@ export function useDriverProfile(uid?: string): DriverProfile | null {
     );
   }, [uid]);
   return profile;
+}
+
+// ── The driver's cars ────────────────────────────────────────────────────────
+
+export {
+  PRIMARY_VEHICLE_ID,
+  VEHICLE_CHECK_TTL_DAYS,
+  type VehicleCheck,
+  type VehicleCheckReason,
+  type VehicleCheckStatus,
+} from '../domain/vehicleCheck';
+
+export interface DriverVehicle {
+  vehicleId: string;
+  vehicleType: RideType;
+  make: string;
+  color: string;
+  plate: string;
+  /** `${color} ${make}` — what every screen calls this car. */
+  label: string;
+  docUrl?: string | null;
+  photoUrl?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewReason?: string | null;
+  createdAt?: { seconds: number };
+}
+
+/**
+ * Every car on the driver's account, live.
+ *
+ * Read directly (the rules let a driver read their own subcollection) so a car
+ * approved by an admin turns green on the driver's screen without a refresh.
+ * Writes all go through callables — a client that could write here could approve
+ * its own unvetted car.
+ */
+export function useDriverVehicles(uid?: string): DriverVehicle[] {
+  const [rows, setRows] = useState<DriverVehicle[]>([]);
+  useEffect(() => {
+    if (!uid) { setRows([]); return; }
+    return onSnapshot(
+      collection(db, 'drivers', uid, 'vehicles'),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ vehicleId: d.id, ...d.data() }) as DriverVehicle);
+        // Approved cars first, then whatever is waiting, then rejected — the
+        // order a driver picking a car actually wants.
+        const rank = { approved: 0, pending: 1, rejected: 2 } as const;
+        list.sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3));
+        setRows(list);
+      },
+      () => setRows([]),
+    );
+  }, [uid]);
+  return rows;
+}
+
+/**
+ * Does this driver still have to photograph their car?
+ *
+ * Thin wrapper over the pure rule in src/domain/vehicleCheck.ts, which evaluates
+ * exactly what the security rules evaluate — same TTL, same 'primary' fallback,
+ * same "rejected means no check". Keeping the two in step is what stops the app
+ * from waving a driver through to a write Firestore will then bounce.
+ */
+export function vehicleCheckStatus(profile: DriverProfile | null): VehicleCheckStatus {
+  return evaluateVehicleCheck(profile);
 }
 
 export interface OpenRequest {

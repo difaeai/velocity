@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
-import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
+import { clearFirestore, confirmedCar, db, makeReq } from '../../travelMate/__tests__/helpers';
 import { createTrip, placeBid, acceptBid, cancelTrip } from '../index';
 
 const PASSENGER = 'cancel-passenger';
@@ -57,6 +57,7 @@ async function seedApprovedDriver(uid = DRIVER) {
     vehicleLabel: 'Suzuki Alto',
     plate: 'ABC-123',
     rating: 5,
+    ...confirmedCar(),
   });
 }
 

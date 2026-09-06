@@ -39,6 +39,22 @@ export const adminApi = {
     { driverId: string; reason?: string; suspend?: boolean; rejectedSections?: string[] },
     { ok: boolean }
   >('rejectDriver'),
+  /**
+   * Approve or reject a car a driver added after signup. Nothing else lets that
+   * car be driven — `setActiveVehicle` refuses anything but an approved one.
+   */
+  adminReviewDriverVehicle: callable<
+    { driverId: string; vehicleId: string; approve: boolean; reason?: string },
+    { ok: boolean }
+  >('adminReviewDriverVehicle'),
+  /**
+   * Judge the photo a driver took of the car they are driving. Rejecting takes
+   * them offline immediately and forces a new photo before they can go back on.
+   */
+  adminReviewVehiclePhoto: callable<
+    { driverId: string; approve: boolean; reason?: string },
+    { ok: boolean }
+  >('adminReviewVehiclePhoto'),
   setUserRole: callable<{ targetUid: string; role: 'passenger' | 'driver' | 'admin' }, { ok: boolean }>(
     'setUserRole',
   ),

@@ -7,6 +7,7 @@ import { requireRole, requireAuth, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { computeSettlement } from '../domain/fares';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import {
@@ -593,8 +594,11 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const { rideId, gender } = p.data;
 
-  // Locked drivers must settle their commission cycle before taking new work.
-  assertCommissionClear(await db.doc(`drivers/${ctx.uid}`).get(), await getCommissionSettings());
+  // Locked drivers must settle their commission cycle before taking new work — and
+  // nobody takes riders on in a car they have not photographed.
+  const batchDriverSnap = await db.doc(`drivers/${ctx.uid}`).get();
+  assertCommissionClear(batchDriverSnap, await getCommissionSettings());
+  assertVehicleConfirmed(batchDriverSnap);
 
   const rideRef = db.doc(`poolRides/${rideId}`);
   const accepted: { uid: string }[] = [];

@@ -43,6 +43,7 @@ import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertOutstandingClear, getCancellationSettings } from '../domain/cancellation';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { TripStatus } from '../domain/types';
@@ -488,9 +489,12 @@ export const setDriverRoute = onCall(async (req) => {
   if (driverSnap.get('verificationStatus') !== 'approved') {
     throw new HttpsError('permission-denied', 'Only approved drivers can set a route.');
   }
-  // The same two gates that stop a driver bidding also stop them touting a route.
+  // The same gates that stop a driver bidding also stop them touting a route.
   assertCommissionClear(driverSnap, commission);
   assertOutstandingClear(walletSnap, cancellation, 'driver');
+  // …and drivers who have not photographed the car they are driving: the
+  // plate on the passenger's screen has to mean something.
+  assertVehicleConfirmed(driverSnap);
 
   // The road, from Google, fetched here. This is the corridor the driver will be
   // matched on, so it is worth owning: we buy it once, now, and cache it on the
@@ -824,6 +828,9 @@ export const acceptEnRouteRider = onCall(async (req) => {
   }
   assertCommissionClear(driverSnap, commission);
   assertOutstandingClear(walletSnap, cancellation, 'driver');
+  // …and drivers who have not photographed the car they are driving: the
+  // plate on the passenger's screen has to mean something.
+  assertVehicleConfirmed(driverSnap);
 
   const carrierSnap = await activeCarrierTrip(ctx.uid);
   const resolved = await resolveCorridor(ctx.uid, polyline, carrierSnap);

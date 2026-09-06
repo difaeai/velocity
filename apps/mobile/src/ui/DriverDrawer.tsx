@@ -153,6 +153,10 @@ export function DriverDrawer({
           {/* Navigation links */}
           <View style={styles.navSection}>
             <NavItem icon="🏠" label="Home"                   onPress={() => go('/driver/home')} />
+            {/* The car is not a one-time signup detail — drivers sell them, swap
+                them, borrow them. High in the list because a driver who cannot
+                find this switches to lying about what they drive instead. */}
+            <NavItem icon="🚗" label="Your cars"              onPress={() => go('/driver/vehicles')} />
             <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
             <NavItem icon="💳" label={walletLabel}            onPress={() => go('/driver/wallet')} />
             {/* Pool work, kept apart from the solo feed on the home tab. Passengers

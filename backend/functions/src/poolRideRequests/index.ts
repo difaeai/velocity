@@ -7,6 +7,7 @@ import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 import { firstNameOf } from '../trips/poolRoster';
 
@@ -165,6 +166,9 @@ export const driverRespondToRequest = onCall(async (req) => {
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver profile not found.');
   // Locked drivers must settle their commission cycle before taking new work.
   assertCommissionClear(driverSnap, await getCommissionSettings());
+  // …and drivers who have not photographed the car they are driving: the
+  // plate on the passenger's screen has to mean something.
+  assertVehicleConfirmed(driverSnap);
   const driverData = driverSnap.data()!;
 
   const reqRef = db.doc(`poolRideRequests/${requestId}`);

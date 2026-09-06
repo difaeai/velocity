@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { clearFirestore, confirmedCar, db } from '../../travelMate/__tests__/helpers';
 import { joinPoolRide, driverAcceptPoolBatch, cancelPoolJoinRequest } from '../index';
 
 function makeReq<T>(data: T, uid: string, role = 'passenger'): CallableRequest<T> {
@@ -60,6 +60,19 @@ async function seedUser(uid: string, gender: 'male' | 'female', name: string) {
     displayName: name,
     mixedRideOk: true,
     phone: '+92300000' + uid.length,
+  });
+}
+
+/** An approved driver, cleared to take riders on. */
+async function seedDriver(uid: string) {
+  await db().doc(`drivers/${uid}`).set({
+    driverId: uid,
+    verificationStatus: 'approved',
+    online: true,
+    gender: 'male',
+    vehicleLabel: 'Suzuki Cultus',
+    plate: 'ISB-778',
+    ...confirmedCar(),
   });
 }
 
@@ -127,6 +140,12 @@ beforeEach(async () => {
     seedUser(BILAL, 'male', 'Bilal Sheikh'),
     seedUser(USMAN, 'male', 'Usman Tariq'),
     seedUser(NADIA, 'female', 'Nadia Hussain'),
+    // Both drivers have photographed the car they are driving. Without it every
+    // batch accept is refused by the car-photo guard before it reaches the rule
+    // the test is actually about — including the imposter's, whose refusal has
+    // to stay "not your pool ride".
+    seedDriver(DRIVER),
+    seedDriver('driver-imposter'),
   ]);
   await seedRide();
 });

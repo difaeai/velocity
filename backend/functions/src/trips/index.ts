@@ -27,6 +27,7 @@ import {
   poolPerSeatFare,
 } from '../domain/fares';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import {
   assertOutstandingClear,
   cancellationFee,
@@ -415,6 +416,9 @@ export const placeBid = onCall(async (req) => {
   assertCommissionClear(driverSnap, commissionSettings);
   // As must drivers who racked up unpaid cancellation fees.
   assertOutstandingClear(driverWalletSnap, cancellationSettings, 'driver');
+  // …and drivers who have not photographed the car they are driving: the
+  // plate on the passenger's screen has to mean something.
+  assertVehicleConfirmed(driverSnap);
 
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');

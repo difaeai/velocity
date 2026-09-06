@@ -14,6 +14,7 @@ import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAuth, requireAdmin, requireRole, invalid } from '../lib/guards';
 import { applyRole } from '../users';
 import { cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
 
 const onboardingSchema = z.object({
   fullName:            z.string().min(2).max(120),
@@ -449,6 +450,24 @@ export const updateDriver = onCall(async (req) => {
   if ('franchiseId' in updates)    fields.franchiseId = updates.franchiseId ?? null;
 
   await ref.set(fields, { merge: true });
+
+  // The flat vehicle fields on the driver doc are a MIRROR of the active car in
+  // drivers/{uid}/vehicles (see drivers/vehicles.ts). An admin correcting a
+  // plate here has to reach the car too, or the driver's own "My car" screen
+  // would keep showing the wrong details and the next car switch would write
+  // the stale copy straight back over this edit.
+  if (updates.vehicleType || updates.vehicleLabel || updates.plate) {
+    const snap = await ref.get();
+    const activeId = (snap.get('activeVehicleId') as string | undefined) ?? PRIMARY_VEHICLE_ID;
+    const vehicleRef = ref.collection('vehicles').doc(activeId);
+    if ((await vehicleRef.get()).exists) {
+      const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+      if (updates.vehicleType)  patch.vehicleType = updates.vehicleType;
+      if (updates.vehicleLabel) patch.label       = updates.vehicleLabel;
+      if (updates.plate)        patch.plate       = updates.plate.toUpperCase();
+      await vehicleRef.set(patch, { merge: true });
+    }
+  }
 
   if (updates.fullName) {
     await auth.updateUser(driverId, { displayName: updates.fullName }).catch(() => undefined);
