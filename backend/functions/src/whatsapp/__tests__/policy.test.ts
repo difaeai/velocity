@@ -289,6 +289,14 @@ describe('classifySendError — what Meta is really telling us', () => {
     expect(classifySendError(132016)).toBe('halt'); // template disabled
   });
 
+  // 132018 is what a button parameter that does not match the approved button
+  // earns, and it is the error that kept sign-in codes off WhatsApp entirely.
+  // It is identical for every recipient, so continuing past it cannot deliver
+  // anything — it belongs with the other template faults, not in 'ignore'.
+  it('halts on a button that does not match the approved template', () => {
+    expect(classifySendError(132018)).toBe('halt');
+  });
+
   it('drops a recipient who is not on WhatsApp', () => {
     expect(classifySendError(131026)).toBe('drop-recipient');
   });

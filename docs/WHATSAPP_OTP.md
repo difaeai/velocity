@@ -105,6 +105,10 @@ Two more things follow from it:
   the template must all belong to **the same WABA**. Confirm the pairing before
   creating anything.
 
+**For this feature the pairing is already settled and verified — see "What is
+live" below.** Read this section when creating a NEW template or rotating the
+token, not to re-derive what is already recorded there.
+
 In WhatsApp Manager, the WABA ID is in the URL and under Account tools →
 Settings. Compare it against the account that lists your
 `WHATSAPP_PHONE_NUMBER_ID` under Phone numbers.
@@ -143,11 +147,42 @@ registered *on the template* with the app's package name and the SHA-256 of the
 **Play App Signing** certificate, and registered against the wrong key it
 degrades into a button that does nothing, which is worse than Copy code.
 
-If you set it up, switch `WHATSAPP_OTP_BUTTON` to `one_tap`. The two send
-payloads are genuinely different — copy-code buttons take a `coupon_code`
-parameter, one-tap buttons take plain text — and sending the wrong one is
-`(#100) Invalid parameter`, the same trap documented for the alert template.
-That shape is pinned by `src/whatsapp/__tests__/otpTemplate.test.ts`.
+If you set it up, switch `WHATSAPP_OTP_BUTTON` to `one_tap`. **Both send the
+same payload**, so this setting only documents intent — it cannot break a send.
+
+That last sentence used to say the opposite, and the opposite was expensive.
+Meta's guides describe a copy-code button as taking a `coupon_code` parameter
+under `sub_type: 'copy_code'`, and this repo believed them. Meta's
+authentication *builder* does not create such a button. Fetch the approved
+template and look:
+
+```jsonc
+"buttons": [{
+  "type": "URL",                       // ← not COPY_CODE
+  "text": "Copy code",
+  "url": "https://www.whatsapp.com/otp/code/?otp_type=COPY_CODE&code=otp{{1}}"
+}]
+```
+
+It is a **URL button** that WhatsApp merely *renders* as `Copy code`, and the
+parameter it wants is the one that fills `{{1}}` in that URL — plain text under
+`sub_type: 'url'`. One-tap autofill is the same URL button with a different
+`otp_type`, which is why the two are identical on the wire.
+
+Sent as a coupon it is **`(#132018) buttons: Button at index 0 must be of type
+Url`** — a 400 on every send, for every user, forever, with every login silently
+billed to Firebase instead. The shape is pinned by
+`src/whatsapp/__tests__/otpTemplate.test.ts`, which now asserts what the live API
+accepts rather than what the guides describe.
+
+`WHATSAPP_OTP_BUTTON=coupon_code` still sends the legacy shape, for the day Meta
+approves a template whose button really does come back as `type: COPY_CODE`.
+**Check the template before reaching for it** — one GET says which you have:
+
+```bash
+curl -s "https://graph.facebook.com/v21.0/<WABA_ID>/message_templates?name=velocity_login_code" \
+  -H "Authorization: Bearer $WHATSAPP_TOKEN"
+```
 
 ### 2. Backend secrets
 
@@ -193,7 +228,25 @@ Add a TTL policy on collection `otpChallenges`, field `expireAt` (see
 [HARDENING.md](HARDENING.md)). Housekeeping only — a challenge is dead five
 minutes in regardless — but without it every login ever served accumulates.
 
-### 4. Check the wiring
+### 4. What is live
+
+Confirmed against the Graph API on **2026-09-06**, so the two-WABA question in
+[WHATSAPP_ALERTS.md](WHATSAPP_ALERTS.md) is settled for this feature:
+
+| | |
+|---|---|
+| WABA | `927875863241325` — review status **APPROVED**, business **verified** |
+| Sender | `1371291466060575` = **+92 316 5004012**, quality **GREEN**, VERIFIED |
+| Template | `velocity_login_code` (`954383491027013`) — **APPROVED**, AUTHENTICATION, `en` |
+| Button | `type: URL`, rendered `Copy code`, 5-minute expiry — so `copy_code` is right |
+
+The token that reaches this pairing is the one that must be in `WHATSAPP_ENV`.
+The other WABA in the alerts notes (`1023997377126678`) answers
+`(#100) does not exist, cannot be loaded due to missing permissions` for this
+token — which is what a token scoped to the *other* account looks like, and is
+worth remembering as the signature of that mistake.
+
+### 5. Check the wiring
 
 There is no separate test callable for this: use a real phone. Sign in with your
 own number and watch `adminGetWhatsAppStatus` — `otp.configured` says whether the

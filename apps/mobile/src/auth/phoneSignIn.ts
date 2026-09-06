@@ -97,6 +97,25 @@ async function bridgeToJsSdk(nativeUser: NativeUser): Promise<void> {
   await nativeSignOut(getNativeAuth()).catch(() => {});
 }
 
+export interface StartVerificationOptions {
+  /**
+   * Skip WhatsApp and send the SMS.
+   *
+   * The one thing the cheap channel cannot tell us is whether the message
+   * actually arrived. Meta answers a send with `accepted` — a message id, a
+   * 200, everything healthy-looking — and can still drop it afterwards. The
+   * backend hears about that on its webhook and stands WhatsApp down, but only
+   * if the webhook is configured and only after Meta gets round to saying so,
+   * and neither of those helps the person holding the phone right now.
+   *
+   * What that person does is tap Resend. So a Resend after a WhatsApp code is
+   * read as what it almost always is — "the WhatsApp one never came" — and
+   * goes by SMS. The cost is bounded to people who did not receive a WhatsApp
+   * message, which is exactly the population that should be getting an SMS.
+   */
+  preferSms?: boolean;
+}
+
 /**
  * Starts verification for an E.164 number (e.g. "+923001234567").
  *
@@ -107,6 +126,11 @@ async function bridgeToJsSdk(nativeUser: NativeUser): Promise<void> {
  * number that has asked for too many codes; handing that one a dearer SMS would
  * reward exactly what the limit is there to stop.
  *
+ * `opts.preferSms` skips WhatsApp outright. The screens pass it on a Resend that
+ * follows a WhatsApp code, because a Resend is the user telling us the first one
+ * did not arrive — and sending a second message down the same channel that just
+ * failed them is how somebody ends up locked out of a working app.
+ *
  * `onAutoVerified` fires when Android verified the number on its own — the code
  * never reaches the user, so the screen should move on without waiting for input.
  * It receives an error instead if the automatic path failed mid-bridge. It is
@@ -116,9 +140,12 @@ async function bridgeToJsSdk(nativeUser: NativeUser): Promise<void> {
 export async function startPhoneVerification(
   e164: string,
   onAutoVerified?: (error?: unknown) => void,
+  opts?: StartVerificationOptions,
 ): Promise<PhoneVerification> {
-  const viaWhatsApp = await startWhatsAppVerification(e164);
-  if (viaWhatsApp) return viaWhatsApp;
+  if (!opts?.preferSms) {
+    const viaWhatsApp = await startWhatsAppVerification(e164);
+    if (viaWhatsApp) return viaWhatsApp;
+  }
 
   return startSmsVerification(e164, onAutoVerified);
 }

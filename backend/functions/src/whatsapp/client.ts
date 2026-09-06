@@ -217,6 +217,7 @@ const ERROR_ACTIONS: ReadonlyMap<number, SendFailureAction> = new Map<number, Se
   [132005, 'halt'],           // Hydrated text too long
   [132007, 'halt'],           // Template format character policy violated
   [132012, 'halt'],           // Parameter format mismatch
+  [132018, 'halt'],           // Button params do not match the approved button
   [132015, 'halt'],           // Template is paused
   [132016, 'halt'],           // Template is disabled — a quality death sentence
   [132068, 'halt'],           // Flow is blocked
@@ -373,7 +374,13 @@ async function postMessage(
  * copy or autofill it rather than retype it.
  */
 
-/** Which OTP button the approved template carries. */
+/**
+ * Which OTP button the approved template carries.
+ *
+ * The three that send something all describe the same *wire* shape but not the
+ * same template, and the distinction that matters is not the one the names
+ * suggest — see `otpComponents`.
+ */
 export type OtpButtonKind =
   /** `Copy code` — works on every platform, needs no app registration. */
   | 'copy_code'
@@ -384,6 +391,17 @@ export type OtpButtonKind =
    * that does nothing, which is worse than Copy code.
    */
   | 'one_tap'
+  /**
+   * The legacy `sub_type: 'copy_code'` / `coupon_code` shape, which belongs to
+   * MARKETING coupon templates rather than to authentication.
+   *
+   * Kept only as an escape hatch. If Meta ever approves an authentication
+   * template whose button comes back as `type: COPY_CODE` instead of
+   * `type: URL`, this is the setting that sends it without a deploy. Do not
+   * reach for it otherwise: on the templates Meta's authentication builder
+   * actually produces it is `(#132018)`.
+   */
+  | 'coupon_code'
   /** The template has no button at all. */
   | 'none';
 
@@ -398,14 +416,18 @@ export interface WhatsAppOtpConfig {
 }
 
 /**
- * The two send payloads differ, and getting it wrong is `(#100) Invalid
- * parameter` — the same trap `resolveUrlButtonIndex` exists for. Copy-code
- * buttons take a `coupon_code` parameter under `sub_type: 'copy_code'`;
- * one-tap buttons take a plain text parameter under `sub_type: 'url'`. Neither
- * is inferable from here: it is a property of what Meta approved.
+ * Reads `WHATSAPP_OTP_BUTTON`.
+ *
+ * `copy_code` and `one_tap` differ only in what the recipient sees; both are
+ * sent identically (see `otpComponents`), so picking the wrong one of those two
+ * is harmless. `coupon_code` is the one that changes the wire, and `none` is
+ * the one to use for a template with no button at all — a button component
+ * sent against a template that has none is rejected just as hard as the wrong
+ * kind.
  */
 function resolveOtpButton(): OtpButtonKind {
   const raw = env('WHATSAPP_OTP_BUTTON').toLowerCase();
+  if (raw === 'coupon_code' || raw === 'copy_code_legacy') return 'coupon_code';
   if (raw === 'one_tap' || raw === 'url' || raw === 'autofill') return 'one_tap';
   if (raw === 'none' || raw === 'off') return 'none';
   // Default to the button that works everywhere and needs nothing registered.
@@ -438,26 +460,47 @@ export function whatsAppOtpConfig(): WhatsAppOtpConfig | null {
 /**
  * Builds the components for one authentication template send.
  *
- * Pure and exported so the payload shape — the part that earns `(#100)` when it
- * is wrong — is unit-testable without a token or a network.
+ * Pure and exported so the payload shape — the part that earns a 4xx when it is
+ * wrong — is unit-testable without a token or a network.
+ *
+ * WHY COPY-CODE AND ONE-TAP SEND THE SAME THING
+ * ---------------------------------------------
+ * They look like opposites and are documented like opposites, and this file
+ * used to treat them that way: `sub_type: 'copy_code'` with a `coupon_code`
+ * parameter for one, `sub_type: 'url'` with text for the other. That is wrong,
+ * and it is wrong in a way no amount of reading the code reveals — it has to be
+ * read off the approved template.
+ *
+ * Meta's authentication builder does not create a copy-code *button*. It
+ * creates a **URL button** pointing at
+ * `https://www.whatsapp.com/otp/code/?otp_type=COPY_CODE&…&code=otp{{1}}`, and
+ * WhatsApp renders that link as `Copy code`. One-tap autofill is the same URL
+ * button with a different `otp_type`. So for BOTH, the parameter Meta wants is
+ * the one that fills `{{1}}` in that URL: plain text under `sub_type: 'url'`.
+ *
+ * Sent the other way round it is `(#132018) buttons: Button at index 0 must be
+ * of type Url` — a 400 on every send, for every recipient, silently billing
+ * every login to Firebase SMS instead. `coupon_code` remains available for the
+ * genuine MARKETING coupon shape, because that one does exist; it is simply not
+ * what an authentication template is made of.
  */
 export function otpComponents(code: string, button: OtpButtonKind): Record<string, unknown>[] {
   const components: Record<string, unknown>[] = [
     { type: 'body', parameters: [{ type: 'text', text: code }] },
   ];
-  if (button === 'copy_code') {
-    components.push({
-      type: 'button',
-      sub_type: 'copy_code',
-      index: '0',
-      parameters: [{ type: 'coupon_code', coupon_code: code }],
-    });
-  } else if (button === 'one_tap') {
+  if (button === 'copy_code' || button === 'one_tap') {
     components.push({
       type: 'button',
       sub_type: 'url',
       index: '0',
       parameters: [{ type: 'text', text: code }],
+    });
+  } else if (button === 'coupon_code') {
+    components.push({
+      type: 'button',
+      sub_type: 'copy_code',
+      index: '0',
+      parameters: [{ type: 'coupon_code', coupon_code: code }],
     });
   }
   return components;
