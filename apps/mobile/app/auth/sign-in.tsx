@@ -284,7 +284,9 @@ export default function SignIn() {
           // retries exactly the part that failed (see phoneSignIn's confirm()),
           // so this asks for that instead of raising an alarm.
           setError('Almost there — tap Verify to finish signing in.');
-        });
+        // A Resend after a WhatsApp code means the WhatsApp code did not arrive.
+        // Sending a second one down the same channel would fail the same way.
+        }, { preferSms: isResend && confirmation?.channel === 'whatsapp' });
         landed = true;
         adoptConfirmation(result, isResend);
       } catch (e) {

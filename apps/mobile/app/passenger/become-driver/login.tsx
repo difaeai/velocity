@@ -118,7 +118,9 @@ export default function DriverLogin() {
         const result = await startPhoneVerification(`+92${digits}`, (autoError) => {
           if (autoError) setError(describePhoneAuthError(autoError).message);
           else routeVerifiedDriver();
-        });
+        // Same reasoning as the passenger screen: a Resend after a WhatsApp code
+        // is the driver telling us it never arrived, so switch channels.
+        }, { preferSms: isResend && confirmation?.channel === 'whatsapp' });
         landed = true;
         setConfirmation(result);
         setStep('enter_otp');

@@ -40,7 +40,12 @@ import { z } from 'zod';
 
 import { auth, db, FieldValue, Timestamp } from '../lib/firebase';
 import { rateLimit } from '../lib/ratelimit';
-import { sendOtpTemplate, toWhatsAppNumber, whatsAppOtpConfig } from '../whatsapp/client';
+import {
+  classifySendError,
+  sendOtpTemplate,
+  toWhatsAppNumber,
+  whatsAppOtpConfig,
+} from '../whatsapp/client';
 import { pktDayKey } from '../whatsapp/policy';
 
 const CHALLENGES = 'otpChallenges';
@@ -368,6 +373,16 @@ export const startWhatsAppOtp = onCall(async (req) => {
     return fallback(res.action === 'drop-recipient' ? 'undeliverable' : 'send-failed');
   }
 
+  // Meta answering 200 means *accepted*, not delivered. The only notice that a
+  // message it accepted never arrived is a `failed` status on the webhook
+  // minutes later, and matching that back to this challenge needs the id Meta
+  // just handed us. Awaited rather than fired and forgotten: a status can beat
+  // an unawaited write, and a write that loses that race is a login that never
+  // falls back. One small update against a round trip we have already paid for.
+  if (res.messageId) {
+    await ref.update({ messageId: res.messageId }).catch(() => undefined);
+  }
+
   countOtpUsage('otpSent', day);
   return {
     sent: true as const,
@@ -376,6 +391,68 @@ export const startWhatsAppOtp = onCall(async (req) => {
     expiresInSec: CODE_TTL_SEC,
   };
 });
+
+/* ──────────────────── When Meta accepts and then drops it ─────────────────── */
+
+/**
+ * A message Meta accepted and then failed to deliver.
+ *
+ * Called from the webhook for every `failed` status, and the answer it returns
+ * is "was this one of ours?" — `false` means the status belongs to the alerts
+ * feature and the webhook should handle it as before.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Every *synchronous* refusal already falls back to SMS: `startWhatsAppOtp`
+ * answers `via: 'sms'` and the app uses the native flow. The hole was the
+ * asynchronous one. Meta returns `message_status: accepted` — a 200, a message
+ * id, everything looking healthy — and only later decides it cannot deliver.
+ * When that happened, the challenge stayed live, the person sat watching a code
+ * screen for a code that was never coming, and every subsequent login went on
+ * cheerfully trying WhatsApp first. That is exactly the silent failure the SMS
+ * fallback is supposed to make impossible.
+ *
+ * WHY IT DOES NOT TRIP THE ALERTS BREAKER
+ * ---------------------------------------
+ * It used to, by accident: the webhook classified the error and tripped the
+ * only breaker it knew about. That is the wrong switch for two reasons. It
+ * stops offline-driver alerts, which had nothing to do with it, and the alerts
+ * breaker only clears when a human clears it — while every minute WhatsApp OTP
+ * stays off is a minute of logins billed at Firebase's rate. So an OTP failure
+ * suppresses OTP, on OTP's own self-clearing 30-minute timer, and the two
+ * features go on not being able to switch each other off.
+ */
+export async function handleOtpDeliveryFailure(
+  messageId: string,
+  detail: string,
+  code: number | null,
+): Promise<boolean> {
+  const snap = await db
+    .collection(CHALLENGES)
+    .where('messageId', '==', messageId)
+    .limit(1)
+    .get();
+  if (snap.empty) return false;
+
+  const doc = snap.docs[0];
+  if (!doc) return false;
+
+  // The code never reached anybody, so the challenge is a live credential
+  // nobody holds. Drop it — and, since the next thing the user does is tap
+  // Resend, dropping it is also what routes them to SMS.
+  await doc.ref.delete().catch(() => undefined);
+
+  // Only an account- or template-level failure means the NEXT login would fail
+  // too. A number that simply is not on WhatsApp says nothing about anyone
+  // else's login, and standing the whole feature down for it would bill every
+  // other login in the next half hour to Firebase for no reason.
+  if (classifySendError(code) === 'halt') {
+    await suppressWhatsAppOtp(detail, code);
+  } else {
+    logger.warn('WhatsApp OTP: accepted then failed', { code, detail });
+  }
+  return true;
+}
 
 /* ─────────────────────────── Redeem the code ─────────────────────────────── */
 

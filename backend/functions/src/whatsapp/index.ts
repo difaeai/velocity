@@ -12,6 +12,7 @@ import { logger } from 'firebase-functions';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
+import { handleOtpDeliveryFailure } from '../auth/whatsappOtp';
 import { db, FieldValue } from '../lib/firebase';
 import { requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
@@ -219,6 +220,8 @@ export function verifySignature(
 interface WebhookValue {
   messages?: { from?: string; type?: string; text?: { body?: string }; button?: { text?: string } }[];
   statuses?: {
+    /** The `wamid` of the message this status is about. */
+    id?: string;
     status?: string;
     recipient_id?: string;
     errors?: { code?: number; title?: string }[];
@@ -264,9 +267,19 @@ async function handleStatus(st: NonNullable<WebhookValue['statuses']>[number]): 
   const code = st.errors?.[0]?.code ?? null;
   const action = classifySendError(code);
   const to = st.recipient_id;
+  const detail = st.errors?.[0]?.title ?? `status error ${code}`;
+
+  // Sign-in codes go out on this same number, so their failures arrive here
+  // too — and they must NOT be handled as an alerts problem. Tripping the
+  // alerts breaker for a login code stops offline-driver alerts for something
+  // that had nothing to do with them, and leaves the person who is actually
+  // affected — someone waiting on a code — with no fallback at all. The OTP
+  // side knows how to kill the dead challenge and stand itself down on its own
+  // self-clearing timer, so give it first refusal.
+  if (st.id && (await handleOtpDeliveryFailure(st.id, detail, code))) return;
 
   if (action === 'halt') {
-    await tripCircuitBreaker(st.errors?.[0]?.title ?? `status error ${code}`, code);
+    await tripCircuitBreaker(detail, code);
     return;
   }
   if (action === 'drop-recipient' && to) {
