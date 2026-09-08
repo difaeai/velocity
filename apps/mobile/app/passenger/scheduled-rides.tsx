@@ -26,7 +26,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
-import { RIDE_TYPE_LABELS, type Gender, type RideType } from '../../src/domain/types';
+import { PAYMENT_METHOD_SHORT, RIDE_TYPE_LABELS, type Gender, type PaymentMethod, type RideType } from '../../src/domain/types';
 
 interface ScheduledRide {
   id: string;
@@ -36,7 +36,11 @@ interface ScheduledRide {
   offeredFare: number;
   seats: number;
   passengerGender: Gender;
+  /** The settlement channel. */
   paymentMethod: 'cash' | 'wallet';
+  /** Every method the rider offered. Absent on schedules saved before the
+   *  multi-select shipped, where paymentMethod alone is the whole answer. */
+  paymentMethods?: PaymentMethod[];
   days: CommuteDay[];
   time: string;
   active: boolean;
@@ -82,7 +86,9 @@ export default function ScheduledRides() {
         offeredFare: ride.offeredFare,
         seats: ride.seats,
         passengerGender: ride.passengerGender,
-        paymentMethod: ride.paymentMethod,
+        paymentMethods: ride.paymentMethods?.length
+          ? ride.paymentMethods
+          : [ride.paymentMethod],
         days: ride.days,
         time: ride.time,
         active: value,
@@ -185,7 +191,9 @@ export default function ScheduledRides() {
               <View style={s.metaRow}>
                 <Text style={s.metaText}>
                   {RIDE_TYPE_LABELS[ride.rideType] ?? ride.rideType} · PKR {ride.offeredFare} ·{' '}
-                  {ride.paymentMethod === 'cash' ? 'Cash' : 'Wallet'}
+                  {(ride.paymentMethods?.length ? ride.paymentMethods : [ride.paymentMethod])
+                    .map((m) => PAYMENT_METHOD_SHORT[m])
+                    .join(' / ')}
                 </Text>
                 <Pressable onPress={() => confirmDelete(ride)} disabled={busyId === ride.id} hitSlop={8}>
                   <Text style={s.deleteText}>Delete</Text>

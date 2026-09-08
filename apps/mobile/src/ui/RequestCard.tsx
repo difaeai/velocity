@@ -25,7 +25,7 @@ import { colors } from '../config';
 import { themed } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { timeAgo } from '../lib/timeAgo';
-import { RIDE_TYPE_LABELS } from '../domain/types';
+import { PAYMENT_METHOD_SHORT, RIDE_TYPE_LABELS, type PaymentMethod } from '../domain/types';
 import type { OpenRequest } from '../hooks/driver';
 
 /** Horizontal travel (px) that counts as "swiped open". */
@@ -133,7 +133,16 @@ export function RequestCard({
   const rating = r.passengerRating ?? 5;
   const ratingCount = r.passengerRatingCount ?? 0;
   const name = r.passengerName?.trim() || 'Passenger';
-  const paymentLabel = r.paymentMethod === 'wallet' ? 'Wallet' : 'Cash';
+  /**
+   * Every way this rider will pay, which is what the driver is actually
+   * deciding on — a rider offering cash or JazzCash is easier to accept than
+   * one who only has a bank transfer. Requests booked before the multi-select
+   * shipped carry a single method, so fall back to it rather than showing a
+   * driver nothing.
+   */
+  const payMethods: PaymentMethod[] = r.paymentMethods?.length
+    ? r.paymentMethods
+    : [r.paymentMethod === 'wallet' ? 'wallet' : 'cash'];
 
   // Pool vs solo is the single most important thing about a request for the
   // driver — a pool means several pickups and several drop-offs on one fare —
@@ -187,9 +196,11 @@ export function RequestCard({
           <Text style={styles.dropoff} numberOfLines={2}>{r.dropoff?.address ?? 'Drop-off'}</Text>
 
           <View style={styles.chips}>
-            <View style={[styles.chip, styles.chipPay]}>
-              <Text style={styles.chipPayTxt}>{paymentLabel}</Text>
-            </View>
+            {payMethods.map((m) => (
+              <View key={m} style={[styles.chip, styles.chipPay]}>
+                <Text style={styles.chipPayTxt}>{PAYMENT_METHOD_SHORT[m]}</Text>
+              </View>
+            ))}
             <View style={[styles.chip, styles.chipCat]}>
               <Text style={styles.chipCatTxt}>{RIDE_TYPE_LABELS[r.rideType]}</Text>
             </View>

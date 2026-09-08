@@ -428,6 +428,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ----- marketRates/{cityId} -------------------------------------------
+    // What inDrive and Yango charge in this city, as rate cards fitted to real
+    // observations. Riders read it so the booking screen can show the
+    // comparison without a round trip; only the callables write it, so no
+    // client can invent a competitor price for us to undercut.
+    match /marketRates/{cityId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ----- competitorQuoteReports/{id} ------------------------------------
+    // Riders telling us what another app quoted them. Written through
+    // reportCompetitorQuote (which rate-limits and sanity-checks), read only by
+    // the market desk — one rider's report is not for other riders to see.
+    match /competitorQuoteReports/{reportId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- paymentIntents/{id} & payouts/{id} -----------------------------
     // Wallet top-up intents and driver payout requests. Written only by the
     // backend; the owner and admins may read.

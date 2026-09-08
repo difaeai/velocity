@@ -51,6 +51,32 @@ export type TripStatus =
 
 export type BidStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
 
+/**
+ * Everything a rider can offer to pay with. A booking carries a LIST of these,
+ * not one: a rider who is happy with cash or JazzCash gets picked up by more
+ * drivers than one who insists on a single method, and the driver decides which
+ * of the offered methods they actually want.
+ */
+export type PaymentMethod = 'cash' | 'easypaisa' | 'jazzcash' | 'bank' | 'wallet';
+
+export const PAYMENT_METHODS: readonly PaymentMethod[] = [
+  'cash', 'easypaisa', 'jazzcash', 'bank', 'wallet',
+] as const;
+
+/**
+ * Which ledger a booking settles through.
+ *
+ * EasyPaisa, JazzCash and a bank transfer are money that reaches the driver
+ * directly, exactly like a banknote — the platform never holds it, and the
+ * driver owes commission on it. Only a wallet ride settles inside Velocity, and
+ * only when the rider offered nothing else. Every downstream money path
+ * (commission, cash-in-hand, payouts) keys off this, so it stays the two values
+ * that logic has always understood.
+ */
+export function settlementChannel(methods: PaymentMethod[]): 'cash' | 'wallet' {
+  return methods.length === 1 && methods[0] === 'wallet' ? 'wallet' : 'cash';
+}
+
 export interface GeoPoint {
   lat: number;
   lng: number;

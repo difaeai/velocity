@@ -269,6 +269,18 @@ export default function AdminDashboard() {
           <Text style={styles.ridersCardArrow}>→</Text>
         </Pressable>
 
+        {/* Market rates — where we stand against inDrive and Yango */}
+        <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/market-rates')}>
+          <View style={styles.ridersCardLeft}>
+            <Text style={styles.ridersCardTitle}>📊  Market Rates</Text>
+            <Text style={styles.ridersCardDesc}>
+              What inDrive and Yango charge here, whether we are still under
+              them, and the rate cards the comparison runs on
+            </Text>
+          </View>
+          <Text style={styles.ridersCardArrow}>→</Text>
+        </Pressable>
+
         {/* Intercity Trips */}
         <Pressable style={styles.ridersCard} onPress={() => router.push('/admin/intercity-trips')}>
           <View style={styles.ridersCardLeft}>

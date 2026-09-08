@@ -5,6 +5,7 @@ import {
   calculateFare, validateBid, calculatePoolingSplit,
   DEFAULT_ISLAMABAD_RAWALPINDI, DEFAULT_KARACHI,
 } from './fareEngine';
+import { comparisonFor } from './marketFunctions';
 
 const REGION = 'asia-south1';
 const db = () => getFirestore();
@@ -73,7 +74,32 @@ export const getFareEstimate = onCall({ region: REGION }, async (req) => {
   const { cityId, trip } = parseTrip(req.data as Record<string, unknown>);
   const cfg = await loadCityConfig(cityId);
   trip.surgeMultiplier = await getZoneSurge(cityId, req.data?.geohash as string);
-  return calculateFare(cfg, trip);
+  const est = calculateFare(cfg, trip);
+
+  // Hold the engine's answer against what inDrive and Yango charge, and come in
+  // under the cheaper of them. This is the authoritative copy of that rule —
+  // the booking screen previews the same maths, but this is the number that
+  // counts. With no verified competitor rates for the city the comparison is
+  // unavailable and the engine's fare stands untouched.
+  const { comparison } = await comparisonFor(
+    cityId, trip.category, trip.distanceKm, trip.durationMin,
+    est.recommendedFare, est.minAcceptableBid,
+  );
+
+  return {
+    ...est,
+    recommendedFare: comparison.available ? comparison.velocityFare : est.recommendedFare,
+    market: {
+      available: comparison.available,
+      competitors: comparison.competitors,
+      cheapest: comparison.cheapest,
+      targetFare: comparison.targetFare,
+      savings: comparison.savings,
+      savingsPct: comparison.savingsPct,
+      guaranteeMet: comparison.guaranteeMet,
+      engineFare: comparison.engineFare,
+    },
+  };
 });
 
 export const submitBid = onCall({ region: REGION }, async (req) => {

@@ -18,7 +18,9 @@ import { rateLimit } from '../lib/ratelimit';
 import { encodeGeohash } from '../lib/geohash';
 import { sendToUser, sendToUsers } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { DriverPublicInfo, TripStatus } from '../domain/types';
+import {
+  DriverPublicInfo, TripStatus, PaymentMethod, PAYMENT_METHODS, settlementChannel,
+} from '../domain/types';
 import {
   MAX_POOL_RIDERS,
   MAX_SEATS,
@@ -110,6 +112,19 @@ const createTripSchema = z.object({
   // joinable only through the share link. Nullish because the mobile SDK
   // encodes absent optionals as null on the wire.
   poolVisibility: z.enum(['public', 'private']).nullish(),
+  /**
+   * Every method the rider will accept, in their own order of preference.
+   * At least one, and the driver sees all of them on the request.
+   */
+  paymentMethods: z
+    .array(z.enum(['cash', 'easypaisa', 'jazzcash', 'bank', 'wallet']))
+    .min(1, 'Choose at least one way to pay.')
+    .max(PAYMENT_METHODS.length)
+    .optional(),
+  /**
+   * Legacy single choice, still sent by older builds on phones that have
+   * not updated. Ignored whenever paymentMethods is present.
+   */
   paymentMethod: z.enum(['cash', 'wallet']).default('cash'),
   preferFemaleDriver: z.boolean().optional(),
   promoCode: z.string().max(32).optional(),
@@ -126,6 +141,15 @@ export const createTrip = onCall(async (req) => {
     invalid(parsed.error.issues[0]?.message ?? 'Invalid trip request.');
   }
   const data = parsed.data;
+
+  // What the rider will accept, and which ledger that lands in. A build that
+  // predates the multi-select still sends only `paymentMethod`, so fall back to
+  // it rather than rejecting those riders. Duplicates are squeezed out because
+  // the list is shown to the driver verbatim.
+  const paymentMethods: PaymentMethod[] = Array.from(
+    new Set<PaymentMethod>(data.paymentMethods ?? [data.paymentMethod]),
+  );
+  const paymentMethod = settlementChannel(paymentMethods);
 
   // Two independent config reads that used to run back to back, costing the
   // rider a whole extra round trip on the one call they are staring at a
@@ -191,7 +215,7 @@ export const createTrip = onCall(async (req) => {
     const finalFare = Math.max(50, data.offeredFare - promoDiscount);
     broadcastFare = finalFare;
 
-    if (data.paymentMethod === 'wallet' && walletBalance < finalFare) {
+    if (paymentMethod === 'wallet' && walletBalance < finalFare) {
       throw new HttpsError(
         'failed-precondition',
         `Insufficient wallet balance (${walletBalance} PKR). Top up your wallet or pay with cash.`,
@@ -239,7 +263,8 @@ export const createTrip = onCall(async (req) => {
             },
           }
         : {}),
-      paymentMethod: data.paymentMethod,
+      paymentMethod,
+      paymentMethods,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
       promoCode: data.promoCode ?? null,
       promoDiscount,
@@ -278,7 +303,8 @@ export const createTrip = onCall(async (req) => {
             },
           }
         : {}),
-      paymentMethod: data.paymentMethod,
+      paymentMethod,
+      paymentMethods,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
       pickup: data.pickup,
       dropoff: data.dropoff,

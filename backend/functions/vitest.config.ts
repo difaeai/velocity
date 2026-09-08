@@ -12,6 +12,7 @@ export default defineConfig({
       'src/auth/__tests__/**/*.test.ts',
       'src/users/__tests__/**/*.test.ts',
       'src/lib/__tests__/**/*.test.ts',
+      'src/fare/__tests__/**/*.test.ts',
       'src/travelMate/__tests__/**/*.test.ts',
       'src/poolRideRequests/__tests__/**/*.test.ts',
       'src/poolRides/__tests__/**/*.test.ts',

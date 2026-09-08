@@ -691,6 +691,42 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "competitorQuoteReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "cityId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "competitorQuoteReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "cityId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "competitor",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

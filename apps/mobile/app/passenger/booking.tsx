@@ -56,10 +56,14 @@ import {
 } from '../../src/ui/RideIcons';
 import {
   BASE_FARES,
+  BOOKABLE_PAYMENT_METHODS,
   MAX_SEATS,
+  PAYMENT_METHOD_LABELS,
   RIDE_TYPE_LABELS,
   fareBounds,
+  settlementChannel,
   type Gender,
+  type PaymentMethod,
   type PoolVisibility,
   type RideType,
 } from '../../src/domain/types';
@@ -67,6 +71,11 @@ import {
   CityFareConfig, VehicleCategory,
   calculateFare, round5,
 } from '../../src/lib/fareEngine';
+import {
+  CityMarketRates, Competitor, MarketComparison, MarketComparisonSettings,
+  DEFAULT_MARKET_SETTINGS, compareToMarket,
+} from '../../src/lib/marketRates';
+import { MarketCompare } from '../../src/ui/MarketCompare';
 
 /** A booking dictated on the voice screen, ready to seed this screen's state. */
 interface VoicePrefill {
@@ -135,10 +144,16 @@ const RIDE_SNAP_POINTS = [0.44, 0.70, 0.94];
 // is only ever a label.
 const CURRENT_LOCATION_LABEL = 'Current location';
 
-// The prefilled offer is pinned below the engine's market-fair estimate so
-// Velocity always reads cheaper than inDrive/Yango for the same trip:
+// Every fare document on this screen is keyed by city. One city is live, so it
+// is a constant rather than a lookup; when the second one opens this becomes a
+// function of the pickup coordinates and nothing else here changes.
+const CITY_ID = 'islamabad_rawalpindi';
+
+// The fallback for a city or vehicle class we have no verified competitor rates
+// for. It is a flat step under our own recommended fare — a position rather than
+// a comparison, which is why nothing is shown to the rider about it. Where real
+// rate cards exist, `marketFor` below overrides this with the actual undercut.
 // display = recommendedFare × ANCHOR_FACTOR, clamped to the allowed bid range.
-// 0.80 = "we look ~20% cheaper than the market". Tune here.
 const ANCHOR_FACTOR = 0.8;
 
 function anchorFare(est: { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number }): number {
@@ -321,8 +336,27 @@ export default function Booking() {
   // Fare engine config from Firestore (city-level rates set by admin)
   const [fareConfig, setFareConfig] = useState<CityFareConfig | null>(null);
   useEffect(() => {
-    getDoc(doc(db, 'fareConfig', 'islamabad_rawalpindi')).then((snap) => {
+    getDoc(doc(db, 'fareConfig', CITY_ID)).then((snap) => {
       if (snap.exists()) setFareConfig(snap.data() as CityFareConfig);
+    }).catch(() => {});
+  }, []);
+
+  // What the other apps charge here, and the rule for staying under them.
+  // Read straight from Firestore rather than through a callable: the rider
+  // changes vehicle class several times on this screen and each change would
+  // otherwise be a network round trip. The backend recomputes the same
+  // comparison when the trip is actually created — that copy is the one that
+  // decides money.
+  const [marketRates, setMarketRates] = useState<CityMarketRates | null>(null);
+  const [marketSettings, setMarketSettings] = useState<MarketComparisonSettings>(DEFAULT_MARKET_SETTINGS);
+  useEffect(() => {
+    getDoc(doc(db, 'marketRates', CITY_ID)).then((snap) => {
+      if (snap.exists()) setMarketRates(snap.data() as CityMarketRates);
+    }).catch(() => {});
+    getDoc(doc(db, 'config', 'marketComparison')).then((snap) => {
+      if (snap.exists()) {
+        setMarketSettings({ ...DEFAULT_MARKET_SETTINGS, ...(snap.data() as Partial<MarketComparisonSettings>) });
+      }
     }).catch(() => {});
   }, []);
 
@@ -344,7 +378,22 @@ export default function Booking() {
   const [seats, setSeats] = useState(voicePrefill?.seats ?? 1);
   const [gender] = useState<Gender>('unspecified');
   const [autoAccept, setAutoAccept] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'wallet'>('cash');
+  /**
+   * Everything the rider is willing to pay with. A list, not a choice: a rider
+   * who will take cash OR JazzCash is a rider more drivers will pick up, and
+   * the driver picks from what was offered when the ride ends.
+   *
+   * Cash starts selected because it is how almost every ride here is paid and
+   * nobody should have to tap to get the default. Emptying the list is allowed
+   * while the rider is deciding; the Book button is what refuses to proceed.
+   */
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(['cash']);
+
+  function togglePaymentMethod(m: PaymentMethod) {
+    setPaymentMethods((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+    );
+  }
   // Pool rides: public → nearby riders can discover and join; private → only
   // people with the share link can join.
   const [poolVisibility, setPoolVisibility] = useState<PoolVisibility>('public');
@@ -384,8 +433,48 @@ export default function Booking() {
     userEditedFare.current = false;
   }, [dropoffCoords, rideType]);
 
+  /**
+   * The comparison for the currently selected vehicle class, and the fare that
+   * falls out of it.
+   *
+   * Two regimes, and the difference matters. With verified competitor cards for
+   * this city and class we price against them — `compareToMarket` puts us
+   * `undercutPct` below the cheaper of the two, never through the driver floor.
+   * With no cards the ANCHOR_FACTOR fallback above stands, exactly as it did
+   * before any of this existed: a flat step under our own recommended fare.
+   * The second regime is a position, not a comparison, which is why it shows
+   * the rider no competitor numbers.
+   */
+  const marketFor = (rt: RideType): { fare: number; comparison: MarketComparison | null } => {
+    const est = fareConfig && distKm
+      ? calculateFare(fareConfig, {
+          category: RIDE_TO_CAT[rt],
+          distanceKm: distKm,
+          durationMin: Math.round(distKm * 3.5),
+        })
+      : null;
+    if (!est || !distKm) return { fare: BASE_FARES[rt], comparison: null };
+
+    const comparison = compareToMarket({
+      cityRates: marketRates,
+      settings: marketSettings,
+      category: RIDE_TO_CAT[rt],
+      distanceKm: distKm,
+      durationMin: Math.round(distKm * 3.5),
+      velocityFare: est.recommendedFare,
+      floorFare: est.minAcceptableBid,
+    });
+
+    return {
+      fare: comparison.available ? comparison.velocityFare : anchorFare(est),
+      comparison: comparison.available ? comparison : null,
+    };
+  };
+
+  const marketNow = marketFor(rideType);
+
   const prefillAnchor = engineEst
-    ? anchorFare(engineEst)
+    ? marketNow.fare
     : fareConfig
       ? fareConfig.categories[RIDE_TO_CAT[rideType]]?.minFare ?? null
       : null;
@@ -395,12 +484,12 @@ export default function Booking() {
     setFareText(String(prefillAnchor));
   }, [prefillAnchor]);
 
-  // Engine-anchored price for a ride type (falls back to the static base fare).
+  /**
+   * Price shown on a vehicle card. Same path as the selected class takes, so
+   * the carousel and the offer below it can never disagree.
+   */
   function priceFor(rt: RideType): number {
-    const est = fareConfig && distKm
-      ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rt], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
-      : null;
-    return est ? anchorFare(est) : BASE_FARES[rt];
+    return marketFor(rt).fare;
   }
 
   function selectRide(rt: RideType) {
@@ -575,6 +664,13 @@ export default function Booking() {
       requestLocation();
       return;
     }
+    // The Book button is already disabled without one, so this only catches a
+    // press that raced the state — but a ride whose driver cannot tell how they
+    // get paid is not a ride worth creating.
+    if (paymentMethods.length === 0) {
+      setError('Choose at least one way to pay before booking.');
+      return;
+    }
     // Clamp the offer into the allowed band before it reaches the backend, in
     // case the fare field is still focused and never got its onBlur clamp.
     const min = engineEst?.minAcceptableBid ?? bounds.min;
@@ -602,7 +698,7 @@ export default function Booking() {
         passengerGender: gender,
         pool: isPool,
         poolVisibility: isPool ? poolVisibility : undefined,
-        paymentMethod,
+        paymentMethods,
         preferFemaleDriver: false,
         promoCode: promoCode.trim() || undefined,
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
@@ -615,6 +711,29 @@ export default function Booking() {
       setError(e instanceof FirebaseError ? e.message : 'Could not create the ride.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  /**
+   * The rider tells us what inDrive or Yango quoted them for this exact trip.
+   *
+   * Best-effort on purpose: a failed report must never interrupt a booking, so
+   * it swallows its own errors. The report is stored unreviewed and moves no
+   * price by itself — the pricing desk fits it into a rate card.
+   */
+  async function reportCompetitorQuote(competitor: Competitor, quotedFare: number) {
+    if (!distKm) return;
+    try {
+      await api.reportCompetitorQuote({
+        cityId: CITY_ID,
+        competitor,
+        category: RIDE_TO_CAT[rideType],
+        quotedFare,
+        distanceKm: +distKm.toFixed(2),
+        durationMin: Math.round(distKm * 3.5),
+      });
+    } catch {
+      // Nothing to say to the rider — this was a favour to us, not a booking step.
     }
   }
 
@@ -648,7 +767,7 @@ export default function Booking() {
         offeredFare: fare,
         seats,
         passengerGender: gender,
-        paymentMethod,
+        paymentMethods,
         days: schedDays,
         time,
       });
@@ -685,7 +804,17 @@ export default function Booking() {
   // The best case a pool can reach: a full car. Never the price we lead with —
   // the rider pays the full fare until somebody actually joins.
   const poolShareFare = poolFareFor(fare, POOL_TIERS[POOL_TIERS.length - 1]?.extra ?? 3);
-  const payLabel = paymentMethod === 'cash' ? 'Pay cash' : 'Pay from wallet';
+  // The ledger this booking lands in. EasyPaisa, JazzCash and a bank transfer
+  // are money that reaches the driver directly, so they settle exactly like
+  // cash; only a wallet-only ride settles inside Velocity.
+  const paymentMethod = settlementChannel(paymentMethods);
+  const noPaymentChosen = paymentMethods.length === 0;
+  const onlyPayment = paymentMethods.length === 1 ? paymentMethods[0] : undefined;
+  const payLabel = paymentMethods.length === 0
+    ? 'Choose how you pay'
+    : onlyPayment
+      ? `Pay by ${PAYMENT_METHOD_LABELS[onlyPayment].toLowerCase()}`
+      : `${paymentMethods.length} ways to pay offered`;
 
   /* ════════════════════ STAGE 1 — ROUTE ENTRY ════════════════════ */
   if (stage === 'route') {
@@ -1143,7 +1272,16 @@ export default function Booking() {
               })}
           </ScrollView>
 
-          {/* ── 3. What you offer the driver ── */}
+          {/* ── 3. What the same trip costs elsewhere ──
+               Renders only when there is a fresh, well-sampled rate card for
+               this city and vehicle class. No data, no panel — never a guess. */}
+          <MarketCompare
+            comparison={marketNow.comparison}
+            disclaimer={marketSettings.disclaimer}
+            onReport={reportCompetitorQuote}
+          />
+
+          {/* ── 4. What you offer the driver ── */}
           <Text style={styles.stepLabel}>WHAT WILL YOU PAY?</Text>
           <View style={styles.fareCard}>
             <View style={styles.fareStepperRow}>
@@ -1177,57 +1315,66 @@ export default function Booking() {
             </Text>
           </View>
 
+          {/* ── 5. How you will pay ──
+               The last thing between the rider and a driver, and the one part
+               of the sheet that will not accept an empty answer. Offering more
+               than one method is not a formality: the driver sees every method
+               on the request and takes the ride knowing they can be paid a way
+               that suits them. ── */}
+          <Text style={styles.stepLabel}>HOW WILL YOU PAY? · PICK AT LEAST ONE</Text>
+          <View style={styles.payWrap}>
+            {BOOKABLE_PAYMENT_METHODS.map((m) => {
+              const on = paymentMethods.includes(m);
+              const walletLocked = m === 'wallet' && !walletTopupEnabled;
+              return (
+                <Pressable
+                  key={m}
+                  style={[styles.payChip, on && styles.payChipOn, walletLocked && styles.payChipOff]}
+                  onPress={() => {
+                    if (walletLocked) {
+                      Alert.alert(
+                        'Coming soon',
+                        'Wallet payments are coming soon. Cash, EasyPaisa, JazzCash and bank transfer all work today.',
+                      );
+                      return;
+                    }
+                    togglePaymentMethod(m);
+                  }}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={PAYMENT_METHOD_LABELS[m]}
+                >
+                  {m === 'cash' ? (
+                    <CashIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
+                  ) : m === 'wallet' ? (
+                    <WalletIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
+                  ) : null}
+                  <Text style={[styles.payChipTxt, on && styles.payChipTxtOn]}>
+                    {walletLocked ? 'Wallet (soon)' : PAYMENT_METHOD_LABELS[m]}
+                  </Text>
+                  {on ? <Text style={styles.payChipTick}>✓</Text> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={paymentMethods.length === 0 ? styles.payWarn : styles.payHint}>
+            {paymentMethods.length === 0
+              ? 'Choose at least one way to pay before you book.'
+              : 'Your driver sees these on the request and settles with you at the end.'}
+          </Text>
+
           {/* ── Everything else. A first-time rider can book without ever
-               opening this: cash, a public pool and no promo are the defaults,
-               and they are what almost every rider wants anyway. ── */}
+               opening this: a public pool and no promo are the defaults, and
+               they are what almost every rider wants anyway. ── */}
           <Pressable style={styles.moreToggle} onPress={() => setMoreOpen((v) => !v)}>
             <Text style={styles.moreToggleText}>
-              {moreOpen ? 'Hide extra options' : 'Payment, promo code & more'}
+              {moreOpen ? 'Hide extra options' : 'Promo code, pool settings & more'}
             </Text>
             <Text style={styles.moreChevron}>{moreOpen ? '⌃' : '⌄'}</Text>
           </Pressable>
 
           {moreOpen ? (
             <View style={styles.moreBody}>
-              <Text style={styles.sectionLabel}>HOW YOU PAY</Text>
-              <View style={styles.paymentToggleRow}>
-                <Pressable
-                  style={[styles.paymentBtn, paymentMethod === 'cash' && styles.paymentBtnActive]}
-                  onPress={() => setPaymentMethod('cash')}
-                >
-                  <CashIcon
-                    size={17}
-                    color={paymentMethod === 'cash' ? colors.primary : colors.muted}
-                    accent={paymentMethod === 'cash' ? colors.primary : colors.muted}
-                  />
-                  <Text style={[styles.paymentBtnLabel, paymentMethod === 'cash' && styles.paymentBtnLabelActive]}>Cash</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.paymentBtn,
-                    paymentMethod === 'wallet' && styles.paymentBtnActive,
-                    !walletTopupEnabled && { opacity: 0.5 },
-                  ]}
-                  disabled={!walletTopupEnabled}
-                  onPress={() => {
-                    if (!walletTopupEnabled) {
-                      Alert.alert('Coming soon', 'Wallet payments are coming soon. Please pay the driver in cash for now.');
-                      return;
-                    }
-                    setPaymentMethod('wallet');
-                  }}
-                >
-                  <WalletIcon
-                    size={17}
-                    color={paymentMethod === 'wallet' ? colors.primary : colors.muted}
-                    accent={paymentMethod === 'wallet' ? colors.primary : colors.muted}
-                  />
-                  <Text style={[styles.paymentBtnLabel, paymentMethod === 'wallet' && styles.paymentBtnLabelActive]}>
-                    {walletTopupEnabled ? 'Wallet' : 'Wallet (soon)'}
-                  </Text>
-                </Pressable>
-              </View>
-
               <View style={styles.optionTogglesRow}>
                 {mode === 'solo' && (
                   <Pressable style={styles.optionToggle} onPress={() => setAutoAccept(v => !v)}>
@@ -1405,21 +1552,32 @@ export default function Booking() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <Pressable
-          style={({ pressed }) => [styles.bookButton, pressed && { opacity: 0.85 }, loading && { opacity: 0.7 }]}
+          style={({ pressed }) => [
+            styles.bookButton,
+            pressed && { opacity: 0.85 },
+            (loading || noPaymentChosen) && { opacity: 0.7 },
+          ]}
           onPress={submitRide}
-          disabled={loading}
+          disabled={loading || noPaymentChosen}
           accessibilityRole="button"
+          accessibilityState={{ disabled: loading || noPaymentChosen }}
           accessibilityLabel={`Book ride for ${fare} rupees`}
         >
           <Text style={styles.bookButtonText}>
-            {loading ? 'Booking…' : `Book Ride · PKR ${fare}`}
+            {loading
+              ? 'Booking…'
+              : noPaymentChosen
+                ? 'Choose how you will pay'
+                : `Book Ride · PKR ${fare}`}
           </Text>
         </Pressable>
 
         <Text style={styles.bookCaption}>
-          {mode === 'pool'
-            ? `${payLabel} · PKR ${fare} if you ride alone, PKR ${poolShareFare} each when full`
-            : `${payLabel} · drivers bid on your offer — no surge tricks`}
+          {noPaymentChosen
+            ? 'Pick at least one payment method above — drivers need to know how they get paid.'
+            : mode === 'pool'
+              ? `${payLabel} · PKR ${fare} if you ride alone, PKR ${poolShareFare} each when full`
+              : `${payLabel} · drivers bid on your offer — no surge tricks`}
         </Text>
       </View>
 
@@ -1462,7 +1620,8 @@ export default function Booking() {
               {`${(pickup.trim() || currentAddress || 'Current location')} → ${dropoff.trim() || 'Destination'}`}
             </Text>
             <Text style={styles.schedSub}>
-              {RIDE_TYPE_LABELS[rideType]} · PKR {fare} · {paymentMethod === 'cash' ? 'Cash' : 'Wallet'}
+              {RIDE_TYPE_LABELS[rideType]} · PKR {fare} ·{' '}
+              {paymentMethods.map((m) => PAYMENT_METHOD_LABELS[m]).join(' / ') || 'No payment method'}
             </Text>
 
             <Text style={styles.schedLabel}>REPEAT ON</Text>
@@ -2596,33 +2755,50 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  paymentToggleRow: {
+  /* ── How you will pay. A wrapping row of toggles rather than a segmented
+       control, because more than one of them can be on at once. ── */
+  payWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  paymentBtn: {
-    flex: 1,
+  payChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 44,
+    gap: 7,
+    height: 42,
+    paddingHorizontal: 14,
     borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1.5,
     borderColor: colors.border,
   },
-  paymentBtnActive: {
+  payChipOn: {
     backgroundColor: colors.glassLime,
     borderColor: colors.primary,
   },
-  paymentBtnLabel: {
+  payChipOff: { opacity: 0.5 },
+  payChipTxt: {
     fontSize: 13,
     fontWeight: '800',
     color: colors.muted,
   },
-  paymentBtnLabelActive: {
+  payChipTxtOn: { color: colors.primary },
+  payChipTick: {
+    fontSize: 12,
+    fontWeight: '900',
     color: colors.primary,
+  },
+  payHint: {
+    fontSize: 11.5,
+    color: colors.muted,
+    lineHeight: 16,
+  },
+  payWarn: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: colors.danger,
+    lineHeight: 16,
   },
   optionTogglesRow: {
     flexDirection: 'row',

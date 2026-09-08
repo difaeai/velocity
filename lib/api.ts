@@ -34,6 +34,46 @@ function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
 
 /** Admin-only backend actions (each guarded by requireAdmin server-side). */
 export const adminApi = {
+  // ── Market desk ─────────────────────────────────────────────────────────
+  // Competitor rate cards and the undercut rule. Nothing here scrapes anyone:
+  // the cards hold fares somebody observed, and the backend refuses one without
+  // a source and a sample size.
+  adminUpsertMarketRates: callable<
+    {
+      cityId: string;
+      competitor: 'indrive' | 'yango';
+      category: 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury';
+      rates: {
+        base: number; includedKm: number; includedMin: number;
+        perKm: number; perMin: number; minFare: number;
+        competitorClass: string;
+        source: 'ops_survey' | 'rider_reports' | 'published';
+        sampleSize: number;
+        note?: string;
+      };
+    },
+    { ok: boolean }
+  >('adminUpsertMarketRates'),
+  adminDeleteMarketRates: callable<
+    {
+      cityId: string;
+      competitor: 'indrive' | 'yango';
+      category: 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury';
+    },
+    { ok: boolean }
+  >('adminDeleteMarketRates'),
+  adminFitMarketRates: callable<
+    {
+      cityId: string;
+      competitor: 'indrive' | 'yango';
+      category: 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury';
+    },
+    { ok: boolean; reason?: string; reportCount: number; needed?: number }
+  >('adminFitMarketRates'),
+  adminMarketPosition: callable<
+    { cityId: string; distanceKm?: number; durationMin?: number },
+    { cityId: string; distanceKm: number; durationMin: number; undercutPct: number; rows: unknown[] }
+  >('adminMarketPosition'),
   approveDriver: callable<{ driverId: string }, { ok: boolean }>('approveDriver'),
   rejectDriver: callable<
     { driverId: string; reason?: string; suspend?: boolean; rejectedSections?: string[] },
