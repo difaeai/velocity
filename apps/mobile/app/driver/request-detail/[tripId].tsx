@@ -33,7 +33,7 @@ import { themed } from '../../../src/theme';
 import { formatDistance } from '../../../src/lib/geo';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { DraggableSheet } from '../../../src/ui/DraggableSheet';
-import { RIDE_TYPE_LABELS } from '../../../src/domain/types';
+import { PAYMENT_METHOD_SHORT, RIDE_TYPE_LABELS, type PaymentMethod } from '../../../src/domain/types';
 import { RequestRouteMap } from '../../../src/ui/RequestRouteMap';
 import { ReportRequestModal } from '../../../src/ui/ReportRequestModal';
 import { DriverDrawer } from '../../../src/ui/DriverDrawer';
@@ -265,11 +265,16 @@ export default function RequestDetailScreen() {
               </View>
 
               <View style={styles.chips}>
-                <View style={[styles.chip, styles.chipPay]}>
-                  <Text style={styles.chipPayTxt}>
-                    {request.paymentMethod === 'wallet' ? 'Wallet' : 'Cash'}
-                  </Text>
-                </View>
+                {/* Every method this rider offered — the driver picks one of
+                    these at the end of the ride, so all of them belong here. */}
+                {(request.paymentMethods?.length
+                  ? request.paymentMethods
+                  : [(request.paymentMethod === 'wallet' ? 'wallet' : 'cash') as PaymentMethod]
+                ).map((m) => (
+                  <View key={m} style={[styles.chip, styles.chipPay]}>
+                    <Text style={styles.chipPayTxt}>{PAYMENT_METHOD_SHORT[m]}</Text>
+                  </View>
+                ))}
                 <View style={[styles.chip, styles.chipCat]}>
                   <Text style={styles.chipCatTxt}>{RIDE_TYPE_LABELS[request.rideType]}</Text>
                 </View>

@@ -39,6 +39,55 @@ export const RIDE_TYPE_LABELS: Record<RideType, string> = {
   xl: 'XL',
 };
 
+// ── How a rider will pay ────────────────────────────────────────────────────
+/**
+ * Everything a rider can offer to pay with. A booking carries a LIST of these,
+ * not one: a rider who is happy with cash or JazzCash gets picked up by more
+ * drivers than one who insists on a single method, and the driver decides
+ * which of the offered methods they actually want.
+ *
+ * `wallet` is the only one that settles inside Velocity. Cash, EasyPaisa,
+ * JazzCash and a bank transfer all end with the rider paying the driver
+ * directly, which is why `settlementChannel` folds them together — see there.
+ */
+export type PaymentMethod = 'cash' | 'easypaisa' | 'jazzcash' | 'bank' | 'wallet';
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Cash',
+  easypaisa: 'EasyPaisa',
+  jazzcash: 'JazzCash',
+  bank: 'Bank transfer',
+  wallet: 'Wallet',
+};
+
+/** Short forms for the driver's request card, where space is tight. */
+export const PAYMENT_METHOD_SHORT: Record<PaymentMethod, string> = {
+  cash: 'Cash',
+  easypaisa: 'EasyPaisa',
+  jazzcash: 'JazzCash',
+  bank: 'Bank',
+  wallet: 'Wallet',
+};
+
+/** The methods a rider can pick at booking, in the order they are shown. */
+export const BOOKABLE_PAYMENT_METHODS: PaymentMethod[] = [
+  'cash', 'easypaisa', 'jazzcash', 'bank', 'wallet',
+];
+
+/**
+ * Which ledger a booking settles through.
+ *
+ * EasyPaisa, JazzCash and a bank transfer are money that reaches the driver
+ * directly, exactly like a banknote — the platform never holds it, and the
+ * driver owes commission on it. Only a wallet ride settles inside Velocity, and
+ * only when the rider offered nothing else. Everything downstream of a
+ * completed trip (commission, cash-in-hand, payouts) keys off this, so it stays
+ * the two values that logic has always understood.
+ */
+export function settlementChannel(methods: PaymentMethod[]): 'cash' | 'wallet' {
+  return methods.length === 1 && methods[0] === 'wallet' ? 'wallet' : 'cash';
+}
+
 // ── Fare logic (mirrors the backend; the server remains authoritative) ──
 export const COMMISSION_RATE = 0.1;
 export const MAX_SEATS = 4;
@@ -129,7 +178,10 @@ export interface Trip {
   fare: number | null;
   seats: number;
   passengerGender: Gender;
+  /** The settlement channel — see settlementChannel(). */
   paymentMethod?: 'cash' | 'wallet';
+  /** Every method the rider offered to pay with. Always at least one. */
+  paymentMethods?: PaymentMethod[];
   /**
    * Where the driver was, last time they reported it.
    *

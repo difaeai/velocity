@@ -7,7 +7,22 @@
  */
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
-import type { Gender, GeoPoint, PoolVisibility, RideType, TripStatus } from '../domain/types';
+import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
+import type { VehicleCategory } from '../lib/fareEngine';
+import type {
+  Competitor, CompetitorCategoryRates, MarketComparison,
+} from '../lib/marketRates';
+
+/**
+ * The rider-facing shape of a market comparison: the comparison itself plus the
+ * wording that has to appear beneath it. The disclaimer is not decoration — the
+ * competitor figures are estimates from observed fares, and saying so is what
+ * keeps the panel honest.
+ */
+export type MarketComparisonResult = MarketComparison & {
+  disclaimer: string;
+  undercutPct: number;
+};
 
 /**
  * The Firebase callable serializer encodes `undefined` object values as
@@ -94,6 +109,13 @@ export interface CreateTripInput {
   pool?: boolean;
   /** Pool rides only: public → discoverable nearby, private → link-only. */
   poolVisibility?: PoolVisibility;
+  /**
+   * Every way the rider is willing to pay, in their order of preference. At
+   * least one; the driver sees all of them on the request. `paymentMethod`
+   * below is derived from this by the backend and kept only so an older build
+   * still books.
+   */
+  paymentMethods?: PaymentMethod[];
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
   promoCode?: string;
@@ -483,6 +505,68 @@ export const api = {
   >('confirmVehiclePhoto'),
 
   createTrip: callable<CreateTripInput, { ok: boolean; tripId: string; shareCode: string | null }>('createTrip'),
+
+  /**
+   * What inDrive and Yango would charge for this trip, and what we charge
+   * instead. Comes back `available: false` whenever there is no fresh,
+   * well-sampled rate card for the city and category — the booking screen shows
+   * nothing at all in that case rather than a guess.
+   */
+  getMarketComparison: callable<
+    { cityId: string; category: VehicleCategory; distanceKm: number; durationMin: number },
+    MarketComparisonResult
+  >('getMarketComparison'),
+
+  /**
+   * The rider tells us what another app quoted them. This is what keeps the
+   * rate cards true — riders here already open inDrive and Yango to compare
+   * before they book, so we ask them what they saw.
+   */
+  reportCompetitorQuote: callable<
+    {
+      cityId: string;
+      competitor: Competitor;
+      category: VehicleCategory;
+      quotedFare: number;
+      distanceKm: number;
+      durationMin: number;
+      competitorClass?: string;
+    },
+    { ok: boolean }
+  >('reportCompetitorQuote'),
+
+  adminUpsertMarketRates: callable<
+    {
+      cityId: string;
+      competitor: Competitor;
+      category: VehicleCategory;
+      rates: Omit<CompetitorCategoryRates, 'verifiedAt'>;
+    },
+    { ok: boolean; card: CompetitorCategoryRates }
+  >('adminUpsertMarketRates'),
+
+  adminDeleteMarketRates: callable<
+    { cityId: string; competitor: Competitor; category: VehicleCategory },
+    { ok: boolean }
+  >('adminDeleteMarketRates'),
+
+  /** Turn the pending rider reports for one tier into a fitted rate card. */
+  adminFitMarketRates: callable<
+    { cityId: string; competitor: Competitor; category: VehicleCategory; competitorClass?: string },
+    { ok: boolean; reason?: string; card?: CompetitorCategoryRates; reportCount: number; needed?: number }
+  >('adminFitMarketRates'),
+
+  /** Where we stand against the market, category by category. */
+  adminMarketPosition: callable<
+    { cityId: string; distanceKm?: number; durationMin?: number },
+    {
+      cityId: string;
+      distanceKm: number;
+      durationMin: number;
+      undercutPct: number;
+      rows: (MarketComparison & { category: VehicleCategory })[];
+    }
+  >('adminMarketPosition'),
 
   /**
    * The driver's consent switch for WhatsApp ride alerts.
@@ -1547,6 +1631,8 @@ export interface ScheduledRideInput {
   offeredFare: number;
   seats: number;
   passengerGender: Gender;
+  /** Every method the rider will accept when this books itself. */
+  paymentMethods?: PaymentMethod[];
   paymentMethod?: 'cash' | 'wallet';
   days: CommuteDay[];
   time: string; // HH:MM

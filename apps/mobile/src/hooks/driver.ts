@@ -4,7 +4,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'fireb
 import { db } from '../firebase';
 import { distanceMeters } from '../lib/geo';
 import { evaluateVehicleCheck, type VehicleCheckStatus } from '../domain/vehicleCheck';
-import type { RideType, Trip } from '../domain/types';
+import type { PaymentMethod, RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
   fullName?: string;
@@ -167,7 +167,14 @@ export interface OpenRequest {
   passengerName?: string;
   passengerRating?: number;
   passengerRatingCount?: number;
+  /** Which ledger the ride settles through. */
   paymentMethod?: 'cash' | 'wallet';
+  /**
+   * Every method the rider offered to pay with — this is what the driver
+   * decides on. Absent on requests booked by a build that predates the
+   * multi-select, where `paymentMethod` alone is the whole answer.
+   */
+  paymentMethods?: PaymentMethod[];
   preferFemaleDriver?: boolean;
   pickup?: { address?: string; lat?: number; lng?: number };
   dropoff?: { address?: string; lat?: number; lng?: number };

@@ -262,6 +262,10 @@ export { upsertScheduledRide, deleteScheduledRide, runScheduledRides } from './s
 
 // Fare engine — estimate, bid validation, pooling quote, admin seeding
 export { getFareEstimate, submitBid, getPoolingQuote, seedFareConfig } from './fare';
+export {
+  getMarketComparison, reportCompetitorQuote,
+  adminUpsertMarketRates, adminDeleteMarketRates, adminFitMarketRates, adminMarketPosition,
+} from './fare';
 
 // Intercity travel — booking, chat, admin trip management
 export {

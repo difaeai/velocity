@@ -26,6 +26,7 @@ import { requireAuth, invalid } from '../lib/guards';
 import { encodeGeohash } from '../lib/geohash';
 import { notifyUser } from '../lib/fcm';
 import { offeredFareBounds, broadcastTripToNearbyDrivers } from '../trips';
+import { PaymentMethod, PAYMENT_METHODS, settlementChannel } from '../domain/types';
 
 const MAX_SCHEDULES_PER_USER = 5;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -50,6 +51,13 @@ const UpsertSchema = z.object({
   offeredFare:     z.number().int().min(50).max(100000),
   seats:           z.number().int().min(1).max(6),
   passengerGender: z.enum(['male', 'female', 'unspecified']),
+  /** Every method the rider will accept. The driver sees all of them. */
+  paymentMethods:  z
+    .array(z.enum(['cash', 'easypaisa', 'jazzcash', 'bank', 'wallet']))
+    .min(1)
+    .max(PAYMENT_METHODS.length)
+    .optional(),
+  /** Legacy single choice from older builds; ignored when the list is sent. */
   paymentMethod:   z.enum(['cash', 'wallet']).default('cash'),
   days:            z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).min(1).max(7),
   time:            z.string().regex(HHMM, 'time must be HH:MM'),
@@ -63,6 +71,11 @@ export const upsertScheduledRide = onCall(async (req) => {
   const p = UpsertSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid schedule.');
   const d = p.data;
+  // A build that predates the multi-select sends only `paymentMethod`; fall
+  // back to it rather than refusing that rider's schedule.
+  const scheduleMethods: PaymentMethod[] = Array.from(
+    new Set<PaymentMethod>(d.paymentMethods ?? [d.paymentMethod]),
+  );
 
   let ref;
   if (d.scheduleId) {
@@ -92,7 +105,8 @@ export const upsertScheduledRide = onCall(async (req) => {
       offeredFare:     d.offeredFare,
       seats:           d.seats,
       passengerGender: d.passengerGender,
-      paymentMethod:   d.paymentMethod,
+      paymentMethods:  scheduleMethods,
+      paymentMethod:   settlementChannel(scheduleMethods),
       days:            d.days,
       time:            d.time,
       active:          d.active,
@@ -228,6 +242,10 @@ async function bookScheduledTrip(scheduleId: string, s: FirebaseFirestore.Docume
   const pickup = s.pickup as { lat: number; lng: number; address: string };
   const dropoff = s.dropoff as { lat: number; lng: number; address: string };
   const rideType = s.rideType as string;
+  // Schedules saved before the multi-select carry only the single method.
+  const runMethods: PaymentMethod[] = Array.isArray(s.paymentMethods) && s.paymentMethods.length
+    ? (s.paymentMethods as PaymentMethod[])
+    : [(s.paymentMethod as PaymentMethod) ?? 'cash'];
 
   // Clamp the saved fare into today's acceptable band so an old schedule keeps
   // working when the admin fare config moves.
@@ -268,6 +286,7 @@ async function bookScheduledTrip(scheduleId: string, s: FirebaseFirestore.Docume
       seats: (s.seats as number) ?? 1,
       pool: false,
       paymentMethod: s.paymentMethod ?? 'cash',
+      paymentMethods: runMethods,
       preferFemaleDriver: false,
       promoCode: null,
       promoDiscount: 0,
@@ -290,6 +309,7 @@ async function bookScheduledTrip(scheduleId: string, s: FirebaseFirestore.Docume
       passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
       pool: false,
       paymentMethod: s.paymentMethod ?? 'cash',
+      paymentMethods: runMethods,
       preferFemaleDriver: false,
       pickup,
       dropoff,
