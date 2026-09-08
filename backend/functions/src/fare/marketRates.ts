@@ -327,6 +327,37 @@ export function compareToMarket(input: CompareInput): MarketComparison {
 }
 
 /**
+ * Why there is no comparison to show, in a sentence an operator can act on.
+ *
+ * The rider never sees this — a missing panel is simply a missing panel to
+ * them. It exists because "is the feature broken or is the city unconfigured"
+ * is otherwise unanswerable from the booking screen, which is exactly where
+ * somebody testing will be standing when they ask it.
+ */
+export function describeMarketGap(
+  comparison: MarketComparison,
+  settings: MarketComparisonSettings,
+): string {
+  if (comparison.blocker === 'disabled') {
+    return 'Comparison is switched off in Admin → Market rates.';
+  }
+
+  const reasons = comparison.excluded;
+  if (reasons.length === 0) return 'No competitor rates for this city.';
+
+  const missing = reasons.filter((r) => r.reason === 'missing').map((r) => r.label);
+  const stale = reasons.filter((r) => r.reason === 'stale').map((r) => r.label);
+  const thin = reasons.filter((r) => r.reason === 'low_sample').map((r) => r.label);
+
+  const parts: string[] = [];
+  if (missing.length) parts.push(`no card for ${missing.join(' or ')}`);
+  if (stale.length) parts.push(`${stale.join(' and ')} last checked over ${settings.maxAgeDays} days ago`);
+  if (thin.length) parts.push(`${thin.join(' and ')} fitted to fewer than ${settings.minSampleSize} quotes`);
+
+  return `${parts.join('; ')} — add one in Admin → Market rates.`;
+}
+
+/**
  * One rider's report of what a competitor quoted them. This is the pipe that
  * keeps the rate cards real: riders in this market already open inDrive and
  * Yango to compare before they book, so we ask them what they saw.

@@ -73,7 +73,7 @@ import {
 } from '../../src/lib/fareEngine';
 import {
   CityMarketRates, Competitor, MarketComparison, MarketComparisonSettings,
-  DEFAULT_MARKET_SETTINGS, compareToMarket,
+  DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
 
@@ -224,7 +224,7 @@ export default function Booking() {
     voicePool?: string;
     voiceSeats?: string;
   }>();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   // The ride sheet is absolutely pinned to the screen bottom; edge-to-edge
   // Android draws it behind the system navigation bar unless padded.
   const insets = useSafeAreaInsets();
@@ -445,7 +445,9 @@ export default function Booking() {
    * The second regime is a position, not a comparison, which is why it shows
    * the rider no competitor numbers.
    */
-  const marketFor = (rt: RideType): { fare: number; comparison: MarketComparison | null } => {
+  const marketFor = (
+    rt: RideType,
+  ): { fare: number; comparison: MarketComparison | null; emptyReason: string | null } => {
     const est = fareConfig && distKm
       ? calculateFare(fareConfig, {
           category: RIDE_TO_CAT[rt],
@@ -453,7 +455,9 @@ export default function Booking() {
           durationMin: Math.round(distKm * 3.5),
         })
       : null;
-    if (!est || !distKm) return { fare: BASE_FARES[rt], comparison: null };
+    if (!est || !distKm) {
+      return { fare: BASE_FARES[rt], comparison: null, emptyReason: 'No route yet.' };
+    }
 
     const comparison = compareToMarket({
       cityRates: marketRates,
@@ -468,6 +472,7 @@ export default function Booking() {
     return {
       fare: comparison.available ? comparison.velocityFare : anchorFare(est),
       comparison: comparison.available ? comparison : null,
+      emptyReason: comparison.available ? null : describeMarketGap(comparison, marketSettings),
     };
   };
 
@@ -1242,6 +1247,24 @@ export default function Booking() {
             </Pressable>
           </View>
 
+          {/* ── What the same trip costs elsewhere ──
+               Directly under the two price cards, because this is the moment
+               the rider is weighing a number — it is the comparison they would
+               otherwise leave the app to make.
+
+               Renders only when there is a fresh, well-sampled rate card for
+               this city and vehicle class. No data, no panel: never a guess.
+               An admin sees why it is empty instead of nothing, because
+               "is it broken or is it unconfigured" is otherwise unanswerable
+               from the rider's screen. */}
+          <MarketCompare
+            comparison={marketNow.comparison}
+            disclaimer={marketSettings.disclaimer}
+            onReport={reportCompetitorQuote}
+            showEmptyReason={role === 'admin'}
+            emptyReason={marketNow.emptyReason}
+          />
+
           {/* ── 2. Which vehicle ── */}
           <Text style={styles.stepLabel}>WHICH CAR?</Text>
           <ScrollView
@@ -1272,16 +1295,7 @@ export default function Booking() {
               })}
           </ScrollView>
 
-          {/* ── 3. What the same trip costs elsewhere ──
-               Renders only when there is a fresh, well-sampled rate card for
-               this city and vehicle class. No data, no panel — never a guess. */}
-          <MarketCompare
-            comparison={marketNow.comparison}
-            disclaimer={marketSettings.disclaimer}
-            onReport={reportCompetitorQuote}
-          />
-
-          {/* ── 4. What you offer the driver ── */}
+          {/* ── 3. What you offer the driver ── */}
           <Text style={styles.stepLabel}>WHAT WILL YOU PAY?</Text>
           <View style={styles.fareCard}>
             <View style={styles.fareStepperRow}>

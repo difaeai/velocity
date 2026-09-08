@@ -24,18 +24,38 @@ interface Props {
   disclaimer: string;
   /** Opens the "seen a different price?" sheet. Omit to hide the link. */
   onReport?: (competitor: Competitor, quotedFare: number) => Promise<void> | void;
+  /**
+   * Admins only. A rider gets no panel and no explanation when there are no
+   * rates — that is correct. Somebody testing the app needs to be able to tell
+   * an unconfigured city from a broken feature without leaving the screen.
+   */
+  showEmptyReason?: boolean;
+  emptyReason?: string | null;
 }
 
-export function MarketCompare({ comparison, disclaimer, onReport }: Props) {
+export function MarketCompare({
+  comparison, disclaimer, onReport, showEmptyReason, emptyReason,
+}: Props) {
   const [reportOpen, setReportOpen] = useState(false);
   const [which, setWhich] = useState<Competitor>('indrive');
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [sent, setSent] = useState(false);
 
-  // No verified rates for this city and class → no panel. Deliberately silent:
-  // an empty space says less than a number we cannot stand behind.
-  if (!comparison?.available || !comparison.cheapest) return null;
+  // No verified rates for this city and class → no panel. Deliberately silent
+  // for riders: an empty space says less than a number we cannot stand behind.
+  if (!comparison?.available || !comparison.cheapest) {
+    if (!showEmptyReason) return null;
+    return (
+      <View style={styles.diagCard}>
+        <Text style={styles.diagHead}>ADMIN · NO COMPARISON SHOWN HERE</Text>
+        <Text style={styles.diagBody}>
+          {emptyReason ?? 'No competitor rates for this city.'}
+        </Text>
+        <Text style={styles.diagFoot}>Riders see nothing at all until a card exists.</Text>
+      </View>
+    );
+  }
 
   const { competitors, cheapest, velocityFare, savings, savingsPct, guaranteeMet } = comparison;
 
@@ -174,6 +194,21 @@ const styles = themed(() => StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
+  // Admin-only diagnostic. Deliberately drab — it is a maintenance note on a
+  // rider's screen, and it should never read as part of the product.
+  diagCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    padding: 12,
+    gap: 4,
+    marginTop: 4,
+  },
+  diagHead: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8, color: colors.muted },
+  diagBody: { fontSize: 12.5, color: colors.text, lineHeight: 17 },
+  diagFoot: { fontSize: 11, color: colors.muted },
+
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   head: {
     flex: 1,

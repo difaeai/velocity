@@ -32,7 +32,7 @@ import type { VehicleCategory } from '../../src/lib/fareEngine';
 import {
   CityMarketRates, Competitor, CompetitorCategoryRates,
   MarketComparison, MarketComparisonSettings, RateSource,
-  COMPETITOR_LABELS, DEFAULT_MARKET_SETTINGS, RATE_SOURCE_LABELS,
+  COMPETITOR_LABELS, DEFAULT_MARKET_SETTINGS, RATE_SOURCE_LABELS, fitRateCard,
 } from '../../src/lib/marketRates';
 
 const CITIES = [
@@ -131,6 +131,43 @@ export default function MarketRates() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
 
   /**
+   * Two ways to fill a card, and 'quotes' is the one that matches how the job
+   * is actually done: you stand there with their app open, read the price for
+   * a route you know the length of, and write it down. Asking for a base fare
+   * and a per-km rate asks you to have already fitted a line in your head.
+   *
+   * 'rates' stays for the case where you genuinely know the tariff.
+   */
+  const [mode, setMode] = useState<'quotes' | 'rates'>('quotes');
+  const [quotes, setQuotes] = useState<{ km: string; fare: string }[]>([
+    { km: '', fare: '' }, { km: '', fare: '' }, { km: '', fare: '' },
+  ]);
+
+  function setQuote(i: number, field: 'km' | 'fare', v: string) {
+    setQuotes((prev) => prev.map((q, j) => (j === i ? { ...q, [field]: v.replace(/[^0-9.]/g, '') } : q)));
+  }
+
+  /**
+   * The line through the quotes entered so far, or null while there are too few
+   * of them — or too few *distinct distances*, which is the failure worth
+   * catching: three readings of the same trip say nothing about a per-km rate.
+   *
+   * Only one editor is open at a time, so one preview for the screen is right.
+   * Duration is derived the same way the booking screen derives it, so a card
+   * fitted here prices trips the way the app measures them.
+   */
+  const fitPreview = fitRateCard(
+    quotes
+      .map((q) => ({
+        quotedFare: Number(q.fare),
+        distanceKm: Number(q.km),
+        durationMin: Math.round(Number(q.km) * 3.5),
+      }))
+      .filter((o) => o.quotedFare > 0 && o.distanceKm > 0),
+    settings.minSampleSize,
+  );
+
+  /**
    * Everything this screen shows, fetched without touching state. Keeping the
    * fetch pure is what lets the effect below drop a response that arrived after
    * the admin already switched city — and it keeps every setState on the far
@@ -187,6 +224,17 @@ export default function MarketRates() {
       );
       return;
     }
+    // In quote mode the numbers come from the fit, never from the rate fields —
+    // saving a card the operator never saw fitted would be saving a guess.
+    const fitted = mode === 'quotes' ? fitPreview : null;
+    if (mode === 'quotes' && !fitted) {
+      Alert.alert(
+        'Not enough to fit',
+        `Enter at least ${settings.minSampleSize} quotes at genuinely different distances.`,
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       await api.adminUpsertMarketRates({
@@ -194,16 +242,18 @@ export default function MarketRates() {
         competitor,
         category,
         rates: {
-          base: Number(draft.base) || 0,
-          perKm: Number(draft.perKm) || 0,
-          perMin: Number(draft.perMin) || 0,
-          minFare: Number(draft.minFare) || 0,
-          includedKm: Number(draft.includedKm) || 0,
-          includedMin: Number(draft.includedMin) || 0,
-          sampleSize: Number(draft.sampleSize) || 1,
+          base: fitted ? fitted.base : Number(draft.base) || 0,
+          perKm: fitted ? fitted.perKm : Number(draft.perKm) || 0,
+          perMin: fitted ? fitted.perMin : Number(draft.perMin) || 0,
+          minFare: fitted ? fitted.minFare : Number(draft.minFare) || 0,
+          includedKm: fitted ? 0 : Number(draft.includedKm) || 0,
+          includedMin: fitted ? 0 : Number(draft.includedMin) || 0,
+          sampleSize: fitted ? fitted.sampleSize : Number(draft.sampleSize) || 1,
           competitorClass: draft.competitorClass.trim(),
-          source: draft.source,
-          note: draft.note,
+          source: fitted ? 'ops_survey' : draft.source,
+          note: fitted
+            ? `Fitted from ${fitted.sampleSize} quotes read in their app. ${draft.note}`.trim()
+            : draft.note,
         },
       });
       setEditing(null);
@@ -374,7 +424,11 @@ export default function MarketRates() {
                         style={styles.cardHead}
                         onPress={() => {
                           setEditing(open ? null : key);
-                          if (!open) setDraft(draftFrom(card));
+                          if (!open) {
+                            setDraft(draftFrom(card));
+                            setQuotes([{ km: '', fare: '' }, { km: '', fare: '' }, { km: '', fare: '' }]);
+                            setMode(card ? 'rates' : 'quotes');
+                          }
                         }}
                       >
                         <View style={{ flex: 1 }}>
@@ -400,15 +454,70 @@ export default function MarketRates() {
                             onChange={(v) => setDraft({ ...draft, competitorClass: v })}
                             numeric={false}
                           />
-                          <View style={styles.fieldGrid}>
-                            <Field label="Base PKR" value={draft.base} onChange={(v) => setDraft({ ...draft, base: v })} />
-                            <Field label="Per km" value={draft.perKm} onChange={(v) => setDraft({ ...draft, perKm: v })} />
-                            <Field label="Per min" value={draft.perMin} onChange={(v) => setDraft({ ...draft, perMin: v })} />
-                            <Field label="Min fare" value={draft.minFare} onChange={(v) => setDraft({ ...draft, minFare: v })} />
-                            <Field label="Included km" value={draft.includedKm} onChange={(v) => setDraft({ ...draft, includedKm: v })} />
-                            <Field label="Included min" value={draft.includedMin} onChange={(v) => setDraft({ ...draft, includedMin: v })} />
-                            <Field label="Quotes seen" value={draft.sampleSize} onChange={(v) => setDraft({ ...draft, sampleSize: v })} />
+                          <View style={styles.modeRow}>
+                            <Pressable
+                              style={[styles.mode, mode === 'quotes' && styles.modeOn]}
+                              onPress={() => setMode('quotes')}
+                            >
+                              <Text style={[styles.modeTxt, mode === 'quotes' && styles.modeTxtOn]}>
+                                Enter their quotes
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.mode, mode === 'rates' && styles.modeOn]}
+                              onPress={() => setMode('rates')}
+                            >
+                              <Text style={[styles.modeTxt, mode === 'rates' && styles.modeTxtOn]}>
+                                Enter their rates
+                              </Text>
+                            </Pressable>
                           </View>
+
+                          {mode === 'quotes' ? (
+                            <>
+                              <Text style={styles.editorHint}>
+                                Open their app, read the price for a route you know the length of,
+                                and put both here. Three that are genuinely different lengths beat
+                                ten of the same trip — the line is fitted through them.
+                              </Text>
+                              {quotes.map((q, i) => (
+                                <View key={i} style={styles.quoteRow}>
+                                  <View style={styles.quoteCell}>
+                                    <Field label="Distance km" value={q.km} onChange={(v) => setQuote(i, 'km', v)} />
+                                  </View>
+                                  <View style={styles.quoteCell}>
+                                    <Field label="They quoted PKR" value={q.fare} onChange={(v) => setQuote(i, 'fare', v)} />
+                                  </View>
+                                </View>
+                              ))}
+                              <Pressable
+                                style={styles.addQuote}
+                                onPress={() => setQuotes((prev) => [...prev, { km: '', fare: '' }])}
+                              >
+                                <Text style={styles.addQuoteTxt}>+ Another quote</Text>
+                              </Pressable>
+                              {fitPreview ? (
+                                <Text style={styles.fitPreview}>
+                                  Fits to PKR {fitPreview.base} + {fitPreview.perKm}/km · min{' '}
+                                  {fitPreview.minFare} — from {fitPreview.sampleSize} quotes
+                                </Text>
+                              ) : (
+                                <Text style={styles.fitPending}>
+                                  Needs at least {settings.minSampleSize} quotes at different distances.
+                                </Text>
+                              )}
+                            </>
+                          ) : (
+                            <View style={styles.fieldGrid}>
+                              <Field label="Base PKR" value={draft.base} onChange={(v) => setDraft({ ...draft, base: v })} />
+                              <Field label="Per km" value={draft.perKm} onChange={(v) => setDraft({ ...draft, perKm: v })} />
+                              <Field label="Per min" value={draft.perMin} onChange={(v) => setDraft({ ...draft, perMin: v })} />
+                              <Field label="Min fare" value={draft.minFare} onChange={(v) => setDraft({ ...draft, minFare: v })} />
+                              <Field label="Included km" value={draft.includedKm} onChange={(v) => setDraft({ ...draft, includedKm: v })} />
+                              <Field label="Included min" value={draft.includedMin} onChange={(v) => setDraft({ ...draft, includedMin: v })} />
+                              <Field label="Quotes seen" value={draft.sampleSize} onChange={(v) => setDraft({ ...draft, sampleSize: v })} />
+                            </View>
+                          )}
 
                           <Text style={styles.fieldLabel}>WHERE IT CAME FROM</Text>
                           <View style={styles.srcRow}>
@@ -434,11 +543,16 @@ export default function MarketRates() {
 
                           <View style={styles.actions}>
                             <Pressable
-                              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+                              style={[
+                                styles.saveBtn,
+                                (saving || (mode === 'quotes' && !fitPreview)) && { opacity: 0.6 },
+                              ]}
                               onPress={() => saveCard(competitor, cat.key)}
-                              disabled={saving}
+                              disabled={saving || (mode === 'quotes' && !fitPreview)}
                             >
-                              <Text style={styles.saveTxt}>{saving ? 'Saving…' : 'Save card'}</Text>
+                              <Text style={styles.saveTxt}>
+                                {saving ? 'Saving…' : mode === 'quotes' ? 'Fit & save card' : 'Save card'}
+                              </Text>
                             </Pressable>
                             {card ? (
                               <Pressable
@@ -604,6 +718,33 @@ const styles = themed(() => StyleSheet.create({
   srcOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
   srcTxt: { fontSize: 12, fontWeight: '700', color: colors.muted },
   srcTxtOn: { color: colors.primary },
+
+  modeRow: { flexDirection: 'row', gap: 8 },
+  mode: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  modeOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  modeTxt: { fontSize: 12, fontWeight: '800', color: colors.muted },
+  modeTxtOn: { color: colors.primary },
+
+  quoteRow: { flexDirection: 'row', gap: 8 },
+  quoteCell: { flex: 1 },
+  addQuote: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  addQuoteTxt: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  fitPreview: { fontSize: 12, fontWeight: '700', color: colors.primary, lineHeight: 17 },
+  fitPending: { fontSize: 12, color: colors.muted, lineHeight: 17 },
 
   actions: { flexDirection: 'row', gap: 8 },
   saveBtn: {
