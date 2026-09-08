@@ -3,9 +3,14 @@
  *
  * Riders on this market already do the comparison by hand — open inDrive, read
  * the price, open Yango, read that one, pick the cheaper. This panel does it
- * for them on the screen where they are already standing.
+ * for them without their leaving the screen.
  *
- * What it will not do is invent a number. The competitor figures come from rate
+ * Two shapes. `map` is a narrow translucent strip that floats over the route,
+ * where it is visible the whole time the rider is choosing and costs the
+ * booking sheet no height at all. `sheet` is the full-width card, for anywhere
+ * the panel has room to be read rather than glanced at.
+ *
+ * What neither will do is invent a number. The competitor figures come from rate
  * cards fitted to fares someone actually observed, and the panel renders only
  * when there is a fresh, well-sampled card for this city and vehicle class.
  * With no data there is no panel — see src/lib/marketRates.ts for why that is
@@ -24,6 +29,8 @@ interface Props {
   disclaimer: string;
   /** Opens the "seen a different price?" sheet. Omit to hide the link. */
   onReport?: (competitor: Competitor, quotedFare: number) => Promise<void> | void;
+  /** 'map' floats over the route; 'sheet' is the full-width card. */
+  variant?: 'map' | 'sheet';
   /**
    * Admins only. A rider gets no panel and no explanation when there are no
    * rates — that is correct. Somebody testing the app needs to be able to tell
@@ -34,7 +41,7 @@ interface Props {
 }
 
 export function MarketCompare({
-  comparison, disclaimer, onReport, showEmptyReason, emptyReason,
+  comparison, disclaimer, onReport, variant = 'sheet', showEmptyReason, emptyReason,
 }: Props) {
   const [reportOpen, setReportOpen] = useState(false);
   const [which, setWhich] = useState<Competitor>('indrive');
@@ -42,22 +49,7 @@ export function MarketCompare({
   const [saving, setSaving] = useState(false);
   const [sent, setSent] = useState(false);
 
-  // No verified rates for this city and class → no panel. Deliberately silent
-  // for riders: an empty space says less than a number we cannot stand behind.
-  if (!comparison?.available || !comparison.cheapest) {
-    if (!showEmptyReason) return null;
-    return (
-      <View style={styles.diagCard}>
-        <Text style={styles.diagHead}>ADMIN · NO COMPARISON SHOWN HERE</Text>
-        <Text style={styles.diagBody}>
-          {emptyReason ?? 'No competitor rates for this city.'}
-        </Text>
-        <Text style={styles.diagFoot}>Riders see nothing at all until a card exists.</Text>
-      </View>
-    );
-  }
-
-  const { competitors, cheapest, velocityFare, savings, savingsPct, guaranteeMet } = comparison;
+  const onMap = variant === 'map';
 
   async function submitReport() {
     const value = Math.round(Number(amount));
@@ -72,6 +64,123 @@ export function MarketCompare({
     }
   }
 
+  const reportModal = (
+    <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
+      <Pressable style={styles.backdrop} onPress={() => setReportOpen(false)}>
+        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          {sent ? (
+            <Text style={styles.thanks}>Thanks — that goes straight to our pricing desk.</Text>
+          ) : (
+            <>
+              <Text style={styles.sheetTitle}>What were you quoted?</Text>
+              <Text style={styles.sheetBody}>
+                For this same trip, right now. Real numbers are what keep the comparison above
+                honest.
+              </Text>
+
+              <View style={styles.pickRow}>
+                {(Object.keys(COMPETITOR_LABELS) as Competitor[]).map((c) => (
+                  <Pressable
+                    key={c}
+                    style={[styles.pick, which === c && styles.pickOn]}
+                    onPress={() => setWhich(c)}
+                  >
+                    <Text style={[styles.pickTxt, which === c && styles.pickTxtOn]}>
+                      {COMPETITOR_LABELS[c]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <View style={styles.inputRow}>
+                <Text style={styles.inputPrefix}>PKR</Text>
+                <TextInput
+                  value={amount}
+                  onChangeText={(t) => setAmount(t.replace(/[^0-9]/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                  autoFocus
+                />
+              </View>
+
+              <Pressable
+                style={[styles.send, (!amount || saving) && styles.sendOff]}
+                disabled={!amount || saving}
+                onPress={submitReport}
+              >
+                <Text style={styles.sendTxt}>{saving ? 'Sending…' : 'Send'}</Text>
+              </Pressable>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+
+  // No verified rates for this city and class → no panel. Deliberately silent
+  // for riders: an empty space says less than a number we cannot stand behind.
+  if (!comparison?.available || !comparison.cheapest) {
+    if (!showEmptyReason) return null;
+    return (
+      <View style={[styles.diagCard, onMap && styles.diagCardMap]}>
+        <Text style={styles.diagHead}>ADMIN · NO COMPARISON</Text>
+        <Text style={styles.diagBody}>
+          {emptyReason ?? 'No competitor rates for this city.'}
+        </Text>
+        <Text style={styles.diagFoot}>Riders see nothing at all until a card exists.</Text>
+      </View>
+    );
+  }
+
+  const { competitors, cheapest, velocityFare, savings, savingsPct, guaranteeMet } = comparison;
+
+  /* ── The strip that floats over the route ── */
+  if (onMap) {
+    return (
+      <View style={styles.mapCard}>
+        <Text style={styles.mapHead}>SAME TRIP</Text>
+
+        {competitors.map((c) => (
+          <View key={c.competitor} style={styles.mapRow}>
+            <Text style={styles.mapRival} numberOfLines={1}>{c.label}</Text>
+            <Text style={styles.mapRivalFare}>~{c.fare.toLocaleString()}</Text>
+          </View>
+        ))}
+
+        <View style={styles.mapDivider} />
+
+        <Text style={styles.mapUs}>Velocity</Text>
+        <View style={styles.mapUsRow}>
+          <Text style={styles.mapUsFare}>{velocityFare.toLocaleString()}</Text>
+          {guaranteeMet && savingsPct != null && savingsPct > 0 ? (
+            <View style={styles.mapBadge}>
+              <Text style={styles.mapBadgeTxt}>−{savingsPct}%</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {guaranteeMet && savings != null && savings > 0 ? (
+          <Text style={styles.mapSaving}>You keep PKR {savings.toLocaleString()}</Text>
+        ) : (
+          <Text style={styles.mapSavingMuted}>Close to the market on a trip this short</Text>
+        )}
+
+        <Text style={styles.mapNote}>Estimated, not a live quote</Text>
+
+        {onReport ? (
+          <Pressable onPress={() => setReportOpen(true)} hitSlop={8}>
+            <Text style={styles.mapReport}>Saw another price?</Text>
+          </Pressable>
+        ) : null}
+
+        {reportModal}
+      </View>
+    );
+  }
+
+  /* ── The full-width card ── */
   return (
     <View style={styles.card}>
       <View style={styles.headRow}>
@@ -128,63 +237,62 @@ export function MarketCompare({
         </Pressable>
       ) : null}
 
-      <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setReportOpen(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            {sent ? (
-              <Text style={styles.thanks}>Thanks — that goes straight to our pricing desk.</Text>
-            ) : (
-              <>
-                <Text style={styles.sheetTitle}>What were you quoted?</Text>
-                <Text style={styles.sheetBody}>
-                  For this same trip, right now. Real numbers are what keep the comparison above
-                  honest.
-                </Text>
-
-                <View style={styles.pickRow}>
-                  {(Object.keys(COMPETITOR_LABELS) as Competitor[]).map((c) => (
-                    <Pressable
-                      key={c}
-                      style={[styles.pick, which === c && styles.pickOn]}
-                      onPress={() => setWhich(c)}
-                    >
-                      <Text style={[styles.pickTxt, which === c && styles.pickTxtOn]}>
-                        {COMPETITOR_LABELS[c]}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <View style={styles.inputRow}>
-                  <Text style={styles.inputPrefix}>PKR</Text>
-                  <TextInput
-                    value={amount}
-                    onChangeText={(t) => setAmount(t.replace(/[^0-9]/g, ''))}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={colors.muted}
-                    style={styles.input}
-                    autoFocus
-                  />
-                </View>
-
-                <Pressable
-                  style={[styles.send, (!amount || saving) && styles.sendOff]}
-                  disabled={!amount || saving}
-                  onPress={submitReport}
-                >
-                  <Text style={styles.sendTxt}>{saving ? 'Sending…' : 'Send'}</Text>
-                </Pressable>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {reportModal}
     </View>
   );
 }
 
 const styles = themed(() => StyleSheet.create({
+  /* ── Floating strip over the route ──
+       Narrow on purpose: it sits beside the road line rather than on top of it,
+       and the rider reads it in a glance without it becoming the screen. */
+  mapCard: {
+    width: 138,
+    backgroundColor: colors.glassPanel,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 11,
+    paddingHorizontal: 11,
+    gap: 3,
+  },
+  mapHead: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.9,
+    color: colors.muted,
+    marginBottom: 3,
+  },
+  mapRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  mapRival: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.muted },
+  mapRivalFare: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: colors.muted,
+    textDecorationLine: 'line-through',
+  },
+  mapDivider: { height: 1, backgroundColor: colors.border, marginVertical: 7 },
+  mapUs: { fontSize: 11, fontWeight: '800', color: colors.text, letterSpacing: 0.3 },
+  mapUsRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  mapUsFare: { fontSize: 21, fontWeight: '900', color: colors.primary },
+  mapBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  mapBadgeTxt: { fontSize: 10, fontWeight: '900', color: '#000' },
+  mapSaving: { fontSize: 10.5, fontWeight: '700', color: colors.text, lineHeight: 14, marginTop: 2 },
+  mapSavingMuted: { fontSize: 10, color: colors.muted, lineHeight: 13, marginTop: 2 },
+  mapNote: { fontSize: 9, color: colors.muted, marginTop: 4 },
+  mapReport: { fontSize: 10, fontWeight: '700', color: colors.primary, marginTop: 5 },
+
+  diagCardMap: {
+    width: 178,
+    backgroundColor: colors.glassPanel,
+    marginTop: 0,
+  },
+
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,
