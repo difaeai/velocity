@@ -1047,6 +1047,31 @@ export default function Booking() {
             </View>
           </View>
         </View>
+
+        {/* What the same trip costs on the other apps, over the route rather
+            than in the sheet. It belongs here for two reasons: the rider can
+            see it the entire time they are choosing, instead of only after
+            scrolling past the car list; and the sheet keeps the height, which
+            is the scarcest thing on this screen.
+
+            Renders only when there is a fresh, well-sampled rate card for this
+            city and vehicle class. No data, no card: never a guess. An admin
+            sees why it is empty instead of nothing, because "broken or
+            unconfigured" is otherwise unanswerable from the rider's screen. */}
+        <View style={styles.marketSlot} pointerEvents="box-none">
+          <MarketCompare
+            variant="map"
+            comparison={marketNow.comparison}
+            disclaimer={marketSettings.disclaimer}
+            onReport={reportCompetitorQuote}
+            // __DEV__ too, not just admins: the phone testing this is signed in
+            // as an ordinary rider, so "why is the card missing" would otherwise
+            // be unanswerable on the exact device where it is being asked. Never
+            // reaches a release build.
+            showEmptyReason={role === 'admin' || __DEV__}
+            emptyReason={marketNow.emptyReason}
+          />
+        </View>
       </SafeAreaView>
 
       {/* ══════════════ ONE SHEET: choose, price, book ══════════════
@@ -1197,7 +1222,7 @@ export default function Booking() {
                are the one who offers it to drivers and the one who can raise
                it. Riders who join afterwards take the per-seat share of it as
                it stands — there is no second negotiation inside a pool. */}
-          <Text style={styles.stepLabel}>OR BOOK YOUR OWN · HOW DO YOU WANT TO RIDE?</Text>
+          <Text style={styles.stepLabel}>OR BOOK YOUR OWN</Text>
           <View style={styles.pickRow}>
             <Pressable
               style={({ pressed }) => [styles.pickCard, mode === 'pool' && styles.pickCardOn, pressed && styles.pickCardPressed]}
@@ -1217,9 +1242,8 @@ export default function Booking() {
               </View>
               <Text style={styles.pickPrice}>PKR {fare}</Text>
               <Text style={styles.pickSub}>
-                For 10 minutes your ride shows up for riders going your way, and they can hop in
-                straight away — your fare drops to PKR {poolShareFare} each as they do. After a
-                driver takes it, you decide nothing more: they do.
+                Others going your way can join for 10 minutes — your fare drops to PKR{' '}
+                {poolShareFare} each if they do.
               </Text>
               <View style={styles.saveBadge}>
                 <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>
@@ -1243,27 +1267,9 @@ export default function Booking() {
                 ) : null}
               </View>
               <Text style={styles.pickPrice}>PKR {fare}</Text>
-              <Text style={styles.pickSub}>The whole car to yourself. Fastest pickup, nobody joins.</Text>
+              <Text style={styles.pickSub}>The whole car to yourself. Fastest pickup.</Text>
             </Pressable>
           </View>
-
-          {/* ── What the same trip costs elsewhere ──
-               Directly under the two price cards, because this is the moment
-               the rider is weighing a number — it is the comparison they would
-               otherwise leave the app to make.
-
-               Renders only when there is a fresh, well-sampled rate card for
-               this city and vehicle class. No data, no panel: never a guess.
-               An admin sees why it is empty instead of nothing, because
-               "is it broken or is it unconfigured" is otherwise unanswerable
-               from the rider's screen. */}
-          <MarketCompare
-            comparison={marketNow.comparison}
-            disclaimer={marketSettings.disclaimer}
-            onReport={reportCompetitorQuote}
-            showEmptyReason={role === 'admin'}
-            emptyReason={marketNow.emptyReason}
-          />
 
           {/* ── 2. Which vehicle ── */}
           <Text style={styles.stepLabel}>WHICH CAR?</Text>
@@ -1336,7 +1342,11 @@ export default function Booking() {
                on the request and takes the ride knowing they can be paid a way
                that suits them. ── */}
           <Text style={styles.stepLabel}>HOW WILL YOU PAY? · PICK AT LEAST ONE</Text>
-          <View style={styles.payWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.payWrap}
+          >
             {BOOKABLE_PAYMENT_METHODS.map((m) => {
               const on = paymentMethods.includes(m);
               const walletLocked = m === 'wallet' && !walletTopupEnabled;
@@ -1370,12 +1380,10 @@ export default function Booking() {
                 </Pressable>
               );
             })}
-          </View>
-          <Text style={paymentMethods.length === 0 ? styles.payWarn : styles.payHint}>
-            {paymentMethods.length === 0
-              ? 'Choose at least one way to pay before you book.'
-              : 'Your driver sees these on the request and settles with you at the end.'}
-          </Text>
+          </ScrollView>
+          {paymentMethods.length === 0 ? (
+            <Text style={styles.payWarn}>Choose at least one way to pay before you book.</Text>
+          ) : null}
 
           {/* ── Everything else. A first-time rider can book without ever
                opening this: a public pool and no promo are the defaults, and
@@ -2134,6 +2142,13 @@ const styles = themed(() => StyleSheet.create({
     right: 0,
     zIndex: 10,
   },
+  /* Left rail under the route summary. Left-aligned so it sits clear of the
+     road line, which runs from the pickup pin down toward the sheet. */
+  marketSlot: {
+    alignSelf: 'flex-start',
+    paddingLeft: 14,
+    paddingTop: 10,
+  },
   floatingHeaderBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2773,8 +2788,8 @@ const styles = themed(() => StyleSheet.create({
        control, because more than one of them can be on at once. ── */
   payWrap: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
+    paddingRight: 20,
   },
   payChip: {
     flexDirection: 'row',
@@ -2802,11 +2817,6 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     color: colors.primary,
-  },
-  payHint: {
-    fontSize: 11.5,
-    color: colors.muted,
-    lineHeight: 16,
   },
   payWarn: {
     fontSize: 11.5,
