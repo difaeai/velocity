@@ -73,7 +73,7 @@ import {
 } from '../../src/lib/fareEngine';
 import {
   CityMarketRates, Competitor, MarketComparison, MarketComparisonSettings,
-  DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap,
+  DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap, restateAgainstOffer,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
 
@@ -477,6 +477,19 @@ export default function Booking() {
   };
 
   const marketNow = marketFor(rideType);
+
+  /**
+   * The comparison as the rider's own offer makes it true.
+   *
+   * `marketNow.comparison` is priced off our recommendation. The fare below is
+   * theirs to move, and once they move it the card has to move with it —
+   * otherwise the strip over the map goes on claiming a discount against a
+   * number the rider has already replaced. Display only: the prefill and the
+   * vehicle-card prices still come from `marketFor`.
+   */
+  const marketDisplay = marketNow.comparison
+    ? restateAgainstOffer(marketNow.comparison, fare)
+    : null;
 
   const prefillAnchor = engineEst
     ? marketNow.fare
@@ -1061,7 +1074,7 @@ export default function Booking() {
         <View style={styles.marketSlot} pointerEvents="box-none">
           <MarketCompare
             variant="map"
-            comparison={marketNow.comparison}
+            comparison={marketDisplay}
             disclaimer={marketSettings.disclaimer}
             onReport={reportCompetitorQuote}
             // __DEV__ too, not just admins: the phone testing this is signed in
@@ -1328,9 +1341,16 @@ export default function Booking() {
                 <Text style={styles.stepperText}>+</Text>
               </Pressable>
             </View>
+            {/* The recommendation has to be the number the rest of the screen
+                is selling. When a market comparison is live, that is the
+                undercut fare we prefilled — NOT the fare engine's own figure,
+                which sits above it by design. Printing the engine number here
+                told a rider offering our own recommended 560 that Velocity
+                recommended 625, which reads as "you are lowballing" and quietly
+                argues against the comparison card two inches above it. */}
             <Text style={styles.fareRangeHint}>
               {engineEst
-                ? `${distKm ? `~${distKm.toFixed(1)} km · ` : ''}Recommended PKR ${engineEst.recommendedFare} · Allowed PKR ${fareMin}–${fareMax}${engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}`
+                ? `${distKm ? `~${distKm.toFixed(1)} km · ` : ''}Recommended PKR ${marketNow.comparison?.available ? marketNow.fare : engineEst.recommendedFare} · Allowed PKR ${fareMin}–${fareMax}${engineEst.surgeApplied > 1 ? ` · Surge ${engineEst.surgeApplied.toFixed(1)}×` : ''}`
                 : `Allowed range PKR ${fareMin}–${fareMax}`}
             </Text>
           </View>

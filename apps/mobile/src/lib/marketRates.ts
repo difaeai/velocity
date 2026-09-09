@@ -327,6 +327,39 @@ export function compareToMarket(input: CompareInput): MarketComparison {
 }
 
 /**
+ * The same comparison, restated against the fare the rider has actually typed.
+ *
+ * `compareToMarket` answers "what should this ride cost", and its answer is
+ * what we prefill. But the fare on this screen is the rider's to move, and the
+ * moment they move it every claim built on the old number goes stale: a card
+ * still saying "560, −16%, you keep 104" over a stepper reading 700 is telling
+ * a rider something about their own trip that is not true.
+ *
+ * Pure, and deliberately narrow — it restates savings against the same cheapest
+ * competitor and the same target. It never re-picks a competitor, never
+ * re-prices, and never touches the driver floor.
+ */
+export function restateAgainstOffer(
+  comparison: MarketComparison,
+  offeredFare: number,
+): MarketComparison {
+  if (!comparison.available || !comparison.cheapest) return comparison;
+  if (!Number.isFinite(offeredFare) || offeredFare <= 0) return comparison;
+  if (offeredFare === comparison.velocityFare) return comparison;
+
+  const rivalFare = comparison.cheapest.fare;
+  const savings = rivalFare - offeredFare;
+
+  return {
+    ...comparison,
+    velocityFare: offeredFare,
+    savings: savings > 0 ? savings : 0,
+    savingsPct: rivalFare > 0 ? Math.round((savings / rivalFare) * 100) : 0,
+    guaranteeMet: comparison.targetFare != null && offeredFare <= comparison.targetFare,
+  };
+}
+
+/**
  * Why there is no comparison to show, in a sentence an operator can act on.
  *
  * The rider never sees this — a missing panel is simply a missing panel to
