@@ -496,21 +496,36 @@ export default function Booking() {
    * number the rider has already replaced. Display only: the prefill and the
    * vehicle-card prices still come from `marketFor`.
    */
-  /**
-   * How far along the payment-method row the rider has scrolled.
-   *
-   * Only the fades need it. Four methods do not fit on a phone, and a row that
-   * simply ends mid-chip reads as a clipping bug rather than as more content —
-   * so the edges fade, and only on the side that actually has something behind
-   * them.
-   */
-  const [payScroll, setPayScroll] = useState({ x: 0, content: 0, view: 0 });
-  const payMoreRight = payScroll.content - payScroll.view - payScroll.x > 4;
-  const payMoreLeft = payScroll.x > 4;
-
   const marketDisplay = marketNow.comparison
     ? restateAgainstOffer(marketNow.comparison, fare)
     : null;
+
+  /**
+   * Whether the payment-method row has anything behind its edges.
+   *
+   * Two rules this code has to obey, and I broke both on the first pass.
+   *
+   * A scroll event is recycled the instant its handler returns, so every
+   * measurement is read out of `nativeEvent` SYNCHRONOUSLY and only the plain
+   * number goes anywhere else. Reading `e.nativeEvent.layout.width` from inside
+   * a setState updater — which runs after the handler has gone — is how this
+   * screen came up as "Cannot read property 'layout' of null".
+   *
+   * And state here is the two booleans, not the pixels. `onScroll` fires about
+   * sixty times a second and this component is the entire booking screen;
+   * storing the offset re-rendered all of it on every frame of a flick. The
+   * measurements live in a ref, and state changes only when a fade actually
+   * has to appear or go.
+   */
+  const [payFade, setPayFade] = useState({ left: false, right: false });
+  const payMetrics = useRef({ x: 0, view: 0, content: 0 });
+  const syncPayFade = () => {
+    const { x, view, content } = payMetrics.current;
+    const left = x > 4;
+    const right = content - view - x > 4;
+    setPayFade((f) => (f.left === left && f.right === right ? f : { left, right }));
+  };
+
 
   const prefillAnchor = engineEst
     ? marketNow.fare
@@ -1401,9 +1416,18 @@ export default function Booking() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.payWrap}
               scrollEventThrottle={16}
-              onScroll={(e) => setPayScroll((p) => ({ ...p, x: e.nativeEvent.contentOffset.x }))}
-              onLayout={(e) => setPayScroll((p) => ({ ...p, view: e.nativeEvent.layout.width }))}
-              onContentSizeChange={(w) => setPayScroll((p) => ({ ...p, content: w }))}
+              onScroll={(e) => {
+                payMetrics.current.x = e.nativeEvent.contentOffset.x;
+                syncPayFade();
+              }}
+              onLayout={(e) => {
+                payMetrics.current.view = e.nativeEvent.layout.width;
+                syncPayFade();
+              }}
+              onContentSizeChange={(w) => {
+                payMetrics.current.content = w;
+                syncPayFade();
+              }}
             >
               {BOOKABLE_PAYMENT_METHODS.map((m) => {
                 const on = paymentMethods.includes(m);
@@ -1441,8 +1465,8 @@ export default function Booking() {
             </ScrollView>
             {/* Only ever on the side with something behind it, so the fade is a
                 statement about the content and not decoration on the sheet. */}
-            {payMoreLeft ? <EdgeFade side="left" colour={RIDE_SHEET_SOLID} /> : null}
-            {payMoreRight ? <EdgeFade side="right" colour={RIDE_SHEET_SOLID} /> : null}
+            {payFade.left ? <EdgeFade side="left" colour={RIDE_SHEET_SOLID} /> : null}
+            {payFade.right ? <EdgeFade side="right" colour={RIDE_SHEET_SOLID} /> : null}
           </View>
           {paymentMethods.length === 0 ? (
             <Text style={styles.payWarn}>Choose at least one way to pay before you book.</Text>
