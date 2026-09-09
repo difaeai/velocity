@@ -24,6 +24,35 @@ import { colors } from '../config';
 import { themed } from '../theme';
 import { COMPETITOR_LABELS, type Competitor, type MarketComparison } from '../lib/marketRates';
 
+/**
+ * The little square that stands in for a competitor's logo.
+ *
+ * Deliberately NOT their real trademark. Two reasons, and the second is the
+ * one that decided it: we do not ship their artwork, and inDrive's brand green
+ * is within a few degrees of our own lime. Painting a rival's row in the colour
+ * this app uses for "ours" would make the one thing the card exists to say —
+ * that number is theirs, this number is ours — the hardest thing to read on it.
+ *
+ * So every rival wears the same neutral grey monogram and Velocity keeps the
+ * lime to itself. If we ever license the real marks, this is the only component
+ * that has to change.
+ */
+function BrandMark({ competitor, size = 16 }: { competitor: Competitor; size?: number }) {
+  const glyph = competitor === 'indrive' ? 'iD' : 'Y';
+  return (
+    <View
+      style={[
+        styles.mark,
+        { width: size, height: size, borderRadius: Math.round(size * 0.3) },
+      ]}
+    >
+      <Text style={[styles.markTxt, { fontSize: size * (glyph.length > 1 ? 0.5 : 0.62) }]}>
+        {glyph}
+      </Text>
+    </View>
+  );
+}
+
 interface Props {
   comparison: MarketComparison | null;
   disclaimer: string;
@@ -48,6 +77,9 @@ export function MarketCompare({
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [sent, setSent] = useState(false);
+  // The floating strip opens for the qualifiers. Collapsed is the honest
+  // default: on a map, height is the thing the rider is paying for.
+  const [open, setOpen] = useState(false);
 
   const onMap = variant === 'map';
 
@@ -136,43 +168,58 @@ export function MarketCompare({
 
   const { competitors, cheapest, velocityFare, savings, savingsPct, guaranteeMet } = comparison;
 
-  /* ── The strip that floats over the route ── */
+  /* ── The strip that floats over the route ──
+       Three lines and a badge. It used to be nine, and at that height it ran
+       from under the route card all the way into the booking sheet, sitting on
+       the map it was supposed to annotate. Everything a rider needs to act on
+       is in the collapsed state — their price, our price, how much less — and
+       the qualifiers that only matter once (what you keep, that it is an
+       estimate, how to correct it) live behind a tap. ── */
   if (onMap) {
     return (
       <View style={styles.mapCard}>
-        <Text style={styles.mapHead}>SAME TRIP</Text>
-
-        {competitors.map((c) => (
-          <View key={c.competitor} style={styles.mapRow}>
-            <Text style={styles.mapRival} numberOfLines={1}>{c.label}</Text>
-            <Text style={styles.mapRivalFare}>~{c.fare.toLocaleString()}</Text>
+        <Pressable onPress={() => setOpen((v) => !v)} hitSlop={6}>
+          <View style={styles.mapHeadRow}>
+            <Text style={styles.mapHead}>SAME TRIP</Text>
+            {guaranteeMet && savingsPct != null && savingsPct > 0 ? (
+              <View style={styles.mapBadge}>
+                <Text style={styles.mapBadgeTxt}>−{savingsPct}%</Text>
+              </View>
+            ) : null}
+            <Text style={styles.mapChevron}>{open ? '⌃' : '⌄'}</Text>
           </View>
-        ))}
 
-        <View style={styles.mapDivider} />
-
-        <Text style={styles.mapUs}>Velocity</Text>
-        <View style={styles.mapUsRow}>
-          <Text style={styles.mapUsFare}>{velocityFare.toLocaleString()}</Text>
-          {guaranteeMet && savingsPct != null && savingsPct > 0 ? (
-            <View style={styles.mapBadge}>
-              <Text style={styles.mapBadgeTxt}>−{savingsPct}%</Text>
+          {competitors.map((c) => (
+            <View key={c.competitor} style={styles.mapRow}>
+              <BrandMark competitor={c.competitor} size={15} />
+              <Text style={styles.mapRival} numberOfLines={1}>{c.label}</Text>
+              <Text style={styles.mapRivalFare}>{c.fare.toLocaleString()}</Text>
             </View>
-          ) : null}
-        </View>
+          ))}
 
-        {guaranteeMet && savings != null && savings > 0 ? (
-          <Text style={styles.mapSaving}>You keep PKR {savings.toLocaleString()}</Text>
-        ) : (
-          <Text style={styles.mapSavingMuted}>Close to the market on a trip this short</Text>
-        )}
+          <View style={styles.mapUsRow}>
+            <View style={styles.mapUsMark} />
+            <Text style={styles.mapUs}>Velocity</Text>
+            <Text style={styles.mapUsFare}>{velocityFare.toLocaleString()}</Text>
+          </View>
+        </Pressable>
 
-        <Text style={styles.mapNote}>Estimated, not a live quote</Text>
-
-        {onReport ? (
-          <Pressable onPress={() => setReportOpen(true)} hitSlop={8}>
-            <Text style={styles.mapReport}>Saw another price?</Text>
-          </Pressable>
+        {open ? (
+          <View style={styles.mapMore}>
+            {guaranteeMet && savings != null && savings > 0 ? (
+              <Text style={styles.mapSaving}>You keep PKR {savings.toLocaleString()}</Text>
+            ) : (
+              <Text style={styles.mapSavingMuted}>
+                Close to the market on a trip this short
+              </Text>
+            )}
+            <Text style={styles.mapNote}>Estimated, not a live quote</Text>
+            {onReport ? (
+              <Pressable onPress={() => setReportOpen(true)} hitSlop={8}>
+                <Text style={styles.mapReport}>Saw another price?</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         {reportModal}
@@ -196,6 +243,7 @@ export function MarketCompare({
         const isCheapest = c.competitor === cheapest.competitor;
         return (
           <View key={c.competitor} style={styles.row}>
+            <BrandMark competitor={c.competitor} size={22} />
             <View style={styles.rowLeft}>
               <Text style={styles.rival}>{c.label}</Text>
               <Text style={styles.tier} numberOfLines={1}>{c.competitorClass}</Text>
@@ -208,6 +256,7 @@ export function MarketCompare({
       })}
 
       <View style={[styles.row, styles.usRow]}>
+        <View style={styles.usMark} />
         <View style={styles.rowLeft}>
           <Text style={styles.us}>Velocity</Text>
           <Text style={styles.tier}>This ride</Text>
@@ -244,48 +293,80 @@ export function MarketCompare({
 
 const styles = themed(() => StyleSheet.create({
   /* ── Floating strip over the route ──
-       Narrow on purpose: it sits beside the road line rather than on top of it,
-       and the rider reads it in a glance without it becoming the screen. */
+       Narrow AND short on purpose. It sits beside the road line, not on top of
+       it, and it must clear the booking sheet at its tallest snap point — which
+       the nine-line version did not. Every size below is chosen so the whole
+       strip is read in one glance, without becoming the screen. */
   mapCard: {
-    width: 138,
+    width: 152,
     backgroundColor: colors.glassPanel,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: 11,
-    paddingHorizontal: 11,
-    gap: 3,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
   },
+  mapHeadRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
   mapHead: {
-    fontSize: 9,
+    flex: 1,
+    fontSize: 8.5,
     fontWeight: '900',
     letterSpacing: 0.9,
     color: colors.muted,
-    marginBottom: 3,
   },
-  mapRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  mapRival: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.muted },
+  mapChevron: { fontSize: 11, fontWeight: '900', color: colors.muted, lineHeight: 12 },
+
+  /* Rival rows: mark, name, struck fare. The strike is what makes a bare
+     number legible as "what you would have paid". */
+  mapRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
+  mapRival: { flex: 1, fontSize: 11.5, fontWeight: '600', color: colors.muted },
   mapRivalFare: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.muted,
     textDecorationLine: 'line-through',
   },
-  mapDivider: { height: 1, backgroundColor: colors.border, marginVertical: 7 },
-  mapUs: { fontSize: 11, fontWeight: '800', color: colors.text, letterSpacing: 0.3 },
-  mapUsRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  mapUsFare: { fontSize: 21, fontWeight: '900', color: colors.primary },
+
+  /* Our row. No divider rule above it — the lime dot and the type size already
+     separate it, and a hairline was one more horizontal line on a map full of
+     them. */
+  mapUsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  mapUsMark: { width: 15, height: 15, borderRadius: 5, backgroundColor: colors.primary },
+  mapUs: { flex: 1, fontSize: 11.5, fontWeight: '800', color: colors.text },
+  mapUsFare: { fontSize: 19, fontWeight: '900', color: colors.primary, lineHeight: 22 },
+
   mapBadge: {
     backgroundColor: colors.primary,
     borderRadius: 5,
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  mapBadgeTxt: { fontSize: 10, fontWeight: '900', color: '#000' },
-  mapSaving: { fontSize: 10.5, fontWeight: '700', color: colors.text, lineHeight: 14, marginTop: 2 },
-  mapSavingMuted: { fontSize: 10, color: colors.muted, lineHeight: 13, marginTop: 2 },
-  mapNote: { fontSize: 9, color: colors.muted, marginTop: 4 },
-  mapReport: { fontSize: 10, fontWeight: '700', color: colors.primary, marginTop: 5 },
+  mapBadgeTxt: { fontSize: 9.5, fontWeight: '900', color: '#000' },
+
+  /* Behind the tap. */
+  mapMore: { marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: colors.border, gap: 3 },
+  mapSaving: { fontSize: 10.5, fontWeight: '700', color: colors.text, lineHeight: 14 },
+  mapSavingMuted: { fontSize: 10, color: colors.muted, lineHeight: 13 },
+  mapNote: { fontSize: 9, color: colors.muted },
+  mapReport: { fontSize: 10.5, fontWeight: '700', color: colors.primary, marginTop: 2 },
+
+  /* Stand-in for a competitor logo — see BrandMark. */
+  mark: {
+    backgroundColor: colors.glassChip,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markTxt: { fontWeight: '900', color: colors.muted, includeFontPadding: false },
 
   diagCardMap: {
     width: 178,
@@ -353,6 +434,7 @@ const styles = themed(() => StyleSheet.create({
   rivalFareCheapest: { color: colors.text },
 
   usRow: { borderBottomWidth: 0, paddingTop: 10 },
+  usMark: { width: 22, height: 22, borderRadius: 7, backgroundColor: colors.primary },
   us: { fontSize: 16, fontWeight: '900', color: colors.primary },
   usFare: { fontSize: 22, fontWeight: '900', color: colors.primary },
 
