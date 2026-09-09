@@ -8,6 +8,8 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+
 import { Text } from './Text';
 import { colors } from '../config';
 import { SUPPORT_EMAIL } from '../share/links';
@@ -72,7 +74,51 @@ export function Badge({ label, color = colors.primary }: { label: string; color?
   );
 }
 
+/**
+ * The soft edge that tells a rider a horizontal row keeps going.
+ *
+ * A row of chips that runs off the screen looks identical to a row that ends
+ * in a chip the designer clipped — the payment methods were reading as
+ * "Cash, EasyPaisa, JazzCash, E" — and nothing on a flat edge says "scroll me".
+ * A fade does, because the content dissolving into the surface is the one cue
+ * that cannot be mistaken for a layout mistake.
+ *
+ * Sits on top of the list and takes no touches, so a chip half under it is
+ * still tappable. `colour` must be the surface behind the row, opaque: a
+ * translucent one fades to the map instead of to the sheet.
+ */
+export function EdgeFade({
+  side = 'right', width = 28, colour, style,
+}: {
+  side?: 'left' | 'right';
+  width?: number;
+  /** The opaque background this fades into. */
+  colour: string;
+  style?: ViewStyle;
+}) {
+  // The gradient runs from transparent at the content edge to the surface
+  // colour at the screen edge, so `x1`/`x2` flip with the side.
+  const solidFirst = side === 'left';
+  return (
+    <View
+      pointerEvents="none"
+      style={[styles.edgeFade, side === 'left' ? { left: 0 } : { right: 0 }, { width }, style]}
+    >
+      <Svg width="100%" height="100%">
+        <Defs>
+          <LinearGradient id={`edge-${side}`} x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor={colour} stopOpacity={solidFirst ? 1 : 0} />
+            <Stop offset="1" stopColor={colour} stopOpacity={solidFirst ? 0 : 1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill={`url(#edge-${side})`} />
+      </Svg>
+    </View>
+  );
+}
+
 const styles = themed(() => StyleSheet.create({
+  edgeFade: { position: 'absolute', top: 0, bottom: 0 },
   btn: {
     height: 52,
     borderRadius: 14,
