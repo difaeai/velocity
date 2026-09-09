@@ -1275,12 +1275,17 @@ export default function Booking() {
                 ) : null}
               </View>
               <Text style={styles.pickPrice}>PKR {fare}</Text>
+              {/* Two lines, not four. This sentence set the height of both
+                  cards — Solo is only as tall as Share Ride is — and every line
+                  of it pushed the fare stepper, the one control the rider came
+                  here to use, further under the fold. The clause that had to
+                  survive the cut is "going your way": who can join is the thing
+                  riders get wrong about pooling. */}
               <Text style={styles.pickSub}>
-                Others going your way can join for 10 minutes — your fare drops to PKR{' '}
-                {poolShareFare} each if they do.
+                Others going your way can join for 10 min — then PKR {poolShareFare} each.
               </Text>
               <View style={styles.saveBadge}>
-                <Text style={styles.saveBadgeText}>SAVE UP TO {maxSavePct}%</Text>
+                <Text style={styles.saveBadgeText}>SAVE {maxSavePct}%</Text>
               </View>
             </Pressable>
 
@@ -1305,7 +1310,14 @@ export default function Booking() {
             </Pressable>
           </View>
 
-          {/* ── 2. Which vehicle ── */}
+          {/* ── 2. Which vehicle ──
+               Sized down with the cards above it for one reason: everything on
+               this sheet before "WHAT WILL YOU PAY?" is a choice most riders
+               make once and then leave alone, while the fare stepper is the
+               control they came here to touch. The carousel keeps its shape —
+               icon, name, price, seats — at about three quarters of the height,
+               which is enough to read at a glance and no longer enough to push
+               the stepper off the first snap point. ── */}
           <Text style={styles.stepLabel}>WHICH CAR?</Text>
           <ScrollView
             horizontal
@@ -1322,7 +1334,7 @@ export default function Booking() {
                     onPress={() => selectRide(rt.key)}
                   >
                     <View style={[styles.vehicleIconWrap, active && styles.vehicleIconWrapActive]}>
-                      <rt.Icon size={30} color={active ? colors.primary : '#e6eae8'} />
+                      <rt.Icon size={25} color={active ? colors.primary : '#e6eae8'} />
                     </View>
                     <Text style={[styles.vehicleName, active && { color: colors.primary }]}>{rt.label}</Text>
                     <Text style={styles.vehicleDesc} numberOfLines={1}>{rt.desc}</Text>
@@ -2273,16 +2285,16 @@ const styles = themed(() => StyleSheet.create({
        the same until a rider actually joins a pool. ── */
   pickRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   pickCard: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.border,
-    padding: 12,
-    gap: 3,
+    padding: 10,
+    gap: 2,
   },
   pickCardOn: {
     backgroundColor: colors.glassLime,
@@ -2295,32 +2307,32 @@ const styles = themed(() => StyleSheet.create({
     gap: 6,
   },
   pickTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
     color: colors.text,
   },
   pickTick: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pickTickTxt: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
     color: '#0b0d0c',
   },
   pickPrice: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     color: colors.text,
     letterSpacing: -0.4,
   },
   pickSub: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 10.5,
+    lineHeight: 14,
     fontWeight: '600',
     color: '#a9b0ad',
   },
@@ -2497,11 +2509,12 @@ const styles = themed(() => StyleSheet.create({
     marginTop: 1,
   },
   saveBadge: {
+    alignSelf: 'flex-start',
     backgroundColor: colors.primary,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 2,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginTop: 2,
     flexShrink: 1, // never push the POOL eyebrow off a narrow card
   },
   saveBadgeText: {
@@ -2515,53 +2528,53 @@ const styles = themed(() => StyleSheet.create({
 
   // Vehicle carousel
   vehicleRow: {
-    gap: 10,
+    gap: 8,
     paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 5,
   },
   vehicleCard: {
-    width: 122,
+    width: 110,
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.border,
-    padding: 12,
-    gap: 2,
+    padding: 10,
+    gap: 1,
   },
   vehicleCardActive: {
     backgroundColor: colors.glassLime,
     borderColor: colors.primary,
   },
   vehicleIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   vehicleIconWrapActive: {
     backgroundColor: 'rgba(204,255,0,0.12)',
   },
   vehicleName: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: '900',
     color: colors.text,
   },
   vehicleDesc: {
-    fontSize: 9.5,
+    fontSize: 9,
     color: colors.muted,
     fontWeight: '600',
   },
   vehiclePrice: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#e6eae8',
-    marginTop: 4,
+    marginTop: 2,
   },
   vehicleSeats: {
-    fontSize: 9.5,
+    fontSize: 9,
     color: colors.muted,
     fontWeight: '700',
   },
