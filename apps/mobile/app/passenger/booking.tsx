@@ -76,6 +76,7 @@ import {
   DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap, restateAgainstOffer,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
+import { EdgeFade } from '../../src/ui/components';
 
 /** A booking dictated on the voice screen, ready to seed this screen's state. */
 interface VoicePrefill {
@@ -138,6 +139,14 @@ const DEFAULT_POOL_RADIUS_KM = 5;
 // but the map behind it stays worth looking at, so the first snap still shows
 // the route. The Book bar is pinned outside the sheet at every height.
 const RIDE_SNAP_POINTS = [0.44, 0.70, 0.94];
+
+// The booking sheet's own surface. Named because the horizontal rows inside it
+// fade into this exact colour at their edges, and a fade to the wrong colour is
+// more obviously wrong than no fade at all. The opaque twin is what the fade
+// uses: the sheet is 97% opaque over the map, and a gradient that ends
+// translucent dissolves the chips into the road instead of into the sheet.
+const RIDE_SHEET_BG = 'rgba(11,13,12,0.97)';
+const RIDE_SHEET_SOLID = '#0b0d0c';
 
 // Stand-in shown the moment coordinates land, before the reverse-geocoded
 // street address does. The backend receives real coordinates either way, so this
@@ -487,6 +496,18 @@ export default function Booking() {
    * number the rider has already replaced. Display only: the prefill and the
    * vehicle-card prices still come from `marketFor`.
    */
+  /**
+   * How far along the payment-method row the rider has scrolled.
+   *
+   * Only the fades need it. Four methods do not fit on a phone, and a row that
+   * simply ends mid-chip reads as a clipping bug rather than as more content —
+   * so the edges fade, and only on the side that actually has something behind
+   * them.
+   */
+  const [payScroll, setPayScroll] = useState({ x: 0, content: 0, view: 0 });
+  const payMoreRight = payScroll.content - payScroll.view - payScroll.x > 4;
+  const payMoreLeft = payScroll.x > 4;
+
   const marketDisplay = marketNow.comparison
     ? restateAgainstOffer(marketNow.comparison, fare)
     : null;
@@ -1362,45 +1383,55 @@ export default function Booking() {
                on the request and takes the ride knowing they can be paid a way
                that suits them. ── */}
           <Text style={styles.stepLabel}>HOW WILL YOU PAY? · PICK AT LEAST ONE</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.payWrap}
-          >
-            {BOOKABLE_PAYMENT_METHODS.map((m) => {
-              const on = paymentMethods.includes(m);
-              const walletLocked = m === 'wallet' && !walletTopupEnabled;
-              return (
-                <Pressable
-                  key={m}
-                  style={[styles.payChip, on && styles.payChipOn, walletLocked && styles.payChipOff]}
-                  onPress={() => {
-                    if (walletLocked) {
-                      Alert.alert(
-                        'Coming soon',
-                        'Wallet payments are coming soon. Cash, EasyPaisa, JazzCash and bank transfer all work today.',
-                      );
-                      return;
-                    }
-                    togglePaymentMethod(m);
-                  }}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on }}
-                  accessibilityLabel={PAYMENT_METHOD_LABELS[m]}
-                >
-                  {m === 'cash' ? (
-                    <CashIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
-                  ) : m === 'wallet' ? (
-                    <WalletIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
-                  ) : null}
-                  <Text style={[styles.payChipTxt, on && styles.payChipTxtOn]}>
-                    {walletLocked ? 'Wallet (soon)' : PAYMENT_METHOD_LABELS[m]}
-                  </Text>
-                  {on ? <Text style={styles.payChipTick}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <View style={styles.payRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.payWrap}
+              scrollEventThrottle={16}
+              onScroll={(e) => setPayScroll((p) => ({ ...p, x: e.nativeEvent.contentOffset.x }))}
+              onLayout={(e) => setPayScroll((p) => ({ ...p, view: e.nativeEvent.layout.width }))}
+              onContentSizeChange={(w) => setPayScroll((p) => ({ ...p, content: w }))}
+            >
+              {BOOKABLE_PAYMENT_METHODS.map((m) => {
+                const on = paymentMethods.includes(m);
+                const walletLocked = m === 'wallet' && !walletTopupEnabled;
+                return (
+                  <Pressable
+                    key={m}
+                    style={[styles.payChip, on && styles.payChipOn, walletLocked && styles.payChipOff]}
+                    onPress={() => {
+                      if (walletLocked) {
+                        Alert.alert(
+                          'Coming soon',
+                          'Wallet payments are coming soon. Cash, EasyPaisa, JazzCash and bank transfer all work today.',
+                        );
+                        return;
+                      }
+                      togglePaymentMethod(m);
+                    }}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={PAYMENT_METHOD_LABELS[m]}
+                  >
+                    {m === 'cash' ? (
+                      <CashIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
+                    ) : m === 'wallet' ? (
+                      <WalletIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
+                    ) : null}
+                    <Text style={[styles.payChipTxt, on && styles.payChipTxtOn]}>
+                      {walletLocked ? 'Wallet (soon)' : PAYMENT_METHOD_LABELS[m]}
+                    </Text>
+                    {on ? <Text style={styles.payChipTick}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {/* Only ever on the side with something behind it, so the fade is a
+                statement about the content and not decoration on the sheet. */}
+            {payMoreLeft ? <EdgeFade side="left" colour={RIDE_SHEET_SOLID} /> : null}
+            {payMoreRight ? <EdgeFade side="right" colour={RIDE_SHEET_SOLID} /> : null}
+          </View>
           {paymentMethods.length === 0 ? (
             <Text style={styles.payWarn}>Choose at least one way to pay before you book.</Text>
           ) : null}
@@ -2219,7 +2250,7 @@ const styles = themed(() => StyleSheet.create({
   /* ════════ Stage 2 — the one booking sheet ════════ */
   /* Height is the rider's, via DraggableSheet — this only skins the surface. */
   rideSheet: {
-    backgroundColor: 'rgba(11,13,12,0.97)',
+    backgroundColor: RIDE_SHEET_BG,
   },
   rideScroll: {
     flex: 1,
@@ -2806,6 +2837,7 @@ const styles = themed(() => StyleSheet.create({
 
   /* ── How you will pay. A wrapping row of toggles rather than a segmented
        control, because more than one of them can be on at once. ── */
+  payRow: { position: 'relative' },
   payWrap: {
     flexDirection: 'row',
     gap: 8,
