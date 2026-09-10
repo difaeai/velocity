@@ -24,6 +24,18 @@ module.exports = function withGradleConfig(config) {
     // Build only arm64-v8a for debug (all modern Android phones) — cuts build time by 75%
     set('reactNativeArchitectures', 'arm64-v8a');
 
+    // Minify (and therefore obfuscate) release builds with R8. Google Play
+    // grades an app on how much of its DEX is obfuscated and warns below 25%;
+    // with this off Velocity measured 1%, which Play flags as able to affect
+    // visibility and publishing. The keep rules R8 needs to not rename the
+    // reflective parts of React Native out from under themselves are appended
+    // by plugins/withProguardRules.js — the two must be changed together.
+    //
+    // Only minification is enabled: `android.enableShrinkResourcesInReleaseBuilds`
+    // is a different Play metric and a different risk (it drops resources that
+    // are only ever looked up by name), so it stays off until it is asked for.
+    set('android.enableMinifyInReleaseBuilds', 'true');
+
     // NOTE: do NOT set 'android.kotlinVersion' here to satisfy a dependency that
     // wants a newer Kotlin. It moves kotlin-stdlib/reflect but NOT the Kotlin
     // compiler, which Expo 56 pins separately at 2.1.20 — the result is a 2.3.0
