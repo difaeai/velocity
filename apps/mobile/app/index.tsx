@@ -1,28 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Text } from '../src/ui/Text';
 import { useAuth } from '../src/auth/AuthContext';
 import { db } from '../src/firebase';
 import { colors } from '../src/config';
 import { themed } from '../src/theme';
-import { LogoMark } from '../src/ui/LogoMark';
 import { WELCOME_SEEN_KEY } from './welcome';
 
 /** Entry route: sends the user to the right experience based on auth + role. */
 export default function Index() {
   const { initializing, user, role } = useAuth();
-  // The brand splash is the first frame this app ever paints, and on iOS the
-  // window width read during that pass can still be the pre-layout one — which
-  // clipped the mark, both brand lines and the star accent at half the screen
-  // for the full three seconds the splash is held. Reading the width through
-  // the hook (and keying the view on it) means the corrected value repaints the
-  // splash instead of arriving too late to matter.
-  const { width: windowWidth } = useWindowDimensions();
-  const [showSplash, setShowSplash] = useState(true);
   const [profileChecked, setProfileChecked] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   // Driver application status (drivers/{uid}.verificationStatus). A "pending"
@@ -32,12 +22,6 @@ export default function Index() {
   // Whether the signed-out welcome carousel has already been shown on this
   // device. false → show carousel; true → straight to sign-in.
   const [welcomeSeen, setWelcomeSeen] = useState(false);
-
-  useEffect(() => {
-    // 3000ms matches the logo's decelerating 3D spin (2x → 1x → stop).
-    const timer = setTimeout(() => setShowSplash(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -103,23 +87,21 @@ export default function Index() {
     check();
   }, [user?.uid]);
 
-  if (initializing || showSplash || !profileChecked) {
-    return (
-      <View key={windowWidth} style={[styles.container, { width: windowWidth }]}>
-        {/* Logo — no background, just the lime mark */}
-        <LogoMark size={96} color="#ccff00" spin />
-
-        {/* Brand name */}
-        <Text style={styles.brandText}>VELOCITY</Text>
-        <Text style={styles.brandSub}>Ride smarter. Move faster.</Text>
-
-        {/* Small star accent */}
-        <View style={styles.starContainer}>
-          <Text style={styles.star}>✦</Text>
-        </View>
-      </View>
-    );
-  }
+  // A bare colour, deliberately.
+  //
+  // This used to be a three-second branded splash — the spinning mark over
+  // VELOCITY and a tagline. On iOS it painted only half the screen: build 4
+  // rendered the left half ("VELO", "Ride smarter.", no star), build 5 the
+  // right half ("CITY", "Move faster.", star). Laying the content out against
+  // the full width while the surface drew half of it is a native-layer problem
+  // underneath React, and two builds spent guessing at it fixed nothing.
+  //
+  // So there is nothing left to clip. The native splash from the
+  // expo-splash-screen plugin already shows the mark on this exact colour and
+  // renders correctly; this just holds that same colour for the moment between
+  // it hiding and the real screen mounting. Launch is three seconds quicker for
+  // it. Do not reintroduce a JS splash without testing it on a device first.
+  if (initializing || !profileChecked) return <View style={styles.container} />;
 
   if (!user) return <Redirect href={welcomeSeen ? '/auth/sign-in' : '/welcome'} />;
   // Approved drivers go straight to their dashboard — they never sign in again.
@@ -135,31 +117,9 @@ const styles = themed(() => StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    // Matches the native splash's backgroundColor in app.json exactly. Any
-    // difference here is a visible seam as one hands over to the other.
+    // Matches the native splash's backgroundColor in app.json exactly, so the
+    // handover from it is invisible.
     backgroundColor: '#101211',
-    gap: 16,
-  },
-  brandText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: 4,
-  },
-  brandSub: {
-    fontSize: 14,
-    color: '#8a8c8c',
-    letterSpacing: 0.5,
-  },
-  starContainer: {
-    position: 'absolute',
-    bottom: 44,
-    right: 44,
-  },
-  star: {
-    fontSize: 22,
-    color: '#ccff00',
-    opacity: 0.6,
   },
 }));
 
