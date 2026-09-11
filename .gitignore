@@ -61,3 +61,10 @@ velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json
 # history — one accidental `git add .` would bloat the repo permanently.
 *.aab
 *.apk
+
+# Apple signing keys. The App Store Connect API key (AuthKey_<KeyID>.p8) and the
+# APNs key are single-download secrets — Apple will not re-issue the file, only
+# revoke and replace it. They live outside the repo (~/.appstoreconnect) and are
+# passed to `eas submit` by path; this pattern is the safety net for the day
+# someone drops one into the working tree and runs `git add .`.
+*.p8
