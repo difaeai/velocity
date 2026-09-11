@@ -107,6 +107,35 @@ export interface WhatsAppOtpSettings {
    * is meant to be: a backstop against a caller that is not the app.
    */
   maxSendsPerNumberPerHour: number;
+  /**
+   * Numbers that must never be handed a WhatsApp code, normalised to the same
+   * shape `toWhatsAppNumber` produces.
+   *
+   * This exists for app-store reviewers. A reviewer signs in with a number
+   * registered in the Firebase console as a test number, for which Firebase
+   * accepts a fixed code and sends nothing at all. That short-circuit lives
+   * entirely inside Firebase's own flow — nothing outside it knows the list
+   * exists, this endpoint included.
+   */
+  demoNumbers: string[];
+}
+
+/**
+ * Normalises the configured demo numbers, dropping anything that is not a
+ * Pakistani mobile and capping the list.
+ *
+ * Bad entries are dropped rather than rejected: a typo in one number must not
+ * take the other numbers — or the whole settings read — down with it.
+ */
+function readDemoNumbers(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (out.length >= 10) break;
+    const n = toWhatsAppNumber(typeof entry === 'string' ? entry : null);
+    if (n && !out.includes(n)) out.push(n);
+  }
+  return out;
 }
 
 const clamp = (v: unknown, lo: number, hi: number, fallback: number): number =>
@@ -130,6 +159,7 @@ export function readOtpSettings(
     enabled: d.enabled !== false,
     dailyCap: clamp(d.dailyCap, 0, 100_000, 3_000),
     maxSendsPerNumberPerHour: clamp(d.maxSendsPerNumberPerHour, 1, 20, 10),
+    demoNumbers: readDemoNumbers(d.demoNumbers),
   };
 }
 
@@ -326,6 +356,24 @@ export const startWhatsAppOtp = onCall(async (req) => {
   ]);
   const settings = readOtpSettings(settingsSnap.data());
   if (!settings.enabled) return fallback('disabled');
+
+  // A reviewer's test number, which can never receive a WhatsApp message
+  // because it is fictional. Without this the reviewer is told a code is on its
+  // way — Meta answers 200, which means accepted, not delivered — and then sits
+  // in front of a code screen for a message that does not exist. The review
+  // fails on a login that cannot be completed.
+  //
+  // `undeliverable` is precisely the right answer: the client caches it against
+  // this one number and drops to the native Firebase flow, where the fixed code
+  // works, while every other number goes on using WhatsApp.
+  //
+  // This chooses a channel and nothing more. Firebase still performs the
+  // verification, so being listed here makes no account easier to sign in to.
+  //
+  // Checked ahead of the rate limit and the daily budget deliberately: a
+  // reviewer retrying must never be able to lock themselves out of the account
+  // they were given, and a code that is never sent should cost nothing.
+  if (settings.demoNumbers.includes(to)) return fallback('undeliverable');
 
   const suppressedUntil = toMillis(healthSnap.get('suppressedUntil'));
   if (suppressedUntil !== null && suppressedUntil > Date.now()) return fallback('suppressed');

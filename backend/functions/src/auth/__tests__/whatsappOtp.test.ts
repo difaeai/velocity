@@ -133,6 +133,20 @@ describe('readOtpSettings', () => {
     expect(readOtpSettings(null).maxSendsPerNumberPerHour).toBe(10);
   });
 
+  // The reviewer bypass. Listed numbers are normalised to the same shape the
+  // send path compares against, so '0300…' in the config matches '92300…' here.
+  it('normalises demo numbers and ignores junk entries', () => {
+    const s = readOtpSettings({
+      demoNumbers: ['03000000000', '+92 300 1234567', 'not a number', 42, '03000000000'],
+    });
+    expect(s.demoNumbers).toEqual(['923000000000', '923001234567']);
+  });
+
+  it('has no demo numbers unless configured', () => {
+    expect(readOtpSettings(null).demoNumbers).toEqual([]);
+    expect(readOtpSettings({ demoNumbers: 'nope' }).demoNumbers).toEqual([]);
+  });
+
   // Clamped on READ, so a bad admin edit can never become a bad send — the same
   // posture as readAlertSettings.
   it('clamps out-of-range edits instead of trusting them', () => {
