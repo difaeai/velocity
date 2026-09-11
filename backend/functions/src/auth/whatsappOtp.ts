@@ -127,9 +127,23 @@ export interface WhatsAppOtpSettings {
  * Bad entries are dropped rather than rejected: a typo in one number must not
  * take the other numbers — or the whole settings read — down with it.
  */
+/**
+ * The reviewer test number, hard-wired.
+ *
+ * This is the number registered in the Firebase console as a test number, for
+ * which Firebase accepts a fixed code and sends nothing. It is built in rather
+ * than configured because a review fails outright when it is missing, and an
+ * empty config document is the state a fresh environment is always in. Nobody
+ * should have to remember to arm this.
+ *
+ * Safe to hard-code: it only ever picks a CHANNEL. Firebase still performs the
+ * verification, so this number is no easier to sign in as than any other.
+ */
+const DEFAULT_DEMO_NUMBERS = ['923000000000'];
+
 function readDemoNumbers(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
+  if (!Array.isArray(raw)) return [...DEFAULT_DEMO_NUMBERS];
+  const out: string[] = [...DEFAULT_DEMO_NUMBERS];
   for (const entry of raw) {
     if (out.length >= 10) break;
     const n = toWhatsAppNumber(typeof entry === 'string' ? entry : null);
