@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -15,6 +15,13 @@ import { WELCOME_SEEN_KEY } from './welcome';
 /** Entry route: sends the user to the right experience based on auth + role. */
 export default function Index() {
   const { initializing, user, role } = useAuth();
+  // The brand splash is the first frame this app ever paints, and on iOS the
+  // window width read during that pass can still be the pre-layout one — which
+  // clipped the mark, both brand lines and the star accent at half the screen
+  // for the full three seconds the splash is held. Reading the width through
+  // the hook (and keying the view on it) means the corrected value repaints the
+  // splash instead of arriving too late to matter.
+  const { width: windowWidth } = useWindowDimensions();
   const [showSplash, setShowSplash] = useState(true);
   const [profileChecked, setProfileChecked] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
@@ -98,7 +105,7 @@ export default function Index() {
 
   if (initializing || showSplash || !profileChecked) {
     return (
-      <View style={styles.container}>
+      <View key={windowWidth} style={[styles.container, { width: windowWidth }]}>
         {/* Logo — no background, just the lime mark */}
         <LogoMark size={96} color="#ccff00" spin />
 
@@ -128,7 +135,9 @@ const styles = themed(() => StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1c1c',
+    // Matches the native splash's backgroundColor in app.json exactly. Any
+    // difference here is a visible seam as one hands over to the other.
+    backgroundColor: '#101211',
     gap: 16,
   },
   brandText: {

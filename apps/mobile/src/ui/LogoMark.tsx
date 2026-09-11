@@ -9,8 +9,11 @@ import Svg, { Defs, Mask, Rect, Circle, Path, G } from 'react-native-svg';
  *
  * `spin` runs a one-shot 3D spin on mount (used on the splash and brand
  * screens): the mark rotates around its vertical axis for 3 seconds,
- * starting at ~2 turns/sec, passing ~1 turn/sec, and decelerating to a
- * stop — a countdown feel (2x → 1x → 0).
+ * starting at ~2 turns/sec and decelerating to a stop.
+ *
+ * Two turns, not more. A Y-rotation puts the mark edge-on twice per turn,
+ * and at four turns it spent so much of the splash as an unreadable sliver
+ * that it looked like a logo failing to load rather than one spinning.
  */
 export function LogoMark({
   size = 60,
@@ -57,11 +60,12 @@ export function LogoMark({
 
   if (!spin) return mark;
 
-  // 4 full turns over 3s with ease-out ≈ 2 turns/s at launch, ~1 turn/s
-  // mid-flight, 0 at rest. Perspective makes the Y-rotation read as 3D.
+  // 2 full turns over 3s. Cubic ease-out opens at three times the average
+  // rate, so that is ~2 turns/s at launch decaying to 0 at rest, and the mark
+  // ends front-facing. Perspective makes the Y-rotation read as 3D.
   const rotateY = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '1440deg'],
+    outputRange: ['0deg', '720deg'],
   });
 
   return (
