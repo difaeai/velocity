@@ -142,9 +142,15 @@ describe('readOtpSettings', () => {
     expect(s.demoNumbers).toEqual(['923000000000', '923001234567']);
   });
 
-  it('has no demo numbers unless configured', () => {
-    expect(readOtpSettings(null).demoNumbers).toEqual([]);
-    expect(readOtpSettings({ demoNumbers: 'nope' }).demoNumbers).toEqual([]);
+  // Built in, not configured: a review fails outright when this is missing and
+  // an empty config document is the state a fresh environment is always in.
+  it('always carries the reviewer test number, configured or not', () => {
+    expect(readOtpSettings(null).demoNumbers).toEqual(['923000000000']);
+    expect(readOtpSettings({}).demoNumbers).toEqual(['923000000000']);
+    expect(readOtpSettings({ demoNumbers: 'nope' }).demoNumbers).toEqual(['923000000000']);
+    // Still there when an admin configures other numbers alongside it.
+    expect(readOtpSettings({ demoNumbers: ['03001234567'] }).demoNumbers)
+      .toEqual(['923000000000', '923001234567']);
   });
 
   // Clamped on READ, so a bad admin edit can never become a bad send — the same
