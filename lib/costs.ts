@@ -366,7 +366,7 @@ export const CATALOGUE: CostItem[] = [
   {
     id: 'workspace-mail',
     platform: 'Google Workspace',
-    service: 'Mailbox for support@velocityrides.app',
+    service: 'Mailbox for business@velocityrides.app',
     category: 'Domain & mail',
     purpose: 'A real inbox behind the support address printed on the legal pages and the Play listing.',
     amount: 0,

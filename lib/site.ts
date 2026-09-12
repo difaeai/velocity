@@ -26,7 +26,7 @@ export const TERMS_URL = `${SITE_URL}/terms`;
  * This is a domain mailbox, not a personal inbox: it has to keep working when
  * someone else answers support. Point it wherever mail should actually land.
  */
-export const SUPPORT_EMAIL = 'support@velocityrides.app';
+export const SUPPORT_EMAIL = 'business@velocityrides.app';
 
 /**
  * Official profiles, emitted as schema.org `sameAs` on the homepage.
