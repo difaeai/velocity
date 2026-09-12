@@ -26,7 +26,7 @@ export const DELETE_ACCOUNT_URL = `${WEB_ORIGIN}/delete-account`;
 export const TERMS_URL = `${WEB_ORIGIN}/terms`;
 
 /** The one support address. Anything user-facing must use this, not a literal. */
-export const SUPPORT_EMAIL = 'support@velocityrides.app';
+export const SUPPORT_EMAIL = 'business@velocityrides.app';
 
 /** Builds an https share link that opens the given in-app path. */
 export function appLink(path: string): string {
