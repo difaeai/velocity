@@ -152,7 +152,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside style={asideStyle}>
         <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <VelocityIcon size={32} />
-          <strong>Velocity</strong>
+          <strong>Velocity Rides</strong>
         </Link>
 
         <div style={switcherStyle}>

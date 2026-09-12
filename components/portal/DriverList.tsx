@@ -12,7 +12,7 @@ import { portalApi, type PortalSubmission } from '@/lib/api';
 import s from './portal.module.css';
 
 const STATUS_COPY: Record<PortalSubmission['status'], { label: string; cls: string }> = {
-  pending: { label: 'Awaiting Velocity', cls: 'pillPending' },
+  pending: { label: 'Awaiting Velocity Rides', cls: 'pillPending' },
   approved: { label: 'Approved', cls: 'pillApproved' },
   rejected: { label: 'Not approved', cls: 'pillRejected' },
 };
@@ -75,7 +75,7 @@ export function DriverList({
                 {d.status === 'approved' && !d.fleetBound ? (
                   <em className={s.reason}>
                     Approved as a driver, but not credited to your fleet — they already drove for
-                    Velocity before you added them.
+                    Velocity Rides before you added them.
                   </em>
                 ) : null}
               </span>

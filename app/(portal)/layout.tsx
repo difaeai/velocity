@@ -12,8 +12,8 @@ import { Providers } from '@/components/Providers';
  * skips the UI gate still gets nothing.
  */
 export const metadata: Metadata = {
-  title: { absolute: 'Velocity Fleet Portal' },
-  description: 'Run your Velocity fleet: add drivers, share your code, track approvals.',
+  title: { absolute: 'Velocity Rides Fleet Portal' },
+  description: 'Run your Velocity Rides fleet: add drivers, share your code, track approvals.',
   robots: { index: false, follow: false },
 };
 

@@ -1,5 +1,5 @@
 /**
- * The Velocity mark — GENERATED, do not edit by hand.
+ * The Velocity Rides mark — GENERATED, do not edit by hand.
  *
  * Traced from apps/mobile/assets/icon.png by scripts/generate-brand-assets.mjs.
  * Re-run that script after any change to the app icon; everything on the web
@@ -30,7 +30,7 @@ export function VelocityMark({
       width={size}
       height={size}
       role="img"
-      aria-label="Velocity"
+      aria-label="Velocity Rides"
       className={className}
       style={{ display: 'block', color: 'currentColor', ...style }}
     >

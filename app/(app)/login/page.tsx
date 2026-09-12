@@ -42,7 +42,7 @@ export default function Login() {
       <Card style={{ width: 380, maxWidth: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <VelocityIcon size={36} />
-          <strong style={{ fontSize: 20 }}>Velocity Admin</strong>
+          <strong style={{ fontSize: 20 }}>Velocity Rides Admin</strong>
         </div>
 
         {signedInNotAdmin ? (

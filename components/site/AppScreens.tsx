@@ -276,7 +276,7 @@ export function ScreenTrip() {
   );
 }
 
-/* ── screen 4: Earn with Velocity ──────────────────────────────────────── */
+/* ── screen 4: Earn with Velocity Rides ──────────────────────────────────────── */
 
 export function ScreenEarn() {
   const bars = [38, 52, 30, 64, 48, 74, 92];
@@ -285,7 +285,7 @@ export function ScreenEarn() {
       <StatusBar />
       <div className={s.earnHead}>
         <span>
-          <small>Earn with Velocity</small>
+          <small>Velocity Rides</small>
           <b>Your fleet</b>
         </span>
         <span className={s.proBadge}>PRO</span>

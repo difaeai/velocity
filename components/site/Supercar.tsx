@@ -100,7 +100,7 @@ export function Supercar({ idPrefix = 'car', className }: { idPrefix?: string; c
       viewBox="0 0 1000 360"
       className={className}
       role="img"
-      aria-label="A green Velocity supercar in side profile, accelerating"
+      aria-label="A green Velocity Rides supercar in side profile, accelerating"
     >
       <defs>
         <linearGradient id={`${p}-paint`} x1="0" y1="0.3" x2="0" y2="1">

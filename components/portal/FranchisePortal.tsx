@@ -49,7 +49,7 @@ function friendlyAuthError(e: unknown): string {
       case 'auth/code-expired':
         return 'That code has expired. Ask for a new one.';
       case 'auth/unauthorized-domain':
-        return 'This site is not authorised for sign-in yet. Tell Velocity support.';
+        return 'This site is not authorised for sign-in yet. Tell Velocity Rides support.';
       default:
         return e.message.replace('Firebase: ', '');
     }
@@ -143,10 +143,10 @@ function SignIn() {
         <span className={s.mark} aria-hidden="true">
           V
         </span>
-        <h1 className={s.authTitle}>Velocity Fleet Portal</h1>
+        <h1 className={s.authTitle}>Velocity Rides Fleet Portal</h1>
         <p className={s.authSub}>
           {step === 'phone'
-            ? 'Sign in with the same mobile number you use in the Velocity app.'
+            ? 'Sign in with the same mobile number you use in the Velocity Rides app.'
             : `We sent a 6-digit code to ${toE164(phone)}.`}
         </p>
 
@@ -328,7 +328,7 @@ function Dashboard({ portalId }: { portalId: string }) {
           />
           <Copyable
             title="Your portal link"
-            body="This is your private address for this dashboard. Anyone opening it still has to sign in as you, but treat it as yours — ask Velocity support to reissue it if it gets out."
+            body="This is your private address for this dashboard. Anyone opening it still has to sign in as you, but treat it as yours — ask Velocity Rides support to reissue it if it gets out."
             value={typeof window !== 'undefined' ? `${window.location.origin}/f/${p.portalId}` : ''}
           />
         </section>
@@ -336,7 +336,7 @@ function Dashboard({ portalId }: { portalId: string }) {
         <section className={s.panel}>
           <h2 className={s.h2}>Add a driver</h2>
           <p className={s.panelNote}>
-            Fill in the driver and their vehicle. Nothing is created yet — Velocity reviews every
+            Fill in the driver and their vehicle. Nothing is created yet — Velocity Rides reviews every
             submission and gives the final approval. You will be notified either way.
           </p>
           <AddDriverForm portalId={portalId} onSubmitted={reload} />

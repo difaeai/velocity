@@ -5,8 +5,8 @@ import { Providers } from '@/components/Providers';
 export const metadata: Metadata = {
   // `absolute` so the marketing template on the root layout does not append
   // " · Velocity" to every console screen.
-  title: { absolute: 'Velocity Admin' },
-  description: 'Operations console for the Velocity ride-hailing platform.',
+  title: { absolute: 'Velocity Rides Admin' },
+  description: 'Operations console for the Velocity Rides ride-hailing platform.',
   // Neither the console nor a one-off share link belongs in a search index.
   robots: { index: false, follow: false },
 };

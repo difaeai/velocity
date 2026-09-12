@@ -74,7 +74,7 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
 
 /**
  * The six services, in the ticker under the hero and again in the bento grid.
- * One list, so the two can never disagree about what Velocity actually does.
+ * One list, so the two can never disagree about what Velocity Rides actually does.
  */
 const SERVICES = [
   {
@@ -247,7 +247,7 @@ const SAFETY = [
 const FAQS = [
   {
     q: 'Do I need a card or a bank account?',
-    a: 'No. Cash is a full payment method on Velocity, not a fallback. You book, you ride, you pay the driver at the end. A wallet is there if you want it, but nothing requires it.',
+    a: 'No. Cash is a full payment method on Velocity Rides, not a fallback. You book, you ride, you pay the driver at the end. A wallet is there if you want it, but nothing requires it.',
   },
   {
     q: 'How does pooling actually save money?',
@@ -262,12 +262,12 @@ const FAQS = [
     a: 'There is an SOS button inside the trip. It raises a safety event that lands live on a staffed safety desk, along with your location if you share it. Route deviations can be flagged the same way, and every co-rider added to a pool mid-trip is visible to you.',
   },
   {
-    q: 'Is Velocity on iPhone?',
-    a: 'Velocity is on Google Play for Android today. The iOS build is in progress — the app is one codebase, so it is a release step rather than a rewrite.',
+    q: 'Is Velocity Rides on iPhone?',
+    a: 'Velocity Rides is on Google Play for Android today. The iOS build is in progress — the app is one codebase, so it is a release step rather than a rewrite.',
   },
   {
     q: 'Which cities does it cover?',
-    a: 'Velocity is built for Pakistan and works wherever there are drivers signed up nearby. Intercity seats run between the cities operators have published trips for, and you can see the list inside the app before you book.',
+    a: 'Velocity Rides is built for Pakistan and works wherever there are drivers signed up nearby. Intercity seats run between the cities operators have published trips for, and you can see the list inside the app before you book.',
   },
 ];
 
@@ -283,7 +283,7 @@ const JSON_LD = {
     {
       '@type': 'Organization',
       '@id': `${SITE}#org`,
-      name: 'Velocity',
+      name: 'Velocity Rides',
       url: SITE,
       logo: `${SITE}/app/icon.png`,
       areaServed: { '@type': 'Country', name: 'Pakistan' },
@@ -291,7 +291,7 @@ const JSON_LD = {
     },
     {
       '@type': 'MobileApplication',
-      name: 'Velocity',
+      name: 'Velocity Rides',
       operatingSystem: 'Android',
       applicationCategory: 'TravelApplication',
       installUrl: PLAY_URL,
@@ -348,7 +348,7 @@ export default function Home() {
                 </h1>
 
                 <p className={styles.heroLead}>
-                  Velocity is a ride-hailing app built for how Pakistan actually travels and actually
+                  Velocity Rides is a ride-hailing app built for how Pakistan actually travels and actually
                   pays. City rides, pooled seats, intercity trips and couriers — one app, one
                   account, cash accepted everywhere.
                 </p>
@@ -404,7 +404,7 @@ export default function Home() {
                   <div
                     className={styles.phone}
                     role="img"
-                    aria-label="The Velocity booking screen: a route pinned on the map, with a fare of 480 rupees offered and a Find a driver button."
+                    aria-label="The Velocity Rides booking screen: a route pinned on the map, with a fare of 480 rupees offered and a Find a driver button."
                   >
                     <span className={styles.notch} aria-hidden="true" />
                     <div className={styles.phoneScreen}>
@@ -509,7 +509,7 @@ export default function Home() {
                     <p>{c.before}</p>
                   </div>
                   <div className={styles.changeAfter}>
-                    <span className={styles.changeTag}>With Velocity</span>
+                    <span className={styles.changeTag}>With Velocity Rides</span>
                     <p>{c.after}</p>
                     <small>{c.note}</small>
                   </div>
@@ -624,7 +624,7 @@ export default function Home() {
                 Everything that needs to get across town — or across the country
               </h2>
               <p className={styles.lead}>
-                Velocity is not only a taxi app. The same account books your morning commute, your
+                Velocity Rides is not only a taxi app. The same account books your morning commute, your
                 seat to Lahore, and the parcel that has to be there by five.
               </p>
             </Reveal>
@@ -668,7 +668,7 @@ export default function Home() {
                 It all happens on <span className={styles.accent}>your phone</span>
               </h2>
               <p className={styles.lead}>
-                Velocity is a mobile app — there is no web booking. Here is what you actually do in
+                Velocity Rides is a mobile app — there is no web booking. Here is what you actually do in
                 it, screen by screen.
               </p>
             </Reveal>
@@ -718,21 +718,21 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Earn with Velocity — the partner program ───────────────────── */}
+        {/* ── Earn with Velocity Rides — the partner program ───────────────────── */}
         <section className={`${styles.section} ${styles.deep}`} id="earn">
           <div className={styles.wrap}>
             <div className={`${styles.split} ${styles.splitReverse}`}>
               <Reveal className={styles.splitCopy}>
                 <span className={styles.eyebrow}>
                   <TrendingUp />
-                  Earn with Velocity
+                  Earn with Velocity Rides
                 </span>
                 <h2 className={styles.h2}>
                   Build a transport business without <span className={styles.accent}>owning a car</span>
                 </h2>
                 <p className={styles.lead}>
-                  Recruit drivers and riders onto Velocity, run them as your fleet, and take a share
-                  of what Velocity earns from every ride they complete. One five-digit code builds
+                  Recruit drivers and riders onto Velocity Rides, run them as your fleet, and take a share
+                  of what Velocity Rides earns from every ride they complete. One five-digit code builds
                   both fleets — a driver who redeems it joins your driver fleet, a passenger joins
                   your rider fleet.
                 </p>
@@ -740,7 +740,7 @@ export default function Home() {
                 <p className={styles.ruleNote}>
                   <Shield />
                   <span>
-                    <b>You earn a share of Velocity&apos;s commission, never of the fare.</b> On a
+                    <b>You earn a share of Velocity Rides&apos; commission, never of the fare.</b> On a
                     Rs 1,000 ride with a 10% commission, a 2% Pro rate pays you Rs 2 — 2% of the
                     Rs 100 commission, not of the fare. The fare belongs to the driver.
                   </span>
@@ -799,7 +799,7 @@ export default function Home() {
                 <div
                   className={styles.phone}
                   role="img"
-                  aria-label="The Earn with Velocity dashboard: 18,420 rupees earned this month, a fleet of 24 drivers and 186 riders, and the fleet code 48213."
+                  aria-label="The Earn with Velocity Rides dashboard: 18,420 rupees earned this month, a fleet of 24 drivers and 186 riders, and the fleet code 48213."
                 >
                   <span className={styles.notch} aria-hidden="true" />
                   <div className={styles.phoneScreen}>
@@ -820,7 +820,7 @@ export default function Home() {
                 Other ways to earn
               </span>
               <h2 className={styles.h2}>
-                Velocity is not only for the people <span className={styles.accent}>taking rides</span>
+                Velocity Rides is not only for the people <span className={styles.accent}>taking rides</span>
               </h2>
             </Reveal>
 
@@ -860,7 +860,7 @@ export default function Home() {
                 </span>
                 <h2 className={styles.h2}>Nobody gets in a car they know nothing about</h2>
                 <p className={styles.lead}>
-                  Safety on Velocity is not a page in the settings. It is a set of checks that run
+                  Safety on Velocity Rides is not a page in the settings. It is a set of checks that run
                   before the ride, during it, and after it.
                 </p>
 
@@ -889,7 +889,7 @@ export default function Home() {
                 <div
                   className={styles.phone}
                   role="img"
-                  aria-label="The Velocity live trip screen: the driver tracked on the map, their name, rating and plate, and an SOS button."
+                  aria-label="The Velocity Rides live trip screen: the driver tracked on the map, their name, rating and plate, and an SOS button."
                 >
                   <span className={styles.notch} aria-hidden="true" />
                   <div className={styles.phoneScreen}>
@@ -939,7 +939,7 @@ export default function Home() {
               </span>
               <h2>Your next ride is one download away</h2>
               <p>
-                Velocity is free to install and free to join as a driver. Sign in with your phone
+                Velocity Rides is free to install and free to join as a driver. Sign in with your phone
                 number and book the first thing you need today.
               </p>
               <div className={styles.ctaActions}>
@@ -958,7 +958,7 @@ export default function Home() {
           <VelocityMark style={{ color: '#ccff00' }} />
         </span>
         <span className={styles.mobileBarText}>
-          <strong>Get Velocity</strong>
+          <strong>Get Velocity Rides</strong>
           <span>Free on Google Play</span>
         </span>
         <a
@@ -980,7 +980,7 @@ export default function Home() {
                 <span className={styles.brandMark}>
                   <VelocityMark style={{ color: '#ccff00' }} />
                 </span>
-                <span className={styles.brandName}>Velocity</span>
+                <span className={styles.brandName}>Velocity Rides</span>
               </a>
               <p>
                 Ride-hailing, pooling, intercity seats and couriers, built for Pakistan. Available on
@@ -1000,7 +1000,7 @@ export default function Home() {
 
             <div className={styles.footerCol}>
               <h3>Earn</h3>
-              <a href="#earn">Drive with Velocity</a>
+              <a href="#earn">Drive with Velocity Rides</a>
               <a href="#earn">Partner Program</a>
               <a href="#earn">Rent out your car</a>
               <a href="#earn">Advertise your shop</a>
@@ -1022,7 +1022,7 @@ export default function Home() {
           </div>
 
           <div className={styles.footerBase}>
-            <span>© {new Date().getFullYear()} Velocity. Built for Pakistan.</span>
+            <span>© {new Date().getFullYear()} Velocity Rides. Built for Pakistan.</span>
             <span className={styles.footerLegal}>
               <a href={PRIVACY_URL}>Privacy</a>
               <a href={TERMS_URL}>Terms</a>
