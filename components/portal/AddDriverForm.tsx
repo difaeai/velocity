@@ -87,7 +87,7 @@ export function AddDriverForm({
         vehicleColor: form.vehicleColor.trim() || undefined,
         notes: form.notes.trim() || undefined,
       });
-      setDone(`${form.fullName.trim()} submitted. Velocity will review it shortly.`);
+      setDone(`${form.fullName.trim()} submitted. Velocity Rides will review it shortly.`);
       setForm(EMPTY);
       await onSubmitted();
     } catch (err) {
@@ -181,7 +181,7 @@ export function AddDriverForm({
         </Field>
       </div>
 
-      <Field label="Anything Velocity should know">
+      <Field label="Anything Velocity Rides should know">
         <textarea
           className={`${s.input} ${s.textarea}`}
           rows={2}

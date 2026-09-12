@@ -32,9 +32,9 @@ const SLIDES = [
   {
     screen: ScreenEarn,
     icon: TrendingUp,
-    title: 'Earn with Velocity',
+    title: 'Earn with Velocity Rides',
     body: 'Run a fleet from your phone. Watch what your drivers and riders earn you, share your code, and withdraw when you want.',
-    label: 'The Earn with Velocity dashboard: 18,420 rupees earned this month, 24 drivers, 186 riders, fleet code 48213.',
+    label: 'The Earn with Velocity Rides dashboard: 18,420 rupees earned this month, 24 drivers, 186 riders, fleet code 48213.',
   },
   {
     screen: ScreenCash,

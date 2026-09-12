@@ -62,7 +62,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
             <span className={styles.brandMark}>
               <VelocityMark style={{ color: '#ccff00' }} />
             </span>
-            <span className={styles.brandName}>Velocity</span>
+            <span className={styles.brandName}>Velocity Rides</span>
           </a>
 
           <div className={styles.navLinks}>

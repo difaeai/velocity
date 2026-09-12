@@ -33,30 +33,30 @@ const jetBrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   title: {
-    default: 'Velocity — ride-hailing built for Pakistan',
-    template: '%s · Velocity',
+    default: 'Velocity Rides — ride-hailing built for Pakistan',
+    template: '%s · Velocity Rides',
   },
   description:
     'Offer your own fare, split a ride with people going your way, and pay in cash. City rides, intercity seats, couriers and more — in one app.',
-  applicationName: 'Velocity',
+  applicationName: 'Velocity Rides',
   keywords: [
     'ride hailing Pakistan',
     'car pooling Pakistan',
     'intercity travel',
     'courier delivery',
-    'Velocity app',
+    'Velocity Rides app',
   ],
   openGraph: {
     type: 'website',
-    siteName: 'Velocity',
-    title: 'Velocity — ride-hailing built for Pakistan',
+    siteName: 'Velocity Rides',
+    title: 'Velocity Rides — ride-hailing built for Pakistan',
     description:
       'Offer your own fare, split a ride with people going your way, and pay in cash. One app for city rides, intercity seats and couriers.',
     url: SITE,
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Velocity — ride-hailing built for Pakistan',
+    title: 'Velocity Rides — ride-hailing built for Pakistan',
     description: 'Name your fare. Split the ride. Pay in cash.',
   },
   // No `icons` entry on purpose: an explicit one overrides Next's file

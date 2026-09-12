@@ -65,11 +65,11 @@ export default function AppLinkPage() {
       <div style={st.card}>
         <div style={st.logoRow}>
           <VelocityMark size={28} style={{ color: '#ccff00' }} />
-          <span style={st.brand}>Velocity</span>
+          <span style={st.brand}>Velocity Rides</span>
         </div>
 
         <h1 style={st.title}>
-          {path ? 'Opening in the Velocity app…' : 'Velocity ride-sharing'}
+          {path ? 'Opening in the Velocity Rides app…' : 'Velocity Rides ride-sharing'}
         </h1>
         <p style={st.sub}>
           {path
