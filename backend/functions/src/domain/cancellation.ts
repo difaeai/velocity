@@ -127,7 +127,7 @@ export function assertOutstandingClear(
   throw new HttpsError(
     'failed-precondition',
     role === 'driver'
-      ? `Cancellation fees due: pay ${outstanding} PKR to Velocity to keep accepting rides.`
-      : `Cancellation fees due: pay ${outstanding} PKR to Velocity to book another ride.`,
+      ? `Cancellation fees due: pay ${outstanding} PKR to Velocity Rides to keep accepting rides.`
+      : `Cancellation fees due: pay ${outstanding} PKR to Velocity Rides to book another ride.`,
   );
 }

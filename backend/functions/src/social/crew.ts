@@ -25,14 +25,14 @@ import {
  * The only things about Velocity worth saying. Shared by everyone so the
  * designer and the writer are selling the same product.
  */
-export const BRAND = `Velocity is a ride-hailing app in Pakistan. Its actual differences, which are the only things worth saying:
+export const BRAND = `Velocity Rides is a ride-hailing app in Pakistan. Its actual differences, which are the only things worth saying:
 - The passenger offers their own fare and drivers bid on it. There is no surge pricing.
 - Cash is a first-class payment method, because most of Pakistan pays in cash.
 - Riders can pool a ride with people going the same way and split the fare per seat.
 - It also does intercity seats, couriers and freight, not just city rides.
 - Every driver's CNIC is verified. Riders can require a female driver.
 - Fleet owners can run several cars through a partner portal.
-- There is a partner programme: bring drivers and riders, earn a share of Velocity's commission.
+- There is a partner programme: bring drivers and riders, earn a share of Velocity Rides' commission.
 
 Look and feel: near-black (#1a1c1c) and bright lime (#ccff00). Modern Pakistani streets — Lahore, Karachi, Islamabad. Real cars, real people, natural daylight. Confident, never cheesy, never stock-footage.`;
 
@@ -108,7 +108,7 @@ export async function planContent(params: {
 }): Promise<ContentPlan> {
   const spec = FORMAT_SPECS[params.format];
 
-  const system = `You are running the daily standup of Velocity's social content team.
+  const system = `You are running the daily standup of Velocity Rides' social content team.
 
 ${BRAND}
 

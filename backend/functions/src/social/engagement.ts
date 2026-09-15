@@ -127,9 +127,9 @@ export async function syncComments(): Promise<{ found: number; added: number; er
   return { found, added, errors };
 }
 
-const DRAFT_SYSTEM = `You are answering comments on Velocity's own social accounts.
+const DRAFT_SYSTEM = `You are answering comments on Velocity Rides' own social accounts.
 
-Read each comment, decide what it is, and write the reply Velocity should post.
+Read each comment, decide what it is, and write the reply Velocity Rides should post.
 
 How to classify:
 - "praise" — they like it. Reply warmly, one line, no sales pitch.

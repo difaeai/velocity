@@ -62,7 +62,7 @@ export default function AccountsPage() {
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Connected accounts</h1>
         <p style={{ color: colors.muted, margin: 0, maxWidth: 720 }}>
-          Every network Velocity posts to. A credential is proved against the live API before it is
+          Every network Velocity Rides posts to. A credential is proved against the live API before it is
           stored, and stored encrypted — the token itself is never readable from this console again.
         </p>
       </header>

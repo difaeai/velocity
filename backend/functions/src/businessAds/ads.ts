@@ -58,7 +58,7 @@ export const createBusinessAd = onCall(async (req) => {
   const creative = parsed.data.creative;
 
   if (!isOwnStorageUrl(creative.imageUrl)) {
-    invalid('The offer picture must be uploaded to Velocity storage.');
+    invalid('The offer picture must be uploaded to Velocity Rides storage.');
   }
 
   const advertiser = await requireAdvertiser(uid);
@@ -117,7 +117,7 @@ export const updateBusinessAd = onCall(async (req) => {
   const { adId, creative } = parsed.data;
 
   if (creative.imageUrl && !isOwnStorageUrl(creative.imageUrl)) {
-    invalid('The offer picture must be uploaded to Velocity storage.');
+    invalid('The offer picture must be uploaded to Velocity Rides storage.');
   }
 
   const adRef = db.doc(`businessAds/${adId}`);

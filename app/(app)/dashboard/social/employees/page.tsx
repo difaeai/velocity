@@ -135,7 +135,7 @@ export default function EmployeesPage() {
       <header>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Employees</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          Everyone who works on Velocity’s social content. Hire them, name them, brief them — and whoever is on the
+          Everyone who works on Velocity Rides’ social content. Hire them, name them, brief them — and whoever is on the
           team does their job on every run.
         </p>
       </header>

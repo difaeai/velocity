@@ -198,7 +198,7 @@ export default function PartnersPage() {
       <div>
         <h1 style={{ margin: 0, color: colors.text }}>🏢 Partner Program</h1>
         <p style={{ color: colors.muted, marginTop: 6, fontSize: 14 }}>
-          Partners earn a share of Velocity&apos;s <strong>platform commission</strong> on genuine
+          Partners earn a share of Velocity Rides&apos; <strong>platform commission</strong> on genuine
           completed rides run by the drivers and passengers they recruited — never a share of the
           fare. Free earns 0.5% on both fleets; Pro pays a one-off fee and earns 2% (driver) and
           1.3% (passenger).
@@ -871,7 +871,7 @@ function Settings() {
         <h3 style={{ margin: '0 0 4px', color: colors.text }}>Tier rates</h3>
         <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
           On a Rs 1,000 ride with a 10% platform commission (Rs 100), a 2% driver-fleet rate pays the
-          partner <strong>Rs 2</strong> — 2% of the commission, not of the fare. Velocity&apos;s net
+          partner <strong>Rs 2</strong> — 2% of the commission, not of the fare. Velocity Rides&apos; net
           can never go negative: the franchise cut is taken first, then the fleets, and a fleet is
           simply paid less if the commission runs out.
         </p>

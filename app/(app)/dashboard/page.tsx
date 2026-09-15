@@ -125,7 +125,7 @@ export default function Overview() {
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Overview</h1>
           <p style={{ color: colors.muted, margin: 0 }}>
-            The last {days} days across every Velocity service.
+            The last {days} days across every Velocity Rides service.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 4, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: 3 }}>
@@ -223,7 +223,7 @@ export default function Overview() {
 
             <ChartCard
               title="Where the fare goes"
-              subtitle="Each column is one day's gross fares, split between the driver and Velocity."
+              subtitle="Each column is one day's gross fares, split between the driver and Velocity Rides."
               series={[
                 { key: 'driver', label: 'Driver payout', color: SERIES[0] },
                 { key: 'commission', label: 'Commission', color: SERIES[1] },

@@ -150,7 +150,7 @@ function autoSubmitPage(form: CheckoutForm, note: string): string {
     .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}"/>`)
     .join('\n      ');
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Velocity — Secure payment</title>
+<title>Velocity Rides — Secure payment</title>
 <style>body{font-family:system-ui,sans-serif;background:#0b0f14;color:#e7eef7;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 .card{text-align:center;padding:32px}.spin{width:36px;height:36px;border:4px solid #24313f;border-top-color:#38e07b;border-radius:50%;margin:0 auto 16px;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}</style>
 </head><body><div class="card"><div class="spin"></div><p>${escapeHtml(note)}</p>
@@ -164,12 +164,12 @@ function resultPage(success: boolean, message: string): string {
   const icon = success ? '✅' : '❌';
   const title = success ? 'Payment successful' : 'Payment failed';
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Velocity — ${title}</title>
+<title>Velocity Rides — ${title}</title>
 <style>body{font-family:system-ui,sans-serif;background:#0b0f14;color:#e7eef7;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 .card{text-align:center;padding:32px;max-width:360px}.icon{font-size:56px}h1{font-size:22px}p{color:#93a4b8}
 a{display:inline-block;margin-top:20px;background:#38e07b;color:#04140b;text-decoration:none;font-weight:800;padding:14px 28px;border-radius:12px}</style>
 </head><body><div class="card"><div class="icon">${icon}</div><h1>${title}</h1>
-<p>${escapeHtml(message)}</p><a href="velocity://wallet">Return to Velocity</a></div></body></html>`;
+<p>${escapeHtml(message)}</p><a href="velocity://wallet">Return to Velocity Rides</a></div></body></html>`;
 }
 
 /**
@@ -205,7 +205,7 @@ export const paymentCheckout = onRequest(async (request, response) => {
     providerRef: intentSnap.get('providerRef') as string,
     amount: intentSnap.get('amount') as number,
     phone: (intentSnap.get('phone') as string | null) ?? undefined,
-    description: 'Velocity wallet top-up',
+    description: 'Velocity Rides wallet top-up',
   };
   const base = functionsBaseUrl();
   const webhookUrl = `${base}/paymentWebhook?t=${token}`;
@@ -336,7 +336,7 @@ export const paymentWebhook = onRequest(async (request, response) => {
     }
     response.status(ok ? 200 : 404).send(
       resultPage(ok, ok
-        ? `PKR ${intentSnap.get('amount')} has been added to your Velocity wallet.`
+        ? `PKR ${intentSnap.get('amount')} has been added to your Velocity Rides wallet.`
         : 'Unknown payment reference.'),
     );
     return;

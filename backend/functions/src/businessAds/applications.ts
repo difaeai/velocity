@@ -135,7 +135,7 @@ export const submitBusinessAdApplication = onCall(async (req) => {
   const data = input.data;
 
   for (const url of [data.paymentProofUrl, data.creative.imageUrl]) {
-    if (!isOwnStorageUrl(url)) invalid('Images must be uploaded to Velocity storage.');
+    if (!isOwnStorageUrl(url)) invalid('Images must be uploaded to Velocity Rides storage.');
   }
 
   const settings = await getBusinessAdSettings();
@@ -269,7 +269,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
         {
           uid,
           status: 'active' as BusinessAdvertiserStatus,
-          businessName: snap.get('draft.businessName') ?? 'Velocity Business',
+          businessName: snap.get('draft.businessName') ?? 'Velocity Rides Business',
           city: snap.get('city') ?? null,
           contactPhone: snap.get('contactPhone') ?? null,
           center: snap.get('center'),

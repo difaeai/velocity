@@ -235,7 +235,7 @@ export default function AdvertisePage() {
         <h1 style={{ margin: 0, color: colors.text }}>📣 Advertise</h1>
         <p style={{ color: colors.muted, marginTop: 6, fontSize: 14 }}>
           Businesses buy a radius around their shop and push one offer at a time to
-          Velocity users inside it. Each user gets a given offer at most once every{' '}
+          Velocity Rides users inside it. Each user gets a given offer at most once every{' '}
           <strong>12 hours</strong>, inside a daily per-user ceiling. Approving a
           request is a <strong>payment check</strong>: the screenshot must match the
           quoted amount.
@@ -540,7 +540,7 @@ function Advertisers({ rows, busy, run }: { rows: Advertiser[]; busy: string | n
                         suspended: a.status !== 'suspended',
                         reason:
                           a.status !== 'suspended'
-                            ? 'Suspended by Velocity pending review.'
+                            ? 'Suspended by Velocity Rides pending review.'
                             : undefined,
                       }),
                     )
@@ -666,7 +666,7 @@ function OfferGrid({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; r
                         adId: ad.id,
                         status: ad.status === 'active' ? 'paused' : 'active',
                         reason:
-                          ad.status === 'active' ? 'Paused by Velocity pending review.' : undefined,
+                          ad.status === 'active' ? 'Paused by Velocity Rides pending review.' : undefined,
                       }),
                     )
                   }
@@ -681,7 +681,7 @@ function OfferGrid({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; r
                       adminApi.adminSetBusinessAdStatus({
                         adId: ad.id,
                         status: 'removed',
-                        reason: 'Removed by Velocity for breaching the advertising rules.',
+                        reason: 'Removed by Velocity Rides for breaching the advertising rules.',
                       }),
                     )
                   }
@@ -828,7 +828,7 @@ function Queries({
             <div style={{ display: 'grid', gap: 10 }}>
               {threads.map((t) => {
                 const closedLabel = t.blockedByAdmin
-                  ? 'closed by Velocity'
+                  ? 'closed by Velocity Rides'
                   : t.blockedByBusiness
                     ? 'blocked by business'
                     : t.blockedByCustomer
@@ -1000,7 +1000,7 @@ function Settings() {
           The cooldown is a clock, not a re-entry trigger: anyone inside a radius
           hears from that advertiser once per window, whether they walked in or live
           there. The daily cap is across ALL advertisers and protects the user —
-          lower it if people start turning Velocity notifications off.
+          lower it if people start turning Velocity Rides notifications off.
         </p>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10 }}>
           <Field label="Cooldown per offer (hours)" value={cooldown} onChange={setCooldown} />

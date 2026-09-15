@@ -622,7 +622,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
         format,
         media,
         caption: captionFor(platform, post.caption, post.captions),
-        title: post.script?.hook ?? 'Velocity',
+        title: post.script?.hook ?? 'Velocity Rides',
         tags: post.hashtags ?? [],
         youtube: post.search?.youtube ?? null,
       });

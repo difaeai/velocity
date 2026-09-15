@@ -92,7 +92,7 @@ export const adminUpsertTravelMateCommunity = onCall({ region: REGION }, async (
     city,
     description: description ?? '',
     createdBy: req.auth!.uid,
-    creatorName: 'Velocity Team',
+    creatorName: 'Velocity Rides Team',
     members: [],
     memberCount: 0,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),

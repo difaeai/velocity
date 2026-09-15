@@ -224,7 +224,7 @@ export const getPartnerFleetMembers = onCall(async (req) => {
       const lastRideAt = edge.get('lastRideAt') as FirebaseFirestore.Timestamp | null;
       return {
         uid: memberUid,
-        name: (user.get('displayName') as string) ?? 'Velocity user',
+        name: (user.get('displayName') as string) ?? 'Velocity Rides user',
         photoURL: (user.get('photoURL') as string) ?? null,
         joinedAt: (edge.get('boundAt') as FirebaseFirestore.Timestamp | null)?.toMillis() ?? null,
         lastRideAt: lastRideAt?.toMillis() ?? null,

@@ -81,7 +81,7 @@ export default function CommissionSettingsPage() {
             <div>
               <label style={labelStyle}>Commission rate (%)</label>
               <p style={{ color: colors.muted, fontSize: 12, marginBottom: 6 }}>
-                Velocity&apos;s cut of every fare, applied app-wide. Online (wallet) rides are collected
+                Velocity Rides&apos; cut of every fare, applied app-wide. Online (wallet) rides are collected
                 instantly at trip completion; cash fares are settled from the driver&apos;s wallet each
                 cycle. Example: 15% of 5 000 PKR cash = 750 PKR.
               </p>
@@ -111,7 +111,7 @@ export default function CommissionSettingsPage() {
                 <li>Every completed ride — cash or online — counts toward the driver&apos;s cycle.</li>
                 <li>When cycle earnings reach <strong>{threshold.toLocaleString()} PKR</strong>, the driver app is paused on the wallet screen; new rides stay blurred.</li>
                 <li>The driver owes <strong>{rate}%</strong> of the cycle&apos;s <em>cash</em> fares (e.g. {Math.round(threshold * rate / 100).toLocaleString()} PKR on an all-cash cycle). Commission on online rides was already deducted at trip completion, so it&apos;s never charged twice.</li>
-                <li>The driver tops up their wallet via JazzCash/Easypaisa (money lands in Velocity&apos;s merchant account), Velocity deducts the commission, and the app unlocks. All-online cycles clear automatically.</li>
+                <li>The driver tops up their wallet via JazzCash/Easypaisa (money lands in Velocity Rides&apos; merchant account), Velocity Rides deducts the commission, and the app unlocks. All-online cycles clear automatically.</li>
               </ul>
             </div>
 

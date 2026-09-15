@@ -64,7 +64,7 @@ export function CostOfVelocityTile() {
         <div style={{ flex: '1 1 260px', minWidth: 240 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ color: colors.muted, fontSize: 12.5, fontWeight: 600 }}>
-              Cost of Velocity
+              Cost of Velocity Rides
             </span>
             <span style={{ color: colors.secondary, fontSize: 12, fontWeight: 800 }}>
               Full breakdown →

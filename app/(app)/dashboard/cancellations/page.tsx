@@ -162,10 +162,10 @@ export default function CancellationSettingsPage() {
                     fare (e.g. <strong>PKR {Math.round(500 * passengerRate / 100)}</strong> on a 500 PKR ride);
                     a driver who cancels owes <strong>{driverRate}%</strong> (<strong>PKR {Math.round(500 * driverRate / 100)}</strong>).
                   </li>
-                  <li>The fee is taken from their wallet balance first. Anything the balance can&apos;t cover becomes <em>outstanding to Velocity</em>.</li>
+                  <li>The fee is taken from their wallet balance first. Anything the balance can&apos;t cover becomes <em>outstanding to Velocity Rides</em>.</li>
                   <li>
                     {outstandingLimit > 0
-                      ? <>At <strong>PKR {outstandingLimit.toLocaleString()}</strong> outstanding the account is blocked. They clear it by paying Velocity and uploading a screenshot — it lands in <strong>Settlements</strong> for review, same as driver commission.</>
+                      ? <>At <strong>PKR {outstandingLimit.toLocaleString()}</strong> outstanding the account is blocked. They clear it by paying Velocity Rides and uploading a screenshot — it lands in <strong>Settlements</strong> for review, same as driver commission.</>
                       : <>Blocking is <strong>off</strong> — fees accrue but nobody is ever stopped from riding or driving.</>}
                   </li>
                 </ul>

@@ -174,7 +174,7 @@ export const getPoolTripByCode = onCall(async (req) => {
     dropoffAddress: dropoff?.address ?? 'Destination',
     rideType:   snap.get('rideType') as string,
     visibility: (snap.get('poolVisibility') as string | undefined) ?? 'public',
-    hostName:   (hostSnap.get('displayName') as string | undefined) ?? 'A Velocity rider',
+    hostName:   (hostSnap.get('displayName') as string | undefined) ?? 'A Velocity Rides rider',
     riders:     members.length,
     males:      genders.male   ?? 0,
     females:    genders.female ?? 0,

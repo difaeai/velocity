@@ -78,12 +78,12 @@ export async function requirePortalOwner(
   const ctx = requireAuth(req);
   const snap = await db.doc(`partners/${ctx.uid}`).get();
 
-  if (!snap.exists) invalid('This account is not a Velocity partner.');
+  if (!snap.exists) invalid('This account is not a Velocity Rides partner.');
   if (snap.get('tier') !== 'pro') {
     invalid('The fleet portal is part of the Pro plan. Upgrade in the app to use it.');
   }
   if (snap.get('status') !== 'active') {
-    invalid('This partner account is suspended. Contact Velocity support.');
+    invalid('This partner account is suspended. Contact Velocity Rides support.');
   }
   if (!snap.get('portalId') || snap.get('portalId') !== portalId) {
     // Deliberately the same message whether the link is wrong or belongs to

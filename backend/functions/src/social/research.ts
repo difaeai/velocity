@@ -40,7 +40,7 @@ Reply with one JSON object and nothing else:
 {
   "trends": ["4-7 short observations about what is travelling right now, each with the specific thing that made it travel"],
   "competitorMoves": ["3-6 things the other apps are actually doing this month"],
-  "opportunities": ["3-6 gaps Velocity can take, each one specific enough to film"],
+  "opportunities": ["3-6 gaps Velocity Rides can take, each one specific enough to film"],
   "hookPatterns": ["3-6 hook shapes that are working, as patterns not copy"],
   "avoid": ["2-4 things that are done to death or that would land badly here"]
 }`;

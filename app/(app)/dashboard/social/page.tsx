@@ -163,7 +163,7 @@ export default function SocialOverview() {
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          The team you hired plans, writes, designs, cuts and posts Velocity’s content — and stops at your approval,
+          The team you hired plans, writes, designs, cuts and posts Velocity Rides’ content — and stops at your approval,
           every time.
         </p>
       </header>

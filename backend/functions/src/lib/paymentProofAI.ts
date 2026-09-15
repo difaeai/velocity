@@ -120,17 +120,17 @@ export async function verifyPaymentProof(params: {
 
   const debt = params.debtDescription ?? 'a commission on the cash fares they collected';
   const client = new Anthropic();
-  const prompt = `You are a fraud-review assistant for a Pakistani ride-hailing platform ("Velocity"). A user owes Velocity ${debt} and must pay it by transferring money to one of Velocity's official accounts, then uploading a screenshot of that payment as proof. Your job is to inspect the screenshot.
+  const prompt = `You are a fraud-review assistant for a Pakistani ride-hailing platform ("Velocity Rides"). A user owes Velocity Rides ${debt} and must pay it by transferring money to one of Velocity Rides' official accounts, then uploading a screenshot of that payment as proof. Your job is to inspect the screenshot.
 
 Amount the user must have paid: at least PKR ${params.amountDue}.
 
-Velocity's official receiving accounts (the recipient in the screenshot should match one of these):
+Velocity Rides' official receiving accounts (the recipient in the screenshot should match one of these):
 ${accountsSummary(params.accounts)}
 
 Assess the screenshot on three points:
 1. genuine — Is this a real, unedited payment confirmation from a payment app (JazzCash, Easypaisa, a bank app, or a bank transfer receipt)? Look for signs of tampering, photo-editing, mismatched fonts, altered numbers, screenshots of screenshots, or a reused/old receipt. Be strict: if it looks manipulated, fake, or is not a payment receipt at all, genuine=false.
 2. amountDetected — The transferred amount in PKR shown on the receipt (a number), or null if you cannot read it.
-3. recipientMatch — Does the recipient account/number/title shown match one of Velocity's accounts above? true/false. If no accounts are configured, or you cannot tell, use false.
+3. recipientMatch — Does the recipient account/number/title shown match one of Velocity Rides' accounts above? true/false. If no accounts are configured, or you cannot tell, use false.
 
 Assume nothing from context — judge only what the screenshot itself shows.
 

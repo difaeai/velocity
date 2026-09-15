@@ -173,7 +173,7 @@ export const adminMarkRideStatus = onCall(async (req) => {
         status: genuine ? fresh.get('status') : 'reversed',
         fleetCommission: genuine ? cut : 0,
         reversedCommission: genuine ? null : cut,
-        fraudReason: genuine ? null : (reason ?? 'Ride marked fraudulent by Velocity.'),
+        fraudReason: genuine ? null : (reason ?? 'Ride marked fraudulent by Velocity Rides.'),
         reviewedBy: admin.uid,
         reviewedAt: FieldValue.serverTimestamp(),
       });

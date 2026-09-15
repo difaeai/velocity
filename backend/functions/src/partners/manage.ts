@@ -167,7 +167,7 @@ export const adminDeletePartner = onCall(async (req) => {
   await notifyUser(
     partnerId,
     'Partner account removed',
-    reason ?? 'Your Velocity partner account has been removed. You may apply again from Earn with Velocity.',
+    reason ?? 'Your Velocity Rides partner account has been removed. You may apply again from Earn with Velocity Rides.',
     'ride',
     { partnerEvent: 'deleted' },
   );
