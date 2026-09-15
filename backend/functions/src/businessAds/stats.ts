@@ -12,6 +12,13 @@
  * The 7-day series comes from the per-ad daily rollups for the same reason. It
  * returns a row for every one of the last 7 days, zero-filled, so the client can
  * render a chart without worrying about missing buckets.
+ *
+ * SEEN BY
+ * -------
+ * `viewers` is distinct people who opened an offer. The "recently seen" feed is
+ * the one place this callable does touch impressions — a single indexed query,
+ * limited to a handful of rows — and it returns WHEN and WHICH OFFER only. Never
+ * who: an advertiser learns that someone looked, not which rider walked past.
  * ----------------------------------------------------------------------------
  */
 import { onCall } from 'firebase-functions/v2/https';
@@ -26,7 +33,12 @@ interface DayRow {
   notified: number;
   reach: number;
   clicks: number;
+  viewers: number;
+  queries: number;
 }
+
+/** How many "recently seen" rows the dashboard carries. */
+const RECENT_VIEWS = 8;
 
 /** The last `n` days in Pakistan time, oldest first. */
 function recentDays(n: number): string[] {
@@ -72,7 +84,8 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       advertiser: null,
       ads: [],
       series: [],
-      totals: { notified: 0, reach: 0, clicks: 0, ctr: 0 },
+      totals: { notified: 0, reach: 0, clicks: 0, ctr: 0, viewers: 0, queries: 0, seenRate: 0 },
+      recentViews: [],
     };
   }
 
@@ -94,6 +107,8 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       notified: (d.get('notified') as number) ?? 0,
       reach: (d.get('reach') as number) ?? 0,
       clicks: (d.get('clicks') as number) ?? 0,
+      viewers: (d.get('viewers') as number) ?? 0,
+      queries: (d.get('queries') as number) ?? 0,
       moderationReason: (d.get('moderationReason') as string | null) ?? null,
       createdAtMs: ms(d.get('createdAt')),
     }))
@@ -102,7 +117,7 @@ export const getBusinessAdDashboard = onCall(async (req) => {
   // One rollup read per ad per day, 7 days — small, and only for ads that exist.
   const days = recentDays(7);
   const zeroed: Record<string, DayRow> = {};
-  for (const day of days) zeroed[day] = { day, notified: 0, reach: 0, clicks: 0 };
+  for (const day of days) zeroed[day] = { day, notified: 0, reach: 0, clicks: 0, viewers: 0, queries: 0 };
 
   if (ads.length > 0) {
     const refs = ads.flatMap((ad) => days.map((day) => db.doc(`businessAds/${ad.adId}/daily/${day}`)));
@@ -114,16 +129,40 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       row.notified += (snap.get('notified') as number | undefined) ?? 0;
       row.reach += (snap.get('reach') as number | undefined) ?? 0;
       row.clicks += (snap.get('clicks') as number | undefined) ?? 0;
+      row.viewers += (snap.get('viewers') as number | undefined) ?? 0;
+      row.queries += (snap.get('queries') as number | undefined) ?? 0;
     });
   }
+
+  // Anonymous on purpose — see SEEN BY above. A missing index or an empty ledger
+  // is not worth failing the whole dashboard over; the feed just stays empty.
+  const titles = new Map(ads.map((ad) => [ad.adId, ad.title]));
+  const recentViews = await db
+    .collection('businessAdImpressions')
+    .where('ownerUid', '==', uid)
+    .orderBy('firstViewedAt', 'desc')
+    .limit(RECENT_VIEWS)
+    .get()
+    .then((snap) =>
+      snap.docs
+        .map((d) => ({
+          adId: d.get('adId') as string,
+          adTitle: titles.get(d.get('adId') as string) ?? null,
+          atMs: ms(d.get('firstViewedAt')),
+        }))
+        .filter((v) => v.atMs !== null && v.adTitle !== null),
+    )
+    .catch(() => []);
 
   const totals = ads.reduce(
     (acc, ad) => ({
       notified: acc.notified + ad.notified,
       reach: acc.reach + ad.reach,
       clicks: acc.clicks + ad.clicks,
+      viewers: acc.viewers + ad.viewers,
+      queries: acc.queries + ad.queries,
     }),
-    { notified: 0, reach: 0, clicks: 0 },
+    { notified: 0, reach: 0, clicks: 0, viewers: 0, queries: 0 },
   );
 
   const tier = tierForRadius(settings, radiusKm);
@@ -159,6 +198,11 @@ export const getBusinessAdDashboard = onCall(async (req) => {
       // pushed one person twice and got one open has a 100% open rate, and
       // dividing by pushes would report 50% and understate a real result.
       ctr: totals.reach > 0 ? Math.round((totals.clicks / totals.reach) * 1000) / 10 : 0,
+      // Share of the people reached who actually looked. Capped at 100: someone
+      // can open an offer from the in-app list without ever being pushed it.
+      seenRate:
+        totals.reach > 0 ? Math.min(100, Math.round((totals.viewers / totals.reach) * 1000) / 10) : 0,
     },
+    recentViews,
   };
 });

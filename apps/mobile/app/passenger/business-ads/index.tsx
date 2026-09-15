@@ -7,12 +7,14 @@
  *   none      → the pitch and the price list
  *   pending   → what they submitted and what it cost, while a human looks
  *   rejected  → why, and the way back in
- *   active    → the results, the offers, and the buttons that change them
+ *   active    → the results, who saw it, what they asked, and the offers
  *   expired   → the results they got, and renew
  *
  * The numbers sit ABOVE the offers on purpose. Someone paying 5,500 a month is
  * buying reach; the first thing they want on opening this screen is whether they
- * got any, not a list of what they wrote.
+ * got any, not a list of what they wrote. Then, in order: how many people
+ * actually looked ("Seen by"), and the customers waiting on an answer
+ * ("Queries") — the one section that asks the owner to do something.
  */
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -23,15 +25,16 @@ import { DEMO_OFFER, demoPreview } from '../../../src/ads/demoOffer';
 import { api } from '../../../src/api/client';
 import type { BusinessAd, BusinessAdDashboard } from '../../../src/api/client';
 import { colors } from '../../../src/config';
-import { useBusinessAdDashboard } from '../../../src/hooks/businessAds';
+import { useBusinessAdDashboard, useBusinessAdQueries } from '../../../src/hooks/businessAds';
 import {
   registerForPushNotifications,
   useNotificationPermission,
 } from '../../../src/lib/notifications';
 import { themed } from '../../../src/theme';
 import { Text } from '../../../src/ui/Text';
+import { QueriesSection, ResultsFunnel, SeenBySection } from '../../../src/ui/businessAds';
 import { PrimaryButton } from '../../../src/ui/components';
-import { formatPKR, ErrorState, SectionTitle, Skeleton, StatTile } from '../../../src/ui/partner';
+import { formatPKR, ErrorState, SectionTitle, Skeleton } from '../../../src/ui/partner';
 
 export default function BusinessAdsHome() {
   const router = useRouter();
@@ -87,11 +90,12 @@ export default function BusinessAdsHome() {
         <Pressable
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/business'))}
           hitSlop={12}
+          style={styles.headerBtn}
         >
           <Text style={styles.back}>←</Text>
         </Pressable>
         <Text style={styles.headerTitle}>Find your Customers</Text>
-        <View style={{ width: 22 }} />
+        <View style={styles.headerBtn} />
       </View>
 
       <ScrollView
@@ -120,6 +124,8 @@ export default function BusinessAdsHome() {
             onEditAd={(ad) => router.push(`/passenger/business-ads/compose?adId=${ad.adId}`)}
             onAnalytics={() => router.push('/passenger/business-ads/analytics')}
             onRenew={() => router.push('/passenger/business-ads/subscribe')}
+            onAllQueries={() => router.push('/passenger/business-ads/queries')}
+            onOpenQuery={(id) => router.push(`/passenger/offer-query/${id}`)}
           />
         )}
 
@@ -157,6 +163,18 @@ function PlanPlaceholder() {
 
 // ── State: never advertised, or turned down ──────────────────────────────────
 
+const FEATURES = [
+  { icon: '📍', title: 'On phones near your door', body: 'Your picture and offer, sent to people inside your radius.' },
+  { icon: '👁', title: 'Seen by', body: 'Know exactly how many people opened your offer, day by day.' },
+  { icon: '💬', title: 'Queries', body: 'Customers ask about the offer and you reply from here.' },
+];
+
+const STEPS = [
+  { title: 'Choose your reach', body: 'Up to 3 km or up to 5 km, for 3, 6 or 12 months.' },
+  { title: 'Publish your offer', body: 'Picture, business name and the deal — live after approval.' },
+  { title: 'Get seen and asked', body: 'Watch who opened it and answer their questions.' },
+];
+
 function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => void }) {
   const reason = data.application?.rejectionReason;
   return (
@@ -171,26 +189,49 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
       ) : null}
 
       <View style={styles.heroCard}>
-        <Text style={styles.heroEmoji}>📣</Text>
+        <View style={styles.kicker}>
+          <Text style={styles.kickerTxt}>FOR BUSINESSES</Text>
+        </View>
         <Text style={styles.heroTitle}>Reach the people who pass your door</Text>
         <Text style={styles.heroBody}>
-          Publish your offer and every Velocity user inside your radius gets it as
-          a notification on their phone — with your picture, your business name and
-          your offer. You see how many were reached and how many opened it.
+          Every Velocity user inside your radius gets your offer as a notification —
+          then you see who looked and answer what they ask.
         </Text>
+        <View style={styles.featureList}>
+          {FEATURES.map((f) => (
+            <View key={f.title} style={styles.featureRow}>
+              <View style={styles.featureIcon}>
+                <Text style={styles.featureEmoji}>{f.icon}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.featureTitle}>{f.title}</Text>
+                <Text style={styles.featureBody}>{f.body}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
 
-      <SectionTitle>What it costs</SectionTitle>
+      <SectionTitle>Choose your reach</SectionTitle>
       <View style={styles.priceRow}>
         <View style={styles.priceCard}>
-          <Text style={styles.priceRadius}>Up to 3 km</Text>
+          <Text style={styles.priceRadius}>UP TO 3 KM</Text>
           <Text style={styles.priceAmount}>{formatPKR(5500)}</Text>
-          <Text style={styles.priceMeta}>per month · 1 offer running</Text>
+          <Text style={styles.priceMeta}>per month</Text>
+          <View style={styles.priceChip}>
+            <Text style={styles.priceChipTxt}>1 offer running</Text>
+          </View>
         </View>
-        <View style={styles.priceCard}>
-          <Text style={styles.priceRadius}>3–5 km</Text>
+        <View style={[styles.priceCard, styles.priceCardFeatured]}>
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeTxt}>MORE REACH</Text>
+          </View>
+          <Text style={styles.priceRadius}>3–5 KM</Text>
           <Text style={styles.priceAmount}>{formatPKR(7000)}</Text>
-          <Text style={styles.priceMeta}>per month · 3 offers running</Text>
+          <Text style={styles.priceMeta}>per month</Text>
+          <View style={styles.priceChip}>
+            <Text style={styles.priceChipTxt}>3 offers running</Text>
+          </View>
         </View>
       </View>
       <Text style={styles.priceNote}>
@@ -199,6 +240,21 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
       </Text>
 
       <PrimaryButton label="Get started" onPress={onStart} />
+
+      <View style={styles.stepsCard}>
+        <Text style={styles.stepsTitle}>How it works</Text>
+        {STEPS.map((step, i) => (
+          <View key={step.title} style={styles.stepRow}>
+            <View style={styles.stepNum}>
+              <Text style={styles.stepNumTxt}>{i + 1}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.stepTitle}>{step.title}</Text>
+              <Text style={styles.stepBody}>{step.body}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -257,6 +313,8 @@ function Live({
   onEditAd,
   onAnalytics,
   onRenew,
+  onAllQueries,
+  onOpenQuery,
 }: {
   data: BusinessAdDashboard;
   busyAdId: string | null;
@@ -266,12 +324,18 @@ function Live({
   onEditAd: (ad: BusinessAd) => void;
   onAnalytics: () => void;
   onRenew: () => void;
+  onAllQueries: () => void;
+  onOpenQuery: (queryId: string) => void;
 }) {
+  const queries = useBusinessAdQueries(!!data.advertiser);
   const a = data.advertiser;
   if (!a) return null;
   const expired = data.stage === 'expired';
   const suspended = data.stage === 'suspended';
   const slotsFull = a.liveAds >= a.adSlots;
+  const planDays = Math.max(1, a.months * 30);
+  const daysLeftPct = a.daysLeft === null ? 0 : Math.min(100, Math.round((a.daysLeft / planDays) * 100));
+  const stateLabel = suspended ? 'PAUSED' : expired ? 'ENDED' : a.liveAds > 0 ? 'LIVE' : 'READY';
 
   return (
     <View style={{ gap: 14 }}>
@@ -294,18 +358,31 @@ function Live({
       ) : null}
 
       <View style={styles.planCard}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.planBiz} numberOfLines={1}>{a.businessName}</Text>
-          <Text style={styles.planMeta}>
-            {a.radiusKm} km radius · {a.adSlots} offer{a.adSlots === 1 ? '' : 's'} at a time
-          </Text>
-          {a.daysLeft !== null && !expired ? (
-            <Text style={styles.planDays}>{a.daysLeft} days left on this plan</Text>
-          ) : null}
+        <View style={styles.planTop}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.planStateRow}>
+              <View style={[styles.stateDot, stateLabel === 'LIVE' ? styles.stateDotLive : null]} />
+              <Text style={[styles.stateTxt, stateLabel === 'LIVE' ? { color: colors.primary } : null]}>
+                {stateLabel}
+              </Text>
+            </View>
+            <Text style={styles.planBiz} numberOfLines={1}>{a.businessName}</Text>
+            <Text style={styles.planMeta}>
+              {a.radiusKm} km radius · {a.liveAds}/{a.adSlots} offer{a.adSlots === 1 ? '' : 's'} running
+            </Text>
+          </View>
+          <Pressable style={styles.renewBtn} onPress={onRenew}>
+            <Text style={styles.renewTxt}>{expired ? 'Renew' : 'Extend'}</Text>
+          </Pressable>
         </View>
-        <Pressable style={styles.renewBtn} onPress={onRenew}>
-          <Text style={styles.renewTxt}>{expired ? 'Renew' : 'Extend'}</Text>
-        </Pressable>
+        {a.daysLeft !== null && !expired ? (
+          <View style={{ gap: 6 }}>
+            <View style={styles.planTrack}>
+              <View style={[styles.planFill, { width: `${daysLeftPct}%` }]} />
+            </View>
+            <Text style={styles.planDays}>{a.daysLeft} days left on this plan</Text>
+          </View>
+        ) : null}
       </View>
 
       <SectionTitle
@@ -317,19 +394,27 @@ function Live({
       >
         Your results
       </SectionTitle>
-      <View style={styles.tileRow}>
-        <StatTile label="People reached" value={String(data.totals.reach)} hint="unique users" />
-        <StatTile label="Notifications" value={String(data.totals.notified)} hint="sent" />
-      </View>
-      <View style={styles.tileRow}>
-        <StatTile
-          label="Opened"
-          value={String(data.totals.clicks)}
-          hint="tapped your offer"
-          accent={colors.primary}
-        />
-        <StatTile label="Open rate" value={`${data.totals.ctr}%`} hint="of people reached" />
-      </View>
+      <ResultsFunnel data={data} />
+
+      <SectionTitle>Seen by</SectionTitle>
+      <SeenBySection data={data} ads={data.ads} />
+
+      <SectionTitle
+        action={
+          queries.threads.length > 0 ? (
+            <Pressable onPress={onAllQueries} hitSlop={8}>
+              <Text style={styles.linkTxt}>See all ›</Text>
+            </Pressable>
+          ) : undefined
+        }
+      >
+        {queries.unread > 0 ? `Queries · ${queries.unread} new` : 'Queries'}
+      </SectionTitle>
+      <QueriesSection
+        threads={queries.threads}
+        loading={queries.loading}
+        onOpen={(t) => onOpenQuery(t.queryId)}
+      />
 
       <SectionTitle
         action={
@@ -340,7 +425,7 @@ function Live({
           ) : undefined
         }
       >
-        Your offers ({a.liveAds}/{a.adSlots} running)
+        Your offers
       </SectionTitle>
 
       {data.ads.length === 0 ? (
@@ -352,58 +437,56 @@ function Live({
           <PrimaryButton label="Publish your offer" onPress={onNewAd} />
         </View>
       ) : (
-        data.ads.map((ad) => (
-          <View key={ad.adId} style={styles.adCard}>
-            {ad.imageUrl ? <Image source={{ uri: ad.imageUrl }} style={styles.adImage} /> : null}
-            <View style={{ padding: 14, gap: 8 }}>
-              <View style={styles.adTopRow}>
-                <View style={{ flex: 1 }}>
+        data.ads.map((ad) => {
+          const live = ad.status === 'active';
+          return (
+            <View key={ad.adId} style={styles.adCard}>
+              {ad.imageUrl ? (
+                <View>
+                  <Image source={{ uri: ad.imageUrl }} style={styles.adImage} />
+                  <View style={[styles.statusPill, live ? styles.statusLive : null]}>
+                    <Text style={[styles.statusTxt, live ? { color: '#000' } : null]}>
+                      {live ? '● LIVE' : 'PAUSED'}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+              <View style={{ padding: 14, gap: 8 }}>
+                <View>
                   <Text style={styles.previewBiz}>{ad.businessName}</Text>
                   <Text style={styles.previewTitle}>{ad.title}</Text>
                 </View>
-                <View style={[styles.statusPill, ad.status === 'active' ? styles.statusLive : null]}>
-                  <Text
-                    style={[
-                      styles.statusTxt,
-                      ad.status === 'active' ? { color: colors.primary } : null,
-                    ]}
+                <Text style={styles.previewBody} numberOfLines={2}>{ad.offerDetails}</Text>
+
+                {ad.moderationReason ? (
+                  <Text style={styles.modNote}>Taken down by Velocity: {ad.moderationReason}</Text>
+                ) : null}
+
+                <View style={styles.adStatsRow}>
+                  <AdStat label="Reached" value={ad.reach} />
+                  <AdStat label="Seen by" value={ad.viewers ?? 0} accent />
+                  <AdStat label="Queries" value={ad.queries ?? 0} />
+                </View>
+
+                <View style={styles.adActions}>
+                  <Pressable style={styles.adAction} onPress={() => onEditAd(ad)}>
+                    <Text style={styles.adActionTxt}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.adAction, busyAdId === ad.adId && { opacity: 0.5 }]}
+                    disabled={busyAdId === ad.adId || expired || suspended || (!live && slotsFull)}
+                    onPress={() => onToggle(ad)}
                   >
-                    {ad.status === 'active' ? 'LIVE' : 'PAUSED'}
-                  </Text>
+                    <Text style={styles.adActionTxt}>{live ? 'Pause' : 'Resume'}</Text>
+                  </Pressable>
+                  <Pressable style={styles.adAction} onPress={() => onDelete(ad)}>
+                    <Text style={[styles.adActionTxt, { color: colors.danger }]}>Delete</Text>
+                  </Pressable>
                 </View>
               </View>
-              <Text style={styles.previewBody} numberOfLines={3}>{ad.offerDetails}</Text>
-
-              {ad.moderationReason ? (
-                <Text style={styles.modNote}>Taken down by Velocity: {ad.moderationReason}</Text>
-              ) : null}
-
-              <View style={styles.adStatsRow}>
-                <AdStat label="Reached" value={ad.reach} />
-                <AdStat label="Sent" value={ad.notified} />
-                <AdStat label="Opened" value={ad.clicks} />
-              </View>
-
-              <View style={styles.adActions}>
-                <Pressable style={styles.adAction} onPress={() => onEditAd(ad)}>
-                  <Text style={styles.adActionTxt}>Edit</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.adAction, busyAdId === ad.adId && { opacity: 0.5 }]}
-                  disabled={busyAdId === ad.adId || expired || suspended || (ad.status !== 'active' && slotsFull)}
-                  onPress={() => onToggle(ad)}
-                >
-                  <Text style={styles.adActionTxt}>
-                    {ad.status === 'active' ? 'Pause' : 'Resume'}
-                  </Text>
-                </Pressable>
-                <Pressable style={styles.adAction} onPress={() => onDelete(ad)}>
-                  <Text style={[styles.adActionTxt, { color: colors.danger }]}>Delete</Text>
-                </Pressable>
-              </View>
             </View>
-          </View>
-        ))
+          );
+        })
       )}
     </View>
   );
@@ -495,27 +578,40 @@ function DemoNotificationCard() {
 
   return (
     <View style={styles.demoCard}>
-      <Text style={styles.demoTitle}>See it on your phone</Text>
-      <Text style={styles.demoBody}>
-        Send yourself a sample offer from a made-up KFC branch. It is the same
-        notification your own offer goes out as — picture, name, offer and how far
-        away you are. It arrives on this phone only, and nobody else is notified.
-      </Text>
+      <View style={styles.demoHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.demoTitle}>See it on your phone</Text>
+          <Text style={styles.demoBody}>
+            A sample offer from a made-up KFC branch — exactly how customers get
+            yours. Only this phone is notified.
+          </Text>
+        </View>
+        <View style={styles.demoChip}>
+          <Text style={styles.demoChipTxt}>PREVIEW</Text>
+        </View>
+      </View>
 
       {needsPermission ? <PermissionAsk blocked={permission === 'blocked'} onAsk={ask} onOpenSettings={openSettings} /> : null}
 
-      {/* A mock of the tray card, so the button is not a leap of faith. */}
-      <View style={styles.trayCard}>
-        <View style={styles.trayHead}>
-          <View style={styles.trayIcon}>
-            <Text style={styles.trayIconTxt}>V</Text>
-          </View>
-          <Text style={styles.trayApp}>Velocity</Text>
-          <Text style={styles.trayNow}>now</Text>
+      {/* A mock of the tray card, so the button is not a leap of faith. It sits
+          on a strip styled like the top of a phone, so it reads as "the shade",
+          not as another card on this screen. */}
+      <View style={styles.shade}>
+        <View style={styles.shadeBar}>
+          <View style={styles.shadeNotch} />
         </View>
-        <Text style={styles.trayTitle} numberOfLines={2}>{preview.title}</Text>
-        <Text style={styles.trayBody} numberOfLines={3}>{preview.body}</Text>
-        <Image source={{ uri: DEMO_OFFER.imageUrl }} style={styles.trayImage} resizeMode="cover" />
+        <View style={styles.trayCard}>
+          <View style={styles.trayHead}>
+            <View style={styles.trayIcon}>
+              <Text style={styles.trayIconTxt}>V</Text>
+            </View>
+            <Text style={styles.trayApp}>Velocity</Text>
+            <Text style={styles.trayNow}>· now</Text>
+          </View>
+          <Text style={styles.trayTitle} numberOfLines={2}>{preview.title}</Text>
+          <Text style={styles.trayBody} numberOfLines={2}>{preview.body}</Text>
+          <Image source={{ uri: DEMO_OFFER.imageUrl }} style={styles.trayImage} resizeMode="cover" />
+        </View>
       </View>
 
       <PrimaryButton
@@ -525,22 +621,27 @@ function DemoNotificationCard() {
         disabled={busy === 'later'}
       />
       <Pressable
-        style={[styles.demoLater, busy ? { opacity: 0.5 } : null]}
+        style={({ pressed }) => [styles.demoLater, (busy || pressed) ? { opacity: busy ? 0.5 : 0.8 } : null]}
         disabled={!!busy}
         onPress={() => send(10)}
       >
         <Text style={styles.demoLaterTxt}>
-          {busy === 'later'
-            ? 'Close Velocity now — it arrives in a few seconds'
-            : 'Send in 10 seconds (close the app first)'}
+          {busy === 'later' ? 'Close Velocity now — it arrives in a few seconds' : '⏱  Send in 10 seconds'}
         </Text>
       </Pressable>
+      {busy !== 'later' ? (
+        <Text style={styles.demoHint}>
+          Tap it, then close the app — proves the offer arrives with Velocity closed.
+        </Text>
+      ) : null}
 
       {sent && sent.pushed ? (
-        <Text style={styles.demoSentNote}>
-          Sent. Pull your notification shade down to see it — it stays there until
-          you swipe it away, even with Velocity closed. Tap it to open the offer.
-        </Text>
+        <View style={styles.demoSent}>
+          <Text style={styles.demoSentNote}>
+            ✓ Sent. Pull your notification shade down to see it — it stays there until
+            you swipe it away, even with Velocity closed. Tap it to open the offer.
+          </Text>
+        </View>
       ) : null}
     </View>
   );
@@ -585,10 +686,10 @@ function PermissionAsk({
   );
 }
 
-function AdStat({ label, value }: { label: string; value: number }) {
+function AdStat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
   return (
     <View style={styles.adStat}>
-      <Text style={styles.adStatValue}>{value}</Text>
+      <Text style={[styles.adStatValue, accent ? { color: colors.primary } : null]}>{value.toLocaleString()}</Text>
       <Text style={styles.adStatLabel}>{label}</Text>
     </View>
   );
@@ -611,42 +712,110 @@ const styles = themed(() => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  headerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   back: { fontSize: 22, color: colors.text },
   headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  body: { padding: 16, paddingBottom: 40, gap: 12 },
+  body: { padding: 16, paddingBottom: 40, gap: 14 },
 
+  // ── Pitch
   heroCard: {
     backgroundColor: colors.glassLime,
     borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 20,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 24,
     padding: 18,
-    gap: 8,
+    gap: 10,
   },
-  heroEmoji: { fontSize: 30 },
-  heroTitle: { fontSize: 19, fontWeight: '900', color: colors.text },
+  kicker: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: colors.btnBg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  kickerTxt: { fontSize: 10, fontWeight: '900', color: colors.btnText, letterSpacing: 1 },
+  heroTitle: { fontSize: 24, fontWeight: '900', color: colors.text, lineHeight: 30 },
   heroBody: { fontSize: 13, color: colors.muted, fontWeight: '600', lineHeight: 19 },
+  featureList: { gap: 10, marginTop: 4 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  featureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureEmoji: { fontSize: 18 },
+  featureTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  featureBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
 
   priceRow: { flexDirection: 'row', gap: 10 },
   priceCard: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 14,
-    gap: 3,
+    gap: 2,
   },
-  priceRadius: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.5 },
-  priceAmount: { fontSize: 19, fontWeight: '900', color: colors.text },
+  priceCardFeatured: { borderColor: colors.primary, borderWidth: 1.5 },
+  priceBadge: {
+    position: 'absolute',
+    top: -9,
+    right: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  priceBadgeTxt: { fontSize: 9, fontWeight: '900', color: colors.background, letterSpacing: 0.6 },
+  priceRadius: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.6 },
+  priceAmount: { fontSize: 21, fontWeight: '900', color: colors.text, marginTop: 4 },
   priceMeta: { fontSize: 11, color: colors.muted, fontWeight: '600' },
+  priceChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderRadius: 999,
+    backgroundColor: colors.glassChip,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  priceChipTxt: { fontSize: 10, fontWeight: '800', color: colors.text },
   priceNote: { fontSize: 11, color: colors.muted, fontWeight: '600', lineHeight: 16 },
 
+  stepsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 12,
+  },
+  stepsTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  stepRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  stepNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumTxt: { fontSize: 12, fontWeight: '900', color: colors.primary },
+  stepTitle: { fontSize: 13, fontWeight: '900', color: colors.text },
+  stepBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
+
+  // ── Pending
   waitCard: {
     backgroundColor: colors.surface,
     borderRadius: 20,
@@ -688,19 +857,25 @@ const styles = themed(() => StyleSheet.create({
   rowLabel: { fontSize: 13, color: colors.muted, fontWeight: '600' },
   rowValue: { fontSize: 14, color: colors.text, fontWeight: '800' },
 
+  // ── Live
   planCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
+    gap: 14,
   },
-  planBiz: { fontSize: 16, fontWeight: '900', color: colors.text },
+  planTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  planStateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  stateDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.muted },
+  stateDotLive: { backgroundColor: colors.primary },
+  stateTxt: { fontSize: 10, fontWeight: '900', color: colors.muted, letterSpacing: 1 },
+  planBiz: { fontSize: 19, fontWeight: '900', color: colors.text },
   planMeta: { fontSize: 12, color: colors.muted, fontWeight: '600', marginTop: 2 },
-  planDays: { fontSize: 11, color: colors.primary, fontWeight: '800', marginTop: 4 },
+  planTrack: { height: 6, borderRadius: 3, backgroundColor: colors.glassChip, overflow: 'hidden' },
+  planFill: { height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  planDays: { fontSize: 11, color: colors.muted, fontWeight: '800' },
   renewBtn: {
     borderRadius: 12,
     borderWidth: 1.5,
@@ -710,7 +885,6 @@ const styles = themed(() => StyleSheet.create({
   },
   renewTxt: { fontSize: 13, fontWeight: '900', color: colors.primary },
 
-  tileRow: { flexDirection: 'row', gap: 10 },
   linkTxt: { fontSize: 13, fontWeight: '800', color: colors.primary },
 
   emptyCard: {
@@ -739,45 +913,71 @@ const styles = themed(() => StyleSheet.create({
 
   adCard: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
   },
   adImage: { width: '100%', height: 150, backgroundColor: colors.background },
-  adTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   statusPill: {
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
-  statusLive: { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  statusTxt: { fontSize: 9, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  statusLive: { backgroundColor: '#ccff00' },
+  statusTxt: { fontSize: 10, fontWeight: '900', color: '#ffffff', letterSpacing: 0.8 },
   modNote: { fontSize: 11, fontWeight: '700', color: colors.danger },
 
   adStatsRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 10,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
   },
-  adStat: { flex: 1 },
-  adStatValue: { fontSize: 16, fontWeight: '900', color: colors.text },
+  adStat: { flex: 1, alignItems: 'center' },
+  adStatValue: { fontSize: 17, fontWeight: '900', color: colors.text },
   adStatLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.3 },
 
+  adActions: { flexDirection: 'row', gap: 8 },
+  adAction: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  adActionTxt: { fontSize: 12, fontWeight: '800', color: colors.text },
+
+  // ── Demo
   demoCard: {
     marginTop: 6,
     backgroundColor: colors.surface,
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    gap: 10,
+    gap: 12,
   },
-  demoTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
-  demoBody: { fontSize: 12, color: colors.muted, fontWeight: '600', lineHeight: 18 },
+  demoHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  demoTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+  demoBody: { fontSize: 12, color: colors.muted, fontWeight: '600', lineHeight: 18, marginTop: 4 },
+  demoChip: {
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    backgroundColor: colors.glassLime,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  demoChipTxt: { fontSize: 9, fontWeight: '900', color: colors.primary, letterSpacing: 0.8 },
 
   // Lime-bordered rather than red: this is a thing to switch on, not a failure.
   permCard: {
@@ -809,13 +1009,20 @@ const styles = themed(() => StyleSheet.create({
   },
   placeholderNote: { fontSize: 12, color: colors.muted, fontWeight: '700', marginTop: 2 },
 
-  // The mock tray card. Deliberately flat grey-on-black rather than themed lime:
-  // it is imitating the phone's notification shade, not the rest of this screen.
+  // The mock shade. Deliberately flat grey-on-black rather than themed lime: it
+  // is imitating the phone's notification shade, not the rest of this screen.
+  shade: {
+    backgroundColor: colors.glassChip,
+    borderRadius: 18,
+    padding: 8,
+    paddingTop: 0,
+    gap: 6,
+  },
+  shadeBar: { alignItems: 'center', paddingVertical: 6 },
+  shadeNotch: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
   trayCard: {
     backgroundColor: colors.background,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
     padding: 12,
     gap: 4,
   },
@@ -824,36 +1031,37 @@ const styles = themed(() => StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 4,
-    backgroundColor: colors.primary,
+    backgroundColor: '#ccff00',
     alignItems: 'center',
     justifyContent: 'center',
   },
   trayIconTxt: { fontSize: 10, fontWeight: '900', color: '#000' },
-  trayApp: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 0.3 },
-  trayNow: { fontSize: 10, fontWeight: '700', color: `${colors.muted}99` },
-  trayTitle: { fontSize: 13, fontWeight: '900', color: colors.text, marginTop: 2 },
-  trayBody: { fontSize: 11, fontWeight: '600', color: colors.muted, lineHeight: 16 },
+  trayApp: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.3 },
+  trayNow: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  trayTitle: { fontSize: 14, fontWeight: '900', color: colors.text, marginTop: 2 },
+  trayBody: { fontSize: 12, fontWeight: '600', color: colors.muted, lineHeight: 17 },
   trayImage: {
     width: '100%',
-    height: 130,
+    height: 140,
     borderRadius: 10,
     marginTop: 6,
     backgroundColor: colors.surface,
   },
 
-  demoLater: { alignItems: 'center', paddingVertical: 10 },
-  demoLaterTxt: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  demoSentNote: { fontSize: 11, fontWeight: '700', color: colors.text, lineHeight: 17 },
-
-  adActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
-  adAction: {
-    flex: 1,
+  demoLater: {
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    justifyContent: 'center',
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
-  adActionTxt: { fontSize: 12, fontWeight: '800', color: colors.text },
+  demoLaterTxt: { fontSize: 14, fontWeight: '900', color: colors.primary },
+  demoHint: { fontSize: 11, fontWeight: '600', color: colors.muted, textAlign: 'center', marginTop: -4 },
+  demoSent: {
+    borderRadius: 12,
+    backgroundColor: colors.glassLime,
+    padding: 12,
+  },
+  demoSentNote: { fontSize: 12, fontWeight: '700', color: colors.text, lineHeight: 18 },
 }));

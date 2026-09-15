@@ -17,6 +17,7 @@ import { Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '../../../src/api/client';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { db } from '../../../src/firebase';
 import { themed } from '../../../src/theme';
@@ -31,10 +32,12 @@ interface OfferDoc {
   status: string;
   contactPhone: string | null;
   city: string | null;
+  ownerUid: string;
 }
 
 export default function OfferScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { adId } = useLocalSearchParams<{ adId: string }>();
   const [offer, setOffer] = useState<OfferDoc | null>(null);
   const [missing, setMissing] = useState(false);
@@ -106,6 +109,17 @@ export default function OfferScreen() {
           <Text style={styles.title}>{offer.title}</Text>
           <Text style={styles.details}>{offer.offerDetails}</Text>
 
+          {/* The question goes to the business's Queries inbox. Hidden for the
+              owner previewing their own offer — nobody to ask. */}
+          {user && offer.ownerUid !== user.uid ? (
+            <Pressable
+              style={styles.askBtn}
+              onPress={() => router.push(`/passenger/offer-query/${adId}_${user.uid}`)}
+            >
+              <Text style={styles.askTxt}>💬 Ask about this offer</Text>
+            </Pressable>
+          ) : null}
+
           {offer.contactPhone ? (
             <Pressable
               style={styles.callBtn}
@@ -165,6 +179,16 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
   },
   callTxt: { fontSize: 15, fontWeight: '900', color: '#000' },
+  askBtn: {
+    marginTop: 8,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  askTxt: { fontSize: 15, fontWeight: '900', color: colors.primary },
 
   disclaimer: {
     marginTop: 8,

@@ -1014,6 +1014,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- businessAdQueries/{adId}_{askerUid} --------------------------------
+    // A customer's questions about one offer, and the business's answers. Only
+    // the two people in the thread (and admins) may read it; the list query the
+    // business runs is constrained by ownerUid, which this rule requires. Writes
+    // go through the callables — every message is a push to someone else.
+    //
+    // The asker is also checked off the id itself ({adId}_{askerUid}): a
+    // customer opening "Ask about this offer" listens to a thread that does not
+    // exist until their first message, and a listener refused at that moment is
+    // dead for good — the reply would never appear.
+    match /businessAdQueries/{queryId} {
+      allow read: if isAdmin()
+                  || (isSignedIn()
+                      && (resource.data.ownerUid == uid()
+                          || queryId.matches('^.+_' + uid() + '$')));
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAdmin()
+                    || (isSignedIn()
+                        && (queryId.matches('^.+_' + uid() + '$')
+                            || get(/databases/$(database)/documents/businessAdQueries/$(queryId)).data.ownerUid == uid()));
+        allow write: if false;
+      }
+    }
+
     // ----- businessAdNotifyBudget/{uid}_{day} --------------------------------
     // Today's per-person push allowance. Server-only — a client that could
     // write this could hand itself an unlimited number of offers.
