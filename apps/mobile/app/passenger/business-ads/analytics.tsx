@@ -75,10 +75,14 @@ export default function BusinessAdAnalytics() {
                 hint="unique users near you"
                 accent={colors.primary}
               />
-              <StatTile label="Opened" value={String(data.totals.clicks)} hint="tapped your offer" />
+              <StatTile label="Seen by" value={String(data.totals.viewers ?? 0)} hint="people who opened it" />
             </View>
             <View style={styles.tileRow}>
               <StatTile label="Notifications sent" value={String(data.totals.notified)} hint="incl. repeats" />
+              <StatTile label="Queries" value={String(data.totals.queries ?? 0)} hint="customers who asked" />
+            </View>
+            <View style={styles.tileRow}>
+              <StatTile label="Opened" value={String(data.totals.clicks)} hint="total taps, incl. repeats" />
               <StatTile label="Open rate" value={`${data.totals.ctr}%`} hint="of people reached" />
             </View>
 

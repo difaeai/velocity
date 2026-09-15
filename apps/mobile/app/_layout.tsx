@@ -105,6 +105,10 @@ export default function RootLayout() {
         // A nearby business offer. Opening this screen is the tap the advertiser
         // is paying to measure, so it must land on the offer and nowhere else.
         router.push(`/passenger/offer/${data.adId}`);
+      } else if (data.screen === 'business-query' && data.queryId) {
+        // A question about an offer (to the business) or its answer (to the
+        // customer). The same conversation screen serves both sides.
+        router.push(`/passenger/offer-query/${data.queryId}`);
       } else if (data.screen === 'business-ads') {
         router.push('/passenger/business-ads');
       }

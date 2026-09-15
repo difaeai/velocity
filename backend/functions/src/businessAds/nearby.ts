@@ -236,6 +236,10 @@ export const checkNearbyBusinessAds = onCall(async (req) => {
  * counted (an advertiser cares about total opens), but the impression doc records
  * them against one uid, so the admin can still see opens-per-person if a number
  * ever looks too good to be true.
+ *
+ * The FIRST open per person is also what "Seen by" counts (`viewers`). A push
+ * sitting unread in someone's tray is not a person who saw the offer — there is
+ * no honest way to measure that from a closed app — so seen means opened.
  */
 export const recordBusinessAdClick = onCall(async (req) => {
   const { uid } = requireAuth(req);
@@ -250,25 +254,46 @@ export const recordBusinessAdClick = onCall(async (req) => {
   if (!ad.exists) invalid('That offer no longer exists.');
 
   const now = FieldValue.serverTimestamp();
+  const ownerUid = ad.get('ownerUid') as string;
 
-  await db.doc(`businessAdImpressions/${impressionId(adId, uid)}`).set(
-    {
-      adId,
-      uid,
-      ownerUid: ad.get('ownerUid'),
-      clicks: FieldValue.increment(1),
-      lastClickedAt: now,
-    },
-    { merge: true },
-  );
-  await adRef.update({ clicks: FieldValue.increment(1), lastClickedAt: now });
+  // The owner looking at their own offer is not an audience. Counting it would
+  // let a business pad "Seen by" just by checking how the offer looks.
+  if (ownerUid === uid) return { ok: true, firstView: false };
+
+  // "Seen by" counts PEOPLE, so the first open per person has to be decided
+  // exactly once. Two opens racing (a double tap on the tray card) must not both
+  // see a missing `firstViewedAt` — hence the transaction on the impression doc.
+  const impRef = db.doc(`businessAdImpressions/${impressionId(adId, uid)}`);
+  const firstView = await db.runTransaction(async (tx) => {
+    const imp = await tx.get(impRef);
+    const isFirst = !imp.exists || !imp.get('firstViewedAt');
+    tx.set(
+      impRef,
+      {
+        adId,
+        uid,
+        ownerUid,
+        clicks: FieldValue.increment(1),
+        lastClickedAt: now,
+        ...(isFirst ? { firstViewedAt: now } : {}),
+      },
+      { merge: true },
+    );
+    return isFirst;
+  });
+
+  const seen = firstView ? { viewers: FieldValue.increment(1) } : {};
+  await adRef.update({ clicks: FieldValue.increment(1), lastClickedAt: now, ...seen });
   await db
     .doc(`businessAds/${adId}/daily/${pkDay()}`)
-    .set({ clicks: FieldValue.increment(1) }, { merge: true });
+    .set({ clicks: FieldValue.increment(1), ...seen }, { merge: true });
   await db
-    .doc(`businessAdvertisers/${ad.get('ownerUid')}`)
-    .update({ totalClicks: FieldValue.increment(1) })
+    .doc(`businessAdvertisers/${ownerUid}`)
+    .update({
+      totalClicks: FieldValue.increment(1),
+      ...(firstView ? { totalViewers: FieldValue.increment(1) } : {}),
+    })
     .catch(() => {});
 
-  return { ok: true };
+  return { ok: true, firstView };
 });

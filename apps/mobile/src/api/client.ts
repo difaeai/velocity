@@ -1201,7 +1201,17 @@ export const api = {
     { lat: number; lng: number },
     { ok: boolean; notified: number; ads: NearbyBusinessAd[] }
   >('checkNearbyBusinessAds'),
-  recordBusinessAdClick: callable<{ adId: string }, { ok: boolean }>('recordBusinessAdClick'),
+  recordBusinessAdClick: callable<{ adId: string }, { ok: boolean; firstView?: boolean }>(
+    'recordBusinessAdClick',
+  ),
+  sendBusinessAdQuery: callable<
+    { adId: string; text: string },
+    { ok: boolean; queryId: string; isNew: boolean }
+  >('sendBusinessAdQuery'),
+  replyBusinessAdQuery: callable<{ queryId: string; text: string }, { ok: boolean }>(
+    'replyBusinessAdQuery',
+  ),
+  markBusinessAdQueryRead: callable<{ queryId: string }, { ok: boolean }>('markBusinessAdQueryRead'),
   /**
    * Sends the mock KFC offer to the CALLER'S OWN phone, so a business owner can
    * see the notification they would be paying for. `delaySeconds` holds it back
@@ -1349,6 +1359,10 @@ export interface BusinessAd extends BusinessAdCreative {
   reach: number;
   /** Offer screen opens — the number that says the push worked. */
   clicks: number;
+  /** Distinct people who opened it — "Seen by". */
+  viewers: number;
+  /** Conversations people started about this offer. */
+  queries: number;
   moderationReason: string | null;
   createdAtMs: number | null;
 }
@@ -1358,6 +1372,43 @@ export interface BusinessAdDayRow {
   notified: number;
   reach: number;
   clicks: number;
+  viewers: number;
+  queries: number;
+}
+
+/** One anonymous "someone opened your offer" row. Never says who. */
+export interface BusinessAdRecentView {
+  adId: string;
+  adTitle: string;
+  atMs: number;
+}
+
+/** A customer's conversation with a business about one offer. */
+export interface BusinessAdQueryThread {
+  queryId: string;
+  adId: string;
+  ownerUid: string;
+  askerUid: string;
+  /** First name only. */
+  askerName: string;
+  adTitle: string;
+  businessName: string;
+  adImageUrl: string | null;
+  lastMessage: string;
+  lastFrom: 'customer' | 'business';
+  lastMessageAtMs: number | null;
+  /** `waiting` = the customer spoke last. */
+  status: 'waiting' | 'answered';
+  ownerUnread: number;
+  askerUnread: number;
+  messageCount: number;
+}
+
+export interface BusinessAdQueryMessage {
+  id: string;
+  from: 'customer' | 'business';
+  text: string;
+  createdAtMs: number | null;
 }
 
 export interface BusinessAdDashboard {
@@ -1393,7 +1444,18 @@ export interface BusinessAdDashboard {
   } | null;
   ads: BusinessAd[];
   series: BusinessAdDayRow[];
-  totals: { notified: number; reach: number; clicks: number; ctr: number };
+  totals: {
+    notified: number;
+    reach: number;
+    clicks: number;
+    ctr: number;
+    /** Distinct people who opened any offer. Optional: older cached payloads lack it. */
+    viewers?: number;
+    queries?: number;
+    /** viewers ÷ reach, as a percentage. */
+    seenRate?: number;
+  };
+  recentViews?: BusinessAdRecentView[];
 }
 
 export interface NearbyBusinessAd extends BusinessAdCreative {

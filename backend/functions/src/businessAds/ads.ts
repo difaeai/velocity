@@ -93,6 +93,10 @@ export const createBusinessAd = onCall(async (req) => {
     notified: 0,
     reach: 0,
     clicks: 0,
+    // `viewers` is distinct people who opened it ("Seen by"); `queries` is how
+    // many of them wrote to the business about it.
+    viewers: 0,
+    queries: 0,
     createdAt: now,
     updatedAt: now,
   });

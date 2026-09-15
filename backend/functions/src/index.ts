@@ -303,6 +303,9 @@ export {
   getBusinessAdDashboard,
   expireBusinessAdPlans,
   sendBusinessAdDemoNotification,
+  sendBusinessAdQuery,
+  replyBusinessAdQuery,
+  markBusinessAdQueryRead,
 } from './businessAds';
 
 // Admin: broadcast push notification

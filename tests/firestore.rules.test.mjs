@@ -448,3 +448,35 @@ test('the same rule holds for seat requests on pool ride requests', async () => 
     setDoc(doc(asker, 'poolRideRequests/poolReq1/joinRequests/asker1'), { status: 'accepted' }),
   );
 });
+
+test('an offer question is readable by its asker and the business only', async () => {
+  const asker = testEnv.authenticatedContext('asker1', { role: 'passenger' }).firestore();
+  const shop = testEnv.authenticatedContext('shop1', { role: 'passenger' }).firestore();
+  const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'businessAdQueries/ad1_asker1'), {
+      adId: 'ad1', ownerUid: 'shop1', askerUid: 'asker1', askerName: 'Asker', lastMessage: 'Hi',
+    });
+    await setDoc(doc(db, 'businessAdQueries/ad1_asker1/messages/m1'), {
+      from: 'customer', senderUid: 'asker1', text: 'Is it on delivery too?',
+    });
+  });
+
+  for (const who of [asker, shop, admin]) {
+    await assertSucceeds(getDoc(doc(who, 'businessAdQueries/ad1_asker1')));
+    await assertSucceeds(getDoc(doc(who, 'businessAdQueries/ad1_asker1/messages/m1')));
+  }
+  await assertFails(getDoc(doc(stranger, 'businessAdQueries/ad1_asker1')));
+  await assertFails(getDoc(doc(stranger, 'businessAdQueries/ad1_asker1/messages/m1')));
+
+  // The customer listens to their thread BEFORE the first message creates it.
+  // Refusing that read would kill the listener, and the reply would never show.
+  await assertSucceeds(getDoc(doc(stranger, 'businessAdQueries/ad2_stranger1')));
+  await assertFails(getDoc(doc(stranger, 'businessAdQueries/ad2_asker1')));
+
+  // Every message is a push to someone else's phone, so writes are callable-only.
+  await assertFails(setDoc(doc(asker, 'businessAdQueries/ad1_asker1/messages/m2'), { text: 'x' }));
+  await assertFails(updateDoc(doc(shop, 'businessAdQueries/ad1_asker1'), { ownerUnread: 0 }));
+});
