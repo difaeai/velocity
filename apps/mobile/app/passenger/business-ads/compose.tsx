@@ -133,7 +133,7 @@ export default function BusinessAdCompose() {
               <View style={styles.notifAppIcon}>
                 <Text style={styles.notifAppIconTxt}>V</Text>
               </View>
-              <Text style={styles.notifApp}>Velocity · now</Text>
+              <Text style={styles.notifApp}>Velocity Rides · now</Text>
             </View>
             <Text style={styles.notifTitle} numberOfLines={1}>
               {(businessName.trim() || 'Your business') + ': ' + (title.trim() || 'Your offer title')}
@@ -201,7 +201,7 @@ export default function BusinessAdCompose() {
 
           {radiusKm ? (
             <Text style={styles.reachNote}>
-              Goes to Velocity users within {radiusKm} km of your business.
+              Goes to Velocity Rides users within {radiusKm} km of your business.
             </Text>
           ) : null}
 

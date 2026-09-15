@@ -159,8 +159,8 @@ export default function TravelMateGroup() {
     const groupLabel = group?.name ? ` "${group.name}"` : '';
     const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
     Share.share({
-      message: `${myName} invited you to join their Travel Partner commute group${groupLabel} on Velocity!\n\n${link}\n\nOr open the app → Travel Partner → "Join a group" and paste this invite code:\n${groupId}`,
-      title: `${myName} invited you on Velocity`,
+      message: `${myName} invited you to join their Travel Partner commute group${groupLabel} on Velocity Rides!\n\n${link}\n\nOr open the app → Travel Partner → "Join a group" and paste this invite code:\n${groupId}`,
+      title: `${myName} invited you on Velocity Rides`,
     }).catch(() => Alert.alert('Share failed', `Copy this invite code manually:\n\n${groupId}`));
   }
 

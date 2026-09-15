@@ -180,8 +180,8 @@ export default function OfferQueryScreen() {
       Alert.alert(
         'Thanks for telling us',
         block
-          ? 'Velocity will review this conversation. You won’t hear from them again.'
-          : 'Velocity will review this conversation.',
+          ? 'Velocity Rides will review this conversation. You won’t hear from them again.'
+          : 'Velocity Rides will review this conversation.',
       );
     } catch (e) {
       Alert.alert('Report not sent', (e as { message?: string }).message ?? 'Try again.');
@@ -192,7 +192,7 @@ export default function OfferQueryScreen() {
 
   const closed = closedByVelocity
     ? {
-        title: 'Closed by Velocity',
+        title: 'Closed by Velocity Rides',
         body: 'This conversation was closed after a report. Contact support if you think this is a mistake.',
       }
     : iBlocked

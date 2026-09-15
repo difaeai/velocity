@@ -140,7 +140,7 @@ export function PaymentMethodsScreen({ role }: { role: 'passenger' | 'driver' })
           <View style={styles.comingSoonBanner}>
             <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
             <Text style={styles.comingSoonText}>
-              Connecting an account so Velocity can top up your wallet automatically is on its way.
+              Connecting an account so Velocity Rides can top up your wallet automatically is on its way.
               For now you can still top up manually from the Wallet screen.
             </Text>
           </View>
@@ -211,7 +211,7 @@ export function PaymentMethodsScreen({ role }: { role: 'passenger' | 'driver' })
             {role === 'driver'
               ? 'Connected accounts top up your wallet, which is what settles the commission you owe on cash rides. '
               : 'Connected accounts top up your wallet, which pays for rides and any fees you owe. '}
-            Velocity never sees or stores your PIN, password or full card number — your bank or wallet
+            Velocity Rides never sees or stores your PIN, password or full card number — your bank or wallet
             authorises us to charge only the amount you approve, and you can disconnect any method here
             at any time.
           </Text>

@@ -186,7 +186,7 @@ export function DriverDrawer({
                 onClose();
                 const reloaded = await toggleTheme();
                 if (!reloaded) {
-                  Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
+                  Alert.alert('Theme saved ✅', 'Close and reopen Velocity Rides to apply the new theme everywhere.');
                 }
               }}
             />

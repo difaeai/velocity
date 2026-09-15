@@ -62,7 +62,7 @@ function prompt(update: AvailableUpdate): void {
     describeUpdate(update),
     update.releaseNotes,
     update.mandatory
-      ? 'This update is required to keep using Velocity.'
+      ? 'This update is required to keep using Velocity Rides.'
       : null,
   ]
     .filter(Boolean)

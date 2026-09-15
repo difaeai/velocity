@@ -138,7 +138,7 @@ export default function OfferScreen() {
 
           <View style={styles.disclaimer}>
             <Text style={styles.disclaimerTxt}>
-              This is a paid offer from a business near you, not from Velocity. Terms
+              This is a paid offer from a business near you, not from Velocity Rides. Terms
               are between you and the business.
             </Text>
           </View>

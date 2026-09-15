@@ -69,8 +69,8 @@ export default function ReferralCentre() {
   async function share() {
     const message =
       audience === 'driver'
-        ? `Drive with Velocity and start earning.\n\nSign up, then enter my referral code ${code} in Driver menu → Referral code.\n\n${link}`
-        : `Ride with Velocity — real fares, real drivers.\n\nSign up, then enter my referral code ${code} in Settings → Referral code.\n\n${link}`;
+        ? `Drive with Velocity Rides and start earning.\n\nSign up, then enter my referral code ${code} in Driver menu → Referral code.\n\n${link}`
+        : `Ride with Velocity Rides — real fares, real drivers.\n\nSign up, then enter my referral code ${code} in Settings → Referral code.\n\n${link}`;
     try {
       await Share.share({ message });
     } catch {
@@ -138,8 +138,8 @@ export default function ReferralCentre() {
             onPress={() =>
               copy(
                 audience === 'driver'
-                  ? `Drive with Velocity. Use my referral code ${code}: ${link}`
-                  : `Ride with Velocity. Use my referral code ${code}: ${link}`,
+                  ? `Drive with Velocity Rides. Use my referral code ${code}: ${link}`
+                  : `Ride with Velocity Rides. Use my referral code ${code}: ${link}`,
                 'Message',
               )
             }

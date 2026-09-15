@@ -132,7 +132,7 @@ export default function EarnLanding() {
 
         <GrowthArt />
 
-        <Text style={s.h1}>Earn with Velocity</Text>
+        <Text style={s.h1}>Earn with Velocity Rides</Text>
 
         {/* The same ceiling the home-screen card advertises. Landing here from
             that card and finding no number at all read as a bait-and-switch. */}
@@ -164,7 +164,7 @@ export default function EarnLanding() {
           <Rule
             emoji="✅"
             title="You earn from completed rides"
-            body="Every genuine ride your drivers and passengers finish pays you a share of Velocity's commission on that ride."
+            body="Every genuine ride your drivers and passengers finish pays you a share of Velocity Rides' commission on that ride."
           />
           <Rule
             emoji="📵"

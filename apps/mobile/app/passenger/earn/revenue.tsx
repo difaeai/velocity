@@ -104,7 +104,7 @@ export default function Revenue() {
 
         <View style={s.note}>
           <Text style={s.noteText}>
-            Every figure here is a share of Velocity's platform commission on rides your members
+            Every figure here is a share of Velocity Rides' platform commission on rides your members
             completed — never a share of the fare itself.
             {overview.flaggedRides > 0
               ? ` ${overview.flaggedRides} flagged ride${overview.flaggedRides === 1 ? '' : 's'} contributed nothing.`

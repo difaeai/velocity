@@ -82,7 +82,7 @@ export default function DeleteAccountScreen() {
       // longer exists. Sign out before routing so nothing tries to read as them.
       await signOut().catch(() => {});
       router.replace('/welcome');
-      Alert.alert('Account deleted', 'Your Velocity account and personal data have been removed.');
+      Alert.alert('Account deleted', 'Your Velocity Rides account and personal data have been removed.');
     } catch (e) {
       // The backend refuses with a readable sentence when a ride is running or
       // money is owed either way — show that verbatim, it names the amount and

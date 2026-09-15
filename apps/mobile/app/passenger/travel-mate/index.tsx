@@ -141,7 +141,7 @@ export default function TravelMateHome() {
     const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
-        `👋 I'm ${myName ? `${myName} ` : ''}on Velocity Travel Partner.\n\n` +
+        `👋 I'm ${myName ? `${myName} ` : ''}on Velocity Rides Travel Partner.\n\n` +
         `Check out my profile and match with me to share rides:\n${link}`,
       title: 'Share my Travel Partner profile',
     }).catch(() => {});
@@ -181,7 +181,7 @@ export default function TravelMateHome() {
               const link = appLink(`/passenger/travel-mate/group-invite/${groupId}`);
               Share.share({
                 message:
-                  `Join my Travel Partner commute group on Velocity!\n\n${link}\n\n` +
+                  `Join my Travel Partner commute group on Velocity Rides!\n\n${link}\n\n` +
                   `Or open the app → Travel Partner → "Join a group" and paste this invite code:\n${groupId}`,
                 title: 'Join my Travel Partner group',
               }).catch(() => {});

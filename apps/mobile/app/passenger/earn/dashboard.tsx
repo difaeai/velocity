@@ -81,7 +81,7 @@ export default function PartnerDashboard() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={s.hello}>
-              Earn with Velocity · {partner.tier === 'pro' ? 'Pro Partner' : 'Free Partner'}
+              Earn with Velocity Rides · {partner.tier === 'pro' ? 'Pro Partner' : 'Free Partner'}
             </Text>
             <Text style={s.name} numberOfLines={1}>{partner.fullName}</Text>
           </View>
@@ -197,7 +197,7 @@ export default function PartnerDashboard() {
         <View style={s.ruleNote}>
           <Text style={s.ruleNoteText}>
             You earn {formatPKR(overview.avgCommissionPerRide)} on average per completed ride — a
-            share of Velocity's commission, not of the fare. Cancelled, scam and fraud rides pay
+            share of Velocity Rides' commission, not of the fare. Cancelled, scam and fraud rides pay
             nothing.
             {overview.flaggedRides > 0
               ? ` ${overview.flaggedRides} ride${overview.flaggedRides === 1 ? '' : 's'} in your fleets ${overview.flaggedRides === 1 ? 'was' : 'were'} flagged and paid zero.`

@@ -95,7 +95,7 @@ export function ReportSheet({
         <View style={s.sheet}>
           <Text style={s.title}>Report {name}</Text>
           <Text style={s.sub}>
-            Velocity will see the recent messages in this conversation. {name} isn’t told who
+            Velocity Rides will see the recent messages in this conversation. {name} isn’t told who
             reported them.
           </Text>
           {REASONS.map((r) => (

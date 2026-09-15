@@ -176,7 +176,7 @@ export default function TripScreen() {
       `Cancel this ride? It costs PKR ${fee}`,
       `Your driver accepted this ride at PKR ${fare} and is on the way. Cancelling now charges a `
         + `${Math.round(cancellation.passengerFeeRate * 100)}% fee — PKR ${fee}.\n\n`
-        + 'It comes out of your wallet balance, and anything left over is owed to Velocity before you can book again.',
+        + 'It comes out of your wallet balance, and anything left over is owed to Velocity Rides before you can book again.',
       [
         { text: 'Keep my ride', style: 'cancel' },
         {
@@ -187,7 +187,7 @@ export default function TripScreen() {
             if (res.outstanding > 0) {
               Alert.alert(
                 'Ride cancelled',
-                `PKR ${res.outstanding} is now outstanding to Velocity. Settle it from your wallet to keep booking rides.`,
+                `PKR ${res.outstanding} is now outstanding to Velocity Rides. Settle it from your wallet to keep booking rides.`,
               );
             } else if (res.fee > 0) {
               Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
@@ -208,7 +208,7 @@ export default function TripScreen() {
     try {
       await Share.share({
         message:
-          `🔀 ${hostName} invited you to share their Velocity ride!\n\n` +
+          `🔀 ${hostName} invited you to share their ride on Velocity Rides!\n\n` +
           `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
           `We split the fare — everyone pays less as more riders join.\n` +
           `Invite code: ${trip.shareCode}\n\nTap to join:\n${link}`,
@@ -243,7 +243,7 @@ export default function TripScreen() {
       const myName = user.displayName?.trim() || 'A friend';
       await Share.share({
         message:
-          `🚗 ${myName} wants to ride together on Velocity!\n\n` +
+          `🚗 ${myName} wants to ride together on Velocity Rides!\n\n` +
           `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
           `Travel partners can book the same ride here:\n${link}`,
         title: 'Share ride with Travel Partners',
@@ -728,7 +728,7 @@ export default function TripScreen() {
                 const pickup  = trip.pickup?.address ?? 'pickup';
                 const dropoff = trip.dropoff?.address ?? 'destination';
                 const msg = encodeURIComponent(
-                  `🚗 I'm on a Velocity ride!\n\nDriver: ${driver}\nVehicle: ${vehicle}\nPlate: ${plate}\n\nFrom: ${pickup}\nTo: ${dropoff}\n\nTrack my trip for safety.`
+                  `🚗 I'm on a ride with Velocity Rides!\n\nDriver: ${driver}\nVehicle: ${vehicle}\nPlate: ${plate}\n\nFrom: ${pickup}\nTo: ${dropoff}\n\nTrack my trip for safety.`
                 );
                 Linking.openURL(`whatsapp://send?text=${msg}`).catch(() =>
                   Linking.openURL(`https://wa.me/?text=${msg}`)

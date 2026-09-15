@@ -287,7 +287,7 @@ export default function PartnerApply() {
           )}
 
           <Text style={s.rateNote}>
-            Rates are a share of Velocity&apos;s commission on each completed ride — not of the fare.
+            Rates are a share of Velocity Rides&apos; commission on each completed ride — not of the fare.
             You never take money from your drivers or riders.
           </Text>
 

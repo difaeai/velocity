@@ -38,9 +38,9 @@ interface Message {
 }
 
 const SUPPORT_ID = 'velocity_support';
-const SUPPORT_NAME = 'Velocity Support';
+const SUPPORT_NAME = 'Velocity Rides Support';
 const WELCOME_MSG =
-  'Hello! Welcome to Velocity Support. How can we help you today? We typically reply within a few minutes.';
+  'Hello! Welcome to Velocity Rides Support. How can we help you today? We typically reply within a few minutes.';
 
 export default function SupportChatScreen() {
   const router = useRouter();
@@ -144,7 +144,7 @@ export default function SupportChatScreen() {
             <LogoMark size={24} color="#000" />
           </View>
           <View>
-            <Text style={styles.agentName}>Velocity Support</Text>
+            <Text style={styles.agentName}>Velocity Rides Support</Text>
             <Text style={styles.agentStatus}>Online</Text>
           </View>
         </View>

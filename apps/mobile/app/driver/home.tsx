@@ -443,7 +443,7 @@ export default function DriverHome() {
       `Cancel this ride? It costs PKR ${fee}`,
       `You accepted this ride at PKR ${fare} and the passenger is waiting for you. Cancelling now `
         + `charges a ${Math.round(cancellation.driverFeeRate * 100)}% fee — PKR ${fee}.\n\n`
-        + 'It comes out of your wallet balance, and anything left over is owed to Velocity before you can accept rides again.',
+        + 'It comes out of your wallet balance, and anything left over is owed to Velocity Rides before you can accept rides again.',
       [
         { text: 'Keep the ride', style: 'cancel' },
         {
@@ -454,7 +454,7 @@ export default function DriverHome() {
             if (res.outstanding > 0) {
               Alert.alert(
                 'Ride cancelled',
-                `PKR ${res.outstanding} is now outstanding to Velocity. Settle it from your wallet to keep accepting rides.`,
+                `PKR ${res.outstanding} is now outstanding to Velocity Rides. Settle it from your wallet to keep accepting rides.`,
               );
             } else if (res.fee > 0) {
               Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
@@ -558,7 +558,7 @@ export default function DriverHome() {
             <View style={styles.lockBanner}>
               <Text style={styles.lockTitle}>🔒 Commission due — {commission.due.toLocaleString()} PKR</Text>
               <Text style={styles.lockBody}>
-                Finish your current trip, then settle with Velocity to keep receiving rides.
+                Finish your current trip, then settle with Velocity Rides to keep receiving rides.
               </Text>
             </View>
           )}
@@ -707,7 +707,7 @@ export default function DriverHome() {
                   The passenger is waiting. Cancelling costs a{' '}
                   {Math.round(cancellation.driverFeeRate * 100)}% fee — PKR{' '}
                   {Math.round((activeTrip.fare ?? activeTrip.offeredFare) * cancellation.driverFeeRate)}
-                  {' '}— and anything your wallet cannot cover is added to what you owe Velocity,
+                  {' '}— and anything your wallet cannot cover is added to what you owe Velocity Rides,
                   which has to be cleared before you can accept rides again.
                 </Text>
               </>

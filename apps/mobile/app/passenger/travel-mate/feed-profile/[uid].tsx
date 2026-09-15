@@ -316,8 +316,8 @@ export default function FeedProfile() {
     const link = appLink(`/passenger/travel-mate/feed-profile/${profile.uid}`);
     Share.share({
       message: isOwn
-        ? `👋 I'm ${profile.displayName} on Velocity Travel Partner. Follow me and see my posts:\n${link}`
-        : `Check out ${profile.displayName} on Velocity Travel Partner:\n${link}`,
+        ? `👋 I'm ${profile.displayName} on Velocity Rides Travel Partner. Follow me and see my posts:\n${link}`
+        : `Check out ${profile.displayName} on Velocity Rides Travel Partner:\n${link}`,
     }).catch(() => {});
   }
 
@@ -365,7 +365,7 @@ export default function FeedProfile() {
   function sharePost(post: TMPost) {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
-      message: `${post.authorName} on Velocity Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
+      message: `${post.authorName} on Velocity Rides Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
     }).catch(() => {});
   }
 

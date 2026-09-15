@@ -147,7 +147,7 @@ export default function CommunityPage() {
     const link = appLink(`/passenger/travel-mate/community/${community.id}`);
     Share.share({
       message:
-        `Join "${community.name}" — a Velocity Travel Partner community in ${community.city}.\n\n${link}`,
+        `Join "${community.name}" — a Velocity Rides Travel Partner community in ${community.city}.\n\n${link}`,
     }).catch(() => {});
   }
 
@@ -179,7 +179,7 @@ export default function CommunityPage() {
   function sharePost(post: TMPost) {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
-      message: `${post.authorName} on Velocity Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
+      message: `${post.authorName} on Velocity Rides Travel Partner:\n\n${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}See the post: ${link}`,
     }).catch(() => {});
   }
 

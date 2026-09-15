@@ -169,7 +169,7 @@ describe('describeUpdate — what the prompt actually says', () => {
     expect(res.currentBuild).toBe(25);
     const sentence = describeUpdate(res);
     expect(sentence).toBe(
-      'A newer build of Velocity 1.5.0 is on the Play Store — update 25 → 26.',
+      'A newer build of Velocity Rides 1.5.0 is on the Play Store — update 25 → 26.',
     );
     expect(sentence).not.toContain('1.5.0 — ');
   });

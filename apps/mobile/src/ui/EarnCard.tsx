@@ -137,7 +137,7 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
 
       <View style={styles.body}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>Earn with Velocity</Text>
+          <Text style={styles.title}>Earn with Velocity Rides</Text>
           <View style={styles.newPill}>
             <Text style={styles.newPillText}>NEW</Text>
           </View>
@@ -163,7 +163,7 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
           Your own transport company. Register passengers and drivers, then earn from both fleets.
         </Text>
         <Text style={styles.fine}>
-          Up to 2% of Velocity commission on their every completed ride.
+          Up to 2% of Velocity Rides commission on their every completed ride.
         </Text>
 
         <View style={styles.chipsRow}>

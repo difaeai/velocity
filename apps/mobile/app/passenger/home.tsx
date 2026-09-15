@@ -130,7 +130,7 @@ export default function PassengerHome() {
         if (res.ok && res.partnerName) {
           Alert.alert(
             'You joined a fleet 🎉',
-            `You're now part of ${res.partnerName}'s Velocity fleet. Your fares are unchanged — they earn from Velocity's side, never from yours.`,
+            `You're now part of ${res.partnerName}'s Velocity Rides fleet. Your fares are unchanged — they earn from Velocity Rides' side, never from yours.`,
           );
         }
       })
@@ -525,7 +525,7 @@ export default function PassengerHome() {
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/earn')}>
                     <Text style={styles.menuItemIcon}>💸</Text>
-                    <Text style={styles.menuItemText}>Earn with Velocity</Text>
+                    <Text style={styles.menuItemText}>Earn with Velocity Rides</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>

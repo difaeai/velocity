@@ -197,7 +197,7 @@ export function TopUpSheet({
               <View style={styles.comingSoonBanner}>
                 <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
                 <Text style={styles.comingSoonText}>
-                  Automatic wallet top-ups are almost here. Until then you can pay Velocity directly
+                  Automatic wallet top-ups are almost here. Until then you can pay Velocity Rides directly
                   from the accounts shown on your Wallet screen.
                 </Text>
               </View>

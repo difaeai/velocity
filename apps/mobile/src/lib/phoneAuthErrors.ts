@@ -139,7 +139,7 @@ export function describePhoneAuthError(e: unknown): PhoneAuthFailure {
         throttled: true,
         misconfigured: false,
         detail,
-        message: 'Velocity has hit its SMS limit for now. Please try again later — this is on our side, not yours.',
+        message: 'Velocity Rides has hit its SMS limit for now. Please try again later — this is on our side, not yours.',
       };
     case 'auth/operation-not-allowed':
     case 'auth/app-not-authorized':
@@ -163,7 +163,7 @@ export function describePhoneAuthError(e: unknown): PhoneAuthFailure {
         throttled: false,
         misconfigured: false,
         detail,
-        message: 'That number is already attached to another Velocity account.',
+        message: 'That number is already attached to another Velocity Rides account.',
       };
     case 'auth/invalid-verification-code':
       return { throttled: false, misconfigured: false, detail, message: 'Incorrect code — please try again.' };

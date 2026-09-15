@@ -125,17 +125,17 @@ export function OutstandingFees({
       <Text style={styles.body}>
         {blocked
           ? role === 'driver'
-            ? 'You owe Velocity for rides you cancelled after accepting them. Pay this off to start accepting rides again.'
-            : 'You owe Velocity for rides you cancelled after a driver had accepted. Pay this off to book again.'
+            ? 'You owe Velocity Rides for rides you cancelled after accepting them. Pay this off to start accepting rides again.'
+            : 'You owe Velocity Rides for rides you cancelled after a driver had accepted. Pay this off to book again.'
           : limit > 0
-            ? `Owed to Velocity for cancelling confirmed rides. You can keep ${role === 'driver' ? 'driving' : 'riding'} — but at ${limit.toLocaleString()} PKR outstanding your account is blocked, so you have ${remainingBeforeBlock.toLocaleString()} PKR of room left.`
-            : 'Owed to Velocity for cancelling confirmed rides.'}
+            ? `Owed to Velocity Rides for cancelling confirmed rides. You can keep ${role === 'driver' ? 'driving' : 'riding'} — but at ${limit.toLocaleString()} PKR outstanding your account is blocked, so you have ${remainingBeforeBlock.toLocaleString()} PKR of room left.`
+            : 'Owed to Velocity Rides for cancelling confirmed rides.'}
       </Text>
 
       {/* How to settle */}
       <Text style={styles.stepsTitle}>How to pay</Text>
       <Text style={styles.step}>
-        <Text style={styles.bold}>1.</Text> Send <Text style={styles.bold}>PKR {amount.toLocaleString()}</Text> to Velocity&apos;s account below.
+        <Text style={styles.bold}>1.</Text> Send <Text style={styles.bold}>PKR {amount.toLocaleString()}</Text> to Velocity Rides&apos; account below.
       </Text>
       <Text style={styles.step}>
         <Text style={styles.bold}>2.</Text> Screenshot the successful payment.
@@ -168,7 +168,7 @@ export function OutstandingFees({
         </>
       ) : (
         <Text style={styles.noAccounts}>
-          Velocity&apos;s payment account isn&apos;t set up yet. Please contact support to pay this off.
+          Velocity Rides&apos; payment account isn&apos;t set up yet. Please contact support to pay this off.
         </Text>
       )}
 
