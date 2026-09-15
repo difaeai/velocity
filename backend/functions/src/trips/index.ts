@@ -994,7 +994,7 @@ export const cancelTrip = onCall(async (req) => {
       ctx.uid,
       '⚠️ Cancellation fee',
       addedToOutstanding > 0
-        ? `PKR ${fee} was charged for cancelling after the ride was confirmed. PKR ${addedToOutstanding} is now outstanding to Velocity — settle it from your wallet.`
+        ? `PKR ${fee} was charged for cancelling after the ride was confirmed. PKR ${addedToOutstanding} is now outstanding to Velocity Rides — settle it from your wallet.`
         : `PKR ${fee} was charged to your wallet for cancelling after the ride was confirmed.`,
       { tripId },
     );
@@ -1334,7 +1334,7 @@ export const completeTrip = onCall(async (req) => {
     await sendToUser(
       ctx.uid,
       '🔒 Commission due',
-      `Your earnings cycle is complete. Settle PKR ${settlement.commissionDue} with Velocity to keep receiving rides.`,
+      `Your earnings cycle is complete. Settle PKR ${settlement.commissionDue} with Velocity Rides to keep receiving rides.`,
       { tripId },
     );
   }

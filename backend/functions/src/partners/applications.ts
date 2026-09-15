@@ -128,7 +128,7 @@ export function normalizePhone(raw: string): string {
 export async function requirePartner(uid: string) {
   const snap = await db.doc(`partners/${uid}`).get();
   if (!snap.exists) {
-    invalid('You are not a Velocity partner yet. Apply for the Partner Program first.');
+    invalid('You are not a Velocity Rides partner yet. Apply for the Partner Program first.');
   }
   if (snap.get('status') === 'suspended') {
     invalid('Your partner account is suspended. Contact support.');
@@ -162,12 +162,12 @@ export const submitPartnerApplication = onCall(async (req) => {
   if (data.cnicBackUrl) docs.push(data.cnicBackUrl);
   if (data.paymentProofUrl) docs.push(data.paymentProofUrl);
   for (const url of docs) {
-    if (!isOwnStorageUrl(url)) invalid('Documents must be uploaded to Velocity storage.');
+    if (!isOwnStorageUrl(url)) invalid('Documents must be uploaded to Velocity Rides storage.');
   }
 
   // Already a partner? Nothing to apply for.
   const partnerSnap = await db.doc(`partners/${uid}`).get();
-  if (partnerSnap.exists) invalid('You are already a Velocity partner.');
+  if (partnerSnap.exists) invalid('You are already a Velocity Rides partner.');
 
   const appRef = db.doc(`partner_applications/${uid}`);
   const existing = await appRef.get();
@@ -299,7 +299,7 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
     });
 
     if (decision === 'approve' && code) {
-      const fullName = (snap.get('fullName') as string) ?? 'Velocity Partner';
+      const fullName = (snap.get('fullName') as string) ?? 'Velocity Rides Partner';
 
       // Both fleets exist the moment the partner does. An approved partner who
       // still has to press "create fleet" before their code resolves is a
@@ -359,7 +359,7 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
 
   const copy: Record<PartnerApplicationStatus, { title: string; body: string }> = {
     approved: {
-      title: 'You are a Velocity Partner 🎉',
+      title: 'You are a Velocity Rides Partner 🎉',
       body:
         tier === 'pro'
           ? `Approved on Pro. Your code is ${code}. Your private fleet portal: ${portalUrl(portalId!)} — sign in with this same number.`

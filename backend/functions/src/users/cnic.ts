@@ -75,7 +75,7 @@ export const submitCnicVerification = onCall(async (req) => {
   const { cnicNumber, fullName, frontUrl, backUrl } = input.data!;
 
   for (const url of [frontUrl, backUrl]) {
-    if (!isOwnStorageUrl(url)) invalid('CNIC photos must be uploaded to Velocity storage.');
+    if (!isOwnStorageUrl(url)) invalid('CNIC photos must be uploaded to Velocity Rides storage.');
   }
 
   const userRef = db.collection('users').doc(uid);

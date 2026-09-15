@@ -82,7 +82,7 @@ export default function SettlementsPage() {
       <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Settlements</h1>
       <p style={{ color: colors.muted, marginBottom: 24, maxWidth: 720 }}>
         Payments the AI couldn&apos;t auto-approve — driver commission cycles and unpaid cancellation
-        fees alike. Check the screenshot against the amount due and Velocity&apos;s account, then
+        fees alike. Check the screenshot against the amount due and Velocity Rides&apos; account, then
         approve to clear the debt or reject to ask for a new receipt.
       </p>
 
@@ -147,7 +147,7 @@ export default function SettlementsPage() {
                         <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: colors.muted, lineHeight: 1.6 }}>
                           <li>Genuine: <strong style={{ color: v.genuine ? colors.success : colors.danger }}>{v.genuine ? 'yes' : 'no'}</strong></li>
                           <li>Amount detected: <strong>{v.amountDetected != null ? `PKR ${v.amountDetected.toLocaleString()}` : 'unreadable'}</strong></li>
-                          <li>Recipient matches Velocity: <strong style={{ color: v.recipientMatch ? colors.success : colors.danger }}>{v.recipientMatch ? 'yes' : 'no'}</strong></li>
+                          <li>Recipient matches Velocity Rides: <strong style={{ color: v.recipientMatch ? colors.success : colors.danger }}>{v.recipientMatch ? 'yes' : 'no'}</strong></li>
                           <li>Confidence: <strong>{v.confidence ?? '—'}</strong></li>
                           {v.reasoning ? <li>{v.reasoning}</li> : null}
                         </ul>

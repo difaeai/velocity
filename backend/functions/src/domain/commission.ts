@@ -63,7 +63,7 @@ export function assertCommissionClear(driverSnap: DocumentSnapshot, settings: Co
     const due = commissionDue(driverSnap, settings);
     throw new HttpsError(
       'failed-precondition',
-      `Commission due: pay ${due} PKR to Velocity to keep accepting rides.`,
+      `Commission due: pay ${due} PKR to Velocity Rides to keep accepting rides.`,
     );
   }
 }

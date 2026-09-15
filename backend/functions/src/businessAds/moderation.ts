@@ -63,7 +63,7 @@ export async function getPairBlock(ownerUid: string, askerUid: string): Promise<
  * learns only that they cannot write, never a detail about the other party.
  */
 export function assertNotBlocked(block: PairBlock, sender: 'business' | 'customer'): void {
-  if (block.byAdmin) invalid('This conversation was closed by Velocity.');
+  if (block.byAdmin) invalid('This conversation was closed by Velocity Rides.');
   if (sender === 'customer') {
     if (block.byCustomer) invalid('You blocked this business. Unblock it to send a message.');
     if (block.byBusiness) invalid('You can’t send messages to this business.');

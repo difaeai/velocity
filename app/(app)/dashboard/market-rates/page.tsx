@@ -411,7 +411,7 @@ export default function MarketRatesPage() {
                 <th style={{ padding: '8px 6px' }}>inDrive</th>
                 <th style={{ padding: '8px 6px' }}>Yango</th>
                 <th style={{ padding: '8px 6px' }}>Target</th>
-                <th style={{ padding: '8px 6px' }}>Velocity</th>
+                <th style={{ padding: '8px 6px' }}>Velocity Rides</th>
                 <th style={{ padding: '8px 6px' }}>Rider saves</th>
                 <th style={{ padding: '8px 6px' }}>Status</th>
               </tr>

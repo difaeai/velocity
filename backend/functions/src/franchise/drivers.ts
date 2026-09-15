@@ -450,7 +450,7 @@ export const adminReviewDriverSubmission = onCall(async (req) => {
     'Driver approved 🚗',
     bindFleet
       ? `${fullName} is approved and has joined your driver fleet.`
-      : `${fullName} is approved as a driver, but could not be credited to your fleet — they already drive for Velocity.`,
+      : `${fullName} is approved as a driver, but could not be credited to your fleet — they already drive for Velocity Rides.`,
     'ride',
     { franchiseEvent: 'driver_approved', submissionId },
   );

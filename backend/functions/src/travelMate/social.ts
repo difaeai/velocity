@@ -112,7 +112,7 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
   // Reject attachment URLs that don't live in our own Storage bucket.
   for (const att of [image, file]) {
     if (att && !isOwnStorageUrl(att.url)) {
-      throw new HttpsError('invalid-argument', 'Attachment must be uploaded to Velocity storage.');
+      throw new HttpsError('invalid-argument', 'Attachment must be uploaded to Velocity Rides storage.');
     }
   }
 

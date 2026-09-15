@@ -111,7 +111,7 @@ export const previewPartnerFleet = onCall(async (req) => {
   return {
     ok: true,
     code,
-    partnerName: (partner.get('fullName') as string) ?? 'A Velocity partner',
+    partnerName: (partner.get('fullName') as string) ?? 'A Velocity Rides partner',
     partnerLevel: (partner.get('level') as string) ?? 'bronze',
     partnerTier: (partner.get('tier') as string) ?? 'free',
   };

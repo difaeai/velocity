@@ -119,7 +119,7 @@ export default function FleetSubmissionsPage() {
         setNote(
           res.fleetBound
             ? `${row.fullName} approved and added to the fleet.`
-            : `${row.fullName} approved as a driver, but NOT credited to the fleet — they had already completed rides for Velocity.`,
+            : `${row.fullName} approved as a driver, but NOT credited to the fleet — they had already completed rides for Velocity Rides.`,
         );
       } else {
         setNote(`${row.fullName} rejected. The partner has been told why.`);

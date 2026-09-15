@@ -233,9 +233,9 @@ export default function CostsPage() {
     <div>
       <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
         <div style={{ flex: 1, minWidth: 280 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Cost of Velocity</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Cost of Velocity Rides</h1>
           <p style={{ color: colors.muted, margin: 0, maxWidth: 720 }}>
-            Everything Velocity pays somebody else to exist — the cloud under the apps, the AI on
+            Everything Velocity Rides pays somebody else to exist — the cloud under the apps, the AI on
             the social desk, Meta&rsquo;s WhatsApp numbers, Maps, the Play account, the blue tick.
             The list of services comes from the code; the amounts come from the vendors, or from
             your invoices.

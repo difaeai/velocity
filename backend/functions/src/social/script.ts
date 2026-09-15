@@ -34,7 +34,7 @@ import {
 /** What each angle is actually about, so the model isn't guessing from a slug. */
 const ANGLE_BRIEFS: Record<string, string> = {
   'driver-earnings':
-    'What a driver takes home. Velocity charges commission only on completed rides, and the driver keeps the rest of the fare in cash on the spot.',
+    'What a driver takes home. Velocity Rides charges commission only on completed rides, and the driver keeps the rest of the fare in cash on the spot.',
   'fleet-owner-maths':
     'Owning cars and putting other drivers on them through the Pro fleet portal — how the numbers work for someone with 2–10 vehicles.',
   'rider-savings':
@@ -47,7 +47,7 @@ const ANGLE_BRIEFS: Record<string, string> = {
   intercity: 'City-to-city seats — Lahore to Islamabad and similar — versus the bus.',
   couriers: 'Sending a parcel across the city with a rider who is already going that way.',
   'partner-program':
-    'Earning a share of Velocity’s commission by bringing drivers and riders onto the platform.',
+    'Earning a share of Velocity Rides’ commission by bringing drivers and riders onto the platform.',
   'city-spotlight': 'One city, its routes and its drivers. Local and specific.',
 };
 
