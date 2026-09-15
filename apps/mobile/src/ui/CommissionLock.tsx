@@ -111,7 +111,7 @@ export function CommissionLock({
         <Text style={styles.lockTitle}>Settle your commission to continue</Text>
         <Text style={styles.lockBody}>
           Your earnings this cycle reached{' '}
-          <Text style={styles.bold}>{cycleGrossFare.toLocaleString()} PKR</Text>. Velocity&apos;s{' '}
+          <Text style={styles.bold}>{cycleGrossFare.toLocaleString()} PKR</Text>. Velocity Rides&apos;{' '}
           {Math.round(rate * 100)}% commission on the {cycleCashFare.toLocaleString()} PKR you
           collected in cash is due now.
         </Text>
@@ -131,7 +131,7 @@ export function CommissionLock({
       <View style={styles.stepsCard}>
         <Text style={styles.stepsTitle}>How to settle</Text>
         <Text style={styles.step}>
-          <Text style={styles.bold}>1.</Text> Send <Text style={styles.bold}>PKR {due.toLocaleString()}</Text> to Velocity&apos;s account below.
+          <Text style={styles.bold}>1.</Text> Send <Text style={styles.bold}>PKR {due.toLocaleString()}</Text> to Velocity Rides&apos; account below.
         </Text>
         <Text style={styles.step}>
           <Text style={styles.bold}>2.</Text> Take a screenshot of the successful payment.
@@ -165,7 +165,7 @@ export function CommissionLock({
           </>
         ) : (
           <Text style={styles.noAccounts}>
-            Velocity&apos;s payment account isn&apos;t set up yet. Please contact support to settle.
+            Velocity Rides&apos; payment account isn&apos;t set up yet. Please contact support to settle.
           </Text>
         )}
 

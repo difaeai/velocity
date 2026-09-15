@@ -48,7 +48,7 @@ export default function DriverIntro() {
     Alert.alert('Coming soon', 'Courier sign-up will be available shortly. You can register as a driver now.');
 
   const openMenu = () =>
-    Alert.alert('Velocity', undefined, [
+    Alert.alert('Velocity Rides', undefined, [
       { text: 'Switch to passenger mode', onPress: goPassenger },
       { text: 'Contact support', onPress: () => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {}) },
       { text: 'Close', style: 'cancel' },

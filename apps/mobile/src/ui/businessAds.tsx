@@ -163,7 +163,7 @@ export function SeenBySection({ data, ads }: { data: BusinessAdDashboard; ads: B
         ))
       )}
       <Text style={s.privacy}>
-        Counted once per person, when they open the offer. Velocity never shows you who.
+        Counted once per person, when they open the offer. Velocity Rides never shows you who.
       </Text>
     </View>
   );

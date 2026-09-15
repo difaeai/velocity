@@ -415,7 +415,7 @@ export default function BusinessAdSubscribe() {
 
               <View style={styles.termsCard}>
                 <Text style={styles.termsTxt}>
-                  By submitting you agree that Velocity reviews your offer before it
+                  By submitting you agree that Velocity Rides reviews your offer before it
                   goes out, and may take down an offer that misleads users. Your plan
                   starts the day it is approved.
                 </Text>

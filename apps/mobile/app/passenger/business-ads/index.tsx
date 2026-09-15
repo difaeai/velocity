@@ -194,7 +194,7 @@ function Pitch({ data, onStart }: { data: BusinessAdDashboard; onStart: () => vo
         </View>
         <Text style={styles.heroTitle}>Reach the people who pass your door</Text>
         <Text style={styles.heroBody}>
-          Every Velocity user inside your radius gets your offer as a notification —
+          Every Velocity Rides user inside your radius gets your offer as a notification —
           then you see who looked and answer what they ask.
         </Text>
         <View style={styles.featureList}>
@@ -341,7 +341,7 @@ function Live({
     <View style={{ gap: 14 }}>
       {suspended ? (
         <View style={styles.alertCard}>
-          <Text style={styles.alertTitle}>Advertising paused by Velocity</Text>
+          <Text style={styles.alertTitle}>Advertising paused by Velocity Rides</Text>
           <Text style={styles.alertBody}>
             {a.suspensionReason ?? 'Contact support to get your offers running again.'}
           </Text>
@@ -459,7 +459,7 @@ function Live({
                 <Text style={styles.previewBody} numberOfLines={2}>{ad.offerDetails}</Text>
 
                 {ad.moderationReason ? (
-                  <Text style={styles.modNote}>Taken down by Velocity: {ad.moderationReason}</Text>
+                  <Text style={styles.modNote}>Taken down by Velocity Rides: {ad.moderationReason}</Text>
                 ) : null}
 
                 <View style={styles.adStatsRow}>
@@ -535,7 +535,7 @@ function DemoNotificationCard() {
     // otherwise.
     Alert.alert(
       'Allow notifications first',
-      'Velocity needs permission to put the offer on your phone. Open Settings › Notifications and switch Velocity on, then come back and press send.',
+      'Velocity Rides needs permission to put the offer on your phone. Open Settings › Notifications and switch Velocity Rides on, then come back and press send.',
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Open settings', onPress: () => void openSettings() },
@@ -561,7 +561,7 @@ function DemoNotificationCard() {
       if (!res.pushed) {
         Alert.alert(
           'It could not reach your phone',
-          'The offer is saved in your Velocity notifications. If notifications for Velocity are switched off in your phone settings, switch them on and send it again.',
+          'The offer is saved in your Velocity Rides notifications. If notifications for Velocity Rides are switched off in your phone settings, switch them on and send it again.',
           [
             { text: 'OK', style: 'cancel' },
             { text: 'Open settings', onPress: () => void openSettings() },
@@ -606,7 +606,7 @@ function DemoNotificationCard() {
             <View style={styles.trayIcon}>
               <Text style={styles.trayIconTxt}>V</Text>
             </View>
-            <Text style={styles.trayApp}>Velocity</Text>
+            <Text style={styles.trayApp}>Velocity Rides</Text>
             <Text style={styles.trayNow}>· now</Text>
           </View>
           <Text style={styles.trayTitle} numberOfLines={2}>{preview.title}</Text>
@@ -627,12 +627,12 @@ function DemoNotificationCard() {
         onPress={() => send(10)}
       >
         <Text style={styles.demoLaterTxt}>
-          {busy === 'later' ? 'Close Velocity now — it arrives in a few seconds' : '⏱  Send in 10 seconds'}
+          {busy === 'later' ? 'Close Velocity Rides now — it arrives in a few seconds' : '⏱  Send in 10 seconds'}
         </Text>
       </Pressable>
       {busy !== 'later' ? (
         <Text style={styles.demoHint}>
-          Tap it, then close the app — proves the offer arrives with Velocity closed.
+          Tap it, then close the app — proves the offer arrives with Velocity Rides closed.
         </Text>
       ) : null}
 
@@ -650,7 +650,7 @@ function DemoNotificationCard() {
         <View style={styles.demoSent}>
           <Text style={styles.demoSentNote}>
             ✓ Sent. Pull your notification shade down to see it — it stays there until
-            you swipe it away, even with Velocity closed. Tap it to open the offer.
+            you swipe it away, even with Velocity Rides closed. Tap it to open the offer.
           </Text>
         </View>
       ) : null}
@@ -685,8 +685,8 @@ function PermissionAsk({
       <Text style={styles.permTitle}>🔔 Turn on notifications</Text>
       <Text style={styles.permBody}>
         {blocked
-          ? 'Notifications for Velocity are switched off on this phone, so nothing can arrive. Open your phone settings, switch Velocity notifications on, and come back — the offer will land on your screen.'
-          : 'Your phone will ask for permission — press Allow. Then the offer arrives on your screen, and swiping down from the top of the screen shows it any time, even with Velocity closed. This is exactly how your customers will see your own offer.'}
+          ? 'Notifications for Velocity Rides are switched off on this phone, so nothing can arrive. Open your phone settings, switch Velocity Rides notifications on, and come back — the offer will land on your screen.'
+          : 'Your phone will ask for permission — press Allow. Then the offer arrives on your screen, and swiping down from the top of the screen shows it any time, even with Velocity Rides closed. This is exactly how your customers will see your own offer.'}
       </Text>
       <Pressable style={styles.permBtn} onPress={() => void (blocked ? onOpenSettings() : onAsk())}>
         <Text style={styles.permBtnTxt}>

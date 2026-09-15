@@ -82,7 +82,7 @@ export default function DemoQueryScreen() {
       timer.current = setTimeout(() => {
         setTyping(false);
         setCustomerMsgs((m) => [...m, { id: `${id}-r`, from: 'business', text: cannedReply(trimmed) }]);
-        setNote('In the real thing, this reply arrives as a notification — even with Velocity closed.');
+        setNote('In the real thing, this reply arrives as a notification — even with Velocity Rides closed.');
       }, 1400);
     } else {
       setBusinessMsgs((m) => [...m, { id, from: 'business', text: trimmed }]);

@@ -74,7 +74,7 @@ export default function ReferralCodeScreen() {
       const res = await api.claimPartnerReferral({ code, deviceId: deviceFingerprint() });
       Alert.alert(
         'Code applied 🎉',
-        `You're now part of ${res.partnerName ?? 'your partner'}'s Velocity fleet. Your fares don't change — they earn from Velocity's side, never from yours.`,
+        `You're now part of ${res.partnerName ?? 'your partner'}'s Velocity Rides fleet. Your fares don't change — they earn from Velocity Rides' side, never from yours.`,
         [{ text: 'Done', onPress: () => router.back() }],
       );
       setExisting(await api.getMyReferral({}));
@@ -138,8 +138,8 @@ export default function ReferralCodeScreen() {
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <Text style={s.h1}>Have a referral code?</Text>
         <Text style={s.sub}>
-          If a Velocity partner invited you, enter their 5-digit code. It costs you nothing and never
-          changes your fare — they earn a share of Velocity&apos;s commission, not of your money.
+          If a Velocity Rides partner invited you, enter their 5-digit code. It costs you nothing and never
+          changes your fare — they earn a share of Velocity Rides&apos; commission, not of your money.
         </Text>
 
         <TextInput

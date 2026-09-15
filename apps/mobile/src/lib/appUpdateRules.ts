@@ -167,9 +167,9 @@ export function describeUpdate(update: AvailableUpdate): string {
   // fallback keeps a malformed config from producing "you're on null".
   if (update.latestBuild !== null && update.currentBuild !== null) {
     return (
-      `A newer build of Velocity ${update.latestVersion} is on the Play Store — ` +
+      `A newer build of Velocity Rides ${update.latestVersion} is on the Play Store — ` +
       `update ${update.currentBuild} → ${update.latestBuild}.`
     );
   }
-  return `A newer build of Velocity ${update.latestVersion} is available on the Play Store.`;
+  return `A newer build of Velocity Rides ${update.latestVersion} is available on the Play Store.`;
 }

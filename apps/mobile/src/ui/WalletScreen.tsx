@@ -49,7 +49,7 @@ const PAYOUT_METHODS: { key: PayoutMethod; label: string }[] = [
 /** What the wallet is for, behind the (?) on the balance card. */
 function explainWallet(role: 'passenger' | 'driver') {
   Alert.alert(
-    'Your Velocity wallet',
+    'Your Velocity Rides wallet',
     role === 'driver'
       ? 'Top up to settle the commission you owe on cash rides, so your account never gets locked mid-shift. Fares you earn on online rides land here too, and you can withdraw those to your own account.'
       : 'Top up once and pay for rides straight from your balance — no cash, no change. Your balance is also used for any cancellation fees you owe.',
@@ -145,7 +145,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           <Text style={styles.balance}>PKR {balance.toLocaleString()}</Text>
           {outstanding.amount > 0 ? (
             <Text style={styles.balanceOwed}>
-              −{outstanding.amount.toLocaleString()} PKR outstanding to Velocity
+              −{outstanding.amount.toLocaleString()} PKR outstanding to Velocity Rides
             </Text>
           ) : null}
           <View style={styles.topUpButtonWrap}>
@@ -211,7 +211,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             </View>
             <View style={styles.commRow}>
               <Text style={styles.commMeta}>
-                Velocity commission ({Math.round(commission.rate * 100)}% of cash fares)
+                Velocity Rides commission ({Math.round(commission.rate * 100)}% of cash fares)
               </Text>
               <Text style={[styles.commDue, commission.locked && { color: colors.danger }]}>
                 {commission.due.toLocaleString()} PKR
@@ -224,14 +224,14 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
                   onPress={() => router.replace('/driver')}
                 />
                 <Text style={styles.payoutHint}>
-                  Go to your Home screen to pay Velocity and upload your payment screenshot. Your
+                  Go to your Home screen to pay Velocity Rides and upload your payment screenshot. Your
                   account unlocks once it&apos;s verified.
                 </Text>
               </>
             ) : (
               <Text style={styles.payoutHint}>
                 When cycle earnings reach {commission.threshold.toLocaleString()} PKR you&apos;ll settle
-                by paying Velocity and uploading a screenshot. Commission on online rides is collected
+                by paying Velocity Rides and uploading a screenshot. Commission on online rides is collected
                 automatically.
               </Text>
             )}
@@ -243,7 +243,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
         {role === 'driver' &&
         (velocityAccounts?.easypaisaNumber || velocityAccounts?.jazzcashNumber || velocityAccounts?.bankIban) ? (
           <Card>
-            <Text style={styles.label}>Pay Velocity — official accounts</Text>
+            <Text style={styles.label}>Pay Velocity Rides — official accounts</Text>
             <Text style={styles.accountsIntro}>
               Send your commission or dues to one of these accounts
               {velocityAccounts.accountTitle ? (

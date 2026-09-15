@@ -87,7 +87,7 @@ export default function JoinFleet() {
         <View style={s.center}>
           <Text style={s.emoji}>🤷</Text>
           <Text style={s.title}>{problem}</Text>
-          <PrimaryButton label="Continue to Velocity" onPress={() => router.replace('/passenger/home')} />
+          <PrimaryButton label="Continue to Velocity Rides" onPress={() => router.replace('/passenger/home')} />
         </View>
       </SafeAreaView>
     );
@@ -110,7 +110,7 @@ export default function JoinFleet() {
           <Text style={s.emoji}>🎉</Text>
           <Text style={s.title}>You&apos;re in {preview.partnerName}&apos;s fleet</Text>
           <Text style={s.body}>
-            Your fares are unchanged — they earn from Velocity&apos;s side, never from your pocket.
+            Your fares are unchanged — they earn from Velocity Rides&apos; side, never from your pocket.
           </Text>
           <PrimaryButton label="Start riding" onPress={() => router.replace('/passenger/home')} />
         </View>
@@ -126,7 +126,7 @@ export default function JoinFleet() {
         <Text style={s.invited}>{preview.partnerName} invited you</Text>
         <LevelBadge level={preview.partnerLevel} size="sm" />
 
-        <Text style={s.title}>Join Velocity</Text>
+        <Text style={s.title}>Join Velocity Rides</Text>
         <Text style={s.body}>
           Real fares, real drivers, across Pakistan. Ride with us, or sign up to drive — either way
           this code puts you in {preview.partnerName}&apos;s fleet.
@@ -140,7 +140,7 @@ export default function JoinFleet() {
         {/* Say the quiet part plainly: joining costs the recruit nothing. */}
         <Text style={s.fine}>
           Joining a fleet is free and never changes your fare. The partner earns a share of
-          Velocity&apos;s own commission, not of your money.
+          Velocity Rides&apos; own commission, not of your money.
         </Text>
 
         <PrimaryButton

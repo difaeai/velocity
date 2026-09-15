@@ -153,7 +153,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'Velocity',
+        name: 'Velocity Rides',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#ccff00',

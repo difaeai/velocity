@@ -30,7 +30,7 @@ export default function DriverAccountChoice() {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.hero}>
           <Text style={styles.heroEmoji}>🚗</Text>
-          <Text style={styles.heroTitle}>Drive with Velocity</Text>
+          <Text style={styles.heroTitle}>Drive with Velocity Rides</Text>
           <Text style={styles.heroSub}>
             Sign up to start earning, or log in if you already have a driver account.
           </Text>

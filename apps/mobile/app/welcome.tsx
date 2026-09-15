@@ -50,7 +50,7 @@ const SLIDES: { key: Variant; title: string; body: string }[] = [
   },
   {
     key: 'earn',
-    title: 'Earn with Velocity',
+    title: 'Earn with Velocity Rides',
     body: 'Share your code with riders and drivers and earn real money from every ride they take.',
   },
 ];
@@ -299,7 +299,7 @@ export default function Welcome() {
       {/* Static overlay: brand + skip on top, dots + button at the bottom */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.topBar} pointerEvents="box-none">
-          <Text style={styles.brand}>Velocity</Text>
+          <Text style={styles.brand} numberOfLines={1}>Velocity Rides</Text>
           <Pressable onPress={finish} hitSlop={12}>
             <Text style={styles.skip}>Skip</Text>
           </Pressable>

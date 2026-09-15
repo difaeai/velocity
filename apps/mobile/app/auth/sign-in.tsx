@@ -416,7 +416,13 @@ export default function SignIn() {
     >
       <View style={[styles.brandBlock, kbVisible && styles.brandBlockCompact]}>
         <BoltIcon size={kbVisible ? 34 : 56} />
-        <Text style={[styles.brandTitle, kbVisible && styles.brandTitleCompact]}>Velocity</Text>
+        <Text
+          style={[styles.brandTitle, kbVisible && styles.brandTitleCompact]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          Velocity Rides
+        </Text>
         {kbVisible ? null : (
           <Text style={styles.brandSub}>
             Experience the next generation of urban mobility in Pakistan.
@@ -471,7 +477,7 @@ export default function SignIn() {
       <View style={styles.flexSpacer} />
 
       <Text style={styles.terms}>
-        By continuing, you agree to Velocity&apos;s{' '}
+        By continuing, you agree to Velocity Rides&apos;{' '}
         <Text
           style={styles.termsLink}
           onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
@@ -505,7 +511,9 @@ export default function SignIn() {
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Text style={styles.backArrow}>←</Text>
         </Pressable>
-        <Text style={styles.otpBrand}>Velocity</Text>
+        <Text style={styles.otpBrand} numberOfLines={1} adjustsFontSizeToFit>
+          Velocity Rides
+        </Text>
       </View>
 
       <Text style={styles.otpTitle}>Verify your number</Text>
@@ -707,7 +715,7 @@ const styles = themed(() => StyleSheet.create({
   otpHeader: { flexDirection: 'row', alignItems: 'center', gap: 18, marginBottom: 36 },
   backBtn: { padding: 4 },
   backArrow: { fontSize: 26, color: '#ffffff', fontWeight: '700' },
-  otpBrand: { fontSize: 26, fontWeight: '900', color: '#ffffff' },
+  otpBrand: { flexShrink: 1, fontSize: 26, fontWeight: '900', color: '#ffffff' },
 
   otpTitle: { fontSize: 30, fontWeight: '900', color: '#ffffff', textAlign: 'center', marginBottom: 12 },
   otpSub: { fontSize: 18, color: 'rgba(255,255,255,0.6)', textAlign: 'center' },

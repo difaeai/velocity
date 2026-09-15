@@ -70,7 +70,7 @@ function emptyForm(): TripForm {
     date: toInputDate(dep), time: toInputTime(dep),
     vehicleType: 'standard_ac',
     totalSeats: '28', farePerSeat: '1100',
-    operatorName: 'Velocity',
+    operatorName: 'Velocity Rides',
     pickupPoint: '', dropoffPoint: '',
     driverName: '', driverPhone: '', plateNumber: '',
     notes: '',
@@ -159,7 +159,7 @@ export default function AdminIntercityTrips() {
         vehicleType: form.vehicleType,
         totalSeats: seats,
         farePerSeat: fare,
-        operatorName: form.operatorName || 'Velocity',
+        operatorName: form.operatorName || 'Velocity Rides',
         pickupPoint:  form.pickupPoint  || undefined,
         dropoffPoint: form.dropoffPoint || undefined,
         driverName:   form.driverName   || undefined,
@@ -365,7 +365,7 @@ export default function AdminIntercityTrips() {
               </View>
             </View>
 
-            <Field label="Operator Name" value={form.operatorName} onChange={v => setF('operatorName', v)} placeholder="Velocity" />
+            <Field label="Operator Name" value={form.operatorName} onChange={v => setF('operatorName', v)} placeholder="Velocity Rides" />
             <Field label="Pickup Point"  value={form.pickupPoint}  onChange={v => setF('pickupPoint', v)}  placeholder="Terminal address" />
             <Field label="Dropoff Point" value={form.dropoffPoint} onChange={v => setF('dropoffPoint', v)} placeholder="Destination terminal" />
             <Field label="Driver Name"   value={form.driverName}   onChange={v => setF('driverName', v)}   placeholder="Optional" />

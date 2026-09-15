@@ -26,7 +26,7 @@ import { themed } from '../theme';
 
 /** Each message is one whole literal so `Text` can translate it as a sentence. */
 const MESSAGES = [
-  'Bring people onto Velocity and they become your fleet — you earn from every ride they take.',
+  'Bring people onto Velocity Rides and they become your fleet — you earn from every ride they take.',
   'Not just drivers: passengers you invite earn for you too.',
   'Invite drivers, invite riders, keep earning — your fares never change.',
 ];
@@ -76,7 +76,7 @@ export function NewsTicker({ onPress }: { onPress?: () => void }) {
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel="Earn with Velocity — build your own fleet of drivers and passengers"
+      accessibilityLabel="Earn with Velocity Rides — build your own fleet of drivers and passengers"
     >
       <Animated.View style={[styles.row, { transform: [{ translateX: x }] }]}>
         {copy(true)}

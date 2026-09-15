@@ -199,7 +199,7 @@ export function MarketCompare({
 
           <View style={styles.mapUsRow}>
             <View style={styles.mapUsMark} />
-            <Text style={styles.mapUs}>Velocity</Text>
+            <Text style={styles.mapUs} numberOfLines={1}>Velocity Rides</Text>
             <Text style={styles.mapUsFare}>{velocityFare.toLocaleString()}</Text>
           </View>
         </Pressable>
@@ -258,7 +258,7 @@ export function MarketCompare({
       <View style={[styles.row, styles.usRow]}>
         <View style={styles.usMark} />
         <View style={styles.rowLeft}>
-          <Text style={styles.us}>Velocity</Text>
+          <Text style={styles.us} numberOfLines={1}>Velocity Rides</Text>
           <Text style={styles.tier}>This ride</Text>
         </View>
         <Text style={styles.usFare}>PKR {velocityFare.toLocaleString()}</Text>

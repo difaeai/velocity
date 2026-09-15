@@ -56,7 +56,7 @@ interface Sub {
 }
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  wallet: '💳 Velocity Wallet (charged on approval)',
+  wallet: '💳 Velocity Rides Wallet (charged on approval)',
   easypaisa: '📱 EasyPaisa (upload receipt)',
   jazzcash: '📱 JazzCash (upload receipt)',
   bank: '🏦 Bank transfer (upload receipt)',
@@ -302,7 +302,7 @@ export default function TravelMateSubscription() {
             {payMethod === 'wallet' && (
               <Card>
                 <Text style={s.walletNote}>
-                  PKR {selectedPlan.pricePKR.toLocaleString()} will be deducted from your Velocity wallet only after an admin approves your request. No charge if rejected.
+                  PKR {selectedPlan.pricePKR.toLocaleString()} will be deducted from your Velocity Rides wallet only after an admin approves your request. No charge if rejected.
                 </Text>
               </Card>
             )}

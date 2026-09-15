@@ -81,7 +81,7 @@ export default function TravelMateProfile() {
     const link = appLink(`/passenger/travel-mate/mate/${user.uid}`);
     Share.share({
       message:
-        `👋 I'm ${profile.displayName} on Velocity Travel Partner.\n\n` +
+        `👋 I'm ${profile.displayName} on Velocity Rides Travel Partner.\n\n` +
         `Check out my profile and match with me to share rides:\n${link}`,
       title: 'Share my Travel Partner profile',
     }).catch(() => {});

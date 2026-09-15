@@ -82,7 +82,7 @@ export default function Settings() {
     setDark((d) => !d);
     const reloaded = await toggleTheme();
     if (!reloaded) {
-      Alert.alert('Theme saved ✅', 'Close and reopen Velocity to apply the new theme everywhere.');
+      Alert.alert('Theme saved ✅', 'Close and reopen Velocity Rides to apply the new theme everywhere.');
     }
   }
 
@@ -145,7 +145,7 @@ export default function Settings() {
         <Text style={styles.hint}>
           {referral?.bound
             ? `You're in ${referral.partnerName ?? 'a partner'}'s fleet — your fares never change because of it.`
-            : 'Got a 5-digit code from a Velocity partner? Riders and drivers enter the same code here.'}
+            : 'Got a 5-digit code from a Velocity Rides partner? Riders and drivers enter the same code here.'}
         </Text>
 
         <Text style={styles.sectionLabel}>PREFERENCES</Text>
@@ -265,7 +265,7 @@ export default function Settings() {
         </View>
 
         <Text style={styles.version}>
-          Velocity v{Constants.expoConfig?.version ?? '1.0.0'}
+          Velocity Rides v{Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
       </ScrollView>
 

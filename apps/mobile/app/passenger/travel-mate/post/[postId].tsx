@@ -161,7 +161,7 @@ export default function PostDetail() {
     const link = appLink(`/passenger/travel-mate/post/${post.id}`);
     Share.share({
       message:
-        `${post.authorName} on Velocity Travel Partner:\n\n` +
+        `${post.authorName} on Velocity Rides Travel Partner:\n\n` +
         `${post.text ? `"${post.text.slice(0, 140)}"\n\n` : ''}` +
         `See the post: ${link}`,
     }).catch(() => {});

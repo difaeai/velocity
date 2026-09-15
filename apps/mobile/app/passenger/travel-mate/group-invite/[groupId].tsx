@@ -85,7 +85,7 @@ export default function GroupInviteScreen() {
         }
         setError(
           TRANSIENT.has(code)
-            ? "We couldn't reach Velocity just now. Check your connection and try again."
+            ? "We couldn't reach Velocity Rides just now. Check your connection and try again."
             : e instanceof Error ? e.message : 'Could not load this group.',
         );
         setLoading(false);

@@ -108,7 +108,7 @@ export default function DemoOfferScreen() {
 
         <View style={styles.disclaimer}>
           <Text style={styles.disclaimerTxt}>
-            A real offer here comes from a business near you, not from Velocity —
+            A real offer here comes from a business near you, not from Velocity Rides —
             terms are between you and the business. This sample was sent only to
             this phone, because you asked for it.
           </Text>

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Velocity",
+    "name": "Velocity Rides",
     "slug": "velocity",
     "scheme": "velocity",
     "version": "1.9.0",
@@ -14,12 +14,12 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
-        "NSCameraUsageDescription": "Velocity needs camera access so you can take and share a photo in chat and capture verification documents.",
-        "NSLocationWhenInUseUsageDescription": "Velocity uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
-        "NSContactsUsageDescription": "Velocity lets you pick a contact to share their number in chat.",
-        "NSMicrophoneUsageDescription": "Velocity uses your microphone so you can book a ride by speaking instead of typing.",
-        "NSSpeechRecognitionUsageDescription": "Velocity turns your speech into a ride booking. Recognition happens on your device."
+        "NSPhotoLibraryUsageDescription": "Velocity Rides needs access to your photos so you can share pictures in chat and upload verification documents.",
+        "NSCameraUsageDescription": "Velocity Rides needs camera access so you can take and share a photo in chat and capture verification documents.",
+        "NSLocationWhenInUseUsageDescription": "Velocity Rides uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
+        "NSContactsUsageDescription": "Velocity Rides lets you pick a contact to share their number in chat.",
+        "NSMicrophoneUsageDescription": "Velocity Rides uses your microphone so you can book a ride by speaking instead of typing.",
+        "NSSpeechRecognitionUsageDescription": "Velocity Rides turns your speech into a ride booking. Recognition happens on your device."
       }
     },
     "android": {
@@ -77,20 +77,20 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Velocity needs access to your photos so you can share pictures in chat and upload verification documents.",
-          "cameraPermission": "Velocity needs camera access so you can take and share a photo in chat."
+          "photosPermission": "Velocity Rides needs access to your photos so you can share pictures in chat and upload verification documents.",
+          "cameraPermission": "Velocity Rides needs camera access so you can take and share a photo in chat."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Velocity uses your location to set your pickup point, match nearby rides, and share your location in chat."
+          "locationWhenInUsePermission": "Velocity Rides uses your location to set your pickup point, match nearby rides, and share your location in chat."
         }
       ],
       [
         "expo-contacts",
         {
-          "contactsPermission": "Velocity lets you pick a contact to share their number in chat."
+          "contactsPermission": "Velocity Rides lets you pick a contact to share their number in chat."
         }
       ],
       [
@@ -103,8 +103,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Velocity uses your microphone so you can book a ride by speaking instead of typing.",
-          "speechRecognitionPermission": "Velocity turns your speech into a ride booking. Recognition happens on your device.",
+          "microphonePermission": "Velocity Rides uses your microphone so you can book a ride by speaking instead of typing.",
+          "speechRecognitionPermission": "Velocity Rides turns your speech into a ride booking. Recognition happens on your device.",
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ]

@@ -32,7 +32,7 @@ export default function ProfileScreen() {
       'Your safety matters. During a ride you can trigger an Emergency SOS from the trip screen, and our team monitors safety events in real time.',
     );
   const aboutInfo = () =>
-    Alert.alert('Velocity', 'Velocity — ride-hailing & smart pooling.\n\nMade for Pakistan. 🇵🇰');
+    Alert.alert('Velocity Rides', 'Velocity Rides — ride-hailing & smart pooling.\n\nMade for Pakistan. 🇵🇰');
 
   return (
     <SafeAreaView style={styles.safe}>
