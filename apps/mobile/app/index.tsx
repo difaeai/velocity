@@ -89,18 +89,11 @@ export default function Index() {
 
   // A bare colour, deliberately.
   //
-  // This used to be a three-second branded splash — the spinning mark over
-  // VELOCITY and a tagline. On iOS it painted only half the screen: build 4
-  // rendered the left half ("VELO", "Ride smarter.", no star), build 5 the
-  // right half ("CITY", "Move faster.", star). Laying the content out against
-  // the full width while the surface drew half of it is a native-layer problem
-  // underneath React, and two builds spent guessing at it fixed nothing.
-  //
-  // So there is nothing left to clip. The native splash from the
-  // expo-splash-screen plugin already shows the mark on this exact colour and
-  // renders correctly; this just holds that same colour for the moment between
-  // it hiding and the real screen mounting. Launch is three seconds quicker for
-  // it. Do not reintroduce a JS splash without testing it on a device first.
+  // The animated brand splash used to live here and painted only half the
+  // screen on iOS. It is now an overlay in the root layout (src/ui/BrandSplash)
+  // that sizes itself from the screen edges instead of this route's layout, so
+  // this route only holds the splash colour while auth resolves underneath it.
+  // Do not move the splash back into a route.
   if (initializing || !profileChecked) return <View style={styles.container} />;
 
   if (!user) return <Redirect href={welcomeSeen ? '/auth/sign-in' : '/welcome'} />;
