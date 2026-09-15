@@ -516,6 +516,8 @@ export const UR: Record<string, string> = {
   "Propose your route & fare · driver accepts or counters": "اپنا راستہ اور کرایہ تجویز کریں · ڈرائیور قبول کرے یا جوابی پیشکش کرے",
   "The whole car to yourself": "پوری گاڑی صرف آپ کی",
   "Find your Customers": "اپنے گاہک تلاش کریں",
+  "Find my Customers": "میرے گاہک تلاش کریں",
+  "My questions": "میرے سوالات",
   "Move your goods, or bring customers to your door. Pick one.": "اپنا سامان بھیجیں، یا گاہکوں کو اپنی دکان تک لائیں۔ ایک منتخب کریں۔",
   "Reach the people who pass your door": "اپنی دکان کے قریب گزرنے والوں تک پہنچیں",
   "What it costs": "قیمت کیا ہے",

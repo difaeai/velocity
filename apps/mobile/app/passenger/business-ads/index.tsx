@@ -88,13 +88,13 @@ export default function BusinessAdsHome() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/business'))}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/passenger/home'))}
           hitSlop={12}
           style={styles.headerBtn}
         >
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Find your Customers</Text>
+        <Text style={styles.headerTitle}>Find my Customers</Text>
         <View style={styles.headerBtn} />
       </View>
 

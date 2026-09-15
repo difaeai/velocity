@@ -312,7 +312,7 @@ export const adminReviewBusinessAdApplication = onCall(async (req) => {
   const copy: Record<BusinessAdApplicationStatus, { title: string; body: string }> = {
     approved: {
       title: 'Your advertising plan is live 🎉',
-      body: `Approved for ${radiusKm} km and ${months} months. Open Business → Find your Customers to publish your offer.`,
+      body: `Approved for ${radiusKm} km and ${months} months. Open Find my Customers from the menu to publish your offer.`,
     },
     rejected: {
       title: 'Advertising request rejected',
