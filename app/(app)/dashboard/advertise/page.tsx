@@ -14,6 +14,9 @@
  *                 gated on a second review (by design — an approved advertiser
  *                 publishes freely), so this tab is the lever for the offer that
  *                 should never have gone out.
+ *   Queries     — reports from customers and businesses about Queries
+ *                 conversations, with the messages as they were when reported.
+ *                 Block closes the pair for both sides; Dismiss leaves it be.
  *   Settings    — prices per band, the notification budget, and the accounts
  *                 advertisers pay into. Changing a price never re-prices a plan
  *                 already sold; the quote is snapshotted at submission.
@@ -26,19 +29,20 @@
  */
 
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { adminApi } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card, StatCard, Badge } from '@/components/ui';
 
-type Tab = 'requests' | 'advertisers' | 'offers' | 'settings';
+type Tab = 'requests' | 'advertisers' | 'offers' | 'queries' | 'settings';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'requests', label: 'Requests' },
   { key: 'advertisers', label: 'Advertisers' },
   { key: 'offers', label: 'Live offers' },
+  { key: 'queries', label: 'Queries' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -102,8 +106,41 @@ interface LiveAd {
   notified?: number;
   reach?: number;
   clicks?: number;
+  viewers?: number;
+  queries?: number;
   moderationReason?: string | null;
   createdAt?: { seconds: number };
+}
+
+interface QueryReport {
+  id: string;
+  queryId: string;
+  adTitle?: string | null;
+  businessName?: string | null;
+  askerName?: string | null;
+  reporterSide: 'business' | 'customer';
+  reason: string;
+  note?: string | null;
+  alsoBlocked?: boolean;
+  messages?: { from: string; text: string; atMs: number | null }[];
+  status: string;
+  createdAt?: { seconds: number };
+}
+
+interface QueryThread {
+  id: string;
+  adTitle?: string;
+  businessName?: string;
+  askerName?: string;
+  lastMessage?: string;
+  lastFrom?: string;
+  status?: string;
+  messageCount?: number;
+  reportCount?: number;
+  blockedByBusiness?: boolean;
+  blockedByCustomer?: boolean;
+  blockedByAdmin?: boolean;
+  lastMessageAt?: { seconds: number };
 }
 
 function when(ts?: { seconds: number }): string {
@@ -124,6 +161,8 @@ export default function AdvertisePage() {
   const [requests, setRequests] = useState<AdRequest[]>([]);
   const [advertisers, setAdvertisers] = useState<Advertiser[]>([]);
   const [ads, setAds] = useState<LiveAd[]>([]);
+  const [reports, setReports] = useState<QueryReport[]>([]);
+  const [threads, setThreads] = useState<QueryThread[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +192,21 @@ export default function AdvertisePage() {
           list.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
           setAds(list);
         },
+        (e) => setError(e.message),
+      ),
+      onSnapshot(
+        query(
+          collection(db, 'businessAdQueryReports'),
+          where('status', '==', 'open'),
+          orderBy('createdAt', 'desc'),
+          limit(100),
+        ),
+        (snap) => setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as QueryReport)),
+        (e) => setError(e.message),
+      ),
+      onSnapshot(
+        query(collection(db, 'businessAdQueries'), orderBy('lastMessageAt', 'desc'), limit(40)),
+        (snap) => setThreads(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as QueryThread)),
         (e) => setError(e.message),
       ),
     ];
@@ -213,6 +267,7 @@ export default function AdvertisePage() {
           >
             {t.label}
             {t.key === 'requests' && requests.length > 0 ? ` (${requests.length})` : ''}
+            {t.key === 'queries' && reports.length > 0 ? ` (${reports.length})` : ''}
           </button>
         ))}
       </div>
@@ -225,6 +280,8 @@ export default function AdvertisePage() {
         <Advertisers rows={advertisers} busy={busy} run={run} />
       ) : tab === 'offers' ? (
         <Offers rows={ads} busy={busy} run={run} />
+      ) : tab === 'queries' ? (
+        <Queries reports={reports} threads={threads} busy={busy} run={run} />
       ) : (
         <Settings />
       )}
@@ -515,13 +572,55 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 // ── Live offers ──────────────────────────────────────────────────────────────
 
 function Offers({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; run: Runner }) {
-  if (rows.length === 0) {
-    return (
-      <Card>
-        <p style={{ color: colors.muted, margin: 0 }}>No offers published yet.</p>
-      </Card>
-    );
-  }
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <RecountSeenBy busy={busy} run={run} />
+      {rows.length === 0 ? (
+        <Card>
+          <p style={{ color: colors.muted, margin: 0 }}>No offers published yet.</p>
+        </Card>
+      ) : (
+        <OfferGrid rows={rows} busy={busy} run={run} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Seen by" began counting on 2026-09-15. Offers already running had opens but
+ * no per-person record, so their Seen by read 0. This rebuilds it from the
+ * impression ledger; it sets absolute numbers, so running it again is harmless.
+ */
+function RecountSeenBy({ busy, run }: { busy: string | null; run: Runner }) {
+  const [result, setResult] = useState<string | null>(null);
+  return (
+    <Card>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 220, color: colors.muted, fontSize: 13 }}>
+          <strong style={{ color: colors.text }}>Recount &ldquo;Seen by&rdquo;</strong> — rebuilds
+          distinct viewers for every offer from the open history. Safe to run more than once.
+          {result ? <div style={{ marginTop: 6, color: colors.success, fontWeight: 700 }}>{result}</div> : null}
+        </div>
+        <Button
+          variant="secondary"
+          disabled={busy === 'recount'}
+          onClick={() =>
+            run('recount', async () => {
+              const r = await adminApi.adminBackfillBusinessAdViewers({});
+              setResult(
+                `Done: ${r.viewers.toLocaleString()} viewers across ${r.ads} offers (${r.stamped} older opens filled in).`,
+              );
+            })
+          }
+        >
+          {busy === 'recount' ? 'Recounting…' : 'Recount now'}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function OfferGrid({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; run: Runner }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
       {rows.map((ad) => {
@@ -550,7 +649,8 @@ function Offers({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; run:
                 {ad.offerDetails}
               </div>
               <div style={{ color: colors.muted, fontSize: 12 }}>
-                {ad.city ?? '—'} · {ad.radiusKm} km · {ad.reach ?? 0} reached · {ad.clicks ?? 0} opened
+                {ad.city ?? '—'} · {ad.radiusKm} km · {ad.reach ?? 0} reached · {ad.viewers ?? 0} seen by ·{' '}
+                {ad.clicks ?? 0} opens · {ad.queries ?? 0} queries
               </div>
               {ad.moderationReason ? (
                 <div style={{ color: colors.danger, fontSize: 12 }}>
@@ -594,6 +694,179 @@ function Offers({ rows, busy, run }: { rows: LiveAd[]; busy: string | null; run:
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+// ── Queries ──────────────────────────────────────────────────────────────────
+
+const REASON_LABEL: Record<string, string> = {
+  spam: 'Spam',
+  abusive: 'Abusive',
+  scam: 'Scam',
+  inappropriate: 'Inappropriate',
+  other: 'Other',
+};
+
+/**
+ * Reports first — they are the only thing on this tab that needs a decision.
+ * The messages shown are the snapshot taken when the report was filed, not the
+ * live thread, so what the reporter saw is what gets judged.
+ */
+function Queries({
+  reports,
+  threads,
+  busy,
+  run,
+}: {
+  reports: QueryReport[];
+  threads: QueryThread[];
+  busy: string | null;
+  run: Runner;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <div>
+        <h3 style={{ margin: '0 0 8px', color: colors.text }}>Open reports</h3>
+        {reports.length === 0 ? (
+          <Card>
+            <p style={{ color: colors.muted, margin: 0 }}>No open reports.</p>
+          </Card>
+        ) : (
+          <div style={{ display: 'grid', gap: 12 }}>
+            {reports.map((r) => {
+              const key = `report-${r.id}`;
+              const working = busy === key;
+              const business = r.businessName ?? 'Business';
+              const customer = r.askerName ?? 'Customer';
+              return (
+                <Card key={r.id}>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Badge label={REASON_LABEL[r.reason] ?? r.reason} color={colors.danger} />
+                      <span style={{ fontSize: 13, color: colors.text, fontWeight: 700 }}>
+                        {r.reporterSide === 'business'
+                          ? `${business} reported ${customer}`
+                          : `${customer} reported ${business}`}
+                      </span>
+                      {r.alsoBlocked ? <Badge label="also blocked" color={colors.warn} /> : null}
+                      <span style={{ marginLeft: 'auto', fontSize: 12, color: colors.muted }}>{when(r.createdAt)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.muted }}>About &ldquo;{r.adTitle ?? '—'}&rdquo;</div>
+                    {r.note ? (
+                      <div style={{ fontSize: 13, color: colors.text, whiteSpace: 'pre-wrap' }}>Note: {r.note}</div>
+                    ) : null}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gap: 6,
+                        maxHeight: 260,
+                        overflowY: 'auto',
+                        padding: 10,
+                        borderRadius: 10,
+                        border: `1px solid ${colors.border}`,
+                      }}
+                    >
+                      {(r.messages ?? []).length === 0 ? (
+                        <span style={{ fontSize: 12, color: colors.muted }}>No messages captured.</span>
+                      ) : (
+                        (r.messages ?? []).map((m, i) => (
+                          <div key={i} style={{ fontSize: 13, color: colors.text }}>
+                            <strong style={{ color: m.from === 'business' ? colors.primary : colors.text }}>
+                              {m.from === 'business' ? business : customer}:
+                            </strong>{' '}
+                            <span style={{ whiteSpace: 'pre-wrap' }}>{m.text}</span>
+                            {m.atMs ? (
+                              <span style={{ fontSize: 11, color: colors.muted }}>
+                                {' '}· {new Date(m.atMs).toLocaleString()}
+                              </span>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Button
+                        variant="danger"
+                        disabled={working}
+                        onClick={() =>
+                          run(key, () =>
+                            adminApi.adminResolveBusinessAdQueryReport({ reportId: r.id, action: 'block' }),
+                          )
+                        }
+                      >
+                        Close conversation
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={working}
+                        onClick={() =>
+                          run(key, () =>
+                            adminApi.adminResolveBusinessAdQueryReport({ reportId: r.id, action: 'dismiss' }),
+                          )
+                        }
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 style={{ margin: '0 0 8px', color: colors.text }}>Recent conversations</h3>
+        {threads.length === 0 ? (
+          <Card>
+            <p style={{ color: colors.muted, margin: 0 }}>No customer questions yet.</p>
+          </Card>
+        ) : (
+          <Card>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {threads.map((t) => {
+                const closedLabel = t.blockedByAdmin
+                  ? 'closed by Velocity'
+                  : t.blockedByBusiness
+                    ? 'blocked by business'
+                    : t.blockedByCustomer
+                      ? 'blocked by customer'
+                      : null;
+                return (
+                  <div
+                    key={t.id}
+                    style={{ display: 'grid', gap: 3, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}
+                  >
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: 13, color: colors.text }}>
+                        {t.askerName ?? 'Customer'} → {t.businessName ?? 'Business'}
+                      </strong>
+                      <Badge
+                        label={t.status === 'waiting' ? 'waiting' : 'answered'}
+                        color={t.status === 'waiting' ? colors.warn : colors.success}
+                      />
+                      {closedLabel ? <Badge label={closedLabel} color={colors.danger} /> : null}
+                      {t.reportCount ? <Badge label={`${t.reportCount} report(s)`} color={colors.danger} /> : null}
+                      <span style={{ marginLeft: 'auto', fontSize: 12, color: colors.muted }}>
+                        {when(t.lastMessageAt)}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.muted }}>
+                      &ldquo;{t.adTitle ?? '—'}&rdquo; · {t.messageCount ?? 0} messages
+                    </div>
+                    <div style={{ fontSize: 13, color: colors.text }}>
+                      {t.lastFrom === 'business' ? t.businessName ?? 'Business' : t.askerName ?? 'Customer'}:{' '}
+                      {t.lastMessage}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

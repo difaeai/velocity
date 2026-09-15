@@ -26,4 +26,10 @@ export { checkNearbyBusinessAds, recordBusinessAdClick } from './nearby';
 export { sendBusinessAdDemoNotification } from './demo';
 export { getBusinessAdDashboard } from './stats';
 export { sendBusinessAdQuery, replyBusinessAdQuery, markBusinessAdQueryRead } from './queries';
+export {
+  setBusinessAdQueryBlock,
+  reportBusinessAdQuery,
+  adminResolveBusinessAdQueryReport,
+} from './moderation';
+export { adminBackfillBusinessAdViewers } from './backfill';
 export { expireBusinessAdPlans } from './expire';

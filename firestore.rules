@@ -1028,6 +1028,7 @@ service cloud.firestore {
       allow read: if isAdmin()
                   || (isSignedIn()
                       && (resource.data.ownerUid == uid()
+                          || resource.data.askerUid == uid()
                           || queryId.matches('^.+_' + uid() + '$')));
       allow write: if false;
 
@@ -1038,6 +1039,21 @@ service cloud.firestore {
                             || get(/databases/$(database)/documents/businessAdQueries/$(queryId)).data.ownerUid == uid()));
         allow write: if false;
       }
+    }
+
+    // ----- businessAdQueryBlocks/{ownerUid}_{askerUid} ------------------------
+    // Who blocked whom. Server-only: the threads mirror the flags for display,
+    // and a client that could write here could unblock itself.
+    match /businessAdQueryBlocks/{blockId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- businessAdQueryReports/{reportId} ----------------------------------
+    // Reports carry a snapshot of both people's messages — admins only.
+    match /businessAdQueryReports/{reportId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ----- businessAdNotifyBudget/{uid}_{day} --------------------------------

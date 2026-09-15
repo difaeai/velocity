@@ -12,7 +12,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':');
 
@@ -475,6 +475,18 @@ test('an offer question is readable by its asker and the business only', async (
   // Refusing that read would kill the listener, and the reply would never show.
   await assertSucceeds(getDoc(doc(stranger, 'businessAdQueries/ad2_stranger1')));
   await assertFails(getDoc(doc(stranger, 'businessAdQueries/ad2_asker1')));
+
+  // The two inbox queries: the business's Queries list and the customer's own.
+  await assertSucceeds(getDocs(query(collection(shop, 'businessAdQueries'), where('ownerUid', '==', 'shop1'))));
+  await assertSucceeds(getDocs(query(collection(asker, 'businessAdQueries'), where('askerUid', '==', 'asker1'))));
+  await assertFails(getDocs(query(collection(stranger, 'businessAdQueries'), where('ownerUid', '==', 'shop1'))));
+
+  // Blocks and reports are server-only; a client that could write a block could
+  // unblock itself, and reports quote both people's messages.
+  await assertFails(getDoc(doc(asker, 'businessAdQueryBlocks/shop1_asker1')));
+  await assertFails(setDoc(doc(asker, 'businessAdQueryBlocks/shop1_asker1'), { byBusiness: false }));
+  await assertFails(getDoc(doc(shop, 'businessAdQueryReports/r1')));
+  await assertSucceeds(getDoc(doc(admin, 'businessAdQueryReports/r1')));
 
   // Every message is a push to someone else's phone, so writes are callable-only.
   await assertFails(setDoc(doc(asker, 'businessAdQueries/ad1_asker1/messages/m2'), { text: 'x' }));

@@ -119,6 +119,11 @@ export default function OfferScreen() {
               <Text style={styles.askTxt}>💬 Ask about this offer</Text>
             </Pressable>
           ) : null}
+          {user && offer.ownerUid !== user.uid ? (
+            <Pressable onPress={() => router.push('/passenger/my-questions')} hitSlop={8} style={styles.myQs}>
+              <Text style={styles.myQsTxt}>See all my questions ›</Text>
+            </Pressable>
+          ) : null}
 
           {offer.contactPhone ? (
             <Pressable
@@ -189,6 +194,8 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
   },
   askTxt: { fontSize: 15, fontWeight: '900', color: colors.primary },
+  myQs: { alignItems: 'center', paddingVertical: 6 },
+  myQsTxt: { fontSize: 12, fontWeight: '800', color: colors.muted },
 
   disclaimer: {
     marginTop: 8,

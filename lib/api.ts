@@ -301,6 +301,14 @@ export const adminApi = {
     },
     { ok: boolean }
   >('adminUpdateBusinessAdSettings'),
+  adminResolveBusinessAdQueryReport: callable<
+    { reportId: string; action: 'dismiss' | 'block' | 'unblock'; note?: string },
+    { ok: boolean }
+  >('adminResolveBusinessAdQueryReport'),
+  adminBackfillBusinessAdViewers: callable<
+    Record<string, never>,
+    { ok: boolean; scanned: number; stamped: number; ads: number; viewers: number }
+  >('adminBackfillBusinessAdViewers'),
 };
 
 /* ── franchise portal ─────────────────────────────────────────────────────

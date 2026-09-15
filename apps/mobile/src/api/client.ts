@@ -1212,6 +1212,13 @@ export const api = {
     'replyBusinessAdQuery',
   ),
   markBusinessAdQueryRead: callable<{ queryId: string }, { ok: boolean }>('markBusinessAdQueryRead'),
+  setBusinessAdQueryBlock: callable<{ queryId: string; blocked: boolean }, { ok: boolean; blocked: boolean }>(
+    'setBusinessAdQueryBlock',
+  ),
+  reportBusinessAdQuery: callable<
+    { queryId: string; reason: BusinessAdQueryReportReason; note?: string; block?: boolean },
+    { ok: boolean; reportId: string }
+  >('reportBusinessAdQuery'),
   /**
    * Sends the mock KFC offer to the CALLER'S OWN phone, so a business owner can
    * see the notification they would be paying for. `delaySeconds` holds it back
@@ -1402,7 +1409,15 @@ export interface BusinessAdQueryThread {
   ownerUnread: number;
   askerUnread: number;
   messageCount: number;
+  /** The shop stopped this customer writing to it. */
+  blockedByBusiness: boolean;
+  /** The customer stopped this shop — and its offers. */
+  blockedByCustomer: boolean;
+  /** Velocity closed the conversation after a report. */
+  blockedByAdmin: boolean;
 }
+
+export type BusinessAdQueryReportReason = 'spam' | 'abusive' | 'scam' | 'inappropriate' | 'other';
 
 export interface BusinessAdQueryMessage {
   id: string;

@@ -24,6 +24,7 @@ import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
+import { routeForNotification } from '../../src/lib/notificationRoute';
 import { themed } from '../../src/theme';
 
 type NotifType = 'ride' | 'promo' | 'system' | 'wallet';
@@ -35,6 +36,8 @@ interface Notification {
   type: NotifType;
   timestamp: Timestamp | null;
   read: boolean;
+  /** Where tapping it goes — the same table the phone's tray uses. */
+  route: string | null;
 }
 
 const TYPE_META: Record<NotifType, { icon: string; color: string }> = {
@@ -80,6 +83,7 @@ export default function NotificationsScreen() {
           type: (d.data().type as NotifType) ?? 'system',
           timestamp: d.data().timestamp as Timestamp | null,
           read: (d.data().read as boolean) ?? false,
+          route: routeForNotification(d.data()),
         })),
       );
     });
@@ -144,7 +148,10 @@ export default function NotificationsScreen() {
               <Pressable
                 key={notif.id}
                 style={[styles.card, !notif.read && styles.cardUnread]}
-                onPress={() => { if (!notif.read) markRead(notif.id); }}
+                onPress={() => {
+                  if (!notif.read) void markRead(notif.id);
+                  if (notif.route) router.push(notif.route as never);
+                }}
               >
                 <View style={[styles.iconWrap, { backgroundColor: `${meta.color}25`, borderColor: `${meta.color}50` }]}>
                   <Text style={styles.icon}>{meta.icon}</Text>
@@ -155,7 +162,10 @@ export default function NotificationsScreen() {
                     {!notif.read && <View style={styles.dot} />}
                   </View>
                   <Text style={styles.body} numberOfLines={2}>{notif.body}</Text>
-                  <Text style={styles.time}>{formatRelativeTime(notif.timestamp)}</Text>
+                  <Text style={styles.time}>
+                    {formatRelativeTime(notif.timestamp)}
+                    {notif.route ? '  ·  Open ›' : ''}
+                  </Text>
                 </View>
               </Pressable>
             );

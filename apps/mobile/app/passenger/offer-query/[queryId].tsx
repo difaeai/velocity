@@ -10,6 +10,10 @@
  *
  * Which side you are is read off the thread (owner or not), falling back to the
  * id for a thread that has not been written yet — that can only be the asker.
+ *
+ * The ⋯ menu reports or blocks the other person. When nobody can write — a
+ * block, Velocity closing it, or (for the customer) a deleted offer — the
+ * composer is replaced by a bar that says why, rather than left to fail on send.
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -33,6 +37,7 @@ import { db } from '../../../src/firebase';
 import { useBusinessAdThread } from '../../../src/hooks/businessAds';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { themed } from '../../../src/theme';
+import { ClosedBar, QueryActionsSheet, ReportSheet } from '../../../src/ui/QueryModeration';
 import { Text, TextInput } from '../../../src/ui/Text';
 
 const TEXT_MAX = 500;
@@ -54,6 +59,11 @@ export default function OfferQueryScreen() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [offer, setOffer] = useState<OfferHead | null>(null);
+  /** null while unknown; false once the offer is deleted or gone. */
+  const [offerLive, setOfferLive] = useState<boolean | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [acting, setActing] = useState(false);
   const listRef = useRef<FlatList<BusinessAdQueryMessage>>(null);
 
   const uid = user?.uid ?? '';
@@ -65,23 +75,29 @@ export default function OfferQueryScreen() {
     return queryId.slice(0, -(uid.length + 1));
   }, [thread, queryId, uid]);
 
-  // The header before the first message: the thread doc does not exist yet, so
-  // the offer itself names what the customer is asking about.
+  // The offer, live. Before the first message it is the only thing naming what
+  // the customer is asking about; after it, it says whether the customer may
+  // still write — a deleted offer takes new questions with it, though the
+  // business can still answer the ones already asked.
   useEffect(() => {
-    if (thread || !adId) return;
+    if (!adId) return;
     return onSnapshot(
       doc(db, 'businessAds', adId),
       (snap) => {
-        if (!snap.exists()) return;
+        if (!snap.exists()) {
+          setOfferLive(false);
+          return;
+        }
+        setOfferLive(snap.get('status') !== 'removed');
         setOffer({
           title: (snap.get('title') as string) ?? '',
           businessName: (snap.get('businessName') as string) ?? '',
           imageUrl: (snap.get('imageUrl') as string | null) ?? null,
         });
       },
-      () => {},
+      () => setOfferLive(false),
     );
-  }, [thread, adId]);
+  }, [adId]);
 
   // Opening the conversation reads it. Only asks the server when there is
   // actually something unread on this side, so scrolling costs nothing.
@@ -121,7 +137,69 @@ export default function OfferQueryScreen() {
   }
 
   const counterpart = isBusiness ? (thread?.askerName ?? 'Customer') : (head?.businessName ?? 'Business');
-  const showPrompts = !isBusiness && !loading && messages.length === 0;
+
+  const iBlocked = !!thread && (isBusiness ? thread.blockedByBusiness : thread.blockedByCustomer);
+  const theyBlocked = !!thread && (isBusiness ? thread.blockedByCustomer : thread.blockedByBusiness);
+  const closedByVelocity = !!thread?.blockedByAdmin;
+  const offerEnded = !isBusiness && offerLive === false;
+  const canWrite = !iBlocked && !theyBlocked && !closedByVelocity && !offerEnded;
+  const showPrompts = !isBusiness && !loading && messages.length === 0 && canWrite;
+
+  async function setBlocked(next: boolean) {
+    if (!queryId) return;
+    setActing(true);
+    try {
+      await api.setBusinessAdQueryBlock({ queryId, blocked: next });
+    } catch (e) {
+      Alert.alert('Could not change that', (e as { message?: string }).message ?? 'Try again.');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  function confirmBlock() {
+    setMenuOpen(false);
+    Alert.alert(
+      `Block ${counterpart}?`,
+      isBusiness
+        ? 'They won’t be able to send you questions about any of your offers. You can unblock them later.'
+        : 'They won’t be able to message you, and you’ll stop getting their offers. You can unblock them later.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: () => void setBlocked(true) },
+      ],
+    );
+  }
+
+  async function submitReport(reason: Parameters<typeof api.reportBusinessAdQuery>[0]['reason'], block: boolean) {
+    if (!queryId) return;
+    setActing(true);
+    try {
+      await api.reportBusinessAdQuery({ queryId, reason, block });
+      setReportOpen(false);
+      Alert.alert(
+        'Thanks for telling us',
+        block
+          ? 'Velocity will review this conversation. You won’t hear from them again.'
+          : 'Velocity will review this conversation.',
+      );
+    } catch (e) {
+      Alert.alert('Report not sent', (e as { message?: string }).message ?? 'Try again.');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  const closed = closedByVelocity
+    ? {
+        title: 'Closed by Velocity',
+        body: 'This conversation was closed after a report. Contact support if you think this is a mistake.',
+      }
+    : iBlocked
+      ? { title: `You blocked ${counterpart}`, body: 'Unblock to send messages again.' }
+      : theyBlocked
+        ? { title: 'You can’t reply here', body: 'The other side is no longer accepting messages.' }
+        : { title: 'This offer has ended', body: 'You can still read the conversation, but new questions can’t be sent.' };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -138,7 +216,13 @@ export default function OfferQueryScreen() {
             {isBusiness ? 'Customer question' : 'Ask the business'}
           </Text>
         </View>
-        <View style={{ width: 22 }} />
+        {thread ? (
+          <Pressable onPress={() => setMenuOpen(true)} hitSlop={12} style={styles.moreBtn}>
+            <Text style={styles.more}>⋯</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 22 }} />
+        )}
       </View>
 
       {/* Android runs edge-to-edge on SDK 56 and ignores adjustResize, so the
@@ -205,6 +289,15 @@ export default function OfferQueryScreen() {
           </View>
         ) : null}
 
+        {!canWrite ? (
+          <ClosedBar
+            title={closed.title}
+            body={closed.body}
+            actionLabel={iBlocked && !closedByVelocity ? 'Unblock' : undefined}
+            onAction={() => void setBlocked(false)}
+            busy={acting}
+          />
+        ) : (
         <View style={styles.composer}>
           <TextInput
             style={styles.input}
@@ -223,7 +316,32 @@ export default function OfferQueryScreen() {
             <Text style={styles.sendTxt}>{sending ? '…' : '➤'}</Text>
           </Pressable>
         </View>
+        )}
       </KeyboardAvoidingView>
+
+      <QueryActionsSheet
+        visible={menuOpen}
+        name={counterpart}
+        blocked={iBlocked}
+        onClose={() => setMenuOpen(false)}
+        onReport={() => {
+          setMenuOpen(false);
+          setReportOpen(true);
+        }}
+        onBlock={confirmBlock}
+        onUnblock={() => {
+          setMenuOpen(false);
+          void setBlocked(false);
+        }}
+      />
+      <ReportSheet
+        visible={reportOpen}
+        name={counterpart}
+        alreadyBlocked={iBlocked}
+        sending={acting}
+        onClose={() => setReportOpen(false)}
+        onSubmit={(reason, block) => void submitReport(reason, block)}
+      />
     </SafeAreaView>
   );
 }
@@ -241,6 +359,8 @@ const styles = themed(() => StyleSheet.create({
     gap: 12,
   },
   back: { fontSize: 22, color: colors.text },
+  moreBtn: { width: 22, alignItems: 'flex-end' },
+  more: { fontSize: 22, fontWeight: '900', color: colors.text },
   headerMid: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
   headerSub: { fontSize: 11, fontWeight: '700', color: colors.muted, marginTop: 1 },

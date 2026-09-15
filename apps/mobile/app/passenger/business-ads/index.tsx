@@ -507,6 +507,7 @@ function Live({
  * own phone and counts it in nobody's advertising results.
  */
 function DemoNotificationCard() {
+  const router = useRouter();
   const [busy, setBusy] = useState<'now' | 'later' | null>(null);
   const [sent, setSent] = useState<{ title: string; body: string; pushed: boolean } | null>(null);
   const { permission, ready, ask, openSettings } = useNotificationPermission();
@@ -634,6 +635,16 @@ function DemoNotificationCard() {
           Tap it, then close the app — proves the offer arrives with Velocity closed.
         </Text>
       ) : null}
+
+      {/* The other half of what they are buying: customers asking about it. */}
+      <Pressable style={styles.demoAsk} onPress={() => router.push('/passenger/offer-query/demo')}>
+        <Text style={styles.demoAskIcon}>💬</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.demoAskTitle}>Try a customer question</Text>
+          <Text style={styles.demoAskBody}>Ask the sample KFC branch something, or answer one as the business.</Text>
+        </View>
+        <Text style={styles.demoAskArrow}>›</Text>
+      </Pressable>
 
       {sent && sent.pushed ? (
         <View style={styles.demoSent}>
@@ -1058,6 +1069,20 @@ const styles = themed(() => StyleSheet.create({
   },
   demoLaterTxt: { fontSize: 14, fontWeight: '900', color: colors.primary },
   demoHint: { fontSize: 11, fontWeight: '600', color: colors.muted, textAlign: 'center', marginTop: -4 },
+  demoAsk: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: 12,
+  },
+  demoAskIcon: { fontSize: 20 },
+  demoAskTitle: { fontSize: 13, fontWeight: '900', color: colors.text },
+  demoAskBody: { fontSize: 11, fontWeight: '600', color: colors.muted, lineHeight: 16, marginTop: 1 },
+  demoAskArrow: { fontSize: 22, fontWeight: '900', color: colors.primary },
   demoSent: {
     borderRadius: 12,
     backgroundColor: colors.glassLime,

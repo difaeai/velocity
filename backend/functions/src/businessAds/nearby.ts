@@ -40,6 +40,7 @@ import { requireAuth, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getBusinessAdSettings, maxRadiusKm, pkDay } from './config';
 import { candidateCells } from './geo';
+import { businessesBlockedByCustomer } from './moderation';
 
 const nearbySchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -107,6 +108,9 @@ export const checkNearbyBusinessAds = onCall(async (req) => {
     .get();
 
   const nowMs = Date.now();
+  // A customer who blocked a business in Queries has said they want nothing
+  // from it — its offers stop reaching them too.
+  const blockedOwners = snap.empty ? new Set<string>() : await businessesBlockedByCustomer(uid);
   const cooldownMs = settings.notifyCooldownHours * 3600 * 1000;
 
   // Inside the radius the advertiser paid for, and on a plan that has not lapsed.
@@ -114,6 +118,7 @@ export const checkNearbyBusinessAds = onCall(async (req) => {
     .map((doc) => {
       const center = doc.get('center') as { lat: number; lng: number } | undefined;
       if (!center) return null;
+      if (blockedOwners.has(doc.get('ownerUid') as string)) return null;
       const distanceM = haversineM(lat, lng, center.lat, center.lng);
       const radiusKm = (doc.get('radiusKm') as number | undefined) ?? 0;
       const expiry = (doc.get('planExpiresAt') as Timestamp | null | undefined)?.toMillis?.();
