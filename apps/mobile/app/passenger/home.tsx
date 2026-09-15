@@ -480,11 +480,12 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>{walletLabel}</Text>
                   </Pressable>
 
-                  {/* "Business" rather than "Business delivery": the hub behind
-                      it carries both deliveries and Find your Customers. */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business')}>
-                    <Text style={styles.menuItemIcon}>💼</Text>
-                    <Text style={styles.menuItemText}>Business</Text>
+                  {/* Straight to the advertising screen — no hub in between. The
+                      business-delivery quote form that used to share this entry
+                      was removed (2026-09-15). */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business-ads')}>
+                    <Text style={styles.menuItemIcon}>📣</Text>
+                    <Text style={styles.menuItemText}>Find my Customers</Text>
                   </Pressable>
 
                   {/* Questions this rider asked businesses about their offers —
