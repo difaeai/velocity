@@ -94,6 +94,11 @@ export default function DemoOfferScreen() {
           <Text style={styles.dirTxt}>🧭 Get directions</Text>
         </Pressable>
 
+        {/* The Queries half of the demo — local only, nothing is sent. */}
+        <Pressable style={styles.dirBtn} onPress={() => router.push('/passenger/offer-query/demo')}>
+          <Text style={styles.dirTxt}>💬 Ask about this offer</Text>
+        </Pressable>
+
         <View style={{ height: 4 }} />
         <PrimaryButton
           label={sending ? 'Close the app now…' : 'Send it again in 10 seconds'}

@@ -146,6 +146,9 @@ function toThread(id: string, d: Record<string, unknown>): BusinessAdQueryThread
     ownerUnread: (d.ownerUnread as number) ?? 0,
     askerUnread: (d.askerUnread as number) ?? 0,
     messageCount: (d.messageCount as number) ?? 0,
+    blockedByBusiness: d.blockedByBusiness === true,
+    blockedByCustomer: d.blockedByCustomer === true,
+    blockedByAdmin: d.blockedByAdmin === true,
   };
 }
 
@@ -157,6 +160,19 @@ function toThread(id: string, d: Record<string, unknown>): BusinessAdQueryThread
  * is sent. The rules only allow this query because it is constrained by ownerUid.
  */
 export function useBusinessAdQueries(enabled = true) {
+  return useQueryInbox('ownerUid', enabled);
+}
+
+/**
+ * The customer's side: every offer they have asked a business about. Without
+ * this the only ways back into a conversation were the reply notification or
+ * the offer itself — and a deleted offer took the second one away.
+ */
+export function useMyBusinessAdQuestions() {
+  return useQueryInbox('askerUid', true);
+}
+
+function useQueryInbox(side: 'ownerUid' | 'askerUid', enabled: boolean) {
   const { user } = useAuth();
   const [threads, setThreads] = useState<BusinessAdQueryThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,7 +184,7 @@ export function useBusinessAdQueries(enabled = true) {
     if (!user || !enabled) return;
     const q = query(
       collection(db, 'businessAdQueries'),
-      where('ownerUid', '==', user.uid),
+      where(side, '==', user.uid),
       orderBy('lastMessageAt', 'desc'),
       limit(50),
     );
@@ -184,9 +200,12 @@ export function useBusinessAdQueries(enabled = true) {
         setError(true);
       },
     );
-  }, [user, enabled]);
+  }, [user, enabled, side]);
 
-  const unread = threads.reduce((n, t) => n + (t.ownerUnread > 0 ? 1 : 0), 0);
+  const unread = threads.reduce(
+    (n, t) => n + ((side === 'ownerUid' ? t.ownerUnread : t.askerUnread) > 0 ? 1 : 0),
+    0,
+  );
   // Nothing to listen to (signed out, or no plan) is not "still loading".
   return { threads, unread, loading: active && loading, error };
 }

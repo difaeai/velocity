@@ -306,6 +306,10 @@ export {
   sendBusinessAdQuery,
   replyBusinessAdQuery,
   markBusinessAdQueryRead,
+  setBusinessAdQueryBlock,
+  reportBusinessAdQuery,
+  adminResolveBusinessAdQueryReport,
+  adminBackfillBusinessAdViewers,
 } from './businessAds';
 
 // Admin: broadcast push notification

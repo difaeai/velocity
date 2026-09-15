@@ -8,6 +8,7 @@ import Constants from 'expo-constants';
 
 import { AuthProvider } from '../src/auth/AuthContext';
 import { hydrateResourceCache } from '../src/lib/cachedResource';
+import { routeForNotification } from '../src/lib/notificationRoute';
 import {
   getLanguageVersion,
   loadLanguage,
@@ -92,26 +93,8 @@ export default function RootLayout() {
     const Notifications = require('expo-notifications');
 
     const routeFromData = (data: Record<string, string>) => {
-      if (data.screen === 'request-detail' && data.tripId) {
-        router.push(`/driver/request-detail/${data.tripId}`);
-      } else if (data.screen === 'pool-join' && data.code) {
-        // Daily-route pool alert → straight to the join screen for that pool.
-        router.push(`/passenger/pool-join/${data.code}`);
-      } else if (data.screen === 'business-offer-demo') {
-        // The "see it on your phone" demo. No adId, no click to record — it is
-        // the sample offer, rendered from a constant.
-        router.push('/passenger/offer/demo');
-      } else if (data.screen === 'business-offer' && data.adId) {
-        // A nearby business offer. Opening this screen is the tap the advertiser
-        // is paying to measure, so it must land on the offer and nowhere else.
-        router.push(`/passenger/offer/${data.adId}`);
-      } else if (data.screen === 'business-query' && data.queryId) {
-        // A question about an offer (to the business) or its answer (to the
-        // customer). The same conversation screen serves both sides.
-        router.push(`/passenger/offer-query/${data.queryId}`);
-      } else if (data.screen === 'business-ads') {
-        router.push('/passenger/business-ads');
-      }
+      const to = routeForNotification(data);
+      if (to) router.push(to as never);
     };
 
     // Handle tap on a notification that arrived while the app was in foreground/background

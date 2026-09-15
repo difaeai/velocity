@@ -31,6 +31,7 @@ import { requireAuth, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { firstNameOf } from '../trips/poolRoster';
 import { pkDay } from './config';
+import { assertNotBlocked, getPairBlock } from './moderation';
 
 const TEXT_MAX = 500;
 
@@ -61,6 +62,7 @@ export const sendBusinessAdQuery = onCall(async (req) => {
 
   const ownerUid = ad.get('ownerUid') as string;
   if (ownerUid === uid) invalid('This is your own offer.');
+  assertNotBlocked(await getPairBlock(ownerUid, uid), 'customer');
 
   const id = queryId(adId, uid);
   const threadRef = db.doc(`businessAdQueries/${id}`);
@@ -132,6 +134,7 @@ export const replyBusinessAdQuery = onCall(async (req) => {
   const thread = await threadRef.get();
   if (!thread.exists) invalid('That conversation no longer exists.');
   if (thread.get('ownerUid') !== uid) invalid('That question was sent to another business.');
+  assertNotBlocked(await getPairBlock(uid, thread.get('askerUid') as string), 'business');
 
   const now = FieldValue.serverTimestamp();
   const batch = db.batch();

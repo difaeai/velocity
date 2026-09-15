@@ -224,13 +224,23 @@ export function QueryRow({
   thread,
   last,
   onPress,
+  side = 'business',
 }: {
   thread: BusinessAdQueryThread;
   last?: boolean;
   onPress: () => void;
+  /** Whose inbox this row sits in. The customer sees the business, not themselves. */
+  side?: 'business' | 'customer';
 }) {
-  const unread = thread.ownerUnread > 0;
-  const initial = (thread.askerName.trim()[0] ?? '?').toUpperCase();
+  const asBusiness = side === 'business';
+  const unread = (asBusiness ? thread.ownerUnread : thread.askerUnread) > 0;
+  const name = asBusiness ? thread.askerName : thread.businessName;
+  const initial = (name.trim()[0] ?? '?').toUpperCase();
+  const mineLast = thread.lastFrom === (asBusiness ? 'business' : 'customer');
+  const blocked = thread.blockedByAdmin || thread.blockedByBusiness || thread.blockedByCustomer;
+  // The pill is the thing to act on: the business owes an answer, or the
+  // customer has one waiting to be read.
+  const pill = blocked ? 'CLOSED' : asBusiness ? (thread.status === 'waiting' ? 'REPLY' : null) : unread ? 'NEW' : null;
   return (
     <Pressable
       onPress={onPress}
@@ -242,7 +252,7 @@ export function QueryRow({
       <View style={{ flex: 1, gap: 2 }}>
         <View style={s.rowBetween}>
           <Text style={[s.qName, unread && { fontWeight: '900' }]} numberOfLines={1}>
-            {thread.askerName}
+            {name}
           </Text>
           <Text style={s.feedTime}>
             {thread.lastMessageAtMs ? timeAgo(thread.lastMessageAtMs / 1000) : ''}
@@ -251,12 +261,12 @@ export function QueryRow({
         <Text style={s.qOffer} numberOfLines={1}>about “{thread.adTitle}”</Text>
         <View style={s.rowBetween}>
           <Text style={[s.qMsg, unread && { color: colors.text }]} numberOfLines={1}>
-            {thread.lastFrom === 'business' ? 'You: ' : ''}
+            {mineLast ? 'You: ' : ''}
             {thread.lastMessage}
           </Text>
-          {thread.status === 'waiting' ? (
-            <View style={s.pill}>
-              <Text style={s.pillTxt}>REPLY</Text>
+          {pill ? (
+            <View style={[s.pill, pill === 'CLOSED' && s.pillMuted]}>
+              <Text style={[s.pillTxt, pill === 'CLOSED' && { color: colors.muted }]}>{pill}</Text>
             </View>
           ) : null}
         </View>
@@ -375,4 +385,5 @@ const s = themed(() => StyleSheet.create({
     paddingVertical: 2,
   },
   pillTxt: { fontSize: 9, fontWeight: '900', color: colors.btnText, letterSpacing: 0.6 },
+  pillMuted: { backgroundColor: colors.glassChip },
 }));

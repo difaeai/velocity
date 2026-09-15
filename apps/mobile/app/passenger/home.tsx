@@ -487,6 +487,13 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Business</Text>
                   </Pressable>
 
+                  {/* Questions this rider asked businesses about their offers —
+                      the only way back into one whose offer was deleted. */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/my-questions')}>
+                    <Text style={styles.menuItemIcon}>🏷️</Text>
+                    <Text style={styles.menuItemText}>My questions</Text>
+                  </Pressable>
+
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/special-rides')}>
                     <Text style={styles.menuItemIcon}>🚗</Text>
                     <Text style={styles.menuItemText}>Special Rides</Text>
