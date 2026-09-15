@@ -22,6 +22,7 @@ import {
   subscribeTheme,
   type ThemeMode,
 } from '../src/theme';
+import { BrandSplash } from '../src/ui/BrandSplash';
 import { UpdateGate } from '../src/ui/UpdateGate';
 
 LogBox.ignoreLogs([
@@ -136,6 +137,10 @@ export default function RootLayout() {
         <Fragment key={`${themeVersion}:${languageVersion}`}>
           <Slot />
         </Fragment>
+        {/* Last, so it paints over the routes mounting underneath it, and
+            outside the keyed Fragment so a theme switch cannot restart it.
+            Mounts in the same render that hides the native splash. */}
+        <BrandSplash />
       </AuthProvider>
     </SafeAreaProvider>
   );
