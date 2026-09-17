@@ -21,6 +21,12 @@
  *   npm run publish:version -- --version 1.4.0 --build 19
  *   npm run publish:version -- --min-version 1.4.0     # forces the update (drops Cancel)
  *   npm run publish:version -- --disable               # switch the prompt off
+ *   npm run publish:version -- --platform ios          # App Store release (after Apple releases it)
+ *
+ * --platform ios writes under `ios` in the same doc and never touches the Play
+ * fields. The two must stay apart: EAS counts build numbers per platform, and an
+ * iOS install that compared itself against the Android versionCode was sent to
+ * Google Play — App Review rejected 1.9.0 (6) for exactly that (Guideline 4).
  *
  * Credentials: the repo service-account JSON, or GOOGLE_APPLICATION_CREDENTIALS.
  */
@@ -43,6 +49,7 @@ function arg(name) {
   return i !== -1 ? process.argv[i + 1] : undefined;
 }
 const has = (name) => process.argv.includes(`--${name}`);
+const PLATFORM = arg('platform') ?? 'android';
 
 /** The version humans see, straight from the app config that built the AAB. */
 function versionFromAppJson() {
@@ -60,11 +67,11 @@ function versionFromAppJson() {
 function buildFromEas() {
   const out = execFileSync(
     'npx',
-    ['eas-cli', 'build:version:get', '--platform', 'android', '--non-interactive'],
+    ['eas-cli', 'build:version:get', '--platform', PLATFORM, '--non-interactive'],
     { cwd: path.join(REPO, 'apps/mobile'), encoding: 'utf8', shell: true },
   );
-  const m = out.match(/versionCode\s*-\s*(\d+)/i);
-  if (!m) throw new Error(`Could not read versionCode from eas output:\n${out}`);
+  const m = out.match(/(?:versionCode|buildNumber)\s*-\s*(\d+)/i);
+  if (!m) throw new Error(`Could not read the build number from eas output:\n${out}`);
   return Number(m[1]);
 }
 
@@ -82,6 +89,9 @@ function releaseNotesFor(version) {
 }
 
 async function main() {
+  if (PLATFORM !== 'android' && PLATFORM !== 'ios') {
+    throw new Error(`--platform must be android or ios, not "${PLATFORM}".`);
+  }
   const dryRun = has('dry-run');
   const version = arg('version') ?? versionFromAppJson();
   const build = Number(arg('build') ?? buildFromEas());
@@ -94,18 +104,22 @@ async function main() {
   // side effect of shipping a release.
   const minVersion = arg('min-version');
 
-  const payload = {
+  const release = {
     enabled: !has('disable'),
     latestVersion: version,
     latestBuild: build,
-    storeUrl: STORE_URL,
-    updatedAt: FieldValue.serverTimestamp(),
   };
   const notes = releaseNotesFor(version);
-  if (notes) payload.releaseNotes = notes;
-  if (minVersion) payload.minSupportedVersion = minVersion;
+  if (notes) release.releaseNotes = notes;
+  if (minVersion) release.minSupportedVersion = minVersion;
 
-  console.log('config/appVersion ←');
+  // iOS carries no storeUrl: the app always opens its own App Store page.
+  const payload =
+    PLATFORM === 'ios'
+      ? { ios: release, updatedAt: FieldValue.serverTimestamp() }
+      : { ...release, storeUrl: STORE_URL, updatedAt: FieldValue.serverTimestamp() };
+
+  console.log(`config/appVersion (${PLATFORM}) ←`);
   for (const [k, v] of Object.entries(payload)) {
     console.log(`  ${k}: ${k === 'updatedAt' ? '<serverTimestamp>' : JSON.stringify(v)}`);
   }

@@ -1,5 +1,5 @@
 /**
- * "There's a newer version on the Play Store" — the check behind the update prompt.
+ * "There's a newer version on the store" — the check behind the update prompt.
  * ----------------------------------------------------------------------------
  * WHY A CONFIG DOC AND NOT THE PLAY API
  * -------------------------------------
@@ -33,6 +33,7 @@
  */
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -50,13 +51,22 @@ export { compareVersions, describeUpdate, evaluateUpdate, parseBuildNumber } fro
 const ANDROID_PACKAGE = 'com.velocityridzpk.app';
 export const PLAY_URL = `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`;
 
+/**
+ * App Store product page (App Store Connect app id, see eas.json `ascAppId`).
+ * The ONLY place an iOS Update button may send anyone — Guideline 4.
+ */
+const APP_STORE_ID = '6810774199';
+export const APP_STORE_URL = `https://apps.apple.com/app/id${APP_STORE_ID}`;
+/** Same page via the App Store app's own scheme, which skips Safari entirely. */
+export const APP_STORE_NATIVE_URL = `itms-apps://apps.apple.com/app/id${APP_STORE_ID}`;
+
 /** The version string of the running build. */
 export function currentAppVersion(): string {
   return Constants.expoConfig?.version ?? '0.0.0';
 }
 
 /**
- * The running build's Android versionCode, or null when this build can't tell us.
+ * The running build number (Android versionCode / iOS CFBundleVersion), or null when this build can't tell us.
  *
  * `Application.nativeBuildVersion` is a string ("13") baked into the binary at
  * build time, which is exactly right for EAS remote versioning: it reports the
@@ -83,11 +93,24 @@ export async function checkForAppUpdate(): Promise<AvailableUpdate | null> {
   try {
     const snap = await getDoc(doc(db, 'config', 'appVersion'));
     if (!snap.exists()) return null;
+    // Android and iOS number their builds independently, so each platform reads
+    // only its own release and only ever links to its own store.
+    if (Platform.OS === 'ios') {
+      return evaluateUpdate(
+        snap.data() as VersionConfig,
+        currentAppVersion(),
+        currentBuildNumber(),
+        APP_STORE_URL,
+        'ios',
+      );
+    }
+    if (Platform.OS !== 'android') return null;
     return evaluateUpdate(
       snap.data() as VersionConfig,
       currentAppVersion(),
       currentBuildNumber(),
       PLAY_URL,
+      'android',
     );
   } catch {
     return null;

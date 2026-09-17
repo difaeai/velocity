@@ -9,14 +9,32 @@
  * an old build — so it is deliberately free of I/O.
  */
 
-/** Shape of `config/appVersion`, as written by the admin console. */
-export interface VersionConfig {
+/** Which store a build was installed from — decides what it compares against. */
+export type StorePlatform = 'android' | 'ios';
+
+/** The published release for ONE store. */
+export interface PlatformVersionConfig {
   enabled?: boolean;
   latestVersion?: string;
   latestBuild?: number;
   minSupportedVersion?: string;
   releaseNotes?: string;
   storeUrl?: string;
+}
+
+/**
+ * Shape of `config/appVersion`, as written by the admin console.
+ *
+ * The top-level fields are the Play Store release (they predate iOS and every
+ * shipped Android build reads them there). The App Store release lives under
+ * `ios`, and it has to be separate: EAS numbers builds per platform, so Android
+ * sits at versionCode 30-something while iOS is at build 6. An iOS install that
+ * compared itself against the Android number was told it was out of date and
+ * sent to Google Play — which is exactly what App Review rejected 1.9.0 (6) for
+ * under Guideline 4.
+ */
+export interface VersionConfig extends PlatformVersionConfig {
+  ios?: PlatformVersionConfig;
 }
 
 export interface AvailableUpdate {
@@ -42,6 +60,8 @@ export interface AvailableUpdate {
   releaseNotes: string | null;
   /** Where the Update button sends the user. */
   storeUrl: string;
+  /** "Play Store" / "App Store", for the prompt copy. */
+  storeName: string;
   /**
    * True when the running build is below the published minimum. The prompt then
    * drops its Cancel button — reserved for releases that genuinely cannot
@@ -99,24 +119,39 @@ export function compareVersions(a: string, b: string): number {
  * published, newer version: no config, `enabled: false`, no version or build
  * published at all, or a build that is already current or ahead.
  *
- * `build` is the running Android versionCode, or null when this build cannot
- * report one (EAS remote versioning keeps it out of source). Build numbers are
- * therefore only compared when BOTH sides are known; the version string is the
- * path that always works.
+ * `build` is the running build number (Android versionCode / iOS
+ * CFBundleVersion), or null when this build cannot report one. Build numbers
+ * are therefore only compared when BOTH sides are known; the version string is
+ * the path that always works.
+ *
+ * `platform` picks the release to compare against. iOS only ever reads
+ * `cfg.ios` — never the top-level Play release, whose build numbers mean
+ * nothing on iOS — and only ever sends the user to `storeUrl` as given (the App
+ * Store product page), ignoring any admin-typed link: App Review requires the
+ * Update button to open the app's App Store page and nothing else.
  */
 export function evaluateUpdate(
   cfg: VersionConfig | undefined | null,
   version: string,
   build: number | null,
-  fallbackStoreUrl: string,
+  storeUrl: string,
+  platform: StorePlatform = 'android',
 ): AvailableUpdate | null {
   if (!cfg) return null;
-  // Not published yet, or deliberately switched off: say nothing.
+  // Master switch: off means off on every platform.
   if (cfg.enabled === false) return null;
 
-  const latestVersion = typeof cfg.latestVersion === 'string' ? cfg.latestVersion.trim() : '';
+  const release: PlatformVersionConfig | undefined = platform === 'ios' ? cfg.ios : cfg;
+  if (!release || typeof release !== 'object') return null;
+  // Not published yet, or deliberately switched off: say nothing.
+  if (release.enabled === false) return null;
+
+  const latestVersion =
+    typeof release.latestVersion === 'string' ? release.latestVersion.trim() : '';
   const latestBuild =
-    typeof cfg.latestBuild === 'number' && Number.isFinite(cfg.latestBuild) ? cfg.latestBuild : null;
+    typeof release.latestBuild === 'number' && Number.isFinite(release.latestBuild)
+      ? release.latestBuild
+      : null;
 
   // Nothing to compare against at all.
   if (!latestVersion && latestBuild === null) return null;
@@ -128,9 +163,11 @@ export function evaluateUpdate(
   if (!versionBehind && !buildBehind) return null;
 
   const minVersion =
-    typeof cfg.minSupportedVersion === 'string' ? cfg.minSupportedVersion.trim() : '';
-  const storeUrl =
-    typeof cfg.storeUrl === 'string' && cfg.storeUrl.trim() ? cfg.storeUrl.trim() : fallbackStoreUrl;
+    typeof release.minSupportedVersion === 'string' ? release.minSupportedVersion.trim() : '';
+  const url =
+    platform === 'android' && typeof release.storeUrl === 'string' && release.storeUrl.trim()
+      ? release.storeUrl.trim()
+      : storeUrl;
 
   return {
     latestVersion: latestVersion || version,
@@ -141,10 +178,11 @@ export function evaluateUpdate(
     // reaching this line without it means the build gap is the whole story.
     sameVersion: !versionBehind,
     releaseNotes:
-      typeof cfg.releaseNotes === 'string' && cfg.releaseNotes.trim()
-        ? cfg.releaseNotes.trim()
+      typeof release.releaseNotes === 'string' && release.releaseNotes.trim()
+        ? release.releaseNotes.trim()
         : null,
-    storeUrl,
+    storeUrl: url,
+    storeName: platform === 'ios' ? 'App Store' : 'Play Store',
     mandatory: !!minVersion && compareVersions(minVersion, version) > 0,
   };
 }
@@ -160,16 +198,16 @@ export function evaluateUpdate(
  */
 export function describeUpdate(update: AvailableUpdate): string {
   if (!update.sameVersion) {
-    return `Version ${update.latestVersion} is available on the Play Store — you're on ${update.currentVersion}.`;
+    return `Version ${update.latestVersion} is available on the ${update.storeName} — you're on ${update.currentVersion}.`;
   }
   // Same version string, so the build numbers are the difference. `evaluateUpdate`
   // only returns a same-version update when both builds are known, but the
   // fallback keeps a malformed config from producing "you're on null".
   if (update.latestBuild !== null && update.currentBuild !== null) {
     return (
-      `A newer build of Velocity Rides ${update.latestVersion} is on the Play Store — ` +
+      `A newer build of Velocity Rides ${update.latestVersion} is on the ${update.storeName} — ` +
       `update ${update.currentBuild} → ${update.latestBuild}.`
     );
   }
-  return `A newer build of Velocity Rides ${update.latestVersion} is available on the Play Store.`;
+  return `A newer build of Velocity Rides ${update.latestVersion} is available on the ${update.storeName}.`;
 }
