@@ -16,6 +16,12 @@
  * fetch an update the store cannot serve them yet. And since our releases often
  * keep the same version string, the BUILD NUMBER is the field that usually does
  * the work — publishing the version alone would prompt nobody at all.
+ *
+ * iOS is published separately, under `ios` in the same doc. EAS numbers builds
+ * per platform (Android vc30-something, iOS build 6), so the two can never share
+ * a build number: when iOS read the Android one it prompted every iPhone and
+ * sent it to Google Play, and App Review rejected 1.9.0 (6) for it (Guideline 4).
+ * iOS always links to the App Store page; it has no store-link field on purpose.
  */
 
 import { useEffect, useState } from 'react';
@@ -35,7 +41,13 @@ interface VersionForm {
   minSupportedVersion: string;
   releaseNotes: string;
   storeUrl: string;
+  iosEnabled: boolean;
+  iosLatestVersion: string;
+  iosLatestBuild: string;
+  iosMinSupportedVersion: string;
 }
+
+const APP_STORE_URL = 'https://apps.apple.com/app/id6810774199';
 
 const EMPTY: VersionForm = {
   enabled: true,
@@ -44,6 +56,10 @@ const EMPTY: VersionForm = {
   minSupportedVersion: '',
   releaseNotes: '',
   storeUrl: '',
+  iosEnabled: true,
+  iosLatestVersion: '',
+  iosLatestBuild: '',
+  iosMinSupportedVersion: '',
 };
 
 /** Same comparison the app uses, so the preview here can't disagree with it. */
@@ -109,6 +125,11 @@ export default function AppVersionPage() {
               typeof d.minSupportedVersion === 'string' ? d.minSupportedVersion : '',
             releaseNotes: typeof d.releaseNotes === 'string' ? d.releaseNotes : '',
             storeUrl: typeof d.storeUrl === 'string' ? d.storeUrl : '',
+            iosEnabled: d.ios?.enabled !== false,
+            iosLatestVersion: typeof d.ios?.latestVersion === 'string' ? d.ios.latestVersion : '',
+            iosLatestBuild: typeof d.ios?.latestBuild === 'number' ? String(d.ios.latestBuild) : '',
+            iosMinSupportedVersion:
+              typeof d.ios?.minSupportedVersion === 'string' ? d.ios.minSupportedVersion : '',
           });
         }
         setLoading(false);
@@ -163,6 +184,31 @@ export default function AppVersionPage() {
       latestBuild = n;
     }
 
+    const iosVersion = form.iosLatestVersion.trim();
+    const iosMin = form.iosMinSupportedVersion.trim();
+    const iosBuildRaw = form.iosLatestBuild.trim();
+    if (iosVersion && !VERSION_RE.test(iosVersion)) {
+      setError('App Store version must be dotted numbers, e.g. 1.9.0.');
+      return;
+    }
+    if (iosMin && !VERSION_RE.test(iosMin)) {
+      setError('App Store minimum version must be dotted numbers, e.g. 1.9.0.');
+      return;
+    }
+    if (iosVersion && iosMin && compareVersions(iosMin, iosVersion) > 0) {
+      setError('The App Store minimum version is higher than the App Store version.');
+      return;
+    }
+    let iosBuild: number | null = null;
+    if (iosBuildRaw) {
+      const n = Number(iosBuildRaw);
+      if (!Number.isInteger(n) || n < 1) {
+        setError('App Store build number must be a whole number (the iOS build number).');
+        return;
+      }
+      iosBuild = n;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -175,6 +221,12 @@ export default function AppVersionPage() {
           minSupportedVersion,
           releaseNotes: form.releaseNotes.trim(),
           storeUrl: form.storeUrl.trim(),
+          ios: {
+            enabled: form.iosEnabled,
+            latestVersion: iosVersion,
+            latestBuild: iosBuild,
+            minSupportedVersion: iosMin,
+          },
           updatedAt: Date.now(),
         },
         { merge: true },
@@ -265,7 +317,7 @@ export default function AppVersionPage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <label style={labelStyle}>Version live on the Play Store</label>
+            <label style={labelStyle}>Version live on the Play Store (Android)</label>
             <input
               style={inputStyle}
               value={form.latestVersion}
@@ -336,6 +388,73 @@ export default function AppVersionPage() {
             {forceFloor
               ? `Anyone below ${forceFloor} gets a dialogue with NO Cancel button — they cannot use the app until they update. Only for a release that genuinely breaks compatibility.`
               : 'Blank means every prompt is dismissible. Set a version only when older builds truly cannot work any more.'}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 26, paddingTop: 18, borderTop: `1px solid ${colors.border}` }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: colors.text }}>
+                App Store (iPhone){form.iosEnabled ? '' : ' — off'}
+              </div>
+              <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 3, lineHeight: 1.5 }}>
+                Separate from Play: iOS build numbers are counted on their own. Leave blank and no
+                iPhone is ever prompted. Update always opens <code>{APP_STORE_URL}</code>.
+              </div>
+            </div>
+            <label style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <input
+                type="checkbox"
+                checked={form.iosEnabled}
+                onChange={(e) => set('iosEnabled', e.target.checked)}
+                disabled={!isAdmin}
+              />{' '}
+              On
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Version live on the App Store</label>
+              <input
+                style={inputStyle}
+                value={form.iosLatestVersion}
+                placeholder="1.9.0"
+                onChange={(e) => set('iosLatestVersion', e.target.value)}
+                disabled={!isAdmin}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>iOS build number</label>
+              <input
+                style={inputStyle}
+                value={form.iosLatestBuild}
+                placeholder="7"
+                onChange={(e) => set('iosLatestBuild', e.target.value)}
+                disabled={!isAdmin}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Force below (optional)</label>
+              <input
+                style={inputStyle}
+                value={form.iosMinSupportedVersion}
+                placeholder="leave blank"
+                onChange={(e) => set('iosMinSupportedVersion', e.target.value)}
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <div style={hintStyle}>
+            Set this only after Apple has released the build to the public — never while it is in
+            review.
           </div>
         </div>
 

@@ -180,3 +180,64 @@ describe('describeUpdate — what the prompt actually says', () => {
     expect(describeUpdate(res)).toContain('update 25 → 26');
   });
 });
+
+describe('evaluateUpdate — iOS reads only its own release (App Review, Guideline 4)', () => {
+  const APP_STORE = 'https://apps.apple.com/app/id6810774199';
+
+  it('the rejection: an Android build number never prompts an iOS install', () => {
+    // 1.9.0 (6) on iOS was told it was behind Android's versionCode 30 and sent
+    // to Google Play. With no `ios` release published, iOS must say nothing.
+    expect(
+      evaluateUpdate({ latestVersion: '1.9.0', latestBuild: 30, storeUrl: URL }, '1.9.0', 6, APP_STORE, 'ios'),
+    ).toBeNull();
+    expect(
+      evaluateUpdate({ latestVersion: '2.0.0', latestBuild: 40 }, '1.9.0', 6, APP_STORE, 'ios'),
+    ).toBeNull();
+  });
+
+  it('compares against the iOS build and links only to the App Store', () => {
+    const res = evaluateUpdate(
+      {
+        latestVersion: '1.9.0',
+        latestBuild: 30,
+        storeUrl: URL,
+        ios: { latestVersion: '1.9.0', latestBuild: 7, storeUrl: URL },
+      },
+      '1.9.0',
+      6,
+      APP_STORE,
+      'ios',
+    )!;
+    expect(res).not.toBeNull();
+    expect(res.latestBuild).toBe(7);
+    // An admin-typed (here: Play) link is ignored on iOS.
+    expect(res.storeUrl).toBe(APP_STORE);
+    expect(res.storeName).toBe('App Store');
+    expect(describeUpdate(res)).toBe(
+      'A newer build of Velocity Rides 1.9.0 is on the App Store — update 6 → 7.',
+    );
+  });
+
+  it('an iOS install already at the iOS release sees nothing', () => {
+    expect(
+      evaluateUpdate({ latestBuild: 30, ios: { latestVersion: '1.9.0', latestBuild: 6 } }, '1.9.0', 6, APP_STORE, 'ios'),
+    ).toBeNull();
+  });
+
+  it('the master switch turns iOS off too', () => {
+    expect(
+      evaluateUpdate({ enabled: false, ios: { latestVersion: '9.0.0' } }, '1.9.0', 6, APP_STORE, 'ios'),
+    ).toBeNull();
+    expect(
+      evaluateUpdate({ ios: { enabled: false, latestVersion: '9.0.0' } }, '1.9.0', 6, APP_STORE, 'ios'),
+    ).toBeNull();
+  });
+
+  it('Android ignores the iOS release and keeps its Play wording', () => {
+    expect(
+      evaluateUpdate({ ios: { latestVersion: '9.0.0', latestBuild: 99 } }, '1.9.0', 30, URL, 'android'),
+    ).toBeNull();
+    const res = evaluateUpdate({ latestVersion: '1.9.0', latestBuild: 31 }, '1.9.0', 30, URL)!;
+    expect(res.storeName).toBe('Play Store');
+  });
+});

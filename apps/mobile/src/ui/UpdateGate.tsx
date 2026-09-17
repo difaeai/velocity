@@ -25,7 +25,13 @@ import { useEffect } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
-import { checkForAppUpdate, describeUpdate, type AvailableUpdate } from '../lib/appUpdate';
+import {
+  APP_STORE_NATIVE_URL,
+  APP_STORE_URL,
+  checkForAppUpdate,
+  describeUpdate,
+  type AvailableUpdate,
+} from '../lib/appUpdate';
 
 /** One prompt per app process. Survives the root layout's theme/language remounts. */
 let promptedThisLaunch = false;
@@ -36,6 +42,19 @@ export function resetUpdatePromptForTesting(): void {
 }
 
 async function openStore(url: string): Promise<void> {
+  // App Review (Guideline 4) requires the Update button to land on this app's
+  // App Store page. The url is ignored on iOS so nothing — a stale config, a
+  // Play link — can ever send an iPhone anywhere else.
+  if (Platform.OS === 'ios') {
+    try {
+      await Linking.openURL(APP_STORE_NATIVE_URL);
+      return;
+    } catch {
+      // Universal link opens the App Store app too.
+    }
+    await Linking.openURL(APP_STORE_URL).catch(() => {});
+    return;
+  }
   // The Play Store app handles market:// directly, which skips the browser
   // bounce. Falls back to the https listing when it isn't installed.
   if (Platform.OS === 'android') {
