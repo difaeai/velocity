@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '../firebase';
+import { markChatSeen, useChatSeen } from '../lib/chatSeen';
 
 /**
  * Unread in-ride messages from the other side of the ride.
@@ -14,11 +14,11 @@ import { db } from '../firebase';
  * not surface a notification for an app already in the foreground, so without
  * this the message is delivered to a screen nobody is looking at.
  *
- * "Read" is the last time this room's chat was opened, kept per room in
- * AsyncStorage so it survives a reload and never counts the user's own
- * messages back at them.
+ * "Read" is the last time this room's chat was opened, kept per room by
+ * lib/chatSeen so it survives a reload, never counts the user's own messages
+ * back at them, and is the same cursor the Messages inbox reads — opening a
+ * ride's chat here clears its row there.
  */
-const SEEN_KEY = (roomId: string) => `velocity.chatSeen.${roomId}`;
 
 /** Enough to badge "9+" without streaming a whole conversation to count it. */
 const SCAN_LIMIT = 30;
@@ -34,27 +34,11 @@ export function useUnreadChat(
 ): { unread: number; latestFrom: string | null; markRead: () => void } {
   const [unread, setUnread] = useState(0);
   const [latestFrom, setLatestFrom] = useState<string | null>(null);
-  // Millisecond timestamp of the last time this room was opened. Held in a ref
-  // as well as state so the snapshot handler always reads the current value
-  // without re-subscribing every time it moves.
-  const seenAtRef = useRef<number>(0);
-  const [seenLoaded, setSeenLoaded] = useState(false);
+  const { seenAt, ready } = useChatSeen();
+  const seen = roomId ? seenAt('trip', roomId) : 0;
 
   useEffect(() => {
-    if (!roomId) return;
-    let alive = true;
-    AsyncStorage.getItem(SEEN_KEY(roomId))
-      .then((raw) => {
-        if (!alive) return;
-        seenAtRef.current = Number(raw) || 0;
-        setSeenLoaded(true);
-      })
-      .catch(() => { if (alive) setSeenLoaded(true); });
-    return () => { alive = false; };
-  }, [roomId]);
-
-  useEffect(() => {
-    if (!roomId || !myUid || !seenLoaded) return;
+    if (!roomId || !myUid || !ready) return;
     const q = query(
       collection(db, 'trips', roomId, 'chat'),
       orderBy('sentAt', 'desc'),
@@ -71,7 +55,7 @@ export function useUnreadChat(
           // A message still awaiting its server timestamp has just been written
           // by somebody else — it is unread by definition.
           const at = m.sentAt?.seconds ? m.sentAt.seconds * 1000 : Date.now();
-          if (at <= seenAtRef.current) continue;
+          if (at <= seen) continue;
           count += 1;
           if (!newestOther) newestOther = d.id;
         }
@@ -80,15 +64,13 @@ export function useUnreadChat(
       },
       () => { /* a chat we cannot read is not a chat with unread messages */ },
     );
-  }, [roomId, myUid, seenLoaded]);
+  }, [roomId, myUid, ready, seen]);
 
   const markRead = useCallback(() => {
     if (!roomId) return;
-    const now = Date.now();
-    seenAtRef.current = now;
+    markChatSeen('trip', roomId);
     setUnread(0);
     setLatestFrom(null);
-    AsyncStorage.setItem(SEEN_KEY(roomId), String(now)).catch(() => {});
   }, [roomId]);
 
   return { unread, latestFrom, markRead };

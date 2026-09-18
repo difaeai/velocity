@@ -64,12 +64,25 @@ export const sendTripMessage = onCall(async (req) => {
     (userSnap.get('name') as string | undefined) ??
     'Rider';
 
-  await db.collection(`trips/${tripId}/chat`).add({
+  // The message and the trip's chat summary go up together. The summary is what
+  // the rider's Messages inbox lists: without it, showing "you have 3 driver
+  // conversations" would mean opening three subcollections to find out, and the
+  // inbox would cost a read per ride the rider has ever taken.
+  const now = FieldValue.serverTimestamp();
+  const batch = db.batch();
+  batch.set(db.collection(`trips/${tripId}/chat`).doc(), {
     senderId: ctx.uid,
     senderName,
     text,
-    sentAt: FieldValue.serverTimestamp(),
+    sentAt: now,
   });
+  batch.update(db.doc(`trips/${tripId}`), {
+    chatLastMessage: preview(text),
+    chatLastMessageAt: now,
+    chatLastSenderId: ctx.uid,
+    chatLastSenderName: senderName,
+  });
+  await batch.commit();
 
   // Everyone on the ride except whoever just typed it.
   const recipients = [...participants].filter((uid) => uid !== ctx.uid);

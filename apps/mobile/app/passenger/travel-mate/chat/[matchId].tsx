@@ -44,6 +44,7 @@ import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TravelMateMessageInput, type ChatAttachment } from '../../../../src/api/client';
 import { colors } from '../../../../src/config';
+import { markChatSeen } from '../../../../src/lib/chatSeen';
 import { themed } from '../../../../src/theme';
 import { EmojiPicker, QUICK_REACTIONS } from '../../../../src/ui/EmojiPicker';
 import {
@@ -137,6 +138,11 @@ export default function TravelMateChat() {
     return onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message));
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      // Being on this screen when a message lands is reading it. Marking on
+      // every snapshot (rather than only on mount) also covers the rider's own
+      // sends, which would otherwise leave the thread looking unread in the
+      // Messages inbox until they came back to it.
+      markChatSeen('mate', matchId);
     });
   }, [matchId]);
 

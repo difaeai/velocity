@@ -158,6 +158,10 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
     const update: Record<string, unknown> = {
       lastMessage: preview.slice(0, 100),
       lastMessageAt: now,
+      // Who spoke last. The rider's Messages inbox needs it to tell "they
+      // replied" from "I sent this and nobody has answered" without opening the
+      // messages subcollection for every thread in the list.
+      lastMessageFrom: uid,
     };
     // Threads created before message requests existed have no requestStatus —
     // treat those as accepted so old chats keep working.

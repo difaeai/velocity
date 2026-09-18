@@ -131,7 +131,7 @@ export const shareTravelMateRide = onCall({ region: REGION }, async (req: Callab
       text: `${me.displayName} shared a ride: ${trip.pickup?.address ?? 'pickup'} → ${trip.dropoff?.address ?? 'destination'}`,
       createdAt: now,
     });
-    batch.update(groupRef, { lastMessage: '🚗 Shared a ride', lastMessageAt: now });
+    batch.update(groupRef, { lastMessage: '🚗 Shared a ride', lastMessageAt: now, lastMessageFrom: uid });
     await batch.commit();
   }
 
