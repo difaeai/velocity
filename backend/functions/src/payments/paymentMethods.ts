@@ -32,6 +32,7 @@ import { getFeatureFlags } from '../domain/featureFlags';
 import { creditFromIntent } from './credit';
 import {
   isMockProvider,
+  mockGatewayAllowed,
   providerForSetupCallback,
   tokenizingProvider,
   type CheckoutForm,
@@ -393,7 +394,10 @@ const setupIdSchema = z.object({ setupId: z.string().min(1).max(128) });
 /** Dev-only: simulate a successful gateway authorisation (mock provider only). */
 export const mockConfirmPaymentMethod = onCall(async (req) => {
   const ctx = requireAuth(req);
-  if (!isMockProvider()) {
+  // Emulator only. `isMockProvider()` alone is true on any deployment that has
+  // no gateway credentials yet, and this callable mints a working saved
+  // instrument out of nothing — see mockGatewayAllowed() in providers.ts.
+  if (!mockGatewayAllowed() || !isMockProvider()) {
     throw new HttpsError('failed-precondition', 'Only available with the mock provider.');
   }
   const parsed = setupIdSchema.safeParse(req.data);

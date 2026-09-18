@@ -492,3 +492,66 @@ test('an offer question is readable by its asker and the business only', async (
   await assertFails(setDoc(doc(asker, 'businessAdQueries/ad1_asker1/messages/m2'), { text: 'x' }));
   await assertFails(updateDoc(doc(shop, 'businessAdQueries/ad1_asker1'), { ownerUnread: 0 }));
 });
+
+/**
+ * A pool ride's group chat is for the people in that car and nobody else.
+ *
+ * Before this, `poolRides/{rideId}/chat` was `allow read: if isSignedIn()` with
+ * a create rule that only checked the sender had signed their own message. So
+ * any account could read, and post into, the conversation of a car full of
+ * strangers — and because the parent `poolRides` doc is deliberately readable by
+ * everybody (it is a browsable offer), collecting the ride ids to do it was one
+ * query, not a guess.
+ */
+test('a pool ride chat is readable and writable only by that car', async () => {
+  const rider = testEnv.authenticatedContext('poolRider1', { role: 'passenger' }).firestore();
+  const outsider = testEnv.authenticatedContext('poolOutsider', { role: 'passenger' }).firestore();
+  const poolDriver = testEnv.authenticatedContext('poolDriver1', { role: 'driver' }).firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'poolRides/pool1'), {
+      rideId: 'pool1', driverId: 'poolDriver1', status: 'open', seatsTotal: 4, seatsTaken: 1,
+    });
+    // Seat docs are written only by the joinPoolRide CF; holding one is what
+    // makes somebody a member of this car.
+    await setDoc(doc(db, 'poolRides/pool1/passengers/poolRider1'), {
+      passengerId: 'poolRider1', seats: 1, status: 'confirmed',
+    });
+    await setDoc(doc(db, 'poolRides/pool1/chat/m1'), {
+      senderId: 'poolRider1', senderName: 'R', text: 'On my way', sentAt: new Date(),
+    });
+  });
+
+  const message = (senderId, senderName) => ({
+    senderId, senderName, text: 'hello', sentAt: new Date(),
+  });
+
+  // The rider holding a seat and the ride's own driver are both in the car.
+  await assertSucceeds(getDoc(doc(rider, 'poolRides/pool1/chat/m1')));
+  await assertSucceeds(getDoc(doc(poolDriver, 'poolRides/pool1/chat/m1')));
+  await assertSucceeds(
+    setDoc(doc(rider, 'poolRides/pool1/chat/m2'), message('poolRider1', 'R')),
+  );
+  await assertSucceeds(
+    setDoc(doc(poolDriver, 'poolRides/pool1/chat/m3'), message('poolDriver1', 'D')),
+  );
+
+  // A signed-in stranger is not, even though they can see the ride itself.
+  await assertSucceeds(getDoc(doc(outsider, 'poolRides/pool1')));
+  await assertFails(getDoc(doc(outsider, 'poolRides/pool1/chat/m1')));
+  await assertFails(getDocs(collection(outsider, 'poolRides/pool1/chat')));
+  await assertFails(
+    setDoc(doc(outsider, 'poolRides/pool1/chat/m4'), message('poolOutsider', 'X')),
+  );
+
+  // Signing somebody else's name is still refused for a member.
+  await assertFails(
+    setDoc(doc(rider, 'poolRides/pool1/chat/m5'), message('poolDriver1', 'D')),
+  );
+
+  // Admins read it for dispute handling; nobody edits or deletes history.
+  await assertSucceeds(getDoc(doc(admin, 'poolRides/pool1/chat/m1')));
+  await assertFails(updateDoc(doc(rider, 'poolRides/pool1/chat/m1'), { text: 'edited' }));
+  await assertFails(deleteDoc(doc(rider, 'poolRides/pool1/chat/m1')));
+});

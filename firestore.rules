@@ -296,10 +296,30 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Group chat for the pool ride (driver + all passengers)
+      // Group chat for the pool ride (driver + all passengers).
+      //
+      // Membership is checked on BOTH sides, the way trips/{tripId}/chat does
+      // it. This used to read `allow read: if isSignedIn()` with a create rule
+      // that only checked the sender was writing under their own name — which
+      // meant any signed-in account could read, and post into, the private
+      // conversation of a car full of strangers. The parent `poolRides` doc is
+      // itself readable by every signed-in user (it is a browsable offer), so
+      // the ride ids needed to do it were one query away; there was nothing to
+      // guess.
+      //
+      // A member is the ride's own driver, or somebody holding a seat doc —
+      // `passengers/{uid}` is written only by the joinPoolRide CF, so it is the
+      // authoritative answer to "is this person in this car".
+      function inThisPool() {
+        return isSignedIn() && (
+          get(/databases/$(database)/documents/poolRides/$(rideId)).data.driverId == uid()
+          || exists(/databases/$(database)/documents/poolRides/$(rideId)/passengers/$(uid()))
+        );
+      }
+
       match /chat/{msgId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn()
+        allow read: if isAdmin() || inThisPool();
+        allow create: if inThisPool()
                       && request.resource.data.keys().hasAll(['senderId', 'senderName', 'text', 'sentAt'])
                       && request.resource.data.senderId == uid()
                       && request.resource.data.text is string
