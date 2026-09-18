@@ -1,3 +1,5 @@
+import type { Metadata } from 'next';
+
 import { VelocityMark } from '@/components/BrandMark';
 import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
 import { Counter } from '@/components/site/Counter';
@@ -47,6 +49,16 @@ import {
 } from '@/lib/site';
 
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
+
+/**
+ * The homepage is the one indexable App Router page, so the canonical lives
+ * here rather than in the root layout: a canonical declared in the layout is
+ * inherited by the console and the fleet portal, which would then all claim to
+ * be this page. The legal documents carry their own, in their HTML heads.
+ */
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+};
 
 /** Store badge — Play links out, Apple is honestly marked as not shipped yet. */
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
