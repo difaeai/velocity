@@ -120,7 +120,11 @@ export default function OfferScreen() {
             </Pressable>
           ) : null}
           {user && offer.ownerUid !== user.uid ? (
-            <Pressable onPress={() => router.push('/passenger/my-questions')} hitSlop={8} style={styles.myQs}>
+            <Pressable
+              onPress={() => router.push('/passenger/messages?section=brands')}
+              hitSlop={8}
+              style={styles.myQs}
+            >
               <Text style={styles.myQsTxt}>See all my questions ›</Text>
             </Pressable>
           ) : null}

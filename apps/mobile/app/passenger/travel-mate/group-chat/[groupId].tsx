@@ -39,6 +39,7 @@ import {
 import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api } from '../../../../src/api/client';
+import { markChatSeen } from '../../../../src/lib/chatSeen';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
 
@@ -90,6 +91,8 @@ export default function TravelMateGroupChat() {
     return onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }) as GroupMessage));
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      // Reading the group while it is on screen — same rule as a 1:1 chat.
+      markChatSeen('group', groupId);
     });
   }, [groupId]);
 

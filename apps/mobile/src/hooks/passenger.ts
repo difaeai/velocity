@@ -38,6 +38,30 @@ export function usePassengerTrips(uid?: string): { trips: Trip[]; loading: boole
   return { trips, loading };
 }
 
+/**
+ * Rides this user joined rather than booked — somebody else's pool.
+ *
+ * Kept apart from usePassengerTrips on purpose. These are not the rider's own
+ * trips: they must not turn up in ride history, recent destinations or the daily
+ * routes analysis, all of which read `passengerId == uid` and would be wrong if
+ * this were folded in. The Messages inbox is the one place that wants them,
+ * because a pool rider shares the car — and the conversation — with the driver.
+ */
+export function usePoolMemberTrips(uid?: string): Trip[] {
+  const [trips, setTrips] = useState<Trip[]>([]);
+
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'trips'), where('poolMembers', 'array-contains', uid)),
+      (snap) => setTrips(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip)),
+      () => setTrips([]),
+    );
+  }, [uid]);
+
+  return trips;
+}
+
 export interface RecentDestination {
   address: string;
   /** Coordinates from the original trip — lets rebooking draw the route instantly. */

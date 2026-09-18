@@ -71,7 +71,7 @@ export const sendTravelMateGroupMessage = onCall({ region: REGION }, async (req:
   const now = admin.firestore.FieldValue.serverTimestamp();
   const batch = db.batch();
   batch.set(msgRef, { senderId: uid, senderName, senderPhoto, type: 'text', text, createdAt: now });
-  batch.update(groupRef, { lastMessage: text.substring(0, 100), lastMessageAt: now });
+  batch.update(groupRef, { lastMessage: text.substring(0, 100), lastMessageAt: now, lastMessageFrom: uid });
   await batch.commit();
 
   await Promise.all(

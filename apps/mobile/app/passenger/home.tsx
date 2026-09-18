@@ -25,6 +25,7 @@ import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useWalletLabel } from '../../src/hooks/driver';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
+import { useMessagesUnreadTotal } from '../../src/hooks/messages';
 import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/suggestedRides';
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
@@ -75,6 +76,11 @@ export default function PassengerHome() {
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Unread across all three message sections — Travel Partner, drivers and
+  // brands. It badges the drawer row, and puts a dot on the hamburger itself:
+  // a badge nobody can see until they open the drawer is not a notification.
+  const messagesUnread = useMessagesUnreadTotal();
 
   // The booking sheet covers the bottom of a full-screen map, so the map has to be
   // told how much of itself is hidden — otherwise it centres the user's green dot
@@ -196,8 +202,15 @@ export default function PassengerHome() {
       {/* 2. Top Navigation Overlay */}
       <SafeAreaView style={styles.headerSafeArea} pointerEvents="box-none">
         <View style={styles.topBar}>
-          <Pressable style={styles.hamburgerButton} onPress={() => setDrawerOpen(true)}>
+          <Pressable
+            style={styles.hamburgerButton}
+            onPress={() => setDrawerOpen(true)}
+            accessibilityLabel={
+              messagesUnread > 0 ? `Menu, ${messagesUnread} unread messages` : 'Menu'
+            }
+          >
             <Text style={styles.hamburgerText}>☰</Text>
+            {messagesUnread > 0 ? <View style={styles.hamburgerDot} /> : null}
           </Pressable>
           
           {/* Floating Pickup Pill on Map (from Image 5) */}
@@ -488,13 +501,6 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Find my Customers</Text>
                   </Pressable>
 
-                  {/* Questions this rider asked businesses about their offers —
-                      the only way back into one whose offer was deleted. */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/my-questions')}>
-                    <Text style={styles.menuItemIcon}>🏷️</Text>
-                    <Text style={styles.menuItemText}>My questions</Text>
-                  </Pressable>
-
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/special-rides')}>
                     <Text style={styles.menuItemIcon}>🚗</Text>
                     <Text style={styles.menuItemText}>Special Rides</Text>
@@ -531,6 +537,22 @@ export default function PassengerHome() {
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>
                     <Text style={styles.menuItemIcon}>💬</Text>
                     <Text style={styles.menuItemText}>Matches & Groups</Text>
+                  </Pressable>
+
+                  {/* Every conversation in the app: Travel Partner, the driver
+                      of a ride, and the businesses whose offers this rider
+                      asked about. Replaces the old "My questions" row, which
+                      was one of those three and pretended to be all of them. */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/messages')}>
+                    <Text style={styles.menuItemIcon}>✉️</Text>
+                    <Text style={[styles.menuItemText, styles.menuItemTextGrow]}>Messages</Text>
+                    {messagesUnread > 0 ? (
+                      <View style={styles.menuBadge}>
+                        <Text style={styles.menuBadgeText}>
+                          {messagesUnread > 9 ? '9+' : messagesUnread}
+                        </Text>
+                      </View>
+                    ) : null}
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={openSafety}>
@@ -1153,6 +1175,37 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#d1d5db',
+  },
+  /** Only rows carrying a trailing badge need the label to take the slack. */
+  menuItemTextGrow: {
+    flex: 1,
+  },
+  menuBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  hamburgerDot: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.danger,
+    borderWidth: 2,
+    // Matches the button's own fill, not a theme token: that fill is a fixed
+    // rgba because the button floats over the map in both themes.
+    borderColor: 'rgba(18,21,20,0.95)',
   },
   menuItemTextActive: {
     color: '#ffffff',

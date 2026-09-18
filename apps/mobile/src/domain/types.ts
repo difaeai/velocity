@@ -252,6 +252,20 @@ export interface Trip {
   passengerRated?: boolean;
   driverRated?: boolean;
   arrivedAt?: { seconds: number; nanoseconds: number } | null;
+  /**
+   * Summary of the in-ride chat, written by sendTripMessage alongside the
+   * message itself.
+   *
+   * Denormalised on purpose. The Messages inbox lists every ride the rider has
+   * talked to a driver on; reading that from `trips/{id}/chat` would be one
+   * subcollection query per ride in their history, for a list that is mostly
+   * rides nobody ever typed on. Absent on chats whose last message predates
+   * this, which read as "no messages" rather than wrongly.
+   */
+  chatLastMessage?: string | null;
+  chatLastMessageAt?: { seconds: number } | null;
+  chatLastSenderId?: string | null;
+  chatLastSenderName?: string | null;
   // Cancellation (set by cancelTrip)
   cancelledBy?: string;
   cancelledByRole?: 'passenger' | 'driver';

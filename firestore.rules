@@ -202,11 +202,20 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // In-ride chat between the matched passenger and driver.
+      // In-ride chat between everyone sharing the car.
+      //
+      // Pool riders are readers too. sendTripMessage has always delivered the
+      // message to them — its participant set is passenger + driver + poolMembers
+      // — but the read rule stopped at the first two, so a rider who joined a
+      // pool by link got the push and then an empty conversation. The parent trip
+      // document already grants them a read on exactly this condition.
       match /chat/{msgId} {
         allow read: if isAdmin()
                     || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.passengerId == uid())
-                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid())
+                    || (isSignedIn()
+                        && 'poolMembers' in get(/databases/$(database)/documents/trips/$(tripId)).data
+                        && uid() in get(/databases/$(database)/documents/trips/$(tripId)).data.poolMembers);
         allow create: if isSignedIn()
                       && (
                         get(/databases/$(database)/documents/trips/$(tripId)).data.passengerId == uid()

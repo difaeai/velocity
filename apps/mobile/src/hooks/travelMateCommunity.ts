@@ -94,6 +94,13 @@ export interface TravelThread {
   requestSent?: boolean;
   lastMessage?: string | null;
   lastMessageAt?: { seconds: number } | null;
+  /**
+   * Who sent the last message. Written by sendTravelMateMessage; absent on every
+   * thread whose last message predates it. The Messages inbox uses it to avoid
+   * badging a rider for their own unanswered message — with it missing, the row
+   * simply reads as unread until the thread is opened, which corrects itself.
+   */
+  lastMessageFrom?: string | null;
   matchedAt?: { seconds: number };
   createdAt?: { seconds: number };
 }
@@ -162,4 +169,45 @@ export function useTravelMateThreads(): TravelThreads {
       ),
     };
   }, [threads, blocked, user?.uid]);
+}
+
+// ── Commute groups ───────────────────────────────────────────────────────────
+
+/**
+ * A Travel Partner commute group, as the chat surfaces need it.
+ *
+ * Deliberately a narrower shape than the group screen's: membership, a name, and
+ * the last thing anybody said. Everything else (invite codes, size limits,
+ * shared rides) belongs to the group screen and would only be dead weight in a
+ * list of conversations.
+ */
+export interface TravelGroup {
+  id: string;
+  name?: string;
+  members: string[];
+  memberInfo?: Record<string, { displayName: string; photoURL: string | null }>;
+  destinationName?: string;
+  lastMessage?: string | null;
+  lastMessageAt?: { seconds: number } | null;
+  lastMessageFrom?: string | null;
+}
+
+/** Live list of the groups the signed-in user belongs to, newest activity first. */
+export function useTravelMateGroups(): TravelGroup[] {
+  const { user } = useAuth();
+  const [groups, setGroups] = useState<TravelGroup[]>([]);
+
+  useEffect(() => {
+    if (!user) { setGroups([]); return; }
+    return onSnapshot(
+      query(collection(db, 'travelMateGroups'), where('members', 'array-contains', user.uid)),
+      snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TravelGroup)),
+      () => setGroups([]),
+    );
+  }, [user?.uid]);
+
+  return useMemo(
+    () => [...groups].sort((a, b) => (b.lastMessageAt?.seconds ?? 0) - (a.lastMessageAt?.seconds ?? 0)),
+    [groups],
+  );
 }
