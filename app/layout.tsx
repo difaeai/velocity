@@ -59,6 +59,15 @@ export const metadata: Metadata = {
     title: 'Velocity Rides — ride-hailing built for Pakistan',
     description: 'Name your fare. Split the ride. Pay in cash.',
   },
+  // Meta (Facebook) domain verification. It has to be a real <meta> in the
+  // server-rendered <head> — Meta's scraper does not run our JavaScript — so
+  // it lives in the root layout's metadata and therefore on every page,
+  // including the home page it checks.
+  verification: {
+    other: {
+      'facebook-domain-verification': 'eny730jcnowu1dtiqfc086mtxtd243',
+    },
+  },
   // No `icons` entry on purpose: an explicit one overrides Next's file
   // convention, and the tab then kept serving the stock app/favicon.ico. The
   // icons now come from app/icon.png, app/apple-icon.png and app/favicon.ico,
