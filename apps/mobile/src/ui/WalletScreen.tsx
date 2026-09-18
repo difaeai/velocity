@@ -221,7 +221,11 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
               <>
                 <PrimaryButton
                   label="Settle commission →"
-                  onPress={() => router.replace('/driver')}
+                  // '/driver' is not a route — the driver's home is
+                  // '/driver/home'. This button is how a driver locked out of
+                  // earning gets to the screen that unlocks them, and it landed
+                  // on nothing.
+                  onPress={() => router.replace('/driver/home')}
                 />
                 <Text style={styles.payoutHint}>
                   Go to your Home screen to pay Velocity Rides and upload your payment screenshot. Your

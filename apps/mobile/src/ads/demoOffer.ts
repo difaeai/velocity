@@ -30,6 +30,20 @@ export const DEMO_OFFER = {
   imageUrl:
     process.env.EXPO_PUBLIC_DEMO_AD_IMAGE_URL ??
     'https://velocityrides.app/demo/kfc-offer.jpg',
+  /**
+   * The same picture, bundled.
+   *
+   * `imageUrl` is what the SERVER puts in the push payload, so it has to stay a
+   * public URL. But the preview drawn on the Find-your-Customers screen is the
+   * first thing a shopkeeper looks at, and fetching 49KB from velocityrides.app
+   * to draw it meant the card opened as an empty grey rectangle on every cold
+   * start — a demo of our own product that appears broken for the first second.
+   * Rendering it from the bundle makes it appear with the rest of the screen.
+   *
+   * Keep this file in step with public/demo/kfc-offer.jpg; scripts/make-demo-ad-image.mjs
+   * writes both.
+   */
+  imageAsset: require('../../assets/demo-offer.jpg') as number,
   /** Gulberg Greens, Islamabad — used only for the directions link. */
   center: { lat: 33.6152, lng: 73.1489 },
 } as const;
