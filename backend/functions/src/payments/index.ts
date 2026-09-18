@@ -29,6 +29,7 @@ import {
   easypaisaProvider,
   getProviderByName,
   isMockProvider,
+  mockGatewayAllowed,
   payfastProvider,
   providerForCallback,
   resolveProvider,
@@ -275,7 +276,20 @@ export const paymentWebhook = onRequest(async (request, response) => {
   const params = callbackParams(request);
 
   // Dev-only JSON path for the mock provider (kept for tests/emulator).
-  if (isMockProvider() && typeof request.body === 'object' && request.body && 'reference' in (request.body as object)) {
+  //
+  // `mockGatewayAllowed()` is the load-bearing half. This endpoint is an
+  // UNAUTHENTICATED onRequest, and `isMockProvider()` is true whenever no real
+  // gateway has credentials — the state every deployment is in until PayFast
+  // goes live. Without the emulator check, a POST of
+  // `{"reference": "<intent id>", "success": true}` credited that intent's
+  // wallet with no signature, no token and no sign-in, and unlike every other
+  // path into the wallet this branch is not even behind the walletTopupEnabled
+  // flag.
+  if (
+    mockGatewayAllowed() &&
+    isMockProvider() &&
+    typeof request.body === 'object' && request.body && 'reference' in (request.body as object)
+  ) {
     const b = request.body as Record<string, unknown>;
     if (typeof b.reference === 'string' && b.success === true) {
       const ok = await creditFromIntent(b.reference, `mock_${b.reference}`);

@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import Link from 'next/link';
-import Image from 'next/image';
 
+import { adminApi } from '@/lib/api';
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import { Button } from '@/components/ui';
@@ -88,25 +88,27 @@ export default function SpecialRidesAdminPage() {
     };
   }, []);
 
+  /**
+   * All four actions go through the callables, which is the only path that
+   * actually works.
+   *
+   * Approve and Reject used to POST to /api/admin/special-rides/... — routes
+   * that do not exist in this app — so they 404'd and said "Failed to approve".
+   * Suspend and Reactivate wrote to specialRidesListings directly from the
+   * browser, which the rules refuse (`allow write: if false`) for everybody,
+   * admins included. The backend does the write with the Admin SDK after
+   * checking the admin claim.
+   *
+   * The lists are live `onSnapshot` queries, so nothing is spliced out of state
+   * by hand any more: the server's write is what removes the row, which means
+   * the screen can no longer disagree with the database.
+   */
   async function approveApplication(uid: string) {
     setProcessingId(uid);
     try {
-      // Call the admin function to approve
-      const response = await fetch('/api/admin/special-rides/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, decision: 'approve' }),
-      });
-
-      if (response.ok) {
-        alert('Application approved!');
-        // Remove from pending list
-        setApplications(applications.filter((app) => app.uid !== uid));
-      } else {
-        alert('Failed to approve');
-      }
+      await adminApi.adminReviewSpecialRidesApplication({ uid, decision: 'approve' });
     } catch (e) {
-      alert('Error: ' + (e as Error).message);
+      alert('Could not approve: ' + (e as Error).message);
     } finally {
       setProcessingId(null);
     }
@@ -115,20 +117,13 @@ export default function SpecialRidesAdminPage() {
   async function rejectApplication(uid: string, reason: string) {
     setProcessingId(uid);
     try {
-      const response = await fetch('/api/admin/special-rides/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, decision: 'reject', rejectionReason: reason }),
+      await adminApi.adminReviewSpecialRidesApplication({
+        uid,
+        decision: 'reject',
+        rejectionReason: reason,
       });
-
-      if (response.ok) {
-        alert('Application rejected');
-        setApplications(applications.filter((app) => app.uid !== uid));
-      } else {
-        alert('Failed to reject');
-      }
     } catch (e) {
-      alert('Error: ' + (e as Error).message);
+      alert('Could not reject: ' + (e as Error).message);
     } finally {
       setProcessingId(null);
     }
@@ -137,12 +132,9 @@ export default function SpecialRidesAdminPage() {
   async function suspendListing(uid: string) {
     setProcessingId(uid);
     try {
-      await updateDoc(doc(db, 'specialRidesListings', uid), {
-        status: 'suspended',
-      });
-      alert('Listing suspended');
+      await adminApi.adminSuspendHost({ uid, suspended: true });
     } catch (e) {
-      alert('Error: ' + (e as Error).message);
+      alert('Could not suspend: ' + (e as Error).message);
     } finally {
       setProcessingId(null);
     }
@@ -151,12 +143,9 @@ export default function SpecialRidesAdminPage() {
   async function reactivateListing(uid: string) {
     setProcessingId(uid);
     try {
-      await updateDoc(doc(db, 'specialRidesListings', uid), {
-        status: 'active',
-      });
-      alert('Listing reactivated');
+      await adminApi.adminSuspendHost({ uid, suspended: false });
     } catch (e) {
-      alert('Error: ' + (e as Error).message);
+      alert('Could not reactivate: ' + (e as Error).message);
     } finally {
       setProcessingId(null);
     }
@@ -267,11 +256,24 @@ export default function SpecialRidesAdminPage() {
                             borderRadius: 4,
                           }}
                         >
-                          <Image
+                          {/* A plain <img>, like every other document and photo
+                              in this console. `next/image` refuses any hostname
+                              that is not listed under `images` in next.config.ts,
+                              and nothing is — so the moment an application with
+                              photos appeared, rendering this page threw
+                              "hostname is not configured" and the queue could
+                              not be looked at, let alone approved. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
                             src={photo.url}
                             alt={`Car photo ${idx + 1}`}
-                            fill
-                            style={{ objectFit: 'cover' }}
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
                           />
                         </div>
                       ))}
@@ -379,11 +381,24 @@ export default function SpecialRidesAdminPage() {
                             borderRadius: 4,
                           }}
                         >
-                          <Image
+                          {/* A plain <img>, like every other document and photo
+                              in this console. `next/image` refuses any hostname
+                              that is not listed under `images` in next.config.ts,
+                              and nothing is — so the moment an application with
+                              photos appeared, rendering this page threw
+                              "hostname is not configured" and the queue could
+                              not be looked at, let alone approved. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
                             src={photo.url}
                             alt={`Car photo ${idx + 1}`}
-                            fill
-                            style={{ objectFit: 'cover' }}
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
                           />
                         </div>
                       ))}

@@ -611,7 +611,11 @@ function DemoNotificationCard() {
           </View>
           <Text style={styles.trayTitle} numberOfLines={2}>{preview.title}</Text>
           <Text style={styles.trayBody} numberOfLines={2}>{preview.body}</Text>
-          <Image source={{ uri: DEMO_OFFER.imageUrl }} style={styles.trayImage} resizeMode="cover" />
+          {/* The bundled copy, not DEMO_OFFER.imageUrl: this preview is the first
+              thing on the screen a shopkeeper judges the product by, and a
+              network fetch drew it as an empty grey box for the first second of
+              every cold start. */}
+          <Image source={DEMO_OFFER.imageAsset} style={styles.trayImage} resizeMode="cover" />
         </View>
       </View>
 

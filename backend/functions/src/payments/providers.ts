@@ -574,6 +574,38 @@ class PayFastProvider implements PaymentProvider {
 // Implements tokenisation in full so the entire saved-payment-method flow —
 // connect an account, set a default, one-tap top-up, remove it — is testable
 // end to end without any merchant contract.
+/**
+ * Whether the mock gateway is allowed to move money.
+ *
+ * ONLY under the Firebase emulator. The mock provider reports every charge and
+ * every callback as a success without talking to anybody, which is exactly what
+ * a local test needs and exactly what must never be reachable from the internet.
+ *
+ * It matters because `resolveProvider()` falls back to mock whenever no real
+ * gateway has credentials — which is the state a deployment is in before the
+ * PayFast merchant account goes live. In that state `paymentWebhook`, an
+ * UNAUTHENTICATED onRequest endpoint, would credit any wallet named by a POSTed
+ * intent id, and a saved "mock" instrument would charge successfully forever.
+ * Nothing about "no gateway configured yet" should mean "money is free".
+ *
+ * Two signals, because the two ways this code runs locally set different ones:
+ * `FUNCTIONS_EMULATOR` under the Functions emulator, and `FIRESTORE_EMULATOR_HOST`
+ * under the vitest suite (`firebase emulators:exec` → src/travelMate/__tests__/setup.ts).
+ *
+ * Neither can be true in production. A deployed function is never given
+ * FUNCTIONS_EMULATOR, and pointing FIRESTORE_EMULATOR_HOST at a deployed
+ * backend would send every read and write of the entire platform at an
+ * emulator that is not there — it could not be set by accident and survive a
+ * single request. So this fails closed in production, in staging, and in any
+ * environment nobody thought about.
+ */
+export function mockGatewayAllowed(): boolean {
+  return (
+    process.env.FUNCTIONS_EMULATOR === 'true' ||
+    !!process.env.FIRESTORE_EMULATOR_HOST
+  );
+}
+
 class MockProvider implements TokenizingProvider {
   readonly name = 'mock';
   isConfigured(): boolean { return true; }
@@ -615,6 +647,11 @@ class MockProvider implements TokenizingProvider {
   }
 
   async chargeToken(token: string): Promise<TokenChargeResult> {
+    // Defence in depth: even if a 'mock' instrument were somehow already saved
+    // against an account, it cannot be charged anywhere real.
+    if (!mockGatewayAllowed()) {
+      return { success: false, message: 'This payment method is no longer usable.', tokenDead: true };
+    }
     return { success: true, providerTxnRef: `mockcharge_${token.slice(-8)}_${Date.now()}` };
   }
 

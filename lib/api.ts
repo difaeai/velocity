@@ -235,6 +235,27 @@ export const adminApi = {
     { partnerId: string; suspended: boolean; reason?: string },
     { ok: boolean }
   >('adminSuspendPartner'),
+
+  // ── Special Rides (rent-a-car) ──────────────────────────────────────────
+  // The console used to POST these to /api/admin/special-rides/{approve,reject}.
+  // There is no `app/api` directory in this project and never has been, so both
+  // buttons answered 404 and reported "Failed to approve" — every car listing
+  // ever submitted is still sitting in the queue. Suspend and Reactivate were
+  // broken a second way: they wrote to specialRidesListings straight from the
+  // browser, and that collection is `allow write: if false`.
+  adminReviewSpecialRidesApplication: callable<
+    {
+      uid: string;
+      decision: 'approve' | 'reject' | 'resubmit';
+      rejectionReason?: string;
+      maxDailyRate?: number;
+    },
+    { ok: boolean }
+  >('adminReviewSpecialRidesApplication'),
+  adminSuspendHost: callable<
+    { uid: string; suspended: boolean; reason?: string },
+    { ok: boolean; message: string }
+  >('adminSuspendHost'),
   adminUpdatePartner: callable<
     {
       partnerId: string;

@@ -251,3 +251,77 @@ describe('managing instruments', () => {
     expect((await db().doc(`paymentMethods/${methodId}`).get()).exists).toBe(true);
   });
 });
+
+/**
+ * The mock gateway must be incapable of moving money anywhere but here.
+ *
+ * `resolveProvider()` falls back to the mock provider whenever no real gateway
+ * has credentials — which is the state every deployment is in until the PayFast
+ * merchant account goes live. The mock reports every charge and every callback
+ * as a success without talking to anyone, so in that state:
+ *
+ *   • `paymentWebhook`, an UNAUTHENTICATED onRequest, credited the wallet named
+ *     by a POSTed intent id — no signature, no token, no sign-in, and not even
+ *     behind the walletTopupEnabled flag that guards every other route in;
+ *   • `mockConfirmPaymentMethod` minted a working saved instrument from nothing.
+ *
+ * The emulator check is the whole defence, so it is tested rather than trusted.
+ */
+describe('the mock gateway is emulator-only', () => {
+  /** Run `fn` with every emulator signal removed, then put them back. */
+  async function asDeployed<T>(fn: () => Promise<T> | T): Promise<T> {
+    const fs = process.env.FIRESTORE_EMULATOR_HOST;
+    const fe = process.env.FUNCTIONS_EMULATOR;
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+    delete process.env.FUNCTIONS_EMULATOR;
+    try {
+      return await fn();
+    } finally {
+      if (fs !== undefined) process.env.FIRESTORE_EMULATOR_HOST = fs;
+      if (fe !== undefined) process.env.FUNCTIONS_EMULATOR = fe;
+    }
+  }
+
+  it('is allowed under the emulator and refused once deployed', async () => {
+    const { mockGatewayAllowed } = await import('../providers');
+    expect(mockGatewayAllowed()).toBe(true);
+    expect(await asDeployed(() => mockGatewayAllowed())).toBe(false);
+  });
+
+  it('refuses to mint a saved instrument outside the emulator', async () => {
+    await enableFlags();
+    const setup = await createPaymentMethodSetup.run(req({ kind: 'easypaisa' }, USER)) as {
+      setupId: string;
+    };
+
+    // The guard runs before anything touches Firestore, so removing the
+    // emulator host for the call cannot strand the admin SDK mid-request.
+    await asDeployed(async () => {
+      await expect(
+        mockConfirmPaymentMethod.run(req({ setupId: setup.setupId }, USER)),
+      ).rejects.toMatchObject({ code: 'failed-precondition' });
+    });
+
+    // …and still works here, so the guard is the only thing that changed.
+    const ok = await mockConfirmPaymentMethod.run(req({ setupId: setup.setupId }, USER)) as {
+      methodId: string;
+    };
+    expect(ok.methodId).toBeTruthy();
+  });
+
+  it('declines a charge on an instrument that was saved earlier', async () => {
+    const { mockGatewayAllowed } = await import('../providers');
+    const { getProviderByName, supportsTokenization } = await import('../providers');
+    const mock = getProviderByName('mock');
+    if (!mock || !supportsTokenization(mock)) throw new Error('mock provider should tokenise');
+    expect(mockGatewayAllowed()).toBe(true);
+
+    const charge = { intentId: 'i1', providerRef: 'r1', amount: 500, description: 'test' };
+    const here = await mock.chargeToken('mocktok_abc', charge);
+    expect(here.success).toBe(true);
+
+    const deployed = await asDeployed(() => mock.chargeToken('mocktok_abc', charge));
+    expect(deployed.success).toBe(false);
+    expect(deployed.tokenDead).toBe(true);
+  });
+});

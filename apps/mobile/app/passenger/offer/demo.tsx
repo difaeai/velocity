@@ -73,7 +73,10 @@ export default function DemoOfferScreen() {
           </Text>
         </View>
 
-        <Image source={{ uri: DEMO_OFFER.imageUrl }} style={styles.image} resizeMode="cover" />
+        {/* Bundled, like the preview on the pitch screen. This screen is what a
+            tapped demo notification opens, so it is judged on how fast it
+            paints — and the picture is the whole offer. */}
+        <Image source={DEMO_OFFER.imageAsset} style={styles.image} resizeMode="cover" />
 
         <View style={styles.bizRow}>
           <Text style={styles.biz}>{DEMO_OFFER.businessName}</Text>

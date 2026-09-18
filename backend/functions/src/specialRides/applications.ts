@@ -1,7 +1,7 @@
 import { onCall } from 'firebase-functions/v2/https';
 
 import { db } from '../lib/firebase';
-import { invalid } from '../lib/guards';
+import { invalid, requireAdmin } from '../lib/guards';
 import { SpecialRidesApplication, SpecialRidesListing } from './types';
 
 /**
@@ -75,12 +75,16 @@ export const submitSpecialRidesApplication = onCall(
  */
 export const adminReviewSpecialRidesApplication = onCall(
   async (request) => {
-    const adminUid = request.auth?.uid;
-    if (!adminUid) invalid('Not authenticated');
-
-    // Check if user is admin
-    const adminSnap = await db.collection('admins').doc(adminUid).get();
-    if (!adminSnap.exists) invalid('Not authorized to review applications');
+    // Admin is a custom claim, set only by the backend (users/setUserRole) and
+    // read from the ID token — the same thing `isAdmin()` checks in the
+    // Firestore rules and every other admin callable uses.
+    //
+    // This used to look for a document in an `admins` collection. No code has
+    // ever written to that collection and the rules deny every client write to
+    // it, so it is always empty: a real admin, holding the claim the console
+    // signs them in with, was refused here every single time. Approving a car
+    // listing was unreachable.
+    const { uid: adminUid } = requireAdmin(request);
 
     const { uid, decision, rejectionReason, maxDailyRate } = request.data;
 
@@ -240,12 +244,9 @@ export const getSpecialRidesDashboard = onCall(async (request) => {
  * Admin can suspend a host's listing
  */
 export const adminSuspendHost = onCall(async (request) => {
-  const adminUid = request.auth?.uid;
-  if (!adminUid) invalid('Not authenticated');
-
-  // Check if user is admin
-  const adminSnap = await db.collection('admins').doc(adminUid).get();
-  if (!adminSnap.exists) invalid('Not authorized');
+  // Same claim-based check as the review callable above — see the note there
+  // about the `admins` collection this used to consult.
+  requireAdmin(request);
 
   const { uid, suspended, reason } = request.data;
   const now = Date.now();

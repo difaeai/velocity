@@ -26,5 +26,16 @@ export function routeForNotification(data: Record<string, unknown> | null | unde
   // customer). The same conversation screen serves both sides.
   if (screen === 'business-query' && str('queryId')) return `/passenger/offer-query/${str('queryId')}`;
   if (screen === 'business-ads') return '/passenger/business-ads';
+  // A scheduled ride that has just gone looking for a driver. The rider's whole
+  // reason for tapping is to watch it get picked up, and until now the tap did
+  // nothing at all — the notification was sent with a screen this table had
+  // never been told about (backend: scheduledRides/index.ts).
+  if (screen === 'trip' && str('tripId')) return `/passenger/trip/${str('tripId')}`;
+  // "Booking Confirmed 🎉" for a city-to-city seat. The id in the payload is the
+  // BOOKING id, which is what /passenger/intercity-trip/[id] takes — the same
+  // id city-to-city.tsx pushes on after booking (backend: intercity/index.ts).
+  if (screen === 'intercityTrip' && str('bookingId')) {
+    return `/passenger/intercity-trip/${str('bookingId')}`;
+  }
   return null;
 }

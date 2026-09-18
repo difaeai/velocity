@@ -35,6 +35,7 @@ import type {
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { useCurrentLocation } from '../../../src/hooks/location';
+import { useCachedResource } from '../../../src/lib/cachedResource';
 import {
   uploadBusinessAdImage,
   uploadBusinessAdPaymentProof,
@@ -59,8 +60,26 @@ export default function BusinessAdSubscribe() {
   const { user } = useAuth();
   const location = useCurrentLocation();
 
-  const [plans, setPlans] = useState<BusinessAdPlans | null>(null);
-  const [plansError, setPlansError] = useState(false);
+  /**
+   * The price list, from the cache first.
+   *
+   * It used to be a bare callable fired on mount, with every field on this
+   * screen held behind two grey skeletons until it answered — so opening
+   * "Get started" on a cold function meant staring at nothing for seconds
+   * before a single box could be typed into. The prices change about never,
+   * which makes them exactly what the stale-while-revalidate layer is for:
+   * last session's list paints on the first frame and the server's answer
+   * replaces it a moment later.
+   */
+  const {
+    data: plans,
+    error: plansError,
+    reload: loadPlans,
+  } = useCachedResource<BusinessAdPlans>(
+    'businessAdPlans',
+    () => api.getBusinessAdPlans({}),
+    'Could not load the advertising prices.',
+  );
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Step 1 — the offer and the reach.
@@ -89,21 +108,14 @@ export default function BusinessAdSubscribe() {
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function loadPlans() {
-    setPlansError(false);
-    api
-      .getBusinessAdPlans({})
-      .then((p) => {
-        setPlans(p);
-        // The backend decides which plan lengths are on sale; if the one we
-        // defaulted to isn't, fall back to the shortest that is.
-        const first = p.planMonths[0];
-        if (first && !p.planMonths.includes(months)) setMonths(first);
-      })
-      .catch(() => setPlansError(true));
-  }
-
-  useEffect(loadPlans, []);
+  // The backend decides which plan lengths are on sale; if the one we defaulted
+  // to isn't, fall back to the shortest that is. Runs whenever the list arrives
+  // or changes, which now includes the cached copy on the very first frame.
+  useEffect(() => {
+    if (!plans) return;
+    const first = plans.planMonths[0];
+    if (first && !plans.planMonths.includes(months)) setMonths(first);
+  }, [plans, months]);
 
   const tier: BusinessAdTier | null = useMemo(() => {
     if (!plans || plans.tiers.length === 0) return null;
@@ -190,14 +202,12 @@ export default function BusinessAdSubscribe() {
         <View style={[styles.progressFill, { width: `${(step / 3) * 100}%` }]} />
       </View>
 
-      {plansError ? (
+      {/* Only a failure with nothing cached takes the screen away. Everything on
+          step 1 except the price belongs to the user, not to the server, so it
+          renders while the price list is still in the air. */}
+      {plansError && !plans ? (
         <View style={{ padding: 16 }}>
-          <ErrorState message="Could not load the advertising prices." onRetry={loadPlans} />
-        </View>
-      ) : !plans || !tier ? (
-        <View style={{ padding: 16, gap: 12 }}>
-          <Skeleton height={120} />
-          <Skeleton height={90} />
+          <ErrorState message={plansError} onRetry={loadPlans} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
@@ -291,37 +301,50 @@ export default function BusinessAdSubscribe() {
               </View>
 
               <Text style={styles.sectionLabel}>HOW FAR TO REACH</Text>
-              <View style={styles.radiusRow}>
-                {RADIUS_STEPS.filter((km) => km <= plans.maxRadiusKm).map((km) => (
-                  <Pressable
-                    key={km}
-                    style={[styles.radiusChip, radiusKm === km && styles.radiusChipOn]}
-                    onPress={() => setRadiusKm(km)}
-                  >
-                    <Text style={[styles.radiusTxt, radiusKm === km && { color: colors.primary }]}>
-                      {km} km
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              {plans && tier ? (
+                <>
+                  <View style={styles.radiusRow}>
+                    {RADIUS_STEPS.filter((km) => km <= plans.maxRadiusKm).map((km) => (
+                      <Pressable
+                        key={km}
+                        style={[styles.radiusChip, radiusKm === km && styles.radiusChipOn]}
+                        onPress={() => setRadiusKm(km)}
+                      >
+                        <Text style={[styles.radiusTxt, radiusKm === km && { color: colors.primary }]}>
+                          {km} km
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
 
-              <View style={styles.quoteCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.quoteAmount}>{formatPKR(monthlyFee)}</Text>
-                  <Text style={styles.quoteMeta}>
-                    per month · {tier.adSlots} offer{tier.adSlots === 1 ? '' : 's'} running at a time
+                  <View style={styles.quoteCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.quoteAmount}>{formatPKR(monthlyFee)}</Text>
+                      <Text style={styles.quoteMeta}>
+                        per month · {tier.adSlots} offer{tier.adSlots === 1 ? '' : 's'} running at a time
+                      </Text>
+                    </View>
+                    <Text style={styles.quoteRadius}>{radiusKm} km</Text>
+                  </View>
+                  <Text style={styles.hint}>
+                    Everyone inside your radius gets your offer as a notification, and
+                    again every {plans.notifyCooldownHours} hours while your plan runs.
                   </Text>
+                </>
+              ) : (
+                /* First open on a fresh install. One strip and a line that says
+                   what is happening — not a screenful of grey over fields the
+                   user could already be filling in. */
+                <View style={{ gap: 8 }}>
+                  <Skeleton height={44} radius={12} />
+                  <Skeleton height={64} radius={16} />
+                  <Text style={styles.blockerHint}>Loading today&apos;s prices…</Text>
                 </View>
-                <Text style={styles.quoteRadius}>{radiusKm} km</Text>
-              </View>
-              <Text style={styles.hint}>
-                Everyone inside your radius gets your offer as a notification, and
-                again every {plans.notifyCooldownHours} hours while your plan runs.
-              </Text>
+              )}
 
               <PrimaryButton
                 label="Choose your plan →"
-                disabled={!step1Valid}
+                disabled={!step1Valid || !plans || !tier}
                 onPress={() => {
                   if (!step1Valid) {
                     Alert.alert('Almost there', 'Add your picture, offer and business details first.');
@@ -336,6 +359,14 @@ export default function BusinessAdSubscribe() {
                 </Text>
               ) : null}
             </>
+          ) : !plans || !tier ? (
+            /* Unreachable in practice — step 1's button stays disabled until the
+               price list is in hand — but steps 2 and 3 quote real money, so
+               they are written so they cannot render without it. */
+            <View style={{ gap: 12 }}>
+              <Skeleton height={120} />
+              <Skeleton height={90} />
+            </View>
           ) : step === 2 ? (
             <>
               <Text style={styles.stepTitle}>How long?</Text>
