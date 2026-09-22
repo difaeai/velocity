@@ -59,15 +59,69 @@ interface Sub {
   endAt?: Timestamp;
 }
 
+/** One frozen chat line, copied onto the report when it was filed. */
+interface TranscriptLine {
+  id: string;
+  senderId: string;
+  senderName: string;
+  type: string;
+  text: string;
+  at?: { seconds: number } | null;
+}
+
 interface ModerationReport {
   id: string;
   reporterId: string;
+  /** Denormalised at filing time. Absent on rows filed before names were stored. */
+  reporterName?: string;
   reportedUid: string;
+  reportedName?: string;
+  /** Where the report came from. Absent on rows filed before scopes existed. */
+  scope?: 'match' | 'group' | 'profile';
+  roomId?: string | null;
+  roomName?: string | null;
   matchId: string | null;
+  groupId?: string | null;
+  category?: string;
   reason: string;
-  status: 'open' | 'resolved';
+  /**
+   * The tail of the conversation, frozen server-side when the report was filed.
+   * Reporting closes the thread and blocking hides it, so by the time this
+   * queue is read the messages may be unreachable to anyone but the Admin SDK
+   * — the copy is what makes a report judgeable at all.
+   */
+  transcript?: TranscriptLine[];
+  alsoBlocked?: boolean;
+  status: 'open' | 'resolved' | 'dismissed';
+  outcome?: Outcome;
+  adminNote?: string | null;
+  resolvedBy?: string;
+  resolvedAt?: { seconds: number };
   createdAt?: { seconds: number };
 }
+
+type ReportFilter = 'open' | 'resolved' | 'all';
+type Outcome = 'dismissed' | 'warned' | 'suspended' | 'banned';
+
+/** Category id → how it reads in the queue. Unknown ids fall back to the id. */
+const CATEGORY_LABELS: Record<string, string> = {
+  harassment: 'Harassment',
+  threats: 'Threats',
+  sexual: 'Sexual / inappropriate',
+  spam: 'Spam',
+  scam: 'Scam or fraud',
+  fake_profile: 'Fake profile',
+  underage: 'Under 18',
+  other: 'Other',
+};
+
+/** The four ways a report can be closed, in ascending severity. */
+const OUTCOMES: { id: Outcome; label: string; hint: string }[] = [
+  { id: 'dismissed', label: 'Dismiss',          hint: 'Nothing wrong here — close without action' },
+  { id: 'warned',    label: 'Warn',             hint: 'Push a warning to them; the note is the message' },
+  { id: 'suspended', label: 'Suspend profile',  hint: 'Removes them from Travel Partner' },
+  { id: 'banned',    label: 'Ban account',      hint: 'Suspends the profile AND bans the whole account' },
+];
 
 interface TmSettings {
   freeMonthlySwipes: number;
@@ -129,6 +183,8 @@ export default function TravelMatePage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reports, setReports] = useState<ModerationReport[]>([]);
+  const [reportFilter, setReportFilter] = useState<ReportFilter>('open');
+  const [openCount, setOpenCount] = useState(0);
 
   // ── Plans real-time ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -154,10 +210,26 @@ export default function TravelMatePage() {
   }, []);
 
   // ── Reports real-time ─────────────────────────────────────────────────────
+  // Two listeners, because the tab badge has to keep saying how much work is
+  // waiting even while the desk is reading the resolved pile.
+  useEffect(() => {
+    const base = collection(db, 'travelMateReports');
+    const q =
+      reportFilter === 'all'
+        ? query(base, orderBy('createdAt', 'desc'), limit(200))
+        : reportFilter === 'open'
+          ? query(base, where('status', '==', 'open'), orderBy('createdAt', 'desc'), limit(200))
+          // 'resolved' covers both closed states — dismissed is a resolution.
+          : query(base, where('status', 'in', ['resolved', 'dismissed']), orderBy('createdAt', 'desc'), limit(200));
+    return onSnapshot(q, snap =>
+      setReports(snap.docs.map(d => ({ id: d.id, ...d.data() }) as ModerationReport)),
+    );
+  }, [reportFilter]);
+
   useEffect(() => {
     return onSnapshot(
-      query(collection(db, 'travelMateReports'), where('status', '==', 'open'), orderBy('createdAt', 'desc')),
-      snap => setReports(snap.docs.map(d => ({ id: d.id, ...d.data() }) as ModerationReport)),
+      query(collection(db, 'travelMateReports'), where('status', '==', 'open')),
+      snap => setOpenCount(snap.size),
     );
   }, []);
 
@@ -189,7 +261,7 @@ export default function TravelMatePage() {
             {t === 'subscriptions' ? '🧾 Subscriptions'
               : t === 'plans' ? '📋 Plans'
               : t === 'community' ? '🌍 Community'
-              : t === 'moderation' ? `🚩 Moderation${reports.length ? ` (${reports.length})` : ''}`
+              : t === 'moderation' ? `🚩 Moderation${openCount ? ` (${openCount})` : ''}`
               : '⚙️ Settings'}
           </Button>
         ))}
@@ -212,7 +284,16 @@ export default function TravelMatePage() {
         />
       )}
       {tab === 'settings' && <SettingsTab settings={settings} />}
-      {tab === 'moderation' && <ModerationTab reports={reports} busy={busy} call={call} />}
+      {tab === 'moderation' && (
+        <ModerationTab
+          reports={reports}
+          filter={reportFilter}
+          setFilter={setReportFilter}
+          openCount={openCount}
+          busy={busy}
+          call={call}
+        />
+      )}
       {tab === 'community' && <CommunityTab busy={busy} call={call} />}
     </div>
   );
@@ -946,92 +1027,223 @@ const pillActiveStyle: React.CSSProperties = {
 
 function ModerationTab({
   reports,
+  filter,
+  setFilter,
+  openCount,
   busy,
   call,
 }: {
   reports: ModerationReport[];
+  filter: ReportFilter;
+  setFilter: (f: ReportFilter) => void;
+  openCount: number;
   busy: string | null;
   call: <T>(fn: () => Promise<T>, id: string) => Promise<T | null>;
 }) {
-  const [suspendReason, setSuspendReason] = useState('');
-  const [suspendTarget, setSuspendTarget] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [pending, setPending] = useState<{ reportId: string; outcome: Outcome } | null>(null);
 
-  async function suspend(uid: string, reason: string) {
-    await call(() => adminApi.adminSuspendTravelMateProfile({ targetUid: uid, reason }), `suspend-${uid}`);
-    setSuspendTarget(null);
-    setSuspendReason('');
+  /**
+   * How many other rows in this view name the same person.
+   *
+   * One report is an accusation; four against the same account is a pattern,
+   * and the pattern is what a desk needs before it decides. Counted from the
+   * rows already loaded rather than with a fresh query per card — so it means
+   * "within this view", and the chip says so.
+   */
+  const repeatCounts = new Map<string, number>();
+  for (const r of reports) {
+    repeatCounts.set(r.reportedUid, (repeatCounts.get(r.reportedUid) ?? 0) + 1);
   }
+
+  async function resolve(reportId: string, outcome: Outcome) {
+    const done = await call(
+      () => adminApi.adminResolveTravelMateReport({ reportId, outcome, note: note.trim() || null }),
+      `resolve-${reportId}`,
+    );
+    if (done) {
+      setPending(null);
+      setNote('');
+    }
+  }
+
+  const filterRow = (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      {(['open', 'resolved', 'all'] as ReportFilter[]).map(f => (
+        <Button key={f} variant={filter === f ? 'primary' : 'ghost'} onClick={() => setFilter(f)}>
+          {f === 'open' ? `Open${openCount ? ` (${openCount})` : ''}` : f === 'resolved' ? 'Closed' : 'All'}
+        </Button>
+      ))}
+    </div>
+  );
 
   if (reports.length === 0) {
     return (
-      <Card>
-        <p style={{ color: colors.muted, fontSize: 14, margin: 0, textAlign: 'center' }}>
-          No open reports — queue is clear ✅
-        </p>
-      </Card>
+      <div>
+        {filterRow}
+        <Card>
+          <p style={{ color: colors.muted, fontSize: 14, margin: 0, textAlign: 'center' }}>
+            {filter === 'open' ? 'No open reports — queue is clear ✅' : 'Nothing here.'}
+          </p>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      {reports.map(r => (
-        <Card key={r.id}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: colors.danger, background: `${colors.danger}18`, padding: '3px 8px', borderRadius: 6 }}>🚩 Open</span>
-                {r.createdAt && (
-                  <span style={{ fontSize: 11, color: colors.muted }}>
-                    {new Date(r.createdAt.seconds * 1000).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <div style={{ fontSize: 13, color: colors.muted }}>
-                  Reporter: <code style={{ color: colors.text, fontSize: 11 }}>{r.reporterId}</code>
+    <div>
+      {filterRow}
+      <div style={{ display: 'grid', gap: 14 }}>
+        {reports.map(r => {
+          const closed = r.status !== 'open';
+          const repeats = (repeatCounts.get(r.reportedUid) ?? 1) - 1;
+          const transcript = r.transcript ?? [];
+          const showing = expanded === r.id;
+          const scopeLabel =
+            r.scope === 'group' ? `Group chat${r.roomName ? ` · ${r.roomName}` : ''}`
+              : r.scope === 'profile' ? 'Profile'
+                : r.scope === 'match' || r.matchId ? '1:1 chat'
+                  : 'Unknown';
+
+          return (
+            <Card key={r.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 320 }}>
+                  {/* Status, category, scope and date — enough to triage the
+                      row without opening anything. */}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={closed ? chipNeutral : chipDanger}>
+                      {closed
+                        ? (r.outcome === 'dismissed' ? '⚪ Dismissed' : `✅ ${r.outcome ?? 'Resolved'}`)
+                        : '🚩 Open'}
+                    </span>
+                    <span style={chipAccent}>{CATEGORY_LABELS[r.category ?? 'other'] ?? r.category}</span>
+                    <span style={chipNeutral}>{scopeLabel}</span>
+                    {r.alsoBlocked && <span style={chipNeutral}>Reporter blocked them</span>}
+                    {repeats > 0 && (
+                      <span style={chipDanger}>{repeats + 1} reports in this view</span>
+                    )}
+                    {r.createdAt && (
+                      <span style={{ fontSize: 11, color: colors.muted }}>
+                        {new Date(r.createdAt.seconds * 1000).toLocaleString('en-PK', {
+                          day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ fontSize: 13, color: colors.muted }}>
+                      Reported: <strong style={{ color: colors.text }}>{r.reportedName ?? 'Unknown'}</strong>{' '}
+                      <code style={{ fontSize: 11 }}>{r.reportedUid}</code>
+                    </div>
+                    <div style={{ fontSize: 13, color: colors.muted }}>
+                      Reporter: <strong style={{ color: colors.text }}>{r.reporterName ?? 'Unknown'}</strong>{' '}
+                      <code style={{ fontSize: 11 }}>{r.reporterId}</code>
+                    </div>
+                    {r.roomId && (
+                      <div style={{ fontSize: 13, color: colors.muted }}>
+                        Room: <code style={{ fontSize: 11 }}>{r.roomId}</code>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, color: colors.text, marginTop: 4, padding: '8px 10px', borderRadius: 8, background: colors.bg, whiteSpace: 'pre-wrap' }}>
+                      &ldquo;{r.reason}&rdquo;
+                    </div>
+                    {closed && r.adminNote && (
+                      <div style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
+                        Admin note: {r.adminNote}{r.resolvedBy ? ` — ${r.resolvedBy}` : ''}
+                      </div>
+                    )}
+                  </div>
+
+                  {transcript.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <Button variant="ghost" onClick={() => setExpanded(showing ? null : r.id)}>
+                        {showing ? 'Hide conversation' : `Show conversation (${transcript.length})`}
+                      </Button>
+                      {showing && (
+                        <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'grid', gap: 6, padding: 12, borderRadius: 10, background: colors.bg, border: `1px solid ${colors.border}` }}>
+                          {transcript.map(line => (
+                            <div key={line.id} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                              <strong style={{ color: line.senderId === r.reportedUid ? colors.danger : colors.text }}>
+                                {line.senderName || line.senderId}
+                              </strong>
+                              {line.at && (
+                                <span style={{ color: colors.muted, fontSize: 10.5, marginLeft: 6 }}>
+                                  {new Date(line.at.seconds * 1000).toLocaleString('en-PK', {
+                                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                                  })}
+                                </span>
+                              )}
+                              <div style={{ color: colors.text, whiteSpace: 'pre-wrap' }}>{line.text}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: 13, color: colors.muted }}>
-                  Reported: <code style={{ color: colors.text, fontSize: 11 }}>{r.reportedUid}</code>
-                </div>
-                {r.matchId && (
-                  <div style={{ fontSize: 13, color: colors.muted }}>
-                    Match: <code style={{ color: colors.text, fontSize: 11 }}>{r.matchId}</code>
+
+                {!closed && (
+                  <div style={{ display: 'grid', gap: 8, minWidth: 260 }}>
+                    {pending?.reportId === r.id ? (
+                      <>
+                        <div style={{ fontSize: 12, color: colors.muted }}>
+                          {OUTCOMES.find(o => o.id === pending.outcome)?.hint}
+                        </div>
+                        <input
+                          value={note}
+                          onChange={e => setNote(e.target.value)}
+                          placeholder={pending.outcome === 'warned' ? 'Warning message (sent to them)' : 'Note (internal, optional)'}
+                          style={{ ...inputStyle, fontSize: 12, padding: '6px 10px' }}
+                        />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <Button variant="ghost" onClick={() => { setPending(null); setNote(''); }}>
+                            Cancel
+                          </Button>
+                          <Button
+                            variant={pending.outcome === 'dismissed' ? 'secondary' : 'danger'}
+                            disabled={busy === `resolve-${r.id}`}
+                            onClick={() => resolve(r.id, pending.outcome)}
+                          >
+                            {busy === `resolve-${r.id}`
+                              ? 'Working…'
+                              : `Confirm ${OUTCOMES.find(o => o.id === pending.outcome)?.label}`}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      OUTCOMES.map(o => (
+                        <Button
+                          key={o.id}
+                          variant={o.id === 'dismissed' ? 'ghost' : o.id === 'warned' ? 'secondary' : 'danger'}
+                          onClick={() => { setPending({ reportId: r.id, outcome: o.id }); setNote(''); }}
+                        >
+                          {o.label}
+                        </Button>
+                      ))
+                    )}
                   </div>
                 )}
-                <div style={{ fontSize: 13, color: colors.text, marginTop: 4, padding: '8px 10px', borderRadius: 8, background: colors.bg }}>
-                  "{r.reason}"
-                </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {suspendTarget === r.reportedUid ? (
-                <div style={{ display: 'grid', gap: 8, minWidth: 220 }}>
-                  <input
-                    value={suspendReason}
-                    onChange={e => setSuspendReason(e.target.value)}
-                    placeholder="Suspension reason (optional)"
-                    style={{ ...inputStyle, fontSize: 12, padding: '6px 10px' }}
-                  />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button variant="ghost" onClick={() => setSuspendTarget(null)}>Cancel</Button>
-                    <Button
-                      variant="danger"
-                      disabled={busy === `suspend-${r.reportedUid}`}
-                      onClick={() => suspend(r.reportedUid, suspendReason)}
-                    >
-                      {busy === `suspend-${r.reportedUid}` ? 'Suspending…' : 'Confirm suspend'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button variant="danger" onClick={() => setSuspendTarget(r.reportedUid)}>
-                  Suspend profile
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-      ))}
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+// Report chips. Inline rather than classed because this dashboard carries no
+// CSS module — every other tab on the page styles the same way.
+const chipBase: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 700,
+  padding: '3px 8px',
+  borderRadius: 6,
+  whiteSpace: 'nowrap',
+};
+const chipDanger: React.CSSProperties = { ...chipBase, color: colors.danger, background: `${colors.danger}18` };
+const chipAccent: React.CSSProperties = { ...chipBase, color: colors.primary, background: `${colors.primary}18` };
+const chipNeutral: React.CSSProperties = { ...chipBase, color: colors.muted, background: `${colors.muted}1f` };

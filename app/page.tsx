@@ -11,6 +11,7 @@ import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
 import { SpotlightGrid } from '@/components/site/Spotlight';
 import { SpeedStage } from '@/components/site/SpeedStage';
+import { InstallBarSubtitle, InstallButton } from '@/components/site/InstallButton';
 import {
   AppleMark,
   ArrowRight,
@@ -46,9 +47,11 @@ import {
   SOCIAL_PROFILES,
   FACEBOOK_URL,
   INSTAGRAM_URL,
+  PLAY_URL,
+  APP_STORE_URL,
+  IOS_REQUIREMENT,
+  ANDROID_REQUIREMENT,
 } from '@/lib/site';
-
-const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 
 /**
  * The homepage is the one indexable App Router page, so the canonical lives
@@ -60,27 +63,92 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
 };
 
-/** Store badge — Play links out, Apple is honestly marked as not shipped yet. */
+/**
+ * Store badge. Both platforms are live, so both are real links.
+ *
+ * The iOS half used to be a dead `<span>` reading "Coming soon to the App
+ * Store" — deliberately not a link, because it was not shipped. It has shipped,
+ * so it is a link like any other, and the muted `storeSoon` treatment that told
+ * people not to tap it is gone.
+ */
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
-  if (variant === 'ios') {
-    return (
-      <span className={`${styles.store} ${styles.storeSoon}`}>
-        <AppleMark />
-        <span className={styles.storeText}>
-          <small>Coming soon to</small>
-          <strong>the App Store</strong>
-        </span>
-      </span>
-    );
-  }
+  const ios = variant === 'ios';
   return (
-    <a className={styles.store} href={PLAY_URL} target="_blank" rel="noreferrer">
-      <GooglePlay />
+    <a
+      className={styles.store}
+      href={ios ? APP_STORE_URL : PLAY_URL}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {ios ? <AppleMark /> : <GooglePlay />}
       <span className={styles.storeText}>
-        <small>Get it on</small>
-        <strong>Google Play</strong>
+        <small>{ios ? 'Download on' : 'Get it on'}</small>
+        <strong>{ios ? 'the App Store' : 'Google Play'}</strong>
       </span>
     </a>
+  );
+}
+
+/**
+ * The two platforms, side by side, each with what it actually needs to run.
+ *
+ * A row of badges says "you can get this"; it does not say "and it will work
+ * on your phone", which is the question someone on a five-year-old Android
+ * handset is actually asking. The requirement line answers it before the tap.
+ */
+const PLATFORMS = [
+  {
+    id: 'ios' as const,
+    mark: AppleMark,
+    name: 'iPhone',
+    store: 'App Store',
+    requirement: IOS_REQUIREMENT,
+    href: APP_STORE_URL,
+  },
+  {
+    id: 'android' as const,
+    mark: GooglePlay,
+    name: 'Android',
+    store: 'Google Play',
+    requirement: ANDROID_REQUIREMENT,
+    href: PLAY_URL,
+  },
+];
+
+function AvailabilityCards() {
+  return (
+    <div className={styles.platformGrid}>
+      {PLATFORMS.map((p) => {
+        const Mark = p.mark;
+        return (
+          <a
+            key={p.id}
+            className={styles.platformCard}
+            href={p.href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className={styles.platformMark} aria-hidden="true">
+              <Mark />
+            </span>
+            <span className={styles.platformBody}>
+              <span className={styles.platformRow}>
+                <strong>{p.name}</strong>
+                <span className={styles.platformLive}>
+                  <span className={styles.pulse} aria-hidden="true" />
+                  Live
+                </span>
+              </span>
+              <small>{p.requirement}</small>
+            </span>
+            <span className={styles.platformGo}>
+              {p.store}
+              <ArrowRight />
+            </span>
+          </a>
+        );
+      })}
+    </div>
   );
 }
 
@@ -301,12 +369,25 @@ const JSON_LD = {
       areaServed: { '@type': 'Country', name: 'Pakistan' },
       sameAs: SOCIAL_PROFILES,
     },
+    // One node per store rather than one node listing two operating systems:
+    // `installUrl` is singular, and a single node would have to pick a store to
+    // point at — which is how the iOS listing stayed invisible to search after
+    // it shipped.
     {
       '@type': 'MobileApplication',
       name: 'Velocity Rides',
-      operatingSystem: 'Android',
+      operatingSystem: 'Android 7.0+',
       applicationCategory: 'TravelApplication',
       installUrl: PLAY_URL,
+      publisher: { '@id': `${SITE}#org` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
+    },
+    {
+      '@type': 'MobileApplication',
+      name: 'Velocity Rides',
+      operatingSystem: 'iOS 16.4+',
+      applicationCategory: 'TravelApplication',
+      installUrl: APP_STORE_URL,
       publisher: { '@id': `${SITE}#org` },
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
     },
@@ -328,7 +409,7 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
       />
-      <SiteNav playUrl={PLAY_URL} />
+      <SiteNav />
 
       <main>
         {/* ── hero ──────────────────────────────────────────────────────── */}
@@ -341,7 +422,7 @@ export default function Home() {
               <div className={styles.heroCopy}>
                 <span className={styles.launchPill}>
                   <span className={styles.pulse} aria-hidden="true" />
-                  Now live on Google Play
+                  Now live on iPhone and Android
                 </span>
 
                 {/* Each line rises out of its own mask. The text is real text —
@@ -940,8 +1021,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── climax CTA ────────────────────────────────────────────────── */}
-        <section className={styles.sectionTight}>
+        {/* ── climax CTA + availability ─────────────────────────────────── */}
+        <section className={styles.sectionTight} id="get">
           <div className={styles.wrap}>
             <Reveal className={styles.ctaBand}>
               <span className={styles.ctaStripes} aria-hidden="true" />
@@ -949,15 +1030,12 @@ export default function Home() {
                 <Bolt />
                 Get moving
               </span>
-              <h2>Your next ride is one download away</h2>
+              <h2>One app, on both your phones</h2>
               <p>
-                Velocity Rides is free to install and free to join as a driver. Sign in with your phone
-                number and book the first thing you need today.
+                Velocity Rides is out now on iPhone and Android — the same account, the same rides and
+                the same cash payments on either. Free to install, free to join as a driver.
               </p>
-              <div className={styles.ctaActions}>
-                <StoreBadge variant="play" />
-                <StoreBadge variant="ios" />
-              </div>
+              <AvailabilityCards />
             </Reveal>
           </div>
         </section>
@@ -971,16 +1049,9 @@ export default function Home() {
         </span>
         <span className={styles.mobileBarText}>
           <strong>Get Velocity Rides</strong>
-          <span>Free on Google Play</span>
+          <InstallBarSubtitle />
         </span>
-        <a
-          className={`${styles.btn} ${styles.btnLime}`}
-          href={PLAY_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Install
-        </a>
+        <InstallButton label="Install" />
       </div>
 
       {/* ── footer ──────────────────────────────────────────────────────── */}
@@ -996,9 +1067,12 @@ export default function Home() {
               </a>
               <p>
                 Ride-hailing, pooling, intercity seats and couriers, built for Pakistan. Available on
-                Google Play.
+                the App Store and Google Play.
               </p>
-              <StoreBadge variant="play" />
+              <div className={styles.footerStores}>
+                <StoreBadge variant="ios" />
+                <StoreBadge variant="play" />
+              </div>
             </div>
 
             <div className={styles.footerCol}>

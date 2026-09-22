@@ -338,19 +338,121 @@
   letter-spacing: -0.02em;
 }
 
-/* The iOS badge is honestly marked as not shipped — it is not a link and must
-   not look like one. */
-.storeSoon {
-  background: transparent;
-  color: var(--text-mut);
-  border-color: var(--line-hi);
-  box-shadow: none;
-  cursor: default;
+/* ── availability cards ────────────────────────────────────────────────────
+   Two platforms, side by side, each saying what it needs to run. Sized to sit
+   inside .ctaBand, which is centred — hence the auto margins on the grid and
+   the left-aligned card contents, so the text does not centre with it. */
+.platformGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  width: min(100%, 720px);
+  /* .ctaBand is a centred column with its own gap, so no top margin here —
+     adding one would space this away from the paragraph twice. */
+  margin-inline: auto;
+  text-align: left;
 }
 
-.storeSoon:hover {
-  transform: none;
-  box-shadow: none;
+.platformCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-hi);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  transition:
+    transform 220ms var(--ease),
+    border-color 220ms var(--ease),
+    background 220ms var(--ease);
+}
+
+.platformCard:hover {
+  transform: translateY(-3px);
+  border-color: var(--lime);
+  background: rgba(204, 255, 0, 0.07);
+}
+
+.platformMark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--white);
+}
+
+.platformMark svg {
+  width: 23px;
+  height: 23px;
+}
+
+.platformBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.platformRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.platformRow strong {
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+
+/* The live dot reuses .pulse, so the hero pill and these cards can never
+   disagree about what "live" looks like. */
+.platformLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+
+.platformBody small {
+  font-size: 12.5px;
+  color: var(--text-mut);
+}
+
+.platformGo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+
+.platformGo svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Both store badges in the footer, wrapping rather than overflowing the
+   column they sit in. */
+.footerStores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 /* ==========================================================================
@@ -2304,14 +2406,6 @@
   font-size: clamp(16px, 1.5vw, 19px);
 }
 
-.ctaActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-top: var(--s-3);
-}
-
 /* ==========================================================================
    MOBILE INSTALL BAR
    ========================================================================== */
@@ -2591,12 +2685,19 @@
   }
 }
 
+@media (max-width: 720px) {
+  .platformGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 520px) {
   .footerGrid {
     grid-template-columns: 1fr;
   }
 
-  .heroActions .store {
+  .heroActions .store,
+  .footerStores .store {
     width: 100%;
   }
 }

@@ -102,18 +102,27 @@ describe('reportTravelMateUser', () => {
     expect(snap.data()!.status).toBe('unmatched');
   });
 
-  it('SECURITY: non-participant cannot auto-close a match', async () => {
+  it('SECURITY: a non-participant cannot attach someone else’s match to a report', async () => {
     // Eve knows Alice and Bob's matchId but is not in the match.
+    //
+    // This used to file the report and merely ignore the matchId. It is now a
+    // hard rejection, because a report carries a transcript of the room it
+    // names: quietly accepting a matchId the caller is not in would hand Eve a
+    // copy of a conversation she cannot otherwise read, in a doc she is allowed
+    // to read back as its reporter.
     const matchId = await seedMatch(ALICE, BOB);
-    await reportTravelMateUser.run(makeReq({ reportedUid: BOB, matchId, reason: 'Abuse' }, EVE));
+    await expect(
+      reportTravelMateUser.run(makeReq({ reportedUid: BOB, matchId, reason: 'Abuse' }, EVE)),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
 
-    // Match must still be active — the report is created but the match is NOT closed.
     const snap = await db().doc(`travelMateMatches/${matchId}`).get();
     expect(snap.data()!.status).toBe('active');
+    expect((await db().collection('travelMateReports').get()).empty).toBe(true);
 
-    // Report doc IS created (reporter still files the report)
-    const reports = await db().collection('travelMateReports').get();
-    expect(reports.size).toBe(1);
+    // Reporting Bob's *profile* is still open to her — she just cannot name a
+    // room she is not in.
+    await reportTravelMateUser.run(makeReq({ reportedUid: BOB, reason: 'Abuse' }, EVE));
+    expect((await db().collection('travelMateReports').get()).size).toBe(1);
   });
 
   it('report without matchId does not touch any match', async () => {

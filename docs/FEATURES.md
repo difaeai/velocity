@@ -1270,7 +1270,10 @@ everyone.
   own Storage bucket (`travelMateChat/{uid}/…`), so a message cannot smuggle an
   external link. See `src/chat/attachments.ts`, `ChatModal`, `EmojiPicker`.
 - `reactToTravelMateMessage` — emoji reactions.
-- `unmatchTravelMate`, `reportTravelMateUser` (optionally auto-unmatching).
+- `unmatchTravelMate`, `reportTravelMateUser` (a thin adapter over
+  `fileTravelMateReport`, so a report raised from a profile has the same shape
+  as one raised from a chat).
+- Chat management lives behind the header **⋮** menu — see §13.6a.
 
 ### 13.6 Groups and fare split
 
@@ -1285,7 +1288,47 @@ everyone.
   divides the fare equally via wallet transfers **between the passengers**. The
   driver is paid the full fare as usual and **sees nothing different — zero
   driver-side change.**
-- `openTravelMateDirectChat` opens a private DM with a group member.
+- `openTravelMateDirectChat` opens a private DM with a group member. A block in
+  either direction closes that door.
+
+### 13.6a Chat management (leave · block · report)
+
+`leaveTravelMateChat`, `leaveTravelMateGroupChat`, `reportTravelMateChat`,
+`adminResolveTravelMateReport` (`travelMate/chatModeration.ts`); shared UI in
+`src/ui/ChatSafety.tsx` (`ChatMenuSheet`, `ReportSheet`).
+
+**Scope — this is Travel Partner only.** The rider↔driver trip chat deliberately
+has none of it: a booked ride is a contract with someone already on their way,
+and "leave chat" there would strand both sides mid-trip. Trip-chat safety runs
+through SOS and the disputes desk instead.
+
+- **Leave a 1:1** — `leaveTravelMateChat` sets `status: 'left'`, records
+  `leftBy`, and adds the leaver to `hiddenFor`. A two-person conversation ends
+  when one person walks out, so it closes for **both**; the other side keeps the
+  history and a banner naming who left.
+- **Leave a group** — `leaveTravelMateGroupChat` removes the uid from `members`,
+  which *is* the access check in the Firestore rules, so read access goes with
+  it. Posts a `type: 'system'` line, hands `createdBy` to the next member if the
+  creator left, and closes the group (`status: 'closed'`) when the last member
+  goes. The group screen pops itself the moment its listener is denied.
+- **Block** — the same `blockTravelMateUser` as everywhere else, now sharing one
+  `performTravelMateBlock` helper so a "block them too" on a report places an
+  identical block. In a group it cannot evict anyone; it hides their messages
+  for the blocker and stops their pushes.
+- **Report** — `reportTravelMateChat` takes a scope (`match` / `group` /
+  `profile`), a category from a fixed list (harassment, threats, sexual, spam,
+  scam, fake_profile, underage, other) and optional detail, and can block in the
+  same action. A 1:1 report closes the thread; a group report disturbs nothing.
+  Rate-limited to 20 per user per day.
+- **Transcripts** — the report freezes the last 30 messages of the room onto the
+  report doc. Reporting closes the thread and blocking hides it, so by the time
+  the desk reads the queue the evidence may be unreachable to anyone but the
+  Admin SDK. Attachments are summarised (`[image]`), never copied — a report is
+  a record of what was said, not a second door to the media.
+- **SECURITY** — a caller who is not in the named room is rejected outright
+  rather than having the room quietly ignored. Accepting a `roomId` the caller
+  is not in would hand them a transcript they cannot otherwise read, inside a
+  doc they may read back as its reporter.
 
 ### 13.7 Shareable ride links
 
@@ -1333,7 +1376,17 @@ Tabs (`TravelMateTabBar`): **Home · Feed · Matches · Chats · Profile**.
 - `adminUpdateTravelMatePost` — edit or take down a post.
 - `adminUpsertTravelMateCommunity` / `adminDeleteTravelMateCommunity` — curate
   city communities.
-- Reports land in a queue on the **Travel Partner** admin page.
+- Reports land in the **Moderation** tab of the **Travel Partner** admin page:
+  both names, the category, the scope, how many rows in the view name the same
+  person, and the frozen transcript behind a "Show conversation" toggle.
+  Filter by Open / Closed / All.
+- `adminResolveTravelMateReport` closes a report **and carries the outcome out**
+  — `dismissed`, `warned` (pushes the note to them and counts on the profile),
+  `suspended` (`travelMateProfiles.active = false`) or `banned` (suspends the
+  profile *and* sets `users/{uid}.banned`, the same flag `banPassenger` writes).
+  Every outcome writes an `auditLogs` row. Before this the queue could only
+  grow: nothing could close a report, so the tab's count measured the age of the
+  product rather than the work waiting.
 
 ### 13.10 Subscriptions (built, switched off)
 

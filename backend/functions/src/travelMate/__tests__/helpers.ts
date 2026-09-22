@@ -79,6 +79,40 @@ export async function seedMatch(uidA: string, uidB: string, status = 'active') {
   return id;
 }
 
+/**
+ * Build a CallableRequest whose caller holds the admin claim.
+ *
+ * requireAdmin reads the role off the decoded token, not off the uid, so an
+ * admin test request differs from makeReq only in that claim.
+ */
+export function makeAdminReq<T>(data: T, uid = 'admin-uid'): CallableRequest<T> {
+  return {
+    data,
+    auth: { uid, token: { uid, role: 'admin' } as unknown as admin.auth.DecodedIdToken },
+    acceptsStreaming: false,
+    rawRequest: {} as never,
+  } as unknown as CallableRequest<T>;
+}
+
+/** Seed a commute group with the given members (first one is the creator). */
+export async function seedGroup(members: string[], overrides: Record<string, unknown> = {}) {
+  const ref = db().collection('travelMateGroups').doc();
+  const memberInfo: Record<string, unknown> = {};
+  for (const m of members) memberInfo[m] = { displayName: `User ${m}`, photoURL: null };
+  await ref.set({
+    name: 'Test group',
+    createdBy: members[0],
+    members,
+    memberInfo,
+    destinationName: 'Office',
+    maxSize: 4,
+    status: 'open',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...overrides,
+  });
+  return ref.id;
+}
+
 /** Seed a wallet with a balance. */
 export async function seedWallet(uid: string, balance: number) {
   await db().doc(`wallets/${uid}`).set({ uid, balance, currency: 'PKR' });

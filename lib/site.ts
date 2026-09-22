@@ -21,6 +21,26 @@ export const DELETE_ACCOUNT_URL = `${SITE_URL}/delete-account`;
 export const TERMS_URL = `${SITE_URL}/terms`;
 
 /**
+ * The two stores the app actually ships on.
+ *
+ * Both live here for the same reason every other outward link does: the
+ * homepage names them in five places (hero, availability cards, the sticky
+ * install bar, the nav button and the structured data) and four of those were
+ * wrong the day iOS shipped. One constant each.
+ *
+ * The Play id is the registered package name and the Apple id is the App Store
+ * Connect app id — neither is a display name, and neither changes when the
+ * brand does. Do not "tidy" them.
+ */
+export const PLAY_URL =
+  'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
+export const APP_STORE_URL = 'https://apps.apple.com/pk/app/velocity-rides/id6810774199';
+
+/** What each store's listing requires, for the availability cards. */
+export const IOS_REQUIREMENT = 'iPhone · iOS 16.4 or later';
+export const ANDROID_REQUIREMENT = 'Phones & tablets · Android 7.0+';
+
+/**
  * Where support mail goes. Kept here so the legal pages and the site agree.
  *
  * This is a domain mailbox, not a personal inbox: it has to keep working when

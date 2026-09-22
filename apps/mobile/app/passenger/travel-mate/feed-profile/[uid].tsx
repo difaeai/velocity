@@ -45,6 +45,7 @@ import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TMComment, type TMCommunity, type TMPost } from '../../../../src/api/client';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../../src/hooks/travelMateCommunity';
+import { ReportSheet, type ReportSubmission } from '../../../../src/ui/ChatSafety';
 import { timeAgo, joinedLabel } from '../../../../src/lib/timeAgo';
 import { areaSummary } from '../../../../src/lib/areaLabel';
 import { colors } from '../../../../src/config';
@@ -82,6 +83,8 @@ export default function FeedProfile() {
   const { user } = useAuth();
   const router = useRouter();
   const blocked = useBlockedSet();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const following = useFollowingSet();
   const myProfile = useMyTMProfile();
 
@@ -253,19 +256,7 @@ export default function FeedProfile() {
       },
       {
         text: 'Report user',
-        onPress: () => {
-          Alert.alert('Report user', 'Tell us what happened — our team reviews every report.', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Inappropriate content',
-              onPress: () => report('Inappropriate content (community feed)'),
-            },
-            {
-              text: 'Harassment or spam',
-              onPress: () => report('Harassment or spam (community feed)'),
-            },
-          ]);
-        },
+        onPress: () => setReportOpen(true),
       },
     ]);
   }
@@ -301,13 +292,36 @@ export default function FeedProfile() {
     }
   }
 
-  async function report(reason: string) {
+  /**
+   * The same report sheet the chats use.
+   *
+   * It used to be a two-option nested Alert whose "reason" was a sentence with
+   * "(community feed)" glued on the end, which meant the moderation queue could
+   * not sort profile reports alongside chat ones. One sheet, one category list,
+   * one shape in the queue.
+   */
+  async function submitReport({ category, reason, alsoBlock }: ReportSubmission) {
     if (!profile) return;
+    setReporting(true);
     try {
-      await api.reportTravelMateUser({ reportedUid: profile.uid, reason });
-      Alert.alert('Thank you', 'Your report was submitted and will be reviewed.');
-    } catch {
-      Alert.alert('Error', 'Could not submit the report.');
+      await api.reportTravelMateChat({
+        scope: 'profile',
+        reportedUid: profile.uid,
+        category,
+        reason,
+        alsoBlock,
+      });
+      setReportOpen(false);
+      Alert.alert(
+        'Report sent',
+        alsoBlock
+          ? `Thanks — our safety team will review this. ${profile.displayName} has been blocked.`
+          : 'Thanks — our safety team will review this.',
+      );
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not submit the report.');
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -709,6 +723,14 @@ export default function FeedProfile() {
           </View>
         </View>
       </Modal>
+
+      <ReportSheet
+        visible={reportOpen}
+        personName={profile?.displayName ?? 'this person'}
+        submitting={reporting}
+        onClose={() => setReportOpen(false)}
+        onSubmit={submitReport}
+      />
     </SafeAreaView>
   );
 }

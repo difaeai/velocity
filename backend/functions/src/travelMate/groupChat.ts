@@ -24,6 +24,8 @@ import { z } from 'zod';
 
 import { sendToUser } from '../lib/fcm';
 
+import { assertNotBlocked, isBlockedEitherWay } from './community';
+
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
@@ -74,8 +76,16 @@ export const sendTravelMateGroupMessage = onCall({ region: REGION }, async (req:
   batch.update(groupRef, { lastMessage: text.substring(0, 100), lastMessageAt: now, lastMessageFrom: uid });
   await batch.commit();
 
+  // A block cannot remove someone from a shared group, but it does end the
+  // notifications: a member who blocked the sender has their messages hidden in
+  // the group screen, and buzzing their phone for a message they will never see
+  // would make the block look broken.
+  const recipients = members.filter((m) => m !== uid);
+  const reachable = await Promise.all(
+    recipients.map(async (m) => ((await isBlockedEitherWay(uid, m)) ? null : m)),
+  );
   await Promise.all(
-    members.filter((m) => m !== uid).map((m) =>
+    reachable.filter((m): m is string => m !== null).map((m) =>
       pushTo(m, `${senderName} · ${group.name ?? 'Group'}`, text, {
         type: 'travelMate.groupMessage', groupId,
       }),
@@ -98,6 +108,10 @@ export const openTravelMateDirectChat = onCall({ region: REGION }, async (req: C
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { targetUid, groupId } = parsed.data;
   if (targetUid === uid) throw new HttpsError('invalid-argument', 'You cannot chat with yourself.');
+
+  // Sharing a group is not a way around a block. Checked here as well as on
+  // send, because opening the thread is what puts a row in both inboxes.
+  await assertNotBlocked(uid, targetUid);
 
   const matchRef = db.doc(`travelMateMatches/${pairId(uid, targetUid)}`);
   const matchSnap = await matchRef.get();
