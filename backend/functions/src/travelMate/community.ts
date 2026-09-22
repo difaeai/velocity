@@ -79,14 +79,19 @@ async function requireProfile(uid: string): Promise<ProfileInfo> {
   return { displayName: (d.displayName as string) ?? 'Member', photoURL: (d.photoURL as string) ?? null };
 }
 
-/** Throws if either user has blocked the other. The generic message never
- *  reveals which side placed the block. */
-export async function assertNotBlocked(a: string, b: string): Promise<void> {
+/** True when either user has blocked the other, in either direction. */
+export async function isBlockedEitherWay(a: string, b: string): Promise<boolean> {
   const [ab, ba] = await Promise.all([
     db.doc(`travelMateBlocks/${a}_${b}`).get(),
     db.doc(`travelMateBlocks/${b}_${a}`).get(),
   ]);
-  if (ab.exists || ba.exists) {
+  return ab.exists || ba.exists;
+}
+
+/** Throws if either user has blocked the other. The generic message never
+ *  reveals which side placed the block. */
+export async function assertNotBlocked(a: string, b: string): Promise<void> {
+  if (await isBlockedEitherWay(a, b)) {
     throw new HttpsError('permission-denied', 'This user is unavailable.');
   }
 }
@@ -532,12 +537,17 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
 // ---------------------------------------------------------------------------
 const BlockInput = z.object({ targetUid: z.string().min(1).max(128) });
 
-export const blockTravelMateUser = onCall({ region: REGION }, async (req: CallableRequest) => {
-  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
-  const uid = req.auth.uid;
-  const parsed = BlockInput.safeParse(req.data);
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
-  const { targetUid } = parsed.data;
+/**
+ * Place a block and sever everything it implies.
+ *
+ * Exported because blocking is not only its own action: the report sheet in
+ * every chat offers "block them too", and a report that blocks must place
+ * exactly the same block — same doc id, same severed follows, same closed
+ * thread. Two code paths that merely *look* the same drift, and the half that
+ * drifts is the one nobody reads until someone stays reachable after being
+ * blocked.
+ */
+export async function performTravelMateBlock(uid: string, targetUid: string): Promise<void> {
   if (targetUid === uid) throw new HttpsError('invalid-argument', 'You cannot block yourself.');
 
   // Denormalise the target's name/photo so the "Blocked users" screen renders
@@ -558,17 +568,31 @@ export const blockTravelMateUser = onCall({ region: REGION }, async (req: Callab
   batch.delete(db.doc(`travelMateFollows/${targetUid}_${uid}`));
   await batch.commit();
 
-  // Close any open chat/match so neither side can keep messaging.
+  // Close any open chat/match so neither side can keep messaging, and drop it
+  // out of the blocker's own inbox — they asked never to hear from this person
+  // again, and a closed-but-visible row is still hearing from them.
   const matchRef = db.doc(`travelMateMatches/${pairId(uid, targetUid)}`);
   const matchSnap = await matchRef.get();
-  if (matchSnap.exists && (matchSnap.data()!.status ?? 'active') === 'active') {
-    await matchRef.update({
-      status: 'unmatched',
-      unmatchedBy: uid,
-      unmatchedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+  if (matchSnap.exists) {
+    const update: Record<string, unknown> = {
+      hiddenFor: admin.firestore.FieldValue.arrayUnion(uid),
+    };
+    if ((matchSnap.data()!.status ?? 'active') === 'active') {
+      update.status = 'unmatched';
+      update.unmatchedBy = uid;
+      update.unmatchedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+    await matchRef.update(update);
   }
+}
 
+export const blockTravelMateUser = onCall({ region: REGION }, async (req: CallableRequest) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+  const parsed = BlockInput.safeParse(req.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+
+  await performTravelMateBlock(uid, parsed.data.targetUid);
   return { blocked: true };
 });
 

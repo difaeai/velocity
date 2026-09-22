@@ -193,6 +193,15 @@ export const adminApi = {
     { targetUid: string; reason?: string },
     { ok: boolean }
   >('adminSuspendTravelMateProfile'),
+  /**
+   * Close a chat report out. Before this the queue could only grow: reports
+   * arrived, nothing could resolve them, and the count on the tab measured the
+   * age of the product rather than the work waiting.
+   */
+  adminResolveTravelMateReport: callable<
+    { reportId: string; outcome: 'dismissed' | 'warned' | 'suspended' | 'banned'; note?: string | null },
+    { ok: boolean; outcome: string }
+  >('adminResolveTravelMateReport'),
 
   // ── Travel Mate community feed admin (full CRUD) ──────────────────────────
   adminUpdateTravelMatePost: callable<

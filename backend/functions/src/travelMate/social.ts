@@ -9,6 +9,7 @@
  * declineTravelMateMessageRequest — recipient wipes it; the sender can't retry.
  * unmatchTravelMate      — close a match (members can't do this via rules).
  * reportTravelMateUser   — file a moderation report, optionally auto-unmatch.
+ *                          (Thin adapter over chatModeration.fileTravelMateReport.)
  *
  * Identity wall: these only ever read/write travelMate* collections (+ a
  * read-only FCM token lookup). They never touch trips or driver data.
@@ -23,6 +24,7 @@ import { z } from 'zod';
 import { sendToUser } from '../lib/fcm';
 
 import { assertNotBlocked } from './community';
+import { fileTravelMateReport, REPORT_CATEGORIES } from './chatModeration';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -339,39 +341,37 @@ export const unmatchTravelMate = onCall({ region: REGION }, async (req: Callable
 // ---------------------------------------------------------------------------
 const ReportInput = z.object({
   reportedUid: z.string().min(1).max(128),
-  matchId: z.string().max(256).optional(),
-  reason: z.string().trim().min(1).max(500),
+  matchId: z.string().min(1).max(256).nullish(),
+  reason: z.string().trim().min(1).max(1000),
+  category: z.enum(REPORT_CATEGORIES).nullish(),
+  alsoBlock: z.boolean().nullish(),
 });
 
+/**
+ * The original report entry point, still called from a member's profile screen.
+ *
+ * It is now a thin adapter over fileTravelMateReport (chatModeration.ts) rather
+ * than a second implementation: the admin queue reads one collection, and a row
+ * raised here has to carry the same fields — names, scope, category, transcript
+ * — as one raised from a chat, or the desk has to special-case where it came
+ * from. A caller that passes no matchId is reporting a bare profile.
+ */
 export const reportTravelMateUser = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const parsed = ReportInput.safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid report.');
-  const { reportedUid, matchId, reason } = parsed.data;
-  if (reportedUid === uid) throw new HttpsError('invalid-argument', 'You cannot report yourself.');
+  const { reportedUid, matchId, reason, category, alsoBlock } = parsed.data;
 
-  const reportRef = db.collection('travelMateReports').doc();
-  const batch = db.batch();
-  batch.set(reportRef, {
+  const { reportId, blocked } = await fileTravelMateReport({
     reporterId: uid,
     reportedUid,
-    matchId: matchId ?? null,
+    scope: matchId ? 'match' : 'profile',
+    roomId: matchId ?? null,
+    category: category ?? null,
     reason,
-    status: 'open',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    alsoBlock: alsoBlock ?? false,
   });
-  // Reporting auto-closes the match — but only if the reporter is actually in it.
-  if (matchId) {
-    const matchSnap = await db.doc(`travelMateMatches/${matchId}`).get();
-    if (matchSnap.exists && (matchSnap.data()!.users as string[]).includes(uid)) {
-      batch.update(db.doc(`travelMateMatches/${matchId}`), {
-        status: 'unmatched',
-        unmatchedBy: uid,
-        unmatchedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    }
-  }
-  await batch.commit();
-  return { reportId: reportRef.id, status: 'open' };
+
+  return { reportId, status: 'open', blocked };
 });

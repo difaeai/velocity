@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useState } from 'react';
 
-import { Close, GooglePlay, Menu } from './Icons';
+import { Close, Menu } from './Icons';
+import { InstallButton } from './InstallButton';
 import { VelocityMark } from '@/components/BrandMark';
 import styles from './site.module.css';
 
@@ -14,7 +15,15 @@ const LINKS = [
   { href: '#safety', label: 'Safety' },
 ];
 
-export function SiteNav({ playUrl }: { playUrl: string }) {
+/**
+ * The nav no longer takes a store URL.
+ *
+ * It used to be handed the Play link, which was correct while Play was the
+ * only place to get the app. Now that both stores are live the button has to
+ * pick one per visitor, and that decision belongs in InstallButton — passing a
+ * URL in would just mean the nav hard-codes the wrong store for iPhone users.
+ */
+export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [open, setOpen] = useState(false);
@@ -74,10 +83,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
           </div>
 
           <div className={styles.navCta}>
-            <a className={`${styles.btn} ${styles.btnLime}`} href={playUrl} target="_blank" rel="noreferrer">
-              <GooglePlay />
-              Get the app
-            </a>
+            <InstallButton />
           </div>
 
           <button
@@ -99,16 +105,7 @@ export function SiteNav({ playUrl }: { playUrl: string }) {
                 {l.label}
               </a>
             ))}
-            <a
-              className={`${styles.btn} ${styles.btnLime}`}
-              href={playUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setOpen(false)}
-            >
-              <GooglePlay />
-              Get the app
-            </a>
+            <InstallButton onClick={() => setOpen(false)} />
           </div>
         ) : null}
       </div>

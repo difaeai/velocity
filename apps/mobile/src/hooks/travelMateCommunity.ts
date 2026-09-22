@@ -76,7 +76,7 @@ export function useMyTMProfile(): MyTMProfile | null | undefined {
 
 // ── Threads: matches, chats and message requests ────────────────────────────
 
-export type ThreadStatus = 'active' | 'unmatched' | 'declined';
+export type ThreadStatus = 'active' | 'unmatched' | 'declined' | 'left';
 export type ThreadOrigin = 'swipe' | 'feed' | 'group';
 export type RequestStatus = 'pending' | 'accepted' | 'declined';
 
@@ -85,6 +85,15 @@ export interface TravelThread {
   users: string[];
   userInfo: Record<string, { displayName: string; photoURL: string | null }>;
   status: ThreadStatus;
+  /** Who walked out of the conversation (leaveTravelMateChat). */
+  leftBy?: string[];
+  /**
+   * Who asked never to see this thread again — set by leaving, blocking and
+   * reporting. Closed threads are already out of every list below, so today
+   * this only guarantees the row stays gone; it is the field to filter on if
+   * closed conversations are ever shown.
+   */
+  hiddenFor?: string[];
   /** How the thread started. Absent on threads created before requests existed. */
   origin?: ThreadOrigin;
   /** Absent on legacy threads — those are treated as already accepted. */
@@ -154,6 +163,7 @@ export function useTravelMateThreads(): TravelThreads {
 
     const visible = threads
       .filter(t => t.status === 'active')
+      .filter(t => !t.hiddenFor?.includes(uid))
       .filter(t => !t.users.some(u => u !== uid && blocked.has(u)))
       .sort((a, b) => recency(b) - recency(a));
 

@@ -8,11 +8,15 @@
  * is an emoji keyboard for the composer and long-press reactions on any bubble.
  *
  * Header actions:
- *   - Report: opens reason sheet → calls reportTravelMateUser (auto-unmatches)
- *   - Unmatch: confirm → calls unmatchTravelMate
- *   - Group: creates a commute group and navigates to it
+ *   - Group (🤝): creates a commute group and navigates to it
+ *   - Menu (⋮):  the chat management sheet — view profile, block, report, or
+ *                leave the conversation. See src/ui/ChatSafety.tsx.
  *
- * Read-only mode when match.status === 'unmatched'.
+ * Leaving closes the thread for both sides and drops it out of this user's
+ * inbox; blocking and reporting both do that too, and reporting additionally
+ * freezes a transcript onto the report for the admin desk.
+ *
+ * Read-only mode whenever match.status is anything but 'active'.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -48,6 +52,12 @@ import { markChatSeen } from '../../../../src/lib/chatSeen';
 import { themed } from '../../../../src/theme';
 import { EmojiPicker, QUICK_REACTIONS } from '../../../../src/ui/EmojiPicker';
 import {
+  ChatMenuSheet,
+  ReportSheet,
+  type ChatMenuAction,
+  type ReportSubmission,
+} from '../../../../src/ui/ChatSafety';
+import {
   AttachmentError,
   captureChatPhoto,
   getChatLocation,
@@ -76,7 +86,9 @@ interface Message {
 interface TravelMatch {
   users: string[];
   userInfo: Record<string, { displayName: string; photoURL: string | null }>;
-  status: 'active' | 'unmatched' | 'declined';
+  status: 'active' | 'unmatched' | 'declined' | 'left';
+  /** Who walked out. Drives the closed banner's wording. */
+  leftBy?: string[];
   /** Absent on threads created before message requests existed = accepted. */
   requestStatus?: 'pending' | 'accepted' | 'declined';
   requestFrom?: string | null;
@@ -98,9 +110,10 @@ export default function TravelMateChat() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [reactionTarget, setReactionTarget] = useState<Message | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const listRef = useRef<FlatList>(null);
 
@@ -277,20 +290,30 @@ export default function TravelMateChat() {
     }
   }
 
-  function confirmUnmatch() {
+  // ── Chat management ────────────────────────────────────────────────────────
+  // Leaving, blocking and reporting all end the conversation, so each one pops
+  // the screen afterwards: the thread is gone from this user's inbox and
+  // staying on a dead chat is the one outcome none of them meant.
+  const otherName = otherInfo?.displayName ?? 'this person';
+
+  function confirmLeave() {
     Alert.alert(
-      'Unmatch',
-      `Are you sure you want to unmatch with ${otherInfo?.displayName ?? 'this person'}? This cannot be undone.`,
+      'Leave this chat?',
+      `The conversation with ${otherName} will close for both of you and disappear from your Messages. You can't undo this.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Unmatch', style: 'destructive',
+          text: 'Leave chat',
+          style: 'destructive',
           onPress: async () => {
+            setLeaving(true);
             try {
-              await api.unmatchTravelMate({ matchId });
+              await api.leaveTravelMateChat({ matchId });
               router.back();
             } catch (e: unknown) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Could not unmatch.');
+              Alert.alert('Error', e instanceof Error ? e.message : 'Could not leave the chat.');
+            } finally {
+              setLeaving(false);
             }
           },
         },
@@ -298,24 +321,94 @@ export default function TravelMateChat() {
     );
   }
 
-  async function submitReport() {
-    if (!reportReason.trim()) return;
+  function confirmBlock() {
+    Alert.alert(
+      `Block ${otherName}?`,
+      `They won't be able to message you, see your posts or find you again. This chat will close. You can unblock them from your profile.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.blockTravelMateUser({ targetUid: otherId });
+              router.back();
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Could not block.');
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function submitReport({ category, reason, alsoBlock }: ReportSubmission) {
     setReporting(true);
     try {
-      await api.reportTravelMateUser({
+      await api.reportTravelMateChat({
+        scope: 'match',
+        roomId: matchId,
         reportedUid: otherId,
-        matchId,
-        reason: reportReason.trim(),
+        category,
+        reason,
+        alsoBlock,
       });
       setReportOpen(false);
-      setReportReason('');
-      Alert.alert('Reported', 'Thank you for your report. This match has been closed.');
+      Alert.alert(
+        'Report sent',
+        alsoBlock
+          ? `Thanks — our safety team will review this. ${otherName} has been blocked and the chat is closed.`
+          : 'Thanks — our safety team will review this. The chat has been closed.',
+      );
       router.back();
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Report failed.');
     } finally {
       setReporting(false);
     }
+  }
+
+  const menuActions: ChatMenuAction[] = [
+    {
+      id: 'profile',
+      icon: '👤',
+      label: 'View profile',
+      hint: `See ${otherName}'s Travel Partner profile`,
+      onPress: () =>
+        router.push(`/passenger/travel-mate/feed-profile/${otherId}` as Parameters<typeof router.push>[0]),
+    },
+    {
+      id: 'report',
+      icon: '🚩',
+      label: 'Report',
+      hint: 'Send this conversation to our safety team',
+      destructive: true,
+      onPress: () => setReportOpen(true),
+    },
+    {
+      id: 'block',
+      icon: '🚫',
+      label: 'Block',
+      hint: 'They can never contact or find you again',
+      destructive: true,
+      onPress: confirmBlock,
+    },
+  ];
+
+  // Leaving a conversation that is already closed would be a button that does
+  // nothing a user can see: a closed thread is out of the chat list already.
+  // Block and report stay available — people report after being unmatched, and
+  // that is exactly when they most need to.
+  if (!closed) {
+    menuActions.push({
+      id: 'leave',
+      icon: '🚪',
+      label: 'Leave chat',
+      hint: 'Close the conversation and remove it from Messages',
+      destructive: true,
+      onPress: confirmLeave,
+    });
   }
 
   const createGroup = useCallback(async () => {
@@ -347,18 +440,29 @@ export default function TravelMateChat() {
           <Pressable onPress={createGroup} disabled={closed || creatingGroup} style={s.headerAction}>
             <Text style={s.headerActionText}>{creatingGroup ? '…' : '🤝'}</Text>
           </Pressable>
-          <Pressable onPress={() => setReportOpen(true)} disabled={closed} style={s.headerAction}>
-            <Text style={s.headerActionText}>🚩</Text>
-          </Pressable>
-          <Pressable onPress={confirmUnmatch} disabled={closed} style={s.headerAction}>
-            <Text style={[s.headerActionText, { color: colors.danger }]}>✕</Text>
+          {/* One menu instead of a row of symbols. Block, report and leave are
+              decisions, not taps — they belong behind a sheet that says what
+              each of them does, and a stray ✕ next to the send button is how
+              people unmatch by accident. */}
+          <Pressable
+            onPress={() => setMenuOpen(true)}
+            style={s.headerAction}
+            disabled={leaving}
+            accessibilityRole="button"
+            accessibilityLabel="Chat options"
+          >
+            <Text style={s.headerActionText}>{leaving ? '…' : '⋮'}</Text>
           </Pressable>
         </View>
       </View>
 
       {closed && (
         <View style={s.closedBanner}>
-          <Text style={s.closedBannerText}>This conversation is closed. You can still read previous messages.</Text>
+          <Text style={s.closedBannerText}>
+            {match?.status === 'left' && !match.leftBy?.includes(user?.uid ?? '')
+              ? `${otherInfo?.displayName ?? 'This person'} left the chat. You can still read previous messages.`
+              : 'This conversation is closed. You can still read previous messages.'}
+          </Text>
         </View>
       )}
 
@@ -536,37 +640,21 @@ export default function TravelMateChat() {
         </View>
       )}
 
-      {/* Report modal */}
-      <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => setReportOpen(false)}>
-        <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
-            <Text style={s.modalTitle}>Report {otherInfo?.displayName ?? 'user'}</Text>
-            <Text style={s.modalSub}>Describe the issue. This match will be closed and reviewed by our team.</Text>
-            <TextInput
-              style={s.reasonInput}
-              value={reportReason}
-              onChangeText={setReportReason}
-              placeholder="What happened?"
-              placeholderTextColor={colors.muted}
-              multiline
-              numberOfLines={3}
-              maxLength={500}
-            />
-            <View style={s.modalBtns}>
-              <Pressable onPress={() => { setReportOpen(false); setReportReason(''); }} style={s.cancelBtn}>
-                <Text style={s.cancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={submitReport}
-                disabled={!reportReason.trim() || reporting}
-                style={[s.reportBtn, (!reportReason.trim() || reporting) && { opacity: 0.5 }]}
-              >
-                <Text style={s.reportText}>{reporting ? 'Sending…' : 'Report'}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Chat management */}
+      <ChatMenuSheet
+        visible={menuOpen}
+        title={otherName}
+        subtitle={closed ? 'Conversation closed' : 'Travel Partner chat'}
+        actions={menuActions}
+        onClose={() => setMenuOpen(false)}
+      />
+      <ReportSheet
+        visible={reportOpen}
+        personName={otherName}
+        submitting={reporting}
+        onClose={() => setReportOpen(false)}
+        onSubmit={submitReport}
+      />
     </SafeAreaView>
   );
 }
@@ -792,15 +880,6 @@ const s = themed(() => StyleSheet.create({
   uploadingToast: { position: 'absolute', bottom: 90, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
   uploadingText:  { fontSize: 13, fontWeight: '800', color: '#000' },
 
-  // Report modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalBox:     { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 14 },
-  modalTitle:   { fontSize: 18, fontWeight: '900', color: colors.text },
-  modalSub:     { fontSize: 13, color: colors.muted, lineHeight: 18 },
-  reasonInput:  { height: 90, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, fontSize: 14, color: colors.text, backgroundColor: colors.background, textAlignVertical: 'top' },
-  modalBtns:    { flexDirection: 'row', gap: 12, marginTop: 4 },
-  cancelBtn:    { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  cancelText:   { fontSize: 14, fontWeight: '700', color: colors.muted },
-  reportBtn:    { flex: 1, height: 46, borderRadius: 12, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
-  reportText:   { fontSize: 14, fontWeight: '800', color: '#fff' },
+  // The report and chat-management sheets live in src/ui/ChatSafety.tsx and
+  // carry their own styles — the group chat renders the same ones.
 }));

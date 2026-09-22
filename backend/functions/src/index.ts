@@ -228,6 +228,15 @@ export {
   adminUpsertTravelMateCommunity,
   adminDeleteTravelMateCommunity,
 } from './travelMate/adminCommunity';
+// Chat management — leave / block / report in 1:1 and group chats, and the
+// admin desk that closes the reports out. Trip chat is deliberately excluded:
+// a booked ride is not a conversation you can walk out of.
+export {
+  leaveTravelMateChat,
+  leaveTravelMateGroupChat,
+  reportTravelMateChat,
+  adminResolveTravelMateReport,
+} from './travelMate/chatModeration';
 
 // Pool ride requests — InDrive-style passenger-initiated negotiation (Task 1 + Task 2)
 export {

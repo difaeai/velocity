@@ -11,8 +11,17 @@
  *
  * Ride-share cards (type 'ride_share', posted by shareTravelMateRide) render
  * with a "View ride" button deep-linking to shared-ride/[shareId].
+ *
+ * Chat management (⋮): leave the group, or — from any member's card — block or
+ * report that person. Leaving drops your membership, and membership is what the
+ * Firestore rules gate reads on, so the screen has to pop itself the moment
+ * access goes: a listener that has just been denied looks exactly like a group
+ * that has gone empty.
+ *
+ * Messages from anyone you have blocked are hidden here. A block cannot throw
+ * someone out of a shared group, but it can stop you having to read them.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -39,22 +48,30 @@ import {
 import { db } from '../../../../src/firebase';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api } from '../../../../src/api/client';
+import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
 import { markChatSeen } from '../../../../src/lib/chatSeen';
 import { colors } from '../../../../src/config';
 import { themed } from '../../../../src/theme';
+import {
+  ChatMenuSheet,
+  ReportSheet,
+  type ChatMenuAction,
+  type ReportSubmission,
+} from '../../../../src/ui/ChatSafety';
 
 interface GroupDoc {
   name: string;
   createdBy: string;
   members: string[];
   memberInfo: Record<string, { displayName: string; photoURL: string | null }>;
+  status?: 'open' | 'full' | 'closed';
 }
 
 interface GroupMessage {
   id: string;
   senderId: string;
   senderName?: string;
-  type?: 'text' | 'ride_share';
+  type?: 'text' | 'ride_share' | 'system';
   shareId?: string;
   text: string;
   createdAt?: { seconds: number } | null;
@@ -71,15 +88,32 @@ export default function TravelMateGroupChat() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [dmTarget, setDmTarget] = useState<string | null>(null);
   const [openingDm, setOpeningDm] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [memberMenuFor, setMemberMenuFor] = useState<string | null>(null);
+  const [reportTarget, setReportTarget] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [accessLost, setAccessLost] = useState(false);
+  const blocked = useBlockedSet();
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (!groupId) return;
-    return onSnapshot(doc(db, 'travelMateGroups', groupId), snap => {
-      if (snap.exists()) setGroup(snap.data() as GroupDoc);
-    });
+    return onSnapshot(
+      doc(db, 'travelMateGroups', groupId),
+      snap => {
+        if (snap.exists()) setGroup(snap.data() as GroupDoc);
+      },
+      // Reads are gated on membership, so permission-denied here means this
+      // user is no longer in the group — theirs or an admin's doing. Only that
+      // code: any other error is a network blip, and dropping someone out of a
+      // group chat because their train went through a tunnel would be worse
+      // than the stale view they get by staying.
+      err => {
+        if ((err as { code?: string }).code === 'permission-denied') setAccessLost(true);
+      },
+    );
   }, [groupId]);
 
   useEffect(() => {
@@ -95,6 +129,14 @@ export default function TravelMateGroupChat() {
       markChatSeen('group', groupId);
     });
   }, [groupId]);
+
+  // Losing membership ends the screen. Done in an effect rather than inline in
+  // the listener so the navigation happens after render, not during it.
+  useEffect(() => {
+    if (!accessLost) return;
+    if (router.canGoBack()) router.back();
+    else router.replace('/passenger/travel-mate' as Parameters<typeof router.replace>[0]);
+  }, [accessLost, router]);
 
   async function send() {
     const trimmed = text.trim();
@@ -127,7 +169,6 @@ export default function TravelMateGroupChat() {
     setOpeningDm(true);
     try {
       const { matchId } = await api.openTravelMateDirectChat({ targetUid, groupId });
-      setDmTarget(null);
       setMembersOpen(false);
       router.push(`/passenger/travel-mate/chat/${matchId}` as Parameters<typeof router.push>[0]);
     } catch (e: unknown) {
@@ -137,7 +178,145 @@ export default function TravelMateGroupChat() {
     }
   }
 
-  const dmInfo = dmTarget ? group?.memberInfo?.[dmTarget] : null;
+  // ── Chat management ────────────────────────────────────────────────────────
+  const myName = user ? group?.memberInfo?.[user.uid]?.displayName : undefined;
+  const nameOf = (uid: string) => group?.memberInfo?.[uid]?.displayName ?? 'this member';
+
+  function confirmLeaveGroup() {
+    const others = (group?.members.length ?? 1) - 1;
+    Alert.alert(
+      'Leave this group?',
+      others > 0
+        ? `You'll be removed from ${group?.name ?? 'the group'} and lose access to its messages. The other ${others === 1 ? 'member' : `${others} members`} will see that you left.`
+        : `You're the last member, so ${group?.name ?? 'the group'} will be closed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave group',
+          style: 'destructive',
+          onPress: async () => {
+            if (!groupId) return;
+            setLeaving(true);
+            try {
+              await api.leaveTravelMateGroupChat({ groupId });
+              // Don't wait for the listener to fail — go now, so the screen
+              // never flashes a permission error on the way out.
+              if (router.canGoBack()) router.back();
+              else router.replace('/passenger/travel-mate' as Parameters<typeof router.replace>[0]);
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Could not leave the group.');
+            } finally {
+              setLeaving(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmBlockMember(targetUid: string) {
+    const name = nameOf(targetUid);
+    Alert.alert(
+      `Block ${name}?`,
+      `Their messages will be hidden from you here, and they won't be able to DM you, see your posts or find you again. Blocking does not remove them from this group.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.blockTravelMateUser({ targetUid });
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Could not block.');
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function submitReport({ category, reason, alsoBlock }: ReportSubmission) {
+    if (!reportTarget || !groupId) return;
+    const name = nameOf(reportTarget);
+    setReporting(true);
+    try {
+      await api.reportTravelMateChat({
+        scope: 'group',
+        roomId: groupId,
+        reportedUid: reportTarget,
+        category,
+        reason,
+        alsoBlock,
+      });
+      setReportTarget(null);
+      Alert.alert(
+        'Report sent',
+        alsoBlock
+          ? `Thanks — our safety team will review this group's messages. ${name} is now blocked, so you won't see them here.`
+          : `Thanks — our safety team will review this group's messages.`,
+      );
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Report failed.');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  const groupMenuActions: ChatMenuAction[] = [
+    {
+      id: 'members',
+      icon: '👥',
+      label: 'Members',
+      hint: 'See who is in the group, message or report them',
+      onPress: () => setMembersOpen(true),
+    },
+    {
+      id: 'leave',
+      icon: '🚪',
+      label: 'Leave group',
+      hint: 'You lose access to these messages',
+      destructive: true,
+      onPress: confirmLeaveGroup,
+    },
+  ];
+
+  const memberMenuActions: ChatMenuAction[] = memberMenuFor
+    ? [
+        {
+          id: 'dm',
+          icon: '💬',
+          label: 'Message privately',
+          hint: 'Open a 1:1 chat',
+          onPress: () => openPrivateChat(memberMenuFor),
+        },
+        {
+          id: 'report',
+          icon: '🚩',
+          label: 'Report',
+          hint: 'Send this group’s messages to our safety team',
+          destructive: true,
+          onPress: () => setReportTarget(memberMenuFor),
+        },
+        {
+          id: 'block',
+          icon: '🚫',
+          label: 'Block',
+          hint: 'Hide them here and stop them contacting you',
+          destructive: true,
+          onPress: () => confirmBlockMember(memberMenuFor),
+        },
+      ]
+    : [];
+
+  // Blocking cannot evict someone from a group you both belong to, but their
+  // messages stop being yours to read. Their own sends still reach everyone
+  // else — this is a filter on one reader, not moderation of the room.
+  const visibleMessages = useMemo(
+    () => messages.filter(m => !blocked.has(m.senderId)),
+    [messages, blocked],
+  );
+
 
   return (
     <SafeAreaView style={s.safe}>
@@ -151,6 +330,15 @@ export default function TravelMateGroupChat() {
         <Pressable onPress={() => setMembersOpen(true)} style={s.headerAction}>
           <Text style={{ fontSize: 16 }}>👥</Text>
         </Pressable>
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          style={s.headerAction}
+          disabled={leaving}
+          accessibilityRole="button"
+          accessibilityLabel="Group options"
+        >
+          <Text style={{ fontSize: 18, color: colors.text, fontWeight: '800' }}>{leaving ? '…' : '⋮'}</Text>
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
@@ -160,7 +348,7 @@ export default function TravelMateGroupChat() {
       >
         <FlatList
           ref={listRef}
-          data={messages}
+          data={visibleMessages}
           keyExtractor={m => m.id}
           contentContainerStyle={s.msgList}
           ListEmptyComponent={<Text style={s.empty}>No messages yet. Say hello to your group! 👋</Text>}
@@ -169,6 +357,14 @@ export default function TravelMateGroupChat() {
             const senderName = item.senderName
               ?? group?.memberInfo?.[item.senderId]?.displayName
               ?? 'Member';
+            // "X left the group" — the group's own voice, not anyone's bubble.
+            if (item.type === 'system') {
+              return (
+                <View style={s.systemWrap}>
+                  <Text style={s.systemText}>{item.text}</Text>
+                </View>
+              );
+            }
             if (item.type === 'ride_share') {
               return (
                 <View style={s.rideCardWrap}>
@@ -188,7 +384,7 @@ export default function TravelMateGroupChat() {
             return (
               <View style={[s.bubbleWrap, mine && s.bubbleWrapMine]}>
                 {!mine && (
-                  <Pressable onPress={() => setDmTarget(item.senderId)}>
+                  <Pressable onPress={() => setMemberMenuFor(item.senderId)}>
                     <Text style={s.senderName}>{senderName}</Text>
                   </Pressable>
                 )}
@@ -236,12 +432,15 @@ export default function TravelMateGroupChat() {
                   key={uid}
                   style={s.memberRow}
                   disabled={isMe}
-                  onPress={() => setDmTarget(uid)}
+                  onPress={() => { setMembersOpen(false); setMemberMenuFor(uid); }}
                 >
                   <View style={s.memberAvatar}><Text style={{ fontSize: 18 }}>👤</Text></View>
-                  <Text style={s.memberName}>{info?.displayName ?? 'Member'}{isMe ? ' (you)' : ''}</Text>
+                  <Text style={s.memberName}>
+                    {info?.displayName ?? 'Member'}{isMe ? ' (you)' : ''}
+                    {!isMe && blocked.has(uid) ? ' · blocked' : ''}
+                  </Text>
                   {uid === group.createdBy && <Text style={s.creatorTag}>Creator</Text>}
-                  {!isMe && <Text style={s.memberChevron}>💬</Text>}
+                  {!isMe && <Text style={s.memberChevron}>⋯</Text>}
                 </Pressable>
               );
             })}
@@ -249,26 +448,40 @@ export default function TravelMateGroupChat() {
         </Pressable>
       </Modal>
 
-      {/* Member mini-profile → private chat */}
-      <Modal visible={!!dmTarget} transparent animationType="fade" onRequestClose={() => setDmTarget(null)}>
-        <Pressable style={s.modalOverlayCenter} onPress={() => setDmTarget(null)}>
-          <Pressable style={s.profileBox} onPress={() => {}}>
-            <View style={s.profileAvatar}><Text style={{ fontSize: 34 }}>👤</Text></View>
-            <Text style={s.profileName}>{dmInfo?.displayName ?? 'Member'}</Text>
-            <Text style={s.profileSub}>Group member</Text>
-            <Pressable
-              style={[s.dmBtn, openingDm && { opacity: 0.6 }]}
-              disabled={openingDm}
-              onPress={() => dmTarget && openPrivateChat(dmTarget)}
-            >
-              <Text style={s.dmBtnText}>{openingDm ? 'Opening…' : '💬 Message privately'}</Text>
-            </Pressable>
-            <Pressable style={s.dmCancel} onPress={() => setDmTarget(null)}>
-              <Text style={s.dmCancelText}>Close</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+
+      {/* Chat management — the group, then one member of it. */}
+      <ChatMenuSheet
+        visible={menuOpen}
+        title={group?.name ?? 'Group chat'}
+        subtitle={
+          group
+            ? `${group.members.length} ${group.members.length === 1 ? 'member' : 'members'}${myName ? ` · you are ${myName}` : ''}`
+            : undefined
+        }
+        actions={groupMenuActions}
+        onClose={() => setMenuOpen(false)}
+      />
+      <ChatMenuSheet
+        visible={!!memberMenuFor}
+        title={memberMenuFor ? nameOf(memberMenuFor) : ''}
+        subtitle={
+          memberMenuFor && blocked.has(memberMenuFor)
+            ? 'Blocked — their messages are hidden from you'
+            : 'Group member'
+        }
+        actions={memberMenuActions}
+        onClose={() => setMemberMenuFor(null)}
+      />
+      <ReportSheet
+        visible={!!reportTarget}
+        personName={reportTarget ? nameOf(reportTarget) : ''}
+        // Says the quiet part: blocking hides them from you, it does not throw
+        // them out of a group you both belong to.
+        blockLabel="Also block them (they stay in the group)"
+        submitting={reporting}
+        onClose={() => setReportTarget(null)}
+        onSubmit={submitReport}
+      />
     </SafeAreaView>
   );
 }
@@ -299,6 +512,9 @@ const s = themed(() => StyleSheet.create({
   msgTextMine:    { color: '#fff' },
   msgTime:        { fontSize: 10, color: colors.muted, marginLeft: 4, marginTop: 2 },
 
+  systemWrap: { alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 99, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginVertical: 2 },
+  systemText:  { fontSize: 11.5, fontWeight: '700', color: colors.muted, textAlign: 'center' },
+
   rideCardWrap: { alignSelf: 'stretch', backgroundColor: `${colors.primary}14`, borderWidth: 1, borderColor: `${colors.primary}40`, borderRadius: 14, padding: 12, gap: 6 },
   rideCardHead: { fontSize: 12, fontWeight: '900', color: colors.primary },
   rideCardText: { fontSize: 13, color: colors.text, lineHeight: 18 },
@@ -312,7 +528,6 @@ const s = themed(() => StyleSheet.create({
   sendText:  { color: '#000', fontWeight: '800', fontSize: 14 },
 
   modalOverlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', padding: 32 },
   modalBox:   { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 4 },
   modalTitle: { fontSize: 18, fontWeight: '900', color: colors.text, marginBottom: 8 },
 
@@ -321,13 +536,4 @@ const s = themed(() => StyleSheet.create({
   memberName:   { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
   creatorTag:   { fontSize: 10, fontWeight: '800', color: colors.primary },
   memberChevron:{ fontSize: 14 },
-
-  profileBox:    { backgroundColor: colors.surface, borderRadius: 24, padding: 28, alignItems: 'center', gap: 6, alignSelf: 'stretch' },
-  profileAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: `${colors.primary}20`, alignItems: 'center', justifyContent: 'center' },
-  profileName:   { fontSize: 20, fontWeight: '900', color: colors.text, marginTop: 6 },
-  profileSub:    { fontSize: 12, color: colors.muted },
-  dmBtn:         { alignSelf: 'stretch', height: 48, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
-  dmBtnText:     { fontSize: 15, fontWeight: '800', color: '#fff' },
-  dmCancel:      { paddingVertical: 10 },
-  dmCancelText:  { fontSize: 13, fontWeight: '700', color: colors.muted },
 }));

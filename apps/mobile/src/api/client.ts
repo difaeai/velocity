@@ -367,6 +367,33 @@ export interface ChatAttachment {
  * A Travel Partner chat message can carry text and/or exactly one attachment:
  * a photo, a shared GPS location, a phone contact, or a file/document.
  */
+/**
+ * Why someone is being reported. Mirrors REPORT_CATEGORIES in the backend's
+ * travelMate/chatModeration.ts — a category the server does not know is
+ * rejected by its zod enum, so the two lists have to stay in step.
+ */
+export type ReportCategory =
+  | 'harassment'
+  | 'threats'
+  | 'sexual'
+  | 'spam'
+  | 'scam'
+  | 'fake_profile'
+  | 'underage'
+  | 'other';
+
+/** The report sheet's options, in the order they are offered. */
+export const REPORT_REASONS: { id: ReportCategory; label: string; hint: string }[] = [
+  { id: 'harassment',   label: 'Harassment or bullying', hint: 'Insults, abuse or repeated unwanted messages' },
+  { id: 'threats',      label: 'Threats or violence',    hint: 'Threatening harm to someone' },
+  { id: 'sexual',       label: 'Sexual or inappropriate', hint: 'Unwanted sexual messages or images' },
+  { id: 'spam',         label: 'Spam',                   hint: 'Adverts, links or repeated junk' },
+  { id: 'scam',         label: 'Scam or fraud',          hint: 'Asking for money, fake payment requests' },
+  { id: 'fake_profile', label: 'Fake profile',           hint: 'Pretending to be someone else' },
+  { id: 'underage',     label: 'Under 18',               hint: 'This person appears to be a minor' },
+  { id: 'other',        label: 'Something else',         hint: 'Tell us what happened' },
+];
+
 export interface TravelMateMessageInput {
   matchId: string;
   text?: string;
@@ -840,9 +867,29 @@ export const api = {
     { declined: boolean }
   >('declineTravelMateMessageRequest'),
   reportTravelMateUser: callable<
-    { reportedUid: string; matchId?: string; reason: string },
-    { reportId: string; status: string }
+    { reportedUid: string; matchId?: string | null; reason: string; category?: ReportCategory | null; alsoBlock?: boolean },
+    { reportId: string; status: string; blocked: boolean }
   >('reportTravelMateUser'),
+
+  // ── Chat management — leave / block / report ────────────────────────────────
+  // Available in Travel Partner 1:1 and group chats. Deliberately absent from
+  // the trip chat: you cannot walk out on a driver who is already on the way.
+  leaveTravelMateChat: callable<{ matchId: string }, { left: boolean }>('leaveTravelMateChat'),
+  leaveTravelMateGroupChat: callable<
+    { groupId: string },
+    { left: boolean; name: string }
+  >('leaveTravelMateGroupChat'),
+  reportTravelMateChat: callable<
+    {
+      scope: 'match' | 'group' | 'profile';
+      roomId?: string | null;
+      reportedUid: string;
+      category?: ReportCategory | null;
+      reason?: string | null;
+      alsoBlock?: boolean;
+    },
+    { reportId: string; status: string; blocked: boolean }
+  >('reportTravelMateChat'),
 
   // ── Travel Partner Phase 4 — groups ─────────────────────────────────────────
   createTravelMateGroup: callable<
