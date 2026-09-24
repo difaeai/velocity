@@ -1,0 +1,99 @@
+VELOCITY RIDES 1.10.0  ·  Android versionCode 35  ·  iOS build 8
+=================================================================
+
+This is the first Play release since 1.8.0 (vc30). vc31 and vc34 were built but
+never rolled out, so everything they carried ships here. On iOS it is the first
+update since 1.9.0 (build 7) went live on 2026-09-22.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Every chat now has a menu to leave the conversation, block the person, or
+report them to our safety team — in Travel Partner chats and group chats alike.
+
+Also: one Messages inbox for partners, drivers and brands; see what inDrive and
+Yango charge before you book; pay by EasyPaisa, JazzCash or bank transfer;
+drivers photograph the car they are actually driving; and the app is now on
+iPhone too.
+
+
+WHAT CHANGED SINCE 1.8.0
+------------------------
+
+Chat management — leave, block, report
+  Every Travel Partner conversation now has a menu in the top corner: view the
+  person's profile, report them, block them, or leave the chat.
+
+    - Leaving a one-to-one chat closes it for both people and takes it out of
+      your Messages. A two-person conversation ends when one person walks out;
+      pretending otherwise would just leave the other side talking to nobody.
+    - Leaving a group removes you from it, and you stop seeing its messages.
+      The group carries on without you and is told that you left.
+    - Blocking someone stops them messaging you, finding you or seeing your
+      posts, anywhere in Travel Partner. In a group it hides them from you —
+      it cannot throw another member out of a room you both joined.
+    - Reporting asks what happened (harassment, threats, a scam, spam, a fake
+      profile, and so on), and can block them in the same step. Our safety team
+      sees the conversation as it was when you reported it, so deleting the
+      chat afterwards cannot erase what was said.
+
+  Ride chat with your driver deliberately has none of this. Once a ride is
+  booked the driver is on their way to you and you both need to stay reachable
+  until the trip ends. Safety there is the SOS button and the disputes desk.
+
+One Messages inbox
+  Travel Partner chats, your driver, and replies from businesses now live in
+  one Messages screen with three sections, each carrying its own unread count.
+  It replaces "My questions". A finished ride's conversation is reachable there
+  without going back to the trip.
+
+See what the other apps charge
+  The booking screen shows what inDrive and Yango would cost for the same
+  route, so you can tell whether your offer is reasonable before you send it.
+
+Pay how you actually pay
+  Cash, EasyPaisa, JazzCash, bank transfer or wallet — pick one or several when
+  you book. Wallet top-ups are still switched off.
+
+Drivers photograph the car they are driving
+  A driver registers each of their vehicles and confirms with a photo which one
+  they are in. The confirmation expires, so the car on your screen is the car
+  that arrives. Drivers can add and switch between their own cars.
+
+Find your Customers
+  The business advertising screen was rebuilt: a clearer radius and budget, a
+  "Seen by" count of the people who actually opened the ad, and a Queries inbox
+  so a business can answer questions about its own offer. Abusive senders can
+  be reported and blocked from there too.
+
+  The drawer entry is now "Find my Customers" and opens the ad screen directly.
+
+Velocity Rides
+  The app, the website and every message we send now say "Velocity Rides"
+  rather than "Velocity". Nothing about your account changes.
+
+Now on iPhone
+  Velocity Rides is on the App Store, and the app knows which store to send you
+  to when there is an update. Same account, same rides, same cash payments.
+
+Smaller things
+  - The turning V splash is back, and no longer clips on some phones.
+  - Sign-in codes over WhatsApp send correctly.
+  - Release builds are obfuscated, which Play had been flagging.
+  - Dead links, a stuck admin queue and two slow "Find my Customers" loads are
+    fixed.
+
+
+ROLLOUT CHECKLIST
+-----------------
+[ ] Upload velocity-1.10.0-vc35.aab to Play
+[ ] Roll it into EVERY track that still holds vc3 / vc6 / vc8 — those pre-AdMob
+    1.0.0 bundles have no AD_ID permission and the ad-ID declaration keeps
+    getting rejected until they are superseded. Check the bundle explorer, not
+    just production.
+[ ] Publish admin -> App version as 1.10.0 INCLUDING build number 35, or no
+    Android user is prompted to update
+[ ] iOS: attach build 8 to the 1.10.0 App Store version, then Submit for Review
+[ ] iOS: only AFTER Apple releases it, publish admin -> App version -> ios as
+    1.10.0 / build 8. Publishing it earlier prompts iPhone users to "update" to
+    a build they cannot install.
