@@ -33,11 +33,13 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '../../../../src/ui/Text';
+import { CHAT_WINDOW, oldestFirst } from '../../../../src/lib/chatWindow';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -144,12 +146,15 @@ export default function TravelMateChat() {
   // Subscribe to messages
   useEffect(() => {
     if (!matchId) return;
+    // Newest-first + limit is the only way Firestore can give us the most recent
+    // window; `oldestFirst` puts it back in reading order. See lib/chatWindow.ts.
     const q = query(
       collection(db, 'travelMateMatches', matchId, 'messages'),
-      orderBy('createdAt', 'asc'),
+      orderBy('createdAt', 'desc'),
+      limit(CHAT_WINDOW),
     );
     return onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message));
+      setMessages(oldestFirst(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Message)));
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       // Being on this screen when a message lands is reading it. Marking on
       // every snapshot (rather than only on mount) also covers the rider's own

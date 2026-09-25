@@ -10,13 +10,14 @@ import {
 } from 'react-native';
 import { Text, TextInput } from './Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 
 import { api } from '../api/client';
 
 import { db } from '../firebase';
 import { colors } from '../config';
 import { themed } from '../theme';
+import { CHAT_WINDOW, oldestFirst } from '../lib/chatWindow';
 
 interface ChatMessage {
   id:         string;
@@ -49,9 +50,12 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
 
   useEffect(() => {
     if (!visible || !roomId) return;
-    const q = query(collection(db, collPath), orderBy('sentAt', 'asc'));
+    // Most recent window, flipped back into reading order — lib/chatWindow.ts.
+    const q = query(collection(db, collPath), orderBy('sentAt', 'desc'), limit(CHAT_WINDOW));
     return onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ChatMessage, 'id'>) })));
+      setMessages(
+        oldestFirst(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ChatMessage, 'id'>) }))),
+      );
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     });
   }, [visible, roomId, collPath]);

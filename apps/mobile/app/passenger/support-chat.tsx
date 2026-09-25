@@ -15,6 +15,7 @@ import {
   addDoc,
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -24,6 +25,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
+import { CHAT_WINDOW, oldestFirst } from '../../src/lib/chatWindow';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
@@ -57,16 +59,19 @@ export default function SupportChatScreen() {
 
     const chatRef = doc(db, 'supportChats', user.uid);
     const msgsRef = collection(db, 'supportChats', user.uid, 'messages');
-    const q = query(msgsRef, orderBy('timestamp', 'asc'));
+    // Most recent window, flipped back into reading order — lib/chatWindow.ts.
+    const q = query(msgsRef, orderBy('timestamp', 'desc'), limit(CHAT_WINDOW));
 
     const unsub = onSnapshot(q, async (snap) => {
-      const msgs: Message[] = snap.docs.map((d) => ({
-        id: d.id,
-        text: d.data().text as string,
-        senderId: d.data().senderId as string,
-        senderName: d.data().senderName as string,
-        timestamp: d.data().timestamp as Timestamp | null,
-      }));
+      const msgs: Message[] = oldestFirst(
+        snap.docs.map((d) => ({
+          id: d.id,
+          text: d.data().text as string,
+          senderId: d.data().senderId as string,
+          senderName: d.data().senderName as string,
+          timestamp: d.data().timestamp as Timestamp | null,
+        })),
+      );
       setMessages(msgs);
       setLoading(false);
 

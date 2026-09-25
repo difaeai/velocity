@@ -37,6 +37,7 @@ import { api, type EnRouteMatch } from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { useDriverActiveTrip } from '../../src/hooks/driver';
 import { fetchRouteInfo } from '../../src/hooks/directions';
 import { fetchPlaceDetail, usePlacesAutocomplete } from '../../src/hooks/places';
@@ -115,12 +116,11 @@ export default function EnRoute() {
     }
   }, [polyline, routeReady, coords?.lat, coords?.lng]);
 
-  useEffect(() => {
-    if (!routeReady) return;
-    search();
-    const t = setInterval(search, REFRESH_MS);
-    return () => clearInterval(t);
-  }, [routeReady, search]);
+  // Searches while the driver is looking, and again the moment they come back.
+  // The hook holds `search` in a ref, which also fixes a quieter problem: this
+  // effect used to restart on every new `search` identity — i.e. on every GPS
+  // fix — firing an extra callable each time rather than one per REFRESH_MS.
+  useForegroundInterval(routeReady ? search : null, REFRESH_MS);
 
   // ── Take a rider ──────────────────────────────────────────────────────────
   const accept = useCallback(

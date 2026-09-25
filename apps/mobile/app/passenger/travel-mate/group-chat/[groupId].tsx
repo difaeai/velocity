@@ -39,6 +39,7 @@ import {
   addDoc,
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -46,6 +47,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../../../../src/firebase';
+import { CHAT_WINDOW, oldestFirst } from '../../../../src/lib/chatWindow';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api } from '../../../../src/api/client';
 import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
@@ -118,12 +120,14 @@ export default function TravelMateGroupChat() {
 
   useEffect(() => {
     if (!groupId) return;
+    // Most recent window, flipped back into reading order — lib/chatWindow.ts.
     const q = query(
       collection(db, 'travelMateGroups', groupId, 'messages'),
-      orderBy('createdAt', 'asc'),
+      orderBy('createdAt', 'desc'),
+      limit(CHAT_WINDOW),
     );
     return onSnapshot(q, snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }) as GroupMessage));
+      setMessages(oldestFirst(snap.docs.map(d => ({ id: d.id, ...d.data() }) as GroupMessage)));
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
       // Reading the group while it is on screen — same rule as a 1:1 chat.
       markChatSeen('group', groupId);
