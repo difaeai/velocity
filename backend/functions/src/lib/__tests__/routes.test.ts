@@ -9,6 +9,18 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 
 import { fetchRouteServerSide, serverRoutingConfigured } from '../routes';
 
+/**
+ * Caching is lib/mapsCache.ts's job and is tested there. Stub it to a permanent
+ * miss here, because every case in this file routes the same two points: without
+ * the stub the one successful route below would be served back to every later
+ * case that expects a failure, and they would pass for the wrong reason.
+ */
+vi.mock('../mapsCache', () => ({
+  readRouteCache: async () => null,
+  writeRouteCache: async () => undefined,
+  routeCacheKey: () => 'test-route-key',
+}));
+
 const F10 = { lat: 33.6938, lng: 72.9989 };
 const F6 = { lat: 33.7196, lng: 73.0724 };
 
@@ -127,5 +139,58 @@ describe('fetchRouteServerSide', () => {
     expect(body.regionCode).toBe('PK');
     expect(body.origin.location.latLng.latitude).toBe(F10.lat);
     expect(body.destination.location.latLng.longitude).toBe(F6.lng);
+  });
+});
+
+/**
+ * Which SKU we are billed at is decided by one field in the request body, and
+ * getting it wrong doubles the price of every route while halving the monthly
+ * free allowance. It is invisible until the bill arrives, so it is pinned here.
+ */
+describe('fetchRouteServerSide billing tier', () => {
+  function stubOkRoute() {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        routes: [
+          { polyline: { encodedPolyline: '_p~iF~ps|U_ulLnnqC' }, distanceMeters: 1, duration: '1s' },
+        ],
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+    return fetchSpy;
+  }
+
+  function bodyOf(fetchSpy: ReturnType<typeof stubOkRoute>) {
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    return JSON.parse(init.body as string);
+  }
+
+  it('defaults to the Essentials tier — no traffic unless asked', async () => {
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = stubOkRoute();
+
+    await fetchRouteServerSide(F10, F6);
+
+    expect(bodyOf(fetchSpy).routingPreference).toBe('TRAFFIC_UNAWARE');
+  });
+
+  it('still defaults to Essentials when options are passed without trafficAware', async () => {
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = stubOkRoute();
+
+    await fetchRouteServerSide(F10, F6, {});
+
+    expect(bodyOf(fetchSpy).routingPreference).toBe('TRAFFIC_UNAWARE');
+  });
+
+  it('opts into the Pro tier only on an explicit trafficAware', async () => {
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = stubOkRoute();
+
+    await fetchRouteServerSide(F10, F6, { trafficAware: true });
+
+    expect(bodyOf(fetchSpy).routingPreference).toBe('TRAFFIC_AWARE');
   });
 });

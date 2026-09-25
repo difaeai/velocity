@@ -19,10 +19,27 @@
  * did. Setting the key is an upgrade, not a switch that has to be thrown.
  *
  * COST
- * Routes are cached in Firestore against the trip / driver-route document that
- * needs them. A route is fetched ONCE per trip or per declared route — not once
- * per poll — so a driver refreshing their feed every 20 seconds for an hour costs
- * one Routes call, not 180.
+ * Two things keep this cheap, and both are easy to undo by accident.
+ *
+ * FIRST, THE TIER. `TRAFFIC_AWARE` and `TRAFFIC_AWARE_OPTIMAL` are what Google
+ * calls advanced features, and asking for either moves the whole request from
+ * Compute Routes Essentials ($5 per 1,000, 10,000 free a month) to Compute
+ * Routes **Pro** ($10 per 1,000, only 5,000 free). Double the price and half the
+ * allowance. This used to pass `TRAFFIC_AWARE` unconditionally, which meant every
+ * route line drawn on a map and every corridor match was billed at the Pro rate
+ * for a traffic estimate nothing read. Traffic is now opt-in per call, and the
+ * default is off. Before switching it on somewhere, check that a human actually
+ * reads the duration: fares are computed from distance, and the corridor match
+ * is pure geometry, so for both of those traffic is a number nobody looks at.
+ *
+ * SECOND, CACHING, at two levels. Callers cache the road they need on the trip
+ * or driver-route document that needs it, so a driver refreshing their feed every
+ * 20 seconds for an hour costs one Routes call and not 180. Underneath that,
+ * lib/mapsCache.ts shares roads *across* documents and screens — the same
+ * pickup→dropoff pair is drawn by the passenger's booking screen, the trip
+ * screen, the driver's en-route screen and the request detail screen, and only
+ * the first of them pays. Traffic-aware answers are cached for minutes rather
+ * than weeks, because a stale ETA is worse than no cache at all.
  *
  * THE KEY ITSELF
  * Must be a *separate* key from the Android one in the mobile app. That one is
@@ -33,6 +50,7 @@
 import { logger } from 'firebase-functions';
 
 import { Corridor, LatLng, buildCorridor, decodePolyline } from './corridor';
+import { readRouteCache, routeCacheKey, writeRouteCache } from './mapsCache';
 
 const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
@@ -51,8 +69,27 @@ export interface FetchedRoute {
   corridor: Corridor;
   /** Road distance in metres — the real thing, not the straight line. */
   distanceM: number;
-  /** Traffic-aware driving time in seconds. */
+  /**
+   * Driving time in seconds.
+   *
+   * Free-flow by default. It only accounts for live traffic when the caller
+   * asked for `trafficAware`, which costs twice as much — so treat this as an
+   * estimate unless you know the call opted in.
+   */
   durationSec: number;
+}
+
+export interface RouteOptions {
+  /**
+   * Ask Google to account for live traffic.
+   *
+   * Moves the call to the Compute Routes Pro SKU: double the price, half the
+   * free allowance, and a cached answer that is only good for minutes. Worth it
+   * where a person reads the ETA and would be misled by a free-flow number;
+   * never worth it for geometry, corridor matching, or a fare (those are
+   * distance-based and do not read this field at all).
+   */
+  trafficAware?: boolean;
 }
 
 /**
@@ -65,9 +102,29 @@ export interface FetchedRoute {
 export async function fetchRouteServerSide(
   origin: LatLng,
   destination: LatLng,
+  opts: RouteOptions = {},
 ): Promise<FetchedRoute | null> {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY;
   if (!key) return null;
+
+  const trafficAware = opts.trafficAware === true;
+
+  // Shared across trips, drivers and screens — see the COST note above. Rebuild
+  // the corridor from the cached polyline rather than storing it: it is derived
+  // data, and keeping one copy means the two can never disagree.
+  const cacheKey = routeCacheKey(origin, destination, trafficAware);
+  const cached = await readRouteCache(cacheKey);
+  if (cached) {
+    const points = decodePolyline(cached.polyline);
+    if (points.length >= 2) {
+      return {
+        polyline: cached.polyline,
+        corridor: buildCorridor(points),
+        distanceM: cached.distanceM,
+        durationSec: cached.durationSec,
+      };
+    }
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -89,7 +146,8 @@ export async function fetchRouteServerSide(
           location: { latLng: { latitude: destination.lat, longitude: destination.lng } },
         },
         travelMode: 'DRIVE',
-        routingPreference: 'TRAFFIC_AWARE',
+        // The one field that decides Essentials vs Pro. See RouteOptions.
+        routingPreference: trafficAware ? 'TRAFFIC_AWARE' : 'TRAFFIC_UNAWARE',
         polylineQuality: 'HIGH_QUALITY',
         regionCode: 'PK',
         languageCode: 'en',
@@ -127,12 +185,19 @@ export async function fetchRouteServerSide(
     const points = decodePolyline(polyline);
     if (points.length < 2) return null;
 
+    const distanceM = route!.distanceMeters ?? 0;
+    // Comes back as a protobuf duration string like "914s".
+    const durationSec = parseInt(String(route!.duration ?? '0'), 10) || 0;
+
+    // Best-effort: a road we could not cache costs one extra call later, which is
+    // never a reason to fail the request we already have an answer for.
+    await writeRouteCache(cacheKey, { polyline, distanceM, durationSec }, trafficAware);
+
     return {
       polyline,
       corridor: buildCorridor(points),
-      distanceM: route!.distanceMeters ?? 0,
-      // Comes back as a protobuf duration string like "914s".
-      durationSec: parseInt(String(route!.duration ?? '0'), 10) || 0,
+      distanceM,
+      durationSec,
     };
   } catch (e) {
     // Aborted, offline, DNS, malformed JSON — all the same to the caller.

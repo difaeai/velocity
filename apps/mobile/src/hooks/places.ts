@@ -23,6 +23,47 @@ import { api, type PlaceDetail, type PlacePrediction } from '../api/client';
 
 export type { PlaceDetail, PlacePrediction };
 
+/**
+ * Shortest query we will pay for.
+ *
+ * Two characters is not a search, it is a prefix — "is", "la", "f " match half
+ * of Pakistan and nobody picks a result from them, yet each one is a billed
+ * autocomplete request. Three is where predictions start being useful, and it
+ * removes roughly the first third of the requests a destination search used to
+ * make. Nothing is lost: the user is still typing.
+ */
+const MIN_QUERY_CHARS = 3;
+
+/**
+ * How long to wait for typing to stop.
+ *
+ * Every fire is a billed request (see the COST note in the backend's
+ * lib/places.ts — the session token does not make these free). At 300 ms a
+ * normal typist triggers a call mid-word several times per search; 500 ms is
+ * still below the point where the list feels laggy, and it roughly halves the
+ * number of requests. If this ever feels slow, lower it knowing what it costs.
+ */
+const DEBOUNCE_MS = 500;
+
+/**
+ * Predictions already seen this app session.
+ *
+ * Deliberately IN MEMORY ONLY and deliberately never written to AsyncStorage.
+ * These are Google Maps Content: the licence allows temporary caching for
+ * performance, not a copy on the device that outlives the process. Backspacing
+ * one character and retyping it is the case this catches, and it is a common one.
+ */
+const PREDICTION_LIMIT = 60;
+const predictionMemo = new Map<string, PlacePrediction[]>();
+
+function rememberPredictions(key: string, predictions: PlacePrediction[]): void {
+  if (predictionMemo.size >= PREDICTION_LIMIT) {
+    const oldest = predictionMemo.keys().next().value;
+    if (oldest !== undefined) predictionMemo.delete(oldest);
+  }
+  predictionMemo.set(key, predictions);
+}
+
 export function usePlacesAutocomplete(input: string, sessionToken: string) {
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,17 +73,28 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
 
   useEffect(() => {
     const trimmed = input.trim();
-    if (trimmed.length < 2) {
+    if (trimmed.length < MIN_QUERY_CHARS) {
       setPredictions([]);
       setApiStatus(null);
+      return;
+    }
+
+    // Something we already asked about — answer without spending, and without
+    // waiting out the debounce either, so the cheap path is also the fast one.
+    const memoKey = trimmed.toLowerCase();
+    const remembered = predictionMemo.get(memoKey);
+    if (remembered) {
+      setPredictions(remembered);
+      setApiStatus('OK');
+      setApiMessage(null);
       return;
     }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     // Debounced so a destination search is a few calls, not one per keystroke.
-    // The session token matters for cost too: Google bills autocomplete per
-    // session, so every keystroke plus the final details call is one charge.
+    // Each call is billed — see MIN_QUERY_CHARS and DEBOUNCE_MS above, and the
+    // backend's lib/places.ts for why the session token is not the saving here.
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
@@ -56,6 +108,7 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
         setApiStatus('OK');
         setApiMessage(null);
         setPredictions(res.predictions);
+        rememberPredictions(memoKey, res.predictions);
       } catch (e) {
         setApiStatus('NETWORK_ERROR');
         setApiMessage(e instanceof Error ? e.message : null);
@@ -63,7 +116,7 @@ export function usePlacesAutocomplete(input: string, sessionToken: string) {
       } finally {
         setLoading(false);
       }
-    }, 300);
+    }, DEBOUNCE_MS);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);

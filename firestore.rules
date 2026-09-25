@@ -1160,6 +1160,30 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- mapsCache/{key}, mapsPlaceIds/{key} ------------------------------
+    // Cached Google Maps answers. The catch-all below would deny these anyway;
+    // they are named because of what a client write would mean rather than what
+    // a read would be worth.
+    //
+    // These documents are the licence boundary (see
+    // backend/functions/src/lib/mapsCache.ts). `mapsCache` holds coordinates and
+    // polylines we are only allowed to keep for 30 days, and every document
+    // carries the `expireAt` that proves it. A client that could write here could
+    // push that expiry out and quietly put us in breach of the Google Maps
+    // Platform terms — or poison a coordinate and send a passenger to the wrong
+    // address. Only server code with the Admin SDK, which bypasses these rules,
+    // ever touches either collection.
+    //
+    // `mapsPlaceIds` holds place IDs only, never coordinates, which is why it has
+    // no expiry: place IDs are expressly exempt from the caching restrictions.
+    // Never merge the two collections to "simplify" this.
+    match /mapsCache/{key} {
+      allow read, write: if false;
+    }
+    match /mapsPlaceIds/{key} {
+      allow read, write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
