@@ -39,7 +39,15 @@ const BATCH_LIMIT = 400;
  */
 const MAX_BATCHES = 10;
 
-export const sweepMapsCache = onSchedule('every day 04:00', async () => {
+/**
+ * 04:00 Pakistan time, not 04:00 UTC.
+ *
+ * `onSchedule` defaults to UTC, which would have put this at 09:00 in Karachi —
+ * the morning rush, and the opposite of the quiet hour a sweep wants. Every other
+ * clock-time schedule in this codebase pins `Asia/Karachi` for the same reason;
+ * interval schedules ("every 15 minutes") do not need it.
+ */
+export const sweepMapsCache = onSchedule({ schedule: 'every day 04:00', timeZone: 'Asia/Karachi' }, async () => {
   const now = Timestamp.now();
   let deleted = 0;
 

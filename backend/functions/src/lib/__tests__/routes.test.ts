@@ -19,6 +19,12 @@ vi.mock('../mapsCache', () => ({
   readRouteCache: async () => null,
   writeRouteCache: async () => undefined,
   routeCacheKey: () => 'test-route-key',
+  // Real implementation, because the degenerate-route guard below is exactly the
+  // behaviour under test and stubbing it would make that test vacuous.
+  sameRoundedPoint: (
+    a: { lat: number; lng: number },
+    b: { lat: number; lng: number },
+  ) => a.lat.toFixed(4) === b.lat.toFixed(4) && a.lng.toFixed(4) === b.lng.toFixed(4),
 }));
 
 const F10 = { lat: 33.6938, lng: 72.9989 };
@@ -192,5 +198,52 @@ describe('fetchRouteServerSide billing tier', () => {
     await fetchRouteServerSide(F10, F6, { trafficAware: true });
 
     expect(bodyOf(fetchSpy).routingPreference).toBe('TRAFFIC_AWARE');
+  });
+});
+
+/**
+ * A route from a place to itself is not a route, and Google charges for being
+ * asked. These are the shapes that actually produced one: a destination that
+ * geocoded onto the rider's own position, and a map mounted with the same
+ * coordinate in both props while the real destination was still resolving.
+ */
+describe('fetchRouteServerSide degenerate requests', () => {
+  it('does not pay to route a point to itself', async () => {
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    expect(await fetchRouteServerSide(F10, F10)).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('treats a metre of GPS jitter as the same point', async () => {
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    // ~1 m away: below the ~11 m the cache rounds to, so still one place.
+    expect(await fetchRouteServerSide(F10, { lat: F10.lat + 0.000009, lng: F10.lng })).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still fetches a genuinely short hop', async () => {
+    // The guard must not swallow real short trips — a few hundred metres is a
+    // normal ride, and refusing to draw it would blank the map.
+    process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        routes: [
+          { polyline: { encodedPolyline: '_p~iF~ps|U_ulLnnqC' }, distanceMeters: 300, duration: '90s' },
+        ],
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const route = await fetchRouteServerSide(F10, { lat: F10.lat + 0.003, lng: F10.lng });
+    expect(route).not.toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

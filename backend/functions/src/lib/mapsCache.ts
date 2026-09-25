@@ -309,16 +309,34 @@ export async function writeDetailCache(placeId: string, place: CachedPlace): Pro
  * `trafficAware` is part of the key because the two answers are different
  * products with different prices and different lifetimes.
  */
+/** ~11 m. Tight enough not to cross a block, loose enough to absorb GPS jitter. */
+const COORD_KEY_DECIMALS = 4;
+
+const roundCoord = (n: number) => n.toFixed(COORD_KEY_DECIMALS);
+
 export function routeCacheKey(
   origin: { lat: number; lng: number },
   destination: { lat: number; lng: number },
   trafficAware: boolean,
 ): string {
-  const r = (n: number) => n.toFixed(4);
   return keyOf(
     'rt',
-    `${r(origin.lat)},${r(origin.lng)}|${r(destination.lat)},${r(destination.lng)}|${trafficAware ? 't' : 'p'}`,
+    `${roundCoord(origin.lat)},${roundCoord(origin.lng)}|${roundCoord(destination.lat)},${roundCoord(destination.lng)}|${trafficAware ? 't' : 'p'}`,
   );
+}
+
+/**
+ * True when two points are the same place as far as this cache is concerned.
+ *
+ * Lives here so it cannot drift from the precision `routeCacheKey` rounds to: if
+ * the cache would hand both points the same key, there is nothing between them to
+ * fetch, and callers use this to avoid buying a route from a place to itself.
+ */
+export function sameRoundedPoint(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): boolean {
+  return roundCoord(a.lat) === roundCoord(b.lat) && roundCoord(a.lng) === roundCoord(b.lng);
 }
 
 /** A cached road, or null. */
