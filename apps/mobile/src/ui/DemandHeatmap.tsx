@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { colors } from '../config';
@@ -43,43 +43,63 @@ function heatColor(count: number, max: number): string {
   return `rgba(239,68,68,${0.5 + ratio * 0.3})`;
 }
 
+/**
+ * How many open requests the map reads.
+ *
+ * This used to subscribe to the whole `openRequests` collection — no filter, no
+ * ceiling — so every driver with this screen open streamed every live request in
+ * the country, and paid a document read for each one plus each change to it. A
+ * heatmap only needs enough points to show where demand is; it does not need to
+ * be a complete census, and the difference is invisible at 20x14 tiles. This caps
+ * what one driver's screen can cost while the shape of the map stays the same.
+ */
+const HEAT_SAMPLE = 500;
+
+/** Bucket requests into the grid. Pure, so the tile maths is not tied to a render. */
+function buildGrid(rows: readonly HeatRequest[]): { grid: number[][]; max: number; total: number } {
+  const grid: number[][] = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(0));
+  let max = 0;
+  let total = 0;
+  rows.forEach(r => {
+    const lat = r.pickup?.lat;
+    const lng = r.pickup?.lng;
+    if (lat === undefined || lng === undefined) return;
+    const row = latToRow(lat);
+    const col = lngToCol(lng);
+    if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
+      const cell = ((grid[row] as number[])[col] as number) + 1;
+      (grid[row] as number[])[col] = cell;
+      if (cell > max) max = cell;
+      total++;
+    }
+  });
+  return { grid, max, total };
+}
+
 export function DemandHeatmap() {
   const canvasRef = useRef<{ width: number; height: number } | null>(null);
-  const [requests, setRequests] = useState<HeatRequest[]>([]);
   const [grid, setGrid]         = useState<number[][]>([]);
   const [maxCount, setMaxCount] = useState(1);
   const [totalOpen, setTotalOpen] = useState(0);
 
-  // Subscribe to openRequests
+  // Bucketed straight in the callback. Holding the raw documents in state as well
+  // meant keeping every request in memory only to derive a 20x14 grid from them,
+  // and re-rendering twice for every change: once for the rows, once for the grid.
   useEffect(() => {
-    return onSnapshot(collection(db, 'openRequests'), snap => {
-      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }) as HeatRequest);
-      setRequests(rows);
+    const q = query(
+      collection(db, 'openRequests'),
+      orderBy('createdAt', 'desc'),
+      limit(HEAT_SAMPLE),
+    );
+    return onSnapshot(q, snap => {
+      const { grid: g, max, total } = buildGrid(
+        snap.docs.map(d => ({ id: d.id, ...d.data() }) as HeatRequest),
+      );
+      setGrid(g);
+      setMaxCount(Math.max(max, 1));
+      setTotalOpen(total);
     });
   }, []);
-
-  // Build grid whenever requests change
-  useEffect(() => {
-    const g: number[][] = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(0));
-    let max = 0;
-    let total = 0;
-    requests.forEach(r => {
-      const lat = r.pickup?.lat;
-      const lng = r.pickup?.lng;
-      if (lat === undefined || lng === undefined) return;
-      const row = latToRow(lat);
-      const col = lngToCol(lng);
-      if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
-        (g[row] as number[])[col] = ((g[row] as number[])[col] as number) + 1;
-        const cellVal = (g[row] as number[])[col] as number;
-        if (cellVal > max) max = cellVal;
-        total++;
-      }
-    });
-    setGrid(g);
-    setMaxCount(Math.max(max, 1));
-    setTotalOpen(total);
-  }, [requests]);
 
   return (
     <View style={styles.container}>

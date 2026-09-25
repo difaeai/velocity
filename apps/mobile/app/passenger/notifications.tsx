@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import {
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -21,6 +22,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
+import { CHAT_WINDOW } from '../../src/lib/chatWindow';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCachedList } from '../../src/lib/cachedResource';
 import { colors } from '../../src/config';
@@ -70,9 +72,12 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     if (!user) return;
+    // Already newest-first, so this only needs the ceiling — no flip. An
+    // active account accumulates these forever; the screen shows a window.
     const q = query(
       collection(db, 'notifications', user.uid, 'items'),
       orderBy('timestamp', 'desc'),
+      limit(CHAT_WINDOW),
     );
     const unsub = onSnapshot(q, (snap) => {
       publish(

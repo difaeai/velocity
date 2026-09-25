@@ -29,13 +29,14 @@
  * getting IN, that one says who is getting OUT and what to take from them.
  * ---------------------------------------------------------------------------
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { api, type PoolJoinRequest, type PoolRiderView } from '../api/client';
 import { colors } from '../config';
 import { themed } from '../theme';
+import { useForegroundInterval } from '../hooks/useForegroundInterval';
 
 const GENDER_MARK: Record<string, string> = { male: '♂', female: '♀' };
 
@@ -78,17 +79,16 @@ export function DriverPoolManifest({
 
   // The people waiting on this driver's answer. Polled rather than streamed:
   // a request arrives with a push anyway, and this driver is looking at a road.
-  useEffect(() => {
-    let alive = true;
-    const read = () => {
-      api.getPoolJoinRequests({ tripId })
-        .then((r) => { if (alive) setPending(r.requests); })
-        .catch(() => { if (alive) setPending([]); });
-    };
-    read();
-    const t = setInterval(read, 20000);
-    return () => { alive = false; clearInterval(t); };
-  }, [tripId, refreshKey, localKey]);
+  const readPending = useCallback(() => {
+    api.getPoolJoinRequests({ tripId })
+      .then((r) => setPending(r.requests))
+      .catch(() => setPending([]));
+  }, [tripId]);
+
+  // `refreshKey` / `localKey` are refresh signals, not inputs to the read, so they
+  // belong in the restart key rather than the callback's deps: bumping either must
+  // re-read now, exactly as it did when this was a plain effect.
+  useForegroundInterval(readPending, 20000, `${refreshKey}|${localKey}`);
 
   async function decide(riderId: string, action: 'accept' | 'reject') {
     setDeciding(riderId);

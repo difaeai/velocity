@@ -10,9 +10,10 @@
  * because a discovery poll timed out — the row simply reports nothing and the
  * next beat tries again.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '../api/client';
+import { useForegroundInterval } from './useForegroundInterval';
 import type { Coords } from './location';
 
 /** How often the count is refreshed while home is open. */
@@ -62,48 +63,62 @@ export function useSuggestedRides(coords: Coords | null): SuggestedRidesSummary 
   const coordsRef = useRef<Coords | null>(coords);
   coordsRef.current = coords;
 
-  useEffect(() => {
-    let alive = true;
+  /**
+   * Only the most recent poll may publish.
+   *
+   * Every call takes a ticket and drops its result if a newer call has since
+   * taken one. That replaces the old per-effect `alive` flag and is slightly
+   * stricter than it was: a slow response is now discarded whenever it has been
+   * superseded, not only when the rider's position changed underneath it.
+   */
+  const seq = useRef(0);
 
-    async function poll(force: boolean) {
-      const here = coordsRef.current;
-      if (!here) return;
-      const moved = lastPosition.current
-        ? metresBetween(lastPosition.current, here) >= MOVE_THRESHOLD_M
-        : true;
-      const due = Date.now() - lastFetchedAt.current >= POLL_MS;
-      if (!force && !moved && !due) return;
+  const poll = useCallback(async (force: boolean) => {
+    const here = coordsRef.current;
+    if (!here) return;
+    const moved = lastPosition.current
+      ? metresBetween(lastPosition.current, here) >= MOVE_THRESHOLD_M
+      : true;
+    const due = Date.now() - lastFetchedAt.current >= POLL_MS;
+    if (!force && !moved && !due) return;
 
-      lastFetchedAt.current = Date.now();
-      lastPosition.current = here;
-      try {
-        const { rides } = await api.getSuggestedRides({
-          lat: here.lat,
-          lng: here.lng,
-          radiusKm: HOME_SUGGESTED_RADIUS_KM,
-        });
-        if (!alive) return;
-        // Rows arrive nearest-first, so the first one is the nearest.
-        setState({
-          count: rides.length,
-          withDriver: rides.filter((r) => r.hasDriver).length,
-          nearestDestination: rides[0]?.destinationAreaName ?? null,
-          cheapestFare: rides.length
-            ? rides.reduce((min, r) => Math.min(min, r.farePerSeat), rides[0]!.farePerSeat)
-            : null,
-          loaded: true,
-        });
-      } catch {
-        // Keep the last good summary; only mark that we have looked, so the row
-        // stops showing a spinner it will never resolve.
-        if (alive) setState((s) => ({ ...s, loaded: true }));
-      }
+    // Taken here rather than on entry: a tick that decides it is not due must not
+    // invalidate a request that is already in flight and about to publish.
+    const ticket = ++seq.current;
+    lastFetchedAt.current = Date.now();
+    lastPosition.current = here;
+    try {
+      const { rides } = await api.getSuggestedRides({
+        lat: here.lat,
+        lng: here.lng,
+        radiusKm: HOME_SUGGESTED_RADIUS_KM,
+      });
+      if (ticket !== seq.current) return;
+      // Rows arrive nearest-first, so the first one is the nearest.
+      setState({
+        count: rides.length,
+        withDriver: rides.filter((r) => r.hasDriver).length,
+        nearestDestination: rides[0]?.destinationAreaName ?? null,
+        cheapestFare: rides.length
+          ? rides.reduce((min, r) => Math.min(min, r.farePerSeat), rides[0]!.farePerSeat)
+          : null,
+        loaded: true,
+      });
+    } catch {
+      // Keep the last good summary; only mark that we have looked, so the row
+      // stops showing a spinner it will never resolve.
+      if (ticket === seq.current) setState((s) => ({ ...s, loaded: true }));
     }
+  }, []);
 
+  // A fresh position is worth an immediate look, regardless of the timer.
+  useEffect(() => {
     void poll(true);
-    const t = setInterval(() => void poll(false), 15_000);
-    return () => { alive = false; clearInterval(t); };
-  }, [coords?.lat, coords?.lng]);
+  }, [coords?.lat, coords?.lng, poll]);
+
+  // Kept fresh only while the user is actually looking. A backgrounded app
+  // polling this summary row helps nobody — see hooks/useForegroundInterval.
+  useForegroundInterval(coords ? () => void poll(false) : null, 15_000);
 
   return state;
 }

@@ -30,6 +30,7 @@ import {
   collection,
   doc,
   getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -37,6 +38,7 @@ import {
 import { FirebaseError } from 'firebase/app';
 
 import { db } from '../../../../src/firebase';
+import { CHAT_WINDOW, oldestFirst } from '../../../../src/lib/chatWindow';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { api, type TMComment, type TMPost } from '../../../../src/api/client';
 import { useBlockedSet } from '../../../../src/hooks/travelMateCommunity';
@@ -97,8 +99,13 @@ export default function PostDetail() {
   useEffect(() => {
     if (!postId) return;
     return onSnapshot(
-      query(collection(db, 'travelMatePosts', postId, 'comments'), orderBy('createdAt', 'asc')),
-      snap => setComments(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMComment)),
+      // Most recent window, flipped back into reading order — lib/chatWindow.ts.
+      query(
+        collection(db, 'travelMatePosts', postId, 'comments'),
+        orderBy('createdAt', 'desc'),
+        limit(CHAT_WINDOW),
+      ),
+      snap => setComments(oldestFirst(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TMComment))),
       () => {},
     );
   }, [postId]);

@@ -36,6 +36,7 @@ import { db } from '../firebase';
 import { api, type NearbyPoolRequest, type PoolJoinRequest } from '../api/client';
 import { colors } from '../config';
 import { themed } from '../theme';
+import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import { DRIVER_TAB_BAR_HEIGHT } from './DriverTabBar';
 
 /** Mirrors POOL_NO_JOINER_WINDOW_MS on the backend. */
@@ -99,17 +100,15 @@ function MyPoolCard({ pool }: { pool: MyPool }) {
 
   // Polled, not streamed: a request already arrives as a push, and this card is
   // on a screen a driver glances at between fares.
-  useEffect(() => {
-    let alive = true;
-    const read = () => {
-      api.getPoolRequestJoinRequests({ requestId: pool.id })
-        .then((r) => { if (alive) setPending(r.requests); })
-        .catch(() => { if (alive) setPending([]); });
-    };
-    read();
-    const t = setInterval(read, 20000);
-    return () => { alive = false; clearInterval(t); };
-  }, [pool.id, pool.filledSlots]);
+  const readPending = useCallback(() => {
+    api.getPoolRequestJoinRequests({ requestId: pool.id })
+      .then((r) => setPending(r.requests))
+      .catch(() => setPending([]));
+  }, [pool.id]);
+
+  // A seat filling is a signal to re-read, not an input to the read itself — so it
+  // restarts the poller instead of sitting in the callback's dependencies.
+  useForegroundInterval(readPending, 20000, pool.filledSlots);
 
   async function decideJoin(riderId: string, action: 'accept' | 'reject') {
     setDeciding(riderId);
@@ -438,11 +437,7 @@ export function SharingRidesFeed({
   }, [coords?.lat, coords?.lng, radiusKm]);
 
   // Load on mount / radius change, then keep fresh — pools change as riders join.
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
-  }, [load]);
+  useForegroundInterval(load, 30000);
 
   function setRadius(km: number) {
     setRadiusKm(km);
