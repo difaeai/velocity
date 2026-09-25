@@ -655,7 +655,7 @@ export default function Booking() {
     setDropoffCoords(null);
     setStage('ride');
     // Fetch real lat/lng in the background; draws the route and prices the trip
-    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
     newSession(); // rotate token after detail call closes the billing session
     if (detail && destSeq.current === seq) {
       setDropoffCoords({ lat: detail.lat, lng: detail.lng });

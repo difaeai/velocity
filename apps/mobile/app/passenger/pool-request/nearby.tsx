@@ -241,7 +241,7 @@ export default function NearbyRidesScreen() {
 
   async function selectDropPrediction(pred: PlacePrediction) {
     if (!joinTarget) return;
-    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
     if (!detail) {
       Alert.alert('Could not load place', 'Please try another suggestion.');
       return;

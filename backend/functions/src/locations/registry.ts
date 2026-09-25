@@ -366,6 +366,119 @@ export async function lookupOwnPlace(query: string): Promise<ResolvedOwnPlace | 
   }
 }
 
+export interface OwnPlaceSuggestion {
+  velocityId: string;
+  name: string;
+  city: string | null;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Suggestions for a partial name, from our own map. Free, and free permanently.
+ *
+ * This is the autocomplete half of the same idea as `lookupOwnPlace`. Every
+ * keystroke a rider types is a billed Google autocomplete request, and the
+ * destinations Pakistanis actually pick are a small, repeating set — so once a
+ * place is on our map there is no reason to pay to suggest it ever again.
+ *
+ * ONLY VERIFIED ROWS, for two separate reasons. The obvious one is accuracy: a
+ * pending row is a guess with one or two trips behind it, and putting a guess at
+ * the top of a suggestion list is how somebody ends up at the wrong gate. The
+ * second is provenance. A row is seeded with whatever the booking recorded, which
+ * for a tapped Google prediction is Google's own formatted address; verification
+ * is the point at which an operator has looked at the row and can rename it, so
+ * verified names are ones we stand behind rather than ones we are repeating.
+ *
+ * Firestore has no substring search, so this is a prefix range on the normalised
+ * name plus an exact alias match. "giga" finds "Giga Mall"; "mall" does not, and
+ * that is the honest limit of a query this cheap — Google is still there for the
+ * rest, which is why callers merge rather than replace.
+ */
+export async function searchOwnPlaces(
+  query: string,
+  limit = 5,
+): Promise<OwnPlaceSuggestion[]> {
+  const normalized = normalizeQuery(query);
+  if (normalized.length < 3) return [];
+
+  const toSuggestion = (
+    d: FirebaseFirestore.QueryDocumentSnapshot,
+  ): OwnPlaceSuggestion | null => {
+    const lat = d.get('lat') as number | undefined;
+    const lng = d.get('lng') as number | undefined;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return {
+      velocityId: (d.get('velocityId') as string | undefined) ?? d.id,
+      name: (d.get('name') as string | undefined) ?? '',
+      city: (d.get('city') as string | null | undefined) ?? null,
+      lat,
+      lng,
+    };
+  };
+
+  try {
+    const [byPrefix, byAlias] = await Promise.all([
+      db
+        .collection(LOCATIONS_COLLECTION)
+        .where('status', '==', 'verified')
+        .orderBy('normalizedName')
+        .startAt(normalized)
+        .endAt(`${normalized}`)
+        .limit(limit)
+        .get(),
+      db
+        .collection(LOCATIONS_COLLECTION)
+        .where('aliases', 'array-contains', normalized)
+        .where('status', '==', 'verified')
+        .limit(limit)
+        .get(),
+    ]);
+
+    const seen = new Set<string>();
+    const out: OwnPlaceSuggestion[] = [];
+    // Prefix hits first: an alias match is an operator's shortcut, and a name the
+    // rider is actually typing is the better thing to show at the top.
+    for (const doc of [...byPrefix.docs, ...byAlias.docs]) {
+      const s = toSuggestion(doc);
+      if (!s || seen.has(s.velocityId)) continue;
+      seen.add(s.velocityId);
+      out.push(s);
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch (e) {
+    // A registry problem must degrade to "ask Google", never to an empty list the
+    // rider reads as "no such place". Callers treat an empty result as "nothing of
+    // ours matched" and go on to query Google, which is exactly right here.
+    logger.warn('velocityLocations: suggestion search failed, falling through', e);
+    return [];
+  }
+}
+
+/** Resolve one of our own suggestions back to a place. No Google call, ever. */
+export async function resolveOwnPlace(velocityId: string): Promise<ResolvedOwnPlace | null> {
+  try {
+    const snap = await db.collection(LOCATIONS_COLLECTION).doc(velocityId).get();
+    if (!snap.exists) return null;
+    if ((snap.get('status') as LocationStatus | undefined) !== 'verified') return null;
+
+    const lat = snap.get('lat') as number | undefined;
+    const lng = snap.get('lng') as number | undefined;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+
+    return {
+      lat,
+      lng,
+      address: (snap.get('name') as string | undefined) ?? '',
+      velocityId: (snap.get('velocityId') as string | undefined) ?? snap.id,
+    };
+  } catch (e) {
+    logger.warn('velocityLocations: could not resolve a suggestion', { velocityId, e });
+    return null;
+  }
+}
+
 /** Exported for the admin desk's summary row. */
 export async function countByStatus(): Promise<Record<LocationStatus, number>> {
   const out: Record<LocationStatus, number> = { pending: 0, verified: 0, rejected: 0 };

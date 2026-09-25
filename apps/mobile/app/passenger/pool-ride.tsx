@@ -375,7 +375,7 @@ export default function PoolRideScreen() {
   async function selectDestPrediction(pred: PlacePrediction) {
     if (!selected) return;
     setDestPredictionsOpen(false);
-    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
     if (!detail) {
       Alert.alert('Could not load place', 'Please try another suggestion.');
       return;

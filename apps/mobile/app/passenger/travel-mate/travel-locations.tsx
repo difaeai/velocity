@@ -108,7 +108,7 @@ export default function TravelLocations() {
   async function selectPrediction(pred: PlacePrediction) {
     const kind = activeField;
     if (!kind) return;
-    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
     sessionTokenRef.current = uuidv4(); // rotate token after detail call closes the billing session
     if (!detail) {
       Alert.alert('Could not load place', 'Please try another suggestion.');

@@ -425,7 +425,16 @@ export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
 
 /** One address suggestion from the backend Places proxy. */
 export interface PlacePrediction {
+  /** Google's id. Empty string on a suggestion that came from our own map. */
   placeId: string;
+  /**
+   * Our id, when this suggestion came from Velocity's own map rather than Google.
+   *
+   * Exactly one of `placeId` / `velocityId` is set. Resolving through this one
+   * costs nothing and never expires, because the coordinate behind it was measured
+   * by our own drivers — see backend/functions/src/locations/registry.ts.
+   */
+  velocityId?: string;
   mainText: string;
   secondaryText: string;
   fullText: string;
@@ -1077,11 +1086,11 @@ export const api = {
   // unset — callers show "search unavailable" rather than failing.
   placesAutocomplete: callable<
     { input: string; sessionToken: string },
-    { ok: boolean; configured: boolean; predictions: PlacePrediction[] }
+    { ok: boolean; configured: boolean; predictions: PlacePrediction[]; fromOwnMap?: number }
   >('placesAutocomplete'),
   placeDetails: callable<
-    { placeId: string; sessionToken: string },
-    { ok: boolean; configured: boolean; detail: PlaceDetail | null }
+    { placeId?: string; velocityId?: string; sessionToken: string },
+    { ok: boolean; configured: boolean; detail: PlaceDetail | null; fromOwnMap?: boolean }
   >('placeDetails'),
   geocodeAddress: callable<
     { text: string },

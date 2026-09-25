@@ -269,7 +269,7 @@ export default function PoolRideOfferScreen() {
                   onPress={async () => {
                     setDropoffAddr(pred.fullText);
                     setShowDropPredictions(false);
-                    const detail = await fetchPlaceDetail(pred.placeId, sessionTokenRef.current);
+                    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
                     if (detail) setDropoffCoords({ lat: detail.lat, lng: detail.lng });
                   }}
                 >

@@ -19,6 +19,8 @@ import {
   lookupOwnPlace,
   metresBetween,
   observePlace,
+  resolveOwnPlace,
+  searchOwnPlaces,
   velocityLocationId,
 } from '../registry';
 
@@ -264,5 +266,100 @@ describe('metresBetween', () => {
 
   it('is zero for a point against itself', () => {
     expect(metresBetween(F7, F7)).toBeCloseTo(0, 5);
+  });
+});
+
+/**
+ * Autocomplete from our own map. This is where the money is: every keystroke that
+ * reaches Google is billed, and a suggestion served from here never will be.
+ *
+ * The rules that matter are about what must NOT be suggested — an unverified guess,
+ * or a row with no coordinate — because a bad suggestion at the top of the list is
+ * how somebody ends up at the wrong place, and that is worse than a paid call.
+ */
+describe('searchOwnPlaces', () => {
+  it('suggests a verified place from a prefix of its name', async () => {
+    await confirmTimes('Giga Mall', F7, VERIFY_AFTER_CONFIRMATIONS);
+
+    const hits = await searchOwnPlaces('giga');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.name).toBe('Giga Mall');
+    expect(hits[0]!.lat).toBeCloseTo(F7.lat, 4);
+    expect(hits[0]!.velocityId).toBe(velocityLocationId('Giga Mall', 'ISB'));
+    expect(hits[0]!.city).toBe('Islamabad');
+  });
+
+  it('never suggests a place only one or two trips have seen', async () => {
+    await observePlace({ name: 'Giga Mall', ...F7, source: 'trip_gps', tripId: 'a' });
+    expect(await searchOwnPlaces('giga')).toEqual([]);
+  });
+
+  it('never suggests a rejected place', async () => {
+    await confirmTimes('Bad name here', F7, VERIFY_AFTER_CONFIRMATIONS);
+    const id = velocityLocationId('Bad name here', 'ISB');
+    await db().collection(LOCATIONS_COLLECTION).doc(id).set({ status: 'rejected' }, { merge: true });
+
+    expect(await searchOwnPlaces('bad name')).toEqual([]);
+  });
+
+  it('matches an alias an operator added', async () => {
+    await confirmTimes('F-7 Markaz, Islamabad', F7, VERIFY_AFTER_CONFIRMATIONS);
+    const id = velocityLocationId('F-7 Markaz, Islamabad', 'ISB');
+    await db().collection(LOCATIONS_COLLECTION).doc(id).set({ aliases: ['jinnah super'] }, { merge: true });
+
+    const hits = await searchOwnPlaces('jinnah super');
+    expect(hits.map((h) => h.velocityId)).toEqual([id]);
+  });
+
+  it('does not return the same place twice when name and alias both match', async () => {
+    await confirmTimes('Jinnah Super Market', F7, VERIFY_AFTER_CONFIRMATIONS);
+    const id = velocityLocationId('Jinnah Super Market', 'ISB');
+    // The alias is also a prefix of the name, so both queries find this row.
+    await db().collection(LOCATIONS_COLLECTION).doc(id).set({ aliases: ['jinnah super market'] }, { merge: true });
+
+    const hits = await searchOwnPlaces('jinnah super market');
+    expect(hits).toHaveLength(1);
+  });
+
+  it('respects the limit, so it can never outgrow the dropdown', async () => {
+    for (const n of ['Mall One', 'Mall Two', 'Mall Three', 'Mall Four', 'Mall Five', 'Mall Six']) {
+      await confirmTimes(n, F7, VERIFY_AFTER_CONFIRMATIONS);
+    }
+    expect((await searchOwnPlaces('mall', 5)).length).toBeLessThanOrEqual(5);
+  });
+
+  it('ignores a query too short to mean anything', async () => {
+    await confirmTimes('Giga Mall', F7, VERIFY_AFTER_CONFIRMATIONS);
+    expect(await searchOwnPlaces('gi')).toEqual([]);
+  });
+
+  it('is a prefix search, and does not pretend otherwise', async () => {
+    // "mall" will not find "Giga Mall". That is the honest limit of a query this
+    // cheap, and exactly why the caller still asks Google when we come up short.
+    await confirmTimes('Giga Mall', F7, VERIFY_AFTER_CONFIRMATIONS);
+    expect(await searchOwnPlaces('mall')).toEqual([]);
+  });
+});
+
+describe('resolveOwnPlace', () => {
+  it('resolves one of our suggestions with no Google call in sight', async () => {
+    await confirmTimes('Giga Mall', F7, VERIFY_AFTER_CONFIRMATIONS);
+    const id = velocityLocationId('Giga Mall', 'ISB');
+
+    const got = await resolveOwnPlace(id);
+    expect(got).toMatchObject({ velocityId: id, address: 'Giga Mall' });
+    expect(got!.lat).toBeCloseTo(F7.lat, 4);
+  });
+
+  it('refuses a place that stopped being verified between the suggestion and the tap', async () => {
+    await confirmTimes('Giga Mall', F7, VERIFY_AFTER_CONFIRMATIONS);
+    const id = velocityLocationId('Giga Mall', 'ISB');
+    await db().collection(LOCATIONS_COLLECTION).doc(id).set({ status: 'rejected' }, { merge: true });
+
+    expect(await resolveOwnPlace(id)).toBeNull();
+  });
+
+  it('returns null for an id we have never heard of', async () => {
+    expect(await resolveOwnPlace('VL-ISB-DEADBE')).toBeNull();
   });
 });
