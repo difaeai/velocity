@@ -1,8 +1,18 @@
 /**
  * Turns completed trips into Velocity's own map, fifteen minutes at a time.
  * ----------------------------------------------------------------------------
- * WHERE THE COORDINATE COMES FROM, AND WHY IT IS NOT THE ONE ON THE TRIP
- * A completed trip carries two obvious candidates and one of them is a trap.
+ * WHAT ONE COMPLETED TRIP TEACHES US
+ * Two places: where the rider got in, and where they got out. Both coordinates are
+ * first-party, but they come from different devices and for different reasons.
+ *
+ * THE PICKUP is the rider's own fix. Booking refuses to proceed without location
+ * permission and sets pickup straight from the device, and its label comes from the
+ * platform's reverse geocoder through expo-location — not from Google Maps Platform
+ * at all. Cleanest observation we get.
+ *
+ * WHERE THE DROP-OFF COORDINATE COMES FROM, AND WHY IT IS NOT THE ONE ON THE TRIP
+ * A completed trip carries two obvious candidates for the drop-off and one of them
+ * is a trap.
  *
  *   dropoff.lat / dropoff.lng — DO NOT USE. This is where the *geocoder* said the
  *     destination was. It came out of Places or Geocoding, so it is Google's
@@ -95,38 +105,67 @@ export const promoteTripLocations = onSchedule('every 15 minutes', async () => {
     // the watermark behind it would make every future run re-read it forever.
     if (completedAt && completedAt.toMillis() > newest.toMillis()) newest = completedAt;
 
-    const dropoff = doc.get('dropoff') as { address?: string } | undefined;
-    const name = dropoff?.address?.trim();
-    if (!name) {
-      skipped++;
-      continue;
+    let learnedFromThisTrip = 0;
+
+    // ── The pickup ──
+    // `trips.pickup` is the rider's own device fix: booking refuses to proceed
+    // without location permission and sets pickup straight from it
+    // (apps/mobile/app/passenger/booking.tsx). Its label comes from the platform's
+    // own reverse geocoder via expo-location, not from Google Maps Platform — so
+    // this observation is cleaner in provenance than the drop-off below, where the
+    // label is whatever the geocoder called the place.
+    const pickup = doc.get('pickup') as { lat?: number; lng?: number; address?: string } | undefined;
+    const pickupName = pickup?.address?.trim();
+    if (pickupName && typeof pickup?.lat === 'number' && typeof pickup?.lng === 'number') {
+      // Skip the placeholder the booking screen falls back to when it has no
+      // address: it is not a place, it is every rider's current position.
+      if (pickupName.toLowerCase() !== 'current location') {
+        const id = await observePlace({
+          name: pickupName,
+          lat: pickup.lat,
+          lng: pickup.lng,
+          source: 'trip_gps',
+          placeId: await readCachedPlaceId(pickupName),
+          // Suffixed so one trip can legitimately confirm two different places
+          // without its pickup and drop-off deduplicating against each other.
+          tripId: `${doc.id}#pickup`,
+        });
+        if (id) learnedFromThisTrip++;
+      }
     }
 
+    // ── The drop-off ──
+    // The coordinate is the DRIVER's fix at the end of the ride, never
+    // `dropoff.lat/lng` — see this file's header for why that distinction is the
+    // whole point.
+    const dropoff = doc.get('dropoff') as { address?: string } | undefined;
+    const dropName = dropoff?.address?.trim();
     const fix = doc.get('driverLocation') as { lat?: number; lng?: number } | null | undefined;
     const fixAt = doc.get('driverLocationAt') as Timestamp | undefined;
-    if (typeof fix?.lat !== 'number' || typeof fix?.lng !== 'number' || !fixAt || !completedAt) {
-      skipped++;
-      continue;
-    }
-    if (Math.abs(completedAt.toMillis() - fixAt.toMillis()) > MAX_FIX_AGE_MS) {
-      skipped++;
-      continue;
+
+    const fixUsable =
+      typeof fix?.lat === 'number' &&
+      typeof fix?.lng === 'number' &&
+      !!fixAt &&
+      !!completedAt &&
+      Math.abs(completedAt.toMillis() - fixAt.toMillis()) <= MAX_FIX_AGE_MS;
+
+    if (dropName && fixUsable) {
+      const id = await observePlace({
+        name: dropName,
+        lat: fix!.lat!,
+        lng: fix!.lng!,
+        source: 'trip_gps',
+        // The permanent join between Google's identity for this place and ours.
+        // Place IDs are the one thing the Maps terms let us keep indefinitely, so
+        // if we learned one for this name it is legitimately ours to carry here.
+        placeId: await readCachedPlaceId(dropName),
+        tripId: `${doc.id}#dropoff`,
+      });
+      if (id) learnedFromThisTrip++;
     }
 
-    // The permanent join between Google's identity for this place and ours. Place
-    // IDs are the one thing the Maps terms let us keep indefinitely, so if we
-    // learned one for this name it is legitimately ours to carry here.
-    const placeId = await readCachedPlaceId(name);
-
-    const id = await observePlace({
-      name,
-      lat: fix.lat,
-      lng: fix.lng,
-      source: 'trip_gps',
-      placeId,
-      tripId: doc.id,
-    });
-    if (id) observed++;
+    if (learnedFromThisTrip > 0) observed += learnedFromThisTrip;
     else skipped++;
   }
 

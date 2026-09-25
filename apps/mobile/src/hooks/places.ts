@@ -142,13 +142,29 @@ export async function geocodeAddress(text: string): Promise<PlaceDetail | null> 
   }
 }
 
-/** Resolve a prediction the user tapped into coordinates. */
+/**
+ * Resolve a prediction the user tapped into coordinates.
+ *
+ * Takes the whole prediction rather than a bare id, because the two kinds resolve
+ * down different paths: one of Velocity's own suggestions goes to our registry and
+ * costs nothing, while one of Google's goes to Place Details and closes the
+ * autocomplete billing session. Passing the prediction means a caller cannot
+ * accidentally send a velocityId as a placeId, which would look like a Google id,
+ * fail, and quietly fall back to a paid text search.
+ */
 export async function fetchPlaceDetail(
-  placeId: string,
+  prediction: PlacePrediction | string,
   sessionToken: string,
 ): Promise<PlaceDetail | null> {
+  // A bare string is still accepted: older call sites pass a Google placeId.
+  const req =
+    typeof prediction === 'string'
+      ? { placeId: prediction, sessionToken }
+      : prediction.velocityId
+        ? { velocityId: prediction.velocityId, sessionToken }
+        : { placeId: prediction.placeId, sessionToken };
   try {
-    const res = await api.placeDetails({ placeId, sessionToken });
+    const res = await api.placeDetails(req);
     return res.detail;
   } catch {
     return null;

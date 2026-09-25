@@ -40,7 +40,7 @@ import { useCurrentLocation } from '../../src/hooks/location';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { useDriverActiveTrip } from '../../src/hooks/driver';
 import { fetchRouteInfo } from '../../src/hooks/directions';
-import { fetchPlaceDetail, usePlacesAutocomplete } from '../../src/hooks/places';
+import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 import { PrimaryButton } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import type { GeoPoint } from '../../src/domain/types';
@@ -367,14 +367,16 @@ function RouteSetter({
   const [busy, setBusy] = useState(false);
   const { predictions } = usePlacesAutocomplete(query, token);
 
-  const choose = async (placeId: string, description: string) => {
+  // Takes the whole prediction: one of our own map's suggestions resolves for free
+  // through its velocityId, and passing only the id would lose that.
+  const choose = async (prediction: PlacePrediction, description: string) => {
     if (!coords) {
       Alert.alert('Location needed', 'We need your current location to work out your route.');
       return;
     }
     setBusy(true);
     try {
-      const detail = await fetchPlaceDetail(placeId, token);
+      const detail = await fetchPlaceDetail(prediction, token);
       if (!detail) throw new Error('Could not find that place.');
 
       const origin: GeoPoint = { lat: coords.lat, lng: coords.lng, address: 'Current location' };
@@ -433,7 +435,7 @@ function RouteSetter({
             <Pressable
               key={p.placeId}
               style={styles.prediction}
-              onPress={() => choose(p.placeId, p.mainText)}
+              onPress={() => choose(p, p.mainText)}
             >
               <Text style={styles.predictionMain}>{p.mainText}</Text>
               <Text style={styles.predictionSecondary} numberOfLines={1}>{p.secondaryText}</Text>
