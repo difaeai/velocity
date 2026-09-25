@@ -95,8 +95,55 @@ export interface RouteInfo {
   encoded: string;
 }
 
+/**
+ * Roads fetched this app session.
+ *
+ * One ride asks for the same road up to four times — the passenger's booking
+ * screen, the trip screen, the driver's en-route screen and the request detail
+ * screen each mount their own map, and a `useState` cache dies with the screen.
+ * Every one of those was a paid Routes call for a road we had already bought.
+ *
+ * The backend caches these too (backend/functions/src/lib/mapsCache.ts), so this
+ * layer is about the round trip rather than the money: a remounted map draws its
+ * route immediately instead of flashing a straight line first.
+ *
+ * In memory only, and never written to AsyncStorage: these are Google Maps
+ * Content, and the licence allows temporary caching for performance, not a copy
+ * on the device that outlives the process.
+ */
+const ROUTE_MEMO_LIMIT = 40;
+const ROUTE_MEMO_TTL_MS = 10 * 60 * 1000;
+const routeMemo = new Map<string, { info: RouteInfo; expiresAtMs: number }>();
+
+/** Rounded to ~11 m, matching the backend's key so the two layers agree. */
+function routeMemoKey(origin: MapPoint, dest: MapPoint): string {
+  const r = (n: number) => n.toFixed(4);
+  return `${r(origin.lat)},${r(origin.lng)}|${r(dest.lat)},${r(dest.lng)}`;
+}
+
+function readRouteMemo(origin: MapPoint, dest: MapPoint): RouteInfo | null {
+  const hit = routeMemo.get(routeMemoKey(origin, dest));
+  if (!hit) return null;
+  if (hit.expiresAtMs <= Date.now()) {
+    routeMemo.delete(routeMemoKey(origin, dest));
+    return null;
+  }
+  return hit.info;
+}
+
+function writeRouteMemo(origin: MapPoint, dest: MapPoint, info: RouteInfo): void {
+  if (routeMemo.size >= ROUTE_MEMO_LIMIT) {
+    const oldest = routeMemo.keys().next().value;
+    if (oldest !== undefined) routeMemo.delete(oldest);
+  }
+  routeMemo.set(routeMemoKey(origin, dest), { info, expiresAtMs: Date.now() + ROUTE_MEMO_TTL_MS });
+}
+
 /** Fetch the driving route between two points with its ETA, or null on failure. */
 export async function fetchRouteInfo(origin: MapPoint, dest: MapPoint): Promise<RouteInfo | null> {
+  const remembered = readRouteMemo(origin, dest);
+  if (remembered) return remembered;
+
   try {
     const res = await api.getDirections({
       origin: { lat: origin.lat, lng: origin.lng },
@@ -106,12 +153,14 @@ export async function fetchRouteInfo(origin: MapPoint, dest: MapPoint): Promise<
     if (!encoded) return null;
     const coords = decodePolyline(encoded);
     if (coords.length < 2) return null;
-    return {
+    const info: RouteInfo = {
       coords,
       durationSec: res.route!.durationSec,
       distanceM: res.route!.distanceM,
       encoded,
     };
+    writeRouteMemo(origin, dest, info);
+    return info;
   } catch {
     // Offline, rate limited, Maps outage — the caller draws the straight line.
     return null;
@@ -138,7 +187,12 @@ export function useRoute(pickup?: MapPoint | null, dropoff?: MapPoint | null): L
  * driver's request screen puts in the badges over the map.
  */
 export function useRouteInfo(pickup?: MapPoint | null, dropoff?: MapPoint | null): RouteInfo | null {
-  const [route, setRoute] = useState<RouteInfo | null>(null);
+  // Seeded from the session cache rather than null, so a screen that comes back
+  // to a road we already have draws it on the first frame instead of showing a
+  // straight line and then correcting itself.
+  const [route, setRoute] = useState<RouteInfo | null>(() =>
+    pickup && dropoff ? readRouteMemo(pickup, dropoff) : null,
+  );
 
   const key =
     pickup && dropoff
@@ -151,7 +205,10 @@ export function useRouteInfo(pickup?: MapPoint | null, dropoff?: MapPoint | null
       return;
     }
     let alive = true;
-    setRoute(null);
+    // Only blank the line when we have nothing cached for the new endpoints.
+    const remembered = readRouteMemo(pickup, dropoff);
+    setRoute(remembered);
+    if (remembered) return;
     fetchRouteInfo(pickup, dropoff).then((info) => {
       if (alive) setRoute(info);
     });

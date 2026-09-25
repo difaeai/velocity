@@ -35,6 +35,22 @@ rather than security — a challenge is dead five minutes in by its own
 `validUntilMs`, and single-use besides — but without the policy every login the
 platform has ever served accumulates as a document nobody reads.
 
+Add it on **`mapsCache.expireAt`** as well. This one is a licence obligation, not
+housekeeping. `mapsCache` holds coordinates and route polylines bought from Google,
+and the Maps Platform terms allow caching latitude and longitude "for up to 30
+consecutive calendar days, after which Customer must delete the cached latitude
+and longitude values." The code does not depend on you doing this — `sweepMapsCache`
+runs daily and deletes them anyway, and every read re-checks `expireAt` before it
+serves anything — but the policy is cheaper than the sweep and gives Google a
+native answer if they ever ask.
+
+**Do NOT add a TTL policy to `mapsPlaceIds`.** That collection holds place IDs and
+nothing else: no coordinates, no addresses. Place IDs are expressly exempt from the
+caching restrictions and may be kept indefinitely, and keeping them is what makes a
+repeat address lookup a $5-per-1,000 call instead of a $32 one. Expiring them would
+be paying Google extra for no reason. See
+`backend/functions/src/lib/mapsCache.ts` for the full reasoning.
+
 ### Firebase App Check **(you + code)**
 Stops traffic from anything other than your genuine apps.
 1. Register providers: **Play Integrity** (Android), **App Attest** (iOS),

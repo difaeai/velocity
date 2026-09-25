@@ -171,6 +171,8 @@ export {
   geocodeAddress,
   getDirections,
 } from './maps';
+// Deletes cached Google coordinates inside the 30 days the licence allows
+export { sweepMapsCache } from './maps/sweepMapsCache';
 
 // Saved payment methods — connected Easypaisa/JazzCash/bank/card instruments
 export {

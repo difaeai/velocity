@@ -22,10 +22,25 @@
  * it never leaves the server. See .env.example.
  *
  * COST
- * Autocomplete is billed per *session*, not per keystroke: the client mints a
- * session token, sends it with every keystroke and again with the final
- * Details call, and Google bills the whole thing once. Passing `sessionToken`
- * through faithfully is therefore a cost control, not a formality.
+ * Read this before "optimising" anything here, because the obvious belief about
+ * autocomplete billing is out of date. Under the SKU model Google moved to in
+ * March 2025 a session is only free when it ends in a Place Details call asking
+ * for *Pro or Enterprise* fields. We ask for `location,formattedAddress`, which
+ * is Place Details **Essentials** — and for those sessions Google bills the
+ * first 12 autocomplete requests, with requests 13 and higher free. A normal
+ * destination search is three to six requests, so in practice we pay for every
+ * one of them and the session token saves nothing.
+ *
+ * That is not a reason to drop the token: an abandoned session is billed the
+ * same way, so keeping it costs nothing and it does start saving above twelve
+ * requests. It is a reason not to mistake it for a cost control. What actually
+ * cuts this bill is upstream — fewer requests per search (the 3-character floor
+ * and 500 ms debounce in the client's hooks/places.ts) and never buying the same
+ * answer twice (lib/mapsCache.ts).
+ *
+ * The other two calls here are cached, and `fetchGeocode` prefers the Geocoding
+ * API over Text Search: same answer, $5 per 1,000 instead of $32. See that
+ * function for why Text Search is still here at all.
  *
  * FAILURE
  * Every helper returns null / [] rather than throwing. A Places outage should
@@ -33,9 +48,26 @@
  */
 import { logger } from 'firebase-functions';
 
+import {
+  readCachedPlaceId,
+  readDetailCache,
+  readPlaceCache,
+  writeDetailCache,
+  writePlaceCache,
+} from './mapsCache';
+
 const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
 const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
 const DETAILS_BASE_URL = 'https://places.googleapis.com/v1/places';
+/**
+ * The Geocoding API — address text in, coordinates out, $5 per 1,000.
+ *
+ * Not a legacy endpoint despite the older-looking URL: Geocoding is a current
+ * Essentials-tier API with its own 10,000-a-month free allowance. That matters
+ * here because this project is post-2025 and Google refuses to enable genuinely
+ * legacy Maps APIs on those (see the client's hooks/directions.ts for the scar).
+ */
+const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 /** Give up rather than hold a callable open. */
 const TIMEOUT_MS = 6_000;
@@ -143,15 +175,22 @@ export async function fetchAutocomplete(
     }));
 }
 
-/** Resolve a prediction the user picked into coordinates. */
-export async function fetchPlaceDetail(
+/**
+ * Ask Google what is at a place ID. One Place Details Essentials call.
+ *
+ * `sessionToken` is optional because there are two callers with different
+ * histories: a prediction the user just tapped (there is a live autocomplete
+ * session to close, so pass it) and a place ID we already had on file from weeks
+ * ago (no session exists, so there is nothing to close).
+ */
+async function placeDetailFromGoogle(
   placeId: string,
-  sessionToken: string,
+  sessionToken?: string,
 ): Promise<PlaceDetail | null> {
-  const data = await callPlaces(
-    `${DETAILS_BASE_URL}/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(sessionToken)}`,
-    { method: 'GET', fieldMask: 'location,formattedAddress' },
-  );
+  const url = sessionToken
+    ? `${DETAILS_BASE_URL}/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(sessionToken)}`
+    : `${DETAILS_BASE_URL}/${encodeURIComponent(placeId)}`;
+  const data = await callPlaces(url, { method: 'GET', fieldMask: 'location,formattedAddress' });
   const location = data?.location as { latitude?: number; longitude?: number } | undefined;
   if (typeof location?.latitude !== 'number' || typeof location?.longitude !== 'number') {
     return null;
@@ -163,14 +202,111 @@ export async function fetchPlaceDetail(
   };
 }
 
-/** Geocode a free-typed address via Text Search — the "I'll type it myself" path. */
-export async function fetchGeocode(text: string): Promise<PlaceDetail | null> {
+/**
+ * Resolve a prediction the user picked into coordinates.
+ *
+ * A cache hit skips the Google call, which also means the autocomplete session
+ * never gets closed. That is deliberate and it is free: Google bills an
+ * abandoned session's requests exactly as it bills the first twelve of a closed
+ * Essentials session — the same Autocomplete Requests SKU, the same price. So
+ * for the three-to-six-request searches people actually make, serving from cache
+ * costs the same on autocomplete and saves the whole Place Details call.
+ *
+ * Above twelve requests a closed session would have started earning free ones,
+ * so a very long search that ends on a cached place is fractionally worse. That
+ * is a rare shape, and the Place Details call we skip is worth more than the
+ * handful of autocomplete requests it would have discounted.
+ */
+export async function fetchPlaceDetail(
+  placeId: string,
+  sessionToken: string,
+): Promise<PlaceDetail | null> {
+  const cached = await readDetailCache(placeId);
+  if (cached) return { lat: cached.lat, lng: cached.lng, address: cached.address };
+
+  const detail = await placeDetailFromGoogle(placeId, sessionToken);
+  if (detail) await writeDetailCache(placeId, detail);
+  return detail;
+}
+
+/** Geocode via the Geocoding API. Essentials tier: $5 per 1,000, 10,000 free. */
+async function geocodeFromGoogle(
+  text: string,
+): Promise<(PlaceDetail & { placeId?: string }) | null> {
+  const key = process.env.GOOGLE_MAPS_SERVER_KEY;
+  if (!key) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const url =
+      `${GEOCODE_URL}?address=${encodeURIComponent(text)}` +
+      // `components` restricts rather than biases: an Islamabad sector name must
+      // not resolve to a same-named street in another country.
+      `&components=country:pk&language=en&key=${encodeURIComponent(key)}`;
+
+    const res = await fetch(url, { signal: controller.signal });
+    const data = (await res.json()) as {
+      status?: string;
+      error_message?: string;
+      results?: {
+        formatted_address?: string;
+        place_id?: string;
+        geometry?: { location?: { lat?: number; lng?: number } };
+      }[];
+    };
+
+    // This API reports failure in `status`, not the HTTP code — a REQUEST_DENIED
+    // arrives as a 200. ZERO_RESULTS is not an error, just no such address.
+    if (data.status !== 'OK') {
+      if (data.status !== 'ZERO_RESULTS') {
+        logger.error('Geocoding API rejected the request', {
+          status: data.status,
+          message: data.error_message,
+        });
+      }
+      return null;
+    }
+
+    const first = data.results?.[0];
+    const loc = first?.geometry?.location;
+    if (typeof loc?.lat !== 'number' || typeof loc?.lng !== 'number') return null;
+
+    return {
+      lat: loc.lat,
+      lng: loc.lng,
+      address: first?.formatted_address ?? text,
+      placeId: first?.place_id,
+    };
+  } catch (e) {
+    logger.warn('Geocoding API call failed', e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Geocode via Places Text Search. Pro tier: $32 per 1,000. The last resort. */
+async function textSearchFromGoogle(
+  text: string,
+): Promise<(PlaceDetail & { placeId?: string }) | null> {
   const data = await callPlaces(SEARCH_TEXT_URL, {
     method: 'POST',
-    fieldMask: 'places.location,places.formattedAddress',
+    // `places.id` rides along free — it is an Essentials field and the SKU is
+    // already decided by the other two. Worth having: it is what makes the next
+    // lookup of this address cheap.
+    fieldMask: 'places.id,places.location,places.formattedAddress',
     body: { textQuery: text, regionCode: 'PK', languageCode: 'en', pageSize: 1 },
   });
-  const place = (data?.places as { location?: { latitude?: number; longitude?: number }; formattedAddress?: string }[] | undefined)?.[0];
+  const place = (
+    data?.places as
+      | {
+          id?: string;
+          location?: { latitude?: number; longitude?: number };
+          formattedAddress?: string;
+        }[]
+      | undefined
+  )?.[0];
   if (typeof place?.location?.latitude !== 'number' || typeof place?.location?.longitude !== 'number') {
     return null;
   }
@@ -178,5 +314,60 @@ export async function fetchGeocode(text: string): Promise<PlaceDetail | null> {
     lat: place.location.latitude,
     lng: place.location.longitude,
     address: place.formattedAddress ?? text,
+    placeId: place.id,
   };
+}
+
+/**
+ * Coordinates for an address somebody typed or spoke — the cheapest way we can
+ * get them, in four steps.
+ *
+ * This is the hottest paid path in the app. It backs the free-typed destination,
+ * the voice booking prefill (src/voice/gazetteer.ts resolves spoken phrases to a
+ * canonical string and hands it straight here), rebooking a recent trip whose
+ * coordinates were never saved, and daily-routes setup. It used to be a single
+ * Text Search call asking for `location` and `formattedAddress` — and because
+ * neither field is in the Text Search Essentials set, every one of those was
+ * billed at Text Search **Pro, $32 per 1,000**. For coordinates. Which the
+ * Geocoding API sells for $5.
+ *
+ * So, in order of what it costs us:
+ *
+ *   1. CACHE. Free. Same address, same coordinates, still inside the licence
+ *      window.
+ *   2. A PLACE ID WE ALREADY HAVE. One Place Details Essentials call, $5/1,000.
+ *      This is the step that makes month two cheaper than month one: the
+ *      coordinates expired and were deleted as the licence requires, but the
+ *      place ID did not, so we can ask Google "what is at this exact place"
+ *      instead of "find me this text" all over again.
+ *   3. THE GEOCODING API. $5/1,000 with 10,000 free a month. The normal miss.
+ *   4. TEXT SEARCH. $32/1,000. Only when geocoding found nothing — and it does
+ *      genuinely find things geocoding will not, because it matches business
+ *      names ("Giga Mall", "Jinnah Super") where geocoding wants an address.
+ *      Kept for that reason, not as a fallback for outages, and reached rarely
+ *      enough to stay cheap.
+ *
+ * Whatever answers, the place ID is filed away permanently and the coordinates
+ * on a 29-day clock. See lib/mapsCache.ts for why those are two collections.
+ */
+export async function fetchGeocode(text: string): Promise<PlaceDetail | null> {
+  const cached = await readPlaceCache(text);
+  if (cached) return { lat: cached.lat, lng: cached.lng, address: cached.address };
+
+  const knownPlaceId = await readCachedPlaceId(text);
+  if (knownPlaceId) {
+    const refreshed = await placeDetailFromGoogle(knownPlaceId);
+    if (refreshed) {
+      await writePlaceCache(text, { ...refreshed, placeId: knownPlaceId });
+      return refreshed;
+    }
+    // The place ID no longer resolves — Google retired it, or it was never
+    // good. Fall through and look the text up again rather than failing.
+  }
+
+  const geocoded = (await geocodeFromGoogle(text)) ?? (await textSearchFromGoogle(text));
+  if (!geocoded) return null;
+
+  await writePlaceCache(text, geocoded);
+  return { lat: geocoded.lat, lng: geocoded.lng, address: geocoded.address };
 }
