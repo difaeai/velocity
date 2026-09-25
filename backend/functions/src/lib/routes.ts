@@ -50,7 +50,7 @@
 import { logger } from 'firebase-functions';
 
 import { Corridor, LatLng, buildCorridor, decodePolyline } from './corridor';
-import { readRouteCache, routeCacheKey, writeRouteCache } from './mapsCache';
+import { readRouteCache, routeCacheKey, sameRoundedPoint, writeRouteCache } from './mapsCache';
 
 const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
@@ -108,6 +108,15 @@ export async function fetchRouteServerSide(
   if (!key) return null;
 
   const trafficAware = opts.trafficAware === true;
+
+  // Two points the cache would treat as the same place have no road between them
+  // worth buying. This happens more than it sounds: a destination that geocodes
+  // onto the rider's own position, a pool whose pickup and drop-off are one spot,
+  // a screen that mounts with the same coordinate in both props while the real
+  // destination is still resolving. Every one of those was a paid Routes call that
+  // could only ever come back empty or as a 400. Callers already treat null as
+  // "draw the straight line", which between two identical points is correct.
+  if (sameRoundedPoint(origin, destination)) return null;
 
   // Shared across trips, drivers and screens — see the COST note above. Rebuild
   // the corridor from the cached polyline rather than storing it: it is derived

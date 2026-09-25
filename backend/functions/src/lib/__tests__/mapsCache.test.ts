@@ -27,6 +27,7 @@ import {
   readPlaceCache,
   readRouteCache,
   routeCacheKey,
+  sameRoundedPoint,
   writeDetailCache,
   writePlaceCache,
   writeRouteCache,
@@ -208,5 +209,28 @@ describe('route cache', () => {
 
     await db().collection(COORD_COLLECTION).doc(key).update({ expireAt: new Date(Date.now() - 1000) });
     expect(await readRouteCache(key)).toBeNull();
+  });
+});
+
+describe('sameRoundedPoint', () => {
+  const A = { lat: 33.6938, lng: 72.9989 };
+
+  it('is true for a point against itself', () => {
+    expect(sameRoundedPoint(A, A)).toBe(true);
+  });
+
+  it('is true within the ~11 m the route key rounds to', () => {
+    expect(sameRoundedPoint(A, { lat: A.lat + 0.00002, lng: A.lng + 0.00002 })).toBe(true);
+  });
+
+  it('is false once the points are genuinely apart', () => {
+    // ~330 m — a real, if short, ride.
+    expect(sameRoundedPoint(A, { lat: A.lat + 0.003, lng: A.lng })).toBe(false);
+  });
+
+  it('agrees with routeCacheKey, which is the point of it living here', () => {
+    const B = { lat: A.lat + 0.00002, lng: A.lng };
+    expect(sameRoundedPoint(A, B)).toBe(true);
+    expect(routeCacheKey(A, B, false)).toBe(routeCacheKey(A, A, false));
   });
 });

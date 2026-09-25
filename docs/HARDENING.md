@@ -35,21 +35,37 @@ rather than security — a challenge is dead five minutes in by its own
 `validUntilMs`, and single-use besides — but without the policy every login the
 platform has ever served accumulates as a document nobody reads.
 
-Add it on **`mapsCache.expireAt`** as well. This one is a licence obligation, not
-housekeeping. `mapsCache` holds coordinates and route polylines bought from Google,
-and the Maps Platform terms allow caching latitude and longitude "for up to 30
-consecutive calendar days, after which Customer must delete the cached latitude
-and longitude values." The code does not depend on you doing this — `sweepMapsCache`
-runs daily and deletes them anyway, and every read re-checks `expireAt` before it
-serves anything — but the policy is cheaper than the sweep and gives Google a
-native answer if they ever ask.
+**`mapsCache.expireAt` is not a console step — run the script** *(done 2026-09-25,
+policy ACTIVE)*:
 
-**Do NOT add a TTL policy to `mapsPlaceIds`.** That collection holds place IDs and
-nothing else: no coordinates, no addresses. Place IDs are expressly exempt from the
-caching restrictions and may be kept indefinitely, and keeping them is what makes a
-repeat address lookup a $5-per-1,000 call instead of a $32 one. Expiring them would
-be paying Google extra for no reason. See
-`backend/functions/src/lib/mapsCache.ts` for the full reasoning.
+```
+node scripts/set-firestore-ttl.mjs
+```
+
+This one is a licence obligation rather than housekeeping. `mapsCache` holds
+coordinates and route polylines bought from Google, and the Maps Platform terms
+allow caching latitude and longitude "for up to 30 consecutive calendar days,
+after which Customer must delete the cached latitude and longitude values."
+
+It cannot be done in the console, and not for a trivial reason: the TTL form only
+offers collections that already hold documents, and this policy has to exist
+*before* the first address is cached. The Firestore Admin API has no such
+restriction, which is what the script uses. Running it again is safe — it reports
+an existing policy and changes nothing.
+
+The app does not depend on the policy: `sweepMapsCache` deletes expired
+coordinates daily and every read re-checks `expireAt` before serving anything. The
+policy is the cheaper way to do the same thing first, and it is the native answer
+if Google ever asks.
+
+**Never add a TTL policy to `mapsPlaceIds` or `velocityLocations`.** The script
+asserts both are policy-free and fails if they are not. `mapsPlaceIds` holds place
+IDs and nothing else — no coordinates, no addresses — and place IDs are expressly
+exempt from the caching restrictions, which is what makes a repeat address lookup a
+$5-per-1,000 call instead of a $32 one. `velocityLocations` holds coordinates
+measured by our own drivers' phones, so it is ours outright and expiring it would
+destroy our own data. See `backend/functions/src/lib/mapsCache.ts` and
+`backend/functions/src/locations/registry.ts`.
 
 ### Firebase App Check **(you + code)**
 Stops traffic from anything other than your genuine apps.
