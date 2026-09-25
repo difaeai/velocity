@@ -1184,6 +1184,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- velocityLocations/{id} -------------------------------------------
+    // Velocity's own map. Read-only to signed-in clients so the app can resolve a
+    // place without a callable round trip; all writes are server-side (the trip
+    // promoter and the admin desk).
+    //
+    // Why clients may read it but not write it: every coordinate in here is a
+    // first-party measurement, and `coordSource` is what makes that auditable. A
+    // client that could write would be able to launder a Google coordinate into a
+    // collection that has no expiry — which is exactly the licence breach this
+    // collection is designed around (backend/functions/src/locations/registry.ts).
+    // It could also move a verified pin and misdirect every future passenger.
+    match /velocityLocations/{locationId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

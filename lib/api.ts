@@ -32,6 +32,24 @@ function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
 }
 
+/** One row of Velocity's own map, as the Locations desk lists it. */
+export interface VelocityLocationRow {
+  id: string;
+  velocityId: string;
+  name: string;
+  city: string | null;
+  aliases: string[];
+  /** Google's permanent id for the same place. The one thing we may keep forever. */
+  placeId: string | null;
+  lat: number;
+  lng: number;
+  /** Provenance. There is deliberately no Google option. */
+  coordSource: 'trip_gps' | 'admin_pin';
+  confirmations: number;
+  status: 'pending' | 'verified' | 'rejected';
+  lastConfirmedAt: number | null;
+}
+
 /** Admin-only backend actions (each guarded by requireAdmin server-side). */
 export const adminApi = {
   // ── Market desk ─────────────────────────────────────────────────────────
@@ -167,6 +185,43 @@ export const adminApi = {
     { uid: string; approve: boolean; reason?: string },
     { ok: boolean; status: 'verified' | 'rejected' }
   >('adminReviewCnicVerification'),
+
+  // ── Locations — Velocity's own map ─────────────────────────────────────────
+  // The registry fills itself from completed trips; these are the judgement calls
+  // a person has to make. Note what is absent: there is no "create a location at
+  // these coordinates" call, because every point in that collection has to be a
+  // first-party measurement — a driver's GPS fix or an admin dropping a pin and
+  // owning it. See backend/functions/src/locations/registry.ts.
+  listLocations: callable<
+    {
+      status?: 'pending' | 'verified' | 'rejected' | 'all';
+      search?: string;
+      city?: string;
+      limit?: number;
+    },
+    {
+      ok: boolean;
+      counts: { pending: number; verified: number; rejected: number };
+      locations: VelocityLocationRow[];
+    }
+  >('adminListVelocityLocations'),
+  reviewLocation: callable<
+    {
+      id: string;
+      status?: 'pending' | 'verified' | 'rejected';
+      name?: string;
+      lat?: number;
+      lng?: number;
+    },
+    { ok: boolean }
+  >('adminReviewVelocityLocation'),
+  aliasLocation: callable<
+    { id: string; alias: string; action?: 'add' | 'remove' },
+    { ok: boolean; alias: string }
+  >('adminAliasVelocityLocation'),
+  mergeLocations: callable<{ keepId: string; mergeId: string }, { ok: boolean }>(
+    'adminMergeVelocityLocations',
+  ),
 
   // ── Travel Mate admin ─────────────────────────────────────────────────────
   approveTravelMateSubscription: callable<

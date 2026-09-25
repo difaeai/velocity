@@ -54,6 +54,7 @@ const APP_NAV: NavGroup[] = [
     title: 'Operations',
     items: [
       { href: '/dashboard/live-ops', label: '🗺️ Live ops map' },
+      { href: '/dashboard/locations', label: '📍 Locations' },
       { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
       { href: '/dashboard/market-rates', label: '📊 Market rates' },
       { href: '/dashboard/special-rides', label: '🚙 Special Rides' },

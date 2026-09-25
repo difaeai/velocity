@@ -21,9 +21,24 @@ const mocks = vi.hoisted(() => ({
   readDetailCache: vi.fn<(placeId: string) => Promise<unknown>>(),
   writePlaceCache: vi.fn<(query: string, place: unknown) => Promise<void>>(),
   writeDetailCache: vi.fn<(placeId: string, place: unknown) => Promise<void>>(),
+  // Not used by these tests directly, but locations/registry.ts imports it from
+  // this module, so the mock has to carry it or the import fails at load.
+  normalizeQuery: vi.fn((t: string) => t.trim().toLowerCase()),
 }));
 
 vi.mock('../mapsCache', () => mocks);
+
+/**
+ * Our own map is step 0 of the resolver and has its own tests in
+ * locations/__tests__/registry.test.ts. Stubbed to a permanent miss here so that
+ * these cases stay about the Google steps and need no emulator; the one test that
+ * cares about step 0 makes it hit explicitly.
+ */
+const own = vi.hoisted(() => ({
+  lookupOwnPlace: vi.fn<(query: string) => Promise<unknown>>(),
+}));
+
+vi.mock('../../locations/registry', () => own);
 
 import { fetchGeocode, fetchPlaceDetail } from '../places';
 
@@ -127,6 +142,7 @@ function initOf(spy: FetchStub, call = 0): RequestInit {
 
 beforeEach(() => {
   process.env.GOOGLE_MAPS_SERVER_KEY = 'AIzaTest';
+  own.lookupOwnPlace.mockResolvedValue(null);
   mocks.readPlaceCache.mockResolvedValue(null);
   mocks.readCachedPlaceId.mockResolvedValue(null);
   mocks.readDetailCache.mockResolvedValue(null);
@@ -142,6 +158,32 @@ afterEach(() => {
 });
 
 describe('fetchGeocode — cheapest route to a coordinate', () => {
+  it('step 0: our own map answers first, and nothing else is consulted', async () => {
+    // A place the platform has driven to enough times. This coordinate is ours —
+    // taken from our drivers' phones — so there is nothing to pay and nothing to
+    // expire, which is why it is checked before even the cache.
+    own.lookupOwnPlace.mockResolvedValue({
+      lat: 33.5228,
+      lng: 73.1544,
+      address: 'Giga Mall, DHA II, Islamabad',
+      velocityId: 'VL-ISB-7F3A2C',
+    });
+    const spy = stubFetch();
+
+    const result = await fetchGeocode('Giga Mall');
+
+    expect(result).toEqual({
+      lat: 33.5228,
+      lng: 73.1544,
+      address: 'Giga Mall, DHA II, Islamabad',
+    });
+    expect(spy).not.toHaveBeenCalled();
+    // Not even the rented cache is touched, and nothing is written back into it —
+    // putting our own point there would give it a 29-day expiry it does not have.
+    expect(mocks.readPlaceCache).not.toHaveBeenCalled();
+    expect(mocks.writePlaceCache).not.toHaveBeenCalled();
+  });
+
   it('step 1: a cache hit costs nothing and calls no one', async () => {
     const cached: CachedPlace = {
       lat: 33.7196,

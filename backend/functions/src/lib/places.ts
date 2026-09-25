@@ -55,6 +55,7 @@ import {
   writeDetailCache,
   writePlaceCache,
 } from './mapsCache';
+import { lookupOwnPlace } from '../locations/registry';
 
 const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
 const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
@@ -320,7 +321,7 @@ async function textSearchFromGoogle(
 
 /**
  * Coordinates for an address somebody typed or spoke — the cheapest way we can
- * get them, in four steps.
+ * get them, in five steps.
  *
  * This is the hottest paid path in the app. It backs the free-typed destination,
  * the voice booking prefill (src/voice/gazetteer.ts resolves spoken phrases to a
@@ -333,6 +334,13 @@ async function textSearchFromGoogle(
  *
  * So, in order of what it costs us:
  *
+ *   0. OUR OWN MAP. Free, and free permanently. A place the platform has driven
+ *      to enough times to be sure of is in `velocityLocations` with a coordinate
+ *      taken from our own drivers' phones — not rented from anyone, so it never
+ *      expires and this step never stops working. It is checked first because it
+ *      is both the cheapest answer and, for the places Pakistanis actually name,
+ *      the most accurate one: a geocoder returns the centroid of a mall, our
+ *      drivers return the gate they stop at. See locations/registry.ts.
  *   1. CACHE. Free. Same address, same coordinates, still inside the licence
  *      window.
  *   2. A PLACE ID WE ALREADY HAVE. One Place Details Essentials call, $5/1,000.
@@ -351,6 +359,13 @@ async function textSearchFromGoogle(
  * on a 29-day clock. See lib/mapsCache.ts for why those are two collections.
  */
 export async function fetchGeocode(text: string): Promise<PlaceDetail | null> {
+  // Step 0. Ours, so there is nothing to pay and nothing to expire. Deliberately
+  // not written back into mapsCache: that collection is for rented coordinates and
+  // gets swept, and round-tripping our own point through it would put a 29-day
+  // clock on something that does not have one.
+  const own = await lookupOwnPlace(text);
+  if (own) return { lat: own.lat, lng: own.lng, address: own.address };
+
   const cached = await readPlaceCache(text);
   if (cached) return { lat: cached.lat, lng: cached.lng, address: cached.address };
 
