@@ -174,6 +174,16 @@ export {
 // Deletes cached Google coordinates inside the 30 days the licence allows
 export { sweepMapsCache } from './maps/sweepMapsCache';
 
+// Velocity's own map — first-party places, built from completed trips. Unlike the
+// Maps cache above, nothing here expires, because nothing here is Google's.
+export { promoteTripLocations } from './locations/promote';
+export {
+  adminListVelocityLocations,
+  adminReviewVelocityLocation,
+  adminAliasVelocityLocation,
+  adminMergeVelocityLocations,
+} from './locations/admin';
+
 // Saved payment methods — connected Easypaisa/JazzCash/bank/card instruments
 export {
   getPaymentMethods,
