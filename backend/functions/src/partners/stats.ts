@@ -294,8 +294,14 @@ export const getPartnerMemberRides = onCall(async (req) => {
  * Levels move on lifetime aggregates that only ever drift slowly, so doing this
  * on a schedule instead of on every ride keeps the hot settlement path free of
  * a read it does not need.
+ *
+ * 03:00 Pakistan time, not 03:00 UTC. `onSchedule` defaults to UTC, which had this
+ * running at 08:00 in Karachi — the morning rush, while it walks every partner and
+ * their whole transaction history. Cloud Scheduler confirmed it: the job was
+ * registered `tz=UTC`. Interval schedules ("every 30 minutes") do not need this;
+ * every clock-time one in this codebase does.
  */
-export const recomputePartnerLevels = onSchedule('every day 03:00', async () => {
+export const recomputePartnerLevels = onSchedule({ schedule: 'every day 03:00', timeZone: 'Asia/Karachi' }, async () => {
   const partners = await db.collection('partners').where('status', '==', 'active').get();
 
   for (const partner of partners.docs) {
