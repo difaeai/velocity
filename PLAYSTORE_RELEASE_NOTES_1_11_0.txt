@@ -1,0 +1,125 @@
+VELOCITY RIDES 1.11.0  ·  Android versionCode 36  ·  iOS build 9
+=================================================================
+
+1.10.0 (vc35) was built on 2026-09-24 and never rolled out, so everything it
+carried ships here as well. On iOS this follows build 8, which was also never
+submitted; the last release actually live on the App Store is 1.9.0 (build 7)
+from 2026-09-22.
+
+Almost all of this release is invisible by design. It is a performance, battery
+and cost pass over the app plus the groundwork for Velocity's own map — not a
+feature drop. The honest summary is "the same app, lighter".
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+This one is about speed and battery.
+
+The app no longer works in the background when you are not looking at it, so it
+stops draining your battery and your data. Long chats open instantly instead of
+loading every message you have ever sent. Maps and route lines draw straight
+away when you come back to a screen.
+
+Velocity has also started learning the places Islamabad, Lahore and Karachi
+actually use, so finding your destination will keep getting quicker.
+
+
+WHAT CHANGED SINCE 1.10.0
+-------------------------
+
+Battery and mobile data — the app stops when you do
+  Four screens were quietly polling our servers every 15 to 30 seconds and did
+  not stop when you switched away from the app. Backgrounding an app does not
+  stop its timers, so a driver with the phone in their pocket kept making a
+  round trip every few seconds with nobody looking at the answer.
+
+  Those four — the en-route rider search, suggested rides, the sharing feed and
+  the pool manifest — now pause the moment the app leaves the screen and refresh
+  the instant you come back. Coming back is actually fresher than before, because
+  the old always-on version had no idea you had returned.
+
+  Deliberately NOT paused: the driver's location upload. That feeds your "online"
+  status and the moving car the passenger watches, so it has to keep running while
+  a driver is mid-trip with Google Maps in front of the app. Pausing it would have
+  broken live tracking, which is exactly the sort of thing a battery optimisation
+  is not allowed to cost.
+
+Long chats open instantly
+  Every conversation used to load its entire history on open — every message it
+  had ever held, re-rendered whenever anybody typed. A Travel Partner group a few
+  months old therefore got slower every week. Chats now load the most recent 200
+  messages. Under 200, which is nearly all of them, nothing changes at all.
+
+  Same for post comments, the support chat, the driver trip chat and your
+  notifications list.
+
+Maps and route lines come back instantly
+  One ride used to ask Google for the same road up to four separate times — the
+  booking screen, the trip screen, the driver's en-route screen and the request
+  detail screen each fetched it again, because the cache died with the screen.
+  Now the road is fetched once and every screen after that draws it on the first
+  frame instead of showing a straight line and correcting itself.
+
+Address search
+  Fewer, better-timed lookups: search now starts at three characters instead of
+  two (two characters match half the country and nobody picks a result from
+  them), waits a moment longer for you to stop typing, and remembers what you
+  searched a second ago so backspacing and retyping is instant.
+
+  Underneath, Velocity has started building its own map of the places people
+  actually use. Every completed ride teaches it where a destination really is —
+  from the pickup and the drop-off — and once enough separate rides agree on a
+  place, the app can find it without asking anyone else. It holds nothing on
+  launch day and fills as rides happen, so expect this to get better over weeks
+  rather than on install.
+
+One less permission
+  The app asked Android for permission to WRITE to your contacts. It never
+  wrote a contact and never will — sharing a contact in chat only reads the one
+  you pick, through Android's own picker. The permission is gone.
+
+Driver demand map
+  The demand map was streaming every open request in the country to every driver
+  who opened it. It now reads a bounded sample, which is the same picture at 20x14
+  tiles and a fraction of the work.
+
+Known trade-off
+  The two ETA badges on a driver's request-detail screen are now free-flow
+  estimates rather than live-traffic ones. Fares are worked out from distance and
+  are unaffected, and the corridor match is geometry, so nothing about money or
+  matching changes — but in heavy traffic those two numbers will read optimistic.
+  Traffic-aware routing costs double and half the free allowance, and it was
+  being paid for on every route line in the app for two numbers on one screen.
+  It is now a one-line switch if that trade turns out wrong.
+
+
+BACKEND AND ADMIN (not in the app, shipped alongside)
+-----------------------------------------------------
+
+  - Address lookups moved off Places Text Search onto the Geocoding API: the same
+    answer for $5 per 1,000 calls instead of $32. Route lookups moved off the
+    traffic-aware tier for the same reason.
+  - Answers are cached the way Google's licence actually permits: coordinates for
+    under 30 days with an enforced expiry and a daily sweep, place IDs kept
+    indefinitely because those are expressly exempt. Keeping the two apart is what
+    makes a repeat lookup cheap instead of full price.
+  - New admin desk at Locations (/dashboard/locations) for Velocity's own map:
+    verify, rename, alias or merge the places the platform learns from real rides.
+  - Fixed: the nightly Travel Partner subscription expiry had been failing on a
+    missing Firestore index, which meant expired subscriptions stayed active and
+    kept their paid swipe allowance.
+  - Fixed: a scheduled job was running at 08:00 Karachi rather than 03:00 because
+    it had no timezone set.
+
+
+AFTER THE ROLLOUT — DO NOT SKIP
+-------------------------------
+  1. Roll out in Play Console. Building an AAB is not releasing it; vc31, vc34
+     and vc35 were all built and never rolled out.
+  2. Then publish the version in Admin → App version, INCLUDING the build number
+     (36 for Android, 9 for iOS under the `ios` fields — never the Play fields).
+     An install only prompts when what is published is strictly newer than what it
+     is running, and since our releases often keep a version string, the build
+     number is the field that does the work. Publishing early asks people to fetch
+     an update the store cannot serve them yet.
+  3. iOS is submitted separately with the patch-submit-restore script.
