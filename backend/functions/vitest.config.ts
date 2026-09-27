@@ -26,6 +26,7 @@ export default defineConfig({
       'src/businessAds/__tests__/**/*.test.ts',
       'src/analytics/__tests__/**/*.test.ts',
       'src/locations/__tests__/**/*.test.ts',
+      'src/maps/__tests__/**/*.test.ts',
       'src/social/__tests__/**/*.test.ts',
       'src/whatsapp/__tests__/**/*.test.ts',
     ],

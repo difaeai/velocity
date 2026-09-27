@@ -427,14 +427,19 @@ export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
 
 /** One address suggestion from the backend Places proxy. */
 export interface PlacePrediction {
-  /** Google's id. Empty string on a suggestion that came from our own map. */
+  /**
+   * Google's id — or, on a suggestion from our own map, `velocity:` + its
+   * velocityId, so every row has a unique list key and older builds that only send
+   * `placeId` still resolve it from our map (backend/functions/src/maps/index.ts).
+   */
   placeId: string;
   /**
    * Our id, when this suggestion came from Velocity's own map rather than Google.
    *
-   * Exactly one of `placeId` / `velocityId` is set. Resolving through this one
-   * costs nothing and never expires, because the coordinate behind it was measured
-   * by our own drivers — see backend/functions/src/locations/registry.ts.
+   * Set only on our own suggestions, and preferred over `placeId` when resolving.
+   * Resolving through it costs nothing and never expires, because the coordinate
+   * behind it was measured by our own drivers — see
+   * backend/functions/src/locations/registry.ts.
    */
   velocityId?: string;
   mainText: string;
