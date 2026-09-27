@@ -46,6 +46,28 @@ const autocompleteSchema = z.object({
 const OWN_MAP_SUFFICIENT = 5;
 
 /**
+ * The `placeId` our own suggestions carry: `velocity:` + their velocityId.
+ *
+ * It used to be an empty string, and every app build lists predictions with
+ * `key={pred.placeId}` — so two of ours in one list shared the key '' and React
+ * could drop or repeat rows. Builds before 1.11.0 also send `placeId` alone when a
+ * row is tapped, and an empty one was rejected, leaving the rider with no pin.
+ * A unique, recognisable id fixes both without an app release: newer builds still
+ * send `velocityId`, older ones send this, and `placeDetails` resolves either from
+ * our own map. The prefix can never reach Google — see `ownIdFrom`.
+ */
+export const OWN_PLACE_ID_PREFIX = 'velocity:';
+
+/**
+ * The velocityId inside one of our own `placeId`s, or null for a Google id.
+ * A bare prefix gives '' — still ours, so it resolves to nothing rather than
+ * being sent to Google.
+ */
+function ownIdFrom(placeId: string | undefined): string | null {
+  return placeId?.startsWith(OWN_PLACE_ID_PREFIX) ? placeId.slice(OWN_PLACE_ID_PREFIX.length) : null;
+}
+
+/**
  * Address predictions as the user types — ours first, Google only if needed.
  *
  * Every keystroke that reaches Google is a billed autocomplete request, and the
@@ -72,9 +94,9 @@ export const placesAutocomplete = onCall(async (req) => {
 
   const own = await searchOwnPlaces(parsed.data.input, OWN_MAP_SUFFICIENT);
   const ours = own.map((p) => ({
-    // No placeId: these resolve through `velocityId` instead, which is what keeps
-    // the follow-up Place Details call off Google's meter as well.
-    placeId: '',
+    // Resolved through `velocityId` (or this prefixed id, from older builds), which
+    // is what keeps the follow-up Place Details call off Google's meter as well.
+    placeId: `${OWN_PLACE_ID_PREFIX}${p.velocityId}`,
     velocityId: p.velocityId,
     mainText: p.name,
     secondaryText: p.city ?? '',
@@ -130,8 +152,11 @@ export const placeDetails = onCall(async (req) => {
   const parsed = detailSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a placeId or velocityId, and a session token.');
 
-  if (parsed.data.velocityId) {
-    const own = await resolveOwnPlace(parsed.data.velocityId);
+  // Newer builds send `velocityId`; older ones send our prefixed `placeId`. Either
+  // way it is ours, and it must not fall through to Google as a place ID.
+  const ownId = parsed.data.velocityId || ownIdFrom(parsed.data.placeId);
+  if (ownId !== null) {
+    const own = ownId ? await resolveOwnPlace(ownId) : null;
     return {
       ok: true,
       configured: true,
