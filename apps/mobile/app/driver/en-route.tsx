@@ -19,6 +19,7 @@
  * checks over there rather than being talked into agreeing here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
   Alert,
@@ -56,6 +57,11 @@ interface Radii {
 /** The admin defaults (config/enRouteSettings), until the backend says otherwise. */
 const DEFAULT_RADII: Radii = { corridorM: 1000, destM: 4000 };
 
+/** The driver's own pickup radius, remembered between trips. */
+const RADIUS_KEY = 'driver_enroute_radius_m';
+/** Offered before the backend has told us its list. */
+const DEFAULT_RADIUS_OPTIONS_M = [500, 1000, 1500, 2000];
+
 /** 1000 → "1 km", 1500 → "1.5 km", 500 → "500 m". */
 function distanceLabel(m: number): string {
   if (m < 1000) return `${Math.round(m)} m`;
@@ -88,6 +94,23 @@ export default function EnRoute() {
   const [seatsLeft, setSeatsLeft] = useState(0);
   /** The radii the backend used — admin-set, so never assumed here. */
   const [radii, setRadii] = useState<Radii>(DEFAULT_RADII);
+  /**
+   * How far off the road this driver will go for a pickup — their choice, kept
+   * within the admin maximum by the backend. Null means "the admin default".
+   */
+  const [chosenRadiusM, setChosenRadiusM] = useState<number | null>(null);
+  const [radiusOptions, setRadiusOptions] = useState<number[]>(DEFAULT_RADIUS_OPTIONS_M);
+
+  useEffect(() => {
+    AsyncStorage.getItem(RADIUS_KEY)
+      .then((v) => {
+        const m = Number(v);
+        if (Number.isFinite(m) && m > 0) setChosenRadiusM(m);
+      })
+      .catch(() => {});
+  }, []);
+
+
   const [walletTrip, setWalletTrip] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -114,14 +137,16 @@ export default function EnRoute() {
   }, [activeTrip?.id, activeTrip?.pickup, activeTrip?.dropoff]);
 
   // ── Look for riders ───────────────────────────────────────────────────────
-  const search = useCallback(async () => {
+  const search = useCallback(async (radiusOverrideM?: number) => {
     if (!routeReady) return;
+    const radiusM = radiusOverrideM ?? chosenRadiusM;
     setLoading(true);
     try {
       const res = await api.getEnRouteMatches({
         polyline,
         driverLat: coords?.lat,
         driverLng: coords?.lng,
+        ...(radiusM ? { radiusM } : {}),
       });
       setMatches(res.matches ?? []);
       setSeatsLeft(res.seatsLeft ?? 0);
@@ -129,13 +154,21 @@ export default function EnRoute() {
         corridorM: res.corridorRadiusM ?? DEFAULT_RADII.corridorM,
         destM: res.destRadiusM ?? DEFAULT_RADII.destM,
       });
+      if (res.radiusOptionsM && res.radiusOptionsM.length > 0) setRadiusOptions(res.radiusOptionsM);
       setWalletTrip(res.walletTrip === true);
     } catch (e) {
       Alert.alert('Could not search', (e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [polyline, routeReady, coords?.lat, coords?.lng]);
+  }, [polyline, routeReady, coords?.lat, coords?.lng, chosenRadiusM]);
+
+  /** A new radius is saved for next time and searched straight away. */
+  const chooseRadius = useCallback((m: number) => {
+    setChosenRadiusM(m);
+    AsyncStorage.setItem(RADIUS_KEY, String(m)).catch(() => {});
+    void search(m);
+  }, [search]);
 
   // Searches while the driver is looking, and again the moment they come back.
   // The hook holds `search` in a ref, which also fixes a quieter problem: this
@@ -153,6 +186,8 @@ export default function EnRoute() {
           polyline,
           driverLat: coords?.lat,
           driverLng: coords?.lng,
+          // The same corridor the card came from, or it may be refused on tap.
+          radiusM: radii.corridorM,
         });
         Alert.alert(
           `${res.riderName} is on board`,
@@ -168,7 +203,7 @@ export default function EnRoute() {
         setBusyId(null);
       }
     },
-    [polyline, coords?.lat, coords?.lng, router, search],
+    [polyline, coords?.lat, coords?.lng, router, search, radii.corridorM],
   );
 
   const mapCoords = useMemo(
@@ -210,6 +245,23 @@ export default function EnRoute() {
             ? `Anyone within ${distanceLabel(radii.corridorM)} of this route who is also heading your way`
             : 'We only show riders who are on this road and finishing near where you finish'}
         </Text>
+        {/* The driver decides how far off the road they will go for a pickup. */}
+        <View style={styles.radiusRow}>
+          {radiusOptions.map((m) => {
+            const on = radii.corridorM === m;
+            return (
+              <Pressable
+                key={m}
+                onPress={() => chooseRadius(m)}
+                style={[styles.radiusChip, on && styles.radiusChipOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+              >
+                <Text style={[styles.radiusChipText, on && styles.radiusChipTextOn]}>{distanceLabel(m)}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {mapCoords && (
@@ -493,6 +545,18 @@ const styles = themed(() => StyleSheet.create({
   routeBar: { paddingHorizontal: 16, paddingBottom: 10 },
   routeLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
   routeHint: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  radiusRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  radiusChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  radiusChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  radiusChipText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  radiusChipTextOn: { color: colors.btnText },
 
   map: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
 

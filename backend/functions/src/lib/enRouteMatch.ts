@@ -18,7 +18,9 @@
  *                        useful feed and one full of impossible rides.
  *
  * Radii are admin-configurable (config/enRouteSettings); the defaults are the
- * 1 km corridor and 4 km drop allowance the product asks for.
+ * 1 km corridor and 4 km drop allowance the product asks for. The DRIVER picks
+ * their own corridor on the "Riders on your way" screen, anywhere up to the
+ * admin's maximum (2 km by default) — see effectiveCorridorRadiusM.
  */
 import { db } from './firebase';
 import { Corridor, LatLng, haversineM, projectToCorridor } from './corridor';
@@ -33,14 +35,24 @@ export const MIN_RIDE_SPAN_M = 300;
 export const BEHIND_SLACK_M = 400;
 
 export interface EnRouteSettings {
+  /** The corridor a driver gets until they choose their own. */
   corridorRadiusM: number;
+  /** The widest corridor a driver may choose for themselves. */
+  maxCorridorRadiusM: number;
   destRadiusM: number;
   /** Master switch — lets support turn the whole feature off without a deploy. */
   enabled: boolean;
 }
 
+/** The widest corridor a driver may pick unless the admin says otherwise. */
+export const DEFAULT_MAX_CORRIDOR_RADIUS_M = 2_000;
+
+/** Choices offered to the driver, trimmed to the admin's maximum. */
+export const CORRIDOR_RADIUS_CHOICES_M = [500, 1_000, 1_500, 2_000, 3_000, 5_000] as const;
+
 export const DEFAULT_EN_ROUTE_SETTINGS: EnRouteSettings = {
   corridorRadiusM: DEFAULT_CORRIDOR_RADIUS_M,
+  maxCorridorRadiusM: DEFAULT_MAX_CORRIDOR_RADIUS_M,
   destRadiusM: DEFAULT_DEST_RADIUS_M,
   enabled: true,
 };
@@ -54,9 +66,15 @@ export async function getEnRouteSettings(): Promise<EnRouteSettings> {
     const snap = await db.doc('config/enRouteSettings').get();
     if (snap.exists) {
       const corridor = snap.get('corridorRadiusM');
+      const maxCorridor = snap.get('maxCorridorRadiusM');
       const dest = snap.get('destRadiusM');
+      const corridorRadiusM = inRange(corridor, 200, 5_000) ? corridor : DEFAULT_CORRIDOR_RADIUS_M;
       return {
-        corridorRadiusM: inRange(corridor, 200, 5_000) ? corridor : DEFAULT_CORRIDOR_RADIUS_M,
+        corridorRadiusM,
+        maxCorridorRadiusM: Math.max(
+          corridorRadiusM,
+          inRange(maxCorridor, 200, 5_000) ? maxCorridor : DEFAULT_MAX_CORRIDOR_RADIUS_M,
+        ),
         destRadiusM: inRange(dest, 500, 15_000) ? dest : DEFAULT_DEST_RADIUS_M,
         enabled: snap.get('enabled') !== false,
       };
@@ -65,6 +83,31 @@ export async function getEnRouteSettings(): Promise<EnRouteSettings> {
     /* fall through to defaults */
   }
   return DEFAULT_EN_ROUTE_SETTINGS;
+}
+
+/**
+ * The corridor this driver works with: their own choice, kept between 200 m and
+ * the admin's maximum; the admin default when they have not chosen. The same
+ * value has to reach both the feed and the accept call, or a rider shown on a
+ * 2 km corridor would be refused on tap by a 1 km one.
+ */
+export function effectiveCorridorRadiusM(
+  settings: Pick<EnRouteSettings, 'corridorRadiusM' | 'maxCorridorRadiusM'>,
+  chosenM?: number | null,
+): number {
+  const max = Math.max(settings.corridorRadiusM, settings.maxCorridorRadiusM);
+  const want = typeof chosenM === 'number' && Number.isFinite(chosenM) ? chosenM : settings.corridorRadiusM;
+  return Math.round(Math.min(max, Math.max(200, want)));
+}
+
+/** The radius chips a driver is offered: the fixed choices up to the maximum, plus the default. */
+export function corridorRadiusChoicesM(
+  settings: Pick<EnRouteSettings, 'corridorRadiusM' | 'maxCorridorRadiusM'>,
+): number[] {
+  const max = Math.max(settings.corridorRadiusM, settings.maxCorridorRadiusM);
+  const set = new Set<number>(CORRIDOR_RADIUS_CHOICES_M.filter((m) => m <= max));
+  set.add(settings.corridorRadiusM);
+  return Array.from(set).sort((a, b) => a - b);
 }
 
 export type CorridorRejection =

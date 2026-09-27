@@ -20,6 +20,10 @@
  *
  * WHAT NEVER APPEARS HERE
  *  - Full cars. A seat you cannot take is not a suggestion.
+ *  - Cars the gender rules keep you out of — the same rules every join call
+ *    enforces (2 men → never offered to a woman, "Women only" → never to a
+ *    man, a mixed car only to people open to mixed rides). Offering those
+ *    rows meant a Join that could only fail.
  *  - Private pools. The link is the credential; they are not discoverable.
  *  - Your own ride.
  *  - Pools that stopped gathering and have no driver — about to depart, or dead.
@@ -38,6 +42,8 @@ import { geohashQueryBounds, distanceBetween } from 'geofire-common';
 
 import { db } from '../lib/firebase';
 import { requireAuth, invalid } from '../lib/guards';
+import { canJoinPool, computeGenderAccess, type DriverGenderPref } from '../lib/genderAccess';
+import { poolJoinGenderGate } from './enRoute';
 import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { haversineKm } from './index';
@@ -117,6 +123,29 @@ export const getSuggestedRides = onCall(async (req) => {
 
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const ownTripId = userSnap.get('activeTripId') as string | undefined;
+  const myGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+  const myMixedOk = userSnap.get('mixedRideOk') === true;
+
+  /** The gender rules of a pool request or a driver's pool ride, for this caller. */
+  const seatAllowed = (
+    pref: string | undefined,
+    male: number,
+    female: number,
+    taken: number,
+    total: number,
+  ): boolean => {
+    const genderPref = (pref === 'male_only' || pref === 'female_only' ? pref : 'any') as DriverGenderPref;
+    if (genderPref === 'male_only' && myGender !== 'male') return false;
+    if (genderPref === 'female_only' && myGender !== 'female') return false;
+    return canJoinPool({
+      currentComposition: computeGenderAccess(male, female, total, genderPref),
+      maleSeats: male,
+      femaleSeats: female,
+      joinerGender: myGender,
+      joinerMixedRideOk: myMixedOk,
+      otherSeats: Math.max(0, taken - male - female),
+    }).allowed;
+  };
 
   const rides: SuggestedRide[] = [];
 
@@ -149,6 +178,7 @@ export const getSuggestedRides = onCall(async (req) => {
 
       const soloFare = (d.fare as number | null) ?? (d.offeredFare as number);
       if (!(soloFare > 0)) continue;
+      if (!poolJoinGenderGate(d, myGender, myMixedOk).allowed) continue;
 
       const windowEnd = hasDriver ? null : windowEndOf(d);
       if (!hasDriver && windowEnd !== null && windowEnd <= now.getTime()) continue;
@@ -216,6 +246,13 @@ export const getSuggestedRides = onCall(async (req) => {
         const seatsLeft = (d.totalSlots as number) - (d.filledSlots as number);
         if (seatsLeft <= 0) continue;
         if (d.status === 'open' && expired(d.expiresAt, now)) continue;
+        if (!seatAllowed(
+          d.genderPref as string | undefined,
+          (d.maleSeats as number) ?? 0,
+          (d.femaleSeats as number) ?? 0,
+          (d.filledSlots as number) ?? 0,
+          d.totalSlots as number,
+        )) continue;
 
         const distanceKm = distanceBetween([lat, lng], [d.pickupLat as number, d.pickupLng as number]);
         if (distanceKm > radiusKm) continue;
@@ -264,6 +301,13 @@ export const getSuggestedRides = onCall(async (req) => {
       if (d.driverId === ctx.uid) continue;
       const seatsLeft = (d.maxSeats as number) - (d.takenSeats as number);
       if (seatsLeft <= 0) continue;
+      if (!seatAllowed(
+        d.genderPref as string | undefined,
+        (d.maleSeats as number) ?? 0,
+        (d.femaleSeats as number) ?? 0,
+        (d.takenSeats as number) ?? 0,
+        d.maxSeats as number,
+      )) continue;
 
       const pLat = (d.pickup?.lat as number | undefined) ?? 0;
       const pLng = (d.pickup?.lng as number | undefined) ?? 0;
