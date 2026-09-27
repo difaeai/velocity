@@ -510,9 +510,20 @@ Four properties, each enforced and pinned by tests:
 `lib/corridor.ts` builds the corridor from the route polyline (validated —
 `validateRoutePolyline` rejects shapes that don't correspond to a real route) and
 projects candidate riders onto it. `checkCorridorFit` enforces the on-route
-tolerance (~1 km), the drop allowance (~4 km) and the fare gate. Every card the
+tolerance, the drop allowance (~4 km) and the fare gate. Every card the
 driver sees has **already** passed those checks server-side, so accepting can
 never fail for a reason the card didn't show. En-route rides are cash-only.
+
+The on-route tolerance is the **driver's choice**: chips on the "Riders on your
+way" screen (0.5 / 1 / 1.5 / 2 km), remembered on the phone and sent with both
+`getEnRouteMatches` and `acceptEnRouteRider` so the feed and the accept always
+use the same corridor. The admin sets the default (`corridorRadiusM`, 1 km) and
+the widest a driver may choose (`maxCorridorRadiusM`, 2 km) in
+`config/enRouteSettings`; `effectiveCorridorRadiusM` clamps whatever the app sends.
+
+Picking up somebody on the way works during the ride too (`in_progress`), not
+only on the way to the first pickup — gate 4 refuses anyone the car has already
+passed.
 
 Callables: `setDriverRoute`, `endDriverRoute`, `getEnRouteMatches`,
 `acceptEnRouteRider`, `getPoolRiders`.

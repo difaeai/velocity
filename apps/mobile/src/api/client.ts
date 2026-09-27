@@ -697,18 +697,23 @@ export const api = {
   >('setDriverRoute'),
   endDriverRoute: callable<Record<string, never>, { ok: boolean }>('endDriverRoute'),
   getEnRouteMatches: callable<
-    { polyline?: string; driverLat?: number; driverLng?: number },
+    { polyline?: string; driverLat?: number; driverLng?: number; radiusM?: number },
     {
       matches: EnRouteMatch[];
       seatsLeft: number;
+      /** The corridor this search used: the driver's choice within the admin maximum. */
       corridorRadiusM?: number;
+      /** The widest corridor the driver may choose. */
+      maxCorridorRadiusM?: number;
+      /** The radius chips to offer, in metres. */
+      radiusOptionsM?: number[];
       destRadiusM?: number;
       mode?: 'trip' | 'driver_route';
       walletTrip?: boolean;
     }
   >('getEnRouteMatches'),
   acceptEnRouteRider: callable<
-    { tripId: string; polyline?: string; driverLat?: number; driverLng?: number },
+    { tripId: string; polyline?: string; driverLat?: number; driverLng?: number; radiusM?: number },
     {
       ok: boolean;
       carrierTripId: string;

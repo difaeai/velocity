@@ -69,6 +69,8 @@ import { enRouteRosterEntry, firstNameOf, rosterForTrip } from './poolRoster';
 import {
   CORRIDOR_REJECTION_MESSAGE,
   CorridorFit,
+  corridorRadiusChoicesM,
+  effectiveCorridorRadiusM,
   EnRouteSettings,
   checkCorridorFit,
   getEnRouteSettings,
@@ -696,6 +698,11 @@ const matchesSchema = z.object({
   /** Where the driver is now, so riders they have already passed are dropped. */
   driverLat: z.number().min(-90).max(90).optional(),
   driverLng: z.number().min(-180).max(180).optional(),
+  /**
+   * How far off the road the driver will go for a pickup, as they chose it on
+   * the screen. Kept within the admin's maximum; the admin default when absent.
+   */
+  radiusM: z.number().int().min(100).max(10_000).optional(),
 });
 
 /**
@@ -710,7 +717,7 @@ export const getEnRouteMatches = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
   const parsed = matchesSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide your current route.');
-  const { polyline, driverLat, driverLng } = parsed.data;
+  const { polyline, driverLat, driverLng, radiusM } = parsed.data;
 
   const carrier = await activeCarrierTrip(ctx.uid);
   if (carrier && ((carrier.get('paymentMethod') as string) ?? 'cash') !== 'cash') {
@@ -718,7 +725,16 @@ export const getEnRouteMatches = onCall(async (req) => {
   }
   const resolved = await resolveCorridor(ctx.uid, polyline, carrier);
   const cfg = await loadFareConfig(resolved.origin);
-  const { corridor, destination, settings } = resolved;
+  const { corridor, destination } = resolved;
+  // The driver's own corridor width, inside the admin's limit.
+  const corridorM = effectiveCorridorRadiusM(resolved.settings, radiusM);
+  const settings = { ...resolved.settings, corridorRadiusM: corridorM };
+  const radius = {
+    corridorRadiusM: corridorM,
+    maxCorridorRadiusM: resolved.settings.maxCorridorRadiusM,
+    defaultCorridorRadiusM: resolved.settings.corridorRadiusM,
+    radiusOptionsM: corridorRadiusChoicesM(resolved.settings),
+  };
 
   // How far along its own route the car already is — gate 4.
   const driverAlongM =
@@ -738,7 +754,7 @@ export const getEnRouteMatches = onCall(async (req) => {
   const grossBefore = carrier ? agreedGrossOf(carrier.data()!) : 0;
   const seatsLeft = MAX_POOL_RIDERS - seatsUsed(existing);
 
-  if (seatsLeft <= 0) return { matches: [], seatsLeft: 0, corridorRadiusM: settings.corridorRadiusM };
+  if (seatsLeft <= 0) return { matches: [], seatsLeft: 0, ...radius, destRadiusM: settings.destRadiusM };
 
   // Only pool requests, ever — see the file header.
   const openSnap = await db
@@ -831,7 +847,7 @@ export const getEnRouteMatches = onCall(async (req) => {
   return {
     matches,
     seatsLeft,
-    corridorRadiusM: settings.corridorRadiusM,
+    ...radius,
     destRadiusM: settings.destRadiusM,
     mode: resolved.source,
   };
@@ -938,6 +954,8 @@ const acceptSchema = z.object({
   polyline: z.string().min(4).max(60_000).optional(),
   driverLat: z.number().min(-90).max(90).optional(),
   driverLng: z.number().min(-180).max(180).optional(),
+  /** The corridor width the driver chose — the same one their feed was built with. */
+  radiusM: z.number().int().min(100).max(10_000).optional(),
 });
 
 /**
@@ -958,7 +976,7 @@ export const acceptEnRouteRider = onCall(async (req) => {
   await rateLimit(ctx.uid, 'acceptEnRouteRider', 20, 60);
   const parsed = acceptSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide the ride to pick up.');
-  const { tripId, polyline, driverLat, driverLng } = parsed.data;
+  const { tripId, polyline, driverLat, driverLng, radiusM } = parsed.data;
 
   const [driverSnap, walletSnap, commission, cancellation] = await Promise.all([
     db.doc(`drivers/${ctx.uid}`).get(),
@@ -981,7 +999,13 @@ export const acceptEnRouteRider = onCall(async (req) => {
   const carrierSnap = await activeCarrierTrip(ctx.uid);
   const resolved = await resolveCorridor(ctx.uid, polyline, carrierSnap);
   const cfg = await loadFareConfig(resolved.origin);
-  const { corridor, destination, settings } = resolved;
+  const { corridor, destination } = resolved;
+  // Exactly the corridor the driver's feed used, so a rider it showed is not
+  // refused on tap for being outside a narrower default.
+  const settings = {
+    ...resolved.settings,
+    corridorRadiusM: effectiveCorridorRadiusM(resolved.settings, radiusM),
+  };
 
   const driverAlongM =
     typeof driverLat === 'number' && typeof driverLng === 'number'

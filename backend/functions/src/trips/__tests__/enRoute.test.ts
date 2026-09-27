@@ -140,6 +140,56 @@ describe('getEnRouteMatches', () => {
   });
 });
 
+describe('the driver chooses their own pickup radius', () => {
+  /** A rider standing ~1.5 km off the road, and one ~3 km off it. */
+  async function farRiders() {
+    await db().doc('users/er-far').set({ name: 'Hira Aslam', gender: 'female' });
+    await db().doc('users/er-farther').set({ name: 'Noor Ali', gender: 'female' });
+    const far = await poolTrip('er-far', { lat: 33.64, lng: 73.0162, address: 'Race Course' }, CAND_DROPOFF, 400);
+    const farther = await poolTrip('er-farther', { lat: 33.64, lng: 73.0324, address: 'Shadman' }, CAND_DROPOFF, 500);
+    return { far, farther };
+  }
+  const ids = (res: unknown) => (res as { matches: { tripId: string }[] }).matches.map((m) => m.tripId);
+
+  it('uses the admin default until the driver picks a radius', async () => {
+    const { far } = await farRiders();
+    const res = (await getEnRouteMatches.run(driverReq({ driverLat: ORIGIN.lat, driverLng: ORIGIN.lng }))) as {
+      corridorRadiusM: number; maxCorridorRadiusM: number; radiusOptionsM: number[];
+    };
+    expect(res.corridorRadiusM).toBe(1000);
+    expect(res.maxCorridorRadiusM).toBe(2000);
+    expect(res.radiusOptionsM).toEqual([500, 1000, 1500, 2000]);
+    expect(ids(res)).not.toContain(far);
+  });
+
+  it('widens the feed when the driver picks 2 km — and the accept honours it', async () => {
+    const { far } = await farRiders();
+    const res = await getEnRouteMatches.run(driverReq({ driverLat: ORIGIN.lat, driverLng: ORIGIN.lng, radiusM: 2000 }));
+    expect(ids(res)).toContain(far);
+
+    // Accepting on the default corridor would refuse the same rider…
+    await expect(
+      acceptEnRouteRider.run(driverReq({ tripId: far, driverLat: ORIGIN.lat, driverLng: ORIGIN.lng })),
+    ).rejects.toThrow(/not on your route/);
+    // …so the accept carries the radius the feed was built with.
+    const ok = (await acceptEnRouteRider.run(
+      driverReq({ tripId: far, driverLat: ORIGIN.lat, driverLng: ORIGIN.lng, radiusM: 2000 }),
+    )) as { ok: boolean };
+    expect(ok.ok).toBe(true);
+    const carrier = (await db().doc(`trips/${carrierId}`).get()).data()!;
+    expect(carrier.enRoute.corridorRadiusM).toBe(2000);
+  });
+
+  it('never goes past the admin maximum, whatever the app sends', async () => {
+    const { farther } = await farRiders();
+    const res = (await getEnRouteMatches.run(
+      driverReq({ driverLat: ORIGIN.lat, driverLng: ORIGIN.lng, radiusM: 5000 }),
+    )) as { corridorRadiusM: number };
+    expect(res.corridorRadiusM).toBe(2000);
+    expect(ids(res)).not.toContain(farther);
+  });
+});
+
 describe('acceptEnRouteRider', () => {
   it('picks the rider up — this used to throw on every call', async () => {
     const res = (await acceptEnRouteRider.run(
