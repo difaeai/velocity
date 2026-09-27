@@ -54,9 +54,13 @@ describe('partnerCut', () => {
     expect(partnerCut(platformCommission, 0.01)).not.toBe(partnerCut(1000, 0.01));
   });
 
-  it('rounds to whole rupees', () => {
-    expect(partnerCut(155, 0.01)).toBe(2); // 1.55 → 2
-    expect(partnerCut(144, 0.01)).toBe(1); // 1.44 → 1
+  it('keeps the paisa instead of rounding them away', () => {
+    expect(partnerCut(155, 0.01)).toBe(1.55);
+    expect(partnerCut(144, 0.01)).toBe(1.44);
+    // The case that used to pay nothing: a Free partner on a Rs 600 ride
+    // (Rs 60 commission) earns 0.5% of it — Rs 0.30, which Math.round made 0.
+    expect(partnerCut(60, 0.005)).toBe(0.3);
+    expect(partnerCut(60, 0.005)).toBeGreaterThan(0);
   });
 
   it('pays nothing on a zero or negative commission', () => {
@@ -146,8 +150,8 @@ describe('applyPartnerCredit — the payout waterfall', () => {
     );
     // Driver partner: 1% of the whole 1000. Primary: 1% of 250. Co: 1% of 750.
     expect(s.driverFleetCut).toBe(10);
-    expect(s.passengerFleetCut).toBe(3 + 8); // round(2.5) + round(7.5)
-    expect(s.velocityNet).toBe(1000 - 10 - 11);
+    expect(s.passengerFleetCut).toBe(2.5 + 7.5); // 1% of 250 + 1% of 750, to the paisa
+    expect(s.velocityNet).toBe(1000 - 10 - 10);
   });
 
   it('pays nobody at all on a flagged ride', () => {
@@ -181,9 +185,9 @@ describe('tiers', () => {
   it('every tier rate is still a slice of the COMMISSION, not the fare', () => {
     // Rs 1,000 ride, 10% platform commission = Rs 100.
     const commission = 100;
-    expect(partnerCut(commission, s.free.driverFleetRate)).toBe(1); // 0.5% of 100 → 0.5, rounds to 1
+    expect(partnerCut(commission, s.free.driverFleetRate)).toBe(0.5); // 0.5% of 100
     expect(partnerCut(commission, s.pro.driverFleetRate)).toBe(2); // 2% of 100
-    expect(partnerCut(commission, s.pro.passengerFleetRate)).toBe(1); // 1.3% of 100 → 1.3, rounds to 1
+    expect(partnerCut(commission, s.pro.passengerFleetRate)).toBe(1.3); // 1.3% of 100
 
     // The fare-based numbers — what this must never pay — are an order of
     // magnitude bigger.

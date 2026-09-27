@@ -42,6 +42,14 @@ import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { ACTIVE_STATUSES, haversineKm } from './index';
 import { firstNameOf, joinerRosterEntry, rosterForTrip } from './poolRoster';
+import { computeGenderAccess } from '../lib/genderAccess';
+import {
+  agreedGrossOf,
+  loadFareConfig,
+  poolJoinGenderGate,
+  priceShareJoinerOnto,
+} from './enRoute';
+import type { CityFareConfig } from '../fare/fareEngine';
 
 /**
  * When a pool has a driver, so a new rider is the driver's decision.
@@ -166,6 +174,15 @@ export const getPoolTripByCode = onCall(async (req) => {
   // in the queue, and a second tap reads as the first one having failed.
   const myRequest = await tripRef.collection('joinRequests').doc(ctx.uid).get();
   const requestStatus = myRequest.exists ? (myRequest.get('status') as string) : null;
+  // The same gender rules the join itself enforces, answered before the tap.
+  const meSnap = await db.doc(`users/${ctx.uid}`).get();
+  const gate = alreadyJoined
+    ? { allowed: true as const }
+    : poolJoinGenderGate(
+        snap.data() ?? {},
+        (meSnap.get('gender') as string | undefined) ?? 'unspecified',
+        meSnap.get('mixedRideOk') === true,
+      );
 
   return {
     code,
@@ -187,7 +204,10 @@ export const getPoolTripByCode = onCall(async (req) => {
       (JOINABLE_STATUSES.has(status) || gathering)
       && members.length < maxRiders
       && !alreadyJoined
-      && requestStatus !== 'pending',
+      && requestStatus !== 'pending'
+      && gate.allowed,
+    /** Why this rider cannot join, when the car's gender rules say no. */
+    blockedReason: gate.allowed ? null : gate.reason,
     /**
      * The ride is real but has not settled with a driver yet. It can still be
      * joined while it is `gathering` — that is the whole point of the window —
@@ -235,17 +255,13 @@ async function seatRiderOnPool(
   tripRef: FirebaseFirestore.DocumentReference,
   snap: FirebaseFirestore.DocumentSnapshot,
   riderUid: string,
-): Promise<{
-  tripId: string;
-  riders: number;
-  perSeatFare: number;
-  members: string[];
-  driverId: string | null;
-}> {
+  cfg: CityFareConfig,
+): Promise<SeatResult> {
   const members = (snap.get('poolMembers') as string[] | undefined)
     ?? [snap.get('passengerId') as string];
   const maxRiders = (snap.get('maxPoolRiders') as number | undefined) ?? MAX_POOL_RIDERS;
   const soloFare  = (snap.get('fare') as number | null) ?? (snap.get('offeredFare') as number);
+  const trip = snap.data() ?? {};
 
   if (members.includes(riderUid)) {
     throw new HttpsError('already-exists', 'That rider is already on this ride.');
@@ -257,7 +273,7 @@ async function seatRiderOnPool(
   // A rider on another active trip can't be in two cars at once.
   const userSnap = await tx.get(db.doc(`users/${riderUid}`));
   const activeTripId = userSnap.get('activeTripId') as string | undefined;
-  const joinerGender = userSnap.get('gender') as string | undefined;
+  const joinerGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
   if (activeTripId && activeTripId !== tripRef.id) {
     const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
     if (activeSnap.exists && ACTIVE_STATUSES.has(activeSnap.get('status') as TripStatus)) {
@@ -265,25 +281,43 @@ async function seatRiderOnPool(
     }
   }
 
+  // The same gender rules as every other way into a shared car. This door used
+  // to skip them entirely — only the tally was bumped — so a man could be seated
+  // straight into a car of two women before any driver was even involved.
+  const gate = poolJoinGenderGate(trip, joinerGender, userSnap.get('mixedRideOk') === true);
+  if (!gate.allowed) throw new HttpsError('permission-denied', gate.reason);
+
   const newMembers  = [...members, riderUid];
-  const perSeatFare = poolPerSeatFare(soloFare, newMembers.length);
+  const tierFare    = poolPerSeatFare(soloFare, newMembers.length);
+  const joinerName  = (userSnap.get('name') as string | undefined)
+    ?? (userSnap.get('displayName') as string | undefined);
 
   // Write them into the roster as well as the member list. The uid alone told
   // nobody anything: the driver could not name the person they were picking
   // up or say what to collect from them, and the riders already in the car
   // were never told a stranger had been added to it.
-  const roster = rosterForTrip(snap.data() ?? {});
+  const roster = rosterForTrip(trip);
   const newRoster = [
     ...roster,
     joinerRosterEntry({
       uid: riderUid,
-      name: (userSnap.get('name') as string | undefined)
-        ?? (userSnap.get('displayName') as string | undefined),
+      name: joinerName,
       gender: joinerGender,
       pickup: snap.get('pickup'),
       dropoff: snap.get('dropoff'),
     }),
   ];
+
+  // A car that already carries riders picked up on the way settles from the
+  // leg-split total (poolDriverGross), so a joiner has to be priced into it —
+  // written into poolMembers alone they were never billed, and the next pickup
+  // could not see their seat or their gender.
+  const priced = priceShareJoinerOnto(
+    trip,
+    { uid: riderUid, name: firstNameOf(joinerName), gender: joinerGender },
+    cfg,
+  );
+  const perSeatFare = priced ? priced.joinerFare : tierFare;
 
   // Bump the running gender tally so the nearby feed reflects who's aboard.
   // Merge keeps the existing map and only touches the joiner's bucket.
@@ -298,8 +332,18 @@ async function seatRiderOnPool(
       poolMembers: newMembers,
       poolRoster: newRoster,
       seats: newMembers.length,
-      poolPerSeatFare: perSeatFare,
+      poolPerSeatFare: tierFare,
       ...(genderBump ? { poolGenders: genderBump } : {}),
+      ...(priced
+        ? {
+            poolRiders: priced.riders,
+            poolFares: priced.fares,
+            poolDriverGross: priced.gross,
+            maleSeats: priced.male,
+            femaleSeats: priced.female,
+            genderComposition: computeGenderAccess(priced.male, priced.female, MAX_POOL_RIDERS, 'any'),
+          }
+        : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -314,7 +358,7 @@ async function seatRiderOnPool(
       db.doc(`openRequests/${tripRef.id}`),
       {
         poolRiders: newMembers.length,
-        poolPerSeatFare: perSeatFare,
+        poolPerSeatFare: tierFare,
         seats: newMembers.length,
         ...(genderBump ? { poolGenders: genderBump } : {}),
       },
@@ -329,7 +373,31 @@ async function seatRiderOnPool(
     perSeatFare,
     members: newMembers,
     driverId: (snap.get('driverId') as string | null) ?? null,
+    fares: priced ? priced.fares : null,
   };
+}
+
+/** What seating a rider produced — the joiner's own fare, and everyone's when it differs. */
+interface SeatResult {
+  tripId: string;
+  riders: number;
+  /** The joiner's own fare: the flat tier, or their leg-split share. */
+  perSeatFare: number;
+  members: string[];
+  driverId: string | null;
+  /** Everyone's fare, when the car is priced by the leg-split rather than one flat tier. */
+  fares: Record<string, number> | null;
+}
+
+/** Everything a join produced, for the callables that start one. */
+export interface JoinOutcome extends SeatResult {
+  alreadyJoined: boolean;
+  /** True when the join went to the driver as a request rather than a seat. */
+  pending: boolean;
+  /** Pending requests: what the driver really gains by accepting. */
+  driverEarnExtra: number | null;
+  /** Pending requests: the driver's total if they accept. */
+  driverTotal: number | null;
 }
 
 /** First name of a user, for pushes and request rows. Never the full name. */
@@ -343,30 +411,35 @@ async function riderFirstName(uid: string): Promise<string> {
 }
 
 /** Tell everybody already in the car — and the driver — about a new rider. */
-async function announceJoin(
-  result: {
-    tripId: string;
-    riders: number;
-    perSeatFare: number;
-    members: string[];
-    driverId: string | null;
-  },
-  joinerUid: string,
-): Promise<void> {
+async function announceJoin(result: SeatResult, joinerUid: string): Promise<void> {
   const name = await riderFirstName(joinerUid);
-  await sendToUsers(
-    result.members.filter((m) => m !== joinerUid),
-    `👤 ${name} is sharing your ride`,
-    `${result.riders} riders in the car now — everyone pays PKR ${result.perSeatFare} each.`,
-    { tripId: result.tripId },
-  );
+  const others = result.members.filter((m) => m !== joinerUid);
+  if (result.fares) {
+    // Riders picked up on the way pay for their own stretch of road, so there
+    // is no "everyone pays X" — each rider is told their own fare.
+    await Promise.all(others.map((m) => sendToUser(
+      m,
+      `👤 ${name} is sharing your ride`,
+      `${result.riders} riders in the car now — your fare is PKR ${result.fares![m] ?? result.perSeatFare}.`,
+      { tripId: result.tripId },
+    )));
+  } else {
+    await sendToUsers(
+      others,
+      `👤 ${name} is sharing your ride`,
+      `${result.riders} riders in the car now — everyone pays PKR ${result.perSeatFare} each.`,
+      { tripId: result.tripId },
+    );
+  }
   // The driver has to pick this person up and collect from them, so they are
   // told by name too — they used to find out by counting heads at the kerb.
   if (result.driverId) {
     await sendToUser(
       result.driverId,
       `👤 ${name} joined your shared ride`,
-      `${result.riders} passengers now — PKR ${result.perSeatFare} from each.`,
+      result.fares
+        ? `${result.riders} passengers now — PKR ${result.perSeatFare} from ${name}.`
+        : `${result.riders} passengers now — PKR ${result.perSeatFare} from each.`,
       { tripId: result.tripId },
     );
   }
@@ -395,7 +468,33 @@ export const joinPoolTrip = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid pool code.');
   const { tripRef } = await tripRefByCode(parsed.data.code);
 
-  const result = await db.runTransaction(async (tx) => {
+  const result = await joinPoolTripAsRider(ctx.uid, tripRef);
+  return {
+    ok: true,
+    tripId: result.tripId,
+    riders: result.riders,
+    perSeatFare: result.perSeatFare,
+    members: result.members,
+    driverId: result.driverId,
+    alreadyJoined: result.alreadyJoined,
+    pending: result.pending,
+  };
+});
+
+/**
+ * Put a rider into a pool trip: seat them while it is still gathering, or send
+ * its driver a request once it has one. Invite codes, "Pools near you" and
+ * Travel Partner ride links all come through here, so every door into a shared
+ * car has the same seats, the same gender rules and the same fares.
+ */
+export async function joinPoolTripAsRider(
+  uid: string,
+  tripRef: FirebaseFirestore.DocumentReference,
+): Promise<JoinOutcome> {
+  const pre = await tripRef.get();
+  const cfg = await loadFareConfig((pre.get('pickup') as { lat: number; lng: number } | undefined) ?? null);
+
+  const result = await db.runTransaction(async (tx): Promise<JoinOutcome> => {
     const snap = await tx.get(tripRef);
     if (!snap.exists || snap.get('pool') !== true) {
       throw new HttpsError('not-found', 'This pool ride no longer exists.');
@@ -404,16 +503,21 @@ export const joinPoolTrip = onCall(async (req) => {
     const members = (snap.get('poolMembers') as string[] | undefined) ?? [snap.get('passengerId') as string];
     const maxRiders = (snap.get('maxPoolRiders') as number | undefined) ?? MAX_POOL_RIDERS;
     const soloFare  = (snap.get('fare') as number | null) ?? (snap.get('offeredFare') as number);
+    const trip = snap.data() ?? {};
 
-    if (members.includes(ctx.uid)) {
+    if (members.includes(uid)) {
+      const fares = (trip.poolFares as Record<string, number> | undefined) ?? null;
       return {
         tripId: tripRef.id,
         riders: members.length,
-        perSeatFare: poolPerSeatFare(soloFare, members.length),
+        perSeatFare: fares?.[uid] ?? poolPerSeatFare(soloFare, members.length),
         members,
         driverId: (snap.get('driverId') as string | null) ?? null,
+        fares,
         alreadyJoined: true,
         pending: false,
+        driverEarnExtra: null,
+        driverTotal: null,
       };
     }
     if (members.length >= maxRiders) {
@@ -422,11 +526,11 @@ export const joinPoolTrip = onCall(async (req) => {
 
     // Still gathering: nobody to ask, so seat them now.
     if (status === AWAITING_DRIVER) {
-      if (!withinJoinWindow(snap.data() ?? {})) {
+      if (!withinJoinWindow(trip)) {
         throw new HttpsError('failed-precondition', WINDOW_CLOSED_MESSAGE);
       }
-      const seated = await seatRiderOnPool(tx, tripRef, snap, ctx.uid);
-      return { ...seated, alreadyJoined: false, pending: false };
+      const seated = await seatRiderOnPool(tx, tripRef, snap, uid, cfg);
+      return { ...seated, alreadyJoined: false, pending: false, driverEarnExtra: null, driverTotal: null };
     }
 
     if (!JOINABLE_STATUSES.has(status)) {
@@ -434,7 +538,7 @@ export const joinPoolTrip = onCall(async (req) => {
     }
 
     // Driver confirmed: the driver decides.
-    const reqRef  = tripRef.collection('joinRequests').doc(ctx.uid);
+    const reqRef  = tripRef.collection('joinRequests').doc(uid);
     const reqSnap = await tx.get(reqRef);
     if (reqSnap.exists && reqSnap.get('status') === 'pending') {
       throw new HttpsError('already-exists', 'Your request is already with the driver.');
@@ -450,7 +554,7 @@ export const joinPoolTrip = onCall(async (req) => {
 
     // Refused here rather than at approval time: "you already have a ride" is
     // useful now, and useless after a driver has held a seat for you.
-    const userSnap = await tx.get(db.doc(`users/${ctx.uid}`));
+    const userSnap = await tx.get(db.doc(`users/${uid}`));
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     if (activeTripId && activeTripId !== tripRef.id) {
       const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
@@ -459,18 +563,36 @@ export const joinPoolTrip = onCall(async (req) => {
       }
     }
 
-    const fareIfSeated = poolPerSeatFare(soloFare, members.length + 1);
+    // The same goes for the car's gender rules: they are checked now, before
+    // anybody waits on a driver for a seat the rules would refuse anyway.
+    const joinerGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+    const gate = poolJoinGenderGate(trip, joinerGender, userSnap.get('mixedRideOk') === true);
+    if (!gate.allowed) throw new HttpsError('permission-denied', gate.reason);
+
+    const riderName = firstNameOf(
+      (userSnap.get('name') as string | undefined)
+        ?? (userSnap.get('displayName') as string | undefined),
+    );
+    // What the joiner would pay, and what the driver would REALLY gain: their
+    // total after minus their total now. The push used to quote the joiner's
+    // per-seat fare as "more", which is not what the driver's total moves by.
+    const priced = priceShareJoinerOnto(trip, { uid, name: riderName, gender: joinerGender }, cfg);
+    const fareIfSeated = priced ? priced.joinerFare : poolPerSeatFare(soloFare, members.length + 1);
+    const driverTotal = priced
+      ? priced.gross
+      : poolPerSeatFare(soloFare, members.length + 1) * (members.length + 1);
+    const driverEarnExtra = driverTotal - agreedGrossOf(trip);
+
     tx.set(reqRef, {
       tripId:      tripRef.id,
-      riderId:     ctx.uid,
-      riderName:   firstNameOf(
-        (userSnap.get('name') as string | undefined)
-          ?? (userSnap.get('displayName') as string | undefined),
-      ),
-      riderGender: (userSnap.get('gender') as string | undefined) ?? 'unspecified',
+      riderId:     uid,
+      riderName,
+      riderGender: joinerGender,
       // What the driver would collect from them. Fixed by the pool's tier —
       // the rider did not choose it and cannot move it.
       farePerSeat: fareIfSeated,
+      driverEarnExtra,
+      driverTotalAfter: driverTotal,
       status:      'pending',
       createdAt:   FieldValue.serverTimestamp(),
     });
@@ -481,29 +603,36 @@ export const joinPoolTrip = onCall(async (req) => {
       perSeatFare: fareIfSeated,
       members,
       driverId: (snap.get('driverId') as string | null) ?? null,
+      fares: null,
       alreadyJoined: false,
       pending: true,
+      driverEarnExtra,
+      driverTotal,
     };
   });
 
   if (result.pending) {
     if (result.driverId) {
-      const name = await riderFirstName(ctx.uid);
+      const name = await riderFirstName(uid);
+      const extra = result.driverEarnExtra ?? 0;
+      const total = result.driverTotal ?? 0;
       await sendToUser(
         result.driverId,
         `🙋 ${name} wants to share your ride`,
-        `PKR ${result.perSeatFare} more if you take them. Open the trip to accept or decline.`,
+        extra > 0
+          ? `PKR ${extra} more for you if you take them (they pay PKR ${result.perSeatFare}). Open the trip to accept or decline.`
+          : `Your total would go from PKR ${total - extra} to PKR ${total} if you take them (they pay PKR ${result.perSeatFare}). Open the trip to accept or decline.`,
         { tripId: result.tripId },
       );
     }
-    logger.info('Pool join requested', { tripId: result.tripId, rider: ctx.uid });
+    logger.info('Pool join requested', { tripId: result.tripId, rider: uid });
   } else if (!result.alreadyJoined) {
-    await announceJoin(result, ctx.uid);
-    logger.info('Pool joined', { tripId: result.tripId, joiner: ctx.uid, riders: result.riders });
+    await announceJoin(result, uid);
+    logger.info('Pool joined', { tripId: result.tripId, joiner: uid, riders: result.riders });
   }
 
-  return { ok: true, ...result };
-});
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 const respondJoinSchema = z.object({
@@ -527,6 +656,8 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
 
   const tripRef = db.doc(`trips/${tripId}`);
   const reqRef  = tripRef.collection('joinRequests').doc(riderId);
+  const pre = await tripRef.get();
+  const cfg = await loadFareConfig((pre.get('pickup') as { lat: number; lng: number } | undefined) ?? null);
 
   const outcome = await db.runTransaction(async (tx) => {
     const snap    = await tx.get(tripRef);
@@ -555,10 +686,11 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
         perSeatFare: 0,
         members: [] as string[],
         driverId: ctx.uid,
+        fares: null,
       };
     }
 
-    const seated = await seatRiderOnPool(tx, tripRef, snap, riderId);
+    const seated = await seatRiderOnPool(tx, tripRef, snap, riderId, cfg);
     tx.set(reqRef, {
       status: 'accepted',
       decidedAt: FieldValue.serverTimestamp(),
@@ -764,6 +896,11 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
   // Skip the caller's own open request without exposing passenger ids in the feed.
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const ownTripId = userSnap.get('activeTripId') as string | undefined;
+  // Pools the caller could not get into are not offered to them — the same
+  // rule the poolRideRequests feed has always applied (2 men → never shown to
+  // women), now that joining a booking pool is gated on it too.
+  const myGender  = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+  const myMixedOk = userSnap.get('mixedRideOk') === true;
 
   const pools: PoolFeedRow[] = [];
   const seenCodes = new Set<string>();
@@ -781,6 +918,7 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
   ) => {
     if (docId === ownTripId) return;
     if ((d.poolVisibility ?? 'public') !== 'public') return;
+    if (!poolJoinGenderGate(d, myGender, myMixedOk).allowed) return;
     const code = d.shareCode as string | undefined;
     if (!code || seenCodes.has(code)) return; // legacy pools have no invite code
     if (riders >= MAX_POOL_RIDERS) return;

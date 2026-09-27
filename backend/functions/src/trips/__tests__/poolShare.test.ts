@@ -42,7 +42,10 @@ const BASE_TRIP = {
   rideType: 'mini' as const,
   offeredFare: 400, // full solo fare — inside the static mini band (280–1200)
   seats: 1,
-  passengerGender: 'unspecified' as const,
+  // Everybody in these fixtures is a woman unless a test says otherwise: joining
+  // a booking pool runs the car's gender rules now, and what most of these tests
+  // are about (seats, fares, the queue) has nothing to do with them.
+  passengerGender: 'female' as const,
   pool: true,
   paymentMethod: 'cash' as const,
   pickup: PICKUP,
@@ -82,16 +85,24 @@ async function createConfirmedPool(uid = HOST, overrides: Record<string, unknown
 beforeEach(async () => {
   await clearFirestore();
   for (const uid of [HOST, JOINER, JOINER2, JOINER3, LATE]) {
-    await db().doc(`users/${uid}`).set({ displayName: `User ${uid}` });
+    await db().doc(`users/${uid}`).set({ displayName: `User ${uid}`, gender: 'female' });
   }
 });
 
 describe('poolPerSeatFare', () => {
-  it('follows the 100/60/40/35 tier table', () => {
+  it('follows the 100/60/45/35 tier table', () => {
     expect(poolPerSeatFare(400, 1)).toBe(400);
     expect(poolPerSeatFare(400, 2)).toBe(240);
-    expect(poolPerSeatFare(400, 3)).toBe(160);
+    expect(poolPerSeatFare(400, 3)).toBe(180);
     expect(poolPerSeatFare(400, 4)).toBe(140);
+  });
+  it('pays the driver more for every extra rider, the third included', () => {
+    const total = (n: number) => poolPerSeatFare(400, n) * n;
+    // 400 → 480 → 540 → 560. The third tier used to be 40%: 3 × 160 = 480,
+    // exactly what two riders paid, so the third stop earned the driver nothing.
+    expect(total(2)).toBeGreaterThan(total(1));
+    expect(total(3)).toBeGreaterThan(total(2));
+    expect(total(4)).toBeGreaterThan(total(3));
   });
   it('clamps rider counts outside 1–4', () => {
     expect(poolPerSeatFare(400, 0)).toBe(400);
@@ -422,6 +433,8 @@ describe('visibility', () => {
 
   it('carries the driver and the people already aboard, so the rider picks a car', async () => {
     await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq' });
+    // A man browsing a man's pool: the gender rules have nothing to hide here.
+    await db().doc(`users/${JOINER}`).set({ displayName: 'Joiner', gender: 'male' });
     // The host's gender on the roster is the one they BOOKED with, not whatever
     // their profile says — that is the figure the pool's tally is built from.
     const { tripId } = await createPool(HOST, { passengerGender: 'male' });
@@ -472,32 +485,91 @@ describe('visibility', () => {
 
 describe('gender tally', () => {
   it('seeds the host gender and increments as riders join', async () => {
-    // Host is female; a male and a female join → 2F, 1M.
+    // Host is female; a man who opted into mixed rides joins → 1F, 1M.
     await db().doc(`users/${HOST}`).set({ displayName: 'Host', gender: 'female' });
-    await db().doc(`users/${JOINER}`).set({ displayName: 'J1', gender: 'male' });
-    await db().doc(`users/${JOINER2}`).set({ displayName: 'J2', gender: 'female' });
+    await db().doc(`users/${JOINER}`).set({ displayName: 'J1', gender: 'male', mixedRideOk: true });
 
-    // Gathering, not confirmed: these two get in on their own tap. The tally
-    // has to be right at exactly this moment, because it is what a third rider
-    // looking at the feed decides on — before any driver is involved.
+    // Gathering, not confirmed: he gets in on his own tap. The tally has to be
+    // right at exactly this moment, because it is what the next rider looking
+    // at the feed decides on — before any driver is involved.
     const { tripId, shareCode } = await createPool(HOST, { passengerGender: 'female' });
     let trip = (await db().doc(`trips/${tripId}`).get()).data()!;
     expect(trip.poolGenders).toEqual({ male: 0, female: 1 });
 
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
-    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER2));
 
     trip = (await db().doc(`trips/${tripId}`).get()).data()!;
-    expect(trip.poolGenders).toEqual({ male: 1, female: 2 });
+    expect(trip.poolGenders).toEqual({ male: 1, female: 1 });
 
-    // The nearby feed surfaces the same counts, no names.
+    // A woman who is open to mixed rides sees the same counts, no names.
+    await db().doc(`users/${JOINER3}`).set({ displayName: 'J3', gender: 'female', mixedRideOk: true });
     const res = await getNearbyPublicPoolTrips.run(
       makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER3),
     );
     const pool = (res.pools as { males: number; females: number; riders: number }[])[0];
     expect(pool.males).toBe(1);
-    expect(pool.females).toBe(2);
-    expect(pool.riders).toBe(3);
+    expect(pool.females).toBe(1);
+    expect(pool.riders).toBe(2);
+  });
+});
+
+describe('gender rules on booking pools', () => {
+  it('refuses a man joining two women, and never offers him that car', async () => {
+    await db().doc(`users/${JOINER3}`).set({ displayName: 'Hamza', gender: 'male', mixedRideOk: true });
+    const { shareCode } = await createPool(); // the host is a woman
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)); // …and so is the second rider
+
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER3)))
+      .rejects.toThrow(/female passengers only/);
+
+    const feed = await getNearbyPublicPoolTrips.run(
+      makeReq({ lat: PICKUP.lat, lng: PICKUP.lng, radiusKm: 5 }, JOINER3),
+    );
+    expect(feed.pools).toHaveLength(0);
+
+    const info = await getPoolTripByCode.run(makeReq({ code: shareCode! }, JOINER3));
+    expect(info.joinable).toBe(false);
+    expect(info.blockedReason).toMatch(/female passengers only/);
+  });
+
+  it('asks a man for the mixed-ride opt-in before he joins a woman riding alone', async () => {
+    await db().doc(`users/${JOINER3}`).set({ displayName: 'Hamza', gender: 'male' });
+    const { shareCode } = await createPool();
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER3)))
+      .rejects.toThrow(/Open to mixed-gender rides/);
+  });
+
+  it('treats a rider whose gender is not set as needing that opt-in too', async () => {
+    await db().doc(`users/${LATE}`).set({ displayName: 'Kiran' }); // no gender on file
+    const { shareCode } = await createPool();
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, LATE)))
+      .rejects.toThrow(/Set your gender/);
+
+    await db().doc(`users/${LATE}`).set({ displayName: 'Kiran', mixedRideOk: true });
+    const ok = await joinPoolTrip.run(makeReq({ code: shareCode! }, LATE));
+    expect(ok.riders).toBe(2);
+  });
+
+  it('checks the rules before a request ever reaches the driver', async () => {
+    await db().doc(`users/${JOINER3}`).set({ displayName: 'Hamza', gender: 'male' });
+    const { shareCode, tripId } = await createConfirmedPool();
+    await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER3)))
+      .rejects.toThrow(/Open to mixed-gender rides/);
+    const request = await db().doc(`trips/${tripId}/joinRequests/${JOINER3}`).get();
+    expect(request.exists).toBe(false);
+  });
+});
+
+describe('join requests tell the driver the truth', () => {
+  it('records what the driver really gains, not the joiner’s seat fare', async () => {
+    const { shareCode, tripId } = await createConfirmedPool();
+    await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
+    const request = (await db().doc(`trips/${tripId}/joinRequests/${JOINER}`).get()).data()!;
+    // The host alone owed 400. With the joiner: 240 × 2 = 480 — Rs 80 more for
+    // the driver, where the push used to say "PKR 240 more".
+    expect(request.farePerSeat).toBe(240);
+    expect(request.driverTotalAfter).toBe(480);
+    expect(request.driverEarnExtra).toBe(80);
   });
 });
 

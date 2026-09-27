@@ -82,7 +82,10 @@ async function runningPool() {
 beforeEach(async () => {
   await clearFirestore();
   await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq', phoneNumber: '+923001111111' });
+  // She opted into mixed rides: the host is a man, and joining a man's pool
+  // now takes that consent like every other way into a shared car.
   await db().doc(`users/${RIDER}`).set({
+    mixedRideOk: true,
     name: 'Ayesha Malik',
     gender: 'female',
     phoneNumber: '+923002222222',

@@ -195,11 +195,11 @@ function uuidv4() {
 
 // Pool fare breakdown — percentage of solo fare per seat based on total riders
 // 2 riders total (you + 1 joins): each pays 60%
-// 3 riders total (you + 2 join):  each pays 40%
+// 3 riders total (you + 2 join):  each pays 45%
 // 4 riders total (you + 3 join):  each pays 35%
 const POOL_TIERS = [
   { extra: 1, pct: 0.60, label: '+1 joins' },
-  { extra: 2, pct: 0.40, label: '+2 join'  },
+  { extra: 2, pct: 0.45, label: '+2 join'  },
   { extra: 3, pct: 0.35, label: '+3 join'  },
 ];
 function poolFareFor(soloFare: number, extra: number): number {

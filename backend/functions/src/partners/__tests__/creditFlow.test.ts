@@ -158,7 +158,7 @@ describe('a driver recruited by a FREE partner completes a ride', () => {
     expect(settlement.commission).toBe(100);
     // 0.5% of that 100 is 0.5, which rounds to 1 PKR. 0.5% of the FARE would
     // have been 5 — the bug this whole feature is designed not to have.
-    expect(settlement.driverFleetCut).toBe(1);
+    expect(settlement.driverFleetCut).toBe(0.5); // 0.5% of the Rs 100 commission, to the paisa
     expect(settlement.driverFleetCut).not.toBe(Math.round(FARE * 0.005));
 
     // Receipts are keyed by trip + member + role, so one partner with edges on
@@ -166,7 +166,7 @@ describe('a driver recruited by a FREE partner completes a ride', () => {
     const txn = await db().doc(`partner_transactions/${tripId}_${DRIVER}_driver`).get();
     expect(txn.exists).toBe(true);
     expect(txn.get('tier')).toBe('free');
-    expect(txn.get('fleetCommission')).toBe(1);
+    expect(txn.get('fleetCommission')).toBe(0.5);
     expect(txn.get('platformCommission')).toBe(100);
     expect(txn.get('rideFare')).toBe(FARE);
     expect(txn.get('rideStatus')).toBe('completed');
@@ -176,10 +176,10 @@ describe('a driver recruited by a FREE partner completes a ride', () => {
     await runRide();
 
     const w = await partnerWallet(PARTNER);
-    expect(w.pending).toBe(1);
+    expect(w.pending).toBe(0.5);
     // The hold window is the fraud window — money is not spendable on day one.
     expect(w.balance).toBe(0);
-    expect(w.lifetimeEarnings).toBe(1);
+    expect(w.lifetimeEarnings).toBe(0.5);
   });
 
   it('takes the cut from Velocity, never from the driver', async () => {
@@ -197,11 +197,11 @@ describe('a driver recruited by a FREE partner completes a ride', () => {
     const edge = await db().doc(`driver_referrals/${DRIVER}`).get();
     expect(edge.get('completedRides')).toBe(1);
     expect(edge.get('totalRideValue')).toBe(FARE);
-    expect(edge.get('fleetCommissionGenerated')).toBe(1);
+    expect(edge.get('fleetCommissionGenerated')).toBe(0.5);
 
     const partner = await db().doc(`partners/${PARTNER}`).get();
     expect(partner.get('completedRides')).toBe(1);
-    expect(partner.get('lifetimeEarnings')).toBe(1);
+    expect(partner.get('lifetimeEarnings')).toBe(0.5);
   });
 });
 

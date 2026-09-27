@@ -186,6 +186,39 @@ describe('bookSharedTravelMateRide', () => {
       .rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
+  it('has no room for a partner on a bike', async () => {
+    await seedTrip('trip-bike', SHARER, { rideType: 'bike' });
+    const { shareId } = await shareTravelMateRide.run(makeReq({ tripId: 'trip-bike' }, SHARER));
+    await expect(bookSharedTravelMateRide.run(makeReq({ shareId }, PARTNER)))
+      .rejects.toThrow(/bike ride/);
+  });
+
+  it('seats a partner on a shared (pool) ride through the pool itself', async () => {
+    // Before, the booking only wrote a name into the share document: the trip's
+    // seats and its driver never learnt a partner was coming, and on a pool that
+    // strangers can also join, the car could hold more people than it has seats.
+    await db().doc(`users/${SHARER}`).set({ displayName: 'Sharer', gender: 'male' });
+    await db().doc(`users/${PARTNER}`).set({ displayName: 'Partner', gender: 'male' });
+    await seedTrip('trip-pool', SHARER, {
+      rideType: 'mini',
+      pool: true,
+      passengerGender: 'male',
+      poolMembers: [SHARER],
+      paymentMethod: 'cash',
+    });
+    const { shareId } = await shareTravelMateRide.run(makeReq({ tripId: 'trip-pool' }, SHARER));
+
+    const res = await bookSharedTravelMateRide.run(makeReq({ shareId }, PARTNER));
+    expect(res.booked).toBe(true);
+    expect(res.pending).toBe(false);
+    expect(res.farePerSeat).toBe(300); // 60% of the 500 fare, two riders
+
+    const trip = (await db().doc('trips/trip-pool').get()).data()!;
+    expect(trip.poolMembers).toEqual([SHARER, PARTNER]);
+    const share = (await db().doc(`travelMateSharedRides/${shareId}`).get()).data()!;
+    expect(share.coRiders).toEqual([SHARER, PARTNER]);
+  });
+
   it('rejects closed rides', async () => {
     const { shareId } = await shareTravelMateRide.run(makeReq({ tripId: 'trip-1' }, SHARER));
     await db().doc(`travelMateSharedRides/${shareId}`).update({ status: 'closed' });

@@ -147,7 +147,12 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
     };
 
     if (subscribed) {
-      allowance = q.dailyAllowance ?? 0;
+      // While Travel Partner is free for everyone, a paying subscriber must
+      // never be held to less than a free user gets — their plan's daily cap
+      // (say 20) used to apply while free users had 1,000,000 a month.
+      allowance = travelMateFree
+        ? Math.max(q.dailyAllowance ?? 0, freeMonthlySwipes)
+        : (q.dailyAllowance ?? 0);
       used = (q.dailyKey === dayKey) ? (q.dailyUsed ?? 0) : 0; // lazy daily reset
       update.tier = 'subscribed';
     } else {

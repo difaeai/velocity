@@ -37,6 +37,8 @@ import {
   splitFeeAgainstBalance,
 } from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
+import { loadFareConfigFor } from '../fare/cityConfig';
+import { franchiseCutFor, franchiseRateFrom } from '../domain/franchise';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
 import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
 import { hostRosterEntry } from './poolRoster';
@@ -84,9 +86,10 @@ export async function offeredFareBounds(
   dropoff: { lat: number; lng: number },
 ): Promise<{ min: number; max: number }> {
   try {
-    const snap = await db.doc('fareConfig/islamabad_rawalpindi').get();
-    if (snap.exists) {
-      const cfg = snap.data() as CityFareConfig;
+    // The table of the city the trip starts in (Karachi has its own); cities
+    // without one still use Islamabad–Rawalpindi's, as every trip used to.
+    const cfg: CityFareConfig | null = await loadFareConfigFor(pickup);
+    if (cfg) {
       const category = RIDE_TO_ENGINE_CAT[rideType] ?? 'mini';
       const distanceKm = Math.max(0.5, haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng));
       const est = calculateFare(cfg, {
@@ -1075,6 +1078,11 @@ export const completeTrip = onCall(async (req) => {
     const passengerId   = snap.get('passengerId') as string;
     const franchiseId   = driverSnap.get('franchiseId') as string | null | undefined;
     const paymentMethod = (snap.get('paymentMethod') as string | undefined) ?? 'cash';
+    // The franchise's own rate, read with the other documents before any write.
+    const franchiseSnap = franchiseId ? await tx.get(db.doc(`franchises/${franchiseId}`)) : null;
+    const franchiseRate = franchiseSnap?.exists
+      ? franchiseRateFrom(franchiseSnap.get('commissionRate'))
+      : franchiseRateFrom(undefined);
 
     // Pool cash trips: every rider pays in cash, so the driver's gross is the sum
     // of what the riders actually owe. Wallet holds only ever cover the host's
@@ -1103,9 +1111,10 @@ export const completeTrip = onCall(async (req) => {
     }
     const s = computeSettlement(grossFare, seats, commissionRate);
 
-    // 5% of gross fare goes to the franchise, capped at the commission actually
-    // taken so a low admin-set rate can never make Velocity's net negative.
-    const franchiseCut = franchiseId ? Math.min(Math.round(grossFare * 0.05), s.commission) : 0;
+    // The franchise's own rate (5% unless its document says otherwise) of the
+    // gross fare, capped at the commission actually taken so a low admin-set
+    // rate can never make Velocity's net negative.
+    const franchiseCut = franchiseId ? franchiseCutFor(grossFare, franchiseRate, s.commission) : 0;
 
     // Fleet owners are paid out of the SAME commission, never out of the fare —
     // the driver's payout above is already fixed and is not touched by any of

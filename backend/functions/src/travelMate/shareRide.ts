@@ -24,6 +24,10 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
+import { sendToUser } from '../lib/fcm';
+import { joinPoolTripAsRider } from '../trips/poolShare';
+import { firstNameOf } from '../trips/poolRoster';
+
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
@@ -110,6 +114,9 @@ export const shareTravelMateRide = onCall({ region: REGION }, async (req: Callab
       address: trip.dropoff?.address ?? '',
     },
     rideType: trip.rideType ?? null,
+    // A pool ride seats partners through the pool (seats, fares, driver's OK);
+    // a solo ride lets them ride along on the sharer's fare.
+    pool: trip.pool === true,
     fare: trip.fare ?? trip.offeredFare ?? null,
     coRiders: [uid],
     coRiderInfo: { [uid]: me },
@@ -181,6 +188,7 @@ export const getSharedTravelMateRide = onCall({ region: REGION }, async (req: Ca
       pickupAddress: ride.pickup?.address ?? '',
       dropoffAddress: ride.dropoff?.address ?? '',
       rideType: ride.rideType,
+      pool: ride.pool === true,
       fare: ride.fare,
       status: ride.status,
       groupId: ride.groupId,
@@ -227,22 +235,80 @@ export const bookSharedTravelMateRide = onCall({ region: REGION }, async (req: C
 
   const me = await requireProfile(uid);
 
-  const tripId = await db.runTransaction(async (tx) => {
+  // The car the link points at. Booking used to write a name into this share
+  // document and nothing else: the trip, its seats and its driver never learnt
+  // a partner was coming.
+  const tripRef = db.doc(`trips/${pre.tripId as string}`);
+  const tripSnap = await tripRef.get();
+  if (!tripSnap.exists || ['cancelled', 'completed', 'merged'].includes(tripSnap.get('status') as string)) {
+    throw new HttpsError('failed-precondition', 'This ride is no longer active.');
+  }
+
+  if (tripSnap.get('pool') === true) {
+    // A shared (pool) ride already has seats, gender rules and per-seat fares,
+    // and strangers can join it too — so a partner gets in the same way anyone
+    // else would, and the driver is asked once the ride has one. Riding along
+    // outside the pool's own count is how a pool ended up with more people in
+    // it than seats.
+    const joined = await joinPoolTripAsRider(uid, tripRef);
+    if (!joined.pending) {
+      await rideRef.update({
+        coRiders: admin.firestore.FieldValue.arrayUnion(uid),
+        [`coRiderInfo.${uid}`]: me,
+      });
+    }
+    return {
+      booked: !joined.pending,
+      pending: joined.pending,
+      alreadyJoined: joined.alreadyJoined,
+      tripId: joined.pending ? null : tripRef.id,
+      farePerSeat: joined.perSeatFare,
+    };
+  }
+
+  // A solo ride: partners ride along on the sharer's fare and settle it between
+  // themselves. The car still has to fit them — a bike carries one passenger
+  // and an auto three — and the driver is told how many people will be waiting.
+  const capacity = RIDE_ALONG_CAPACITY[(tripSnap.get('rideType') as string) ?? 'mini'] ?? 4;
+  const count = await db.runTransaction(async (tx) => {
     const snap = await tx.get(rideRef);
     if (!snap.exists) throw new HttpsError('not-found', 'This ride link is invalid or expired.');
     const ride = snap.data()!;
     if (ride.status !== 'open') throw new HttpsError('failed-precondition', 'This ride is no longer open.');
     const coRiders: string[] = ride.coRiders ?? [];
-    if (coRiders.includes(uid)) return ride.tripId as string;
-    if (coRiders.length >= (ride.maxCoRiders ?? 4)) {
-      throw new HttpsError('failed-precondition', 'This ride is full.');
+    if (coRiders.includes(uid)) return coRiders.length;
+    if (coRiders.length >= Math.min(ride.maxCoRiders ?? 4, capacity)) {
+      throw new HttpsError(
+        'failed-precondition',
+        capacity <= 1 ? 'This is a bike ride — there is no room for a partner.' : 'This ride is full.',
+      );
     }
     tx.update(rideRef, {
       coRiders: admin.firestore.FieldValue.arrayUnion(uid),
       [`coRiderInfo.${uid}`]: me,
     });
-    return ride.tripId as string;
+    return coRiders.length + 1;
   });
 
-  return { booked: true, alreadyJoined: false, tripId };
+  const driverId = tripSnap.get('driverId') as string | null | undefined;
+  if (driverId) {
+    await sendToUser(
+      driverId,
+      `👥 ${firstNameOf(pre.sharerInfo?.displayName)} is bringing ${firstNameOf(me.displayName)} along`,
+      `${count} people will be at the pickup for this ride.`,
+      { tripId: tripRef.id },
+    ).catch(() => undefined);
+  }
+
+  return { booked: true, pending: false, alreadyJoined: false, tripId: tripRef.id, farePerSeat: null };
 });
+
+/** People a ride type can carry, the booker included. */
+const RIDE_ALONG_CAPACITY: Record<string, number> = {
+  bike: 1,
+  auto: 3,
+  mini: 4,
+  ac: 4,
+  comfort: 4,
+  xl: 4,
+};

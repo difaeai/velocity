@@ -9,6 +9,7 @@ import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { computeSettlement } from '../domain/fares';
+import { DEFAULT_FRANCHISE_RATE, franchiseCutFor, franchiseRateFor } from '../domain/franchise';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import {
   DRIVER_END_RIDE_SLACK_M,
@@ -241,6 +242,12 @@ export const completePoolRide = onCall(async (req) => {
       })
     : null;
 
+  // The franchise's own rate — read here because the transaction below writes
+  // before it gets to the franchise. It is admin config, like the commission.
+  const preDriver = await driverRef.get();
+  const preFranchiseId = (preDriver.get('franchiseId') as string | null | undefined) ?? null;
+  const franchiseRate = await franchiseRateFor(preFranchiseId);
+
   await db.runTransaction(async (tx) => {
     // Transactional reads must all happen before the first write.
     const [rideSnap, driverSnap] = await Promise.all([tx.get(rideRef), tx.get(driverRef)]);
@@ -294,9 +301,23 @@ export const completePoolRide = onCall(async (req) => {
       { merge: true },
     );
 
-    // Handle franchise commission if driver belongs to a franchise
+    // Handle franchise commission if driver belongs to a franchise: its own rate
+    // of the gross, never more than the commission Velocity actually took (this
+    // used to be a flat, uncapped 5%, so a commission below 5% paid the
+    // franchise out of Velocity's pocket).
     const franchiseId: string | null = driverSnap.get('franchiseId') ?? null;
-    const franchiseCut = franchiseId && grossFare > 0 ? Math.round(grossFare * 0.05) : 0;
+    const rideCommission = computeSettlement(
+      grossFare,
+      Math.max(1, pickedUp.length),
+      commissionSettings.rate,
+    ).commission;
+    const franchiseCut = franchiseId && grossFare > 0
+      ? franchiseCutFor(
+          grossFare,
+          franchiseId === preFranchiseId ? franchiseRate : DEFAULT_FRANCHISE_RATE,
+          rideCommission,
+        )
+      : 0;
     if (franchiseId && franchiseCut > 0) {
       tx.set(
         db.doc(`franchises/${franchiseId}`),
@@ -461,7 +482,14 @@ export const joinPoolRide = onCall(async (req) => {
 
     const currentComposition = computeGenderAccess(maleSeats, femaleSeats, ride.maxSeats as number, driverPref);
 
-    const check = canJoinPool({ currentComposition, maleSeats, femaleSeats, joinerGender, joinerMixedRideOk: mixedRideOk });
+    const check = canJoinPool({
+      currentComposition,
+      maleSeats,
+      femaleSeats,
+      joinerGender,
+      joinerMixedRideOk: mixedRideOk,
+      otherSeats: Math.max(0, ((ride.takenSeats as number) ?? 0) - maleSeats - femaleSeats),
+    });
     if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
 
     // ── Mixed-car batching rule ────────────────────────────────────────────

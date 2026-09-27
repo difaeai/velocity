@@ -36,7 +36,14 @@ export function seriesColors(): { driver: string; passenger: string } {
 }
 
 export function formatPKR(amount: number): string {
-  return `Rs ${Math.round(amount).toLocaleString('en-PK')}`;
+  // Partner cuts are kept to the paisa (0.5% of a Rs 60 commission is Rs 0.30),
+  // so the paisa are shown when there are any — rounding them here would put
+  // the old "Rs 0" straight back on screen.
+  const paisa = Math.round(amount * 100);
+  const rupees = Math.trunc(paisa / 100);
+  const rest = Math.abs(paisa % 100);
+  const whole = `${paisa < 0 && rupees === 0 ? '-' : ''}${rupees.toLocaleString('en-PK')}`;
+  return rest === 0 ? `Rs ${whole}` : `Rs ${whole}.${String(rest).padStart(2, '0')}`;
 }
 
 // ── Level badge ──────────────────────────────────────────────────────────────
