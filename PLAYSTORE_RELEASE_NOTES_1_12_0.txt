@@ -1,0 +1,109 @@
+VELOCITY RIDES 1.12.0  ·  Android versionCode 37  ·  iOS build 10
+=================================================================
+
+1.11.0 is live on the App Store (build 9). Apple takes no new build against a
+released version, so this release is 1.12.0 on both platforms; app.json holds
+one version string for both. EAS assigns the build numbers.
+
+The store notes below introduce Velocity Rides as if to someone opening it for
+the first time. From this release on, people are expected to download and
+start using it. Every line in them describes something this build really does,
+so the notes cannot become a review problem:
+  - no competitor names;
+  - no "best", "#1", "cheapest" or other claims we cannot back up;
+  - no "coming soon";
+  - the App Store text never mentions Android, and the Play text never
+    mentions the App Store.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Velocity Rides: ride-hailing for Pakistan where you name the fare.
+
+• Offer your price; drivers accept or counter; you choose
+• Moto, Mini, A/C and Premium rides, City to City seats and couriers
+• Share a ride, pay per seat, gender rules respected
+• Book by voice in Urdu or English
+• Pay cash, EasyPaisa, JazzCash, bank transfer or wallet
+• Verified drivers, live tracking, SOS and trip sharing
+• Travel Partner: find people going your way
+• Drivers: Solo or Sharing, pick up riders on your route
+
+
+APP STORE "WHAT'S NEW" (already set on version 1.12.0 through the API)
+-----------------------------------------------------------------------
+Welcome to Velocity Rides: getting around Pakistan on a fare you agree on.
+
+NAME YOUR FARE
+Offer a price for your trip. Nearby drivers accept it or send their own offer, and you choose who to ride with.
+
+A RIDE FOR EVERY TRIP
+Moto, Mini, A/C and Premium rides across town, City to City seats for longer journeys, and couriers when only a parcel needs to travel.
+
+SHARE THE RIDE, SPLIT THE FARE
+Share a car with people heading your way and each pay for one seat. You see who is already in the car before you join, and shared rides follow gender rules: for example, women are only placed with men if they have chosen to allow it.
+
+BOOK BY VOICE
+Say where you want to go, in Urdu or English, and the booking fills itself in.
+
+PAY THE WAY YOU ALREADY PAY
+Cash, EasyPaisa, JazzCash, bank transfer or your Velocity wallet.
+
+SAFETY ON EVERY RIDE
+Drivers verify their identity and their car before they can drive. Follow your driver live on the map, share your trip with someone you trust, and raise an SOS if anything feels wrong.
+
+TRAVEL PARTNER
+Find people going the same way, join city groups and plan trips together.
+
+FOR DRIVERS
+Drive solo or take shared rides, choose how far from your route you will go for a pickup, and add riders who are on your way, even during a trip.
+
+
+WHAT CHANGED SINCE 1.11.0 (for the team; not store copy)
+--------------------------------------------------------
+In the app, new in this build:
+  - Drivers can open "Pick up riders on your way" during a trip. The button
+    used to disappear the moment the ride started, although the backend
+    always allowed it.
+  - Drivers choose their pickup radius on that screen: 0.5, 1, 1.5 or 2 km,
+    capped by the admin maximum. The list and "Pick them up" use the same
+    radius.
+  - Pool invite links say why you cannot join (for example the car's gender
+    rules) instead of failing at the join.
+  - Travel Partner shared-ride links show "waiting for the driver" when the
+    driver has to approve.
+  - The booking screen shows the new third-seat share: three riders each pay
+    45% of the solo fare (was 40%, which earned the driver nothing for the
+    third rider).
+  - Partner earnings show paisa, so small commissions are no longer Rs 0.
+
+Already live on the backend since 27 Sep 2026; these reach every build:
+  - "Pick them up" works. Every call used to fail on a Firestore write error.
+  - The same gender rules on every way into a car:
+      - instant join;
+      - driver approval;
+      - Travel Partner link;
+      - pickup on the way;
+      - the suggested-rides feed.
+  - Drivers see their real extra earnings; per-city fares; each franchise's
+    own rate; Pro plan expiry enforced.
+  - Velocity's own map: suggestions carry a unique id, so every build lists
+    and resolves them correctly.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.12.0-vc37.aab (repo root) to Play Console.
+  2. Paste the 500-character block above as the release notes.
+  3. Roll it into EVERY track that still holds vc3, vc6 or vc8. Otherwise the
+     AD_ID rejection comes back.
+  4. After the rollout is live: admin console → App version →
+     version 1.12.0 AND build 37.
+
+iOS:
+  1. Build 10 is uploaded to App Store Connect and attached to version 1.12.0,
+     with the What's New text above.
+  2. The one step left is the human "Submit for Review" click.
+  3. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.12.0 AND build 10. Never before.
