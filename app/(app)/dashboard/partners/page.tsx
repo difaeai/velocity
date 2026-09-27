@@ -114,7 +114,12 @@ function when(ts?: { seconds: number }): string {
 }
 
 function pkr(n?: number): string {
-  return `Rs ${Math.round(n ?? 0).toLocaleString('en-PK')}`;
+  // Partner cuts are kept to the paisa, so show them rather than rounding a
+  // Rs 0.30 cut down to "Rs 0".
+  const v = Math.round((n ?? 0) * 100) / 100;
+  return Number.isInteger(v)
+    ? `Rs ${v.toLocaleString('en-PK')}`
+    : `Rs ${v.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** The registration fee in whatever currency the admin configured. */

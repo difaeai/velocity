@@ -37,11 +37,12 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { requireAuth, requireRole, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
-import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { computeGenderAccess, canJoinPool, genderCounts } from '../lib/genderAccess';
+import { loadFareConfigFor } from '../fare/cityConfig';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertOutstandingClear, getCancellationSettings } from '../domain/cancellation';
@@ -64,7 +65,7 @@ import {
   validateRoutePolyline,
 } from '../lib/corridor';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
-import { rosterForTrip } from './poolRoster';
+import { enRouteRosterEntry, firstNameOf, rosterForTrip } from './poolRoster';
 import {
   CORRIDOR_REJECTION_MESSAGE,
   CorridorFit,
@@ -130,7 +131,12 @@ export interface PoolRider {
   kind: 'host' | 'share' | 'enroute';
   /** The request document they came from, for en-route riders. */
   originTripId: string | null;
-  joinedAt?: FirebaseFirestore.Timestamp | FieldValue;
+  /**
+   * A plain Timestamp, never serverTimestamp(): these riders live in an ARRAY
+   * on the trip, and Firestore rejects sentinel values inside arrays — which
+   * is exactly what made every "Pick them up" fail before this was a Timestamp.
+   */
+  joinedAt?: FirebaseFirestore.Timestamp;
 }
 
 /** The driver's corridor: where they are going and the road they take to get there. */
@@ -151,14 +157,11 @@ interface ResolvedCorridor {
 
 // ── Fare helpers ─────────────────────────────────────────────────────────────
 
-async function loadFareConfig(): Promise<CityFareConfig> {
-  try {
-    const snap = await db.doc('fareConfig/islamabad_rawalpindi').get();
-    if (snap.exists) return snap.data() as CityFareConfig;
-  } catch (e) {
-    logger.warn('enRoute: fare config unreadable, using defaults', e);
-  }
-  return DEFAULT_ISLAMABAD_RAWALPINDI;
+/** The fare table of the city the corridor starts in (see fare/cityConfig). */
+export async function loadFareConfig(
+  origin?: { lat: number; lng: number } | null,
+): Promise<CityFareConfig> {
+  return (await loadFareConfigFor(origin ?? null)) ?? DEFAULT_ISLAMABAD_RAWALPINDI;
 }
 
 /**
@@ -192,11 +195,125 @@ const seatsUsed = (riders: PoolRider[]): number =>
  * The pool tier a rider was promised on the booking screen, or null for someone
  * picked up en route who was never quoted one. Destination-pool riders keep this
  * as a ceiling forever — see INVARIANT 4 in enRouteFare.
+ *
+ * `tierBaseFare` is the fare the booking screen split: the host's AGREED fare
+ * (what they offered and the driver accepted). This used to be the engine's
+ * own solo estimate, which is usually lower — so the first pickup quietly
+ * re-priced everyone below what the driver had accepted.
  */
-function tierCapFor(rider: PoolRider, riders: PoolRider[], hostSoloFare: number): number | null {
+function tierCapFor(rider: PoolRider, riders: PoolRider[], tierBaseFare: number): number | null {
   if (rider.kind === 'enroute') return null;
   const destinationRiders = riders.filter((r) => r.kind !== 'enroute').length;
-  return poolPerSeatFare(hostSoloFare, Math.max(1, destinationRiders));
+  return poolPerSeatFare(tierBaseFare, Math.max(1, destinationRiders));
+}
+
+/** The fare the host agreed with the driver — the base of every pool tier. */
+function agreedFareOf(trip: FirebaseFirestore.DocumentData, fallback: number): number {
+  const fare = (trip.fare as number | null | undefined) ?? (trip.offeredFare as number | undefined);
+  return typeof fare === 'number' && fare > 0 ? fare : fallback;
+}
+
+/**
+ * What the driver is actually going to be paid for this trip as it stands —
+ * exactly what completeTrip would settle right now. This, not a re-pricing of
+ * the same riders, is the "before" a pickup has to beat: measured against a
+ * re-price, "+PKR 200" could be +128 in the driver's pocket, or even a loss
+ * when the host had offered well above the engine's estimate.
+ */
+export function agreedGrossOf(trip: FirebaseFirestore.DocumentData): number {
+  const stored = trip.poolDriverGross as number | undefined;
+  if (typeof stored === 'number' && stored > 0) return stored;
+  const members = (trip.poolMembers as string[] | undefined) ?? [trip.passengerId as string];
+  const n = Math.max(1, members.length);
+  const fare = agreedFareOf(trip, 0);
+  return n > 1 ? poolPerSeatFare(fare, n) * n : fare;
+}
+
+/**
+ * The priced riders stored on an en-route trip, or null when it has none.
+ *
+ * `poolMembers` is the authority on who is aboard. Anyone in it but missing
+ * from `poolRiders` joined through "Pools near you" after an en-route pickup,
+ * back when those joins were not priced in — they were left out of the car
+ * total and out of every later seat and gender check. They ride the host's
+ * road on the host's terms, so they are rebuilt from the host's row.
+ */
+function storedRiders(trip: FirebaseFirestore.DocumentData): PoolRider[] | null {
+  const stored = trip.poolRiders as PoolRider[] | undefined;
+  if (!Array.isArray(stored) || stored.length === 0) return null;
+  const members = (trip.poolMembers as string[] | undefined) ?? [];
+  const missing = members.filter((uid) => !stored.some((r) => r.uid === uid));
+  if (missing.length === 0) return stored;
+  const host = stored.find((r) => r.kind === 'host') ?? stored[0]!;
+  const roster = new Map(rosterForTrip(trip).map((r) => [r.uid, r] as const));
+  return [
+    ...stored,
+    ...missing.map((uid): PoolRider => ({
+      ...host,
+      uid,
+      name: roster.get(uid)?.firstName ?? 'Rider',
+      gender: roster.get(uid)?.gender ?? 'unspecified',
+      seats: 1,
+      kind: 'share',
+      originTripId: null,
+      joinedAt: undefined,
+    })),
+  ];
+}
+
+/**
+ * Price a rider who joined a destination pool (invite link or "Pools near
+ * you") onto a trip that already carries en-route riders.
+ *
+ * Such a trip settles from `poolDriverGross` — the leg-split total — so a
+ * joiner written only into `poolMembers` was never billed, never counted as a
+ * seat by the next pickup, and never seen by the next gender check. They are
+ * priced in here like everyone else: they ride the host's road, their tier
+ * ceiling is the host's agreed fare, and they never pay more than the per-seat
+ * fare they were quoted to join. Null when the trip has no en-route pricing.
+ */
+export function priceShareJoinerOnto(
+  trip: FirebaseFirestore.DocumentData,
+  joiner: { uid: string; name: string; gender: string },
+  cfg: CityFareConfig,
+): {
+  riders: PoolRider[];
+  fares: Record<string, number>;
+  gross: number;
+  joinerFare: number;
+  male: number;
+  female: number;
+} | null {
+  const existing = storedRiders(trip);
+  if (!existing) return null;
+  const host = existing.find((r) => r.kind === 'host') ?? existing[0]!;
+  const category = RIDE_TO_CAT[(trip.rideType as string) ?? 'mini'] ?? 'mini';
+  const tierBase = agreedFareOf(trip, host.soloFare);
+  const others = existing.filter((r) => r.uid !== joiner.uid);
+  const rider: PoolRider = {
+    ...host,
+    uid: joiner.uid,
+    name: firstNameOf(joiner.name),
+    gender: joiner.gender,
+    seats: 1,
+    kind: 'share',
+    originTripId: null,
+    joinedAt: undefined,
+  };
+  const all = [...others, rider];
+  const priced = priceRiders(all, cfg, category, tierBase);
+  const quote = poolPerSeatFare(tierBase, all.length);
+  const joinerFare = Math.min(priced.fares[rider.uid]!, quote);
+  const fares = { ...priced.fares, [rider.uid]: joinerFare };
+  const gross = priced.driverGross - priced.fares[rider.uid]! + joinerFare;
+  const riders: PoolRider[] = all.map((r) => ({
+    ...r,
+    fare: fares[r.uid]!,
+    billableKm: Math.round((priced.billableKm[r.uid] ?? 0) * 100) / 100,
+    joinedAt: r.joinedAt ?? Timestamp.now(),
+  }));
+  for (const r of riders) delete (r as { mixedRideOk?: boolean }).mixedRideOk;
+  return { riders, fares, gross, joinerFare, male: maleCount(riders), female: femaleCount(riders) };
 }
 
 /** Turn the stored riders into what the split needs, then price them. */
@@ -204,7 +321,7 @@ function priceRiders(
   riders: PoolRider[],
   cfg: CityFareConfig,
   category: VehicleCategory,
-  hostSoloFare: number,
+  tierBaseFare: number,
 ) {
   const segments: RiderSegment[] = riders.map((r) => ({
     uid: r.uid,
@@ -213,7 +330,7 @@ function priceRiders(
     pickupOffsetM: r.pickupOffsetM,
     dropoffOffsetM: r.dropoffOffsetM,
     soloFare: r.soloFare,
-    tierCap: tierCapFor(r, riders, hostSoloFare),
+    tierCap: tierCapFor(r, riders, tierBaseFare),
   }));
   return splitEnRouteFares(segments, cfg, category);
 }
@@ -234,8 +351,8 @@ function ridersOnTrip(
   corridor: Corridor,
   cfg: CityFareConfig,
 ): PoolRider[] {
-  const stored = trip.poolRiders as PoolRider[] | undefined;
-  if (Array.isArray(stored) && stored.length > 0) return stored;
+  const stored = storedRiders(trip);
+  if (stored) return stored;
 
   const hostId = trip.passengerId as string;
   const members = (trip.poolMembers as string[] | undefined) ?? [hostId];
@@ -599,10 +716,8 @@ export const getEnRouteMatches = onCall(async (req) => {
   if (carrier && ((carrier.get('paymentMethod') as string) ?? 'cash') !== 'cash') {
     return { matches: [], seatsLeft: 0, walletTrip: true };
   }
-  const [resolved, cfg] = await Promise.all([
-    resolveCorridor(ctx.uid, polyline, carrier),
-    loadFareConfig(),
-  ]);
+  const resolved = await resolveCorridor(ctx.uid, polyline, carrier);
+  const cfg = await loadFareConfig(resolved.origin);
   const { corridor, destination, settings } = resolved;
 
   // How far along its own route the car already is — gate 4.
@@ -615,8 +730,12 @@ export const getEnRouteMatches = onCall(async (req) => {
   const existing: PoolRider[] = carrier ? ridersOnTrip(carrier.data()!, corridor, cfg) : [];
   const category =
     RIDE_TO_CAT[(carrier?.get('rideType') as string) ?? 'mini'] ?? 'mini';
-  const hostSolo = existing.find((r) => r.kind === 'host')?.soloFare ?? 0;
-  const grossBefore = carrier ? priceRiders(existing, cfg, category, hostSolo).driverGross : 0;
+  // The tiers are cut from the fare the host agreed, and "before" is what the
+  // driver would actually be paid right now — not a re-pricing of the same car.
+  const tierBase = carrier
+    ? agreedFareOf(carrier.data()!, existing.find((r) => r.kind === 'host')?.soloFare ?? 0)
+    : 0;
+  const grossBefore = carrier ? agreedGrossOf(carrier.data()!) : 0;
   const seatsLeft = MAX_POOL_RIDERS - seatsUsed(existing);
 
   if (seatsLeft <= 0) return { matches: [], seatsLeft: 0, corridorRadiusM: settings.corridorRadiusM };
@@ -663,7 +782,7 @@ export const getEnRouteMatches = onCall(async (req) => {
     if (!gate.allowed) continue;
 
     // Price the car as it would be with them in it.
-    const priced = priceRiders([...existing, candidate], cfg, category, hostSolo || candidate.soloFare);
+    const priced = priceRiders([...existing, candidate], cfg, category, tierBase || candidate.soloFare);
 
     // Gate 5 — never charge them more than the fare they themselves offered. It
     // is what makes taking them without a further ask defensible: they wanted a
@@ -738,7 +857,7 @@ async function buildCandidate(
 
   return {
     uid,
-    name: (d.passengerName as string) ?? 'Rider',
+    name: firstNameOf(d.passengerName),
     gender: (d.passengerGender as string) ?? 'unspecified',
     seats: (d.seats as number) ?? 1,
     rideType,
@@ -769,8 +888,7 @@ function genderGate(
 ): { allowed: true } | { allowed: false; reason: string } {
   if (existing.length === 0) return { allowed: true }; // an empty car has no composition
 
-  const male = maleCount(existing);
-  const female = femaleCount(existing);
+  const { male, female, other } = genderCounts(existing);
   const composition = computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any');
 
   return canJoinPool({
@@ -779,6 +897,35 @@ function genderGate(
     femaleSeats: female,
     joinerGender: candidate.gender,
     joinerMixedRideOk: candidate.mixedRideOk === true,
+    otherSeats: other,
+  });
+}
+
+/**
+ * The same gender rules, for someone joining a destination pool from "Pools
+ * near you" or an invite link (trips/poolShare). Those joins used to skip every
+ * rule — only the tally was bumped — so this is the one gate both doors to the
+ * same car now go through.
+ */
+export function poolJoinGenderGate(
+  trip: FirebaseFirestore.DocumentData,
+  joinerGender: string,
+  joinerMixedRideOk: boolean,
+): { allowed: true } | { allowed: false; reason: string } {
+  const stored = trip.poolRiders as PoolRider[] | undefined;
+  const aboard: { gender?: string | null; seats?: number }[] =
+    Array.isArray(stored) && stored.length > 0
+      ? stored
+      : rosterForTrip(trip).map((r) => ({ gender: r.gender }));
+  if (aboard.length === 0) return { allowed: true };
+  const { male, female, other } = genderCounts(aboard);
+  return canJoinPool({
+    currentComposition: computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any'),
+    maleSeats: male,
+    femaleSeats: female,
+    joinerGender,
+    joinerMixedRideOk,
+    otherSeats: other,
   });
 }
 
@@ -813,12 +960,11 @@ export const acceptEnRouteRider = onCall(async (req) => {
   if (!parsed.success) invalid('Provide the ride to pick up.');
   const { tripId, polyline, driverLat, driverLng } = parsed.data;
 
-  const [driverSnap, walletSnap, commission, cancellation, cfg] = await Promise.all([
+  const [driverSnap, walletSnap, commission, cancellation] = await Promise.all([
     db.doc(`drivers/${ctx.uid}`).get(),
     db.doc(`wallets/${ctx.uid}`).get(),
     getCommissionSettings(),
     getCancellationSettings(),
-    loadFareConfig(),
   ]);
   if (driverSnap.get('verificationStatus') !== 'approved') {
     throw new HttpsError('permission-denied', 'Driver is not approved.');
@@ -834,6 +980,7 @@ export const acceptEnRouteRider = onCall(async (req) => {
 
   const carrierSnap = await activeCarrierTrip(ctx.uid);
   const resolved = await resolveCorridor(ctx.uid, polyline, carrierSnap);
+  const cfg = await loadFareConfig(resolved.origin);
   const { corridor, destination, settings } = resolved;
 
   const driverAlongM =
@@ -933,7 +1080,10 @@ export const acceptEnRouteRider = onCall(async (req) => {
     const rideType = (candidateSnap.get('rideType') as string) ?? 'mini';
     const candidate: PoolRider & { mixedRideOk: boolean } = {
       uid: riderUid,
-      name: (userSnap.get('name') as string) ?? (userSnap.get('displayName') as string) ?? 'Rider',
+      // First name only: every co-rider can read the trip document.
+      name: firstNameOf(
+        (userSnap.get('name') as string | undefined) ?? (userSnap.get('displayName') as string | undefined),
+      ),
       gender: (candidateSnap.get('passengerGender') as string) ?? 'unspecified',
       seats,
       rideType,
@@ -956,14 +1106,15 @@ export const acceptEnRouteRider = onCall(async (req) => {
 
     // ── Money ──
     const category = RIDE_TO_CAT[(carrierData.rideType as string) ?? 'mini'] ?? 'mini';
-    const hostSolo =
-      existing.find((r) => r.kind === 'host')?.soloFare ?? candidate.soloFare;
-    const grossBefore = isFirstRider
-      ? 0
-      : priceRiders(existing, cfg, category, hostSolo).driverGross;
+    // Tiers are cut from the fare the host agreed with the driver, and the
+    // pickup has to beat what the driver would actually be paid right now.
+    const tierBase = isFirstRider
+      ? candidate.soloFare
+      : agreedFareOf(carrierData, existing.find((r) => r.kind === 'host')?.soloFare ?? candidate.soloFare);
+    const grossBefore = isFirstRider ? 0 : agreedGrossOf(carrierData);
 
     const nextRiders = [...existing, candidate];
-    const priced = priceRiders(nextRiders, cfg, category, hostSolo);
+    const priced = priceRiders(nextRiders, cfg, category, tierBase);
 
     const theirFare = priced.fares[candidate.uid]!;
     const offered = candidateSnap.get('offeredFare') as number;
@@ -987,7 +1138,10 @@ export const acceptEnRouteRider = onCall(async (req) => {
       ...r,
       fare: priced.fares[r.uid]!,
       billableKm: Math.round((priced.billableKm[r.uid] ?? 0) * 100) / 100,
-      joinedAt: r.joinedAt ?? FieldValue.serverTimestamp(),
+      // Timestamp.now(), NOT serverTimestamp(): this is an array element, and a
+      // sentinel inside an array makes Firestore reject the whole write — every
+      // en-route pickup used to fail right here.
+      joinedAt: r.joinedAt ?? Timestamp.now(),
     }));
     // `mixedRideOk` was only needed for the gate — it is not the trip's business.
     for (const r of sealed) delete (r as { mixedRideOk?: boolean }).mixedRideOk;
@@ -995,6 +1149,19 @@ export const acceptEnRouteRider = onCall(async (req) => {
     const members = sealed.map((r) => r.uid);
     const male = maleCount(sealed);
     const female = femaleCount(sealed);
+    const rosterBefore = rosterForTrip(carrierData).filter((r) => r.uid !== candidate.uid);
+    const rosterAfter = isFirstRider
+      ? rosterForTrip(carrierData)
+      : [
+          ...rosterBefore,
+          enRouteRosterEntry({
+            uid: candidate.uid,
+            name: candidate.name,
+            gender: candidate.gender,
+            pickup: candidate.pickup,
+            dropoff: candidate.dropoff,
+          }),
+        ];
 
     const enRoute = {
       active: true,
@@ -1035,6 +1202,12 @@ export const acceptEnRouteRider = onCall(async (req) => {
         maleSeats: male,
         femaleSeats: female,
         genderComposition: computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any'),
+        // What people OUTSIDE the car read before joining it ("Pools near you",
+        // the invite screen): the roster and the ♂/♀ tally. Both used to stop at
+        // the riders who booked, so a picked-up man showed up as a nameless
+        // "Rider" and was missing from the count a woman decides on.
+        poolRoster: rosterAfter,
+        poolGenders: { male, female },
         enRoute,
         updatedAt: FieldValue.serverTimestamp(),
       },

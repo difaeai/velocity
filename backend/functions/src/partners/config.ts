@@ -139,13 +139,18 @@ export function ratesForTier(settings: PartnerSettings, tier: PartnerTier): Tier
 }
 
 /**
- * A partner's cut of one ride, in whole rupees.
+ * A partner's cut of one ride, in rupees to the paisa (two decimals).
  *
  * `platformCommission` — Velocity's commission on the ride. NOT the fare.
+ *
+ * This used to round to whole rupees, which quietly paid Free partners nothing
+ * on almost every city ride: 0.5% of a Rs 60 commission is Rs 0.30, and
+ * Math.round(0.3) is 0. Balances accumulate the paisa instead, and are rounded
+ * only when they are shown or withdrawn.
  */
 export function partnerCut(platformCommission: number, fleetRate: number): number {
   if (!(platformCommission > 0) || !(fleetRate > 0)) return 0;
-  return Math.round(platformCommission * fleetRate);
+  return Math.round(platformCommission * fleetRate * 100) / 100;
 }
 
 // The payout waterfall itself — franchise first, then each fleet in priority

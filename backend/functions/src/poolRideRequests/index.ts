@@ -376,6 +376,7 @@ export const joinPoolRideRequest = onCall(async (req) => {
       femaleSeats,
       joinerGender: passengerGender,
       joinerMixedRideOk,
+      otherSeats: Math.max(0, ((data.filledSlots as number) ?? 0) - maleSeats - femaleSeats),
     });
     if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
 
@@ -535,6 +536,7 @@ export const driverRespondToPoolRequestJoin = onCall(async (req) => {
       femaleSeats,
       joinerGender: riderGender,
       joinerMixedRideOk: await getUserMixedRideOk(riderId),
+      otherSeats: Math.max(0, ((data.filledSlots as number) ?? 0) - maleSeats - femaleSeats),
     });
     if (!check.allowed) throw new HttpsError('failed-precondition', check.reason);
 

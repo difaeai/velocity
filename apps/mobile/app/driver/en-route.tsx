@@ -48,6 +48,21 @@ import type { GeoPoint } from '../../src/domain/types';
 /** Re-check the corridor this often — riders appear and are taken by others. */
 const REFRESH_MS = 20_000;
 
+/** How far off the road a pickup may be, and a drop-off from the destination. */
+interface Radii {
+  corridorM: number;
+  destM: number;
+}
+/** The admin defaults (config/enRouteSettings), until the backend says otherwise. */
+const DEFAULT_RADII: Radii = { corridorM: 1000, destM: 4000 };
+
+/** 1000 → "1 km", 1500 → "1.5 km", 500 → "500 m". */
+function distanceLabel(m: number): string {
+  if (m < 1000) return `${Math.round(m)} m`;
+  const km = Math.round(m / 100) / 10;
+  return `${km} km`;
+}
+
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -71,6 +86,8 @@ export default function EnRoute() {
   const [routeLabel, setRouteLabel] = useState<string>('');
   const [matches, setMatches] = useState<EnRouteMatch[]>([]);
   const [seatsLeft, setSeatsLeft] = useState(0);
+  /** The radii the backend used — admin-set, so never assumed here. */
+  const [radii, setRadii] = useState<Radii>(DEFAULT_RADII);
   const [walletTrip, setWalletTrip] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -108,6 +125,10 @@ export default function EnRoute() {
       });
       setMatches(res.matches ?? []);
       setSeatsLeft(res.seatsLeft ?? 0);
+      setRadii({
+        corridorM: res.corridorRadiusM ?? DEFAULT_RADII.corridorM,
+        destM: res.destRadiusM ?? DEFAULT_RADII.destM,
+      });
       setWalletTrip(res.walletTrip === true);
     } catch (e) {
       Alert.alert('Could not search', (e as Error).message);
@@ -162,6 +183,7 @@ export default function EnRoute() {
     return (
       <RouteSetter
         coords={coords}
+        radii={radii}
         onReady={(encoded, label) => {
           setPolyline(encoded);
           setRouteLabel(label);
@@ -185,7 +207,7 @@ export default function EnRoute() {
         <Text style={styles.routeLabel} numberOfLines={1}>{routeLabel}</Text>
         <Text style={styles.routeHint}>
           {onTrip
-            ? 'Anyone within 1 km of this route who is also heading your way'
+            ? `Anyone within ${distanceLabel(radii.corridorM)} of this route who is also heading your way`
             : 'We only show riders who are on this road and finishing near where you finish'}
         </Text>
       </View>
@@ -356,9 +378,11 @@ function Notice({ text }: { text: string }) {
 
 function RouteSetter({
   coords,
+  radii,
   onReady,
 }: {
   coords: { lat: number; lng: number } | null;
+  radii: Radii;
   onReady: (polyline: string | undefined, label: string) => void;
 }) {
   const router = useRouter();
@@ -444,8 +468,8 @@ function RouteSetter({
 
         <View style={styles.rules}>
           <Text style={styles.rulesTitle}>How it works</Text>
-          <Text style={styles.rule}>· Only riders within 1 km of your road are shown.</Text>
-          <Text style={styles.rule}>· They must finish within 4 km of where you finish.</Text>
+          <Text style={styles.rule}>· Only riders within {distanceLabel(radii.corridorM)} of your road are shown.</Text>
+          <Text style={styles.rule}>· They must finish within {distanceLabel(radii.destM)} of where you finish.</Text>
           <Text style={styles.rule}>· Only people who booked a pool — nobody is put in your car by surprise.</Text>
           <Text style={styles.rule}>· Everyone pays for the road they are actually on. You keep the rest.</Text>
         </View>

@@ -92,8 +92,25 @@ async function loadEdge(path: string): Promise<ReferralEdge | null> {
     uid: snap.get('uid') as string,
     partnerId,
     fleetId: snap.get('fleetId') as string,
-    tier: ((partner.get('tier') as PartnerTier | undefined) ?? 'free'),
+    tier: effectiveTier(partner),
   };
+}
+
+/**
+ * The tier a partner is paid at right now. A Pro plan is bought for a fixed
+ * number of months and `proExpiresAt` is stamped at approval; once it passes,
+ * rides pay Free rates until the plan is renewed. Only the fleet portal used
+ * to look at the expiry, so an expired plan kept earning Pro rates forever.
+ */
+export function effectiveTier(
+  partner: FirebaseFirestore.DocumentSnapshot,
+  now: number = Date.now(),
+): PartnerTier {
+  const tier = (partner.get('tier') as PartnerTier | undefined) ?? 'free';
+  if (tier !== 'pro') return tier;
+  const expires = partner.get('proExpiresAt') as { toMillis?: () => number } | null | undefined;
+  const ms = typeof expires?.toMillis === 'function' ? expires.toMillis() : null;
+  return ms !== null && ms <= now ? 'free' : 'pro';
 }
 
 export interface PrepareArgs {

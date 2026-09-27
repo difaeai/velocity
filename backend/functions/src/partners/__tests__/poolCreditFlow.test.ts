@@ -166,8 +166,8 @@ describe('a pool ride with recruited people aboard', () => {
     expect(await pending(DRIVER_PARTNER)).toBe(4);
 
     // Free rider-side partner: Ahmed's seat carried Rs 100 of the commission;
-    // 0.5% of that rounds to Rs 1 — NOT 0.5% of the whole Rs 200.
-    expect(await pending(RIDER_PARTNER)).toBe(1);
+    // 0.5% of that is Rs 0.50, kept to the paisa — NOT 0.5% of the whole Rs 200.
+    expect(await pending(RIDER_PARTNER)).toBe(0.5);
 
     // One receipt per member per role.
     const driverRow = await db().doc(`partner_transactions/${RIDE_ID}_${DRIVER}_driver`).get();
@@ -179,7 +179,7 @@ describe('a pool ride with recruited people aboard', () => {
 
     const ahmedRow = await db().doc(`partner_transactions/${RIDE_ID}_${AHMED}_passenger`).get();
     expect(ahmedRow.exists).toBe(true);
-    expect(ahmedRow.get('fleetCommission')).toBe(1);
+    expect(ahmedRow.get('fleetCommission')).toBe(0.5);
     expect(ahmedRow.get('rideFare')).toBe(PER_SEAT);
 
     // Bilal has no recruiter: no receipt, nobody paid for him.
@@ -194,7 +194,7 @@ describe('a pool ride with recruited people aboard', () => {
     expect(ahmedEdge.get('completedRides')).toBe(1);
     expect(ahmedEdge.get('totalRideValue')).toBe(PER_SEAT);
     expect(ahmedEdge.get('platformCommissionGenerated')).toBe(100);
-    expect(ahmedEdge.get('fleetCommissionGenerated')).toBe(1);
+    expect(ahmedEdge.get('fleetCommissionGenerated')).toBe(0.5);
 
     const driverEdge = await db().doc(`driver_referrals/${DRIVER}`).get();
     expect(driverEdge.get('totalRideValue')).toBe(2 * PER_SEAT);

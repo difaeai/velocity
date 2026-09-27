@@ -317,6 +317,14 @@ export default function PoolJoinScreen() {
                   : 'No driver yet, so you get in straight away — and the pool goes looking for a car with you already in it.'}
               </Text>
             </>
+          ) : info.blockedReason ? (
+            <>
+              <Text style={styles.stateNote}>{"You can't join this shared ride."}</Text>
+              <Text style={styles.finePrint}>{info.blockedReason}</Text>
+              <Pressable style={styles.primaryBtn} onPress={() => router.replace('/passenger/booking')}>
+                <Text style={styles.primaryBtnTxt}>Book my own shared ride</Text>
+              </Pressable>
+            </>
           ) : info.awaitingDriver ? (
             <>
               {/* A pool whose gathering window has run out. Not a dead end for

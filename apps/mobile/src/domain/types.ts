@@ -160,7 +160,7 @@ export interface PoolRosterEntry {
   firstName: string;
   gender: Gender | string;
   /** 'host' booked the ride · 'share' joined it by link or from discovery. */
-  kind: 'host' | 'share';
+  kind: 'host' | 'share' | 'enroute';
   pickupAddress: string | null;
   dropoffAddress: string | null;
   joinedAt?: { seconds: number } | null;

@@ -63,8 +63,16 @@ export function canJoinPool(opts: {
   femaleSeats: number;
   joinerGender: string;
   joinerMixedRideOk: boolean;
+  /**
+   * Riders already aboard whose gender is not set. They are invisible to the
+   * male/female counts above, so without this a woman could be seated next to
+   * one with no say in it. Treated as "could be either" — see below.
+   */
+  otherSeats?: number;
 }): { allowed: true } | { allowed: false; reason: string } {
   const { currentComposition, maleSeats, femaleSeats, joinerGender, joinerMixedRideOk } = opts;
+  const otherSeats = Math.max(0, opts.otherSeats ?? 0);
+  const joinerKnown = joinerGender === 'male' || joinerGender === 'female';
 
   if (currentComposition === 'none') {
     return { allowed: false, reason: 'This ride is full or no longer accepting passengers.' };
@@ -94,7 +102,40 @@ export function canJoinPool(opts: {
           'Enable "Open to mixed-gender rides" in your pool preferences to join.',
       };
     }
+
+    // A rider whose gender is not set can be anyone, so neither side of that
+    // seat can have agreed to it. Sharing a car with them — or being them and
+    // sharing a car with others — takes the same opt-in a mixed ride does.
+    // Without this the counts above never see them and the consent step is
+    // silently skipped.
+    const occupied = maleSeats + femaleSeats + otherSeats > 0;
+    if (occupied && (!joinerKnown || otherSeats > 0) && !joinerMixedRideOk) {
+      return {
+        allowed: false,
+        reason: joinerKnown
+          ? 'Someone in this ride has not set their gender, so it may be shared with the opposite gender. '
+            + 'Enable "Open to mixed-gender rides" in your pool preferences to join.'
+          : 'Set your gender in your profile to share a ride, or enable '
+            + '"Open to mixed-gender rides" in your pool preferences.',
+      };
+    }
   }
 
   return { allowed: true };
+}
+
+/** Gender counts of the people already in a car, including the unknown ones. */
+export function genderCounts(
+  riders: ReadonlyArray<{ gender?: string | null; seats?: number }>,
+): { male: number; female: number; other: number } {
+  let male = 0;
+  let female = 0;
+  let other = 0;
+  for (const r of riders) {
+    const n = r.seats && r.seats > 0 ? r.seats : 1;
+    if (r.gender === 'male') male += n;
+    else if (r.gender === 'female') female += n;
+    else other += n;
+  }
+  return { male, female, other };
 }

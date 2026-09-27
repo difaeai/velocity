@@ -31,12 +31,15 @@ export const MAX_SEATS = 4;
 
 /**
  * Pool rides — per-seat fare as a share of the solo fare, by total riders.
- * 2 riders → each pays 60% · 3 → 40% · 4 → 35%. Every rider saves versus
- * riding alone while the driver's gross grows with each extra stop
- * (perSeat × riders). Mirrors POOL_TIERS on the mobile booking screen.
+ * 2 riders → each pays 60% · 3 → 45% · 4 → 35%. Every rider saves versus
+ * riding alone, and the driver's gross must grow with EVERY extra stop
+ * (perSeat × riders): 100% → 120% → 135% → 140%. The third tier used to be 40%,
+ * which made three riders worth exactly as much as two (120% both ways), so a
+ * driver had every reason to refuse the third person. Mirrors POOL_TIERS on
+ * the mobile booking screen.
  */
 export const MAX_POOL_RIDERS = 4;
-const POOL_SEAT_PCT: Record<number, number> = { 1: 1, 2: 0.6, 3: 0.4, 4: 0.35 };
+const POOL_SEAT_PCT: Record<number, number> = { 1: 1, 2: 0.6, 3: 0.45, 4: 0.35 };
 
 export function poolPerSeatFare(soloFare: number, riders: number): number {
   const n = Math.min(Math.max(Math.trunc(riders) || 1, 1), MAX_POOL_RIDERS);

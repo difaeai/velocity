@@ -667,11 +667,13 @@ export default function DriverHome() {
             })()}
             {/* Riders on the way. Only on a cash pool with a seat still free —
                 a solo booker never shares their car, and a wallet trip holds only
-                the host's fare so there is no money to pay for an extra rider. */}
+                the host's fare so there is no money to pay for an extra rider.
+                Shown during the ride as well: picking up somebody standing on
+                the road ahead is the whole point of the feature, and the backend
+                refuses anyone the car has already driven past. */}
             {activeTrip.pool === true
               && (activeTrip.paymentMethod ?? 'cash') === 'cash'
-              && (activeTrip.poolMembers?.length ?? 1) < (activeTrip.maxPoolRiders ?? 4)
-              && activeTrip.status !== 'in_progress' && (
+              && (activeTrip.poolMembers?.length ?? 1) < (activeTrip.maxPoolRiders ?? 4) && (
               <Pressable
                 style={styles.enRouteCta}
                 onPress={() => router.push('/driver/en-route')}

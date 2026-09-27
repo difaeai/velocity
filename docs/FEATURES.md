@@ -187,7 +187,7 @@ Admins can also fully CRUD accounts from the console:
    places are offered; history is a modal (`app/passenger/activity.tsx`,
    `saved-places.tsx`).
 2. **Mode.** Solo or Pool, with the pool saving ladder shown up front
-   (60% / 40% / 35%, see [§4](#4-ride-pooling)), plus any **public pools already
+   (60% / 45% / 35%, see [§4](#4-ride-pooling)), plus any **public pools already
    going your way** on this exact route.
 3. **Details.** Vehicle category carousel, seat count, gender, payment method
    (cash / wallet), promo code, your offered fare, and — for pools — public vs
@@ -353,7 +353,7 @@ screen:
 |---|---|
 | 1 (solo) | 100% |
 | 2 | **60%** |
-| 3 | **40%** |
+| 3 | **45%** |
 | 4 | **35%** |
 
 Everyone saves versus riding alone, and the driver's gross **rises** with each

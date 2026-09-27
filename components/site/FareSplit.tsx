@@ -13,7 +13,7 @@ import styles from './site.module.css';
  * to understand once you have watched the number fall, so it gets the
  * interaction budget. The percentages are the real ones the fare engine
  * applies, not illustrative figures: a solo rider pays the whole fare, two
- * riders pay 60% each, three pay 40%, four pay 35%.
+ * riders pay 60% each, three pay 45%, four pay 35%.
  *
  * Accessibility: the buttons are a labelled group of toggles rather than a
  * slider, so they are reachable by Tab and operable by Space/Enter with no
@@ -23,7 +23,7 @@ import styles from './site.module.css';
 const SOLO_FARE = 480;
 
 /** Share of the solo fare each rider pays, indexed by rider count. */
-const SHARE = [1, 0.6, 0.4, 0.35];
+const SHARE = [1, 0.6, 0.45, 0.35];
 
 export function FareSplit() {
   const [riders, setRiders] = useState(1);

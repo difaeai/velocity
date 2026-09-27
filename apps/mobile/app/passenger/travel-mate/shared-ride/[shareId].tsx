@@ -33,6 +33,8 @@ export default function SharedRideScreen() {
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [booked, setBooked] = useState(false);
+  /** A pool ride with a driver: the seat is a request the driver still has to accept. */
+  const [pending, setPending] = useState(false);
 
   const load = useCallback(async () => {
     if (!shareId) return;
@@ -55,8 +57,9 @@ export default function SharedRideScreen() {
     if (!shareId) return;
     setBooking(true);
     try {
-      await api.bookSharedTravelMateRide({ shareId });
-      setBooked(true);
+      const res = await api.bookSharedTravelMateRide({ shareId });
+      if (res.pending) setPending(true);
+      else setBooked(true);
       await load();
     } catch (e: unknown) {
       if (e instanceof FirebaseError && e.code === 'functions/failed-precondition') {
@@ -128,12 +131,22 @@ export default function SharedRideScreen() {
             )}
           </Card>
 
-          {joined ? (
+          {pending && !joined ? (
+            <Card>
+              <Text style={s.joinedEmoji}>🙋</Text>
+              <Text style={s.joinedTitle}>Request sent to the driver</Text>
+              <Text style={s.joinedSub}>
+                {"This is a shared ride that already has a driver, so they decide who else gets in. You'll get a notification when they answer."}
+              </Text>
+            </Card>
+          ) : joined ? (
             <Card>
               <Text style={s.joinedEmoji}>✅</Text>
               <Text style={s.joinedTitle}>{"You're on this ride"}</Text>
               <Text style={s.joinedSub}>
-                Ride together and split the fare afterwards from your group, or settle in cash.
+                {ride.pool
+                  ? 'You have your own seat on this shared ride and pay your share to the driver.'
+                  : 'Ride together and split the fare afterwards from your group, or settle in cash.'}
               </Text>
               {ride.groupId && (
                 <PrimaryButton

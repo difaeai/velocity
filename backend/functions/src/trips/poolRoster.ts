@@ -47,7 +47,7 @@
 import { Timestamp } from '../lib/firebase';
 
 /** How somebody came to be in the car. */
-export type PoolRosterKind = 'host' | 'share';
+export type PoolRosterKind = 'host' | 'share' | 'enroute';
 
 /** One rider on a destination pool, as stored on the trip document. */
 export interface PoolRosterEntry {
@@ -118,6 +118,22 @@ export function joinerRosterEntry(args: {
   dropoff: unknown;
 }): PoolRosterEntry {
   return { ...hostRosterEntry(args), kind: 'share' };
+}
+
+/**
+ * A rider picked up on the way. They used to exist only in `poolRiders`, so
+ * the roster — which is what "Pools near you" and the invite screen read —
+ * showed them as a nameless "Rider" of unknown gender, and the ♂/♀ count a
+ * woman looks at before joining left them out entirely.
+ */
+export function enRouteRosterEntry(args: {
+  uid: string;
+  name: unknown;
+  gender: unknown;
+  pickup: unknown;
+  dropoff: unknown;
+}): PoolRosterEntry {
+  return { ...hostRosterEntry(args), kind: 'enroute' };
 }
 
 /**

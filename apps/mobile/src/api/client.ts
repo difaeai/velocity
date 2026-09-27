@@ -129,7 +129,7 @@ export interface PoolCompanion {
   firstName: string;
   gender: Gender | string;
   /** How they came to be aboard — 'host' booked it, 'share' joined it. */
-  kind?: 'host' | 'share';
+  kind?: 'host' | 'share' | 'enroute';
 }
 
 export interface PoolTripByCode {
@@ -150,6 +150,8 @@ export interface PoolTripByCode {
   perSeatFareNow: number;
   perSeatFareIfYouJoin: number;
   joinable: boolean;
+  /** Why this rider cannot join, when the car's gender rules say no. */
+  blockedReason?: string | null;
   /**
    * The ride exists but has not settled a fare with a driver yet, so it cannot
    * be joined *yet* — which is a different thing from full or departed, and the
@@ -925,7 +927,15 @@ export const api = {
   >('getSharedTravelMateRide'),
   bookSharedTravelMateRide: callable<
     { shareId: string },
-    { booked: boolean; alreadyJoined: boolean; tripId: string | null }
+    {
+      booked: boolean;
+      /** A pool ride with a driver: the seat is a request the driver answers. */
+      pending?: boolean;
+      alreadyJoined: boolean;
+      tripId: string | null;
+      /** Your per-seat fare on a pool ride; null when you ride along on a solo one. */
+      farePerSeat?: number | null;
+    }
   >('bookSharedTravelMateRide'),
   sendTravelMateGroupMessage: callable<
     { groupId: string; text: string },
@@ -1816,6 +1826,8 @@ export interface SharedTravelMateRide {
   pickupAddress: string;
   dropoffAddress: string;
   rideType: string | null;
+  /** A pool ride seats partners through the pool; a solo ride lets them ride along. */
+  pool?: boolean;
   fare: number | null;
   status: 'open' | 'closed';
   groupId: string | null;
