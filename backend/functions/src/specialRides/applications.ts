@@ -3,7 +3,14 @@ import { onCall } from 'firebase-functions/v2/https';
 import { db } from '../lib/firebase';
 import { invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { applicationSchema, parseOrInvalid, reviewSchema, suspendSchema } from './schemas';
+import {
+  APPLICATION_MESSAGES,
+  applicationSchema,
+  hasBothDocuments,
+  parseOrInvalid,
+  reviewSchema,
+  suspendSchema,
+} from './schemas';
 import { SpecialRidesApplication, SpecialRidesListing } from './types';
 
 /**
@@ -23,11 +30,9 @@ export const submitSpecialRidesApplication = onCall(
       ownerName,
       ownerPhone,
       instructions,
-    } = parseOrInvalid(applicationSchema, request.data, invalid);
-
-    if (!documentUrls.insuranceProof || !documentUrls.vehicleRegistration) {
-      invalid('Insurance proof and vehicle registration are required');
-    }
+    } = parseOrInvalid(applicationSchema, request.data, invalid, APPLICATION_MESSAGES);
+    // Missing papers are accepted here and caught at approval — see
+    // `documentUrls` in schemas.ts for why.
 
     const applicationId = db.collection('specialRidesApplications').doc().id;
     const now = Date.now();
@@ -86,6 +91,15 @@ export const adminReviewSpecialRidesApplication = onCall(
     const now = Date.now();
 
     if (decision === 'approve') {
+      // A car only goes live with its papers on file. Submission tolerates them
+      // missing, so this is the one place the requirement is enforced.
+      if (!hasBothDocuments(app.documentUrls)) {
+        invalid(
+          'This application has no insurance or registration documents yet. ' +
+            'Ask the host for them first.',
+        );
+      }
+
       // Create active listing
       // The insurance and registration papers stay on the application, which
       // only the owner and admins can read. The listing is readable by every

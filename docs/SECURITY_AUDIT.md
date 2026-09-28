@@ -395,3 +395,14 @@ migration rather than a code change: App Check (§3), `intercityChats` reads
 (§5, needs a member backfill), verified App Links (§10, needs the Play signing
 SHA-256), API key restriction (§11). Chat attachments
 (`travelMateChat/`) deliberately still accept any document type.
+
+**Special Rides papers (same day, follow-up).** Hosts could never submit: the
+app had no upload for the insurance and registration papers and sent both
+empty, and the callable refused that. The app now uploads them to
+`specialRides/{uid}/documents/` (owner and admin read only, images only, covered
+by `tests/storage.rules.test.mjs`). Submission accepts missing papers so builds
+up to 1.12.0 are not turned away; **approval** is where both are required, and
+the console shows the papers and offers "Ask for documents" instead of Approve
+when they are missing. Production held no Special Rides data at the time, and
+all 26 existing driver documents were JPEG or PNG, so neither the approval gate
+nor the driver-document type cap affected anyone.

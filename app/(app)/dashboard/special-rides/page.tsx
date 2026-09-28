@@ -2,35 +2,98 @@
 
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import Link from 'next/link';
 
 import { adminApi } from '@/lib/api';
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
-import { Button } from '@/components/ui';
 
 interface Photo {
   url: string;
   uploadedAt: number;
 }
 
+/** Only what the cards print. Year can be null: a cleared field on the app. */
+interface CarDetails {
+  year?: number | null;
+  make?: string;
+  model?: string;
+}
+
 interface Application {
   id: string;
   uid: string;
   status: 'pending' | 'approved' | 'rejected' | 'resubmit';
-  carDetails: Record<string, unknown>;
+  carDetails: CarDetails;
   ownerName: string;
   ownerPhone: string;
   pricePerDay: number;
   photos?: Photo[];
+  documentUrls?: { insuranceProof?: string; vehicleRegistration?: string };
   submittedAt: number;
+}
+
+const DOCUMENTS = [
+  { key: 'insuranceProof', label: 'Insurance proof' },
+  { key: 'vehicleRegistration', label: 'Vehicle registration' },
+] as const;
+
+/**
+ * The backend refuses to approve without both papers (app builds up to 1.12.0
+ * could not upload them), so the console says so up front instead of letting
+ * Approve fail.
+ */
+function hasBothDocuments(app: Application): boolean {
+  return Boolean(app.documentUrls?.insuranceProof && app.documentUrls?.vehicleRegistration);
+}
+
+/** The host's papers, opened in a new tab. A missing one is called out, not hidden. */
+function DocumentLinks({ app }: { app: Application }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {DOCUMENTS.map(({ key, label }) => {
+        const url = app.documentUrls?.[key];
+        // Only ever an https link: these values come from a client.
+        return url && url.startsWith('https://') ? (
+          <a
+            key={key}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              padding: '4px 10px',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 4,
+              fontSize: 13,
+              color: colors.primary,
+              textDecoration: 'none',
+            }}
+          >
+            📄 {label}
+          </a>
+        ) : (
+          <span
+            key={key}
+            style={{
+              padding: '4px 10px',
+              background: '#FFF3CD',
+              color: '#856404',
+              borderRadius: 4,
+              fontSize: 13,
+            }}
+          >
+            ⚠ {label}: not provided
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 interface Listing {
   id: string;
   uid: string;
   status: 'active' | 'suspended';
-  carDetails: Record<string, unknown>;
+  carDetails: CarDetails;
   ownerName: string;
   pricePerDay: number;
   photos?: Photo[];
@@ -129,6 +192,23 @@ export default function SpecialRidesAdminPage() {
     }
   }
 
+  /** Sends the application back to the host, who sees this reason in the app. */
+  async function requestDocuments(uid: string) {
+    setProcessingId(uid);
+    try {
+      await adminApi.adminReviewSpecialRidesApplication({
+        uid,
+        decision: 'resubmit',
+        rejectionReason:
+          'Please update the app and add photos of your car insurance and vehicle registration.',
+      });
+    } catch (e) {
+      alert('Could not request documents: ' + (e as Error).message);
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
   async function suspendListing(uid: string) {
     setProcessingId(uid);
     try {
@@ -218,8 +298,7 @@ export default function SpecialRidesAdminPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                     <div>
                       <h3 style={{ margin: 0, color: colors.text }}>
-                        {(app.carDetails as any)?.year} {(app.carDetails as any)?.make}{' '}
-                        {(app.carDetails as any)?.model}
+                        {app.carDetails?.year} {app.carDetails?.make} {app.carDetails?.model}
                       </h3>
                       <p style={{ margin: '4px 0 0 0', fontSize: 14, color: colors.muted }}>
                         Owner: {app.ownerName} • {app.ownerPhone}
@@ -280,10 +359,13 @@ export default function SpecialRidesAdminPage() {
                     </div>
                   )}
 
+                  <DocumentLinks app={app} />
+
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       onClick={() => approveApplication(app.uid)}
-                      disabled={processingId === app.uid}
+                      disabled={processingId === app.uid || !hasBothDocuments(app)}
+                      title={hasBothDocuments(app) ? undefined : 'Both documents are needed before approval'}
                       style={{
                         flex: 1,
                         background: colors.primary,
@@ -291,12 +373,31 @@ export default function SpecialRidesAdminPage() {
                         padding: '8px 12px',
                         border: 'none',
                         borderRadius: 4,
-                        cursor: 'pointer',
+                        cursor: hasBothDocuments(app) ? 'pointer' : 'not-allowed',
+                        opacity: hasBothDocuments(app) ? 1 : 0.5,
                         fontWeight: 600,
                       }}
                     >
                       ✓ Approve
                     </button>
+                    {!hasBothDocuments(app) && (
+                      <button
+                        onClick={() => requestDocuments(app.uid)}
+                        disabled={processingId === app.uid}
+                        style={{
+                          flex: 1,
+                          background: 'none',
+                          color: colors.primary,
+                          padding: '8px 12px',
+                          border: `1px solid ${colors.primary}`,
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Ask for documents
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         const reason = prompt('Rejection reason:');
@@ -347,8 +448,7 @@ export default function SpecialRidesAdminPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                     <div>
                       <h3 style={{ margin: 0, color: colors.text }}>
-                        {(listing.carDetails as any)?.year} {(listing.carDetails as any)?.make}{' '}
-                        {(listing.carDetails as any)?.model}
+                        {listing.carDetails?.year} {listing.carDetails?.make} {listing.carDetails?.model}
                       </h3>
                       <p style={{ margin: '4px 0 0 0', fontSize: 14, color: colors.muted }}>
                         Owner: {listing.ownerName} • ₨{listing.pricePerDay}/day

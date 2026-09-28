@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import {
+  APPLICATION_MESSAGES,
   applicationUpdateSchema,
   bookingRefSchema,
   bookingSchema,
@@ -98,7 +99,7 @@ export const updateSpecialRidesApplication = onCall(async (request) => {
     ownerName,
     ownerPhone,
     instructions,
-  } = parseOrInvalid(applicationUpdateSchema, request.data, invalid);
+  } = parseOrInvalid(applicationUpdateSchema, request.data, invalid, APPLICATION_MESSAGES);
 
   const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
   if (!appSnap.exists) {
@@ -225,7 +226,9 @@ export const bookSpecialRidesCar = onCall(async (request) => {
     returnDate,
     totalPrice,
     includeDriver,
-    driverPrice,
+    // Only when there is one: Firestore refuses an `undefined` field outright,
+    // which made every booking without a driver fail.
+    ...(driverPrice !== undefined ? { driverPrice } : {}),
     createdAt: Date.now(),
   };
 

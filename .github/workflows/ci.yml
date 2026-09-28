@@ -51,6 +51,11 @@ jobs:
         run: npm install -g firebase-tools
       - name: Run security-rules test suite (emulator)
         run: firebase emulators:exec --only firestore --project demo-velocity "node --test tests/firestore.rules.test.mjs"
+      # Storage has its own private upload paths (KYC, host papers, receipts),
+      # and a type cap that is wrong in either direction either breaks uploads
+      # or lets active content in. Same emulator approach, separate process.
+      - name: Run storage-rules test suite (emulator)
+        run: firebase emulators:exec --only storage --project demo-velocity "node --test tests/storage.rules.test.mjs"
 
   # The backend's own test suite — the one that actually exercises the callables
   # against a Firestore emulator: pool joining and the driver's decision, fares,
