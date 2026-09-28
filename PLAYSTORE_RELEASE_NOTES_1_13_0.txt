@@ -1,0 +1,93 @@
+VELOCITY RIDES 1.13.0  ·  Android versionCode 38  ·  iOS build 11
+=================================================================
+
+1.12.0 is live on the App Store (build 10, Ready for Sale). Apple takes no new
+build against a released version, so this release is 1.13.0 on both platforms;
+app.json holds one version string for both. EAS assigns the build numbers.
+
+A small release: two things people hit in the first minute of using the app.
+The store notes lead with them and keep the 1.12.0 introduction underneath,
+because most people reading the notes are still first-time users.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars; this is 498)
+---------------------------------------------------------------------------
+New in this version
+• Your sign-in code arrives faster
+• Date of birth in three taps: day, month, year
+
+Velocity Rides: ride-hailing for Pakistan where you name the fare.
+• Offer your price; drivers accept or counter; you choose
+• Moto, Mini, A/C and Premium rides, City to City seats and couriers
+• Share a ride, pay per seat, gender rules respected
+• Book by voice in Urdu or English
+• Pay cash, EasyPaisa, JazzCash, bank transfer or wallet
+• Verified drivers, live tracking, SOS and trip sharing
+
+
+APP STORE "WHAT'S NEW" (set on version 1.13.0 through the API)
+--------------------------------------------------------------
+NEW IN THIS VERSION
+Your sign-in code arrives faster, and entering your date of birth is now three quick taps: day, month and year.
+
+Welcome to Velocity Rides: getting around Pakistan on a fare you agree on.
+
+NAME YOUR FARE
+Offer a price for your trip. Nearby drivers accept it or send their own offer, and you choose who to ride with.
+
+A RIDE FOR EVERY TRIP
+Moto, Mini, A/C and Premium rides across town, City to City seats for longer journeys, and couriers when only a parcel needs to travel.
+
+SHARE THE RIDE, SPLIT THE FARE
+Share a car with people heading your way and each pay for one seat. You see who is already in the car before you join, and shared rides follow gender rules: for example, women are only placed with men if they have chosen to allow it.
+
+BOOK BY VOICE
+Say where you want to go, in Urdu or English, and the booking fills itself in.
+
+PAY THE WAY YOU ALREADY PAY
+Cash, EasyPaisa, JazzCash, bank transfer or your Velocity wallet.
+
+SAFETY ON EVERY RIDE
+Drivers verify their identity and their car before they can drive. Follow your driver live on the map, share your trip with someone you trust, and raise an SOS if anything feels wrong.
+
+TRAVEL PARTNER
+Find people going the same way, join city groups and plan trips together.
+
+FOR DRIVERS
+Drive solo or take shared rides, choose how far from your route you will go for a pickup, and add riders who are on your way, even during a trip.
+
+WHAT CHANGED SINCE 1.12.0 (for the team; not store copy)
+--------------------------------------------------------
+In the app, new in this build:
+  - Sign-in wakes the server before it is needed. The phone-number screen
+    pings the code-sending function as it opens, and the code-checking
+    function is pinged the moment a code is sent. Production logs showed
+    nearly every sign-in meeting a sleeping server: 4.8 s typical and up to
+    11 s before the code even left, against 1.6 s when awake. Verifying the
+    code took 6-10 s for the same reason.
+  - Date of birth on the profile step is three tiles in one row: Day, Month,
+    Year. Each opens a grid of large buttons and moves on to the next empty
+    part, so a blank row is filled in three taps. It replaces the native
+    calendar. The driver registration form still uses the calendar.
+
+Already live on the backend since 28 Sep 2026; this reaches every build:
+  - Sending a WhatsApp code makes 3 database round trips before the message
+    goes out instead of 6 (the database is in the US, the functions in
+    Mumbai). Same rules, same limits.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.13.0-vc38.aab (repo root) to Play Console.
+  2. Paste the 498-character block above as the release notes.
+  3. Roll it into EVERY track that still holds vc3, vc6 or vc8. Otherwise the
+     AD_ID rejection comes back.
+  4. After the rollout is live: admin console → App version →
+     version 1.13.0 AND build 38.
+
+iOS:
+  1. Build 11 uploads itself to App Store Connect and is attached to version
+     1.13.0 with the What's New text above, then submitted for review.
+  2. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.13.0 AND build 11. Never before.
