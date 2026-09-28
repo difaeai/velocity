@@ -36,7 +36,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { normalizeCode } from './fleets';
 import { logFraud } from './fraud';
@@ -256,10 +256,10 @@ export const claimPartnerReferral = onCall(async (req) => {
 });
 
 const reassignSchema = z.object({
-  uid: z.string().min(1).max(128),
+  uid: docId,
   type: z.enum(['driver', 'passenger']),
   /** Omit to detach the recruit from every fleet. */
-  fleetId: z.string().min(1).max(128).nullable().optional(),
+  fleetId: docId.nullable().optional(),
   reason: z.string().trim().max(300).optional(),
 });
 

@@ -15,7 +15,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 
 const REASONS = [
@@ -29,7 +29,7 @@ const REASONS = [
 ] as const;
 
 const reportSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   // The mobile Firebase SDK encodes absent optional fields as null on the wire,
   // so every optional here must be nullish rather than optional.
   reasons: z.array(z.enum(REASONS)).min(1).max(REASONS.length),

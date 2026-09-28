@@ -7,6 +7,8 @@
  * drivers/approveDriver).
  */
 import { CallableRequest, HttpsError } from 'firebase-functions/v2/https';
+import { z } from 'zod';
+
 import { Role } from '../domain/types';
 
 export interface AuthedContext {
@@ -45,4 +47,24 @@ export function requireAdmin(req: CallableRequest): AuthedContext {
 /** Convenience for raising a consistent validation error. */
 export function invalid(message: string): never {
   throw new HttpsError('invalid-argument', message);
+}
+
+/**
+ * A Firestore document id taken from a caller.
+ *
+ * Ids end up inside paths — `db.doc(`trips/${tripId}`)` — and the Admin SDK
+ * reads a `/` in an id as a path separator, so `tripId: "abc/chat/msg1"` would
+ * quietly address a document in a subcollection instead of the trip. Every
+ * ownership check that follows would then be run against the wrong document.
+ * No real id (auto-ids, uids, the composite `a_b` ids) ever contains a slash.
+ */
+export const docId = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[^/]+$/, 'must be a document id');
+
+/** The same check for ids that arrive outside zod (query strings, raw data). */
+export function isDocId(value: unknown): value is string {
+  return docId.safeParse(value).success;
 }

@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, requireRole, requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, isDocId, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getFeatureFlags } from '../domain/featureFlags';
 import { creditFromIntent } from './credit';
@@ -179,7 +179,7 @@ a{display:inline-block;margin-top:20px;background:#38e07b;color:#04140b;text-dec
  */
 export const paymentCheckout = onRequest(async (request, response) => {
   const intentId = String(request.query.intent ?? '');
-  if (!intentId) { response.status(400).send('Missing intent.'); return; }
+  if (!isDocId(intentId)) { response.status(400).send('Missing intent.'); return; }
 
   const [intentSnap, secretSnap] = await Promise.all([
     db.doc(`paymentIntents/${intentId}`).get(),
@@ -363,7 +363,7 @@ export const paymentWebhook = onRequest(async (request, response) => {
   response.status(200).send(resultPage(false, outcome.message ?? 'The payment was declined or cancelled. No money was taken.'));
 });
 
-const confirmSchema = z.object({ intentId: z.string().min(1).max(128) });
+const confirmSchema = z.object({ intentId: docId });
 
 /** Dev-only: simulate a successful gateway callback (mock provider only). */
 export const mockConfirmTopup = onCall(async (req) => {
@@ -451,7 +451,7 @@ export const requestPayout = onCall(async (req) => {
 });
 
 const markPaidSchema = z.object({
-  payoutId: z.string().min(1).max(128),
+  payoutId: docId,
   txnRef: z.string().max(120).optional(),
 });
 

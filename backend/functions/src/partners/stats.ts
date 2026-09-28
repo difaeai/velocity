@@ -17,7 +17,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { requirePartner } from './applications';
 import { computeLevel, nextLevelTarget } from './types';
 import type { FleetType, PartnerLevel, PartnerStats } from './types';
@@ -246,7 +246,7 @@ export const getPartnerFleetMembers = onCall(async (req) => {
 });
 
 const memberRidesSchema = z.object({
-  memberUid: z.string().min(1).max(128),
+  memberUid: docId,
   limit: z.number().int().min(1).max(200).optional(),
 });
 

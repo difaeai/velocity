@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { sendToUser } from '../lib/fcm';
 import { joinPoolTripAsRider } from '../trips/poolShare';
 import { firstNameOf } from '../trips/poolRoster';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -59,8 +60,8 @@ async function requireProfile(uid: string): Promise<MemberInfo> {
 // groupId is nullish, not optional: the mobile Firebase SDK encodes absent
 // optional fields as null on the wire, which plain .optional() rejects.
 const ShareInput = z.object({
-  tripId: z.string().min(1).max(128),
-  groupId: z.string().min(1).max(128).nullish(),
+  tripId: docId,
+  groupId: docId.nullish(),
 });
 
 export const shareTravelMateRide = onCall({ region: REGION }, async (req: CallableRequest) => {
@@ -146,7 +147,7 @@ export const shareTravelMateRide = onCall({ region: REGION }, async (req: Callab
 });
 
 // ---------------------------------------------------------------------------
-const ShareIdInput = z.object({ shareId: z.string().min(1).max(128) });
+const ShareIdInput = z.object({ shareId: docId });
 
 type Eligibility =
   | { eligible: true; alreadyJoined: boolean }

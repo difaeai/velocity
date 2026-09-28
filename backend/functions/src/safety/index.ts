@@ -9,11 +9,11 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 
 const sosSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   kind: z.enum(['sos', 'route_deviation']).default('sos'),
   location: z
     .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
@@ -61,7 +61,7 @@ export const raiseSafetyEvent = onCall(async (req) => {
 });
 
 const resolveSchema = z.object({
-  eventId: z.string().min(1).max(128),
+  eventId: docId,
   resolution: z.string().max(500).optional(),
 });
 

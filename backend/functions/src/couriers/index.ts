@@ -2,7 +2,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { requireCnicVerified } from '../users/cnic';
 
@@ -20,11 +20,11 @@ const createOrderSchema = z.object({
 });
 
 const cancelOrderSchema = z.object({
-  orderId: z.string().min(1).max(128),
+  orderId: docId,
 });
 
 const adminUpdateSchema = z.object({
-  orderId:     z.string().min(1).max(128),
+  orderId:     docId,
   status:      courierStatusEnum,
   driverName:  z.string().max(64).optional(),
   driverPhone: z.string().max(20).optional(),

@@ -20,12 +20,14 @@
  * the next request instead of whenever the tab is next reloaded.
  * ----------------------------------------------------------------------------
  */
+import { randomInt } from 'crypto';
+
 import { onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 
 /**
  * Where the portal lives. Overridable so a staging deploy hands out staging
@@ -49,8 +51,10 @@ const PORTAL_ID_LEN = 22;
 export async function mintPortalId(): Promise<string> {
   for (let attempt = 0; attempt < 8; attempt++) {
     let id = '';
+    // crypto.randomInt, not Math.random: the latter is predictable from enough
+    // of its own output, and "not enumerable" is the whole claim above.
     for (let i = 0; i < PORTAL_ID_LEN; i++) {
-      id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+      id += ALPHABET[randomInt(ALPHABET.length)];
     }
     const clash = await db.collection('partners').where('portalId', '==', id).limit(1).get();
     if (clash.empty) return id;
@@ -152,7 +156,7 @@ export const getFranchisePortal = onCall(async (req) => {
 });
 
 const rotateSchema = z.object({
-  uid: z.string().min(1).max(128),
+  uid: docId,
   reason: z.string().trim().max(300).optional(),
 });
 

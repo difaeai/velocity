@@ -45,6 +45,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
 import { sendToUser } from '../lib/fcm';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -108,7 +109,7 @@ const CreatePostInput = z.object({
   // Videos are uploaded by the client straight to Storage (rules-capped at
   // 50 MB, video/* only); the post only carries the storage path.
   videoPath: z.string().min(1).max(512).nullish(),
-  communityId: z.string().min(1).max(128).nullish(),
+  communityId: docId.nullish(),
 }).refine(v => !(v.imageBase64 && v.videoPath), { message: 'Attach an image OR a video, not both.' });
 
 export const createTravelMatePost = onCall(
@@ -210,7 +211,7 @@ export const createTravelMatePost = onCall(
 // ---------------------------------------------------------------------------
 // deleteTravelMatePost
 // ---------------------------------------------------------------------------
-const DeletePostInput = z.object({ postId: z.string().min(1).max(128) });
+const DeletePostInput = z.object({ postId: docId });
 
 export const deleteTravelMatePost = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -243,7 +244,7 @@ export const deleteTravelMatePost = onCall({ region: REGION }, async (req: Calla
 // ---------------------------------------------------------------------------
 // likeTravelMatePost — toggle
 // ---------------------------------------------------------------------------
-const LikeInput = z.object({ postId: z.string().min(1).max(128) });
+const LikeInput = z.object({ postId: docId });
 
 export const likeTravelMatePost = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -296,7 +297,7 @@ async function assertCanTouchPost(uid: string, postAuthorId: string): Promise<vo
 // commentTravelMatePost
 // ---------------------------------------------------------------------------
 const CommentInput = z.object({
-  postId: z.string().min(1).max(128),
+  postId: docId,
   text: z.string().trim().min(1).max(1000),
 });
 
@@ -343,8 +344,8 @@ export const commentTravelMatePost = onCall({ region: REGION }, async (req: Call
 // deleteTravelMateComment
 // ---------------------------------------------------------------------------
 const DeleteCommentInput = z.object({
-  postId: z.string().min(1).max(128),
-  commentId: z.string().min(1).max(128),
+  postId: docId,
+  commentId: docId,
 });
 
 export const deleteTravelMateComment = onCall({ region: REGION }, async (req: CallableRequest) => {
@@ -422,7 +423,7 @@ export const createTravelMateCommunity = onCall({ region: REGION }, async (req: 
 // ---------------------------------------------------------------------------
 // joinTravelMateCommunity / leaveTravelMateCommunity
 // ---------------------------------------------------------------------------
-const CommunityIdInput = z.object({ communityId: z.string().min(1).max(128) });
+const CommunityIdInput = z.object({ communityId: docId });
 
 export const joinTravelMateCommunity = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -472,7 +473,7 @@ export const leaveTravelMateCommunity = onCall({ region: REGION }, async (req: C
 // ---------------------------------------------------------------------------
 // openTravelMateFeedChat — DM a fellow community user without a swipe match
 // ---------------------------------------------------------------------------
-const FeedChatInput = z.object({ targetUid: z.string().min(1).max(128) });
+const FeedChatInput = z.object({ targetUid: docId });
 
 export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -535,7 +536,7 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
 // ---------------------------------------------------------------------------
 // blockTravelMateUser / unblockTravelMateUser
 // ---------------------------------------------------------------------------
-const BlockInput = z.object({ targetUid: z.string().min(1).max(128) });
+const BlockInput = z.object({ targetUid: docId });
 
 /**
  * Place a block and sever everything it implies.

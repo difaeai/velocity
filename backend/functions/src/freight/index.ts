@@ -2,7 +2,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 
 const priorityEnum      = z.enum(['standard', 'express', 'same-day']);
@@ -22,15 +22,15 @@ const createRequestSchema = z.object({
 });
 
 const cancelRequestSchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
 });
 
 const acceptQuoteSchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
 });
 
 const adminUpdateSchema = z.object({
-  requestId:  z.string().min(1).max(128),
+  requestId:  docId,
   status:     freightStatusEnum,
   finalQuote: z.number().int().positive().optional(),
   adminNote:  z.string().max(500).optional(),

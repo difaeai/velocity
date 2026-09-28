@@ -16,6 +16,7 @@ import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
 import { sendToUser } from '../lib/fcm';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -25,7 +26,7 @@ const KARACHI_OFFSET = '+05:00'; // Pakistan has no DST as of 2026
 
 // ----- Input schema -----
 const SwipeInput = z.object({
-  targetUid: z.string().min(1).max(128),
+  targetUid: docId,
   direction: z.enum(['like', 'pass']),
 });
 

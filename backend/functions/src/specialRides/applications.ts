@@ -1,7 +1,9 @@
 import { onCall } from 'firebase-functions/v2/https';
 
 import { db } from '../lib/firebase';
-import { invalid, requireAdmin } from '../lib/guards';
+import { invalid, requireAdmin, requireAuth } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
+import { applicationSchema, parseOrInvalid, reviewSchema, suspendSchema } from './schemas';
 import { SpecialRidesApplication, SpecialRidesListing } from './types';
 
 /**
@@ -9,8 +11,8 @@ import { SpecialRidesApplication, SpecialRidesListing } from './types';
  */
 export const submitSpecialRidesApplication = onCall(
   async (request) => {
-    const uid = request.auth?.uid;
-    if (!uid) invalid('Not authenticated');
+    const { uid } = requireAuth(request);
+    await rateLimit(uid, 'specialRidesSubmit', 5, 3600);
 
     const {
       carDetails,
@@ -21,22 +23,10 @@ export const submitSpecialRidesApplication = onCall(
       ownerName,
       ownerPhone,
       instructions,
-    } = request.data;
+    } = parseOrInvalid(applicationSchema, request.data, invalid);
 
-    if (!carDetails?.make || !carDetails?.model) {
-      invalid('Car details (make, model) are required');
-    }
-    if (!documentUrls?.insuranceProof || !documentUrls?.vehicleRegistration) {
+    if (!documentUrls.insuranceProof || !documentUrls.vehicleRegistration) {
       invalid('Insurance proof and vehicle registration are required');
-    }
-    if (!location?.address || !location?.city) {
-      invalid('Location and city are required');
-    }
-    if (pricePerDay < 500 || pricePerDay > 10000) {
-      invalid('Price per day must be between 500 and 10,000 PKR');
-    }
-    if (!photos || photos.length === 0) {
-      invalid('At least one photo is required');
     }
 
     const applicationId = db.collection('specialRidesApplications').doc().id;
@@ -46,14 +36,14 @@ export const submitSpecialRidesApplication = onCall(
       applicationId,
       uid,
       status: 'pending',
-      carDetails,
-      location,
+      carDetails: carDetails as SpecialRidesApplication['carDetails'],
+      location: location as SpecialRidesApplication['location'],
       pricePerDay,
       photos,
       documentUrls,
       ownerName,
       ownerPhone,
-      instructions,
+      ...(instructions ? { instructions } : {}),
       submittedAt: now,
     };
 
@@ -86,11 +76,7 @@ export const adminReviewSpecialRidesApplication = onCall(
     // listing was unreachable.
     const { uid: adminUid } = requireAdmin(request);
 
-    const { uid, decision, rejectionReason, maxDailyRate } = request.data;
-
-    if (!['approve', 'reject', 'resubmit'].includes(decision)) {
-      invalid('Invalid decision');
-    }
+    const { uid, decision, rejectionReason, maxDailyRate } = parseOrInvalid(reviewSchema, request.data, invalid);
 
     // Get the application
     const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
@@ -101,9 +87,13 @@ export const adminReviewSpecialRidesApplication = onCall(
 
     if (decision === 'approve') {
       // Create active listing
+      // The insurance and registration papers stay on the application, which
+      // only the owner and admins can read. The listing is readable by every
+      // signed-in user, so it must not carry them.
+      const { documentUrls: _privateDocs, ...publicApp } = app;
       const listingId = db.collection('specialRidesListings').doc().id;
       const listing = {
-        ...app,
+        ...publicApp,
         listingId,
         status: 'active',
         approvedAt: now,
@@ -141,7 +131,7 @@ export const adminReviewSpecialRidesApplication = onCall(
           status: 'rejected',
           reviewedAt: now,
           reviewedBy: adminUid,
-          rejectionReason,
+          rejectionReason: rejectionReason ?? null,
         });
 
       return {
@@ -157,7 +147,7 @@ export const adminReviewSpecialRidesApplication = onCall(
           status: 'resubmit',
           reviewedAt: now,
           reviewedBy: adminUid,
-          rejectionReason,
+          rejectionReason: rejectionReason ?? null,
         });
 
       return {
@@ -175,8 +165,7 @@ export const adminReviewSpecialRidesApplication = onCall(
  * Get dashboard data for a host (user who posted cars)
  */
 export const getSpecialRidesDashboard = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
 
   // Check for pending applications
   const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
@@ -248,7 +237,7 @@ export const adminSuspendHost = onCall(async (request) => {
   // about the `admins` collection this used to consult.
   requireAdmin(request);
 
-  const { uid, suspended, reason } = request.data;
+  const { uid, suspended, reason } = parseOrInvalid(suspendSchema, request.data, invalid);
   const now = Date.now();
 
   if (suspended) {
@@ -258,7 +247,7 @@ export const adminSuspendHost = onCall(async (request) => {
       .update({
         status: 'suspended',
         suspendedAt: now,
-        suspensionReason: reason,
+        suspensionReason: reason ?? null,
       });
   } else {
     await db

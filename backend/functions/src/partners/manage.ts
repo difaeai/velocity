@@ -17,12 +17,12 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { mintPortalId } from '../franchise/portal';
 
 const updateSchema = z.object({
-  partnerId: z.string().min(1).max(128),
+  partnerId: docId,
   fullName: z.string().trim().min(2).max(100).optional(),
   city: z.string().trim().min(2).max(80).optional(),
   mobile: z.string().trim().min(10).max(20).optional(),
@@ -101,7 +101,7 @@ async function deleteAll(query: FirebaseFirestore.Query): Promise<number> {
 }
 
 const deleteSchema = z.object({
-  partnerId: z.string().min(1).max(128),
+  partnerId: docId,
   reason: z.string().trim().max(300).optional(),
 });
 

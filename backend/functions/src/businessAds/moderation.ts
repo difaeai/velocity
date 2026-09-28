@@ -32,7 +32,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 
 export type BlockSide = 'byBusiness' | 'byCustomer' | 'byAdmin';
@@ -198,7 +198,7 @@ export const adminResolveBusinessAdQueryReport = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = z
     .object({
-      reportId: z.string().min(1).max(128),
+      reportId: docId,
       action: z.enum(['dismiss', 'block', 'unblock']),
       note: z.string().trim().max(500).optional(),
     })

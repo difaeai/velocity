@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { sendToUser } from '../lib/fcm';
 
 import { assertNotBlocked, isBlockedEitherWay } from './community';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -48,7 +49,7 @@ async function pushTo(uid: string, title: string, body: string, data: Record<str
 
 // ---------------------------------------------------------------------------
 const GroupMsgInput = z.object({
-  groupId: z.string().min(1).max(128),
+  groupId: docId,
   text: z.string().trim().min(1).max(2000),
 });
 
@@ -97,8 +98,8 @@ export const sendTravelMateGroupMessage = onCall({ region: REGION }, async (req:
 
 // ---------------------------------------------------------------------------
 const DirectChatInput = z.object({
-  targetUid: z.string().min(1).max(128),
-  groupId: z.string().min(1).max(128),
+  targetUid: docId,
+  groupId: docId,
 });
 
 export const openTravelMateDirectChat = onCall({ region: REGION }, async (req: CallableRequest) => {
@@ -155,7 +156,7 @@ export const openTravelMateDirectChat = onCall({ region: REGION }, async (req: C
 });
 
 // ---------------------------------------------------------------------------
-const PreviewInput = z.object({ groupId: z.string().min(1).max(128) });
+const PreviewInput = z.object({ groupId: docId });
 
 export const previewTravelMateGroup = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');

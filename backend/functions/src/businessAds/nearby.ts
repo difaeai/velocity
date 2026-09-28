@@ -36,7 +36,7 @@ import { z } from 'zod';
 import { haversineM } from '../lib/corridor';
 import { notifyUser } from '../lib/fcm';
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getBusinessAdSettings, maxRadiusKm, pkDay } from './config';
 import { candidateCells } from './geo';
@@ -47,7 +47,7 @@ const nearbySchema = z.object({
   lng: z.number().min(-180).max(180),
 });
 
-const clickSchema = z.object({ adId: z.string().min(1).max(128) });
+const clickSchema = z.object({ adId: docId });
 
 function impressionId(adId: string, uid: string): string {
   return `${adId}_${uid}`;

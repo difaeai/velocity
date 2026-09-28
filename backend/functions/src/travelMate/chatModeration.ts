@@ -29,7 +29,7 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { docId, requireAdmin } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 
@@ -171,7 +171,7 @@ export const leaveTravelMateChat = onCall({ region: REGION }, async (req: Callab
 // Membership IS access here: the Firestore rules gate group reads on
 // `members`, so removing the uid is what actually ends the conversation for
 // them. The group survives without them.
-const LeaveGroupInput = z.object({ groupId: z.string().min(1).max(128) });
+const LeaveGroupInput = z.object({ groupId: docId });
 
 export const leaveTravelMateGroupChat = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -237,7 +237,7 @@ const ReportChatInput = z.object({
   scope: z.enum(['match', 'group', 'profile']),
   /** matchId for a 1:1, groupId for a group, absent for a bare profile report. */
   roomId: z.string().min(1).max(256).nullish(),
-  reportedUid: z.string().min(1).max(128),
+  reportedUid: docId,
   category: z.enum(REPORT_CATEGORIES).nullish(),
   reason: z.string().trim().max(1000).nullish(),
   /** "Block them too" — the checkbox on the report sheet. */
@@ -384,7 +384,7 @@ export const reportTravelMateChat = onCall({ region: REGION }, async (req: Calla
 // them, and every row stayed 'open' forever — so the count on the tab measured
 // how long the product had existed rather than how much work was waiting.
 const ResolveInput = z.object({
-  reportId: z.string().min(1).max(128),
+  reportId: docId,
   outcome: z.enum(['dismissed', 'warned', 'suspended', 'banned']),
   note: z.string().trim().max(1000).nullish(),
 });

@@ -35,7 +35,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendToUser, sendToUsers } from '../lib/fcm';
 import { TripStatus } from '../domain/types';
@@ -636,8 +636,8 @@ export async function joinPoolTripAsRider(
 
 // ---------------------------------------------------------------------------
 const respondJoinSchema = z.object({
-  tripId:  z.string().min(1).max(128),
-  riderId: z.string().min(1).max(128),
+  tripId:  docId,
+  riderId: docId,
   action:  z.enum(['accept', 'reject']),
 });
 
@@ -722,7 +722,7 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
 });
 
 // ---------------------------------------------------------------------------
-const cancelJoinSchema = z.object({ tripId: z.string().min(1).max(128) });
+const cancelJoinSchema = z.object({ tripId: docId });
 
 /** The rider withdraws a seat request the driver has not answered yet. */
 export const cancelPoolTripJoinRequest = onCall(async (req) => {
@@ -743,7 +743,7 @@ export const cancelPoolTripJoinRequest = onCall(async (req) => {
 });
 
 // ---------------------------------------------------------------------------
-const joinRequestsSchema = z.object({ tripId: z.string().min(1).max(128) });
+const joinRequestsSchema = z.object({ tripId: docId });
 
 /** The seat requests still waiting on a pool, for its driver. */
 export const getPoolJoinRequests = onCall(async (req) => {
@@ -771,7 +771,7 @@ export const getPoolJoinRequests = onCall(async (req) => {
 
 // ---------------------------------------------------------------------------
 const visibilitySchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   visibility: z.enum(['public', 'private']),
 });
 

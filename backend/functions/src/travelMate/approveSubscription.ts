@@ -26,6 +26,7 @@
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -50,9 +51,9 @@ function addDays(base: number, days: number): number {
   return base + days * 24 * 3600 * 1000;
 }
 
-const ApproveInput = z.object({ subscriptionId: z.string().min(1).max(128) });
+const ApproveInput = z.object({ subscriptionId: docId });
 const RejectInput = z.object({
-  subscriptionId: z.string().min(1).max(128),
+  subscriptionId: docId,
   reason: z.string().max(300).optional(),
 });
 

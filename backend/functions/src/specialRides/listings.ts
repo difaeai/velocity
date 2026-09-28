@@ -1,20 +1,43 @@
 import { onCall } from 'firebase-functions/v2/https';
 
 import { db } from '../lib/firebase';
-import { invalid } from '../lib/guards';
+import { invalid, requireAuth } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
+import {
+  applicationUpdateSchema,
+  bookingRefSchema,
+  bookingSchema,
+  listingRefSchema,
+  listingsQuerySchema,
+  parseOrInvalid,
+} from './schemas';
 import { SpecialRidesListing, SpecialRidesBooking } from './types';
+
+/**
+ * What a renter may see of a listing. Listings approved before the approval
+ * step stopped copying them may still carry the host's insurance and
+ * registration papers; those never leave the server through here.
+ */
+function toPublicListing(listing: SpecialRidesListing): SpecialRidesListing {
+  const { documentUrls: _privateDocs, ...rest } = listing as SpecialRidesListing & {
+    documentUrls?: unknown;
+  };
+  return rest as SpecialRidesListing;
+}
 
 /**
  * Get all active special rides listings (public listing)
  */
 export const getSpecialRidesListings = onCall(async (request) => {
-  const { city, maxPrice, page = 0 } = request.data;
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesBrowse', 120, 600);
+  const { city, maxPrice, page } = parseOrInvalid(listingsQuerySchema, request.data, invalid);
 
   const snaps = await db
     .collection('specialRidesListings')
     .where('status', '==', 'active')
     .get();
-  let listings = snaps.docs.map((doc) => doc.data() as SpecialRidesListing);
+  let listings = snaps.docs.map((doc) => toPublicListing(doc.data() as SpecialRidesListing));
 
   // Client-side filtering (alternative: use composite indexes for server-side)
   if (city) {
@@ -39,11 +62,9 @@ export const getSpecialRidesListings = onCall(async (request) => {
  * Get details of a specific listing
  */
 export const getSpecialRidesListingDetails = onCall(async (request) => {
-  const { listingId, hostUid } = request.data;
-
-  if (!listingId || !hostUid) {
-    invalid('Listing ID and host UID required');
-  }
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesBrowse', 120, 600);
+  const { listingId, hostUid } = parseOrInvalid(listingRefSchema, request.data, invalid);
 
   const snap = await db.collection('specialRidesListings').doc(hostUid).get();
   if (!snap.exists) {
@@ -57,7 +78,7 @@ export const getSpecialRidesListingDetails = onCall(async (request) => {
 
   return {
     ok: true,
-    listing,
+    listing: toPublicListing(listing),
   };
 });
 
@@ -65,8 +86,8 @@ export const getSpecialRidesListingDetails = onCall(async (request) => {
  * Update a pending application (before approval)
  */
 export const updateSpecialRidesApplication = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesUpdate', 20, 3600);
 
   const {
     carDetails,
@@ -77,7 +98,7 @@ export const updateSpecialRidesApplication = onCall(async (request) => {
     ownerName,
     ownerPhone,
     instructions,
-  } = request.data;
+  } = parseOrInvalid(applicationUpdateSchema, request.data, invalid);
 
   const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
   if (!appSnap.exists) {
@@ -119,8 +140,8 @@ export const updateSpecialRidesApplication = onCall(async (request) => {
  * Delete a pending application or listing
  */
 export const deleteSpecialRidesListing = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesDelete', 10, 3600);
 
   // Check if there's an application
   const appSnap = await db.collection('specialRidesApplications').doc(uid).get();
@@ -154,25 +175,21 @@ export const deleteSpecialRidesListing = onCall(async (request) => {
  * Book a special rides car
  */
 export const bookSpecialRidesCar = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesBook', 10, 3600);
 
+  // Dates are checked for type, order and span in the schema — they used to be
+  // taken as-is, so a non-numeric pair produced a NaN price on the booking.
   const {
     listingId,
     hostUid,
     pickupDate,
     returnDate,
     includeDriver,
-  } = request.data;
+  } = parseOrInvalid(bookingSchema, request.data, invalid);
 
-  if (!listingId || !hostUid) {
-    invalid('Listing ID and host UID required');
-  }
-  if (!pickupDate || !returnDate) {
-    invalid('Pick-up and return dates required');
-  }
-  if (pickupDate >= returnDate) {
-    invalid('Return date must be after pick-up date');
+  if (hostUid === uid) {
+    invalid('You cannot book your own car');
   }
 
   // Get listing details
@@ -182,7 +199,7 @@ export const bookSpecialRidesCar = onCall(async (request) => {
   }
 
   const listing = listingSnap.data() as SpecialRidesListing;
-  if (listing?.status !== 'active') {
+  if (listing?.status !== 'active' || listing.listingId !== listingId) {
     invalid('This listing is not available for booking');
   }
 
@@ -226,10 +243,10 @@ export const bookSpecialRidesCar = onCall(async (request) => {
  * Confirm a booking (host action)
  */
 export const confirmSpecialRidesBooking = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesBookingAction', 30, 3600);
 
-  const { bookingId } = request.data;
+  const { bookingId } = parseOrInvalid(bookingRefSchema, request.data, invalid);
 
   const bookingSnap = await db.collection('specialRidesBookings').doc(bookingId).get();
   if (!bookingSnap.exists) {
@@ -262,10 +279,10 @@ export const confirmSpecialRidesBooking = onCall(async (request) => {
  * Cancel a booking
  */
 export const cancelSpecialRidesBooking = onCall(async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) invalid('Not authenticated');
+  const { uid } = requireAuth(request);
+  await rateLimit(uid, 'specialRidesBookingAction', 30, 3600);
 
-  const { bookingId, reason } = request.data;
+  const { bookingId, reason } = parseOrInvalid(bookingRefSchema, request.data, invalid);
 
   const bookingSnap = await db.collection('specialRidesBookings').doc(bookingId).get();
   if (!bookingSnap.exists) {
@@ -286,7 +303,7 @@ export const cancelSpecialRidesBooking = onCall(async (request) => {
     .update({
       status: 'cancelled',
       cancelledAt: Date.now(),
-      cancellationReason: reason,
+      cancellationReason: reason ?? null,
     });
 
   return {

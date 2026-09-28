@@ -29,7 +29,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { getPartnerSettings } from './config';
 import { mintPortalId, portalUrl } from '../franchise/portal';
@@ -93,7 +93,7 @@ const submitSchema = z
   });
 
 const reviewSchema = z.object({
-  uid: z.string().min(1).max(128),
+  uid: docId,
   decision: z.enum(['approve', 'reject', 'resubmit']),
   reason: z.string().trim().max(500).optional(),
   /** An admin may approve a Pro applicant down to free (e.g. the payment never

@@ -27,7 +27,7 @@ import { z } from 'zod';
 
 import { notifyUser } from '../lib/fcm';
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { firstNameOf } from '../trips/poolRoster';
 import { pkDay } from './config';
@@ -37,7 +37,7 @@ const TEXT_MAX = 500;
 
 const textSchema = z.string().trim().min(1, 'Write a message first.').max(TEXT_MAX);
 
-const askSchema = z.object({ adId: z.string().min(1).max(128), text: textSchema });
+const askSchema = z.object({ adId: docId, text: textSchema });
 const replySchema = z.object({ queryId: z.string().min(1).max(260), text: textSchema });
 const readSchema = z.object({ queryId: z.string().min(1).max(260) });
 

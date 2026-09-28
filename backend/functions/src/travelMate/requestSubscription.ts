@@ -20,13 +20,14 @@
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
 
 const Input = z.object({
-  planId: z.string().min(1).max(128),
+  planId: docId,
   paymentMethod: z.enum(['wallet', 'easypaisa', 'jazzcash', 'bank']),
   // Storage path/URL of the uploaded payment screenshot (manual methods).
   paymentProofURL: z.string().url().max(2000).optional(),
