@@ -349,3 +349,49 @@ and one touches an approval queue.
    fetched from `velocityrides.app` on every mount and is now bundled, and the
    price list is now served through the stale-while-revalidate cache with the
    offer fields no longer held behind it.
+
+---
+
+## Follow-up — 2026-09-28, the 36-point "AI-built app" checklist
+
+Every item of a common 36-point checklist was checked against this codebase.
+Most were already covered by the audit above; this records the verdict per item
+so the list does not have to be re-derived.
+
+**Fixed in this pass**
+
+| # | Item | What changed |
+| --- | --- | --- |
+| 5, 16, 28, 34 | Missing checks, input validation, rate limits | §6 closed: every Special Rides callable now parses a zod schema (`specialRides/schemas.ts`, unknown keys stripped), requires sign-in — `getSpecialRidesListings` / `…ListingDetails` previously ran for anonymous callers — and is rate limited. Booking dates are type-, order- and span-checked (no more `NaN` prices); a host cannot book their own car. |
+| 6 | Cross-user access | Approving a Special Rides application copied the host's insurance and registration document URLs into `specialRidesListings`, which every signed-in user can read. Approval now leaves them on the owner/admin-only application, and both listing getters strip them from older listings too. |
+| 18, 22 | NoSQL injection / path traversal | Caller-supplied ids go into paths (`db.doc(`trips/${tripId}`)`), and the Admin SDK reads a `/` inside an id as a separator — `"abc/chat/msg1"` addresses a different document, and every ownership check after it runs against that document. The 130 id fields validated as `z.string().min(1).max(128)` now use a shared `docId` (`lib/guards.ts`) that refuses `/`; the two payment HTML endpoints check their query-string ids with `isDocId`. |
+| 8 (§8 above) | Predictable ids | `mintPortalId()` uses `crypto.randomInt`. |
+| 21 (§9 above) | Insecure file uploads | `drivers/{uid}/documents/` accepts images and PDF only. |
+| 4 (§4 above) | Framework advisory | `next` and `eslint-config-next` 16.2.9 → 16.3.6; production build passes. Root `npm audit --omit=dev`: 0 vulnerabilities. Backend: the high (`fast-xml-parser`) fixed by `npm audit fix`; 8 moderate remain, all `uuid` under `firebase-admin`, which needs the v14 major. |
+
+**Already sound — no change needed**
+
+| # | Item | Why |
+| --- | --- | --- |
+| 1, 2, 3, 13, 14 | Credentials, `.env`, hardcoded secrets, secrets in git/JS | Service-account JSON and `.env*` are gitignored and were never committed; only `.env.example` files are tracked. The one key in client code is the Firebase Web API key, a public identifier by design (§11). Server keys live in Actions secrets / Cloud Run env. |
+| 4, 24, 25, 26 | Weak auth, password reset, sessions, JWT secrets | No passwords: phone OTP via Firebase Auth or the WhatsApp OTP challenge (hashed, rules-denied, attempt-limited). Session tokens and custom tokens are minted and verified by the Firebase Admin SDK; the repo holds no hand-rolled JWT secret. |
+| 7, 9, 15, 33 | Open DB, admin routes, client-only security, IDOR | Default-deny rules; admin authority is the custom claim checked by rules and `requireAdmin`, the dashboard gate only hides UI; see "Checked and found sound". |
+| 10 | Prod debug tools | The mock gateway and `mockConfirmPaymentMethod` are emulator-only (§1); `seedFareConfig` is admin-only. |
+| 11, 35 | Secrets in logs, exposed logs | Logs carry ids and provider error codes, never OTPs, tokens or request bodies. Logs are Cloud Logging (IAM), not served. |
+| 12 | Verbose prod errors | Callables throw `HttpsError` with fixed messages; the two that pass an exception message through are admin-only (social desk). |
+| 17 | SQL injection | No SQL database. |
+| 19 | XSS | React escapes by default; the one `dangerouslySetInnerHTML` is a static JSON-LD constant; payment result pages use `escapeHtml`; the feed's video WebView escapes the URL attribute. |
+| 20 | CSRF | No cookie sessions and no Next API routes; callables authenticate with a bearer ID token, which a cross-site form cannot attach. |
+| 23 | SSRF | Maps and gateway calls hit fixed hosts; no user-supplied URL is fetched server-side. |
+| 27 | CORS | Callables use Firebase's own CORS handling; the WhatsApp webhook sets `cors: false`; no wildcard origin anywhere. |
+| 29 | Exposed environments | One Firebase project; tests run against `demo-velocity` in the emulator. |
+| 30 | Default credentials | The reviewer number `+923000000000` / `123456` is a Firebase **test** number the stores require. Keep that account a plain passenger with an empty wallet — never give it a role. |
+| 31 | Unsigned webhooks | WhatsApp: HMAC with `timingSafeEqual`. Payments: provider signature plus a per-intent secret token. |
+| 32 | Front-end payment checks | Amounts come from the server-side intent, never from the client or the callback. |
+| 36 | Source maps | `productionBrowserSourceMaps` is not enabled, so Next does not ship them. |
+
+**Still open** — unchanged from above, each needs a console step or data
+migration rather than a code change: App Check (§3), `intercityChats` reads
+(§5, needs a member backfill), verified App Links (§10, needs the Play signing
+SHA-256), API key restriction (§11). Chat attachments
+(`travelMateChat/`) deliberately still accept any document type.

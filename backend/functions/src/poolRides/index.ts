@@ -3,7 +3,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireRole, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
@@ -35,7 +35,7 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number 
 // ── startPoolBoarding ────────────────────────────────────────────────────────
 
 const startBoardingSchema = z.object({
-  rideId:    z.string().min(1).max(128),
+  rideId:    docId,
   driverLat: z.number().min(-90).max(90),
   driverLng: z.number().min(-180).max(180),
 });
@@ -96,8 +96,8 @@ export const startPoolBoarding = onCall(async (req) => {
 // ── poolArrivePassenger ──────────────────────────────────────────────────────
 
 const passengerActionSchema = z.object({
-  rideId:      z.string().min(1).max(128),
-  passengerId: z.string().min(1).max(128),
+  rideId:      docId,
+  passengerId: docId,
 });
 
 /**
@@ -186,7 +186,7 @@ export const poolPassengerBoarded = onCall(async (req) => {
  * every passenger is dropped inside the zone.
  */
 const CompletePoolSchema = z.object({
-  rideId:    z.string().min(1).max(128),
+  rideId:    docId,
   driverLat: z.number().min(-90).max(90).optional(),
   driverLng: z.number().min(-180).max(180).optional(),
 });
@@ -377,7 +377,7 @@ export const completePoolRide = onCall(async (req) => {
 // ── joinPoolRide ──────────────────────────────────────────────────────────────
 
 const JoinRideSchema = z.object({
-  rideId:         z.string().min(1).max(128),
+  rideId:         docId,
   pickupLat:      z.number().min(-90).max(90),
   pickupLng:      z.number().min(-180).max(180),
   pickupAddress:  z.string().trim().min(1).max(300),
@@ -606,7 +606,7 @@ export const joinPoolRide = onCall(async (req) => {
 // ── driverAcceptPoolBatch ─────────────────────────────────────────────────────
 
 const AcceptBatchSchema = z.object({
-  rideId: z.string().min(1).max(128),
+  rideId: docId,
   gender: z.enum(['male', 'female']),
 });
 
@@ -727,7 +727,7 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
 // ── cancelPoolJoinRequest ─────────────────────────────────────────────────────
 
 const CancelJoinRequestSchema = z.object({
-  rideId: z.string().min(1).max(128),
+  rideId: docId,
 });
 
 /** Passenger withdraws their queued (not yet accepted) pool join request. */
@@ -808,8 +808,8 @@ async function removePassengerFromRide(
 // ── driverBlockPoolPassenger ──────────────────────────────────────────────────
 
 const BlockPassengerSchema = z.object({
-  rideId:      z.string().min(1).max(128),
-  passengerId: z.string().min(1).max(128),
+  rideId:      docId,
+  passengerId: docId,
   reason:      z.string().trim().min(3).max(500).optional(),
 });
 
@@ -852,8 +852,8 @@ export const driverBlockPoolPassenger = onCall(async (req) => {
 // ── reportPoolGenderMisrepresentation ─────────────────────────────────────────
 
 const ReportGenderSchema = z.object({
-  rideId:      z.string().min(1).max(128),
-  reportedUid: z.string().min(1).max(128),
+  rideId:      docId,
+  reportedUid: docId,
   note:        z.string().trim().min(3).max(500).optional(),
 });
 

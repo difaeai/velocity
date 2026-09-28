@@ -7,7 +7,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { broadcastNotification } from '../lib/fcm';
 import { Role } from '../domain/types';
 
@@ -56,7 +56,7 @@ export const onUserDelete = functionsV1.auth.user().onDelete(async (user) => {
 });
 
 const setUserRoleSchema = z.object({
-  targetUid: z.string().min(1).max(128),
+  targetUid: docId,
   role: z.enum(['passenger', 'driver', 'admin']),
 });
 
@@ -107,7 +107,7 @@ export const registerFcmToken = onCall(async (req) => {
 });
 
 const banPassengerSchema = z.object({
-  passengerId: z.string().min(1).max(128),
+  passengerId: docId,
   banned: z.boolean(),
 });
 
@@ -133,7 +133,7 @@ export const banPassenger = onCall(async (req) => {
 });
 
 const resolveDisputeSchema = z.object({
-  disputeId: z.string().min(1).max(128),
+  disputeId: docId,
   resolution: z.string().max(500),
   refundAmount: z.number().min(0).optional(),
 });
@@ -177,7 +177,7 @@ export const resolveDispute = onCall(async (req) => {
 });
 
 const createDisputeSchema = z.object({
-  tripId:      z.string().min(1).max(128),
+  tripId:      docId,
   category:    z.enum(['fare', 'behaviour', 'safety', 'lost_item', 'other']).default('other'),
   description: z.string().min(5).max(1000),
 });
@@ -279,7 +279,7 @@ export const adminCreatePassenger = onCall(async (req) => {
 });
 
 const adminUpdatePassengerSchema = z.object({
-  passengerId: z.string().min(1).max(128),
+  passengerId: docId,
   displayName: z.string().min(1).max(120).optional(),
   email:       z.string().email().optional(),
   gender:      z.enum(['male', 'female', 'other', 'unspecified']).optional(),
@@ -324,7 +324,7 @@ export const adminUpdatePassenger = onCall(async (req) => {
 });
 
 const adminDeletePassengerSchema = z.object({
-  passengerId: z.string().min(1).max(128),
+  passengerId: docId,
 });
 
 /** Admin-only: permanently delete a passenger's Auth account + Firestore data. */

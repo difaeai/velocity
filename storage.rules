@@ -37,7 +37,10 @@ service firebase.storage {
     // and admins can read them back. Never world-readable.
     match /drivers/{driverId}/documents/{fileName} {
       allow read: if isOwner(driverId) || isAdmin();
-      allow write: if isOwner(driverId) && underSize(15);
+      // Images or PDF only. Anything else (HTML, say) would be served back from
+      // a Google-domain download URL as attacker-hosted content.
+      allow write: if isOwner(driverId) && underSize(15)
+                   && (isImage() || request.resource.contentType == 'application/pdf');
     }
 
     // Payment screenshots proving a debt to Velocity was settled — cancellation

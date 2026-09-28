@@ -47,6 +47,7 @@ import {
   whatsAppOtpConfig,
 } from '../whatsapp/client';
 import { pktDayKey } from '../whatsapp/policy';
+import { docId } from '../lib/guards';
 
 const CHALLENGES = 'otpChallenges';
 const SETTINGS_DOC = 'config/whatsappOtp';
@@ -519,7 +520,7 @@ export async function handleOtpDeliveryFailure(
 /* ─────────────────────────── Redeem the code ─────────────────────────────── */
 
 const verifySchema = z.object({
-  challengeId: z.string().min(1).max(128),
+  challengeId: docId,
   code: z.string().regex(new RegExp(`^\\d{${CODE_LENGTH}}$`)),
 });
 

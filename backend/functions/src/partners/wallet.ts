@@ -21,7 +21,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { getPartnerSettings } from './config';
 import { requirePartner } from './applications';
@@ -94,7 +94,7 @@ export const maturePartnerEarnings = onSchedule('every 30 minutes', async () => 
 });
 
 const markRideSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   status: z.enum(['completed', 'cancelled', 'scam', 'fraud']),
   reason: z.string().trim().max(300).optional(),
 });
@@ -283,7 +283,7 @@ export const requestPartnerWithdrawal = onCall(async (req) => {
 });
 
 const reviewWithdrawSchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
   decision: z.enum(['approve', 'reject', 'paid']),
   reason: z.string().trim().max(300).optional(),
 });
@@ -367,7 +367,7 @@ export const adminReviewWithdrawal = onCall(async (req) => {
 });
 
 const suspendSchema = z.object({
-  partnerId: z.string().min(1).max(128),
+  partnerId: docId,
   suspended: z.boolean(),
   reason: z.string().trim().max(300).optional(),
 });

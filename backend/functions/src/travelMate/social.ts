@@ -25,6 +25,7 @@ import { sendToUser } from '../lib/fcm';
 
 import { assertNotBlocked } from './community';
 import { fileTravelMateReport, REPORT_CATEGORIES } from './chatModeration';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -286,7 +287,7 @@ export const declineTravelMateMessageRequest = onCall({ region: REGION }, async 
 // Cloud-Function-write-only, so reactions must come through here too.
 const ReactInput = z.object({
   matchId: z.string().min(1).max(256),
-  messageId: z.string().min(1).max(128),
+  messageId: docId,
   emoji: z.string().trim().max(16).nullish(), // null / empty clears the reaction
 });
 
@@ -340,7 +341,7 @@ export const unmatchTravelMate = onCall({ region: REGION }, async (req: Callable
 
 // ---------------------------------------------------------------------------
 const ReportInput = z.object({
-  reportedUid: z.string().min(1).max(128),
+  reportedUid: docId,
   matchId: z.string().min(1).max(256).nullish(),
   reason: z.string().trim().min(1).max(1000),
   category: z.enum(REPORT_CATEGORIES).nullish(),

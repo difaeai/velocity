@@ -22,7 +22,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { creativeSchema, isOwnStorageUrl, requireAdvertiser } from './applications';
 import type { BusinessAdStatus } from './types';
@@ -30,12 +30,12 @@ import type { BusinessAdStatus } from './types';
 const createSchema = z.object({ creative: creativeSchema });
 
 const updateSchema = z.object({
-  adId: z.string().min(1).max(128),
+  adId: docId,
   creative: creativeSchema.partial(),
 });
 
 const statusSchema = z.object({
-  adId: z.string().min(1).max(128),
+  adId: docId,
   status: z.enum(['active', 'paused', 'removed']),
 });
 
@@ -188,7 +188,7 @@ export const adminSetBusinessAdStatus = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = z
     .object({
-      adId: z.string().min(1).max(128),
+      adId: docId,
       status: z.enum(['active', 'paused', 'removed']),
       reason: z.string().trim().max(500).optional(),
     })
@@ -226,7 +226,7 @@ export const adminSuspendAdvertiser = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = z
     .object({
-      uid: z.string().min(1).max(128),
+      uid: docId,
       suspended: z.boolean(),
       reason: z.string().trim().max(500).optional(),
     })

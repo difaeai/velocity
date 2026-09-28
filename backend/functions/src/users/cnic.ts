@@ -21,7 +21,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 
 /** 13 digits, hyphenated: 12345-1234567-1 — the format printed on the card. */
@@ -37,7 +37,7 @@ const submitSchema = z.object({
 });
 
 const reviewSchema = z.object({
-  uid: z.string().min(1).max(128),
+  uid: docId,
   approve: z.boolean(),
   reason: z.string().trim().max(300).optional(),
 });

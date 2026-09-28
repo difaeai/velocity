@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire-common';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
@@ -141,7 +141,7 @@ export const createPoolRideRequest = onCall(async (req) => {
 // ── driverRespondToRequest ────────────────────────────────────────────────────
 
 const DriverRespondSchema = z.object({
-  requestId:           z.string().min(1).max(128),
+  requestId:           docId,
   action:              z.enum(['accept', 'counter']),
   counterFarePerSeat:  z.number().int().min(50).max(10000).optional(),
 });
@@ -224,7 +224,7 @@ export const driverRespondToRequest = onCall(async (req) => {
 // ── leaderRespondToOffer ──────────────────────────────────────────────────────
 
 const LeaderRespondSchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
   action:    z.enum(['accept', 'reject']),
 });
 
@@ -279,7 +279,7 @@ export const leaderRespondToOffer = onCall(async (req) => {
 // ── joinPoolRideRequest ───────────────────────────────────────────────────────
 
 const JoinSchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
   // Joiner's own drop-off. Optional — omitted means "same destination as the
   // leader". When given it must be inside the request's drop zone.
   dropoffLat:      z.number().min(-90).max(90).optional(),
@@ -474,8 +474,8 @@ export const joinPoolRideRequest = onCall(async (req) => {
 // request so the rider is not left waiting on a seat that is not coming.
 
 const RespondJoinSchema = z.object({
-  requestId: z.string().min(1).max(128),
-  riderId:   z.string().min(1).max(128),
+  requestId: docId,
+  riderId:   docId,
   action:    z.enum(['accept', 'reject']),
 });
 
@@ -585,7 +585,7 @@ export const driverRespondToPoolRequestJoin = onCall(async (req) => {
 // ── getPoolRequestJoinRequests ────────────────────────────────────────────────
 // The queue of riders waiting on the driver's answer, for the driver.
 
-const PoolJoinQueueSchema = z.object({ requestId: z.string().min(1).max(128) });
+const PoolJoinQueueSchema = z.object({ requestId: docId });
 
 export const getPoolRequestJoinRequests = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
@@ -613,7 +613,7 @@ export const getPoolRequestJoinRequests = onCall(async (req) => {
 
 // ── cancelPoolRideRequest ─────────────────────────────────────────────────────
 
-const CancelSchema = z.object({ requestId: z.string().min(1).max(128) });
+const CancelSchema = z.object({ requestId: docId });
 
 export const cancelPoolRideRequest = onCall(async (req) => {
   const ctx = requireAuth(req); // drivers off shift may act as passengers too
@@ -642,7 +642,7 @@ export const cancelPoolRideRequest = onCall(async (req) => {
 // yes; either one can cancel instead.
 
 const GoAnywaySchema = z.object({
-  requestId: z.string().min(1).max(128),
+  requestId: docId,
   action:    z.enum(['go', 'cancel']),
 });
 

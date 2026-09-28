@@ -12,7 +12,7 @@ import { randomInt } from 'crypto';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAuth, requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import { rateLimit } from '../lib/ratelimit';
 import { encodeGeohash } from '../lib/geohash';
@@ -417,7 +417,7 @@ export async function broadcastTripToNearbyDrivers(
 }
 
 const placeBidSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   fare: z.number().int().positive(),
 });
 
@@ -501,7 +501,7 @@ export const placeBid = onCall(async (req) => {
 });
 
 const raiseFareSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   fare: z.number().int().positive(),
 });
 
@@ -572,8 +572,8 @@ export const raiseTripFare = onCall(async (req) => {
 });
 
 const acceptBidSchema = z.object({
-  tripId: z.string().min(1).max(128),
-  bidId: z.string().min(1).max(128),
+  tripId: docId,
+  bidId: docId,
 });
 
 /** Passenger accepts a driver's bid; locks the fare and assigns the driver. */
@@ -685,8 +685,8 @@ export const acceptBid = onCall(async (req) => {
 });
 
 const declineBidSchema = z.object({
-  tripId: z.string().min(1).max(128),
-  bidId: z.string().min(1).max(128),
+  tripId: docId,
+  bidId: docId,
 });
 
 /**
@@ -752,7 +752,7 @@ export const declineBid = onCall(async (req) => {
 });
 
 const statusSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   to: z.enum(['arriving', 'arrived', 'in_progress']),
 });
 
@@ -800,7 +800,7 @@ export const updateTripStatus = onCall(async (req) => {
 });
 
 const cancelSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   reason: z.string().max(300).optional(),
 });
 
@@ -1014,7 +1014,7 @@ export const cancelTrip = onCall(async (req) => {
   return { ok: true, fee, paidFromWallet, outstanding: addedToOutstanding };
 });
 
-const completeSchema = z.object({ tripId: z.string().min(1).max(128) });
+const completeSchema = z.object({ tripId: docId });
 
 /**
  * Assigned driver completes the trip. Computes the settlement server-side and

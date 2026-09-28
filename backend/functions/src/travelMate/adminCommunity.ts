@@ -19,6 +19,7 @@
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -33,7 +34,7 @@ function requireAdmin(req: CallableRequest): void {
 
 // ---------------------------------------------------------------------------
 const UpdatePostInput = z.object({
-  postId: z.string().min(1).max(128),
+  postId: docId,
   text: z.string().trim().max(2000),
 });
 
@@ -56,7 +57,7 @@ export const adminUpdateTravelMatePost = onCall({ region: REGION }, async (req: 
 
 // ---------------------------------------------------------------------------
 const UpsertCommunityInput = z.object({
-  communityId: z.string().min(1).max(128).optional(),
+  communityId: docId.optional(),
   name: z.string().trim().min(3).max(48),
   city: z.string().trim().min(2).max(48),
   description: z.string().trim().max(300).optional(),
@@ -102,7 +103,7 @@ export const adminUpsertTravelMateCommunity = onCall({ region: REGION }, async (
 });
 
 // ---------------------------------------------------------------------------
-const DeleteCommunityInput = z.object({ communityId: z.string().min(1).max(128) });
+const DeleteCommunityInput = z.object({ communityId: docId });
 
 export const adminDeleteTravelMateCommunity = onCall({ region: REGION }, async (req: CallableRequest) => {
   requireAdmin(req);

@@ -22,7 +22,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { encodeGeohash } from '../lib/geohash';
 import { notifyUser } from '../lib/fcm';
 import { offeredFareBounds, broadcastTripToNearbyDrivers } from '../trips';
@@ -44,7 +44,7 @@ const geoSchema = z.object({
 });
 
 const UpsertSchema = z.object({
-  scheduleId:      z.string().min(1).max(128).optional(),
+  scheduleId:      docId.optional(),
   pickup:          geoSchema,
   dropoff:         geoSchema,
   rideType:        z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']),
@@ -123,7 +123,7 @@ export const upsertScheduledRide = onCall(async (req) => {
 
 export const deleteScheduledRide = onCall(async (req) => {
   const ctx = requireAuth(req);
-  const p = z.object({ scheduleId: z.string().min(1).max(128) }).safeParse(req.data);
+  const p = z.object({ scheduleId: docId }).safeParse(req.data);
   if (!p.success) invalid('Provide a valid scheduleId.');
 
   const ref = db.doc(`scheduledRides/${p.data.scheduleId}`);

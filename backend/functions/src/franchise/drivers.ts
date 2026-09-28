@@ -27,7 +27,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { notifyUser } from '../lib/fcm';
 import { normalizePhone } from '../partners/applications';
@@ -179,7 +179,7 @@ export const franchiseListDrivers = onCall(async (req) => {
 
 const withdrawSchema = z.object({
   portalId: z.string().trim().min(8).max(64),
-  submissionId: z.string().min(1).max(128),
+  submissionId: docId,
 });
 
 /** A partner may take back a submission the admin has not decided on yet. */
@@ -220,7 +220,7 @@ export const adminListDriverSubmissions = onCall(async (req) => {
 });
 
 const reviewSchema = z.object({
-  submissionId: z.string().min(1).max(128),
+  submissionId: docId,
   decision: z.enum(['approve', 'reject']),
   reason: z.string().trim().max(500).optional(),
 });

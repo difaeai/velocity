@@ -16,6 +16,7 @@
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
+import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -70,7 +71,7 @@ export const createTravelMateGroup = onCall({ region: REGION }, async (req: Call
 });
 
 // ---------------------------------------------------------------------------
-const JoinInput = z.object({ groupId: z.string().min(1).max(128) });
+const JoinInput = z.object({ groupId: docId });
 
 export const joinTravelMateGroup = onCall({ region: REGION }, async (req: CallableRequest) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -111,8 +112,8 @@ export const joinTravelMateGroup = onCall({ region: REGION }, async (req: Callab
 
 // ---------------------------------------------------------------------------
 const SettleInput = z.object({
-  groupId: z.string().min(1).max(128),
-  tripId: z.string().min(1).max(128),
+  groupId: docId,
+  tripId: docId,
   riderUids: z.array(z.string().min(1)).min(2).max(4),
   amountPKR: z.number().positive().optional(),
 });

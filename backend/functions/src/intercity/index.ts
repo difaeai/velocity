@@ -3,23 +3,23 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
 const createBookingSchema = z.object({
-  tripId:        z.string().min(1).max(128),
+  tripId:        docId,
   seatsBooked:   z.number().int().min(1).max(6),
   paymentMethod: z.enum(['cash', 'wallet']),
 });
 
 const cancelBookingSchema = z.object({
-  bookingId: z.string().min(1).max(128),
+  bookingId: docId,
 });
 
 const sendMessageSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   text:   z.string().min(1).max(1000),
 });
 
@@ -46,7 +46,7 @@ const createTripSchema = z.object({
 });
 
 const updateTripSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   status: tripStatusEnum.optional(),
   driverName:   z.string().max(64).optional(),
   driverPhone:  z.string().max(20).optional(),
@@ -58,7 +58,7 @@ const updateTripSchema = z.object({
 });
 
 const cancelTripSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   reason: z.string().max(200).optional(),
 });
 

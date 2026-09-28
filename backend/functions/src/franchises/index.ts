@@ -10,7 +10,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin } from '../lib/guards';
 
 const createFranchiseSchema = z.object({
   name:         z.string().min(2).max(120),
@@ -61,8 +61,8 @@ export const adminCreateFranchise = onCall(async (req) => {
 });
 
 const assignFranchiseSchema = z.object({
-  driverId:    z.string().min(1).max(128),
-  franchiseId: z.string().min(1).max(128).nullable(),
+  driverId:    docId,
+  franchiseId: docId.nullable(),
 });
 
 /** Admin-only: assign or unassign a driver to/from a franchise. */

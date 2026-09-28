@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, isDocId, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getFeatureFlags } from '../domain/featureFlags';
 import { creditFromIntent } from './credit';
@@ -282,7 +282,7 @@ a{display:inline-block;margin-top:20px;background:#38e07b;color:#04140b;text-dec
 /** Renders the gateway's auto-submitting authorisation form for a setup. */
 export const paymentMethodSetupPage = onRequest(async (request, response) => {
   const setupId = String(request.query.setup ?? '');
-  if (!setupId) { response.status(400).send('Missing setup.'); return; }
+  if (!isDocId(setupId)) { response.status(400).send('Missing setup.'); return; }
 
   const [setupSnap, secretSnap] = await Promise.all([
     db.doc(`paymentMethodSetups/${setupId}`).get(),
@@ -389,7 +389,7 @@ export const paymentMethodCallback = onRequest(async (request, response) => {
   response.status(200).send(resultPage(true, 'You can now top up your wallet with one tap.'));
 });
 
-const setupIdSchema = z.object({ setupId: z.string().min(1).max(128) });
+const setupIdSchema = z.object({ setupId: docId });
 
 /** Dev-only: simulate a successful gateway authorisation (mock provider only). */
 export const mockConfirmPaymentMethod = onCall(async (req) => {
@@ -422,7 +422,7 @@ export const mockConfirmPaymentMethod = onCall(async (req) => {
 
 // ─── Managing saved instruments ──────────────────────────────────────────────
 
-const methodIdSchema = z.object({ methodId: z.string().min(1).max(128) });
+const methodIdSchema = z.object({ methodId: docId });
 
 /** Load a method and prove it belongs to the caller. */
 async function ownedMethod(uid: string, methodId: string) {
@@ -484,7 +484,7 @@ export const deletePaymentMethod = onCall(async (req) => {
 // ─── One-tap top-up ──────────────────────────────────────────────────────────
 
 const savedTopupSchema = z.object({
-  methodId: z.string().min(1).max(128),
+  methodId: docId,
   amount: z.number().int().min(MIN_TOPUP).max(MAX_TOPUP),
 });
 

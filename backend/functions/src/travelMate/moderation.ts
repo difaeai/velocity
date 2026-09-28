@@ -6,12 +6,12 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin } from '../lib/guards';
 
 const REGION = 'asia-south1';
 
 const SuspendInput = z.object({
-  targetUid: z.string().min(1).max(128),
+  targetUid: docId,
   reason: z.string().trim().max(500).optional(),
 });
 

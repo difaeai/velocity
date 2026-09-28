@@ -35,7 +35,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireRole } from '../lib/guards';
 import {
   PRIMARY_VEHICLE_ID,
   VEHICLE_CHECK_TTL_DAYS,
@@ -241,7 +241,7 @@ async function hasLiveWork(uid: string): Promise<boolean> {
   return !trips.empty || !pools.empty;
 }
 
-const vehicleIdSchema = z.object({ vehicleId: z.string().min(1).max(128) });
+const vehicleIdSchema = z.object({ vehicleId: docId });
 
 /**
  * Driver: switch which car they are driving.
@@ -379,8 +379,8 @@ export const confirmVehiclePhoto = onCall(async (req) => {
 });
 
 const reviewVehicleSchema = z.object({
-  driverId:  z.string().min(1).max(128),
-  vehicleId: z.string().min(1).max(128),
+  driverId:  docId,
+  vehicleId: docId,
   approve:   z.boolean(),
   reason:    z.string().max(500).optional(),
 });
@@ -421,7 +421,7 @@ export const adminReviewDriverVehicle = onCall(async (req) => {
 });
 
 const reviewCheckSchema = z.object({
-  driverId: z.string().min(1).max(128),
+  driverId: docId,
   approve:  z.boolean(),
   reason:   z.string().max(500).optional(),
 });

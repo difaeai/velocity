@@ -20,7 +20,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireRole } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 import type { PoolRider } from './enRoute';
 import { poolPerSeatFare } from '../domain/fares';
@@ -30,8 +30,8 @@ import { rosterForTrip, type PoolRosterEntry } from './poolRoster';
 type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue };
 
 const dropSchema = z.object({
-  tripId: z.string().min(1).max(128),
-  riderUid: z.string().min(1).max(128),
+  tripId: docId,
+  riderUid: docId,
 });
 
 export const dropOffRider = onCall(async (req) => {

@@ -18,7 +18,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireRole, requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 import {
@@ -218,7 +218,7 @@ export const submitCommissionSettlement = onCall(async (req) => {
 });
 
 const reviewSchema = z.object({
-  settlementId: z.string().min(1).max(128),
+  settlementId: docId,
   approve: z.boolean(),
   reason: z.string().max(300).optional(),
 });

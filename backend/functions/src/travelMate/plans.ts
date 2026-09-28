@@ -7,7 +7,7 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin } from '../lib/guards';
 
 const REGION = 'asia-south1';
 
@@ -20,7 +20,7 @@ const PlanInput = z.object({
 });
 
 const UpdatePlanInput = z.object({
-  planId: z.string().min(1).max(128),
+  planId: docId,
   name: z.string().trim().min(1).max(60).optional(),
   billingPeriod: z.enum(['weekly', 'yearly']).optional(),
   pricePKR: z.number().positive().optional(),
@@ -29,7 +29,7 @@ const UpdatePlanInput = z.object({
 });
 
 const DeletePlanInput = z.object({
-  planId: z.string().min(1).max(128),
+  planId: docId,
 });
 
 export const adminCreateTravelMatePlan = onCall({ region: REGION }, async (req) => {

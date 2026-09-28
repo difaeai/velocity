@@ -38,7 +38,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAuth, requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 import { computeGenderAccess, canJoinPool, genderCounts } from '../lib/genderAccess';
@@ -949,7 +949,7 @@ export function poolJoinGenderGate(
 
 const acceptSchema = z.object({
   /** The open pool request the driver is taking. */
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   /** Fallback road route. Ignored when the backend has its own Maps key. */
   polyline: z.string().min(4).max(60_000).optional(),
   driverLat: z.number().min(-90).max(90).optional(),
@@ -1343,7 +1343,7 @@ export const acceptEnRouteRider = onCall(async (req) => {
  */
 export const getPoolRiders = onCall(async (req) => {
   const ctx = requireAuth(req);
-  const parsed = z.object({ tripId: z.string().min(1).max(128) }).safeParse(req.data);
+  const parsed = z.object({ tripId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
 
   const snap = await db.doc(`trips/${parsed.data.tripId}`).get();

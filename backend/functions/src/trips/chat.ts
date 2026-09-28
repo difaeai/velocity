@@ -23,11 +23,11 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue } from '../lib/firebase';
-import { requireAuth, invalid } from '../lib/guards';
+import { docId, invalid, requireAuth } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 
 const sendSchema = z.object({
-  tripId: z.string().min(1).max(128),
+  tripId: docId,
   text: z.string().trim().min(1).max(1000),
 });
 

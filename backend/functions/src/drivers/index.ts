@@ -11,7 +11,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAuth, requireAdmin, requireRole, invalid } from '../lib/guards';
+import { docId, invalid, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { applyRole } from '../users';
 import { cycleCashFare, getCommissionSettings } from '../domain/commission';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
@@ -240,7 +240,7 @@ export const adminCreateDriver = onCall(async (req) => {
   return { ok: true, uid: uid!, passwordResetLink };
 });
 
-const driverIdSchema = z.object({ driverId: z.string().min(1).max(128) });
+const driverIdSchema = z.object({ driverId: docId });
 
 /** Admin-only: approve a pending driver and grant the 'driver' role. */
 export const approveDriver = onCall(async (req) => {
@@ -420,7 +420,7 @@ export const payCommission = onCall(async (req) => {
 // ── Admin CRUD for existing drivers ───────────────────────────────────────────
 
 const updateDriverSchema = z.object({
-  driverId:     z.string().min(1).max(128),
+  driverId:     docId,
   fullName:     z.string().min(2).max(120).optional(),
   phone:        z.string().max(20).optional(),
   vehicleType:  z.enum(['mini', 'ac', 'comfort', 'xl', 'bike', 'auto']).optional(),
