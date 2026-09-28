@@ -98,7 +98,11 @@ export default function SpecialRidesScreen() {
 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={[styles.card, { borderLeftColor: colors.danger, borderLeftWidth: 4 }]}>
-            <Text style={styles.cardTitle}>❌ Application Rejected</Text>
+            <Text style={styles.cardTitle}>
+              {dashboard?.applications?.[0]?.status === 'resubmit'
+                ? '✏️ Changes Requested'
+                : '❌ Application Rejected'}
+            </Text>
             {dashboard?.applications?.[0]?.rejectionReason && (
               <Text style={styles.cardDesc}>
                 Reason: {dashboard.applications[0].rejectionReason}

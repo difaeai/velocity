@@ -17,12 +17,20 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { api } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
-import { pickChatPhoto, uploadImageAttachment } from '../../../src/chat/attachments';
+import { captureChatPhoto, pickChatPhoto, uploadImageAttachment } from '../../../src/chat/attachments';
+import { uploadSpecialRidesDoc } from '../../../src/lib/uploadDoc';
 
 interface Photo {
   url: string;
   uploadedAt: number;
 }
+
+type DocKind = 'insurance' | 'registration';
+
+const DOC_LABEL: Record<DocKind, string> = {
+  insurance: 'Insurance proof',
+  registration: 'Vehicle registration',
+};
 
 export default function ComposeSpecialRidesScreen() {
   const { user } = useAuth();
@@ -52,6 +60,35 @@ export default function ComposeSpecialRidesScreen() {
 
   // Photos
   const [photos, setPhotos] = useState<Photo[]>([]);
+
+  // Papers. The admin cannot approve a listing without both.
+  const [insuranceUrl, setInsuranceUrl] = useState('');
+  const [registrationUrl, setRegistrationUrl] = useState('');
+  const [uploadingDoc, setUploadingDoc] = useState<DocKind | null>(null);
+
+  function addDocument(kind: DocKind) {
+    Alert.alert(DOC_LABEL[kind], 'Take a clear photo of the whole page.', [
+      { text: 'Take photo', onPress: () => void uploadDocument(kind, 'camera') },
+      { text: 'Choose from gallery', onPress: () => void uploadDocument(kind, 'gallery') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function uploadDocument(kind: DocKind, source: 'camera' | 'gallery') {
+    if (!user?.uid) return;
+    setUploadingDoc(kind);
+    try {
+      const picked = source === 'camera' ? await captureChatPhoto() : await pickChatPhoto();
+      if (!picked) return;
+      const { url } = await uploadSpecialRidesDoc(user.uid, kind, picked.uri, picked.mime);
+      if (kind === 'insurance') setInsuranceUrl(url);
+      else setRegistrationUrl(url);
+    } catch (e: unknown) {
+      Alert.alert('Error', (e as { message?: string }).message ?? 'Failed to upload document');
+    } finally {
+      setUploadingDoc(null);
+    }
+  }
 
   async function addPhoto() {
     if (!user?.uid) return;
@@ -102,6 +139,13 @@ export default function ComposeSpecialRidesScreen() {
       Alert.alert('No Photos', 'Please add at least one photo of your car to help customers.');
       return;
     }
+    if (!insuranceUrl || !registrationUrl) {
+      Alert.alert(
+        'Documents needed',
+        'Add a photo of your car insurance and of the vehicle registration. Only our review team sees them.',
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -109,10 +153,11 @@ export default function ComposeSpecialRidesScreen() {
         carDetails: {
           make: make.trim(),
           model: model.trim(),
-          year: parseInt(year),
+          // A cleared field parses to NaN, which the callable cannot even send.
+          year: parseInt(year) || null,
           licensePlate: licensePlate.trim(),
           color: color.trim(),
-          seatsCount: parseInt(seatsCount),
+          seatsCount: parseInt(seatsCount) || null,
           transmissionType,
           mileage: parseInt(mileage) || 0,
           features: [],
@@ -126,8 +171,8 @@ export default function ComposeSpecialRidesScreen() {
         pricePerDay: parseInt(pricePerDay),
         photos,
         documentUrls: {
-          insuranceProof: '', // TODO: integrate document upload
-          vehicleRegistration: '',
+          insuranceProof: insuranceUrl,
+          vehicleRegistration: registrationUrl,
         },
         ownerName: ownerName.trim(),
         ownerPhone: ownerPhone.trim(),
@@ -322,6 +367,40 @@ export default function ComposeSpecialRidesScreen() {
           </View>
         )}
 
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Documents</Text>
+        <Text style={styles.sectionHint}>
+          Only our review team sees these. Your car goes live once they are checked.
+        </Text>
+        {(['insurance', 'registration'] as const).map((kind) => {
+          const url = kind === 'insurance' ? insuranceUrl : registrationUrl;
+          const busy = uploadingDoc === kind;
+          return (
+            <Pressable
+              key={kind}
+              style={[styles.docRow, (loading || uploadingDoc !== null) && styles.addPhotoButtonDisabled]}
+              onPress={() => addDocument(kind)}
+              disabled={loading || uploadingDoc !== null}
+            >
+              {url ? (
+                <Image source={{ uri: url }} style={styles.docThumb} />
+              ) : (
+                <View style={[styles.docThumb, styles.docThumbEmpty]}>
+                  <Text style={styles.docThumbIcon}>📄</Text>
+                </View>
+              )}
+              <View style={styles.docText}>
+                <Text style={styles.docTitle}>{DOC_LABEL[kind]}</Text>
+                <Text style={styles.docStatus}>{url ? 'Added. Tap to replace' : 'Tap to add a photo'}</Text>
+              </View>
+              {busy ? (
+                <ActivityIndicator color={colors.primary} size="small" />
+              ) : url ? (
+                <Text style={styles.docCheck}>✓</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Instructions (Optional)</Text>
         <RNTextInput
           placeholder="Pickup location, house rules, special instructions..."
@@ -336,7 +415,7 @@ export default function ComposeSpecialRidesScreen() {
         <Pressable
           style={[styles.submitButton, loading && styles.submitButtonDisabled]}
           onPress={submit}
-          disabled={loading}
+          disabled={loading || uploadingPhoto || uploadingDoc !== null}
         >
           {loading ? (
             <ActivityIndicator color="#fff" size="small" />
@@ -491,6 +570,53 @@ const styles = themed(() =>
       fontSize: 16,
       color: '#fff',
       fontWeight: '700',
+    },
+    sectionHint: {
+      fontSize: 12,
+      color: colors.muted,
+      marginTop: -6,
+      marginBottom: 12,
+    },
+    docRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      marginBottom: 10,
+    },
+    docThumb: {
+      width: 52,
+      height: 52,
+      borderRadius: 6,
+    },
+    docThumbEmpty: {
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    docThumbIcon: {
+      fontSize: 22,
+    },
+    docText: {
+      flex: 1,
+    },
+    docTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    docStatus: {
+      fontSize: 12,
+      color: colors.muted,
+      marginTop: 2,
+    },
+    docCheck: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.primary,
     },
   })
 );

@@ -13,7 +13,19 @@ import { docId } from '../lib/guards';
 const text = (max: number) => z.string().trim().max(max);
 /** parseInt('') on the client serialises as null, so optional numbers accept it. */
 const optNum = (min: number, max: number) => z.number().finite().min(min).max(max).nullish();
-const httpsUrl = z.string().max(2048).regex(/^https:\/\//, 'must be an https URL');
+
+/** Same test as the CNIC and partner uploads: a file the app put in our own bucket. */
+export function isOwnStorageUrl(url: string): boolean {
+  return (
+    url.startsWith('https://firebasestorage.googleapis.com/') ||
+    url.startsWith('https://storage.googleapis.com/')
+  );
+}
+
+const storageUrl = z
+  .string()
+  .max(2048)
+  .refine(isOwnStorageUrl, 'must be uploaded to Velocity Rides storage');
 
 const carDetails = z.object({
   make: text(60).min(1),
@@ -35,15 +47,33 @@ const location = z.object({
 });
 
 const photos = z
-  .array(z.object({ url: httpsUrl, uploadedAt: z.number().finite() }))
+  .array(z.object({ url: storageUrl, uploadedAt: z.number().finite() }))
   .min(1)
   .max(20);
 
-/** Empty strings are let through here; the callable decides whether they are required. */
-const documentUrls = z.object({
-  insuranceProof: z.union([httpsUrl, z.literal('')]),
-  vehicleRegistration: z.union([httpsUrl, z.literal('')]),
-});
+/**
+ * The host's insurance and registration papers.
+ *
+ * Either may be an empty string. App builds up to 1.12.0 have no way to upload
+ * them and always send both empty; refusing that at submission meant nobody on
+ * those builds could list a car at all. The requirement is enforced where it
+ * matters instead: an application without both papers cannot be approved.
+ */
+const documentUrl = z
+  .string()
+  .max(2048)
+  .refine((u) => u === '' || isOwnStorageUrl(u), 'must be uploaded to Velocity Rides storage');
+
+const documentUrls = z
+  .object({ insuranceProof: documentUrl, vehicleRegistration: documentUrl })
+  .default({ insuranceProof: '', vehicleRegistration: '' });
+
+/** Both papers are on file. Tolerates the field being absent on older documents. */
+export function hasBothDocuments(
+  docs: { insuranceProof?: string; vehicleRegistration?: string } | null | undefined,
+): boolean {
+  return Boolean(docs?.insuranceProof && docs?.vehicleRegistration);
+}
 
 export const applicationSchema = z.object({
   carDetails,
@@ -51,10 +81,36 @@ export const applicationSchema = z.object({
   pricePerDay: z.number().int().min(500).max(10_000),
   photos,
   documentUrls,
-  ownerName: text(80).min(1),
-  ownerPhone: text(20).min(1),
-  instructions: text(1000).optional(),
+  // Not required: the app pre-fills it from the account and never checked it,
+  // and the original callable stored whatever arrived.
+  ownerName: text(80),
+  ownerPhone: text(30).min(1),
+  instructions: text(2000).optional(),
 });
+
+/**
+ * What to tell a host who got a field wrong, keyed by the field's path. The app
+ * shows the callable's message as-is, and zod's own ("String must contain at
+ * least 1 character(s)") is not something to put in front of a person.
+ */
+export const APPLICATION_MESSAGES: Record<string, string> = {
+  'carDetails.make': 'Enter the car make, e.g. Toyota.',
+  'carDetails.model': 'Enter the car model, e.g. Corolla.',
+  'carDetails.year': 'Enter the model year, e.g. 2019.',
+  'carDetails.licensePlate': 'Check the licence plate.',
+  'carDetails.color': 'Check the colour.',
+  'carDetails.seatsCount': 'Enter the number of seats.',
+  'carDetails.mileage': 'Check the mileage.',
+  'location.address': 'Enter the address or area where the car is parked.',
+  'location.city': 'Enter the city.',
+  pricePerDay: 'Price must be between 500 and 10,000 PKR.',
+  photos: 'Add between 1 and 20 photos of your car.',
+  'documentUrls.insuranceProof': 'Please add the insurance photo again.',
+  'documentUrls.vehicleRegistration': 'Please add the registration photo again.',
+  ownerName: 'Check your name.',
+  ownerPhone: 'Enter a contact phone number.',
+  instructions: 'The instructions are too long.',
+};
 
 export const applicationUpdateSchema = applicationSchema.partial();
 
@@ -98,16 +154,31 @@ export const bookingRefSchema = z.object({
   reason: text(500).optional(),
 });
 
-/** Parses `data` or raises the same invalid-argument error the module always used. */
+/** The message for `path` or its nearest listed parent ('photos.0.url' → 'photos'). */
+function messageFor(path: string, messages: Record<string, string>): string | undefined {
+  for (let key = path; key; key = key.includes('.') ? key.slice(0, key.lastIndexOf('.')) : '') {
+    if (messages[key]) return messages[key];
+  }
+  return undefined;
+}
+
+/**
+ * Parses `data` or raises the same invalid-argument error the module always
+ * used — in words from `messages` where the field has an entry.
+ */
 export function parseOrInvalid<S extends z.ZodTypeAny>(
   schema: S,
   data: unknown,
   invalid: (m: string) => never,
+  messages: Record<string, string> = {},
 ): z.infer<S> {
   const parsed = schema.safeParse(data ?? {});
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    invalid(issue ? `${issue.path.join('.') || 'input'}: ${issue.message}` : 'Invalid input');
+    const path = issue?.path.join('.') ?? '';
+    invalid(
+      issue ? messageFor(path, messages) ?? `${path || 'input'}: ${issue.message}` : 'Invalid input',
+    );
   }
   return parsed.data;
 }

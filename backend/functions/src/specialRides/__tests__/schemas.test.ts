@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { applicationSchema, bookingSchema, listingsQuerySchema } from '../schemas';
+import {
+  APPLICATION_MESSAGES,
+  applicationSchema,
+  bookingSchema,
+  hasBothDocuments,
+  listingsQuerySchema,
+  parseOrInvalid,
+} from '../schemas';
 
 const DAY = 24 * 60 * 60 * 1000;
+const STORAGE = 'https://firebasestorage.googleapis.com/v0/b/x/o/';
 
-/** The exact shape the mobile compose screen sends today. */
+/** The exact shape the compose screen of app 1.12.0 sends: no way to attach papers. */
 const fromApp = {
   carDetails: {
     make: 'Toyota',
@@ -19,11 +27,16 @@ const fromApp = {
   },
   location: { lat: 0, lng: 0, address: 'F-7 Markaz', city: 'Islamabad' },
   pricePerDay: 5000,
-  photos: [{ url: 'https://firebasestorage.googleapis.com/v0/b/x/o/p.jpg', uploadedAt: 1 }],
+  photos: [{ url: `${STORAGE}p.jpg`, uploadedAt: 1 }],
   documentUrls: { insuranceProof: '', vehicleRegistration: '' },
   ownerName: 'Ali',
   ownerPhone: '03001234567',
 };
+
+/** Throws the message, the way `invalid()` does inside a callable. */
+function raise(message: string): never {
+  throw new Error(message);
+}
 
 describe('applicationSchema', () => {
   it('accepts what the app sends, including a blank year (parseInt → null)', () => {
@@ -32,15 +45,62 @@ describe('applicationSchema', () => {
     expect(applicationSchema.safeParse(blankYear).success).toBe(true);
   });
 
+  it('accepts a blank owner name, as the original callable did', () => {
+    expect(applicationSchema.safeParse({ ...fromApp, ownerName: '' }).success).toBe(true);
+  });
+
   it('strips keys nobody asked for instead of storing them', () => {
     const parsed = applicationSchema.parse({ ...fromApp, status: 'approved', uid: 'someone-else' });
     expect(parsed).not.toHaveProperty('status');
     expect(parsed).not.toHaveProperty('uid');
   });
 
-  it('refuses non-https photo URLs and out-of-range prices', () => {
+  it('refuses photos from outside our storage and out-of-range prices', () => {
     expect(applicationSchema.safeParse({ ...fromApp, photos: [{ url: 'javascript:alert(1)', uploadedAt: 1 }] }).success).toBe(false);
+    expect(applicationSchema.safeParse({ ...fromApp, photos: [{ url: 'https://evil.example/p.jpg', uploadedAt: 1 }] }).success).toBe(false);
     expect(applicationSchema.safeParse({ ...fromApp, pricePerDay: 50 }).success).toBe(false);
+  });
+
+  it('takes papers from our storage, and refuses them from anywhere else', () => {
+    const papers = { insuranceProof: `${STORAGE}ins.jpg`, vehicleRegistration: `${STORAGE}reg.jpg` };
+    expect(applicationSchema.safeParse({ ...fromApp, documentUrls: papers }).success).toBe(true);
+    const outside = { ...papers, insuranceProof: 'https://evil.example/ins.jpg' };
+    expect(applicationSchema.safeParse({ ...fromApp, documentUrls: outside }).success).toBe(false);
+  });
+
+  it('treats absent papers as not provided rather than as an error', () => {
+    const { documentUrls: _omitted, ...withoutPapers } = fromApp;
+    const parsed = applicationSchema.parse(withoutPapers);
+    expect(parsed.documentUrls).toEqual({ insuranceProof: '', vehicleRegistration: '' });
+    expect(hasBothDocuments(parsed.documentUrls)).toBe(false);
+  });
+});
+
+describe('hasBothDocuments', () => {
+  it('needs both', () => {
+    expect(hasBothDocuments({ insuranceProof: 'a', vehicleRegistration: 'b' })).toBe(true);
+    expect(hasBothDocuments({ insuranceProof: 'a', vehicleRegistration: '' })).toBe(false);
+    expect(hasBothDocuments(undefined)).toBe(false);
+  });
+});
+
+describe('parseOrInvalid', () => {
+  it('tells a host what to fix in words, not in zod', () => {
+    const noAddress = { ...fromApp, location: { ...fromApp.location, address: '' } };
+    expect(() => parseOrInvalid(applicationSchema, noAddress, raise, APPLICATION_MESSAGES)).toThrow(
+      'Enter the address or area where the car is parked.',
+    );
+  });
+
+  it('falls back to the nearest listed parent for nested fields', () => {
+    const badPhoto = { ...fromApp, photos: [{ url: 'file:///local.jpg', uploadedAt: 1 }] };
+    expect(() => parseOrInvalid(applicationSchema, badPhoto, raise, APPLICATION_MESSAGES)).toThrow(
+      'Add between 1 and 20 photos of your car.',
+    );
+  });
+
+  it('keeps the field path when there are no words for it', () => {
+    expect(() => parseOrInvalid(bookingSchema, { listingId: 'a/b' }, raise)).toThrow(/^listingId: /);
   });
 });
 

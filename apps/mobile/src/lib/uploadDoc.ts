@@ -72,10 +72,29 @@ export async function uploadBusinessAdPaymentProof(uid: string, uri: string): Pr
   return upload(path, uri);
 }
 
-async function upload(path: string, uri: string): Promise<UploadResult> {
+/**
+ * Special Rides host papers — insurance proof or vehicle registration. Lives
+ * under `specialRides/{uid}/documents/`, readable only by the host and the
+ * admin who reviews the listing, since the papers carry the owner's details.
+ *
+ * The content type is set explicitly: the storage rule for this path accepts
+ * images only, and a blob read back from a local file does not always carry
+ * its type. The pickers feeding this are image-only, so JPEG is the fallback.
+ */
+export async function uploadSpecialRidesDoc(
+  uid: string,
+  kind: 'insurance' | 'registration',
+  uri: string,
+  mime?: string | null,
+): Promise<UploadResult> {
+  const path = `specialRides/${uid}/documents/${kind}-${Date.now()}`;
+  return upload(path, uri, mime?.startsWith('image/') ? mime : 'image/jpeg');
+}
+
+async function upload(path: string, uri: string, contentType?: string): Promise<UploadResult> {
   const storageRef = ref(storage, path);
   const blob = await uriToBlob(uri);
-  await uploadBytes(storageRef, blob);
+  await uploadBytes(storageRef, blob, contentType ? { contentType } : undefined);
   const url = await getDownloadURL(storageRef);
   return { path, url };
 }
