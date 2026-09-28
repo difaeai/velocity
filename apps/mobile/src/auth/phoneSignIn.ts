@@ -97,6 +97,40 @@ async function bridgeToJsSdk(nativeUser: NativeUser): Promise<void> {
   await nativeSignOut(getNativeAuth()).catch(() => {});
 }
 
+type SignInFunction = 'startWhatsAppOtp' | 'verifyWhatsAppOtp' | 'exchangePhoneSession';
+
+/**
+ * Well inside the time Cloud Run keeps an idle instance, so a screen that
+ * re-mounts or a number being retyped does not ping again for nothing.
+ */
+const WARM_EVERY_MS = 5 * 60 * 1000;
+const lastWarmed = new Map<SignInFunction, number>();
+
+/**
+ * Wakes one sign-in function a few seconds before it is needed.
+ *
+ * At Velocity's volume every sign-in function is asleep when somebody arrives,
+ * and a sleeping one cost the person 4–11 s before their code even left the
+ * server (production, September 2026) against 1.6 s for one already awake. A
+ * ping lets the seconds spent typing a number, or waiting for a message, pay
+ * for the boot instead. Fire and forget: a ping that fails costs nothing, the
+ * real request just meets the cold start it would have met anyway.
+ */
+function warm(name: SignInFunction): void {
+  const now = Date.now();
+  if (now - (lastWarmed.get(name) ?? 0) < WARM_EVERY_MS) return;
+  lastWarmed.set(name, now);
+  api.warmSignIn(name).catch(() => {});
+}
+
+/**
+ * Call when the phone-number screen opens, and as the number is typed. The
+ * send function is then awake by the time Continue is tapped.
+ */
+export function warmPhoneSignIn(): void {
+  warm('startWhatsAppOtp');
+}
+
 export interface StartVerificationOptions {
   /**
    * Skip WhatsApp and send the SMS.
@@ -144,9 +178,17 @@ export async function startPhoneVerification(
 ): Promise<PhoneVerification> {
   if (!opts?.preferSms) {
     const viaWhatsApp = await startWhatsAppVerification(e164);
-    if (viaWhatsApp) return viaWhatsApp;
+    if (viaWhatsApp) {
+      // The person is now off reading WhatsApp, which is time enough to boot
+      // the function their code goes to.
+      warm('verifyWhatsAppOtp');
+      return viaWhatsApp;
+    }
   }
 
+  // Same idea for SMS: the session exchange runs the moment the code is read,
+  // often automatically, and the SMS itself takes longer than the boot.
+  warm('exchangePhoneSession');
   return startSmsVerification(e164, onAutoVerified);
 }
 

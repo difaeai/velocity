@@ -13,7 +13,11 @@ import { useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { auth, db } from '../../../src/firebase';
-import { startPhoneVerification, type PhoneVerification } from '../../../src/auth/phoneSignIn';
+import {
+  startPhoneVerification,
+  warmPhoneSignIn,
+  type PhoneVerification,
+} from '../../../src/auth/phoneSignIn';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
@@ -67,6 +71,10 @@ export default function DriverLogin() {
   useEffect(() => {
     if (step === 'enter_otp') setTimeout(() => otpRef.current?.focus(), 300);
   }, [step]);
+
+  // Wake the send function while the number is being typed, so Continue does
+  // not meet a cold start (see warmPhoneSignIn).
+  useEffect(() => { warmPhoneSignIn(); }, []);
 
   // A ref, not the `sending` state: `sendOtp` awaits the local send brake before
   // it flips `sending`, so two taps in that window would both read the stale
@@ -287,7 +295,7 @@ export default function DriverLogin() {
                 </View>
                 <TextInput
                   value={phone}
-                  onChangeText={(t) => setPhone(stripPhone(t))}
+                  onChangeText={(t) => { setPhone(stripPhone(t)); warmPhoneSignIn(); }}
                   keyboardType="phone-pad"
                   placeholder="3001234567"
                   placeholderTextColor={colors.muted}
