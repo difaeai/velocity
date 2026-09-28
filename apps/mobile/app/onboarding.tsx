@@ -3,15 +3,12 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -24,6 +21,7 @@ import { useAuth } from '../src/auth/AuthContext';
 import { colors } from '../src/config';
 import { themed } from '../src/theme';
 import { LogoMark } from '../src/ui/LogoMark';
+import { BirthDatePicker, birthDateFromParts, type BirthDateParts } from '../src/ui/BirthDatePicker';
 
 const GENDERS = ['Male', 'Female', 'Other'] as const;
 type Gender = typeof GENDERS[number];
@@ -36,14 +34,9 @@ function ageFromDob(dob: Date): number {
   return age;
 }
 
-const DEFAULT_DOB = new Date();
-DEFAULT_DOB.setFullYear(DEFAULT_DOB.getFullYear() - 25);
-
-const MAX_DATE = new Date();
-MAX_DATE.setFullYear(MAX_DATE.getFullYear() - 13);
-
-const MIN_DATE = new Date();
-MIN_DATE.setFullYear(MIN_DATE.getFullYear() - 100);
+// Nobody under 13 signs up (checked on save), nobody over 100 is offered.
+const MAX_YEAR = new Date().getFullYear() - 13;
+const MIN_YEAR = new Date().getFullYear() - 100;
 
 export default function Onboarding() {
   const router = useRouter();
@@ -51,9 +44,8 @@ export default function Onboarding() {
 
   const [name, setName]               = useState('');
   const [gender, setGender]           = useState<Gender | null>(null);
-  const [dob, setDob]                 = useState<Date | null>(null);
-  const [pickerTemp, setPickerTemp]   = useState<Date>(DEFAULT_DOB);
-  const [showPicker, setShowPicker]   = useState(false);
+  const [dobParts, setDobParts]       = useState<BirthDateParts>({ day: null, month: null, year: null });
+  const dob                           = birthDateFromParts(dobParts);
   const [photoUri, setPhotoUri]       = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [saving, setSaving]           = useState(false);
@@ -100,7 +92,7 @@ export default function Onboarding() {
   async function save() {
     if (!name.trim()) { setError('Please enter your name.'); return; }
     if (!gender)       { setError('Please select your gender.'); return; }
-    if (!dob)          { setError('Please select your date of birth.'); return; }
+    if (!dob)          { setError('Please pick the day, month and year you were born.'); return; }
     const age = ageFromDob(dob);
     if (age < 13)      { setError('You must be at least 13 years old.'); return; }
     if (!user) {
@@ -136,25 +128,6 @@ export default function Onboarding() {
       Alert.alert('Save failed', msg);
     } finally {
       setSaving(false);
-    }
-  }
-
-  function openPicker() {
-    setPickerTemp(dob ?? DEFAULT_DOB);
-    setShowPicker(true);
-  }
-
-  function onDateChange(event: { type?: string }, selected?: Date) {
-    if (Platform.OS === 'android') {
-      // Android native dialog: 'set' = OK pressed, 'dismissed' = cancelled
-      setShowPicker(false);
-      if (event.type === 'set' && selected) {
-        setDob(selected);
-        setPickerTemp(selected);
-      }
-    } else {
-      // iOS spinner inside Modal — just update temp; Done button commits
-      if (selected) setPickerTemp(selected);
     }
   }
 
@@ -223,18 +196,13 @@ export default function Onboarding() {
         {/* Date of Birth */}
         <View style={styles.field}>
           <Text style={styles.label}>Date of birth</Text>
-          <Pressable style={styles.dobBtn} onPress={openPicker}>
-            <Text style={styles.dobIcon}>📅</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={dob ? styles.dobText : styles.dobPlaceholder}>
-                {dob
-                  ? dob.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-                  : 'Select your date of birth'}
-              </Text>
-              {dob && <Text style={styles.dobAge}>{ageFromDob(dob)} years old</Text>}
-            </View>
-            <Text style={styles.dobChevron}>›</Text>
-          </Pressable>
+          <BirthDatePicker
+            value={dobParts}
+            onChange={setDobParts}
+            minYear={MIN_YEAR}
+            maxYear={MAX_YEAR}
+          />
+          {dob && <Text style={styles.dobAge}>{ageFromDob(dob)} years old</Text>}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -255,46 +223,6 @@ export default function Onboarding() {
         </Pressable>
       </ScrollView>
 
-      {/* Android: native dialog (no Modal wrapper needed) */}
-      {Platform.OS === 'android' && showPicker && (
-        <DateTimePicker
-          value={pickerTemp}
-          mode="date"
-          display="default"
-          maximumDate={MAX_DATE}
-          minimumDate={MIN_DATE}
-          onChange={onDateChange}
-        />
-      )}
-
-      {/* iOS: spinner in bottom-sheet Modal */}
-      {Platform.OS === 'ios' && (
-        <Modal visible={showPicker} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
-              <View style={styles.modalHeader}>
-                <Pressable onPress={() => setShowPicker(false)}>
-                  <Text style={styles.modalCancel}>Cancel</Text>
-                </Pressable>
-                <Text style={styles.modalTitle}>Date of birth</Text>
-                <Pressable onPress={() => { setDob(pickerTemp); setShowPicker(false); }}>
-                  <Text style={styles.modalDone}>Done</Text>
-                </Pressable>
-              </View>
-              <DateTimePicker
-                value={pickerTemp}
-                mode="date"
-                display="spinner"
-                maximumDate={MAX_DATE}
-                minimumDate={MIN_DATE}
-                onChange={onDateChange}
-                style={styles.picker}
-                textColor="#ffffff"
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
     </SafeAreaView>
   );
 }
@@ -332,22 +260,9 @@ const styles = themed(() => StyleSheet.create({
   genderBtnText:       { fontSize: 13, fontWeight: '700', color: colors.muted },
   genderBtnTextActive: { color: colors.primary },
 
-  dobBtn:         { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 16, paddingVertical: 10 },
-  dobIcon:        { fontSize: 20 },
-  dobText:        { fontSize: 15, color: colors.text, fontWeight: '700' },
-  dobPlaceholder: { fontSize: 15, color: colors.muted },
-  dobAge:         { fontSize: 12, color: colors.primary, fontWeight: '700', marginTop: 2 },
-  dobChevron:     { fontSize: 22, color: colors.muted },
+  dobAge:         { fontSize: 12, color: colors.primary, fontWeight: '700' },
 
   error:       { color: colors.danger, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   saveBtn:     { height: 54, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   saveBtnText: { fontSize: 17, fontWeight: '900', color: '#000' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalSheet:   { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
-  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  modalTitle:   { fontSize: 16, fontWeight: '800', color: colors.text },
-  modalCancel:  { fontSize: 15, color: colors.muted, fontWeight: '600' },
-  modalDone:    { fontSize: 15, fontWeight: '800', color: colors.primary },
-  picker:       { width: '100%', height: 200 },
 }));

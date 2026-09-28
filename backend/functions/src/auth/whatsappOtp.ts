@@ -39,7 +39,8 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { auth, db, FieldValue, Timestamp } from '../lib/firebase';
-import { rateLimit } from '../lib/ratelimit';
+import { rateLimit, rateLimitSlot } from '../lib/ratelimit';
+import { isWarmPing, warmUp } from '../lib/warmup';
 import {
   classifySendError,
   sendOtpTemplate,
@@ -267,22 +268,81 @@ function toMillis(v: unknown): number | null {
   return null;
 }
 
+/** What the checks in front of a paid send decided. */
+type GateVerdict =
+  | 'pass'
+  /** This number has asked for too many codes this hour. */
+  | 'rate-limited'
+  | 'disabled'
+  | 'undeliverable'
+  | 'suppressed'
+  | 'capped';
+
 /**
- * Takes one slot out of today's budget, or reports that there is none left.
+ * Every check that stands between a request and a paid send, in ONE transaction.
  *
- * Transactional because the alternative — read, decide, write — lets a burst of
- * concurrent logins all read the same count and every one of them believe it is
- * under the cap.
+ * These used to be separate steps — read the settings, take a rate-limit slot,
+ * take a budget slot — and Firestore lives in nam5 while this function runs in
+ * Mumbai, so each step crossed an ocean (a transaction crosses twice) while the
+ * person waited for their code. Folded together they are one read of all four
+ * documents and one commit. The rules, and the order they are applied in, are
+ * exactly what they were.
+ *
+ * Transactional for the reason the budget always was: read, decide, write lets
+ * a burst of concurrent logins all read the same count and every one of them
+ * believe it is under the cap.
  */
-async function reserveOtpBudget(day: string, cap: number): Promise<boolean> {
-  if (cap <= 0) return false;
-  const ref = db.doc(`${USAGE_COLLECTION}/${day}`);
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const used = (snap.get('otpReserved') as number | undefined) ?? 0;
-    if (used >= cap) return false;
-    tx.set(ref, { otpReserved: used + 1, day }, { merge: true });
-    return true;
+async function passOtpGates(to: string, day: string): Promise<GateVerdict> {
+  const settingsRef = db.doc(SETTINGS_DOC);
+  const healthRef = db.doc(HEALTH_DOC);
+  const usageRef = db.doc(`${USAGE_COLLECTION}/${day}`);
+  // Keyed on the number rather than a uid — there is no uid yet, and the number
+  // is what the spend is attached to.
+  const slot = rateLimitSlot(to, 'whatsappOtpSend', 3600);
+
+  return db.runTransaction(async (tx): Promise<GateVerdict> => {
+    const [settingsSnap, healthSnap, slotSnap, usageSnap] = await tx.getAll(
+      settingsRef,
+      healthRef,
+      slot.ref,
+      usageRef,
+    );
+
+    const settings = readOtpSettings(settingsSnap?.data());
+    if (!settings.enabled) return 'disabled';
+
+    // A reviewer's test number, which can never receive a WhatsApp message
+    // because it is fictional. Without this the reviewer is told a code is on
+    // its way — Meta answers 200, which means accepted, not delivered — and then
+    // sits in front of a code screen for a message that does not exist. The
+    // review fails on a login that cannot be completed.
+    //
+    // `undeliverable` is precisely the right answer: the client caches it
+    // against this one number and drops to the native Firebase flow, where the
+    // fixed code works, while every other number goes on using WhatsApp.
+    //
+    // This chooses a channel and nothing more. Firebase still performs the
+    // verification, so being listed here makes no account easier to sign in to.
+    //
+    // Checked ahead of the rate limit and the daily budget deliberately: a
+    // reviewer retrying must never be able to lock themselves out of the account
+    // they were given, and a code that is never sent should cost nothing.
+    if (settings.demoNumbers.includes(to)) return 'undeliverable';
+
+    const suppressedUntil = toMillis(healthSnap?.get('suppressedUntil'));
+    if (suppressedUntil !== null && suppressedUntil > Date.now()) return 'suppressed';
+
+    // Over the limit writes nothing, as `rateLimit` does.
+    const sends = ((slotSnap?.get('count') as number | undefined) ?? 0) + 1;
+    if (sends > settings.maxSendsPerNumberPerHour) return 'rate-limited';
+    tx.set(slot.ref, slot.fields(sends));
+
+    // The send is counted against the number even when the budget then refuses
+    // it, exactly as when these were two transactions.
+    const used = (usageSnap?.get('otpReserved') as number | undefined) ?? 0;
+    if (settings.dailyCap <= 0 || used >= settings.dailyCap) return 'capped';
+    tx.set(usageRef, { otpReserved: used + 1, day }, { merge: true });
+    return 'pass';
   });
 }
 
@@ -350,6 +410,8 @@ export type OtpFallbackReason =
  * exists to stop.
  */
 export const startWhatsAppOtp = onCall(async (req) => {
+  if (isWarmPing(req.data)) return warmUp();
+
   const parsed = startSchema.safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Enter your mobile number.');
 
@@ -365,40 +427,13 @@ export const startWhatsAppOtp = onCall(async (req) => {
   const cfg = whatsAppOtpConfig();
   if (!cfg) return fallback('not-configured');
 
-  const [settingsSnap, healthSnap] = await Promise.all([
-    db.doc(SETTINGS_DOC).get(),
-    db.doc(HEALTH_DOC).get(),
-  ]);
-  const settings = readOtpSettings(settingsSnap.data());
-  if (!settings.enabled) return fallback('disabled');
-
-  // A reviewer's test number, which can never receive a WhatsApp message
-  // because it is fictional. Without this the reviewer is told a code is on its
-  // way — Meta answers 200, which means accepted, not delivered — and then sits
-  // in front of a code screen for a message that does not exist. The review
-  // fails on a login that cannot be completed.
-  //
-  // `undeliverable` is precisely the right answer: the client caches it against
-  // this one number and drops to the native Firebase flow, where the fixed code
-  // works, while every other number goes on using WhatsApp.
-  //
-  // This chooses a channel and nothing more. Firebase still performs the
-  // verification, so being listed here makes no account easier to sign in to.
-  //
-  // Checked ahead of the rate limit and the daily budget deliberately: a
-  // reviewer retrying must never be able to lock themselves out of the account
-  // they were given, and a code that is never sent should cost nothing.
-  if (settings.demoNumbers.includes(to)) return fallback('undeliverable');
-
-  const suppressedUntil = toMillis(healthSnap.get('suppressedUntil'));
-  if (suppressedUntil !== null && suppressedUntil > Date.now()) return fallback('suppressed');
-
-  // Keyed on the number rather than a uid — there is no uid yet, and the number
-  // is what the spend is attached to.
-  await rateLimit(to, 'whatsappOtpSend', settings.maxSendsPerNumberPerHour, 3600);
-
-  const day = pktDayKey(Date.now());
-  if (!(await reserveOtpBudget(day, settings.dailyCap))) return fallback('capped');
+  const startedAt = Date.now();
+  const day = pktDayKey(startedAt);
+  const verdict = await passOtpGates(to, day);
+  if (verdict === 'rate-limited') {
+    throw new HttpsError('resource-exhausted', 'Too many requests — please slow down.');
+  }
+  if (verdict !== 'pass') return fallback(verdict);
 
   // A resend issues a NEW challenge and leaves the previous one alone to expire,
   // which Firebase does not do. It means somebody who tapped Resend and then
@@ -411,21 +446,35 @@ export const startWhatsAppOtp = onCall(async (req) => {
   const ref = db.collection(CHALLENGES).doc();
   const nowMs = Date.now();
 
-  await ref.set({
-    phone: to,
-    e164: `+${to}`,
-    codeHash: hashCode(ref.id, to, code),
-    attempts: 0,
-    consumed: false,
-    validUntilMs: nowMs + CODE_TTL_SEC * 1000,
-    createdAt: FieldValue.serverTimestamp(),
-    // Swept by the Firestore TTL policy (see docs/HARDENING.md). An hour past
-    // the code's own life, so a challenge is always dead by the rules above long
-    // before the sweeper is what stops it.
-    expireAt: Timestamp.fromMillis(nowMs + 60 * 60 * 1000),
-  });
-
-  const res = await sendOtpTemplate(cfg, to, code);
+  // The code goes to Meta while its challenge is being stored, not after it.
+  // The id and the hash are both made right here, so the send has nothing to
+  // wait for, and the write is one more ocean crossing the person would
+  // otherwise sit through before their phone buzzed. A code cannot be typed
+  // before it has arrived, and the write finishes long before that.
+  const [stored, res] = await Promise.all([
+    ref
+      .set({
+        phone: to,
+        e164: `+${to}`,
+        codeHash: hashCode(ref.id, to, code),
+        attempts: 0,
+        consumed: false,
+        validUntilMs: nowMs + CODE_TTL_SEC * 1000,
+        createdAt: FieldValue.serverTimestamp(),
+        // Swept by the Firestore TTL policy (see docs/HARDENING.md). An hour
+        // past the code's own life, so a challenge is always dead by the rules
+        // above long before the sweeper is what stops it.
+        expireAt: Timestamp.fromMillis(nowMs + 60 * 60 * 1000),
+      })
+      .then(
+        () => true,
+        (err: unknown) => {
+          logger.error('WhatsApp OTP: could not store the challenge', { err });
+          return false;
+        },
+      ),
+    sendOtpTemplate(cfg, to, code),
+  ]);
 
   if (!res.ok) {
     // Nothing was delivered, so the challenge is a live code nobody has. Drop it
@@ -434,6 +483,14 @@ export const startWhatsAppOtp = onCall(async (req) => {
     countOtpUsage('otpFailed', day);
     if (res.action === 'halt') await suppressWhatsAppOtp(res.detail, res.code);
     return fallback(res.action === 'drop-recipient' ? 'undeliverable' : 'send-failed');
+  }
+
+  if (!stored) {
+    // The message went out but there is nothing to check its code against, so
+    // it can never sign anybody in. Send the person to SMS rather than leave
+    // them typing a code that is bound to be refused.
+    countOtpUsage('otpSent', day);
+    return fallback('send-failed');
   }
 
   // Meta answering 200 means *accepted*, not delivered. The only notice that a
@@ -447,6 +504,9 @@ export const startWhatsAppOtp = onCall(async (req) => {
   }
 
   countOtpUsage('otpSent', day);
+  // How long the person waited before Meta had their code. It is the number to
+  // read in the logs when somebody says the code was slow.
+  logger.info('WhatsApp OTP: sent', { ms: Date.now() - startedAt });
   return {
     sent: true as const,
     via: 'whatsapp' as const,
@@ -565,6 +625,8 @@ async function userForPhone(
  * same claims, so every security rule and every screen keeps working untouched.
  */
 export const verifyWhatsAppOtp = onCall(async (req) => {
+  if (isWarmPing(req.data)) return warmUp();
+
   const parsed = verifySchema.safeParse(req.data);
   if (!parsed.success) {
     throw new HttpsError('invalid-argument', `Enter the ${CODE_LENGTH}-digit code.`);

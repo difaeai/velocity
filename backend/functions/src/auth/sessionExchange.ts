@@ -24,6 +24,7 @@ import { z } from 'zod';
 
 import { auth } from '../lib/firebase';
 import { rateLimit } from '../lib/ratelimit';
+import { isWarmPing, warmUp } from '../lib/warmup';
 
 const schema = z.object({
   idToken: z.string().min(20).max(8192),
@@ -72,6 +73,10 @@ export function checkExchangeable(
 }
 
 export const exchangePhoneSession = onCall(async (req) => {
+  // Sent by the app while the SMS is still on its way, so this is awake by the
+  // time there is a token to trade (see src/lib/warmup.ts).
+  if (isWarmPing(req.data)) return warmUp();
+
   const parsed = schema.safeParse(req.data);
   if (!parsed.success) {
     throw new HttpsError('invalid-argument', 'Provide the verification token.');

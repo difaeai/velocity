@@ -17,7 +17,11 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { Text, TextInput } from '../../src/ui/Text';
 
-import { startPhoneVerification, type PhoneVerification } from '../../src/auth/phoneSignIn';
+import {
+  startPhoneVerification,
+  warmPhoneSignIn,
+  type PhoneVerification,
+} from '../../src/auth/phoneSignIn';
 import { colors } from '../../src/config';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '../../src/share/links';
 import { themed } from '../../src/theme';
@@ -212,6 +216,10 @@ export default function SignIn() {
   useEffect(() => {
     if (step === 'enter_otp') setTimeout(() => otpRef.current?.focus(), 300);
   }, [step]);
+
+  // Wake the send function while the number is being typed, so Continue does
+  // not meet a cold start (see warmPhoneSignIn).
+  useEffect(() => { warmPhoneSignIn(); }, []);
 
   // A ref, not the `sending` state: `sendOtp` awaits the local send brake before
   // it flips `sending`, and two taps landing in that window would both read the
@@ -443,7 +451,7 @@ export default function SignIn() {
           <View style={styles.phoneDivider} />
           <TextInput
             value={phone}
-            onChangeText={(t) => setPhone(stripPhone(t))}
+            onChangeText={(t) => { setPhone(stripPhone(t)); warmPhoneSignIn(); }}
             keyboardType="phone-pad"
             placeholder="300 1234567"
             placeholderTextColor="rgba(255,255,255,0.28)"

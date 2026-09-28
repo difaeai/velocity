@@ -499,6 +499,13 @@ export const api = {
     { challengeId: string; code: string },
     { customToken: string }
   >('verifyWhatsAppOtp'),
+  /**
+   * Wakes one sign-in function ahead of need, so the real request does not
+   * meet a cold start. Does nothing else. See `warmPhoneSignIn` in
+   * src/auth/phoneSignIn.ts.
+   */
+  warmSignIn: (name: 'startWhatsAppOtp' | 'verifyWhatsAppOtp' | 'exchangePhoneSession') =>
+    callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
   claimDriverRole: callable<Record<string, never>, { ok: boolean }>('claimDriverRole'),
   /**
    * Irreversible. Deletes the caller's own account, purges their personal data
