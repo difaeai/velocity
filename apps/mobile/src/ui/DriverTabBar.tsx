@@ -59,17 +59,19 @@ const ICON_PATHS: Record<DriverTab, string> = {
 export function DriverTabBar({ active }: { active: DriverTab }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const walletComingSoon = useWalletComingSoon();
+  const walletHidden = useWalletComingSoon();
+
+  // Until the wallet economy is officially launched the app presents itself as
+  // cash-only, so the tab is removed rather than shown with a "soon" badge —
+  // advertising a feature nobody can use just invites the question. Flipping
+  // `walletTopupEnabled` brings it back with no deploy.
+  const tabs = walletHidden ? TABS.filter((t) => t.key !== 'wallet') : TABS;
 
   return (
     <View style={[styles.bar, { paddingBottom: insets.bottom, height: DRIVER_TAB_BAR_HEIGHT + insets.bottom }]}>
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const focused = t.key === active;
         const tint = focused ? colors.text : colors.muted;
-        // A tab is a quarter of the screen at 11pt — "Wallet (Coming soon)"
-        // would truncate to nonsense, so the badge carries it here and the
-        // full wording appears on the drawer rows and the screen itself.
-        const soon = t.key === 'wallet' && walletComingSoon;
         return (
           <Pressable
             key={t.key}
@@ -77,15 +79,10 @@ export function DriverTabBar({ active }: { active: DriverTab }) {
             onPress={() => { if (!focused) router.replace(t.href); }}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={soon ? `${t.label} (Coming soon)` : t.label}
+            accessibilityLabel={t.label}
           >
             <View>
               <TabIcon tab={t.key} color={tint} />
-              {soon ? (
-                <View style={styles.soonDot}>
-                  <Text style={styles.soonDotText}>soon</Text>
-                </View>
-              ) : null}
             </View>
             <Text style={[styles.label, { color: tint }, focused && styles.labelActive]} numberOfLines={1}>
               {t.label}
@@ -114,14 +111,4 @@ const styles = themed(() => StyleSheet.create({
   },
   label:       { fontSize: 11, fontWeight: '600' },
   labelActive: { fontWeight: '800' },
-  soonDot: {
-    position: 'absolute',
-    top: -6,
-    left: 14,
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  soonDotText: { fontSize: 8, fontWeight: '900', color: colors.btnText, textTransform: 'uppercase' },
 }));

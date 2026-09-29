@@ -15,7 +15,7 @@ import { Text } from './Text';
 import { useRouter } from 'expo-router';
 
 import { colors } from '../config';
-import { useWalletLabel } from '../hooks/driver';
+import { useWalletComingSoon, useWalletLabel } from '../hooks/driver';
 import { otherLanguageLabel, toggleLanguage } from '../i18n';
 import { getThemeMode, toggleTheme, themed } from '../theme';
 
@@ -74,6 +74,7 @@ export function DriverDrawer({
   const slideX  = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const walletLabel = useWalletLabel('Wallet & Payouts');
+  const walletHidden = useWalletComingSoon();
 
   useEffect(() => {
     if (visible) {
@@ -158,7 +159,13 @@ export function DriverDrawer({
                 find this switches to lying about what they drive instead. */}
             <NavItem icon="🚗" label="Your cars"              onPress={() => go('/driver/vehicles')} />
             <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
-            <NavItem icon="💳" label={walletLabel}            onPress={() => go('/driver/wallet')} />
+            {/* Hidden until the wallet economy officially launches — the app
+                presents itself as cash-only until then. Commission settlement
+                does not depend on this screen: a locked driver gets the whole
+                pay-and-upload flow inline on the home tab. */}
+            {walletHidden ? null : (
+              <NavItem icon="💳" label={walletLabel}          onPress={() => go('/driver/wallet')} />
+            )}
             {/* Pool work, kept apart from the solo feed on the home tab. Passengers
                 asking for a shared ride are a different job — several pickups and
                 drop-offs, a fare to accept or counter — so they get their own

@@ -419,13 +419,13 @@ export default function DriverHome() {
       return;
     }
     if (outstanding.blocked) {
+      // No "open the wallet" button: the home screen already replaces the
+      // request list with the OutstandingFees card whenever this is true, so
+      // the way to settle is behind them, not on a screen that is hidden until
+      // the wallet economy launches.
       Alert.alert(
         'Cancellation fees due',
-        `Pay ${outstanding.amount.toLocaleString()} PKR in cancellation fees to start accepting rides again. Open your wallet to settle.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open wallet', onPress: () => router.push('/driver/wallet') },
-        ],
+        `Pay ${outstanding.amount.toLocaleString()} PKR in cancellation fees to start accepting rides again. Go back to settle.`,
       );
       return;
     }
@@ -718,21 +718,15 @@ export default function DriverHome() {
         </ScrollView>
       ) : commissionLocked ? (
         <ScrollView contentContainerStyle={styles.scroll}>
+          {/* CommissionLock carries the whole settle flow — Velocity's accounts,
+              the screenshot upload and the AI verdict — so there is nothing on
+              the wallet screen a locked driver needs. The button that used to
+              send them there is gone with the rest of the wallet UI. */}
           <CommissionLock status={commission} uid={uid} requests={visible} />
-          <PrimaryButton
-            variant="secondary"
-            label="💳 Open wallet"
-            onPress={() => router.push('/driver/wallet')}
-          />
         </ScrollView>
       ) : outstanding.blocked ? (
         <ScrollView contentContainerStyle={styles.scroll}>
           <OutstandingFees status={outstanding} uid={uid} role="driver" />
-          <PrimaryButton
-            variant="secondary"
-            label="💳 Open wallet"
-            onPress={() => router.push('/driver/wallet')}
-          />
         </ScrollView>
       ) : !online ? (
         <View style={styles.flex}>

@@ -139,25 +139,30 @@ export default function ProfileScreen() {
             <Text style={styles.chevron}>➔</Text>
           </Pressable>
 
-          <View style={styles.divider} />
+          {/* Hidden until the wallet economy officially launches — the app
+              presents itself as cash-only until then. The divider goes with it
+              so the list does not end on a rule. */}
+          {walletComingSoon ? null : (
+            <>
+              <View style={styles.divider} />
 
-          <Pressable style={styles.listItem} onPress={openWallet}>
-            <View style={styles.itemLeftRow}>
-              <Text style={styles.itemIcon}>💳</Text>
-              <View>
-                <Text style={styles.itemTitle}>Wallet &amp; payments</Text>
-                <Text style={styles.itemSubtitle}>
-                  {walletComingSoon ? 'Top up coming soon · Cash' : 'Top up · Cash'}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.cashBadgeContainer}>
-              <View style={styles.cashBadge}>
-                <Text style={styles.cashText}>💵</Text>
-              </View>
-              <Text style={styles.chevron}>➔</Text>
-            </View>
-          </Pressable>
+              <Pressable style={styles.listItem} onPress={openWallet}>
+                <View style={styles.itemLeftRow}>
+                  <Text style={styles.itemIcon}>💳</Text>
+                  <View>
+                    <Text style={styles.itemTitle}>Wallet &amp; payments</Text>
+                    <Text style={styles.itemSubtitle}>Top up · Cash</Text>
+                  </View>
+                </View>
+                <View style={styles.cashBadgeContainer}>
+                  <View style={styles.cashBadge}>
+                    <Text style={styles.cashText}>💵</Text>
+                  </View>
+                  <Text style={styles.chevron}>➔</Text>
+                </View>
+              </Pressable>
+            </>
+          )}
         </View>
 
         {/* Earn as a driver banner */}
