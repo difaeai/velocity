@@ -68,3 +68,14 @@ velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json
 # passed to `eas submit` by path; this pattern is the safety net for the day
 # someone drops one into the working tree and runs `git add .`.
 *.p8
+
+# Launch-video output from the /brag skill. The finished clip is a marketing
+# asset, not source — and `work/` inside it carries its own node_modules, so the
+# folder runs to tens of megabytes. Copy anything worth keeping out to the
+# marketing drive rather than committing it.
+brag-output/
+
+# Scratch API payloads. These pile up while debugging a gateway or the WhatsApp
+# Cloud API by hand (`curl -d @body.json`) and routinely carry a real phone
+# number or a live token, so they must never reach a commit.
+body*.json
