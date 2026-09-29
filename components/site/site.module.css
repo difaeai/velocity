@@ -2531,6 +2531,17 @@
   color: var(--lime);
 }
 
+.footerOwner {
+  color: var(--text-mut);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 200ms var(--ease);
+}
+
+.footerOwner:hover {
+  color: var(--lime);
+}
+
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */

@@ -364,6 +364,14 @@ const JSON_LD = {
       '@type': 'Organization',
       '@id': `${SITE}#org`,
       name: 'Velocity Rides',
+      // Velocity Rides is a brand, not a company. Spelled exactly as on the Meta
+      // business portfolio and berreto.com — Meta matches the two strings.
+      legalName: 'Berreto (Private) Limited',
+      parentOrganization: {
+        '@type': 'Organization',
+        name: 'Berreto (Private) Limited',
+        url: 'https://berreto.com',
+      },
       url: SITE,
       logo: `${SITE}/app/icon.png`,
       areaServed: { '@type': 'Country', name: 'Pakistan' },
@@ -1108,7 +1116,19 @@ export default function Home() {
           </div>
 
           <div className={styles.footerBase}>
-            <span>© {new Date().getFullYear()} Velocity Rides. Built for Pakistan.</span>
+            <span>
+              © {new Date().getFullYear()} Velocity Rides. Built for Pakistan. Velocity Rides is a
+              product of{' '}
+              <a
+                className={styles.footerOwner}
+                href="https://berreto.com"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Berreto (Private) Limited
+              </a>
+              .
+            </span>
             <span className={styles.footerLegal}>
               <a href={PRIVACY_URL}>Privacy</a>
               <a href={TERMS_URL}>Terms</a>
