@@ -22,7 +22,8 @@ import { useNearbyActivity } from '../../src/hooks/nearbyActivity';
 import { usePresenceBeacon } from '../../src/hooks/presence';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
-import { useWalletLabel } from '../../src/hooks/driver';
+import { useOutstanding, useWalletComingSoon, useWalletLabel } from '../../src/hooks/driver';
+import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { useMessagesUnreadTotal } from '../../src/hooks/messages';
@@ -73,6 +74,10 @@ export default function PassengerHome() {
   const { active: activeTrip } = useActiveTrip(user?.uid);
   const router = useRouter();
   const walletLabel = useWalletLabel('Wallet & payments');
+  const walletHidden = useWalletComingSoon();
+  // Unpaid cancellation fees block booking, and the card that clears
+  // them used to be reachable only from the wallet. See the render below.
+  const outstanding = useOutstanding(user?.uid);
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -292,6 +297,17 @@ export default function PassengerHome() {
           keyboardShouldPersistTaps="handled"
         >
 
+        {/* ── An unpaid cancellation fee that has grown past the limit.
+             Top of the sheet because the backend refuses createTrip while it
+             stands: without this the passenger taps "Where to?", is told no,
+             and has nowhere to go. It used to be reachable only from the wallet
+             screen, which is hidden until the wallet economy launches. The card
+             is self-contained — Velocity's accounts, the screenshot upload and
+             the AI verdict — exactly as the driver home screen uses it. ── */}
+        {outstanding.blocked ? (
+          <OutstandingFees status={outstanding} uid={user?.uid} role="passenger" />
+        ) : null}
+
         {/* ── The ride already in progress, if there is one.
              Above "Where to?" because it outranks it: a rider with a driver on
              the way is not looking to book, they are looking for the ride they
@@ -488,10 +504,14 @@ export default function PassengerHome() {
                     <Text style={[styles.menuItemText, styles.menuItemTextActive]}>City</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
-                    <Text style={styles.menuItemIcon}>💳</Text>
-                    <Text style={styles.menuItemText}>{walletLabel}</Text>
-                  </Pressable>
+                  {/* Hidden until the wallet economy officially launches — until
+                      then the app presents itself as cash-only. */}
+                  {walletHidden ? null : (
+                    <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
+                      <Text style={styles.menuItemIcon}>💳</Text>
+                      <Text style={styles.menuItemText}>{walletLabel}</Text>
+                    </Pressable>
+                  )}
 
                   {/* Straight to the advertising screen — no hub in between. The
                       business-delivery quote form that used to share this entry

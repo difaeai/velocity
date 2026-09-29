@@ -1429,23 +1429,17 @@ export default function Booking() {
                 syncPayFade();
               }}
             >
-              {BOOKABLE_PAYMENT_METHODS.map((m) => {
+              {/* The wallet chip is not shown at all until the wallet economy
+                  officially launches — a greyed-out "Wallet (soon)" still
+                  advertises it, and the booking screen should read as a
+                  cash/EasyPaisa/JazzCash/bank world until then. */}
+              {BOOKABLE_PAYMENT_METHODS.filter((m) => m !== 'wallet' || walletTopupEnabled).map((m) => {
                 const on = paymentMethods.includes(m);
-                const walletLocked = m === 'wallet' && !walletTopupEnabled;
                 return (
                   <Pressable
                     key={m}
-                    style={[styles.payChip, on && styles.payChipOn, walletLocked && styles.payChipOff]}
-                    onPress={() => {
-                      if (walletLocked) {
-                        Alert.alert(
-                          'Coming soon',
-                          'Wallet payments are coming soon. Cash, EasyPaisa, JazzCash and bank transfer all work today.',
-                        );
-                        return;
-                      }
-                      togglePaymentMethod(m);
-                    }}
+                    style={[styles.payChip, on && styles.payChipOn]}
+                    onPress={() => togglePaymentMethod(m)}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: on }}
                     accessibilityLabel={PAYMENT_METHOD_LABELS[m]}
@@ -1456,7 +1450,7 @@ export default function Booking() {
                       <WalletIcon size={16} color={on ? colors.primary : colors.muted} accent={on ? colors.primary : colors.muted} />
                     ) : null}
                     <Text style={[styles.payChipTxt, on && styles.payChipTxtOn]}>
-                      {walletLocked ? 'Wallet (soon)' : PAYMENT_METHOD_LABELS[m]}
+                      {PAYMENT_METHOD_LABELS[m]}
                     </Text>
                     {on ? <Text style={styles.payChipTick}>✓</Text> : null}
                   </Pressable>
