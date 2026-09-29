@@ -608,6 +608,43 @@ export function useWalletBalance(uid?: string): number {
   return balance;
 }
 
+/** A wallet balance split by whether it may be withdrawn as cash. All PKR. */
+export interface WalletFunds {
+  balance: number;
+  /** Ride earnings — the only money a payout can draw on. */
+  withdrawable: number;
+  /** Money added by top-up. Spendable on Velocity's charges, never cashed out. */
+  ringFenced: number;
+}
+
+/**
+ * The withdrawable split, mirroring `domain/walletFunds.ts` on the backend.
+ *
+ * Duplicated deliberately rather than fetched: the wallet doc is already
+ * streaming, the rule is three lines, and a driver typing an amount needs the
+ * cap in front of them, not a round trip. The backend stays the authority — it
+ * re-derives this from the same fields inside the payout transaction, so a
+ * client that got it wrong is refused rather than obeyed.
+ */
+export function useWalletFunds(uid?: string): WalletFunds {
+  const [funds, setFunds] = useState<WalletFunds>({ balance: 0, withdrawable: 0, ringFenced: 0 });
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(doc(db, 'wallets', uid), (s) => {
+      const data = s.data();
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+      const balance = Math.max(0, num(data?.balance));
+      const toppedUpTotal = Math.max(0, num(data?.toppedUpTotal));
+      // A wallet that never took gateway money is holding none, so all of it is
+      // withdrawable whatever `earned` says.
+      const earned = toppedUpTotal > 0 ? num(data?.earned) : balance;
+      const withdrawable = Math.max(0, Math.min(balance, earned));
+      setFunds({ balance, withdrawable, ringFenced: balance - withdrawable });
+    });
+  }, [uid]);
+  return funds;
+}
+
 export interface CancellationSettings {
   /** Fraction of the fare a passenger pays for cancelling a confirmed ride. */
   passengerFeeRate: number;

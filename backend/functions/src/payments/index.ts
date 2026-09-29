@@ -23,6 +23,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, isDocId, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { getFeatureFlags } from '../domain/featureFlags';
+import { walletFunds } from '../domain/walletFunds';
 import { creditFromIntent } from './credit';
 import {
   configuredProviders,
@@ -402,9 +403,21 @@ export const requestPayout = onCall(async (req) => {
   await db.runTransaction(async (tx) => {
     const walletRef = db.doc(`wallets/${ctx.uid}`);
     const [walletSnap, driverSnap] = await Promise.all([tx.get(walletRef), tx.get(driverRef)]);
-    const balance = (walletSnap.get('balance') as number) ?? 0;
-    if (amount > balance) {
-      throw new HttpsError('failed-precondition', 'Amount exceeds your balance.');
+
+    // Only ride earnings may leave the platform as cash. Money that came in
+    // through a payment gateway is a prepayment for Velocity's own charges and
+    // paying it back out would make us an unlicensed payment service — see
+    // domain/walletFunds.ts for the full reasoning.
+    const funds = walletFunds(walletSnap);
+    if (amount > funds.withdrawable) {
+      throw new HttpsError(
+        'failed-precondition',
+        funds.ringFenced > 0
+          ? `Only ${funds.withdrawable} PKR of ride earnings can be withdrawn. `
+            + `The other ${funds.ringFenced} PKR was added by top-up and can be used for `
+            + `commission, cancellation fees and subscriptions.`
+          : 'Amount exceeds your balance.',
+      );
     }
     // Fall back to the saved payout account so one-tap payouts keep working.
     const finalMethod = method ?? (driverSnap.get('payoutMethod') as string | undefined) ?? 'jazzcash';
@@ -427,7 +440,16 @@ export const requestPayout = onCall(async (req) => {
     });
     tx.set(
       walletRef,
-      { balance: FieldValue.increment(-amount), updatedAt: FieldValue.serverTimestamp() },
+      {
+        balance: FieldValue.increment(-amount),
+        // Withdrawing consumes the earnings it was drawn from, so the same
+        // money cannot be cashed out twice. Written as an exact value rather
+        // than an increment: on a wallet whose `earned` field does not exist
+        // yet, an increment would decrement from zero and leave it negative,
+        // locking the driver out of earnings they really are owed.
+        earned: funds.withdrawable - amount,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
       { merge: true },
     );
     tx.set(txRef, {

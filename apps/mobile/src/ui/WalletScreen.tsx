@@ -15,6 +15,7 @@ import {
   useSavedPaymentMethods,
   useSettlementAccounts,
   useWalletBalance,
+  useWalletFunds,
   useWalletComingSoon,
   useWalletLabel,
   useWalletTransactions,
@@ -61,6 +62,9 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
   const uid = user?.uid;
   const router = useRouter();
   const balance = useWalletBalance(uid);
+  // Balance split by whether it may leave the platform as cash — top-up money
+  // pays Velocity's own charges only. See backend domain/walletFunds.ts.
+  const funds = useWalletFunds(uid);
   const txns = useWalletTransactions(uid);
   const [busy, setBusy] = useState(false);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('easypaisa');
@@ -89,8 +93,15 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
 
   async function payout() {
     const amt = parseInt(payoutAmount, 10);
-    if (!amt || amt > balance) {
-      Alert.alert('Invalid amount', 'Enter an amount within your balance.');
+    if (!amt || amt > funds.withdrawable) {
+      Alert.alert(
+        'Invalid amount',
+        funds.ringFenced > 0
+          ? `You can withdraw up to ${funds.withdrawable.toLocaleString()} PKR of ride earnings. `
+            + `The other ${funds.ringFenced.toLocaleString()} PKR was added by top-up and pays for `
+            + 'commission, cancellation fees and subscriptions.'
+          : 'Enter an amount within your balance.',
+      );
       return;
     }
     const account = payoutAccount.trim();
@@ -291,11 +302,20 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             <TextInput
               value={payoutAmount}
               onChangeText={(t) => setPayoutAmount(t.replace(/[^0-9]/g, ''))}
-              placeholder={`Amount (max ${balance.toLocaleString()} PKR)`}
+              placeholder={`Amount (max ${funds.withdrawable.toLocaleString()} PKR)`}
               placeholderTextColor={colors.muted}
               keyboardType="number-pad"
               style={styles.input}
             />
+            {/* Only worth explaining when the two numbers differ — otherwise the
+                balance card above has already answered the question. */}
+            {funds.ringFenced > 0 ? (
+              <Text style={styles.payoutHint}>
+                {funds.withdrawable.toLocaleString()} PKR of ride earnings can be withdrawn.
+                The other {funds.ringFenced.toLocaleString()} PKR came from top-ups and pays for
+                commission, cancellation fees and subscriptions.
+              </Text>
+            ) : null}
             <TextInput
               value={payoutAccount}
               onChangeText={setPayoutAccount}
