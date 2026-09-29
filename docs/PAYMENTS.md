@@ -132,9 +132,60 @@ admin. Either way the approval writes a `travelmate_subscription` entry to
 `platformLedger` and bumps `system/counters.travelMateRevenue`.
 
 **Payout:** driver → `requestPayout(amount, method, account)` → backend checks
-balance, reserves the funds and queues a `payouts` doc with the driver's
-Easypaisa/JazzCash number or bank IBAN → an admin disburses it from the platform
-account and calls `markPayoutPaid`.
+the **withdrawable** balance (not the whole balance — see below), reserves the
+funds and queues a `payouts` doc with the driver's Easypaisa/JazzCash number or
+bank IBAN → an admin disburses it from the platform account and calls
+`markPayoutPaid`.
+
+## The withdrawal ring-fence
+
+**Money that came in through a payment gateway can never be paid back out.**
+This is a regulatory boundary, not a product rule.
+
+The State Bank of Pakistan defines e-money as value issued on receipt of funds
+and "accepted as a means of payment by entities **other than the issuer**".
+Issuing it needs an EMI licence and a Rs 200 million capital base. A balance a
+driver tops up to pay Velocity's own commission is *not* e-money — only Velocity
+accepts it, so it is a closed-loop prepayment for our own service. That holds
+only while the money cannot come back out: a driver who could top up 10,000
+through PayFast and withdraw 10,000 to Easypaisa would make us an unlicensed
+payment service.
+
+Two server-only counters on `wallets/{uid}` enforce it (`domain/walletFunds.ts`
+is the single place that reads them):
+
+| Field | Written by | Meaning |
+|-------|-----------|---------|
+| `toppedUpTotal` | `creditFromIntent` only | Lifetime gateway top-ups. Monotonic. Marks the wallet as holding gateway money. |
+| `earned` | `completeTrip` (+), `requestPayout` (−), clamped by `creditFromIntent` | Ride earnings credited, less payouts already taken. |
+
+`withdrawable = min(balance, earned)`; the rest is spendable only on Velocity's
+own charges (commission, cancellation fees, subscriptions). Nothing else touches
+either field — the `min` does the work, so there is no ring-fenced pot for the
+nine places that debit a wallet to remember to decrement.
+
+Two details that are easy to get wrong, both covered by
+`payments/__tests__/walletRingFence.test.ts`:
+
+- **Migration is automatic.** A wallet with `toppedUpTotal` absent or zero has
+  provably never taken gateway money, so its whole balance stays withdrawable.
+  `creditFromIntent` writes that number into `earned` on the first top-up, so no
+  backfill script ever has to run against production.
+- **`earned` is written as an exact value, never blind-incremented downward.**
+  On a wallet where the field does not exist yet, a decrement would start from
+  zero and leave it negative, locking a driver out of earnings they are owed.
+- **Every top-up clamps `earned` down to the balance first.** A driver who
+  earned 500 and paid 300 of it in commission is owed 200; without the clamp the
+  next top-up would refloat `earned` above the balance and turn 300 rupees of
+  gateway money into withdrawable cash.
+
+⚠️ **Still open.** Two paths put a user's money in front of a third party and so
+sit closer to the e-money line than the driver wallet does: wallet-paid rides
+(`acceptBid` holds a passenger's balance and `completeTrip` settles it to a
+driver) and the Travel Partner fare split (`travelMate/groups.ts` debits riders'
+wallets and credits the booker's — a genuine user-to-user transfer). Both are
+harmless while `walletTopupEnabled` is false, because no gateway money can reach
+a passenger wallet. **Decide on them before flipping that flag.**
 
 | Function | Caller | Purpose |
 |----------|--------|---------|
@@ -166,6 +217,9 @@ account and calls `markPayoutPaid`.
   `travelMateRevenue`, plus the existing trip totals) for the dashboard.
 - `wallets/{uid}.outstanding` — unpaid cancellation fees this user owes
   Velocity. Server-written only; drives the booking/bidding block.
+- `wallets/{uid}.toppedUpTotal` / `.earned` — the withdrawal ring-fence (above).
+  Server-written only; `requestPayout` refuses anything above
+  `min(balance, earned)`.
 - `paymentMethods/{id}` — a connected instrument's display data (kind, masked
   tail, brand, default flag, status). Owner-readable, server-written only.
 - `paymentMethodSecrets/{id}` — the gateway token that can charge it. **Denied
@@ -200,14 +254,18 @@ not block on SECP registration. Apply at <https://getstarted.apps.net.pk/signup>
 with NTN, CNIC and a utility bill. Keep the JazzCash/Easypaisa adapters as a
 fallback — they need zero code if PayFast onboarding drags.
 
-⚠️ **The PayFast adapter is a scaffold, not a verified integration.**
-gopayfast.com/docs is IP-gated, so its field names come from public summaries
-and a community package. Three things must be checked against the integration
-pack that arrives with the merchant account before the first live rupee: the
-access-token endpoint path, the `SIGNATURE` formula, and the production base
-URL. `PAYFAST_BASE_URL` has no live default so the adapter fails closed rather
-than posting real money at the sandbox. Success/failure is read from our own
-return URLs plus the per-intent secret, never from guessed response field names.
+⚠️ **The PayFast adapter is sandbox-verified, not production-verified.**
+gopayfast.com/docs is IP-gated, so its field names were confirmed empirically
+against the sandbox on 2026-07-20 with a real card payment (PKR 150, err_code
+000) rather than from documentation. The access-token path, the checkout field
+set and the callback fields all checked out. **Two things still must be checked
+against the integration pack that arrives with the merchant account before the
+first live rupee:** the `SIGNATURE` formula (a payment succeeded with a
+deliberately wrong value and with the field absent, so it may simply be ignored
+— do not rely on it as security) and the **production base URL**.
+`PAYFAST_BASE_URL` has no live default so the adapter fails closed rather than
+posting real money at the sandbox. Success/failure is read from our own return
+URLs plus the per-intent secret, never from guessed response field names.
 
 ### Going live
 

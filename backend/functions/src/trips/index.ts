@@ -1189,7 +1189,14 @@ export const completeTrip = onCall(async (req) => {
       }
       tx.set(
         walletRef,
-        { balance: FieldValue.increment(s.driverPayout), updatedAt: FieldValue.serverTimestamp() },
+        {
+          balance: FieldValue.increment(s.driverPayout),
+          // The one credit that is genuinely the platform's debt to the driver:
+          // they drove the ride, so this is the only money that may later be
+          // withdrawn as cash. See domain/walletFunds.ts.
+          earned: FieldValue.increment(s.driverPayout),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
         { merge: true },
       );
       tx.set(txRef, {
