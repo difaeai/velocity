@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
-import { adminApi } from '@/lib/api';
+import { adminApi, type DriverCommissionReport } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Badge, Button, Card } from '@/components/ui';
 
@@ -605,6 +605,11 @@ export default function DriversPage() {
                       />
                     )}
 
+                    {/* Commission, the daily target, and the manual credit lever.
+                        Only for drivers who are actually working — a pending or
+                        rejected application has no cycle to look at. */}
+                    {tab === 'active' && <DriverCommissionPanel driverId={d.id} />}
+
                     {/* Action buttons */}
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
                       {tab === 'pending' && !isRejecting && (
@@ -711,6 +716,258 @@ const CAR_PHOTO_TTL_DAYS = 30;
  * on the spot and forces a new photo before they can go back on, which is the
  * only fast lever there is when the car in the picture is not the car on file.
  */
+/**
+ * One driver's commission position, their recent target days, and the manual
+ * credit lever.
+ *
+ * WHY IT IS LAZY. The report is three Firestore reads behind a callable, and a
+ * driver list can hold hundreds of rows — fetching it for every row would make
+ * opening this page cost a query per driver for information almost none of them
+ * are being looked at for. So it loads when the panel is expanded, once.
+ *
+ * WHY THE LEVER IS HERE AT ALL. There is no gateway top-up yet, so a driver who
+ * settles in cash at the office, or who is owed a target bonus a bug lost, can
+ * only be made whole by hand. The same control claws credit back off somebody
+ * who farmed the target. Both need a reason, and the backend audit-logs every
+ * adjustment against the admin who made it.
+ */
+function DriverCommissionPanel({ driverId }: { driverId: string }) {
+  const [open, setOpen] = useState(false);
+  const [report, setReport] = useState<DriverCommissionReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await adminApi.adminGetDriverCommission({ driverId, days: 14 }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && !report && !loading) void load();
+  }
+
+  async function adjust(sign: 1 | -1) {
+    const pkr = Math.round(Number(amount));
+    if (!Number.isFinite(pkr) || pkr <= 0) {
+      setError('Enter an amount in PKR.');
+      return;
+    }
+    if (reason.trim().length < 3) {
+      setError('Say why — this is audit-logged.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setDone(null);
+    try {
+      const res = await adminApi.adminAdjustCommissionCredit({
+        driverId,
+        amount: sign * pkr,
+        reason: reason.trim(),
+      });
+      setDone(
+        res.applied >= 0
+          ? `Granted PKR ${res.applied.toLocaleString()} of credit.`
+          : `Removed PKR ${Math.abs(res.applied).toLocaleString()} of credit.`,
+      );
+      setAmount('');
+      setReason('');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not adjust.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button type="button" onClick={toggle} style={panelToggle}>
+        {open ? '▾' : '▸'} Commission, daily target &amp; credit
+      </button>
+
+      {!open ? null : loading && !report ? (
+        <div style={{ color: colors.muted, fontSize: 13, padding: '10px 2px' }}>Loading…</div>
+      ) : (
+        <div style={panelBox}>
+          {error && <div style={{ color: colors.danger, fontSize: 13, fontWeight: 600 }}>{error}</div>}
+          {done && <div style={{ color: colors.success, fontSize: 13, fontWeight: 700 }}>{done}</div>}
+
+          {report && (
+            <>
+              <div style={moneyGrid}>
+                <Money label="Cycle fares" value={report.driver.cycleGrossFare} />
+                <Money
+                  label={`Commission at ${Math.round(report.settings.rate * 100)}%`}
+                  value={report.driver.grossDue}
+                />
+                <Money label="Paid by credit" value={report.driver.creditApplied} />
+                <Money label="Driver owes now" value={report.driver.due} strong />
+                <Money label="Credit available" value={report.driver.commissionCredit} strong />
+                <Money label="Credit earned, lifetime" value={report.driver.commissionCreditEarned} />
+              </div>
+
+              {/* Recent days, so a farmed pattern is visible rather than inferred. */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: colors.text, marginBottom: 6 }}>
+                  Last {report.days.length} days
+                  {report.settings.dailyTargetEnabled
+                    ? ` · target ${report.settings.dailyTargetRides} rides → PKR ${report.settings.dailyTargetBonus.toLocaleString()}`
+                    : ' · target is off'}
+                </div>
+                {report.days.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: colors.muted }}>No completed rides yet.</div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ color: colors.muted, textAlign: 'left' }}>
+                        <th style={th}>Day</th>
+                        <th style={th}>Rides</th>
+                        <th style={th}>Counted</th>
+                        <th style={th}>Riders</th>
+                        <th style={th}>Fares</th>
+                        <th style={th}>Paid out</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.days.map((d) => (
+                        <tr key={d.day} style={{ borderTop: `1px solid ${colors.border}` }}>
+                          <td style={td}>{d.day}</td>
+                          <td style={td}>{d.rides}</td>
+                          <td style={td}>{d.qualifyingRides}</td>
+                          <td style={td}>{d.riders}</td>
+                          <td style={td}>{Math.round(d.grossFare).toLocaleString()}</td>
+                          <td style={{ ...td, fontWeight: d.bonusGranted > 0 ? 800 : 400 }}>
+                            {d.bonusGranted > 0
+                              ? `PKR ${(d.bonusGranted + d.waiverGranted).toLocaleString()}`
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* The manual lever. */}
+              <div style={{ marginTop: 16, borderTop: `1px solid ${colors.border}`, paddingTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: colors.text, marginBottom: 6 }}>
+                  Adjust credit by hand
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ flex: '0 0 130px' }}>
+                    <label style={smallLabel}>Amount (PKR)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={100}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      style={smallInput}
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 220px' }}>
+                    <label style={smallLabel}>Reason (audit-logged)</label>
+                    <input
+                      type="text"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="e.g. paid 500 cash at the office"
+                      style={smallInput}
+                    />
+                  </div>
+                  <Button disabled={saving} onClick={() => adjust(1)}>
+                    {saving ? '…' : '+ Grant'}
+                  </Button>
+                  <Button variant="danger" disabled={saving} onClick={() => adjust(-1)}>
+                    {saving ? '…' : '- Claw back'}
+                  </Button>
+                </div>
+                <div style={{ fontSize: 11.5, color: colors.muted, marginTop: 8, lineHeight: 1.6 }}>
+                  Credit pays this driver&apos;s commission automatically and can never be
+                  withdrawn as cash. A clawback larger than their balance takes what is there
+                  and stops — credit never goes negative.
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: colors.muted }}>{label}</div>
+      <div style={{ fontSize: strong ? 17 : 15, fontWeight: strong ? 900 : 700, color: colors.text }}>
+        PKR {Math.round(value).toLocaleString()}
+      </div>
+    </div>
+  );
+}
+
+const panelToggle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 800,
+  color: colors.primary,
+  fontFamily: 'inherit',
+};
+const panelBox: React.CSSProperties = {
+  marginTop: 10,
+  background: colors.bg,
+  border: `1px solid ${colors.border}`,
+  borderRadius: 12,
+  padding: 14,
+  display: 'grid',
+  gap: 8,
+};
+const moneyGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+  gap: 12,
+};
+const th: React.CSSProperties = { padding: '4px 6px', fontWeight: 700 };
+const td: React.CSSProperties = { padding: '5px 6px', color: colors.text };
+const smallLabel: React.CSSProperties = {
+  display: 'block',
+  fontSize: 10.5,
+  fontWeight: 700,
+  color: colors.muted,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  marginBottom: 3,
+};
+const smallInput: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: `1px solid ${colors.border}`,
+  background: '#fff',
+  color: colors.text,
+  fontSize: 14,
+  boxSizing: 'border-box',
+};
+
 function CarPhotoCheck({ driver }: { driver: DriverRow }) {
   const [busy, setBusy] = useState(false);
   // Read the clock once, when the card opens. "How old is this photo" is a

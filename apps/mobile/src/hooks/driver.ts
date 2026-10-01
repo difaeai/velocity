@@ -4,6 +4,15 @@ import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'fireb
 import { db } from '../firebase';
 import { distanceMeters } from '../lib/geo';
 import { evaluateVehicleCheck, type VehicleCheckStatus } from '../domain/vehicleCheck';
+import {
+  DEFAULT_DAILY_TARGET,
+  dailyTargetProgress,
+  emptyDay,
+  pktDayKey,
+  type DailyTargetDay,
+  type DailyTargetProgress,
+  type DailyTargetSettings,
+} from '../domain/dailyTarget';
 import type { PaymentMethod, RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
@@ -18,6 +27,16 @@ export interface DriverProfile {
   cycleGrossFare?: number;
   /** Cash-only portion of the cycle — what the settle amount is computed from. */
   cycleCashFare?: number;
+  /**
+   * Unspent commission credit, earned by hitting the daily ride target.
+   *
+   * It pays the driver's commission automatically and it can never be withdrawn
+   * as cash — see backend/functions/src/domain/dailyTarget.ts for why that
+   * boundary exists. Server-written only.
+   */
+  commissionCredit?: number;
+  commissionCreditEarned?: number;
+  commissionCreditUsed?: number;
   /**
    * WhatsApp ride alerts for when the app is closed. Server-owned: the driver
    * changes it through the `setWhatsAppAlerts` callable, never by writing here
@@ -401,27 +420,57 @@ export function useDriverPoolRides(uid?: string): DriverPoolRide[] {
   return rides;
 }
 
-export interface CommissionSettings {
+export interface CommissionSettings extends DailyTargetSettings {
   /** Fraction of cash fares owed per cycle (e.g. 0.10). */
   rate: number;
   /** Gross fare (cash + online) at which the driver is locked, in PKR. */
   threshold: number;
 }
 
+const DEFAULT_COMMISSION: CommissionSettings = {
+  rate: 0.10,
+  threshold: 5000,
+  ...DEFAULT_DAILY_TARGET,
+};
+
+/** A number from the admin's text box, or the default when it is not usable. */
+function setting(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+    ? value
+    : fallback;
+}
+
 /**
  * Live admin-set commission settings (dashboard → Commission page). Streams so
- * an admin change applies across the app without a restart.
+ * an admin change — a new daily target, a different bonus, a changed rate —
+ * applies across every open app without a restart and without a release.
+ *
+ * The validation ranges are the same ones `getCommissionSettings` applies on
+ * the backend. They have to be: a value the backend rejects and the app accepts
+ * would show the driver a target nobody is going to pay.
  */
 export function useCommissionSettings(): CommissionSettings {
-  const [settings, setSettings] = useState<CommissionSettings>({ rate: 0.10, threshold: 5000 });
+  const [settings, setSettings] = useState<CommissionSettings>(DEFAULT_COMMISSION);
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'commissionSettings'), (s) => {
       if (!s.exists()) return;
-      const rate = s.get('rate') as number | undefined;
-      const threshold = s.get('threshold') as number | undefined;
+      const d = DEFAULT_COMMISSION;
       setSettings({
-        rate: typeof rate === 'number' && rate > 0 && rate <= 0.5 ? rate : 0.10,
-        threshold: typeof threshold === 'number' && threshold >= 100 ? threshold : 5000,
+        rate: setting(s.get('rate'), d.rate, 0.001, 0.5),
+        threshold: setting(s.get('threshold'), d.threshold, 100, 1_000_000),
+        dailyTargetEnabled: s.get('dailyTargetEnabled') !== false,
+        dailyTargetRides: Math.round(setting(s.get('dailyTargetRides'), d.dailyTargetRides, 1, 100)),
+        dailyTargetBonus: Math.round(setting(s.get('dailyTargetBonus'), d.dailyTargetBonus, 0, 50_000)),
+        dailyTargetWaivesCommission: s.get('dailyTargetWaivesCommission') !== false,
+        dailyTargetMinRideFare: Math.round(
+          setting(s.get('dailyTargetMinRideFare'), d.dailyTargetMinRideFare, 0, 100_000),
+        ),
+        dailyTargetMinRiders: Math.round(
+          setting(s.get('dailyTargetMinRiders'), d.dailyTargetMinRiders, 0, 100),
+        ),
+        dailyTargetMinDayFare: Math.round(
+          setting(s.get('dailyTargetMinDayFare'), d.dailyTargetMinDayFare, 0, 1_000_000),
+        ),
       });
     }, () => undefined);
   }, []);
@@ -431,26 +480,163 @@ export function useCommissionSettings(): CommissionSettings {
 export interface CommissionStatus extends CommissionSettings {
   cycleGrossFare: number;
   cycleCashFare: number;
-  /** PKR the driver must pay Velocity to settle the current cycle. */
+  /** PKR the driver must find out of pocket — net of their target credit. */
   due: number;
+  /** Commission the cycle actually earned, before credit. */
+  grossDue: number;
+  /** The part of `grossDue` the driver's target credit is covering. */
+  creditApplied: number;
+  /** Unspent target credit. Pays commission automatically; never withdrawable. */
+  credit: number;
   /** True when the cycle hit the threshold and something is still owed. */
   locked: boolean;
 }
 
-/** Combines the driver profile and admin settings into one settle status. */
+/**
+ * Combines the driver profile and admin settings into one settle status.
+ *
+ * `due` is net of credit everywhere, exactly as on the backend, because that is
+ * the only number that answers the question the driver is actually asking: what
+ * do I have to pay right now? A driver sitting on PKR 2,000 of target credit
+ * owes nothing and must never be shown a figure that says otherwise.
+ */
 export function useCommissionStatus(profile: DriverProfile | null): CommissionStatus {
   const settings = useCommissionSettings();
   const cycleGrossFare = profile?.cycleGrossFare ?? 0;
   // Pre-migration drivers have no cycleCashFare — their cycles were all cash.
   const cycleCashFare = profile?.cycleCashFare ?? cycleGrossFare;
-  const due = Math.round(cycleCashFare * settings.rate);
+  const credit = Math.max(0, Math.round(profile?.commissionCredit ?? 0));
+  const grossDue = Math.round(cycleCashFare * settings.rate);
+  const creditApplied = Math.min(credit, grossDue);
+  const due = grossDue - creditApplied;
   return {
     ...settings,
     cycleGrossFare,
     cycleCashFare,
+    grossDue,
+    creditApplied,
+    credit,
     due,
     locked: cycleGrossFare >= settings.threshold && due > 0,
   };
+}
+
+/**
+ * Today's daily-target progress, straight from the document the settlement
+ * transaction writes.
+ *
+ * Streamed rather than fetched through a callable: the whole value of this card
+ * is that the counter moves the moment the driver ends a ride, and a function
+ * invocation per ride per driver is a lot of money to spend on a number that is
+ * already sitting in a document the driver is allowed to read.
+ *
+ * The day key is Pakistan-local, so a driver working past midnight sees the new
+ * day start at midnight their time rather than at 5am.
+ */
+export function useDailyTarget(uid: string | undefined): {
+  progress: DailyTargetProgress;
+  day: DailyTargetDay;
+  settings: CommissionSettings;
+} {
+  const settings = useCommissionSettings();
+  const [dayKey, setDayKey] = useState(() => pktDayKey());
+
+  // The loaded day is stored WITH the key it belongs to, and read back only
+  // when the two match. That is what makes the fallback a derived value rather
+  // than a setState in the effect body — and it also means a driver crossing
+  // midnight never sees yesterday's count on today's card for a frame.
+  const [loaded, setLoaded] = useState<{ key: string; day: DailyTargetDay } | null>(null);
+
+  // Roll over at the Pakistan midnight without needing the app restarted. One
+  // cheap tick a minute; the subscription below re-points when the key changes.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const next = pktDayKey();
+      setDayKey((current) => (current === next ? current : next));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      doc(db, 'drivers', uid, 'dailyTargets', dayKey),
+      (s) => {
+        if (!s.exists()) {
+          setLoaded({ key: dayKey, day: emptyDay(dayKey) });
+          return;
+        }
+        const ids = s.get('riderIds');
+        setLoaded({
+          key: dayKey,
+          day: {
+            day: dayKey,
+            rides: (s.get('rides') as number | undefined) ?? 0,
+            qualifyingRides: (s.get('qualifyingRides') as number | undefined) ?? 0,
+            grossFare: (s.get('grossFare') as number | undefined) ?? 0,
+            cashFare: (s.get('cashFare') as number | undefined) ?? 0,
+            riderIds: Array.isArray(ids) ? (ids as string[]) : [],
+            bonusGranted: (s.get('bonusGranted') as number | undefined) ?? 0,
+            waiverGranted: (s.get('waiverGranted') as number | undefined) ?? 0,
+          },
+        });
+      },
+      () => undefined,
+    );
+  }, [uid, dayKey]);
+
+  const day = loaded && loaded.key === dayKey ? loaded.day : emptyDay(dayKey);
+  return { progress: dailyTargetProgress(day, settings), day, settings };
+}
+
+/**
+ * The driver's credit statement — every target bonus earned and every rupee of
+ * it spent on a commission cycle, newest first.
+ */
+export function useCommissionCredits(uid: string | undefined, max = 30): CreditRow[] {
+  // Keyed by uid for the same reason as `useDailyTarget` above: signing out, or
+  // switching account, must not leave another driver's statement on screen, and
+  // deriving that beats clearing it from inside the effect.
+  const [loaded, setLoaded] = useState<{ uid: string; rows: CreditRow[] } | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    const q = query(
+      collection(db, 'drivers', uid, 'commissionCredits'),
+      orderBy('createdAt', 'desc'),
+      limit(max),
+    );
+    return onSnapshot(
+      q,
+      (snap) => {
+        setLoaded({
+          uid,
+          rows: snap.docs.map((d) => ({
+            id: d.id,
+            type: (d.get('type') as CreditRow['type'] | undefined) ?? 'daily_target',
+            amount: (d.get('amount') as number | undefined) ?? 0,
+            day: (d.get('day') as string | undefined) ?? null,
+            reason: (d.get('reason') as string | undefined) ?? null,
+            createdAt: (d.get('createdAt') as { seconds: number } | null | undefined) ?? null,
+          })),
+        });
+      },
+      () => undefined,
+    );
+  }, [uid, max]);
+  return loaded && loaded.uid === uid ? loaded.rows : EMPTY_CREDITS;
+}
+
+/** Stable empty array — a fresh `[]` would re-render every consumer. */
+const EMPTY_CREDITS: CreditRow[] = [];
+
+export interface CreditRow {
+  id: string;
+  type: 'daily_target' | 'spent' | 'admin_grant' | 'admin_clawback';
+  /** Positive = credit earned. Negative = credit spent on commission. */
+  amount: number;
+  day: string | null;
+  reason: string | null;
+  createdAt: { seconds: number } | null;
 }
 
 export interface FeatureFlags {

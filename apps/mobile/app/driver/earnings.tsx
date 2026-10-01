@@ -18,6 +18,14 @@ import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
+import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
+import {
+  useCommissionCredits,
+  useCommissionStatus,
+  useDailyTarget,
+  useDriverProfile,
+  type CreditRow,
+} from '../../src/hooks/driver';
 
 type Period = 'today' | 'week' | 'month' | 'all';
 
@@ -68,6 +76,11 @@ export default function DriverEarnings() {
   const router = useRouter();
   const { user } = useAuth();
   const uid = user?.uid;
+
+  const profile = useDriverProfile(uid);
+  const commission = useCommissionStatus(profile);
+  const dailyTarget = useDailyTarget(uid);
+  const credits = useCommissionCredits(uid);
 
   const [period, setPeriod]       = useState<Period>('week');
   const [rows, setRows]           = useState<TxRow[]>([]);
@@ -128,6 +141,53 @@ export default function DriverEarnings() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* ── Today's target ── The driver's reason to take one more ride, at the
+            top of the screen they open to ask "how am I doing". */}
+        <DailyTargetCard progress={dailyTarget.progress} credit={commission.credit} />
+
+        {/* ── Commission ── What is owed right now, and what the credit paid.
+            This is the only place the driver can see the two separately: the
+            lock screen only appears once the cycle has matured. */}
+        <View style={styles.commissionCard}>
+          <Text style={styles.commissionTitle}>Commission this cycle</Text>
+          <Row
+            label={`Fares collected (of ${commission.threshold.toLocaleString()} PKR)`}
+            value={`${commission.cycleGrossFare.toLocaleString()} PKR`}
+          />
+          <Row
+            label={`Commission at ${Math.round(commission.rate * 100)}%`}
+            value={`${commission.grossDue.toLocaleString()} PKR`}
+          />
+          {commission.creditApplied > 0 ? (
+            <Row
+              label="Paid by your target credit"
+              value={`− ${commission.creditApplied.toLocaleString()} PKR`}
+              accent
+            />
+          ) : null}
+          <View style={styles.commissionDivider} />
+          <Row
+            label={commission.creditApplied > 0 ? 'Still to pay' : 'You owe'}
+            value={`${commission.due.toLocaleString()} PKR`}
+            bold
+          />
+          <Text style={styles.commissionNote}>
+            {commission.due === 0
+              ? 'Nothing to pay right now. Commission is taken from your credit automatically.'
+              : `Payable when your cycle reaches ${commission.threshold.toLocaleString()} PKR of fares.`}
+          </Text>
+        </View>
+
+        {/* ── Credit statement ── */}
+        {credits.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Commission credit</Text>
+            {credits.map((c) => (
+              <CreditRowView key={c.id} row={c} />
+            ))}
+          </>
+        ) : null}
+
         {/* Summary cards */}
         <View style={styles.statsGrid}>
           <StatCard label="Total trips"     value={String(summary.trips)} />
@@ -171,6 +231,58 @@ export default function DriverEarnings() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** One label/value line inside the commission card. */
+function Row({
+  label,
+  value,
+  bold,
+  accent,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <View style={styles.row}>
+      <Text style={[styles.rowLabel, bold && styles.rowBold]}>{label}</Text>
+      <Text
+        style={[
+          styles.rowValue,
+          bold && styles.rowBold,
+          accent && { color: colors.primary },
+        ]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const CREDIT_LABELS: Record<CreditRow['type'], string> = {
+  daily_target: '🎯 Daily target bonus',
+  spent: 'Used against commission',
+  admin_grant: 'Added by Velocity Rides',
+  admin_clawback: 'Removed by Velocity Rides',
+};
+
+function CreditRowView({ row }: { row: CreditRow }) {
+  return (
+    <View style={styles.txRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.txType}>{CREDIT_LABELS[row.type]}</Text>
+        <Text style={styles.txDate}>
+          {row.day ?? (row.createdAt ? formatDate(Timestamp.fromMillis(row.createdAt.seconds * 1000)) : '')}
+          {row.reason ? ` · ${row.reason}` : ''}
+        </Text>
+      </View>
+      <Text style={[styles.txAmount, row.amount < 0 && styles.txNeg]}>
+        {row.amount >= 0 ? '+' : ''}{row.amount.toLocaleString()} PKR
+      </Text>
+    </View>
+  );
+}
 
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
@@ -257,8 +369,24 @@ const styles = themed(() => StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '900', color: colors.text },
   statLabel: { fontSize: 12, color: colors.muted },
 
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 4, marginTop: 8 },
   muted:         { fontSize: 13, color: colors.muted },
+
+  commissionCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 14,
+  },
+  commissionTitle: { fontSize: 14, fontWeight: '900', color: colors.text, marginBottom: 10 },
+  commissionDivider: { height: 1, backgroundColor: colors.border, marginVertical: 8 },
+  commissionNote: { fontSize: 11.5, color: colors.muted, lineHeight: 17, marginTop: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3, gap: 10 },
+  rowLabel: { fontSize: 13, color: colors.muted, flex: 1 },
+  rowValue: { fontSize: 13, fontWeight: '700', color: colors.text },
+  rowBold: { fontWeight: '900', color: colors.text, fontSize: 14 },
 
   txRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   txType:   { fontSize: 14, fontWeight: '700', color: colors.text },

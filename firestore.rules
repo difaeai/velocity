@@ -160,6 +160,35 @@ service cloud.firestore {
         allow read: if isOwner(driverId) || isAdmin();
         allow write: if false;
       }
+
+      // ── drivers/{uid}/dailyTargets/{YYYY-MM-DD} ───────────────────────────
+      // One document per driver-day: rides done, fares taken, and whether the
+      // daily ride target paid out. The driver streams today's document so the
+      // progress card moves the moment a ride completes — which is why it is
+      // readable here rather than behind a callable, and why nothing but the
+      // settlement transaction may write it. A driver who could write this
+      // could grant themselves the bonus.
+      match /dailyTargets/{day} {
+        allow read: if isOwner(driverId) || isAdmin();
+        allow write: if false;
+      }
+
+      // ── drivers/{uid}/commissionCredits/{id} ──────────────────────────────
+      // The driver's credit statement: every target bonus granted, every rupee
+      // of it spent on a commission cycle, every admin adjustment. Money, so
+      // read-only to its owner and written only by the backend.
+      match /commissionCredits/{creditId} {
+        allow read: if isOwner(driverId) || isAdmin();
+        allow write: if false;
+      }
+
+      // ── drivers/{uid}/commissionPayments/{id} ─────────────────────────────
+      // Settled cycles. Already written by three backend paths; the driver had
+      // no way to read their own payment history until now.
+      match /commissionPayments/{paymentId} {
+        allow read: if isOwner(driverId) || isAdmin();
+        allow write: if false;
+      }
     }
 
     // ----- trips/{tripId} --------------------------------------------------
@@ -888,8 +917,11 @@ service cloud.firestore {
     }
 
     // ----- supportChats/{uid} ---------------------------------------------------
-    // 1:1 support thread. The owner writes their own messages directly from the
-    // app; admins can read (and later reply from an admin console).
+    // The ORIGINAL single-thread support chat, superseded by supportTickets
+    // below. Still readable so a conversation that was open when the Rapid
+    // Response system shipped is not simply lost, and still writable by its
+    // owner so a reply typed on an older build is not silently dropped. New
+    // builds open tickets instead; nothing here is referenced by the app.
     match /supportChats/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create, update: if isOwner(userId) || isAdmin();
@@ -903,6 +935,44 @@ service cloud.firestore {
                       && request.resource.data.text.size() <= 1000;
         allow update, delete: if false;
       }
+    }
+
+    // ----- supportTickets/{ticketId} --------------------------------------------
+    // Velocity Rapid Response System. One ticket per complaint, answered first
+    // by the AI agent and then by a person.
+    //
+    // Reads are direct so a thread streams live without polling a callable.
+    // Writes are ALL server-side, which is the difference from supportChats
+    // above and the reason this replaced it: a client that can write into the
+    // thread can forge a message from "Velocity Rides" — promising a refund, a
+    // fee waiver, or an unlock — and then screenshot it. It also cannot run the
+    // agent, count turns toward an escalation, or notify the desk.
+    match /supportTickets/{ticketId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == uid());
+      allow write: if false;
+
+      match /messages/{msgId} {
+        // The parent's userId is the only reader test that makes sense here, and
+        // a message document deliberately does not carry it — so this reads the
+        // parent. One extra document read per subscription, not per message.
+        allow read: if isAdmin()
+                    || (isSignedIn()
+                        && get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.userId == uid());
+        allow write: if false;
+      }
+    }
+
+    // ----- tripWatchLinks/{token} ----------------------------------------------
+    // The secret tokens behind "share my ride with my family".
+    //
+    // Default-deny on purpose, including for the person who created the link. A
+    // shared link is resolved ONLY through the `getTripWatch` callable, which
+    // returns a hand-built, redacted view of the ride (trips/watch.ts). If this
+    // collection were readable, a token would hand out the trip id, and the
+    // trip's own read rule would then hand out everything else to anyone who
+    // happened to be signed in.
+    match /tripWatchLinks/{token} {
+      allow read, write: if false;
     }
 
     // ===== Earn with Velocity — the Partner Program ==========================

@@ -27,6 +27,7 @@ import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { useMessagesUnreadTotal } from '../../src/hooks/messages';
+import { useSupportUnread } from '../../src/hooks/support';
 import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/suggestedRides';
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
@@ -86,6 +87,10 @@ export default function PassengerHome() {
   // brands. It badges the drawer row, and puts a dot on the hamburger itself:
   // a badge nobody can see until they open the drawer is not a notification.
   const messagesUnread = useMessagesUnreadTotal();
+  // Unread replies on this rider's open complaints, so the drawer carries the
+  // same badge the Messages row does — a Rapid Response answer nobody notices
+  // is a resolution that never happened.
+  const supportUnread = useSupportUnread(user?.uid);
 
   // The booking sheet covers the bottom of a full-screen map, so the map has to be
   // told how much of itself is hidden — otherwise it centres the user's green dot
@@ -157,32 +162,6 @@ export default function PassengerHome() {
   const soon = (feature: string) => {
     setDrawerOpen(false);
     comingSoon(feature);
-  };
-  /**
-   * Safety → police helpline 15.
-   *
-   * The number is shown first and the call is placed only from the explicit
-   * "Call 15" button. Nothing here dials on its own: a stray tap on Safety must
-   * never put an emergency call through to the police.
-   */
-  const openSafety = () => {
-    setDrawerOpen(false);
-    Alert.alert(
-      'Safety — Police helpline 15',
-      'Dial 15 to reach the Pakistan police emergency helpline directly.\n\nDuring a ride you can also trigger an Emergency SOS from the trip screen — our team monitors safety events in real time.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Call 15',
-          style: 'destructive',
-          onPress: () => {
-            Linking.openURL('tel:15').catch(() => {
-              Alert.alert('Could not start the call', 'Dial 15 from your phone app.');
-            });
-          },
-        },
-      ],
-    );
   };
   const goDriverMode = () => {
     setDrawerOpen(false);
@@ -575,9 +554,9 @@ export default function PassengerHome() {
                     ) : null}
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={openSafety}>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/safety')}>
                     <Text style={styles.menuItemIcon}>🛡️</Text>
-                    <Text style={styles.menuItemText}>Safety</Text>
+                    <Text style={styles.menuItemText}>Safety Centre</Text>
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/settings')}>
@@ -585,9 +564,16 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Settings</Text>
                   </Pressable>
 
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/support-chat')}>
-                    <Text style={styles.menuItemIcon}>💬</Text>
-                    <Text style={styles.menuItemText}>Support</Text>
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/support')}>
+                    <Text style={styles.menuItemIcon}>⚡</Text>
+                    <Text style={[styles.menuItemText, styles.menuItemTextGrow]}>Help & complaints</Text>
+                    {supportUnread > 0 ? (
+                      <View style={styles.menuBadge}>
+                        <Text style={styles.menuBadgeText}>
+                          {supportUnread > 9 ? '9+' : supportUnread}
+                        </Text>
+                      </View>
+                    ) : null}
                   </Pressable>
 
                   <Pressable style={styles.menuItem} onPress={() => { setDrawerOpen(false); signOut(); }}>

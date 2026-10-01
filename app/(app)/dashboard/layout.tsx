@@ -48,6 +48,7 @@ const APP_NAV: NavGroup[] = [
       { href: '/dashboard/passengers', label: '👥 Passengers' },
       { href: '/dashboard/disputes', label: '⚖️ Disputes' },
       { href: '/dashboard/safety', label: '🆘 Safety desk' },
+      { href: '/dashboard/support', label: '⚡ Rapid Response' },
     ],
   },
   {

@@ -74,6 +74,12 @@ export {
 // Commission settlement (manual bank transfer + AI-verified screenshot)
 export { submitCommissionSettlement, adminReviewCommissionSettlement } from './drivers/commissionSettlement';
 
+// The daily ride target's credit: the admin lever that grants or claws it back
+// by hand (there is no gateway top-up yet), and the per-driver read the
+// dashboard uses. The driver's own progress is streamed straight from
+// `drivers/{uid}/dailyTargets/{day}` — no callable on the hot path.
+export { adminAdjustCommissionCredit, adminGetDriverCommission } from './drivers/commissionCredit';
+
 // Cancellation-fee settlement — same proof flow, open to passengers and drivers
 export { submitCancellationFeeSettlement } from './payments/cancellationFees';
 
@@ -151,6 +157,25 @@ export {
 
 // Safety
 export { raiseSafetyEvent, resolveSafetyEvent } from './safety';
+
+// "Share my ride with my family" — a live tracking link that opens in any
+// browser, with no app and no account. `getTripWatch` is the one callable here
+// that is deliberately unauthenticated; the token is the credential.
+export { createTripWatchLink, getTripWatch, revokeTripWatchLink } from './trips/watch';
+export { sweepTripWatchLinks } from './trips/sweepWatchLinks';
+
+// Velocity Rapid Response System — the complaint desk. AI answers first and
+// hands to a person the moment it is out of its depth or is asked to.
+export {
+  openSupportTicket,
+  sendSupportMessage,
+  requestHumanAgent,
+  markSupportTicketRead,
+  rateSupportResolution,
+  adminReplySupportTicket,
+  adminSetSupportTicketStatus,
+  escalateStaleSupportTickets,
+} from './support';
 
 // Payments
 export {

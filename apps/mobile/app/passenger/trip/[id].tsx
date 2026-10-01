@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   LayoutAnimation,
   Linking,
   Modal,
@@ -16,7 +17,7 @@ import {
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { appLink } from '../../../src/share/links';
+import { appLink, tripWatchUrl } from '../../../src/share/links';
 import { FirebaseError } from 'firebase/app';
 import { collection, getDocs, query as fsQuery, where } from 'firebase/firestore';
 
@@ -88,6 +89,10 @@ export default function TripScreen() {
   // the foreground, and the rider is usually watching this very screen.
   const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(tripId, user?.uid);
   const [reportOpen,   setReportOpen]   = useState(false);
+  // The live-tracking token, cached for this screen so sharing twice hands the
+  // family one URL rather than two. Null = nothing shared yet, or revoked.
+  const [watchToken,   setWatchToken]   = useState<string | null>(null);
+  const [sharingLive,  setSharingLive]  = useState(false);
   const sharePromptShown = useRef(false);
 
   // Initialize adjustedFare when trip loads
@@ -221,6 +226,55 @@ export default function TripScreen() {
     if (!trip) return;
     const next = trip.poolVisibility === 'private' ? 'public' : 'private';
     run(() => api.setPoolVisibility({ tripId: trip.id, visibility: next }));
+  }
+
+  /**
+   * Share a LIVE tracking link with family.
+   *
+   * This replaced a button that pasted the driver's name and the plate into a
+   * WhatsApp message. That message is a photograph of one moment: whoever
+   * receives it learns nothing more for the rest of the ride, which is exactly
+   * the stretch of time they are worried about.
+   *
+   * The link opens in any browser with no app and no account — the people you
+   * most want watching are the ones who have never installed anything — and it
+   * carries the plate and the driver's number so they can act without having to
+   * reach you first. It dies with the ride (plus a short grace window so they
+   * see "arrived"), and it can be revoked.
+   *
+   * The token is minted on the server and cached here, so tapping share twice
+   * does not hand the family two different URLs.
+   */
+  async function shareLiveTrip(channel: 'sheet' | 'whatsapp') {
+    if (!trip || sharingLive) return;
+    setSharingLive(true);
+    try {
+      const token = watchToken ?? (await api.createTripWatchLink({ tripId: trip.id })).token;
+      setWatchToken(token);
+
+      const link = tripWatchUrl(token);
+      const driver = trip.driverInfo?.displayName ?? 'My driver';
+      const plate = trip.driverInfo?.plate ?? 'N/A';
+      const vehicle = trip.driverInfo?.vehicleLabel ?? 'Vehicle';
+      const message =
+        `🚗 I'm on a Velocity Rides trip — follow me live:\n${link}\n\n` +
+        `Driver: ${driver}\nCar: ${vehicle}\nPlate: ${plate}\n` +
+        `From: ${trip.pickup?.address ?? 'pickup'}\nTo: ${trip.dropoff?.address ?? 'destination'}\n\n` +
+        `The link shows where the car is right now. In an emergency, call the police on 15.`;
+
+      if (channel === 'whatsapp') {
+        const encoded = encodeURIComponent(message);
+        await Linking.openURL(`whatsapp://send?text=${encoded}`).catch(() =>
+          Linking.openURL(`https://wa.me/?text=${encoded}`),
+        );
+        return;
+      }
+      await Share.share({ message, title: 'Share my live trip' });
+    } catch (e) {
+      Alert.alert('Could not share', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSharingLive(false);
+    }
   }
 
   // Travel Partner ride link: only travel partners (matched mates / group members)
@@ -676,10 +730,36 @@ export default function TripScreen() {
         {/* ── Active trip: driver info + contact ── */}
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && trip.driverInfo && (
           <Card>
-            <Text style={styles.cardTitle}>{trip.driverInfo.displayName}</Text>
-            <Text style={styles.muted}>
-              {trip.driverInfo.vehicleLabel} · {trip.driverInfo.plate} · {trip.driverInfo.rating}★
-            </Text>
+            {/* Who is coming, in full. A rider standing on a road at night has
+                one job — match the car in front of them to the car we promised —
+                and the plate is how they do it, so it is the largest thing here
+                rather than the third item in a grey line of metadata. */}
+            <View style={styles.driverHead}>
+              {trip.driverInfo.photoURL ? (
+                <Image
+                  source={{ uri: trip.driverInfo.photoURL }}
+                  style={styles.driverPhoto}
+                  alt={`Photo of ${trip.driverInfo.displayName}`}
+                />
+              ) : (
+                <View style={[styles.driverPhoto, styles.driverPhotoBlank]}>
+                  <Text style={styles.driverPhotoTxt}>
+                    {(trip.driverInfo.displayName ?? '?').slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{trip.driverInfo.displayName}</Text>
+                <Text style={styles.muted}>
+                  {trip.driverInfo.vehicleLabel} · {trip.driverInfo.rating}★
+                </Text>
+                <Text style={styles.verifiedTag}>✓ Verified driver · papers checked by Velocity Rides</Text>
+              </View>
+            </View>
+            <View style={styles.plateBox}>
+              <Text style={styles.plateLabel}>NUMBER PLATE</Text>
+              <Text style={styles.plateValue}>{trip.driverInfo.plate || '—'}</Text>
+            </View>
             {/* On a pool this must be the rider's OWN share, not the whole-car
                 fare the driver locked — a rider shown "550 PKR" who owes 330 is
                 being told the wrong number about their own money. */}
@@ -718,25 +798,59 @@ export default function TripScreen() {
               </Pressable>
             </View>
 
-            {/* Share trip via WhatsApp */}
-            <Pressable
-              style={styles.whatsappBtn}
-              onPress={() => {
-                const plate   = trip.driverInfo?.plate ?? 'N/A';
-                const vehicle = trip.driverInfo?.vehicleLabel ?? 'Vehicle';
-                const driver  = trip.driverInfo?.displayName ?? 'Driver';
-                const pickup  = trip.pickup?.address ?? 'pickup';
-                const dropoff = trip.dropoff?.address ?? 'destination';
-                const msg = encodeURIComponent(
-                  `🚗 I'm on a ride with Velocity Rides!\n\nDriver: ${driver}\nVehicle: ${vehicle}\nPlate: ${plate}\n\nFrom: ${pickup}\nTo: ${dropoff}\n\nTrack my trip for safety.`
-                );
-                Linking.openURL(`whatsapp://send?text=${msg}`).catch(() =>
-                  Linking.openURL(`https://wa.me/?text=${msg}`)
-                );
-              }}
-            >
-              <Text style={styles.whatsappBtnText}>📤 Share trip via WhatsApp</Text>
-            </Pressable>
+            {/* ── Share my live trip ── The real one: a link family can open in
+                any browser and watch move. See shareLiveTrip(). */}
+            <View style={styles.liveShareBox}>
+              <Text style={styles.liveShareTitle}>📍 Share my live trip</Text>
+              <Text style={styles.liveShareBody}>
+                Your family can follow this ride on a map — the car, the plate and the
+                driver&apos;s number — with no app needed. The link stops working when you
+                arrive.
+              </Text>
+              <View style={styles.liveShareRow}>
+                <Pressable
+                  style={[styles.whatsappBtn, styles.liveShareBtn]}
+                  onPress={() => shareLiveTrip('whatsapp')}
+                  disabled={sharingLive}
+                >
+                  <Text style={styles.whatsappBtnText}>
+                    {sharingLive ? 'Preparing…' : 'WhatsApp'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.contactBtn, styles.liveShareBtn]}
+                  onPress={() => shareLiveTrip('sheet')}
+                  disabled={sharingLive}
+                >
+                  <Text style={styles.contactBtnText}>Share…</Text>
+                </Pressable>
+              </View>
+              {watchToken ? (
+                <Pressable
+                  onPress={() =>
+                    Alert.alert(
+                      'Stop sharing this ride?',
+                      'The link you sent will stop working immediately. You can always share a new one.',
+                      [
+                        { text: 'Keep sharing', style: 'cancel' },
+                        {
+                          text: 'Stop sharing',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await api.revokeTripWatchLink({ token: watchToken });
+                              setWatchToken(null);
+                            } catch { /* nothing useful to say about a failed revoke */ }
+                          },
+                        },
+                      ],
+                    )
+                  }
+                >
+                  <Text style={styles.revokeLink}>Stop sharing this ride</Text>
+                </Pressable>
+              ) : null}
+            </View>
 
             {/* Travel Partner ride link — partners can book onto this ride */}
             <Pressable style={styles.travelMateShareBtn} onPress={shareWithTravelMates}>
@@ -772,6 +886,17 @@ export default function TripScreen() {
               disabled={busy}
               onPress={() => run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))}
             />
+            {/* SOS reaches us. The Safety Centre reaches the police, Rescue and
+                NCCIA — and we are not the right first call for a fight or an
+                accident, so the way to the ones that are is on this screen. */}
+            <Pressable
+              style={styles.safetyLink}
+              onPress={() => router.push(`/safety?tripId=${trip.id}`)}
+            >
+              <Text style={styles.safetyLinkTxt}>
+                🛡️ Safety Centre — call police 15, report a problem
+              </Text>
+            </Pressable>
             {trip.status !== 'in_progress' && isHost && (
               <>
                 <PrimaryButton
@@ -1049,6 +1174,66 @@ const styles = themed(() => StyleSheet.create({
     alignItems: 'center',
   },
   whatsappBtnText: { fontSize: 13, fontWeight: '800', color: '#25D366' },
+
+  // ── Driver identity ──
+  driverHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  driverPhoto: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.border },
+  driverPhotoBlank: { alignItems: 'center', justifyContent: 'center' },
+  driverPhotoTxt: { fontSize: 20, fontWeight: '900', color: colors.text },
+  verifiedTag: { fontSize: 11, color: colors.primary, fontWeight: '700', marginTop: 3 },
+  plateBox: {
+    marginTop: 12,
+    backgroundColor: colors.glassChip,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  plateLabel: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: colors.muted,
+    letterSpacing: 1.4,
+  },
+  plateValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+
+  // ── Live trip sharing ──
+  liveShareBox: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: colors.glassChip,
+  },
+  liveShareTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  liveShareBody: { fontSize: 11.5, color: colors.muted, lineHeight: 17, marginTop: 4 },
+  liveShareRow: { flexDirection: 'row', gap: 8 },
+  liveShareBtn: { flex: 1, marginTop: 10 },
+  revokeLink: {
+    fontSize: 11.5,
+    color: colors.danger,
+    textAlign: 'center',
+    marginTop: 9,
+    fontWeight: '700',
+  },
+
+  safetyLink: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  safetyLinkTxt: { fontSize: 12.5, fontWeight: '800', color: colors.text },
 
   travelMateShareBtn: {
     marginTop: 10,

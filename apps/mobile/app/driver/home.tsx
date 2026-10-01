@@ -34,11 +34,13 @@ import {
   useDriverPoolRides,
   useDriverProfile,
   useOpenRequests,
+  useDailyTarget,
   useOutstanding,
   vehicleCheckStatus,
   type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
+import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
@@ -97,6 +99,9 @@ export default function DriverHome() {
   const liveRequests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
   const commission = useCommissionStatus(profile);
   const commissionLocked = commission.locked;
+  // Today's ride count against the admin-set target, straight off the day
+  // document the settlement writes — so the card moves as rides land.
+  const dailyTarget = useDailyTarget(uid);
   // Unpaid cancellation fees — past the limit, the backend rejects new bids.
   const outstanding = useOutstanding(uid);
   const cancellation = useCancellationSettings();
@@ -551,6 +556,21 @@ export default function DriverHome() {
         </View>
       </View>
 
+      {/* ── Today's target ── Above the body rather than inside one of its five
+          branches: the count has to be there whether the driver is offline,
+          waiting on the radar, or scrolling a full feed, because it is what
+          they are deciding against. Hidden mid-trip (nothing to decide) and
+          while a settle screen owns the view. */}
+      {!activeTrip && !commissionLocked && !outstanding.blocked && dailyTarget.progress.enabled ? (
+        <View style={styles.targetWrap}>
+          <DailyTargetCard
+            progress={dailyTarget.progress}
+            credit={commission.credit}
+            onPress={() => router.push('/driver/earnings')}
+          />
+        </View>
+      ) : null}
+
       {/* ── Body ── */}
       {activeTrip ? (
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -626,6 +646,20 @@ export default function DriverHome() {
                 </Text>
               </Pressable>
             </View>
+            {/* A driver is as likely to be the one in trouble as the passenger —
+                an abusive rider, a threat, an accident — and until now the only
+                safety route they had was the drawer, three taps away on a
+                screen they are not looking at. Police 15 and Rescue 1122 are
+                behind this, with the trip attached so the desk knows which
+                ride it is. */}
+            <Pressable
+              style={styles.safetyBtn}
+              onPress={() => router.push(`/safety?tripId=${activeTrip.id}`)}
+            >
+              <Text style={styles.safetyBtnText}>
+                🛡️ Safety Centre — call police 15, report a problem
+              </Text>
+            </Pressable>
             {/* Who the driver is actually picking up. Before this the card said
                 "passenger" in the singular however many people were in the
                 pool, so a driver could not tell how many to wait for, who they
@@ -1035,6 +1069,7 @@ const styles = themed(() => StyleSheet.create({
   carBannerChevron: { fontSize: 22, color: '#f59e0b', fontWeight: '700' },
 
   modeRow: { alignItems: 'center', paddingBottom: 8 },
+  targetWrap: { paddingHorizontal: 16, paddingBottom: 2 },
   modeToggle: {
     flexDirection: 'row',
     width: 260,
@@ -1143,6 +1178,15 @@ const styles = themed(() => StyleSheet.create({
     borderColor: colors.primary,
     borderWidth: 1.5,
   },
+  safetyBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  safetyBtnText: { fontSize: 12.5, fontWeight: '800', color: colors.text },
   contactBtn: {
     flex: 1,
     backgroundColor: colors.card,

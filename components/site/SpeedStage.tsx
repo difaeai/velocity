@@ -36,8 +36,8 @@ const CHAPTERS = [
   {
     gear: 'Chapter 03',
     title: 'Arrive, tracked the whole way',
-    body: 'Live map, verified driver, two-way ratings and an SOS button that reaches a real safety desk — not a form.',
-    metric: 'SOS and route-deviation alerts, 24/7',
+    body: 'Your driver’s name, plate and number before the car arrives. A live link your family can open with no app. Police 15 one tap away.',
+    metric: 'SOS, live trip sharing and a staffed desk, 24/7',
   },
 ];
 

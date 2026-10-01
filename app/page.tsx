@@ -291,6 +291,10 @@ const SAFETY = [
         'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a single ride.',
       ],
       [
+        'The whole driver, up front',
+        'Name, photo, car, number plate, rating and phone number — on screen before the car reaches you.',
+      ],
+      [
         'Pools you set the rules for',
         'Gender rules are chosen before you join, and every co-rider added mid-trip is shown to you.',
       ],
@@ -300,12 +304,16 @@ const SAFETY = [
     phase: 'While you are moving',
     items: [
       [
+        'Your family can watch the ride',
+        'Share a live link. It opens in any browser with no app, and shows the car moving, the plate and the driver\u2019s number.',
+      ],
+      [
         'SOS that reaches somebody',
         'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.',
       ],
       [
-        'Route deviation flagging',
-        'If the trip stops making sense, you can say so from the same screen, and it lands in the same place.',
+        'Police 15, one tap away',
+        'The Safety Centre dials the police emergency line and Rescue 1122 \u2014 and tells our safety desk the moment you do.',
       ],
     ],
   },
@@ -319,6 +327,10 @@ const SAFETY = [
       [
         'A dispute goes to a human',
         'Fare and conduct disputes open a case on the same desk, and the settlement is written by the backend.',
+      ],
+      [
+        'Answered in seconds, by a person if you ask',
+        'Rapid Response replies immediately and hands you to a real member of the team the moment you want one.',
       ],
     ],
   },
@@ -339,7 +351,19 @@ const FAQS = [
   },
   {
     q: 'What happens if something goes wrong mid-ride?',
-    a: 'There is an SOS button inside the trip. It raises a safety event that lands live on a staffed safety desk, along with your location if you share it. Route deviations can be flagged the same way, and every co-rider added to a pool mid-trip is visible to you.',
+    a: 'For anything frightening \u2014 a fight, a threat, an assault \u2014 call the police on 15 from the Safety Centre inside the app. It dials for you and tells our safety desk at the same moment, with the plate, the driver and the last known position already attached. Rescue 1122 is on the same screen for an accident. The SOS button raises a live alert on the desk, route deviations can be flagged the same way, and every co-rider added to a pool mid-trip is shown to you.',
+  },
+  {
+    q: 'Can my family follow my ride?',
+    a: 'Yes. Tap share on the trip screen and you get a link that opens in any browser \u2014 no app, no account. Whoever you send it to sees the ride\u2019s status, the car moving on a map, the number plate and the driver\u2019s phone number, so they can act without having to reach you first. The link stops working when you arrive, and you can revoke it at any time.',
+  },
+  {
+    q: 'Someone tried to scam me. What do I do?',
+    a: 'Report it in two places, because they do different things. Velocity Rides can refund what we charged and ban the account \u2014 open the Safety Centre and file it there. Only Pakistan\u2019s cybercrime agency, NCCIA, can investigate and recover money: call 1799 or file at complaint.nccia.gov.pk. Keep your screenshots. And note that Velocity Rides staff never ask for an OTP, a PIN, a card number, or a transfer to a personal account \u2014 anyone who does is not us.',
+  },
+  {
+    q: 'Do I get a real person if I need one?',
+    a: 'Always. Velocity Rapid Response answers immediately so simple questions are settled in seconds, and the moment you ask for a human \u2014 in English or Urdu, typed or by tapping the button \u2014 the conversation moves to a member of our team in the same chat. Safety reports and scams never touch the assistant at all; they open as urgent tickets owned by a person from the first second.',
   },
   {
     q: 'Is Velocity Rides on iPhone?',
@@ -962,7 +986,9 @@ export default function Home() {
                 <h2 className={styles.h2}>Nobody gets in a car they know nothing about</h2>
                 <p className={styles.lead}>
                   Safety on Velocity Rides is not a page in the settings. It is a set of checks that run
-                  before the ride, during it, and after it.
+                  before the ride, during it, and after it — which is why we are willing to call
+                  ourselves Pakistan&apos;s securest ride-hailing app and then list exactly what we mean
+                  by it.
                 </p>
 
                 <ol className={styles.timeline}>
