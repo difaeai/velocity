@@ -14,6 +14,7 @@ import { auth, db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { applyRole } from '../users';
 import { cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { applyCommissionCredit } from './commissionCredit';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
 
 const onboardingSchema = z.object({
@@ -332,7 +333,8 @@ export const payCommission = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
 
   const driverRef = db.doc(`drivers/${ctx.uid}`);
-  const { rate, threshold } = await getCommissionSettings();
+  const settings = await getCommissionSettings();
+  const { rate, threshold } = settings;
 
   const amountPaid = await db.runTransaction(async (tx) => {
     const walletRef = db.doc(`wallets/${ctx.uid}`);
@@ -344,7 +346,28 @@ export const payCommission = onCall(async (req) => {
     }
 
     const cashFare = cycleCashFare(snap);
-    const due = Math.round(cashFare * rate);
+    // Target-bonus credit pays first and is spent here; the wallet only has to
+    // cover what is left, which is often nothing.
+    const breakdown = applyCommissionCredit({
+      tx,
+      driverId: ctx.uid,
+      driverSnap: snap,
+      settings,
+      source: 'wallet',
+    });
+    if (breakdown.creditApplied > 0) {
+      tx.set(db.collection('platformLedger').doc(), {
+        type: 'ride_commission',
+        source: 'daily_target_credit',
+        driverId: ctx.uid,
+        amount: breakdown.creditApplied,
+        paidFromCredit: breakdown.creditApplied,
+        cycleGrossFare,
+        cycleCashFare: cashFare,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    const due = breakdown.due;
     if (due > 0) {
       const balance: number = walletSnap.get('balance') ?? 0;
       if (balance < due) {
@@ -404,6 +427,8 @@ export const payCommission = onCall(async (req) => {
     // Log the payment in a sub-collection for audit.
     tx.set(driverRef.collection('commissionPayments').doc(), {
       amount: due,
+      paidFromCredit: breakdown.creditApplied,
+      grossDue: breakdown.grossDue,
       cycleGrossFare,
       cycleCashFare: cashFare,
       threshold,

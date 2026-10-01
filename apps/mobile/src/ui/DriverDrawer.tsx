@@ -184,6 +184,17 @@ export function DriverDrawer({
 
           <View style={styles.divider} />
 
+          {/* A driver with a problem gets the same desk a rider does. Both
+              entries are here rather than buried in Settings because the two
+              moments they are needed — something frightening on a ride, and a
+              dispute about money — are both moments nobody goes hunting. */}
+          <View style={styles.navSection}>
+            <NavItem icon="🛡️" label="Safety Centre"           onPress={() => go('/safety')} />
+            <NavItem icon="⚡" label="Help & complaints"       onPress={() => go('/support')} />
+          </View>
+
+          <View style={styles.divider} />
+
           <View style={styles.navSection}>
             <NavItem icon="🧍" label="Ride as Passenger"      onPress={() => go('/passenger/home')} />
             <NavItem

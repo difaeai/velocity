@@ -32,3 +32,16 @@ export const SUPPORT_EMAIL = 'business@velocityrides.app';
 export function appLink(path: string): string {
   return `${WEB_ORIGIN}/link${path.startsWith('/') ? '' : '/'}${path}`;
 }
+
+/**
+ * A live ride-tracking link for family.
+ *
+ * NOT an `appLink`. Those bounce the visitor into the app or to the Play Store,
+ * which is the opposite of what is wanted here: the people a rider shares their
+ * trip with are precisely the ones who do not have the app, and sending a
+ * worried relative to a store listing instead of a map is a failure. `/watch`
+ * is a real web page that resolves the token server-side and shows the ride.
+ */
+export function tripWatchUrl(token: string): string {
+  return `${WEB_ORIGIN}/watch/${token}`;
+}

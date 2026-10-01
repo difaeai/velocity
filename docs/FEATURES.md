@@ -577,17 +577,81 @@ Tabs (`DriverTabBar`) and a drawer (`DriverDrawer`) reach:
 
 - Default rate **10%**, default lock threshold **5,000 PKR** of cycle gross
   (`config/commissionSettings`, admin page **Commission**).
-- What's owed is `rate × cycleCashFare` **only** — commission on wallet rides was
-  already deducted at completion, so a mixed cycle never pays twice and an
-  all-online cycle clears itself without ever locking.
+- What's owed is `rate × cycleCashFare` **less the driver's target credit**
+  (§6.4). Commission on wallet rides was already deducted at completion, so a
+  mixed cycle never pays twice and an all-online cycle clears itself without
+  ever locking.
+- `commissionBreakdown()` is the one place the split is computed, and it returns
+  three numbers that must not be confused:
+  `grossDue` (revenue earned), `creditApplied` (what the incentive paid) and
+  `due` (what the driver still has to transfer). **`commissionDue()` returns the
+  net** — that is the figure the lock, the push and every screen mean.
 - When the threshold is reached and something is still owed, the driver is
   **locked**: `placeBid`, `driverRespondToRequest` and `driverAcceptPoolBatch`
-  all reject them, and the app parks on the wallet screen with incoming rides
+  all reject them, and the app parks on the settle screen with incoming rides
   blurred (`CommissionLock`).
-- Clearing it: `payCommission` (from wallet — wired for when top-ups return) or
-  the manual bank-transfer path below, which is what launch actually uses.
+- Clearing it: automatically from credit (the cycle resets inside
+  `completeTrip` when the net due reaches zero), `payCommission` (from wallet —
+  wired for when top-ups return), or the manual bank-transfer path below, which
+  is what launch actually uses. All four paths go through
+  `applyCommissionCredit` / `ledgerCreditSpend`, so credit can only ever be
+  spent once.
 
-### 6.4 Payouts
+### 6.4 The daily ride target (driver incentive)
+
+`domain/dailyTarget.ts`, `drivers/dailyTarget.ts`, `drivers/commissionCredit.ts`.
+
+A driver who completes the admin-set number of **qualifying rides in one
+Pakistan day** earns a fixed **commission credit**, and — while the admin leaves
+the waiver on — owes no commission on that day's rides at all.
+
+Defaults: **15 rides → PKR 2,000**, waiver **on**.
+
+- **The credit is not cash.** It pays Velocity's own charges and can never be
+  withdrawn. That is the same State Bank e-money boundary
+  `domain/walletFunds.ts` draws, reached from the other side: money we hand out
+  that could be cashed out would make us an unlicensed e-money issuer.
+- **A day is a Pakistan day** (UTC+05:00, no DST). UTC midnight is 05:00 in
+  Karachi, so a UTC day key would file a driver's morning rides under yesterday
+  and split the shift that earned the bonus across two.
+- **One document per driver-day**: `drivers/{uid}/dailyTargets/{YYYY-MM-DD}`,
+  written only by the settlement transaction and streamed by the driver app
+  (`useDailyTarget`) so the progress card moves as rides land — no callable on
+  the hot path.
+- **Credit statement**: `drivers/{uid}/commissionCredits/{id}`, one row per
+  grant and per spend (spends are negative, so it reads like a statement).
+- **The two halves of the waiver.** Rides from the moment of crossing onward
+  never enter `cycleCashFare`. Rides earlier the same day are already in it, so
+  they are credited the commission they accrued instead — capped at
+  `min(today's cash, the cycle's cash)`, so a driver who settled at noon is not
+  paid twice for the morning.
+- **Anti-farming.** A flat bonus for a ride count is trivially gamed (a driver,
+  one friend, fifteen minimum-fare rides round a car park). Three admin fields
+  make the day have to be a real shift: a per-ride fare floor (default 150), a
+  distinct-passenger count (default 5) and a day total (default 2,500). Any can
+  be set to 0 to switch it off. The driver app names every unmet condition with
+  live figures, so a day that will not pay out says so before midnight.
+- **Accounting.** A settlement writes revenue and the incentive separately —
+  `platformLedger` `ride_commission` for `grossDue`, `driver_incentive` for
+  `creditApplied`. Netting them would have hidden the whole cost of the
+  programme inside a smaller revenue number.
+- **Pushes.** Two and no more: "one more ride" on the ride that leaves one to
+  go, and "target complete" when it pays.
+- **Admin.** Every field is live on the **Commission** page — the backend reads
+  `config/commissionSettings` per settlement and the driver app streams it, so a
+  change applies to every open app within a second with no deploy and no
+  release. The page refuses impossible combinations (a day total that
+  `rides × floor` cannot reach; more distinct passengers than rides).
+- **The manual lever.** There is no gateway top-up yet, so
+  `adminAdjustCommissionCredit` grants or claws back credit by hand (reason
+  required, audit-logged, floored at zero). It lives in the **Driver approvals**
+  page, under *Commission, daily target & credit*, alongside
+  `adminGetDriverCommission` which shows the last 14 days and the statement.
+- Tests: `drivers/__tests__/dailyTarget.test.ts` (27 cases) pin the day
+  boundary, the once-per-day grant, the waiver cap, the farming refusals and the
+  ledger split.
+
+### 6.5 Payouts
 
 `requestPayout(amount, method, account)` reserves the balance and queues a
 `payouts` doc carrying the driver's Easypaisa/JazzCash number or bank IBAN; an
@@ -1617,17 +1681,166 @@ business offers nearby.
 
 ## 17. Safety
 
-- `raiseSafetyEvent` — a trip participant raises **SOS** or a **route-deviation**
-  alert (optional location and note), rate-limited to 10/minute. The event id is
-  stamped on the trip as `activeSafetyEventId`.
+### 17.1 The Safety Centre (`app/safety.tsx`)
+
+One screen, reached from both menus and from a live ride on both sides (the
+passenger trip screen and the driver's active-trip card). Two rules in it are
+not negotiable:
+
+1. **Nothing dials on its own.** Every emergency number is shown as text and
+   placed only from an explicit confirmation. A stray pocket tap must never put
+   a call through to the police.
+2. **An online scam goes to two places.** Velocity can refund and ban; only
+   NCCIA can investigate and recover money. The screen says so and makes both
+   one tap.
+
+The numbers are facts about Pakistan, mirrored in
+`backend/functions/src/support/knowledge.ts` so the AI agent quotes the same
+ones the screen shows:
+
+| Channel | Number | For |
+| --- | --- | --- |
+| Police emergency | **15** | A fight, a threat, an assault |
+| Rescue 1122 | **1122** | An accident, an injury |
+| NCCIA cybercrime | **1799** | An online scam — also `complaint.nccia.gov.pk` |
+
+### 17.2 Safety events
+
+- `raiseSafetyEvent` — a trip participant raises an alert, rate-limited to
+  10/minute. The event id is stamped on the trip as `activeSafetyEventId`.
+- Kinds: `sos`, `route_deviation`, `police_called`, `harassment`, `accident`,
+  `unsafe_driving`, `scam`. The first four are `critical` and **push every
+  admin** — an alert that waits for somebody to be looking at a dashboard is
+  not an alert.
+- **`police_called` is the important one** and it is not a request for help: it
+  is the app reporting that the person on the ride has just dialled 15 from the
+  Safety Centre. The call is placed first; the report follows silently. We would
+  otherwise learn days later, from a police enquiry, that one of our rides ended
+  with an emergency call.
+- The event carries what the desk needs in the first second rather than after
+  three more reads: the last known position, `driverInfo`, both phone numbers,
+  pickup, dropoff and the trip status.
 - `safetyEvents/{id}` is readable only by the reporter and admins.
-- `resolveSafetyEvent` (admin) closes it. The admin **Safety desk** subscribes to
-  open events live; the **Live ops map** shows the field.
-- Other safety-relevant surfaces: driver and vehicle documents verified before
-  approval, ratings both ways, `reportOpenRequest` for fake requests,
-  `driverBlockPoolPassenger`, `reportPoolGenderMisrepresentation`, the pool gender
-  rules, Travel Partner reporting/blocking, and full visibility of every co-rider
-  added mid-trip.
+  `resolveSafetyEvent` (admin) closes it. The admin **Safety desk** subscribes
+  live; the **Live ops map** shows the field.
+
+### 17.3 Share my ride with my family (`trips/watch.ts`)
+
+The old button pasted the driver's name and plate into a WhatsApp message — a
+photograph of one moment, sent to somebody who then learns nothing for the rest
+of the ride. This is a live link instead.
+
+- `createTripWatchLink({ tripId })` mints a 128-bit token
+  (`tripWatchLinks/{token}`) for any trip participant, and returns the **same**
+  token on repeat calls so sharing twice does not hand the family two URLs.
+- `getTripWatch({ token })` is **deliberately unauthenticated** — the recipient
+  is a relative with a WhatsApp message, not a user. The token is the credential.
+- It returns a **hand-built, redacted view**, not the trip document: status,
+  rider's first name only, the two addresses, the driver's name/car/plate/phone,
+  the last position with its age in seconds, and whether a safety alert is open.
+  Adding a field to a trip can never widen what a shared link shows.
+- Bounded three ways: it dies with the ride (plus a 3-hour grace window so the
+  family sees "arrived safely"), it can be revoked (`revokeTripWatchLink`,
+  per-link), and it is rate-limited **per token** so a leaked link cannot become
+  a position feed. Unknown, revoked and expired all answer with the same
+  `not-found` — a different message would confirm a guessed token.
+- `sweepTripWatchLinks` purges links 24h past expiry. Hygiene, not security:
+  `getTripWatch` already refuses them.
+- The page is `/watch/{token}` on the public site — **not** an `/link/*` app
+  bounce. Sending a worried relative to a store listing instead of a map is a
+  failure. It polls every 10s while the ride is live and stops when it ends, the
+  plate and the driver's number are the largest things on it, and Police 15 /
+  Rescue 1122 are always visible. It sits in the `(app)` route group, which is
+  `robots: noindex`.
+
+### 17.4 Other safety surfaces
+
+Driver and vehicle documents verified before approval, ratings both ways,
+`reportOpenRequest` for fake requests, `driverBlockPoolPassenger`,
+`reportPoolGenderMisrepresentation`, the pool gender rules, Travel Partner
+reporting/blocking, and full visibility of every co-rider added mid-trip.
+
+---
+
+## 17a. Velocity Rapid Response System
+
+`backend/functions/src/support/*`, `app/support/*`, admin page
+**Rapid Response**.
+
+A professional support shape: **AI first, a person the moment you ask.** It
+replaced `supportChats` — a single rolling thread the app wrote to directly,
+which could not run an agent, count turns, notify a desk, or stop a client
+forging a message "from Velocity Rides" promising a refund.
+
+### 17a.1 Tickets, not a chat
+
+`supportTickets/{id}` + `messages/{id}`. One ticket per complaint, because a
+fare dispute from last week and a safety report today have different owners and
+different resolutions. Reads are direct (so a thread streams live); **every**
+write is a callable and the rules deny all client writes.
+
+Categories drive routing, priority and the agent's brief: `safety`,
+`online_scam`, `payment`, `driver_issue`, `passenger_issue`, `commission`,
+`account`, `lost_item`, `other`. Statuses: `ai_handling` → `waiting_human` →
+`human_handling` → `resolved`.
+
+### 17a.2 The AI agent
+
+`support/agent.ts`, on Claude Sonnet via the one `social/claude.ts` client
+(Sonnet, not the social desk's Opus: hundreds of short messages where the facts
+are already in the prompt and latency is felt by somebody standing on a road).
+
+It answers from exactly two things and is told to invent nothing else:
+
+- `support/knowledge.ts` — the policies, interpolated with the **live** admin
+  settings, so it quotes today's commission rate and today's daily target rather
+  than last month's.
+- `support/context.ts` — the caller's own account: role, ban state, outstanding
+  fees, what they owe, their credit, today's target progress, their last three
+  rides, whether a ride is running. No other user's data, ever.
+
+It may not approve a refund, waive a fee, lift a ban, unlock a driver or grant
+credit; it is told to hand over instead.
+
+### 17a.3 Four things escalate a ticket — only one is the model's judgement
+
+| Trigger | Where |
+| --- | --- |
+| The words | `asksForHuman()` on the raw message, **before any API call** |
+| The category | `safety` and `online_scam` never belong to a machine |
+| The model | `needs_human` when it is out of its depth or asked for money |
+| The clock | `MAX_AI_REPLIES` (4), so nobody is trapped in a loop |
+
+`asksForHuman()` matches English, Urdu script, **and Roman Urdu** ("mujhe insaan
+se baat karao", "banday se baat karwa do"). Refusing to *understand* how
+Pakistani users type is a different rule from refusing to *write* the interface
+that way — the app's own UI text stays English/Urdu-script.
+
+There is also a `Talk to a person` button above the composer, `requestHumanAgent`,
+and a "did that help?" prompt whose **no re-opens the ticket for a person**.
+
+### 17a.4 The one invariant
+
+**A customer message is never left without a reply.** The AI answers; or the AI
+fails and the fallback answers *while* handing over; or the category is one the
+AI must not touch and a written-out emergency acknowledgement answers (the
+sentence with the phone number in it must not depend on an API being up). No
+API key, a refusal, a timeout, unparseable JSON — all four produce an answer
+and a ticket in the human queue.
+
+The agent call happens **after** the customer's message is committed, so a crash
+loses a reply, never a complaint. `escalateStaleSupportTickets` (every 15
+minutes) catches both the ticket whose reply never landed and the one that has
+sat in the queue past 30 minutes, and re-notifies the desk.
+
+### 17a.5 The desk
+
+Queue ordered waiting-first, then urgency, then oldest — the person who has
+waited longest is next. Each escalated ticket shows **why** it arrived and the
+account snapshot the AI was looking at when it gave up, so the first thing a
+human does is not ask questions the customer already answered.
+`adminReplySupportTicket` (optionally resolving in the same write),
+`adminSetSupportTicketStatus` (claim / re-queue / re-prioritise / close).
 
 ---
 
@@ -1692,8 +1905,9 @@ pages from `public/legal/`.
 | **Payouts** | Driver cash-out queue; mark paid |
 | **Live ops map** | Real-time supply and demand |
 | **Travel Partner** | Plans, subscription approvals, profile suspensions, community/post moderation |
-| **Safety desk** | Open SOS / route-deviation events; resolve |
-| **Commission** | Rate and lock threshold |
+| **Safety desk** | Open safety events (SOS, police called, harassment, accident); resolve |
+| **Rapid Response** | The support queue — escalated tickets, the AI transcript, reply as a human |
+| **Commission** | Rate, lock threshold, and the whole daily ride target (§6.4) — live to every app on save |
 | **Cancellation fees** | Passenger/driver rates and the outstanding limit |
 | **Settlements** | Manual bank-transfer proofs awaiting review (commission **and** cancellation-fee kinds) |
 | **Feature flags** | Flip the launch-posture flags live |

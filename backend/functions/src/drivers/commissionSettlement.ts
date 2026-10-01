@@ -27,6 +27,7 @@ import {
   isCommissionLocked,
   commissionDue,
 } from '../domain/commission';
+import { applyCommissionCredit } from './commissionCredit';
 import {
   decideProofOutcome,
   proofAIConfigured,
@@ -54,6 +55,8 @@ async function applyManualSettlement(params: {
   const driverRef = db.doc(`drivers/${driverId}`);
   const settlementRef = db.doc(`commissionSettlements/${settlementId}`);
 
+  const settings = await getCommissionSettings();
+
   await db.runTransaction(async (tx) => {
     const [driverSnap, settlementSnap] = await Promise.all([tx.get(driverRef), tx.get(settlementRef)]);
     if (!settlementSnap.exists) throw new HttpsError('not-found', 'Settlement not found.');
@@ -62,6 +65,18 @@ async function applyManualSettlement(params: {
     const cycleGrossFare = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
     const cashFare = cycleCashFare(driverSnap);
 
+    // Any target-bonus credit the driver has pays its part of this cycle and is
+    // spent here, so the cycle is fully discharged by the transfer plus the
+    // credit rather than leaving a remainder nobody owes.
+    const breakdown = applyCommissionCredit({
+      tx,
+      driverId,
+      driverSnap,
+      settings,
+      source: 'manual_bank',
+      ref: settlementId,
+    });
+
     // Ledger the realized commission (money already reached Velocity's bank).
     tx.set(db.collection('platformLedger').doc(), {
       type: 'ride_commission',
@@ -69,6 +84,8 @@ async function applyManualSettlement(params: {
       driverId,
       settlementId,
       amount: amountDue,
+      paidFromCredit: breakdown.creditApplied,
+      grossDue: breakdown.grossDue,
       method: method ?? null,
       verifiedBy,
       cycleGrossFare,
@@ -92,6 +109,8 @@ async function applyManualSettlement(params: {
     );
     tx.set(driverRef.collection('commissionPayments').doc(), {
       amount: amountDue,
+      paidFromCredit: breakdown.creditApplied,
+      grossDue: breakdown.grossDue,
       source: 'manual_bank',
       settlementId,
       cycleGrossFare,

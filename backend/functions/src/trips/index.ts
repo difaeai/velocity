@@ -28,7 +28,19 @@ import {
   fareBounds,
   poolPerSeatFare,
 } from '../domain/fares';
-import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import {
+  assertCommissionClear,
+  commissionCredit,
+  cycleCashFare,
+  getCommissionSettings,
+} from '../domain/commission';
+import {
+  dailyTargetRef,
+  notifyDailyTarget,
+  recordRideOnDailyTarget,
+  todayKey,
+} from '../drivers/dailyTarget';
+import { ledgerCreditSpend } from '../drivers/commissionCredit';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import {
   assertOutstandingClear,
@@ -1029,10 +1041,16 @@ export const completeTrip = onCall(async (req) => {
   const tripRef    = db.doc(`trips/${tripId}`);
   const driverRef  = db.doc(`drivers/${ctx.uid}`);
 
-  // Commission rate/threshold are admin-configurable from the dashboard
-  // (Commission page) and apply app-wide.
+  // Commission rate/threshold and the daily ride target are admin-configurable
+  // from the dashboard (Commission page) and apply app-wide.
   const commissionSettings = await getCommissionSettings();
   const commissionRate = commissionSettings.rate;
+
+  // Which day this ride belongs to, in the driver's own timezone. Resolved once
+  // here rather than inside the transaction: a retry must not be able to move
+  // the ride onto the next day because the clock crossed midnight mid-retry.
+  const targetDay = todayKey();
+  const dayRef    = dailyTargetRef(ctx.uid, targetDay);
 
   // Partner Program: whoever recruited this driver or this passenger earns a
   // slice of Velocity's commission on the ride — but only if the ride is
@@ -1062,9 +1080,10 @@ export const completeTrip = onCall(async (req) => {
   });
 
   const settlement = await db.runTransaction(async (tx) => {
-    const [snap, driverSnap] = await Promise.all([
+    const [snap, driverSnap, daySnap] = await Promise.all([
       tx.get(tripRef),
       tx.get(driverRef),
+      tx.get(dayRef),
     ]);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
@@ -1254,6 +1273,24 @@ export const completeTrip = onCall(async (req) => {
       },
       { merge: true },
     );
+    // The daily ride target. Counts this ride against today's goal, grants the
+    // bonus on the ride that completes it, and hands back the cash fare that is
+    // actually commissionable — zero once today's commission is waived.
+    const target = recordRideOnDailyTarget({
+      tx,
+      driverId: ctx.uid,
+      driverSnap,
+      daySnap,
+      day: targetDay,
+      settings: commissionSettings,
+      grossFare,
+      cashFare: paymentMethod === 'wallet' ? 0 : grossFare,
+      // A full car is one ride but several distinct passengers, which is what
+      // the anti-farming check on the day actually cares about.
+      riderIds: poolMembers.length > 0 ? poolMembers : [passengerId],
+      rideId: tripId,
+    });
+
     // Accumulate cycle earnings for commission lock tracking. Cash fares also
     // grow the settleable (owed) portion; wallet commission was collected just
     // above, so a cycle earned entirely online hits the threshold owing
@@ -1261,11 +1298,47 @@ export const completeTrip = onCall(async (req) => {
     const prevGross = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
     const prevCash  = cycleCashFare(driverSnap);
     let newGross = prevGross + grossFare;
-    let newCash  = prevCash + (paymentMethod === 'wallet' ? 0 : grossFare);
-    const cashDue = Math.round(newCash * commissionSettings.rate);
-    if (newGross >= commissionSettings.threshold && cashDue === 0) {
+    let newCash  = prevCash + target.commissionableCashFare;
+
+    // What the cycle owes, and who is paying it. The credit balance includes
+    // anything this very ride just earned, so the ride that completes the daily
+    // target can settle the cycle it also completed.
+    const cashDue      = Math.round(newCash * commissionSettings.rate);
+    const creditAfter  = commissionCredit(driverSnap) + target.creditDelta;
+    const creditApplied = Math.min(creditAfter, cashDue);
+    const netDue       = cashDue - creditApplied;
+
+    // A matured cycle the driver does not have to find money for clears itself
+    // rather than locking them: either it was earned online (commission already
+    // taken) or their target credit covers it. This is the whole point of the
+    // credit — "it comes off the 2,000, I don't pay separately".
+    if (newGross >= commissionSettings.threshold && netDue === 0) {
+      ledgerCreditSpend({
+        tx,
+        driverId: ctx.uid,
+        source: 'auto_clear',
+        ref: tripId,
+        grossDue: cashDue,
+        creditApplied,
+        due: 0,
+      });
+      if (cashDue > 0) {
+        // Revenue really was earned on this cycle; the credit is what paid it.
+        tx.set(db.collection('platformLedger').doc(), {
+          type: 'ride_commission',
+          source: 'daily_target_credit',
+          driverId: ctx.uid,
+          tripId,
+          amount: cashDue,
+          paidFromCredit: creditApplied,
+          cycleGrossFare: newGross,
+          cycleCashFare: newCash,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
       tx.set(driverRef.collection('commissionPayments').doc(), {
-        amount: 0,
+        amount: cashDue,
+        paidFromCredit: creditApplied,
         threshold: commissionSettings.threshold,
         rate: commissionSettings.rate,
         cycleGrossFare: newGross,
@@ -1282,6 +1355,14 @@ export const completeTrip = onCall(async (req) => {
         tripsCount: FieldValue.increment(1),
         cycleGrossFare: newGross,
         cycleCashFare: newCash,
+        // Credit earned by this ride. Spending it is `ledgerCreditSpend`'s own
+        // write, so the two never race through the same field expression.
+        ...(target.creditDelta > 0
+          ? {
+              commissionCredit: FieldValue.increment(target.creditDelta),
+              commissionCreditEarned: FieldValue.increment(target.creditDelta),
+            }
+          : {}),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -1312,8 +1393,14 @@ export const completeTrip = onCall(async (req) => {
       ...s,
       franchiseCut,
       velocityNet,
-      commissionLocked: newGross >= commissionSettings.threshold && cashDue > 0,
-      commissionDue: cashDue,
+      // Net of credit, like everywhere else the driver is shown a "due".
+      commissionLocked: newGross >= commissionSettings.threshold && netDue > 0,
+      commissionDue: netDue,
+      commissionCredit: Math.max(0, creditAfter - creditApplied),
+      dailyTarget: target.progress,
+      dailyTargetBonus: target.bonusGranted,
+      dailyTargetCredit: target.creditDelta,
+      dailyTargetNudge: target.nudge,
     };
   });
 
@@ -1346,6 +1433,7 @@ export const completeTrip = onCall(async (req) => {
     }
   }
   await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
+  await notifyDailyTarget(ctx.uid, settlement, tripId);
   if (settlement.commissionLocked) {
     await sendToUser(
       ctx.uid,

@@ -26,11 +26,6 @@ export default function ProfileScreen() {
   const openSettings = () => router.push('/passenger/settings');
   const openActivity = () => router.push('/passenger/activity');
   const openWallet = () => router.push('/passenger/wallet');
-  const safetyInfo = () =>
-    Alert.alert(
-      'Safety',
-      'Your safety matters. During a ride you can trigger an Emergency SOS from the trip screen, and our team monitors safety events in real time.',
-    );
   const aboutInfo = () =>
     Alert.alert('Velocity Rides', 'Velocity Rides — ride-hailing & smart pooling.\n\nMade for Pakistan. 🇵🇰');
 
@@ -63,7 +58,7 @@ export default function ProfileScreen() {
             <Text style={styles.actionLabel}>Orders</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem} onPress={() => router.push('/passenger/support-chat')}>
+          <Pressable style={styles.quickActionItem} onPress={() => router.push('/support')}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>🎧</Text>
             </View>
@@ -195,11 +190,12 @@ export default function ProfileScreen() {
 
           <View style={styles.divider} />
 
-          <Pressable style={styles.listItem} onPress={safetyInfo}>
+          <Pressable style={styles.listItem} onPress={() => router.push('/safety')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🛡️</Text>
               <View>
-                <Text style={styles.itemTitle}>Safety</Text>
+                <Text style={styles.itemTitle}>Safety Centre</Text>
+                <Text style={styles.itemSubtitle}>Police 15 · report a scam · share your ride</Text>
               </View>
             </View>
             <Text style={styles.chevron}>➔</Text>

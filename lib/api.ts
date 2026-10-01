@@ -50,6 +50,63 @@ export interface VelocityLocationRow {
   lastConfirmedAt: number | null;
 }
 
+/**
+ * One driver's commission position, as the dashboard needs to see it.
+ *
+ * Derived server-side rather than on this client: `due` is net of credit, and
+ * the admin panel computing that for itself is how the panel and the driver's
+ * own app end up quoting different numbers for the same money.
+ */
+export interface DriverCommissionReport {
+  settings: {
+    rate: number;
+    threshold: number;
+    dailyTargetEnabled: boolean;
+    dailyTargetRides: number;
+    dailyTargetBonus: number;
+    dailyTargetWaivesCommission: boolean;
+    dailyTargetMinRideFare: number;
+    dailyTargetMinRiders: number;
+    dailyTargetMinDayFare: number;
+  };
+  driver: {
+    driverId: string;
+    fullName: string | null;
+    phone: string | null;
+    cycleGrossFare: number;
+    cycleCashFare: number;
+    commissionCredit: number;
+    commissionCreditEarned: number;
+    commissionCreditUsed: number;
+    /** Commission the cycle earned, before credit. */
+    grossDue: number;
+    /** How much of it the credit is covering. */
+    creditApplied: number;
+    /** What the driver still has to transfer. */
+    due: number;
+    creditRemaining: number;
+  };
+  days: {
+    day: string;
+    rides: number;
+    qualifyingRides: number;
+    grossFare: number;
+    cashFare: number;
+    riders: number;
+    bonusGranted: number;
+    waiverGranted: number;
+    met: boolean;
+  }[];
+  credits: {
+    id: string;
+    type: string;
+    amount: number;
+    day: string | null;
+    reason: string | null;
+    createdAt: { seconds: number } | null;
+  }[];
+}
+
 /** Admin-only backend actions (each guarded by requireAdmin server-side). */
 export const adminApi = {
   // ── Market desk ─────────────────────────────────────────────────────────
@@ -119,6 +176,40 @@ export const adminApi = {
   resolveSafetyEvent: callable<{ eventId: string; resolution?: string }, { ok: boolean }>(
     'resolveSafetyEvent',
   ),
+
+  // ── Driver rewards ──────────────────────────────────────────────────────
+  /**
+   * Grant or claw back a driver's commission credit by hand.
+   *
+   * The manual counterpart to a gateway top-up that does not exist yet: a
+   * driver who paid cash at the office, or who is owed a target bonus a bug
+   * lost, is made whole here. Negative claws credit back from someone who
+   * farmed it. The reason is required and every adjustment is audit-logged.
+   */
+  adminAdjustCommissionCredit: callable<
+    { driverId: string; amount: number; reason: string; notify?: boolean },
+    { ok: boolean; applied: number }
+  >('adminAdjustCommissionCredit'),
+  /** A driver's target days, credit statement and what they owe right now. */
+  adminGetDriverCommission: callable<
+    { driverId: string; days?: number },
+    DriverCommissionReport
+  >('adminGetDriverCommission'),
+
+  // ── Velocity Rapid Response ─────────────────────────────────────────────
+  replySupportTicket: callable<
+    { ticketId: string; text: string; resolve?: boolean },
+    { ok: boolean }
+  >('adminReplySupportTicket'),
+  setSupportTicketStatus: callable<
+    {
+      ticketId: string;
+      status: 'ai_handling' | 'waiting_human' | 'human_handling' | 'resolved';
+      priority?: 'normal' | 'high' | 'urgent';
+      note?: string;
+    },
+    { ok: boolean }
+  >('adminSetSupportTicketStatus'),
   markPayoutPaid: callable<{ payoutId: string }, { ok: boolean }>('markPayoutPaid'),
   adminCreateDriver: callable<
     {

@@ -51,7 +51,7 @@ export function CommissionLock({
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<PayMethod>('easypaisa');
 
-  const { due, rate, cycleGrossFare, cycleCashFare } = status;
+  const { due, rate, cycleGrossFare, cycleCashFare, credit, creditApplied, grossDue } = status;
   const onlineFare = Math.max(0, cycleGrossFare - cycleCashFare);
 
   // Which methods we can actually receive on.
@@ -121,10 +121,31 @@ export function CommissionLock({
             collected automatically — you won&apos;t pay it twice.
           </Text>
         )}
+        {/* Target credit already came off this figure. Showing the arithmetic is
+            the whole promise of the daily target: the driver has to be able to
+            see that the bonus they earned is what shrank the bill. */}
+        {creditApplied > 0 && (
+          <Text style={styles.lockNote}>
+            ✓ PKR {creditApplied.toLocaleString()} of your daily-target credit has been used
+            against this cycle&apos;s PKR {grossDue.toLocaleString()} commission
+            {credit - creditApplied > 0
+              ? ` — PKR ${(credit - creditApplied).toLocaleString()} credit is left after this.`
+              : ' — your credit is now used up.'}
+          </Text>
+        )}
         <View style={styles.dueRow}>
-          <Text style={styles.dueLabel}>Amount due</Text>
+          <Text style={styles.dueLabel}>
+            {creditApplied > 0 ? 'Still to pay' : 'Amount due'}
+          </Text>
           <Text style={styles.dueAmt}>{due.toLocaleString()} PKR</Text>
         </View>
+        {/* The way out of ever seeing this screen again, said where it lands. */}
+        {status.dailyTargetEnabled && status.dailyTargetBonus > 0 && (
+          <Text style={styles.lockEarnNote}>
+            🎯 Complete {status.dailyTargetRides} rides in a day and PKR{' '}
+            {status.dailyTargetBonus.toLocaleString()} of credit pays your next commission for you.
+          </Text>
+        )}
       </View>
 
       {/* ── How to settle ── */}
@@ -259,6 +280,13 @@ const styles = themed(() => StyleSheet.create({
   lockTitle: { fontSize: 17, fontWeight: '900', color: colors.danger, textAlign: 'center' },
   lockBody: { fontSize: 13, color: '#ffbbbb', lineHeight: 20, textAlign: 'center' },
   lockNote: { fontSize: 12, color: colors.primary, lineHeight: 18, textAlign: 'center' },
+  lockEarnNote: {
+    fontSize: 12,
+    color: '#ffffffcc',
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 10,
+  },
   bold: { fontWeight: '900', color: '#fff' },
   dueRow: {
     flexDirection: 'row',

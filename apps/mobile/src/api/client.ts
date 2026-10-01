@@ -25,6 +25,34 @@ export type MarketComparisonResult = MarketComparison & {
 };
 
 /**
+ * What a safety alert is about. Mirrors EVENT_KINDS in the backend's
+ * safety/index.ts — a kind this list has and the backend does not is rejected
+ * by its zod schema, so the two move together.
+ */
+export type SafetyEventKind =
+  | 'sos'
+  | 'route_deviation'
+  | 'police_called'
+  | 'harassment'
+  | 'accident'
+  | 'unsafe_driving'
+  | 'scam';
+
+/** Complaint categories. Mirrors SUPPORT_CATEGORIES in the backend's support/types.ts. */
+export type SupportCategory =
+  | 'safety'
+  | 'online_scam'
+  | 'payment'
+  | 'driver_issue'
+  | 'passenger_issue'
+  | 'commission'
+  | 'account'
+  | 'lost_item'
+  | 'other';
+
+export type SupportStatus = 'ai_handling' | 'waiting_human' | 'human_handling' | 'resolved';
+
+/**
  * The Firebase callable serializer encodes `undefined` object values as
  * `null` on the wire, which the backend zod schemas reject for `.optional()`
  * fields ("Invalid post data." etc.). Drop undefined keys before sending so
@@ -779,10 +807,64 @@ export const api = {
     { ok: boolean; fee: number; paidFromWallet: number; outstanding: number }
   >('cancelTrip'),
   completeTrip: callable<{ tripId: string }, { ok: boolean }>('completeTrip'),
+  /**
+   * Raise an alert on a live ride.
+   *
+   * `police_called` is not a cry for help — it is the app reporting that the
+   * person on the ride has just dialled 15, so our safety desk learns about it
+   * in the same second rather than from a police enquiry days later.
+   */
   raiseSafetyEvent: callable<
-    { tripId: string; kind?: 'sos' | 'route_deviation'; note?: string },
+    {
+      tripId: string;
+      kind?: SafetyEventKind;
+      note?: string;
+      location?: { lat: number; lng: number };
+    },
     { ok: boolean; eventId: string }
   >('raiseSafetyEvent'),
+
+  // ── Share my ride with my family ─────────────────────────────────────────
+  /**
+   * Mint a live tracking link for a ride. Returns the same token on repeat
+   * calls, so sharing the ride twice does not give the family two URLs.
+   */
+  createTripWatchLink: callable<
+    { tripId: string },
+    { ok: boolean; token: string; reused: boolean }
+  >('createTripWatchLink'),
+  /** Kill a link that went to the wrong chat. Other links keep working. */
+  revokeTripWatchLink: callable<{ token: string }, { ok: boolean }>('revokeTripWatchLink'),
+
+  // ── Velocity Rapid Response System ───────────────────────────────────────
+  /**
+   * File a complaint. The AI answers first; safety and scam reports go straight
+   * to a person, and `escalated` says which happened.
+   */
+  openSupportTicket: callable<
+    {
+      category: SupportCategory;
+      subject: string;
+      message: string;
+      tripId?: string;
+    },
+    { ok: boolean; ticketId: string; status: SupportStatus; escalated: boolean }
+  >('openSupportTicket'),
+  sendSupportMessage: callable<
+    { ticketId: string; text: string },
+    { ok: boolean; status: SupportStatus; handledBy: 'ai' | 'human' }
+  >('sendSupportMessage'),
+  /** The explicit "talk to a human" button. */
+  requestHumanAgent: callable<
+    { ticketId: string; reason?: string },
+    { ok: boolean; status: SupportStatus }
+  >('requestHumanAgent'),
+  markSupportTicketRead: callable<{ ticketId: string }, { ok: boolean }>('markSupportTicketRead'),
+  /** "Did that help?" — a no re-opens the ticket for a person. */
+  rateSupportResolution: callable<
+    { ticketId: string; helpful: boolean },
+    { ok: boolean }
+  >('rateSupportResolution'),
   getPaymentOptions: callable<
     Record<string, never>,
     { ok: boolean; providers: TopupProvider[]; mock: boolean; comingSoon?: boolean }

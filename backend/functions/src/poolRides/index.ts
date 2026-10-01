@@ -7,6 +7,12 @@ import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import {
+  dailyTargetRef,
+  notifyDailyTarget,
+  recordRideOnDailyTarget,
+  todayKey,
+} from '../drivers/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { computeSettlement } from '../domain/fares';
 import { DEFAULT_FRANCHISE_RATE, franchiseCutFor, franchiseRateFor } from '../domain/franchise';
@@ -248,9 +254,18 @@ export const completePoolRide = onCall(async (req) => {
   const preFranchiseId = (preDriver.get('franchiseId') as string | null | undefined) ?? null;
   const franchiseRate = await franchiseRateFor(preFranchiseId);
 
-  await db.runTransaction(async (tx) => {
+  // Which day this ride belongs to, in the driver's own timezone — resolved
+  // before the transaction so a retry cannot move it across midnight.
+  const targetDay = todayKey();
+  const dayRef    = dailyTargetRef(ctx.uid, targetDay);
+
+  const targetOutcome = await db.runTransaction(async (tx) => {
     // Transactional reads must all happen before the first write.
-    const [rideSnap, driverSnap] = await Promise.all([tx.get(rideRef), tx.get(driverRef)]);
+    const [rideSnap, driverSnap, daySnap] = await Promise.all([
+      tx.get(rideRef),
+      tx.get(driverRef),
+      tx.get(dayRef),
+    ]);
     if (!rideSnap.exists) invalid('Pool ride not found.');
     if (rideSnap.get('driverId') !== ctx.uid) throw new HttpsError('permission-denied', 'Not your pool ride.');
     if (rideSnap.get('status') !== 'in_progress') {
@@ -288,14 +303,38 @@ export const completePoolRide = onCall(async (req) => {
       tx.set(pd.ref, { status: 'dropped_off', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     }
 
+    // The daily ride target. A full pool is one ride toward the target but
+    // several distinct passengers against the anti-farming check, which is the
+    // right way round: carrying four people is harder work than four rides
+    // booked by the same friend.
+    const target = recordRideOnDailyTarget({
+      tx,
+      driverId: ctx.uid,
+      driverSnap,
+      daySnap,
+      day: targetDay,
+      settings: commissionSettings,
+      grossFare,
+      cashFare: grossFare, // pool fares are collected in cash
+      riderIds: preRiders,
+      rideId,
+    });
+
     // Update driver commission cycle — pool fares are collected in cash, so
-    // they grow both the threshold counter and the settleable portion.
+    // they grow both the threshold counter and the settleable portion, unless
+    // today's target has already waived this day's commission.
     tx.set(
       driverRef,
       {
         cycleGrossFare: ((driverSnap.get('cycleGrossFare') as number | undefined) ?? 0) + grossFare,
-        cycleCashFare:  cycleCashFare(driverSnap) + grossFare,
+        cycleCashFare:  cycleCashFare(driverSnap) + target.commissionableCashFare,
         tripsCount:     FieldValue.increment(1),
+        ...(target.creditDelta > 0
+          ? {
+              commissionCredit: FieldValue.increment(target.creditDelta),
+              commissionCreditEarned: FieldValue.increment(target.creditDelta),
+            }
+          : {}),
         updatedAt:      FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -368,10 +407,19 @@ export const completePoolRide = onCall(async (req) => {
       },
       { merge: true },
     );
+
+    return {
+      dailyTarget: target.progress,
+      dailyTargetBonus: target.bonusGranted,
+      dailyTargetCredit: target.creditDelta,
+      dailyTargetNudge: target.nudge,
+    };
   });
 
+  await notifyDailyTarget(ctx.uid, targetOutcome, rideId);
+
   logger.info('Pool ride completed', { rideId, driver: ctx.uid });
-  return { ok: true };
+  return { ok: true, dailyTarget: targetOutcome.dailyTarget };
 });
 
 // ── joinPoolRide ──────────────────────────────────────────────────────────────
