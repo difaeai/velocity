@@ -1,0 +1,115 @@
+VELOCITY RIDES 1.14.0  ·  Android versionCode 39  ·  iOS build 12
+=================================================================
+
+1.13.0 was built (vc38, iOS build 11) but never uploaded to either store, so
+nothing in it has reached a user. This release carries 1.13.0's two changes AND
+everything merged since, under one version number: app.json holds one version
+string for both platforms and EAS assigns the build numbers.
+
+The release people will notice is safety. Three of the four changes are about
+what happens when something goes wrong -- the emergency numbers, a family
+member watching the ride, and a complaint that gets answered. The fourth is for
+drivers: a daily target worth PKR 2,000.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+New in this version
+• Safety Centre: Police 15, Rescue 1122 and scam reporting
+• Share your live trip — family can follow in any browser
+• Help that answers at once, a person the moment you ask
+• Drivers: 15 rides in a day earns a PKR 2,000 bonus
+
+Velocity Rides: ride-hailing for Pakistan where you name the fare.
+• Offer your price; drivers accept or counter; you choose
+• Moto, Mini, A/C, Premium, City to City seats and couriers
+• Pay cash, EasyPaisa, JazzCash, bank transfer or wallet
+
+
+APP STORE "WHAT'S NEW" (set on version 1.14.0 through the API)
+--------------------------------------------------------------
+NEW IN THIS VERSION
+
+SAFETY CENTRE
+One screen for every emergency, from the menu or from a live ride. Police 15
+and Rescue 1122 first, and reporting an online scam goes to both Velocity and
+the NCCIA cybercrime helpline (1799). Nothing dials on its own -- you confirm
+every call.
+
+SHARE YOUR RIDE WITH FAMILY
+Send a link and someone you trust can follow the trip in any browser: no app,
+no account. They see the car on the map, how fresh that position is, the plate
+and the driver's number. The link dies when the ride does, and you can revoke
+it at any time.
+
+HELP THAT ANSWERS
+Velocity Rapid Response replaces the old help chat. Your question gets an
+answer straight away, and a real person takes over the moment you ask for one
+-- or the moment it is about safety or your money. Nothing is left unanswered.
+
+FOR DRIVERS: A DAILY TARGET
+Complete 15 rides in a day and you earn a PKR 2,000 bonus, and that day's
+rides cost you no commission at all. The bonus pays your Velocity charges for
+you, day after day, until it runs out.
+
+Your sign-in code also arrives faster, and entering your date of birth is now
+three quick taps: day, month and year.
+
+
+WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
+----------------------------------------------------------------
+New in this build (merged 1-2 Oct 2026):
+  - Daily ride target. 15 qualifying rides in one PAKISTAN day (UTC+05:00)
+    earns PKR 2,000 and waives that day's commission. The money is a BONUS,
+    never withdrawable: it pays Velocity's own charges until it runs out. Every
+    number -- target, bonus, rate, threshold, waiver, three anti-farming
+    minimums -- is admin-settable on the Commission page, and the driver app
+    STREAMS that config, so a change is live in open apps within a second with
+    no release. Stored fields keep the older `commissionCredit` names on
+    purpose; only the labels changed.
+  - Live trip links. /watch/{token} is a real web page for someone with no app
+    and no account. getTripWatch is unauthenticated by design -- the token IS
+    the credential -- and returns a hand-built redacted view, so adding a field
+    to a trip can never widen what a shared link shows. Expires with the ride
+    (3h grace), revocable per link, rate-limited per token.
+  - Safety Centre on both sides, plus the police. Dialling 15 on a live ride
+    raises a silent `police_called` event after the call; critical events push
+    every admin with the position, the plate and both numbers.
+  - Velocity Rapid Response. supportTickets replaces supportChats: one ticket
+    per complaint, AI first, a person the moment you ask. Escalation triggers
+    on the raw words (English, Urdu script and Roman Urdu) BEFORE any API call,
+    on category (safety and scams never belong to a machine), on the model's
+    own judgement and on the clock. A customer message is never left without a
+    reply -- no key, a refusal, a timeout and bad JSON all still answer and
+    queue a human. A 15-minute sweep catches anything missed.
+  - Driver wording: what a driver EARNS is a bonus, never a commission, on
+    every surface a driver can read -- app, site, admin, pushes and the support
+    agent's brief. Urdu follows (آپ کا بونس).
+  - Composite indexes for the three new support queries, without which the
+    customer's ticket list and the stale-queue sweep fail at runtime.
+
+Carried over from 1.13.0, which never shipped:
+  - Sign-in wakes the server before it is needed. Production logs showed nearly
+    every sign-in meeting a sleeping server: 4.8 s typical, up to 11 s, against
+    1.6 s when awake.
+  - Date of birth is Day / Month / Year tiles instead of the native calendar.
+
+Verified before the build: mobile typecheck clean, 138/138 mobile tests pass.
+Backend at this commit: 752 tests / 55 files, Firestore rules 29/29.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.14.0-vc39.aab (repo root) to Play Console.
+  2. Paste the "WHAT'S NEW" block above as the release notes.
+  3. Roll it into EVERY track that still holds an older build. Otherwise the
+     AD_ID rejection comes back.
+  4. After the rollout is live: admin console → App version →
+     version 1.14.0 AND build 39. Without the build number nobody is prompted.
+
+iOS:
+  1. Upload the .ipa to App Store Connect, attach build 12 to version 1.14.0
+     with the What's New text above, then submit for review.
+  2. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.14.0 AND build 12. Never before.
