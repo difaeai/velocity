@@ -1,10 +1,18 @@
 VELOCITY RIDES 1.14.0  ·  Android versionCode 39  ·  iOS build 12
 =================================================================
 
-1.13.0 was built (vc38, iOS build 11) but never uploaded to either store, so
-nothing in it has reached a user. This release carries 1.13.0's two changes AND
-everything merged since, under one version number: app.json holds one version
-string for both platforms and EAS assigns the build numbers.
+The two platforms are NOT at the same place, which is the thing to know before
+uploading. Verified against both APIs on 2 Oct 2026:
+
+  iOS      1.13.0 (build 11) is READY_FOR_SALE -- it was approved and released,
+           so iPhone users already have it. Apple takes no new build against a
+           released version, so 1.14.0 is REQUIRED here, not cosmetic.
+  Android  vc38 was built on 29 Sep and never uploaded, so no Play user has
+           seen 1.13.0 at all. vc39 supersedes it; vc38 has been deleted.
+
+So on Android this release carries 1.13.0's two changes as well, and on iOS
+those two are already live. app.json holds the one version string for both
+platforms; EAS assigns the build numbers.
 
 The release people will notice is safety. Three of the four changes are about
 what happens when something goes wrong -- the emergency numbers, a family
@@ -109,7 +117,13 @@ Android:
      version 1.14.0 AND build 39. Without the build number nobody is prompted.
 
 iOS:
-  1. Upload the .ipa to App Store Connect, attach build 12 to version 1.14.0
-     with the What's New text above, then submit for review.
-  2. Only after Apple RELEASES the build: admin console → App version → the
+  1. There is NO 1.14.0 version record in App Store Connect yet -- create one.
+     Build 12's CFBundleShortVersionString is 1.14.0, so it cannot be attached
+     to the 1.13.0 record, and 1.13.0 is live anyway.
+  2. Upload velocity-1.14.0-ios12.ipa (repo root). The ASC web UI does not
+     accept an .ipa -- it takes Transporter on a Mac, or the App Store Connect
+     Build Upload API, which works from Windows with the ASC key alone (the
+     three-step buildUploads / buildUploadFiles / PATCH recipe).
+  3. Attach build 12 to 1.14.0 with the What's New text above, then submit.
+  4. Only after Apple RELEASES the build: admin console → App version → the
      iOS section → 1.14.0 AND build 12. Never before.
