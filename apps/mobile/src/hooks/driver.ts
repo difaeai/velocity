@@ -480,14 +480,21 @@ export function useCommissionSettings(): CommissionSettings {
 export interface CommissionStatus extends CommissionSettings {
   cycleGrossFare: number;
   cycleCashFare: number;
-  /** PKR the driver must find out of pocket — net of their target credit. */
+  /** PKR the driver must find out of pocket — net of their bonus. */
   due: number;
-  /** Commission the cycle actually earned, before credit. */
+  /** Commission the cycle actually earned, before the bonus is applied. */
   grossDue: number;
-  /** The part of `grossDue` the driver's target credit is covering. */
-  creditApplied: number;
-  /** Unspent target credit. Pays commission automatically; never withdrawable. */
-  credit: number;
+  /** The part of `grossDue` the driver's bonus is covering. */
+  bonusApplied: number;
+  /**
+   * Unspent bonus. Pays commission automatically; never withdrawable.
+   *
+   * The driver-facing word is **bonus** — "commission" is only ever what they
+   * pay us. The stored field is `drivers/{uid}.commissionCredit`, which keeps
+   * its name for the same reason `travelMate*` did through the Travel Partner
+   * rename: renaming a live field buys nothing and costs a migration.
+   */
+  bonus: number;
   /** True when the cycle hit the threshold and something is still owed. */
   locked: boolean;
 }
@@ -495,27 +502,27 @@ export interface CommissionStatus extends CommissionSettings {
 /**
  * Combines the driver profile and admin settings into one settle status.
  *
- * `due` is net of credit everywhere, exactly as on the backend, because that is
- * the only number that answers the question the driver is actually asking: what
- * do I have to pay right now? A driver sitting on PKR 2,000 of target credit
- * owes nothing and must never be shown a figure that says otherwise.
+ * `due` is net of the bonus everywhere, exactly as on the backend, because that
+ * is the only number that answers the question the driver is actually asking:
+ * what do I have to pay right now? A driver sitting on a PKR 2,000 bonus owes
+ * nothing and must never be shown a figure that says otherwise.
  */
 export function useCommissionStatus(profile: DriverProfile | null): CommissionStatus {
   const settings = useCommissionSettings();
   const cycleGrossFare = profile?.cycleGrossFare ?? 0;
   // Pre-migration drivers have no cycleCashFare — their cycles were all cash.
   const cycleCashFare = profile?.cycleCashFare ?? cycleGrossFare;
-  const credit = Math.max(0, Math.round(profile?.commissionCredit ?? 0));
+  const bonus = Math.max(0, Math.round(profile?.commissionCredit ?? 0));
   const grossDue = Math.round(cycleCashFare * settings.rate);
-  const creditApplied = Math.min(credit, grossDue);
-  const due = grossDue - creditApplied;
+  const bonusApplied = Math.min(bonus, grossDue);
+  const due = grossDue - bonusApplied;
   return {
     ...settings,
     cycleGrossFare,
     cycleCashFare,
     grossDue,
-    creditApplied,
-    credit,
+    bonusApplied,
+    bonus,
     due,
     locked: cycleGrossFare >= settings.threshold && due > 0,
   };

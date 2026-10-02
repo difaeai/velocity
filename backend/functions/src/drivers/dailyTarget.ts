@@ -261,7 +261,7 @@ export async function notifyDailyTarget(
       await sendToUser(
         driverId,
         '🎯 Daily target complete!',
-        `${outcome.dailyTarget.target} rides done — PKR ${outcome.dailyTargetBonus.toLocaleString()} commission credit is yours` +
+        `${outcome.dailyTarget.target} rides done — your PKR ${outcome.dailyTargetBonus.toLocaleString()} bonus is unlocked` +
           (extra > 0
             ? `, plus PKR ${extra.toLocaleString()} of today's commission waived.`
             : '. Today\'s rides are commission-free.'),
@@ -273,7 +273,7 @@ export async function notifyDailyTarget(
       await sendToUser(
         driverId,
         '🔥 One more ride!',
-        `One more ride today unlocks PKR ${outcome.dailyTarget.bonus.toLocaleString()} commission credit.`,
+        `One more ride today unlocks your PKR ${outcome.dailyTarget.bonus.toLocaleString()} bonus.`,
         data,
       );
     }

@@ -11,21 +11,23 @@
  * cash portion only keeps mixed cash/online cycles from paying twice. A cycle
  * earned entirely online therefore owes nothing and clears automatically.
  *
- * ── THE CREDIT ───────────────────────────────────────────────────────────────
+ * ── THE BONUS ────────────────────────────────────────────────────────────────
  *
  * On top of that there is the daily ride target (see ./dailyTarget.ts): a day
- * of enough real rides grants a fixed bonus as `commissionCredit` on the driver
- * document. The credit is spent here and nowhere else — it pays the commission
- * the driver would otherwise have to transfer to us, and when it runs out they
- * are locked and settle by bank transfer as before.
+ * of enough real rides grants a fixed bonus, stored as `commissionCredit` on
+ * the driver document. **To a driver it is called a bonus, never a credit and
+ * never a commission** — see the naming note in ./dailyTarget.ts for why the
+ * field keeps the older name. The bonus is spent here and nowhere else: it pays
+ * the commission the driver would otherwise have to transfer to us, and when it
+ * runs out they are locked and settle by bank transfer as before.
  *
  * So there are two numbers, and keeping them apart is what makes the money add
  * up afterwards:
  *
  *   `grossDue`      the commission actually earned on the cycle. This is
  *                   Velocity's revenue and it is what the ledger records.
- *   `due`           what the DRIVER still has to find, after credit. This is
- *                   what the lock and the settlement screens work from.
+ *   `due`           what the DRIVER still has to find, after their bonus. This
+ *                   is what the lock and the settlement screens work from.
  *
  * `creditApplied` is the difference, and it is an incentive expense, not
  * revenue we failed to collect. Every settlement path ledgers both sides, so a
@@ -102,7 +104,7 @@ export function cycleCashFare(driverSnap: DocumentSnapshot): number {
   return (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
 }
 
-/** Unspent commission credit on this driver, in whole PKR. Never negative. */
+/** The driver's unspent bonus, in whole PKR. Never negative. */
 export function commissionCredit(driverSnap: DocumentSnapshot | undefined): number {
   const credit = driverSnap?.get('commissionCredit') as number | undefined;
   return typeof credit === 'number' && Number.isFinite(credit) ? Math.max(0, Math.round(credit)) : 0;
@@ -112,15 +114,15 @@ export function commissionCredit(driverSnap: DocumentSnapshot | undefined): numb
 export interface CommissionBreakdown {
   /** Commission earned on the cycle — Velocity's revenue. */
   grossDue: number;
-  /** The part of it covered by the driver's target bonuses. */
+  /** The part of it covered by the driver's bonus. */
   creditApplied: number;
   /** What the driver still has to transfer. `grossDue - creditApplied`. */
   due: number;
-  /** Credit left over once this cycle is settled. */
+  /** Bonus left over once this cycle is settled. */
   creditRemaining: number;
 }
 
-/** Split the cycle's commission between the driver's credit and their pocket. */
+/** Split the cycle's commission between the driver's bonus and their pocket. */
 export function commissionBreakdown(
   driverSnap: DocumentSnapshot,
   settings: CommissionSettings,
@@ -139,8 +141,8 @@ export function commissionBreakdown(
 /**
  * What the driver must pay out of pocket right now (PKR, whole rupees).
  *
- * Net of credit on purpose: this is the number the lock, the settlement screen
- * and the "commission due" push all mean. For the revenue figure use
+ * Net of the bonus on purpose: this is the number the lock, the settlement
+ * screen and the "commission due" push all mean. For the revenue figure use
  * `commissionBreakdown().grossDue`.
  */
 export function commissionDue(driverSnap: DocumentSnapshot, settings: CommissionSettings): number {

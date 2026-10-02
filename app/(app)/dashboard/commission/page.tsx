@@ -231,14 +231,22 @@ export default function CommissionSettingsPage() {
             </div>
             <p style={{ color: colors.muted, fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>
               A driver who completes the target in one day (midnight to midnight,
-              Pakistan time) earns a fixed <strong>commission credit</strong>. The credit is
-              not cash and cannot be withdrawn — it pays their commission automatically,
-              day after day, until it runs out.
+              Pakistan time) earns a fixed <strong>bonus</strong>. The bonus is not cash
+              and cannot be withdrawn — it pays their commission automatically, day after
+              day, until it runs out.
+            </p>
+            <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 8, lineHeight: 1.6 }}>
+              To a driver this is always a <strong>bonus</strong>, never a &ldquo;commission&rdquo;.
+              Commission is only ever what they pay us — opposite direction of money, so the
+              two never share a word anywhere a driver can read it.
             </p>
 
             {targetOn && (
               <div style={{ display: 'grid', gap: 20, marginTop: 18 }}>
-                <Field label="Rides needed per day" hint="Qualifying rides — see the minimums below.">
+                <Field
+                  label="Rides needed per day (the bonus threshold)"
+                  hint="Cross this many qualifying rides in a day and the bonus activates. Qualifying means it cleared the minimums below."
+                >
                   <input
                     type="number"
                     min={1}
@@ -250,7 +258,7 @@ export default function CommissionSettingsPage() {
                   />
                 </Field>
                 <Field
-                  label="Credit earned (PKR)"
+                  label="Bonus earned (PKR)"
                   hint={`Works out at about ${bonusPerRide.toLocaleString()} PKR per ride at this target.`}
                 >
                   <input
@@ -275,14 +283,14 @@ export default function CommissionSettingsPage() {
                       <>
                         <strong>On.</strong> A driver who hits the target owes no commission on
                         that day&apos;s rides, so they keep the whole {targetBonus.toLocaleString()} PKR
-                        credit for other days. This is the more generous setting and it is the
+                        bonus for other days. This is the more generous setting and it is the
                         one the programme was designed around.
                       </>
                     ) : (
                       <>
                         <strong>Off.</strong> Commission still accrues on a target day; the
-                        credit simply offsets it. Cheaper for us, and a driver who hits the
-                        target sees most of their credit go straight back into that same day.
+                        bonus simply offsets it. Cheaper for us, and a driver who hits the
+                        target sees most of their bonus go straight back into that same day.
                       </>
                     )}
                   </p>
@@ -358,17 +366,17 @@ export default function CommissionSettingsPage() {
                 <>
                   <li>
                     <strong>{targetRides} qualifying rides in a day</strong> earns{' '}
-                    <strong>{targetBonus.toLocaleString()} PKR of credit</strong>
+                    a <strong>{targetBonus.toLocaleString()} PKR bonus</strong>
                     {waives ? ', and that day costs them no commission at all' : ''}.
                   </li>
                   <li>
-                    The credit pays their next commission by itself. A driver holding{' '}
+                    The bonus pays their next commission by itself. A driver holding{' '}
                     {targetBonus.toLocaleString()} PKR who later owes{' '}
                     {Math.round(targetBonus / 2).toLocaleString()} PKR pays <strong>nothing</strong>
-                    {' '}— it comes off the credit, and they are never locked out until it reaches zero.
+                    {' '}— it comes off the bonus, and they are never locked out until it reaches zero.
                   </li>
                   <li>
-                    The credit <strong>cannot be withdrawn as cash</strong>. That is a regulatory
+                    The bonus <strong>cannot be withdrawn as cash</strong>. That is a regulatory
                     line, not a preference — money we can hand out and they can cash out would
                     make us an e-money issuer.
                   </li>
@@ -380,14 +388,14 @@ export default function CommissionSettingsPage() {
               ) : (
                 <li>
                   The daily target is <strong>off</strong>. Drivers see no target card and earn no
-                  credit; existing credit still pays their commission until it runs out.
+                  bonus; an existing bonus still pays their commission until it runs out.
                 </li>
               )}
             </ul>
             <p style={{ color: colors.muted, fontSize: 12, marginTop: 14, lineHeight: 1.6 }}>
-              Need to grant or claw back credit for one driver by hand — a cash payment at the
-              office, or a bonus a bug lost? Use the Driver approvals page; there is no gateway
-              top-up yet, so that is the manual lever.
+              Need to grant or claw back a bonus for one driver by hand — a cash payment at
+              the office, or a bonus a bug lost? Use the Driver approvals page; there is no
+              gateway top-up yet, so that is the manual lever.
             </p>
           </Card>
 

@@ -585,7 +585,8 @@ Tabs (`DriverTabBar`) and a drawer (`DriverDrawer`) reach:
   three numbers that must not be confused:
   `grossDue` (revenue earned), `creditApplied` (what the incentive paid) and
   `due` (what the driver still has to transfer). **`commissionDue()` returns the
-  net** — that is the figure the lock, the push and every screen mean.
+  net** — that is the figure the lock, the push and every screen mean. The
+  driver sees `creditApplied` labelled "Paid by your bonus".
 - When the threshold is reached and something is still owed, the driver is
   **locked**: `placeBid`, `driverRespondToRequest` and `driverAcceptPoolBatch`
   all reject them, and the app parks on the settle screen with incoming rides
@@ -597,17 +598,27 @@ Tabs (`DriverTabBar`) and a drawer (`DriverDrawer`) reach:
   `applyCommissionCredit` / `ledgerCreditSpend`, so credit can only ever be
   spent once.
 
-### 6.4 The daily ride target (driver incentive)
+### 6.4 The daily ride target (driver bonus)
 
 `domain/dailyTarget.ts`, `drivers/dailyTarget.ts`, `drivers/commissionCredit.ts`.
 
 A driver who completes the admin-set number of **qualifying rides in one
-Pakistan day** earns a fixed **commission credit**, and — while the admin leaves
-the waiver on — owes no commission on that day's rides at all.
+Pakistan day** earns a fixed **bonus**, and — while the admin leaves the waiver
+on — owes no commission on that day's rides at all.
 
-Defaults: **15 rides → PKR 2,000**, waiver **on**.
+Defaults: **15 rides → PKR 2,000**, waiver **on**. The ride count IS the
+threshold: cross it and the bonus activates.
 
-- **The credit is not cash.** It pays Velocity's own charges and can never be
+> **The word is BONUS.** Everything a driver reads — app, web, pushes, the AI
+> agent — calls this a bonus. "Commission" is only ever what they pay us. They
+> are opposite directions of money and must never share a word in front of a
+> driver. The STORED names (`commissionCredit`, the `commissionCredits`
+> subcollection, `applyCommissionCredit`, `adminAdjustCommissionCredit`) keep
+> the older term on purpose, exactly as `travelMate*` survived the Travel
+> Partner rename: renaming a live field and a deployed callable buys nothing a
+> label cannot and costs a migration on money data.
+
+- **The bonus is not cash.** It pays Velocity's own charges and can never be
   withdrawn. That is the same State Bank e-money boundary
   `domain/walletFunds.ts` draws, reached from the other side: money we hand out
   that could be cashed out would make us an unlicensed e-money issuer.
@@ -618,7 +629,7 @@ Defaults: **15 rides → PKR 2,000**, waiver **on**.
   written only by the settlement transaction and streamed by the driver app
   (`useDailyTarget`) so the progress card moves as rides land — no callable on
   the hot path.
-- **Credit statement**: `drivers/{uid}/commissionCredits/{id}`, one row per
+- **Bonus statement**: `drivers/{uid}/commissionCredits/{id}`, one row per
   grant and per spend (spends are negative, so it reads like a statement).
 - **The two halves of the waiver.** Rides from the moment of crossing onward
   never enter `cycleCashFare`. Rides earlier the same day are already in it, so
@@ -633,8 +644,8 @@ Defaults: **15 rides → PKR 2,000**, waiver **on**.
   live figures, so a day that will not pay out says so before midnight.
 - **Accounting.** A settlement writes revenue and the incentive separately —
   `platformLedger` `ride_commission` for `grossDue`, `driver_incentive` for
-  `creditApplied`. Netting them would have hidden the whole cost of the
-  programme inside a smaller revenue number.
+  `creditApplied` (the bonus spent). Netting them would have hidden the whole
+  cost of the programme inside a smaller revenue number.
 - **Pushes.** Two and no more: "one more ride" on the ride that leaves one to
   go, and "target complete" when it pays.
 - **Admin.** Every field is live on the **Commission** page — the backend reads
@@ -643,10 +654,14 @@ Defaults: **15 rides → PKR 2,000**, waiver **on**.
   release. The page refuses impossible combinations (a day total that
   `rides × floor` cannot reach; more distinct passengers than rides).
 - **The manual lever.** There is no gateway top-up yet, so
-  `adminAdjustCommissionCredit` grants or claws back credit by hand (reason
+  `adminAdjustCommissionCredit` grants or claws back a bonus by hand (reason
   required, audit-logged, floored at zero). It lives in the **Driver approvals**
-  page, under *Commission, daily target & credit*, alongside
+  page, under *Commission, daily target & bonus*, alongside
   `adminGetDriverCommission` which shows the last 14 days and the statement.
+- **The public site** names the bonus too (the Drive card, the Earn section and
+  an FAQ). It is prerendered and deliberately ships no Firebase SDK, so it
+  cannot read the live config — the numbers there are written as "right now"
+  and must be kept in step with `DEFAULT_DAILY_TARGET` by hand.
 - Tests: `drivers/__tests__/dailyTarget.test.ts` (27 cases) pin the day
   boundary, the once-per-day grant, the waiver cap, the farming refusals and the
   ledger split.

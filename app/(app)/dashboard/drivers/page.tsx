@@ -718,7 +718,10 @@ const CAR_PHOTO_TTL_DAYS = 30;
  */
 /**
  * One driver's commission position, their recent target days, and the manual
- * credit lever.
+ * bonus lever.
+ *
+ * The driver-facing word is BONUS everywhere; `commissionCredit` survives only
+ * as a field name (see the note in backend domain/dailyTarget.ts).
  *
  * WHY IT IS LAZY. The report is three Firestore reads behind a callable, and a
  * driver list can hold hundreds of rows — fetching it for every row would make
@@ -781,8 +784,8 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
       });
       setDone(
         res.applied >= 0
-          ? `Granted PKR ${res.applied.toLocaleString()} of credit.`
-          : `Removed PKR ${Math.abs(res.applied).toLocaleString()} of credit.`,
+          ? `Granted a PKR ${res.applied.toLocaleString()} bonus.`
+          : `Removed PKR ${Math.abs(res.applied).toLocaleString()} of bonus.`,
       );
       setAmount('');
       setReason('');
@@ -797,7 +800,7 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
   return (
     <div style={{ marginTop: 16 }}>
       <button type="button" onClick={toggle} style={panelToggle}>
-        {open ? '▾' : '▸'} Commission, daily target &amp; credit
+        {open ? '▾' : '▸'} Commission, daily target &amp; bonus
       </button>
 
       {!open ? null : loading && !report ? (
@@ -815,10 +818,10 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
                   label={`Commission at ${Math.round(report.settings.rate * 100)}%`}
                   value={report.driver.grossDue}
                 />
-                <Money label="Paid by credit" value={report.driver.creditApplied} />
+                <Money label="Paid by their bonus" value={report.driver.creditApplied} />
                 <Money label="Driver owes now" value={report.driver.due} strong />
-                <Money label="Credit available" value={report.driver.commissionCredit} strong />
-                <Money label="Credit earned, lifetime" value={report.driver.commissionCreditEarned} />
+                <Money label="Bonus available" value={report.driver.commissionCredit} strong />
+                <Money label="Bonus earned, lifetime" value={report.driver.commissionCreditEarned} />
               </div>
 
               {/* Recent days, so a farmed pattern is visible rather than inferred. */}
@@ -866,7 +869,7 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
               {/* The manual lever. */}
               <div style={{ marginTop: 16, borderTop: `1px solid ${colors.border}`, paddingTop: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.text, marginBottom: 6 }}>
-                  Adjust credit by hand
+                  Adjust bonus by hand
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <div style={{ flex: '0 0 130px' }}>
@@ -898,9 +901,9 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
                   </Button>
                 </div>
                 <div style={{ fontSize: 11.5, color: colors.muted, marginTop: 8, lineHeight: 1.6 }}>
-                  Credit pays this driver&apos;s commission automatically and can never be
+                  A bonus pays this driver&apos;s commission automatically and can never be
                   withdrawn as cash. A clawback larger than their balance takes what is there
-                  and stops — credit never goes negative.
+                  and stops — a bonus never goes negative.
                 </div>
               </div>
             </>

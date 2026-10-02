@@ -1,5 +1,11 @@
 /**
- * Spending the driver's commission credit, and the admin lever that adjusts it.
+ * Spending the driver's bonus, and the admin lever that adjusts it.
+ *
+ * THE WORD IS BONUS. Everything a driver reads calls this a bonus; "commission"
+ * is only ever what they pay us. The field, the collection and the callables
+ * below keep `commissionCredit` in their names — the same decision the Travel
+ * Partner rename made about `travelMate*`: renaming a live field and a deployed
+ * callable buys nothing a label cannot, and costs a migration.
  *
  * Credit is granted by the daily ride target (drivers/dailyTarget.ts) and spent
  * here — in the one moment a commission cycle is settled. There are three ways
@@ -199,10 +205,10 @@ export const adminAdjustCommissionCredit = onCall(async (req) => {
   if (applied !== 0 && notify !== false) {
     await sendToUser(
       driverId,
-      applied > 0 ? '🎁 Commission credit added' : 'ℹ️ Commission credit adjusted',
+      applied > 0 ? '🎁 Bonus added' : 'ℹ️ Bonus adjusted',
       applied > 0
-        ? `PKR ${applied.toLocaleString()} credit was added to your account. It pays your commission automatically.`
-        : `PKR ${Math.abs(applied).toLocaleString()} credit was removed from your account. Reason: ${reason}`,
+        ? `A PKR ${applied.toLocaleString()} bonus was added to your account. It pays your commission automatically.`
+        : `PKR ${Math.abs(applied).toLocaleString()} of bonus was removed from your account. Reason: ${reason}`,
     );
   }
 

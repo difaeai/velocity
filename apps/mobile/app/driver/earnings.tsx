@@ -143,9 +143,9 @@ export default function DriverEarnings() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* ── Today's target ── The driver's reason to take one more ride, at the
             top of the screen they open to ask "how am I doing". */}
-        <DailyTargetCard progress={dailyTarget.progress} credit={commission.credit} />
+        <DailyTargetCard progress={dailyTarget.progress} bonusBalance={commission.bonus} />
 
-        {/* ── Commission ── What is owed right now, and what the credit paid.
+        {/* ── Commission ── What is owed right now, and what the bonus paid.
             This is the only place the driver can see the two separately: the
             lock screen only appears once the cycle has matured. */}
         <View style={styles.commissionCard}>
@@ -158,22 +158,22 @@ export default function DriverEarnings() {
             label={`Commission at ${Math.round(commission.rate * 100)}%`}
             value={`${commission.grossDue.toLocaleString()} PKR`}
           />
-          {commission.creditApplied > 0 ? (
+          {commission.bonusApplied > 0 ? (
             <Row
-              label="Paid by your target credit"
-              value={`− ${commission.creditApplied.toLocaleString()} PKR`}
+              label="Paid by your bonus"
+              value={`− ${commission.bonusApplied.toLocaleString()} PKR`}
               accent
             />
           ) : null}
           <View style={styles.commissionDivider} />
           <Row
-            label={commission.creditApplied > 0 ? 'Still to pay' : 'You owe'}
+            label={commission.bonusApplied > 0 ? 'Still to pay' : 'You owe'}
             value={`${commission.due.toLocaleString()} PKR`}
             bold
           />
           <Text style={styles.commissionNote}>
             {commission.due === 0
-              ? 'Nothing to pay right now. Commission is taken from your credit automatically.'
+              ? 'Nothing to pay right now. Commission is taken from your bonus automatically.'
               : `Payable when your cycle reaches ${commission.threshold.toLocaleString()} PKR of fares.`}
           </Text>
         </View>
@@ -181,7 +181,7 @@ export default function DriverEarnings() {
         {/* ── Credit statement ── */}
         {credits.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>Commission credit</Text>
+            <Text style={styles.sectionTitle}>Bonus history</Text>
             {credits.map((c) => (
               <CreditRowView key={c.id} row={c} />
             ))}
@@ -262,9 +262,9 @@ function Row({
 
 const CREDIT_LABELS: Record<CreditRow['type'], string> = {
   daily_target: '🎯 Daily target bonus',
-  spent: 'Used against commission',
-  admin_grant: 'Added by Velocity Rides',
-  admin_clawback: 'Removed by Velocity Rides',
+  spent: 'Bonus used against commission',
+  admin_grant: 'Bonus added by Velocity Rides',
+  admin_clawback: 'Bonus removed by Velocity Rides',
 };
 
 function CreditRowView({ row }: { row: CreditRow }) {

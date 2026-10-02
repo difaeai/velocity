@@ -259,8 +259,8 @@ const EARN = [
   {
     icon: Car,
     title: 'Drive',
-    body: 'Bring your car or bike, get your documents approved, and start accepting rides. See a heat map of where demand is, and settle your earnings on your own schedule.',
-    points: ['Cash collected stays with you', 'Live demand heat map', 'Two-way ratings'],
+    body: 'Bring your car or bike, get your documents approved, and start accepting rides. See a heat map of where demand is, hit your daily ride target for a bonus, and settle on your own schedule.',
+    points: ['Cash collected stays with you', 'Daily ride target pays a bonus', 'Live demand heat map'],
   },
   {
     icon: Wallet,
@@ -352,6 +352,10 @@ const FAQS = [
   {
     q: 'What happens if something goes wrong mid-ride?',
     a: 'For anything frightening \u2014 a fight, a threat, an assault \u2014 call the police on 15 from the Safety Centre inside the app. It dials for you and tells our safety desk at the same moment, with the plate, the driver and the last known position already attached. Rescue 1122 is on the same screen for an accident. The SOS button raises a live alert on the desk, route deviations can be flagged the same way, and every co-rider added to a pool mid-trip is shown to you.',
+  },
+  {
+    q: 'I want to drive \u2014 what do I actually earn?',
+    a: 'The fare is yours; you collect it in cash at the end of the ride. Velocity Rides takes a commission on the cash you collect, and it is not charged per ride \u2014 it builds up and you settle it by bank transfer when your cycle matures. On top of that there is a daily ride target: complete it and you earn a bonus, and that day\u2019s rides cost you no commission at all. Right now the target is 15 rides for a Rs 2,000 bonus. The bonus is not cash and cannot be withdrawn \u2014 what it does is pay your commission automatically, day after day, until it runs out, so you are never asked for money while you still have one. The app shows your live count, the current target, and exactly what is still missing if a day will not qualify.',
   },
   {
     q: 'Can my family follow my ride?',
@@ -907,6 +911,26 @@ export default function Home() {
                       </span>
                     </span>
                   ))}
+                </div>
+
+                {/* The driver's own deal. The Earn section was entirely about
+                    fleet owners, and a driver reading it learned nothing about
+                    what THEY make. The figures are the launch settings and an
+                    admin can change them from the console, so the mechanism is
+                    the promise and the numbers are explicitly "right now" —
+                    this page is prerendered and deliberately ships no Firebase
+                    SDK, so it cannot read the live config. Keep these in step
+                    with DEFAULT_DAILY_TARGET if the launch numbers change. */}
+                <div className={styles.ruleNote}>
+                  <TrendingUp />
+                  <span>
+                    <b>Driving yourself? Hit your daily ride target and earn a bonus.</b> Right
+                    now that is <b>15 rides in a day for a Rs 2,000 bonus</b>, and that day&apos;s
+                    rides cost you no commission at all. The bonus pays your commission for you,
+                    day after day, until it runs out — so you are never asked for money while you
+                    still have one. Your app shows the live count and the current target, which
+                    we can change.
+                  </span>
                 </div>
 
                 <a
