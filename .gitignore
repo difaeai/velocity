@@ -62,6 +62,10 @@ velocity-fe379-firebase-adminsdk-fbsvc-2efeecd69a.json
 *.aab
 *.apk
 
+# The iOS archive, kept at the repo root for the same reason and ignored for the
+# same reason — EAS holds the authoritative copy of every build artifact.
+*.ipa
+
 # Apple signing keys. The App Store Connect API key (AuthKey_<KeyID>.p8) and the
 # APNs key are single-download secrets — Apple will not re-issue the file, only
 # revoke and replace it. They live outside the repo (~/.appstoreconnect) and are
