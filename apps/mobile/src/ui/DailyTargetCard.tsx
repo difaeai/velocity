@@ -1,6 +1,13 @@
 /**
  * "15 rides today → PKR 2,000." The driver's daily target, on the home screen.
  *
+ * THE WORD IS **BONUS**. What a driver earns for hitting the target is their
+ * bonus; "commission" is only ever what they pay Velocity. The two must never
+ * be called the same thing in front of a driver — one is money coming to them
+ * and the other is money leaving. The stored field is still `commissionCredit`
+ * (see the note in domain/dailyTarget.ts), which is deliberate and invisible
+ * here: no label in this file says "credit".
+ *
  * Three jobs, in this order of importance:
  *
  * 1. **Say what is left.** Not "progress: 60%" — "6 more rides". A driver
@@ -10,7 +17,7 @@
  *    a driver who finds out at midnight that their day did not qualify has been
  *    cheated by the interface, not by the rule. Every unmet condition is named
  *    here while there is still time to fix it.
- * 3. **Say what the credit is for.** It is not cash and it cannot be withdrawn.
+ * 3. **Say what the bonus is for.** It is not cash and it cannot be withdrawn.
  *    Saying so plainly, every time, is the difference between an incentive and
  *    a complaint — and the wallet is hidden until top-ups launch, so this card
  *    is the only place a driver ever sees this money.
@@ -24,12 +31,12 @@ import type { DailyTargetProgress } from '../domain/dailyTarget';
 
 export function DailyTargetCard({
   progress,
-  credit,
+  bonusBalance,
   onPress,
 }: {
   progress: DailyTargetProgress;
-  /** Unspent credit across every day, from the driver document. */
-  credit: number;
+  /** Unspent bonus across every day, from the driver document. */
+  bonusBalance: number;
   onPress?: () => void;
 }) {
   if (!progress.enabled) return null;
@@ -53,7 +60,7 @@ export function DailyTargetCard({
 
       <Text style={styles.headline}>
         {done
-          ? `PKR ${progress.bonus.toLocaleString()} credit earned`
+          ? `PKR ${progress.bonus.toLocaleString()} bonus earned`
           : progress.ridesToGo === 1
             ? '1 more ride to go'
             : `${progress.ridesToGo} more rides to go`}
@@ -81,16 +88,16 @@ export function DailyTargetCard({
         <Text style={styles.waived}>✓ Today&apos;s rides are commission-free</Text>
       ) : null}
 
-      {/* The credit balance, and what it is. Never called a wallet, never
+      {/* The bonus balance, and what it is. Never called a wallet, never
           implied to be withdrawable. */}
       <View style={styles.creditRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.creditLabel}>Commission credit</Text>
+          <Text style={styles.creditLabel}>Your bonus</Text>
           <Text style={styles.creditHint}>
             Pays your commission automatically · not withdrawable as cash
           </Text>
         </View>
-        <Text style={styles.creditValue}>PKR {credit.toLocaleString()}</Text>
+        <Text style={styles.creditValue}>PKR {bonusBalance.toLocaleString()}</Text>
       </View>
     </Pressable>
   );

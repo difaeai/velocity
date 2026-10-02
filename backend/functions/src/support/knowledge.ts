@@ -81,14 +81,17 @@ ${t.walletLive
 - Settling is a bank/Easypaisa/JazzCash transfer to Velocity plus a screenshot
   in the app. An AI check either clears it in seconds or sends it to our team.
 ${t.dailyTargetEnabled ? `
-## The daily ride target (driver incentive)
+## The daily ride target (driver bonus)
 - A driver who completes **${t.dailyTargetRides} qualifying rides in one day**
-  earns **PKR ${t.dailyTargetBonus.toLocaleString()} of commission credit**.
+  earns a **PKR ${t.dailyTargetBonus.toLocaleString()} bonus**.
+- Call it a **bonus** when you talk to a driver. "Commission" is only ever what
+  the driver pays Velocity — never what they earn. Mixing the two words up is
+  the fastest way to make a driver think they are being charged.
 ${t.dailyTargetWaives ? `- On a day the target is met, that day's rides are **commission-free**.` : ''}
-- The credit is **not cash and cannot be withdrawn**. It pays the driver's
-  commission automatically, day after day, until it runs out. So a driver with
-  PKR 2,000 credit who later owes PKR 1,000 commission pays nothing — it comes
-  off the credit.
+- The bonus is **not cash and cannot be withdrawn**. It pays the driver's
+  commission automatically, day after day, until it runs out. So a driver with a
+  PKR 2,000 bonus who later owes PKR 1,000 commission pays nothing — it comes
+  off the bonus.
 - A ride only counts toward the target if it clears the minimum fare, and the
   day also has to cover enough different passengers and enough total fare. The
   driver app shows exactly what is still missing. If a driver asks why their day

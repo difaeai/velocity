@@ -1,5 +1,20 @@
 /**
- * The driver's daily ride target — "15 rides today, PKR 2,000 credit".
+ * The driver's daily ride target — "15 rides today, PKR 2,000 bonus".
+ *
+ * ── WHAT IT IS CALLED ──────────────────────────────────────────────────
+ *
+ * To a driver this is a **BONUS**, everywhere, in the app and on the web.
+ * "Commission" is only ever the cut they pay Velocity. The two are opposite
+ * directions of money and must never share a word in front of a driver — a
+ * driver who reads "commission" on the thing they just earned assumes they are
+ * being charged for it.
+ *
+ * The STORED name is still `commissionCredit` (the field, the
+ * `commissionCredits` subcollection, `applyCommissionCredit`,
+ * `adminAdjustCommissionCredit`). That is deliberate and follows the same call
+ * the Travel Partner rename made about `travelMate*`: renaming a live field and
+ * a deployed callable buys nothing a label cannot, and costs a migration on
+ * money data. Change labels freely; leave the identifiers alone.
  *
  * WHAT THIS IS. Velocity charges drivers a commission on the cash fares they
  * collect (see ./commission.ts). On top of that there is an incentive: a driver
@@ -7,13 +22,13 @@
  * earns a fixed bonus, and — while the admin leaves the waiver on — owes no
  * commission on that day's rides at all.
  *
- * The bonus is NOT cash. It is a commission credit: it can only ever be spent
- * paying Velocity's own charges, and it can never be withdrawn. That is the
+ * The bonus is NOT cash. It can only ever be spent paying Velocity's own
+ * charges, and it can never be withdrawn. That is the
  * same regulatory boundary the wallet ring-fence draws (domain/walletFunds.ts),
  * reached from the other side — money we hand out as an incentive is not money
  * we are holding for the driver, so letting it leave as cash would make it
  * e-money we are not licensed to issue. It is also simply what was asked for:
- * the credit sits there and quietly pays the next days' commission until it
+ * the bonus sits there and quietly pays the next days' commission until it
  * runs out.
  *
  * WHY A DAY IS A PAKISTAN DAY. `onSchedule` and `Date` both default to UTC, and
@@ -67,7 +82,7 @@ export interface DailyTargetSettings {
   dailyTargetEnabled: boolean;
   /** Qualifying rides in one Pakistan day that earn the bonus. */
   dailyTargetRides: number;
-  /** Commission credit granted when the target is met, in PKR. */
+  /** Bonus granted when the target is met, in PKR. */
   dailyTargetBonus: number;
   /**
    * True = a day that met its target owes no commission on its own rides

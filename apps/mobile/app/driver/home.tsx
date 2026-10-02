@@ -565,7 +565,7 @@ export default function DriverHome() {
         <View style={styles.targetWrap}>
           <DailyTargetCard
             progress={dailyTarget.progress}
-            credit={commission.credit}
+            bonusBalance={commission.bonus}
             onPress={() => router.push('/driver/earnings')}
           />
         </View>

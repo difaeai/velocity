@@ -48,7 +48,7 @@ const CATEGORIES: { key: SupportCategory; label: string; icon: string; hint: str
   { key: 'payment', label: 'Fare or payment', icon: '💵', hint: 'A fare, a charge, or a refund.' },
   { key: 'driver_issue', label: 'Problem with a driver', icon: '🚗', hint: 'Behaviour, the car, or the route.' },
   { key: 'passenger_issue', label: 'Problem with a passenger', icon: '🙋', hint: 'For drivers: a rider on one of your trips.' },
-  { key: 'commission', label: 'Commission or credit', icon: '📋', hint: 'For drivers: your cycle, your daily target, your credit.' },
+  { key: 'commission', label: 'Commission or bonus', icon: '📋', hint: 'For drivers: your cycle, your daily target, your bonus.' },
   { key: 'account', label: 'Account or sign-in', icon: '🔐', hint: 'Codes, verification, or a blocked account.' },
   { key: 'lost_item', label: 'Lost item', icon: '🎒', hint: 'Something left in the car.' },
   { key: 'other', label: 'Something else', icon: '💬', hint: 'Anything not on this list.' },
