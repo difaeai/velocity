@@ -38,7 +38,7 @@ import { auth, db, storage, FieldValue } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { walletOutstanding } from '../domain/cancellation';
-import { getCommissionSettings, commissionDue } from '../domain/commission';
+import { getCommissionSettings, commissionOwedInFull } from '../domain/commission';
 import { ACTIVE_STATUSES } from '../trips';
 import type { TripStatus } from '../domain/types';
 
@@ -247,7 +247,8 @@ async function loadDeletionState(uid: string): Promise<DeletionState> {
   return {
     activeTripStatus,
     outstandingFees: walletOutstanding(walletSnap),
-    commissionDue: driverSnap.exists ? commissionDue(driverSnap, commission) : 0,
+    // The whole unsettled cycle, today included — see commissionOwedInFull.
+    commissionDue: driverSnap.exists ? commissionOwedInFull(driverSnap, commission) : 0,
     walletBalance: Math.max(0, (walletSnap.get('balance') as number | undefined) ?? 0),
     partnerBalance: Math.max(0, (partnerWalletSnap.get('balance') as number | undefined) ?? 0),
   };

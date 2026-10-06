@@ -220,7 +220,7 @@ export async function runSupportAgent(
     dailyTargetRides: context.commission.dailyTargetRides,
     dailyTargetBonus: context.commission.dailyTargetBonus,
     dailyTargetWaives: context.commission.dailyTargetWaivesCommission,
-    commissionThreshold: context.commission.threshold,
+    dailyTargetPoolOnly: context.commission.dailyTargetPoolOnly,
     cancellationPassengerPct: Math.round(context.cancellation.passengerFeeRate * 100),
     cancellationDriverPct: Math.round(context.cancellation.driverFeeRate * 100),
     outstandingLimit: context.cancellation.outstandingLimit,

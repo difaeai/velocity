@@ -259,8 +259,8 @@ const EARN = [
   {
     icon: Car,
     title: 'Drive',
-    body: 'Bring your car or bike, get your documents approved, and start accepting rides. See a heat map of where demand is, hit your daily ride target for a bonus, and settle on your own schedule.',
-    points: ['Cash collected stays with you', 'Daily ride target pays a bonus', 'Live demand heat map'],
+    body: 'Bring your car or bike, get your documents approved, and start accepting rides. See a heat map of where demand is, and hit your daily pool-ride target to drive the whole day commission-free.',
+    points: ['Cash collected stays with you', '16 pool rides in a day = no commission', 'Live demand heat map'],
   },
   {
     icon: Wallet,
@@ -355,7 +355,7 @@ const FAQS = [
   },
   {
     q: 'I want to drive \u2014 what do I actually earn?',
-    a: 'The fare is yours; you collect it in cash at the end of the ride. Velocity Rides takes a commission on the cash you collect, and it is not charged per ride \u2014 it builds up and you settle it by bank transfer when your cycle matures. On top of that there is a daily ride target: complete it and you earn a bonus, and that day\u2019s rides cost you no commission at all. Right now the target is 15 rides for a Rs 2,000 bonus. The bonus is not cash and cannot be withdrawn \u2014 what it does is pay your commission automatically, day after day, until it runs out, so you are never asked for money while you still have one. The app shows your live count, the current target, and exactly what is still missing if a day will not qualify.',
+    a: 'The fare is yours; you collect it in cash at the end of the ride. Velocity Rides takes a commission on the cash you collect, and it is charged by the day. Right now: complete 16 pool rides in a day and that whole day costs you no commission at all. Fall short and the day owes 5% of the cash you took — it becomes due at midnight, and you clear it by bank transfer before taking more rides, which the app walks you through in a couple of minutes. Nothing is ever owed while the day is still running, because you have the whole day to reach the target. The app shows your live count, what the day will cost you if you stop now, and exactly what is still missing if a day will not qualify.',
   },
   {
     q: 'Can my family follow my ride?',
@@ -870,7 +870,7 @@ export default function Home() {
                   <Shield />
                   <span>
                     <b>You earn a share of Velocity Rides&apos; commission, never of the fare.</b> On a
-                    Rs 1,000 ride with a 10% commission, a 2% Pro rate pays you Rs 2 — 2% of the
+                    Rs 2,000 ride with a 5% commission, a 2% Pro rate pays you Rs 2 — 2% of the
                     Rs 100 commission, not of the fare. The fare belongs to the driver.
                   </span>
                 </p>
@@ -924,12 +924,13 @@ export default function Home() {
                 <div className={styles.ruleNote}>
                   <TrendingUp />
                   <span>
-                    <b>Driving yourself? Hit your daily ride target and earn a bonus.</b> Right
-                    now that is <b>15 rides in a day for a Rs 2,000 bonus</b>, and that day&apos;s
-                    rides cost you no commission at all. The bonus pays your commission for you,
-                    day after day, until it runs out — so you are never asked for money while you
-                    still have one. Your app shows the live count and the current target, which
-                    we can change.
+                    <b>Driving yourself? Hit your daily target and the day is yours.</b> Right
+                    now that is <b>16 pool rides in a day</b>, and that whole day costs you{' '}
+                    <b>no commission at all</b>. Fall short and the day owes 5% of the cash you
+                    took, due at midnight and cleared by transfer before you take more rides.
+                    Nothing is owed while the day is still running — you have the whole day to get
+                    there. Your app shows the live count and the current target, which we can
+                    change.
                   </span>
                 </div>
 

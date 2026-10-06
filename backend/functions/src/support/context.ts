@@ -22,6 +22,8 @@ import {
   commissionBreakdown,
   commissionCredit,
   getCommissionSettings,
+  openCycle,
+  readCycle,
   type CommissionSettings,
 } from '../domain/commission';
 import { getCancellationSettings, walletOutstanding, type CancellationSettings } from '../domain/cancellation';
@@ -119,10 +121,11 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
   let target: DailyTargetProgress | null = null;
   let due = 0;
   if (isDriver) {
-    const breakdown = commissionBreakdown(driverSnap, commission);
+    const breakdown = commissionBreakdown(driverSnap, commission, day);
     due = breakdown.due;
     const credit = commissionCredit(driverSnap);
-    const cycleGross = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
+    const cycle = readCycle(driverSnap);
+    const open = openCycle(cycle, day);
     target = dailyTargetProgress(readDailyTargetDay(daySnap, day), commission);
 
     lines.push('');
@@ -130,30 +133,40 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
     lines.push(`Verification: ${(driverSnap.get('verificationStatus') as string | undefined) ?? 'unknown'}`);
     lines.push(`Lifetime rides: ${(driverSnap.get('tripsCount') as number | undefined) ?? 0}`);
     lines.push(
-      `Current cycle: ${money(cycleGross)} of fares out of ${money(commission.threshold)} before settling`,
+      `Today so far: ${money(open.gross)} of fares, ${money(open.cash)} of it in cash. ` +
+        'Nothing from today is payable yet — a day only becomes due at midnight, ' +
+        'and not at all if it hit the target.',
     );
+    if (breakdown.settleableGross > 0) {
+      lines.push(
+        `From earlier days, unpaid: ${money(breakdown.settleableGross)} of fares, ` +
+          `${money(breakdown.settleableCash)} of it in cash`,
+      );
+    }
     lines.push(
-      `Commission on this cycle: ${money(breakdown.grossDue)} total, of which ` +
-        `${money(breakdown.creditApplied)} is covered by their credit — ` +
+      `Commission due now: ${money(breakdown.grossDue)} total, of which ` +
+        `${money(breakdown.creditApplied)} is covered by their bonus — ` +
         `they personally owe ${money(breakdown.due)} right now`,
     );
-    lines.push(`Commission credit available: ${money(credit)} (cannot be withdrawn as cash)`);
+    lines.push(`Bonus available: ${money(credit)} (cannot be withdrawn as cash)`);
     lines.push(
-      `Locked out of new rides: ${cycleGross >= commission.threshold && due > 0 ? 'YES — they must settle first' : 'no'}`,
+      `Locked out of new rides: ${due > 0 ? 'YES — they must clear this first' : 'no'}`,
     );
     lines.push('');
     lines.push(`TODAY'S TARGET (${day}, Pakistan time)`);
     if (!target.enabled) {
       lines.push('The daily target programme is currently switched off.');
     } else {
+      const kind = target.poolOnly ? 'pool rides' : 'rides';
       lines.push(
-        `Qualifying rides: ${target.rides} of ${target.target} — bonus ${money(target.bonus)}`,
+        `Qualifying ${kind}: ${target.rides} of ${target.target}` +
+          (target.bonus > 0 ? ` — plus a ${money(target.bonus)} bonus` : ' — reward is a commission-free day'),
       );
       lines.push(
         target.granted
-          ? "Today's bonus has ALREADY been paid into their credit."
+          ? 'Today has ALREADY been made commission-free.'
           : target.met
-            ? 'Every requirement is met; the bonus pays on this ride.'
+            ? 'Every requirement is met; the day goes commission-free on this ride.'
             : `Still needed today: ${target.blockers
                 .map((b) => `${b.label} (has ${b.have}, needs ${b.need})`)
                 .join('; ')}`,

@@ -31,11 +31,17 @@ function blurText(s: string | undefined, keep = 3): string {
 }
 
 /**
- * Full-screen takeover shown when the driver's commission cycle is locked.
- * The app is paused here until the driver settles: they transfer the amount due
- * to Velocity's account, upload a screenshot, and an AI check either unlocks
- * them instantly or sends it to our team for review. Incoming rides stay
- * visible but blurred until then.
+ * Full-screen takeover shown when a day has closed owing commission.
+ *
+ * The app is paused here until the driver clears it: they transfer the amount
+ * due to Velocity's account, upload a screenshot, and an AI check either
+ * unlocks them instantly or sends it to our team for review. Incoming rides
+ * stay visible but blurred until then.
+ *
+ * It bills a DAY, not a cycle. The figures it quotes are the closed days only —
+ * today's takings are deliberately named and excluded, because a driver who
+ * sees today's money in a bill they are being asked to pay reasonably concludes
+ * they are being charged for a day they can still make free.
  */
 export function CommissionLock({
   status,
@@ -51,8 +57,20 @@ export function CommissionLock({
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<PayMethod>('easypaisa');
 
-  const { due, rate, cycleGrossFare, cycleCashFare, bonus, bonusApplied, grossDue } = status;
-  const onlineFare = Math.max(0, cycleGrossFare - cycleCashFare);
+  const {
+    due,
+    rate,
+    bonus,
+    bonusApplied,
+    grossDue,
+    settleableCashFare,
+    settleableGrossFare,
+    todayCashFare,
+  } = status;
+  // Online fares inside the days being charged — their commission was taken at
+  // completion, so saying so here is what stops "am I paying twice?".
+  const onlineFare = Math.max(0, settleableGrossFare - settleableCashFare);
+  const rideWord = status.dailyTargetPoolOnly ? 'pool rides' : 'rides';
 
   // Which methods we can actually receive on.
   const available: PayMethod[] = [];
@@ -108,12 +126,14 @@ export function CommissionLock({
       {/* ── Why the app is paused ── */}
       <View style={styles.lockCard}>
         <Text style={styles.lockIcon}>🔒</Text>
-        <Text style={styles.lockTitle}>Settle your commission to continue</Text>
+        <Text style={styles.lockTitle}>Clear your commission to continue</Text>
         <Text style={styles.lockBody}>
-          Your earnings this cycle reached{' '}
-          <Text style={styles.bold}>{cycleGrossFare.toLocaleString()} PKR</Text>. Velocity Rides&apos;{' '}
-          {Math.round(rate * 100)}% commission on the {cycleCashFare.toLocaleString()} PKR you
-          collected in cash is due now.
+          A day ended on fewer than{' '}
+          <Text style={styles.bold}>
+            {status.dailyTargetRides} {rideWord}
+          </Text>
+          , so Velocity Rides&apos; {Math.round(rate * 100)}% commission on the{' '}
+          {settleableCashFare.toLocaleString()} PKR of cash you took that day is due.
         </Text>
         {onlineFare > 0 && (
           <Text style={styles.lockNote}>
@@ -121,13 +141,19 @@ export function CommissionLock({
             collected automatically — you won&apos;t pay it twice.
           </Text>
         )}
+        {todayCashFare > 0 && (
+          <Text style={styles.lockNote}>
+            ✓ Today&apos;s {todayCashFare.toLocaleString()} PKR is not in this bill. Today is still
+            open, and it costs you nothing at all if you finish the target.
+          </Text>
+        )}
         {/* The bonus already came off this figure. Showing the arithmetic is
             the whole promise of the daily target: the driver has to be able to
             see that the bonus they earned is what shrank the bill. */}
         {bonusApplied > 0 && (
           <Text style={styles.lockNote}>
-            ✓ PKR {bonusApplied.toLocaleString()} of your bonus has been used
-            against this cycle&apos;s PKR {grossDue.toLocaleString()} commission
+            ✓ PKR {bonusApplied.toLocaleString()} of your bonus has been used against the PKR{' '}
+            {grossDue.toLocaleString()} owed
             {bonus - bonusApplied > 0
               ? ` — PKR ${(bonus - bonusApplied).toLocaleString()} bonus is left after this.`
               : ' — your bonus is now used up.'}
@@ -140,10 +166,13 @@ export function CommissionLock({
           <Text style={styles.dueAmt}>{due.toLocaleString()} PKR</Text>
         </View>
         {/* The way out of ever seeing this screen again, said where it lands. */}
-        {status.dailyTargetEnabled && status.dailyTargetBonus > 0 && (
+        {status.dailyTargetEnabled && (
           <Text style={styles.lockEarnNote}>
-            🎯 Complete {status.dailyTargetRides} rides in a day and a PKR{' '}
-            {status.dailyTargetBonus.toLocaleString()} bonus pays your next commission for you.
+            🎯 {status.dailyTargetRides} {rideWord} in a day and that whole day costs you no
+            commission
+            {status.dailyTargetBonus > 0
+              ? `, plus a PKR ${status.dailyTargetBonus.toLocaleString()} bonus.`
+              : '.'}
           </Text>
         )}
       </View>

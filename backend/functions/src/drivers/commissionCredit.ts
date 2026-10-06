@@ -38,19 +38,20 @@ import {
   type CommissionBreakdown,
   type CommissionSettings,
 } from '../domain/commission';
+import { pktDayKey, type DayKey } from '../domain/dailyTarget';
 
 /**
- * Spend as much credit as this cycle's commission can absorb.
+ * Spend as much credit as the payable commission can absorb.
  *
  * Writes the driver's credit fields, the driver-facing credit ledger row and
  * the platform incentive expense. Returns the full breakdown so the caller can
  * ledger the revenue side with the right gross figure and tell the driver what
  * they actually still owe.
  *
- * Idempotent per transaction, not per cycle: it must be called exactly once per
- * settlement, which is why each caller does it in the same transaction that
- * resets `cycleCashFare` to zero. A retry of that transaction re-reads a
- * driver snapshot with the credit already gone.
+ * Idempotent per transaction, not per settlement: it must be called exactly
+ * once per settlement, which is why each caller does it in the same transaction
+ * that clears the settled days off `cycleCashFare`. A retry of that transaction
+ * re-reads a driver snapshot with the credit already gone.
  */
 export function applyCommissionCredit(params: {
   tx: Transaction;
@@ -58,14 +59,24 @@ export function applyCommissionCredit(params: {
   /** The driver document as read in this transaction. */
   driverSnap: DocumentSnapshot;
   settings: CommissionSettings;
+  /** The Pakistan day the settlement is happening on — decides what is payable. */
+  today: DayKey;
   /** How the cycle was settled, for the ledger rows. */
   source: SettlementSource;
   /** The settlement document or trip this settlement belongs to, if any. */
   ref?: string | null;
 }): CommissionBreakdown {
-  const { tx, driverId, driverSnap, settings, source, ref } = params;
-  const breakdown = commissionBreakdown(driverSnap, settings);
-  ledgerCreditSpend({ tx, driverId, source, ref, ...breakdown });
+  const { tx, driverId, driverSnap, settings, today, source, ref } = params;
+  const breakdown = commissionBreakdown(driverSnap, settings, today);
+  ledgerCreditSpend({
+    tx,
+    driverId,
+    source,
+    ref,
+    grossDue: breakdown.grossDue,
+    creditApplied: breakdown.creditApplied,
+    due: breakdown.due,
+  });
   return breakdown;
 }
 
@@ -241,7 +252,7 @@ export const adminGetDriverCommission = onCall(async (req) => {
   ]);
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver record not found.');
 
-  const breakdown = commissionBreakdown(driverSnap, settings);
+  const breakdown = commissionBreakdown(driverSnap, settings, pktDayKey());
   return {
     settings,
     driver: {
@@ -250,6 +261,7 @@ export const adminGetDriverCommission = onCall(async (req) => {
       phone: (driverSnap.get('phone') as string | undefined) ?? null,
       cycleGrossFare: (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0,
       cycleCashFare: (driverSnap.get('cycleCashFare') as number | undefined) ?? 0,
+      cycleDay: (driverSnap.get('cycleDay') as string | undefined) ?? null,
       commissionCredit: (driverSnap.get('commissionCredit') as number | undefined) ?? 0,
       commissionCreditEarned: (driverSnap.get('commissionCreditEarned') as number | undefined) ?? 0,
       commissionCreditUsed: (driverSnap.get('commissionCreditUsed') as number | undefined) ?? 0,
@@ -258,6 +270,7 @@ export const adminGetDriverCommission = onCall(async (req) => {
     days: targetsSnap.docs.map((d) => ({
       day: d.id,
       rides: (d.get('rides') as number | undefined) ?? 0,
+      poolRides: (d.get('poolRides') as number | undefined) ?? 0,
       qualifyingRides: (d.get('qualifyingRides') as number | undefined) ?? 0,
       grossFare: (d.get('grossFare') as number | undefined) ?? 0,
       cashFare: (d.get('cashFare') as number | undefined) ?? 0,

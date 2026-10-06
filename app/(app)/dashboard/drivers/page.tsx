@@ -565,7 +565,7 @@ export default function DriversPage() {
                           <InfoCell label="Rating"        value={d.rating ? `★ ${d.rating.toFixed(1)}` : '★ 5.0'} />
                           <InfoCell label="Trips"         value={String(d.tripsCount ?? 0)} />
                           <InfoCell label="Status"        value={d.online ? 'Online' : 'Offline'} />
-                          <InfoCell label="Cycle fare"    value={`${d.cycleGrossFare ?? 0} PKR`} />
+                          <InfoCell label="Unsettled fares" value={`${d.cycleGrossFare ?? 0} PKR`} />
                         </InfoGrid>
                       </Section>
                     )}
@@ -813,9 +813,10 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
           {report && (
             <>
               <div style={moneyGrid}>
-                <Money label="Cycle fares" value={report.driver.cycleGrossFare} />
+                <Money label="Unsettled fares" value={report.driver.cycleGrossFare} />
+                <Money label="Of that, from closed days" value={report.driver.settleableGross} />
                 <Money
-                  label={`Commission at ${Math.round(report.settings.rate * 100)}%`}
+                  label={`Commission due at ${Math.round(report.settings.rate * 100)}%`}
                   value={report.driver.grossDue}
                 />
                 <Money label="Paid by their bonus" value={report.driver.creditApplied} />
@@ -829,7 +830,10 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.text, marginBottom: 6 }}>
                   Last {report.days.length} days
                   {report.settings.dailyTargetEnabled
-                    ? ` · target ${report.settings.dailyTargetRides} rides → PKR ${report.settings.dailyTargetBonus.toLocaleString()}`
+                    ? ` · target ${report.settings.dailyTargetRides} ${report.settings.dailyTargetPoolOnly ? 'pool rides' : 'rides'} → that day is commission-free` +
+                      (report.settings.dailyTargetBonus > 0
+                        ? ` + PKR ${report.settings.dailyTargetBonus.toLocaleString()}`
+                        : '')
                     : ' · target is off'}
                 </div>
                 {report.days.length === 0 ? (
@@ -840,10 +844,11 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
                       <tr style={{ color: colors.muted, textAlign: 'left' }}>
                         <th style={th}>Day</th>
                         <th style={th}>Rides</th>
+                        <th style={th}>Pool</th>
                         <th style={th}>Counted</th>
                         <th style={th}>Riders</th>
                         <th style={th}>Fares</th>
-                        <th style={th}>Paid out</th>
+                        <th style={th}>Commission</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -851,13 +856,16 @@ function DriverCommissionPanel({ driverId }: { driverId: string }) {
                         <tr key={d.day} style={{ borderTop: `1px solid ${colors.border}` }}>
                           <td style={td}>{d.day}</td>
                           <td style={td}>{d.rides}</td>
+                          <td style={td}>{d.poolRides}</td>
                           <td style={td}>{d.qualifyingRides}</td>
                           <td style={td}>{d.riders}</td>
                           <td style={td}>{Math.round(d.grossFare).toLocaleString()}</td>
-                          <td style={{ ...td, fontWeight: d.bonusGranted > 0 ? 800 : 400 }}>
-                            {d.bonusGranted > 0
-                              ? `PKR ${(d.bonusGranted + d.waiverGranted).toLocaleString()}`
-                              : '—'}
+                          {/* What the day actually cost the driver: free if it hit
+                              the target, otherwise the rate on its cash. */}
+                          <td style={{ ...td, fontWeight: d.met ? 800 : 400 }}>
+                            {d.met
+                              ? `free${d.bonusGranted > 0 ? ` + PKR ${d.bonusGranted.toLocaleString()}` : ''}`
+                              : `PKR ${Math.round(d.cashFare * report.settings.rate).toLocaleString()}`}
                           </td>
                         </tr>
                       ))}

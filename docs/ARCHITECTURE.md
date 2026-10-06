@@ -64,7 +64,8 @@ requested ──acceptBid──▶ matched ──▶ arriving ──▶ arrived 
 
 Every transition is a callable function that validates **who** the caller is and
 whether the **(from → to)** edge is legal. `completeTrip` is the only place a
-settlement (gross, 10% commission, driver payout, passenger share) is computed,
+settlement (gross, the admin-set commission — 5% by default — driver payout,
+passenger share) is computed,
 and it updates the driver wallet, the ledger and the platform counters in a
 single Firestore transaction.
 

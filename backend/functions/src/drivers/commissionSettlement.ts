@@ -25,9 +25,12 @@ import {
   cycleCashFare,
   getCommissionSettings,
   isCommissionLocked,
-  commissionDue,
+  commissionBreakdown,
+  openCycle,
+  readCycle,
 } from '../domain/commission';
 import { applyCommissionCredit } from './commissionCredit';
+import { todayKey } from './dailyTarget';
 import {
   decideProofOutcome,
   proofAIConfigured,
@@ -40,9 +43,16 @@ import { applyCancellationFeeSettlement } from '../payments/cancellationFees';
 export type { SettlementStatus };
 
 /**
- * Atomically apply an approved settlement: settle the whole cycle from the
- * bank transfer the driver made, ledger it as realized platform revenue, and
- * unlock the driver. Idempotent on an already-approved settlement.
+ * Atomically apply an approved settlement: settle the days that had closed
+ * owing commission from the bank transfer the driver made, ledger it as
+ * realized platform revenue, and unlock the driver. Idempotent on an
+ * already-approved settlement.
+ *
+ * WHAT IT CLEARS. The closed days only — the day the driver is standing in
+ * keeps its fares, because they are not payable yet and the driver may still
+ * reach the target and owe nothing on them (domain/commission.ts). Settling no
+ * longer means zeroing the cycle; it means removing the part of it that had
+ * become due.
  */
 async function applyManualSettlement(params: {
   driverId: string;
@@ -56,6 +66,10 @@ async function applyManualSettlement(params: {
   const settlementRef = db.doc(`commissionSettlements/${settlementId}`);
 
   const settings = await getCommissionSettings();
+  // One day key for the whole settlement. The AI path approves seconds after
+  // the driver uploads, so this is the day they were quoted for; an admin
+  // review that sits overnight settles against the day it is approved on.
+  const today = todayKey();
 
   await db.runTransaction(async (tx) => {
     const [driverSnap, settlementSnap] = await Promise.all([tx.get(driverRef), tx.get(settlementRef)]);
@@ -64,15 +78,17 @@ async function applyManualSettlement(params: {
 
     const cycleGrossFare = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
     const cashFare = cycleCashFare(driverSnap);
+    const open = openCycle(readCycle(driverSnap), today);
 
-    // Any target-bonus credit the driver has pays its part of this cycle and is
-    // spent here, so the cycle is fully discharged by the transfer plus the
-    // credit rather than leaving a remainder nobody owes.
+    // Any bonus the driver has pays its part of what is due and is spent here,
+    // so the debt is fully discharged by the transfer plus the bonus rather
+    // than leaving a remainder nobody owes.
     const breakdown = applyCommissionCredit({
       tx,
       driverId,
       driverSnap,
       settings,
+      today,
       source: 'manual_bank',
       ref: settlementId,
     });
@@ -101,10 +117,17 @@ async function applyManualSettlement(params: {
       { merge: true },
     );
 
-    // Reset the cycle → driver is unlocked.
+    // Drop the settled days off the cycle, keep the open one → driver unlocked.
     tx.set(
       driverRef,
-      { cycleGrossFare: 0, cycleCashFare: 0, updatedAt: FieldValue.serverTimestamp() },
+      {
+        cycleGrossFare: open.gross,
+        cycleCashFare: open.cash,
+        cycleDay: today,
+        cycleGrossToday: open.gross,
+        cycleCashToday: open.cash,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
       { merge: true },
     );
     tx.set(driverRef.collection('commissionPayments').doc(), {
@@ -113,6 +136,9 @@ async function applyManualSettlement(params: {
       grossDue: breakdown.grossDue,
       source: 'manual_bank',
       settlementId,
+      rate: settings.rate,
+      settledCashFare: breakdown.settleableCash,
+      settledGrossFare: breakdown.settleableGross,
       cycleGrossFare,
       cycleCashFare: cashFare,
       verifiedBy,
@@ -140,8 +166,9 @@ const submitSchema = z.object({
 });
 
 /**
- * Driver submits a payment screenshot to settle their locked commission cycle.
- * Verifies it with AI and either auto-unlocks, rejects, or queues for admin.
+ * Driver submits a payment screenshot to clear the commission a closed day left
+ * them owing. Verifies it with AI and either auto-unlocks, rejects, or queues
+ * for admin.
  *
  * The verifier reads ANTHROPIC_API_KEY from the function environment (set it in
  * backend/functions/.env.<project>, like the gateway credentials). When it's
@@ -161,13 +188,15 @@ export const submitCommissionSettlement = onCall(async (req) => {
   await rateLimit(ctx.uid, 'submitCommissionSettlement', 6, 3600);
 
   const settings = await getCommissionSettings();
+  const today = todayKey();
   const driverRef = db.doc(`drivers/${ctx.uid}`);
   const driverSnap = await driverRef.get();
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver record not found.');
-  if (!isCommissionLocked(driverSnap, settings)) {
+  if (!isCommissionLocked(driverSnap, settings, today)) {
     throw new HttpsError('failed-precondition', 'No commission is due right now.');
   }
-  const amountDue = commissionDue(driverSnap, settings);
+  const breakdown = commissionBreakdown(driverSnap, settings, today);
+  const amountDue = breakdown.due;
 
   const accountsSnap = await db.doc('config/settlementAccounts').get();
   const accounts = (accountsSnap.exists ? accountsSnap.data() : {}) as VelocityAccounts;
@@ -182,6 +211,11 @@ export const submitCommissionSettlement = onCall(async (req) => {
     amountDue,
     cycleGrossFare: (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0,
     cycleCashFare: cycleCashFare(driverSnap),
+    // The closed days this payment is for, as they stood when it was quoted.
+    settleableCashFare: breakdown.settleableCash,
+    settleableGrossFare: breakdown.settleableGross,
+    paidFromBonus: breakdown.creditApplied,
+    forDay: today,
     proofPath,
     method: method ?? null,
     status: 'verifying' as SettlementStatus,

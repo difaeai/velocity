@@ -199,27 +199,28 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
           <OutstandingFees status={outstanding} uid={uid} role={role} />
         ) : null}
 
-        {/* Commission cycle — drivers settle Velocity's cut from the wallet */}
-        {role === 'driver' && commission.cycleGrossFare > 0 ? (
+        {/* Commission — charged by the day. Today's takings are shown apart
+            from what has actually become due, because only the second of those
+            is money the driver has to find. */}
+        {role === 'driver' && (commission.cycleGrossFare > 0 || commission.due > 0) ? (
           <Card style={commission.locked ? styles.commCardLocked : undefined}>
             <Text style={styles.label}>
-              {commission.locked ? '🔒 Commission due' : 'Commission cycle'}
+              {commission.locked ? '🔒 Commission due' : 'Commission'}
             </Text>
             <View style={styles.commRow}>
-              <Text style={styles.commMeta}>Cycle earnings</Text>
+              <Text style={styles.commMeta}>Fares you took today</Text>
               <Text style={styles.commMeta}>
-                {commission.cycleGrossFare.toLocaleString()} / {commission.threshold.toLocaleString()} PKR
+                {commission.todayGrossFare.toLocaleString()} PKR
               </Text>
             </View>
-            <View style={styles.commTrack}>
-              <View
-                style={[
-                  styles.commFill,
-                  { width: `${Math.min((commission.cycleGrossFare / commission.threshold) * 100, 100)}%` },
-                  commission.locked && { backgroundColor: colors.danger },
-                ]}
-              />
-            </View>
+            {commission.settleableGrossFare > 0 ? (
+              <View style={styles.commRow}>
+                <Text style={styles.commMeta}>Unpaid from earlier days</Text>
+                <Text style={styles.commMeta}>
+                  {commission.settleableGrossFare.toLocaleString()} PKR
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.commRow}>
               <Text style={styles.commMeta}>
                 Velocity Rides commission ({Math.round(commission.rate * 100)}% of cash fares)
@@ -231,7 +232,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             {commission.locked ? (
               <>
                 <PrimaryButton
-                  label="Settle commission →"
+                  label="Clear commission →"
                   // '/driver' is not a route — the driver's home is
                   // '/driver/home'. This button is how a driver locked out of
                   // earning gets to the screen that unlocks them, and it landed
@@ -245,9 +246,10 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
               </>
             ) : (
               <Text style={styles.payoutHint}>
-                When cycle earnings reach {commission.threshold.toLocaleString()} PKR you&apos;ll settle
-                by paying Velocity Rides and uploading a screenshot. Commission on online rides is collected
-                automatically.
+                {commission.dailyTargetEnabled
+                  ? `Finish ${commission.dailyTargetRides} ${commission.dailyTargetPoolOnly ? 'pool rides' : 'rides'} today and the whole day costs you no commission. Short of that, ${Math.round(commission.rate * 100)}% of today's cash is due at midnight and you pay it by transfer with a screenshot.`
+                  : `Today's commission becomes due at midnight. You pay it by transfer with a screenshot.`}
+                {' '}Commission on online rides is collected automatically.
               </Text>
             )}
           </Card>

@@ -875,10 +875,11 @@ function Settings() {
       <Card>
         <h3 style={{ margin: '0 0 4px', color: colors.text }}>Tier rates</h3>
         <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
-          On a Rs 1,000 ride with a 10% platform commission (Rs 100), a 2% driver-fleet rate pays the
+          On a Rs 2,000 ride with a 5% platform commission (Rs 100), a 2% driver-fleet rate pays the
           partner <strong>Rs 2</strong> — 2% of the commission, not of the fare. Velocity Rides&apos; net
           can never go negative: the franchise cut is taken first, then the fleets, and a fleet is
-          simply paid less if the commission runs out.
+          simply paid less if the commission runs out. A day a driver takes commission-free produces
+          no commission, so it pays no partner either.
         </p>
 
         <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 16 }}>

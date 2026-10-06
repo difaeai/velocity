@@ -420,7 +420,10 @@ export default function DriverHome() {
 
   function openRequest(tripId: string) {
     if (commissionLocked) {
-      Alert.alert('Account locked', `Settle ${commission.due.toLocaleString()} PKR commission to accept rides.`);
+      Alert.alert(
+        'Account locked',
+        `A day ended short of the target, so ${commission.due.toLocaleString()} PKR of commission is due. Clear it to start taking rides again.`,
+      );
       return;
     }
     if (outstanding.blocked) {
@@ -566,6 +569,8 @@ export default function DriverHome() {
           <DailyTargetCard
             progress={dailyTarget.progress}
             bonusBalance={commission.bonus}
+            todayCashFare={commission.todayCashFare}
+            rate={commission.rate}
             onPress={() => router.push('/driver/earnings')}
           />
         </View>
@@ -578,7 +583,8 @@ export default function DriverHome() {
             <View style={styles.lockBanner}>
               <Text style={styles.lockTitle}>🔒 Commission due — {commission.due.toLocaleString()} PKR</Text>
               <Text style={styles.lockBody}>
-                Finish your current trip, then settle with Velocity Rides to keep receiving rides.
+                Finish your current trip, then clear this with Velocity Rides to start taking
+                rides again.
               </Text>
             </View>
           )}
