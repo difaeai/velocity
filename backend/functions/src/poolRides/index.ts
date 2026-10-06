@@ -5,14 +5,15 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
-import { notifyUser } from '../lib/fcm';
-import { assertCommissionClear, cycleCashFare, getCommissionSettings } from '../domain/commission';
+import { notifyUser, sendToUser } from '../lib/fcm';
+import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import {
   dailyTargetRef,
   notifyDailyTarget,
   recordRideOnDailyTarget,
   todayKey,
 } from '../drivers/dailyTarget';
+import { applyRideToCycle } from '../drivers/cycle';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { computeSettlement } from '../domain/fares';
 import { DEFAULT_FRANCHISE_RATE, franchiseCutFor, franchiseRateFor } from '../domain/franchise';
@@ -317,17 +318,30 @@ export const completePoolRide = onCall(async (req) => {
       grossFare,
       cashFare: grossFare, // pool fares are collected in cash
       riderIds: preRiders,
+      // Sharing mode is pools and nothing else, so every ride on this path
+      // counts toward the target.
+      isPoolRide: true,
       rideId,
     });
 
-    // Update driver commission cycle — pool fares are collected in cash, so
-    // they grow both the threshold counter and the settleable portion, unless
-    // today's target has already waived this day's commission.
+    // Update the driver's commission cycle — pool fares are collected in cash,
+    // so they grow the settleable portion unless today's target has already
+    // made this day commission-free. The same call rolls any day that has
+    // ended: see drivers/cycle.ts.
+    const cycle = applyRideToCycle({
+      tx,
+      driverId: ctx.uid,
+      driverSnap,
+      settings: commissionSettings,
+      today: targetDay,
+      grossFare,
+      commissionableCashFare: target.commissionableCashFare,
+      rideId,
+    });
     tx.set(
       driverRef,
       {
-        cycleGrossFare: ((driverSnap.get('cycleGrossFare') as number | undefined) ?? 0) + grossFare,
-        cycleCashFare:  cycleCashFare(driverSnap) + target.commissionableCashFare,
+        ...cycle.fields,
         tripsCount:     FieldValue.increment(1),
         ...(target.creditDelta > 0
           ? {
@@ -410,13 +424,24 @@ export const completePoolRide = onCall(async (req) => {
 
     return {
       dailyTarget: target.progress,
+      dailyTargetMet: target.granted,
       dailyTargetBonus: target.bonusGranted,
       dailyTargetCredit: target.creditDelta,
       dailyTargetNudge: target.nudge,
+      commissionLocked: cycle.locked,
+      commissionDue: cycle.due,
     };
   });
 
   await notifyDailyTarget(ctx.uid, targetOutcome, rideId);
+  if (targetOutcome.commissionLocked) {
+    await sendToUser(
+      ctx.uid,
+      '🔒 Commission due',
+      `Yesterday fell short of the target, so PKR ${targetOutcome.commissionDue} of commission is due. Pay it to Velocity Rides to start taking rides again.`,
+      { rideId },
+    );
+  }
 
   logger.info('Pool ride completed', { rideId, driver: ctx.uid });
   return { ok: true, dailyTarget: targetOutcome.dailyTarget };
@@ -670,10 +695,11 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const { rideId, gender } = p.data;
 
-  // Locked drivers must settle their commission cycle before taking new work — and
-  // nobody takes riders on in a car they have not photographed.
+  // A day that ended short of the target leaves commission owing, and it has to
+  // be cleared before new work — and nobody takes riders on in a car they have
+  // not photographed.
   const batchDriverSnap = await db.doc(`drivers/${ctx.uid}`).get();
-  assertCommissionClear(batchDriverSnap, await getCommissionSettings());
+  assertCommissionClear(batchDriverSnap, await getCommissionSettings(), todayKey());
   assertVehicleConfirmed(batchDriverSnap);
 
   const rideRef = db.doc(`poolRides/${rideId}`);

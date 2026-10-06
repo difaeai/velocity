@@ -74,6 +74,10 @@ export {
 // Commission settlement (manual bank transfer + AI-verified screenshot)
 export { submitCommissionSettlement, adminReviewCommissionSettlement } from './drivers/commissionSettlement';
 
+// 00:05 Pakistan time: tell the drivers whose day just closed short that their
+// commission is due. The lock itself needs no job — see drivers/closeDay.ts.
+export { notifyClosedCommissionDays } from './drivers/closeDay';
+
 // The daily ride target's credit: the admin lever that grants or claws it back
 // by hand (there is no gateway top-up yet), and the per-driver read the
 // dashboard uses. The driver's own progress is streamed straight from

@@ -60,11 +60,11 @@ export interface VelocityLocationRow {
 export interface DriverCommissionReport {
   settings: {
     rate: number;
-    threshold: number;
     dailyTargetEnabled: boolean;
     dailyTargetRides: number;
     dailyTargetBonus: number;
     dailyTargetWaivesCommission: boolean;
+    dailyTargetPoolOnly: boolean;
     dailyTargetMinRideFare: number;
     dailyTargetMinRiders: number;
     dailyTargetMinDayFare: number;
@@ -75,20 +75,26 @@ export interface DriverCommissionReport {
     phone: string | null;
     cycleGrossFare: number;
     cycleCashFare: number;
+    /** The Pakistan day the open part of the cycle belongs to, if any. */
+    cycleDay: string | null;
     commissionCredit: number;
     commissionCreditEarned: number;
     commissionCreditUsed: number;
-    /** Commission the cycle earned, before credit. */
+    /** Commission the closed days earned, before the bonus. */
     grossDue: number;
-    /** How much of it the credit is covering. */
+    /** How much of it the bonus is covering. */
     creditApplied: number;
     /** What the driver still has to transfer. */
     due: number;
     creditRemaining: number;
+    /** Cash from days that have closed — what `grossDue` was charged on. */
+    settleableCash: number;
+    settleableGross: number;
   };
   days: {
     day: string;
     rides: number;
+    poolRides: number;
     qualifyingRides: number;
     grossFare: number;
     cashFare: number;

@@ -162,12 +162,12 @@ service cloud.firestore {
       }
 
       // ── drivers/{uid}/dailyTargets/{YYYY-MM-DD} ───────────────────────────
-      // One document per driver-day: rides done, fares taken, and whether the
-      // daily ride target paid out. The driver streams today's document so the
-      // progress card moves the moment a ride completes — which is why it is
-      // readable here rather than behind a callable, and why nothing but the
-      // settlement transaction may write it. A driver who could write this
-      // could grant themselves the bonus.
+      // One document per driver-day: rides done, pool rides done, fares taken,
+      // and whether the day hit its target and went commission-free. The driver
+      // streams today's document so the progress card moves the moment a ride
+      // completes — which is why it is readable here rather than behind a
+      // callable, and why nothing but the settlement transaction may write it.
+      // A driver who could write this could make their own day free.
       match /dailyTargets/{day} {
         allow read: if isOwner(driverId) || isAdmin();
         allow write: if false;

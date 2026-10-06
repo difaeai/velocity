@@ -23,12 +23,25 @@ export interface DriverProfile {
   tripsCount?: number;
   reviewReason?: string;
   rejectedSections?: string[];
-  /** Gross fares (cash + online) accumulated in the current commission cycle. */
+  /** Gross fares (cash + online) not yet settled. */
   cycleGrossFare?: number;
-  /** Cash-only portion of the cycle — what the settle amount is computed from. */
+  /** Cash-only portion of it — what commission is charged on. */
   cycleCashFare?: number;
   /**
-   * Unspent commission credit, earned by hitting the daily ride target.
+   * The Pakistan day the `*Today` figures below belong to.
+   *
+   * This is what makes "nothing is owed until midnight" work without a nightly
+   * job: fares stamped with today are still open, and everything else has
+   * closed and is payable. See backend/functions/src/domain/commission.ts.
+   */
+  cycleDay?: string;
+  /** The part of `cycleGrossFare` taken on `cycleDay`. */
+  cycleGrossToday?: number;
+  /** The part of `cycleCashFare` taken on `cycleDay`. */
+  cycleCashToday?: number;
+  /**
+   * Unspent bonus — the commission a target day cancelled, plus anything an
+   * admin granted by hand.
    *
    * It pays the driver's commission automatically and it can never be withdrawn
    * as cash — see backend/functions/src/domain/dailyTarget.ts for why that
@@ -421,15 +434,12 @@ export function useDriverPoolRides(uid?: string): DriverPoolRide[] {
 }
 
 export interface CommissionSettings extends DailyTargetSettings {
-  /** Fraction of cash fares owed per cycle (e.g. 0.10). */
+  /** Fraction of cash fares a day that missed the target owes (e.g. 0.05). */
   rate: number;
-  /** Gross fare (cash + online) at which the driver is locked, in PKR. */
-  threshold: number;
 }
 
 const DEFAULT_COMMISSION: CommissionSettings = {
-  rate: 0.10,
-  threshold: 5000,
+  rate: 0.05,
   ...DEFAULT_DAILY_TARGET,
 };
 
@@ -442,12 +452,12 @@ function setting(value: unknown, fallback: number, min: number, max: number): nu
 
 /**
  * Live admin-set commission settings (dashboard → Commission page). Streams so
- * an admin change — a new daily target, a different bonus, a changed rate —
+ * an admin change — a new daily target, a changed rate, pool-only on or off —
  * applies across every open app without a restart and without a release.
  *
  * The validation ranges are the same ones `getCommissionSettings` applies on
  * the backend. They have to be: a value the backend rejects and the app accepts
- * would show the driver a target nobody is going to pay.
+ * would show the driver a target nobody is going to honour.
  */
 export function useCommissionSettings(): CommissionSettings {
   const [settings, setSettings] = useState<CommissionSettings>(DEFAULT_COMMISSION);
@@ -457,11 +467,11 @@ export function useCommissionSettings(): CommissionSettings {
       const d = DEFAULT_COMMISSION;
       setSettings({
         rate: setting(s.get('rate'), d.rate, 0.001, 0.5),
-        threshold: setting(s.get('threshold'), d.threshold, 100, 1_000_000),
         dailyTargetEnabled: s.get('dailyTargetEnabled') !== false,
         dailyTargetRides: Math.round(setting(s.get('dailyTargetRides'), d.dailyTargetRides, 1, 100)),
         dailyTargetBonus: Math.round(setting(s.get('dailyTargetBonus'), d.dailyTargetBonus, 0, 50_000)),
         dailyTargetWaivesCommission: s.get('dailyTargetWaivesCommission') !== false,
+        dailyTargetPoolOnly: s.get('dailyTargetPoolOnly') !== false,
         dailyTargetMinRideFare: Math.round(
           setting(s.get('dailyTargetMinRideFare'), d.dailyTargetMinRideFare, 0, 100_000),
         ),
@@ -478,11 +488,18 @@ export function useCommissionSettings(): CommissionSettings {
 }
 
 export interface CommissionStatus extends CommissionSettings {
+  /** Everything unsettled, cash and online, open day included. */
   cycleGrossFare: number;
   cycleCashFare: number;
+  /** Fares taken today — not payable yet, and free if the target is met. */
+  todayGrossFare: number;
+  todayCashFare: number;
+  /** Cash from days that have already ended. This is what is being charged. */
+  settleableCashFare: number;
+  settleableGrossFare: number;
   /** PKR the driver must find out of pocket — net of their bonus. */
   due: number;
-  /** Commission the cycle actually earned, before the bonus is applied. */
+  /** Commission the closed days earned, before the bonus is applied. */
   grossDue: number;
   /** The part of `grossDue` the driver's bonus is covering. */
   bonusApplied: number;
@@ -495,36 +512,72 @@ export interface CommissionStatus extends CommissionSettings {
    * rename: renaming a live field buys nothing and costs a migration.
    */
   bonus: number;
-  /** True when the cycle hit the threshold and something is still owed. */
+  /** A day has closed owing commission that has not been cleared. */
   locked: boolean;
 }
 
 /**
  * Combines the driver profile and admin settings into one settle status.
  *
+ * A MIRROR OF domain/commission.ts, and it has to stay one. Only fares from a
+ * day that has already ended are charged: at 23:59 a short day owes nothing and
+ * at 00:00 the same figures owe 5%, with no write in between. The day key is
+ * recomputed on every render from the clock, so the screen flips at midnight on
+ * its own — exactly when the backend's guard does.
+ *
  * `due` is net of the bonus everywhere, exactly as on the backend, because that
  * is the only number that answers the question the driver is actually asking:
- * what do I have to pay right now? A driver sitting on a PKR 2,000 bonus owes
- * nothing and must never be shown a figure that says otherwise.
+ * what do I have to pay right now? A driver sitting on a bonus that covers it
+ * owes nothing and must never be shown a figure that says otherwise.
  */
 export function useCommissionStatus(profile: DriverProfile | null): CommissionStatus {
   const settings = useCommissionSettings();
-  const cycleGrossFare = profile?.cycleGrossFare ?? 0;
+  // Re-read at the Pakistan midnight without the app being restarted. The same
+  // one-minute tick `useDailyTarget` uses, for the same reason.
+  const [today, setToday] = useState(() => pktDayKey());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = pktDayKey();
+      setToday((prev) => (prev === now ? prev : now));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cycleGrossFare = Math.max(0, profile?.cycleGrossFare ?? 0);
   // Pre-migration drivers have no cycleCashFare — their cycles were all cash.
-  const cycleCashFare = profile?.cycleCashFare ?? cycleGrossFare;
+  const cycleCashFare = Math.min(cycleGrossFare, profile?.cycleCashFare ?? cycleGrossFare);
+
+  // A cycle with no day stamped on it is read as entirely open: that is the
+  // one-day grace for drivers who were mid-cycle when this shipped.
+  const cycleDay = profile?.cycleDay ?? null;
+  const isOpen = cycleDay === null || cycleDay === today;
+  const todayGrossFare = isOpen
+    ? Math.min(cycleGrossFare, Math.max(0, profile?.cycleGrossToday ?? cycleGrossFare))
+    : 0;
+  const todayCashFare = isOpen
+    ? Math.min(cycleCashFare, Math.max(0, profile?.cycleCashToday ?? cycleCashFare))
+    : 0;
+
+  const settleableGrossFare = Math.max(0, cycleGrossFare - todayGrossFare);
+  const settleableCashFare = Math.max(0, cycleCashFare - todayCashFare);
+
   const bonus = Math.max(0, Math.round(profile?.commissionCredit ?? 0));
-  const grossDue = Math.round(cycleCashFare * settings.rate);
+  const grossDue = Math.round(settleableCashFare * settings.rate);
   const bonusApplied = Math.min(bonus, grossDue);
   const due = grossDue - bonusApplied;
   return {
     ...settings,
     cycleGrossFare,
     cycleCashFare,
+    todayGrossFare,
+    todayCashFare,
+    settleableGrossFare,
+    settleableCashFare,
     grossDue,
     bonusApplied,
     bonus,
     due,
-    locked: cycleGrossFare >= settings.threshold && due > 0,
+    locked: due > 0,
   };
 }
 
@@ -574,16 +627,20 @@ export function useDailyTarget(uid: string | undefined): {
           return;
         }
         const ids = s.get('riderIds');
+        const bonusGranted = (s.get('bonusGranted') as number | undefined) ?? 0;
         setLoaded({
           key: dayKey,
           day: {
             day: dayKey,
             rides: (s.get('rides') as number | undefined) ?? 0,
+            poolRides: (s.get('poolRides') as number | undefined) ?? 0,
             qualifyingRides: (s.get('qualifyingRides') as number | undefined) ?? 0,
             grossFare: (s.get('grossFare') as number | undefined) ?? 0,
             cashFare: (s.get('cashFare') as number | undefined) ?? 0,
             riderIds: Array.isArray(ids) ? (ids as string[]) : [],
-            bonusGranted: (s.get('bonusGranted') as number | undefined) ?? 0,
+            // Days written before `granted` existed are recognised by their bonus.
+            granted: s.get('granted') === true || bonusGranted > 0,
+            bonusGranted,
             waiverGranted: (s.get('waiverGranted') as number | undefined) ?? 0,
           },
         });

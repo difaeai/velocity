@@ -570,44 +570,86 @@ Tabs (`DriverTabBar`) and a drawer (`DriverDrawer`) reach:
 | `wallet` | Balance, commission due, settlement, payouts |
 | `payment-methods` | Connected instruments (flag-gated) |
 
-### 6.3 Commission cycle and the lock
+### 6.3 Commission by the day, and the lock
 
-`domain/commission.ts`. Every completed ride adds its gross to the driver's
-`cycleGrossFare`; **cash** rides also add to `cycleCashFare`.
+`domain/commission.ts`, `drivers/cycle.ts`. **A day is the unit.** Every
+completed ride adds its gross to the driver's `cycleGrossFare`; **cash** rides
+also add to `cycleCashFare`. Then:
 
-- Default rate **10%**, default lock threshold **5,000 PKR** of cycle gross
-  (`config/commissionSettings`, admin page **Commission**).
-- What's owed is `rate × cycleCashFare` **less the driver's target credit**
-  (§6.4). Commission on wallet rides was already deducted at completion, so a
-  mixed cycle never pays twice and an all-online cycle clears itself without
-  ever locking.
+| The day | What it costs the driver |
+| --- | --- |
+| 16 qualifying pool rides (§6.4) | **nothing at all** |
+| anything less | `rate × that day's cash`, payable at midnight |
+
+- Default rate **5%**. There is **no settle threshold** — the old PKR 5,000
+  one is gone, and it had to go: a driver needs the whole day to reach sixteen
+  rides, and at intercity fares that threshold fired at about the fourth. It
+  would have locked every driver short of the exact thing it was meant to
+  reward. Nothing is owed mid-day.
+- **Which day, without a nightly sweep.** Three fields carry it and the answer
+  is derived at read time from today's key: `cycleDay` (the Pakistan day the
+  open part belongs to) plus `cycleGrossToday` / `cycleCashToday` (how much of
+  the totals is that day's). The OPEN part is what belongs to `cycleDay` when
+  that is today; the CLOSED part is the rest, and that is exactly what is
+  payable now. At 23:59 a short day locks nobody; at 00:00 the same figures lock
+  the driver, with no write in between.
+- A driver carried over from before those fields existed has no `cycleDay`, so
+  their whole cycle reads as open — one day of grace, and from their next
+  ride they are on the new rule like everybody else.
+- What's owed is `rate × closed-day cash` **less the driver's bonus**
+  (§6.4). Commission on wallet rides was already deducted at completion, so
+  a mixed day never pays twice and an all-online day clears itself without ever
+  locking.
 - `commissionBreakdown()` is the one place the split is computed, and it returns
   three numbers that must not be confused:
   `grossDue` (revenue earned), `creditApplied` (what the incentive paid) and
   `due` (what the driver still has to transfer). **`commissionDue()` returns the
   net** — that is the figure the lock, the push and every screen mean. The
   driver sees `creditApplied` labelled "Paid by your bonus".
-- When the threshold is reached and something is still owed, the driver is
-  **locked**: `placeBid`, `driverRespondToRequest` and `driverAcceptPoolBatch`
-  all reject them, and the app parks on the settle screen with incoming rides
-  blurred (`CommissionLock`).
-- Clearing it: automatically from credit (the cycle resets inside
-  `completeTrip` when the net due reaches zero), `payCommission` (from wallet —
-  wired for when top-ups return), or the manual bank-transfer path below, which
-  is what launch actually uses. All four paths go through
-  `applyCommissionCredit` / `ledgerCreditSpend`, so credit can only ever be
-  spent once.
+- **The lock**: any unpaid closed day. `placeBid`, `driverRespondToRequest`,
+  `driverAcceptPoolBatch` and both en-route callables all reject them, and the
+  app parks on the settle screen with incoming rides blurred
+  (`CommissionLock`). The lock screen quotes the closed days only and names
+  today's takings as excluded, so nobody is asked to pay for a day they can
+  still make free.
+- **Account deletion is the one exception**: `commissionOwedInFull()` charges
+  the open day too, or "delete account" would be the cheapest way to skip a
+  day's commission.
+- Clearing it: automatically from the bonus (the day-roll inside
+  `applyRideToCycle` clears a closed day the bonus covered, and ledgers it),
+  `payCommission` (from wallet — wired for when top-ups return), or the
+  manual bank-transfer path below, which is what launch actually uses. All of
+  them go through `applyCommissionCredit` / `ledgerCreditSpend`, so the bonus
+  can only ever be spent once. Settling removes the closed days and **keeps the
+  open one**.
+- **Nobody finds out from an error message**: `notifyClosedCommissionDays`
+  (`drivers/closeDay.ts`) runs at 00:05 Asia/Karachi and pushes the drivers
+  whose day closed owing, with the amount. It writes no money fields — the
+  lock does not depend on it.
 
-### 6.4 The daily ride target (driver bonus)
+### 6.4 The daily ride target (a commission-free day)
 
 `domain/dailyTarget.ts`, `drivers/dailyTarget.ts`, `drivers/commissionCredit.ts`.
 
-A driver who completes the admin-set number of **qualifying rides in one
-Pakistan day** earns a fixed **bonus**, and — while the admin leaves the waiver
-on — owes no commission on that day's rides at all.
+A driver who completes the admin-set number of **qualifying pool rides in one
+Pakistan day** owes **no commission on that day at all**. The waiver IS the
+reward: there is deliberately no separate cash bonus any more, because paying a
+bonus AND waiving the commission paid for the same day twice.
 
-Defaults: **15 rides → PKR 2,000**, waiver **on**. The ride count IS the
-threshold: cross it and the bonus activates.
+Defaults: **16 pool rides → that day is free**, `dailyTargetBonus` **0**,
+waiver **on**, `dailyTargetPoolOnly` **on**.
+
+- **Only pool / sharing rides count** while `dailyTargetPoolOnly` is on. A solo
+  ride still earns its fare and still owes its commission — it just does not
+  move the counter. "Pool" means what the rest of the codebase means: a
+  `pool: true` trip (a pool the rider booked, or a solo trip the driver turned
+  into one with an en-route pickup) and every driver-offered Sharing-mode pool.
+- `dailyTargetBonus` survives as an admin lever and ships at 0; nothing in the
+  app shows a bonus while it is. Set it and a target day pays cash on top.
+- **Granted once per day.** `granted` on the day document is the idempotency
+  guard. It used to be `bonusGranted > 0`, which stopped working the moment the
+  bonus went to zero — the waiver would have been re-granted on every ride
+  after the sixteenth.
 
 > **The word is BONUS.** Everything a driver reads — app, web, pushes, the AI
 > agent — calls this a bonus. "Commission" is only ever what they pay us. They
@@ -618,41 +660,49 @@ threshold: cross it and the bonus activates.
 > Partner rename: renaming a live field and a deployed callable buys nothing a
 > label cannot and costs a migration on money data.
 
-- **The bonus is not cash.** It pays Velocity's own charges and can never be
+- **A bonus is not cash.** It pays Velocity's own charges and can never be
   withdrawn. That is the same State Bank e-money boundary
   `domain/walletFunds.ts` draws, reached from the other side: money we hand out
   that could be cashed out would make us an unlicensed e-money issuer.
 - **A day is a Pakistan day** (UTC+05:00, no DST). UTC midnight is 05:00 in
   Karachi, so a UTC day key would file a driver's morning rides under yesterday
-  and split the shift that earned the bonus across two.
-- **One document per driver-day**: `drivers/{uid}/dailyTargets/{YYYY-MM-DD}`,
+  and split the shift that earned the free day across two. Midnight Karachi is
+  both the deadline the driver was promised and the moment a short day becomes
+  payable.
+- **One document per driver-day**: `drivers/{uid}/dailyTargets/{YYYY-MM-DD}`
+  (rides, `poolRides`, qualifying rides, fares, distinct riders, `granted`),
   written only by the settlement transaction and streamed by the driver app
   (`useDailyTarget`) so the progress card moves as rides land — no callable on
   the hot path.
 - **Bonus statement**: `drivers/{uid}/commissionCredits/{id}`, one row per
-  grant and per spend (spends are negative, so it reads like a statement).
+  grant (a waived day, an admin grant) and per spend (spends are negative, so it
+  reads like a statement).
 - **The two halves of the waiver.** Rides from the moment of crossing onward
   never enter `cycleCashFare`. Rides earlier the same day are already in it, so
   they are credited the commission they accrued instead — capped at
   `min(today's cash, the cycle's cash)`, so a driver who settled at noon is not
   paid twice for the morning.
-- **Anti-farming.** A flat bonus for a ride count is trivially gamed (a driver,
-  one friend, fifteen minimum-fare rides round a car park). Three admin fields
+- **Anti-farming.** A free day for a ride count is trivially gamed (a driver,
+  one friend, sixteen minimum-fare rides round a car park). Three admin fields
   make the day have to be a real shift: a per-ride fare floor (default 150), a
-  distinct-passenger count (default 5) and a day total (default 2,500). Any can
-  be set to 0 to switch it off. The driver app names every unmet condition with
-  live figures, so a day that will not pay out says so before midnight.
+  distinct-passenger count (default 5) and a day total (default 2,000 - it has
+  to stay reachable by `rides x floor`, and 16 x 150 = 2,400). Any can be set to
+  0 to switch it off. The driver app names every unmet condition with live
+  figures, and says in rupees what the day will cost if the driver stops now, so
+  a day that will not qualify says so before midnight.
 - **Accounting.** A settlement writes revenue and the incentive separately —
   `platformLedger` `ride_commission` for `grossDue`, `driver_incentive` for
   `creditApplied` (the bonus spent). Netting them would have hidden the whole
   cost of the programme inside a smaller revenue number.
-- **Pushes.** Two and no more: "one more ride" on the ride that leaves one to
-  go, and "target complete" when it pays.
+- **Pushes.** Three: "one more ride" on the ride that leaves one to go,
+  "target complete" when the day goes free, and - from `drivers/closeDay.ts` at
+  00:05 - "commission due before you drive" for a day that closed short.
 - **Admin.** Every field is live on the **Commission** page — the backend reads
   `config/commissionSettings` per settlement and the driver app streams it, so a
   change applies to every open app within a second with no deploy and no
   release. The page refuses impossible combinations (a day total that
-  `rides × floor` cannot reach; more distinct passengers than rides).
+  `rides × floor` cannot reach; more distinct passengers than rides; a
+  target with the waiver off and no bonus, which would reward nothing).
 - **The manual lever.** There is no gateway top-up yet, so
   `adminAdjustCommissionCredit` grants or claws back a bonus by hand (reason
   required, audit-logged, floored at zero). It lives in the **Driver approvals**
@@ -662,9 +712,10 @@ threshold: cross it and the bonus activates.
   an FAQ). It is prerendered and deliberately ships no Firebase SDK, so it
   cannot read the live config — the numbers there are written as "right now"
   and must be kept in step with `DEFAULT_DAILY_TARGET` by hand.
-- Tests: `drivers/__tests__/dailyTarget.test.ts` (27 cases) pin the day
-  boundary, the once-per-day grant, the waiver cap, the farming refusals and the
-  ledger split.
+- Tests: `drivers/__tests__/dailyTarget.test.ts` pins the day boundary, the
+  pool-only rule, the once-per-day grant, the waiver cap, the farming refusals,
+  the open-day/closed-day split (nothing owed at 23:59, everything at 00:00) and
+  the ledger split. `drivers/__tests__/commission.test.ts` pins the payment.
 
 ### 6.5 Payouts
 
@@ -945,7 +996,7 @@ wallet, withdraw, join/[code]). Admin page: **Partner Program**.
 A partner earns a slice of the **platform commission** on rides run by people
 they recruited. **Never a slice of the fare.**
 
-> On a 1,000 PKR ride with a 10% platform commission (= 100 PKR), a 2% Pro
+> On a 2,000 PKR ride with a 5% platform commission (= 100 PKR), a 2% Pro
 > driver-fleet rate pays the partner **2 PKR** — 2% of 100, *not* 2% of 1,000.
 
 This distinction is the economic safety of the whole program: the fare belongs to
@@ -1664,7 +1715,8 @@ rule above. See §14 for the money flow.
 > **Ads → No** declaration would only be truthful with both AdMob **and**
 > business-ad delivery off. Today both run, and **Ads → Yes** is correct.
 
-**Revenue lines overall:** ride commission (10% default) · cash-cycle commission
+**Revenue lines overall:** ride commission (5% default, and nothing at all on a
+day that hit its target) · cash-cycle commission
 settlement · cancellation fees · business-ad plans · partner Pro fees ·
 Travel Partner subscriptions (off) · AdMob · intercity seats · courier/freight ·
 Special Rides.

@@ -13,8 +13,15 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { applyRole } from '../users';
-import { cycleCashFare, getCommissionSettings } from '../domain/commission';
+import {
+  closedCycle,
+  cycleCashFare,
+  getCommissionSettings,
+  openCycle,
+  readCycle,
+} from '../domain/commission';
 import { applyCommissionCredit } from './commissionCredit';
+import { todayKey } from './dailyTarget';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
 
 const onboardingSchema = z.object({
@@ -321,38 +328,52 @@ export const rejectDriver = onCall(async (req) => {
 });
 
 /**
- * Driver-callable: settle the commission cycle from the driver's wallet and
- * unlock their profile. The amount owed is the admin-set rate applied to the
- * cycle's **cash** fares only — commission on online (wallet) rides was
- * already deducted from the held fare at completion, so mixed cash/online
- * cycles never pay twice. Settling debits the driver's wallet (funded by
- * JazzCash/Easypaisa top-ups, so the money reaches Velocity), ledgers the
- * amount as realized platform revenue and resets the cycle to zero.
+ * Driver-callable: clear the commission a closed day left them owing, from the
+ * driver's wallet, and unlock their profile. The amount owed is the admin-set
+ * rate applied to those days' **cash** fares only — commission on online
+ * (wallet) rides was already deducted from the held fare at completion, so a
+ * mixed cash/online day never pays twice. Paying debits the driver's wallet
+ * (funded by JazzCash/Easypaisa top-ups, so the money reaches Velocity),
+ * ledgers the amount as realized platform revenue and drops those days off the
+ * cycle — the day still running keeps its fares, because they are not payable
+ * yet and a day that reaches the target owes nothing at all.
+ *
+ * There is no threshold to reach any more: either a closed day owes something
+ * or it does not. See domain/commission.ts.
  */
 export const payCommission = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
 
   const driverRef = db.doc(`drivers/${ctx.uid}`);
   const settings = await getCommissionSettings();
-  const { rate, threshold } = settings;
+  const { rate } = settings;
+  const today = todayKey();
 
   const amountPaid = await db.runTransaction(async (tx) => {
     const walletRef = db.doc(`wallets/${ctx.uid}`);
     const [snap, walletSnap] = await Promise.all([tx.get(driverRef), tx.get(walletRef)]);
     if (!snap.exists) throw new HttpsError('not-found', 'Driver record not found.');
     const cycleGrossFare: number = snap.get('cycleGrossFare') ?? 0;
-    if (cycleGrossFare < threshold) {
-      throw new HttpsError('failed-precondition', 'Commission threshold not reached yet.');
+    const cycle = readCycle(snap);
+    const open = openCycle(cycle, today);
+    const closed = closedCycle(cycle, today);
+    // Nothing has closed yet, so nothing is payable. An all-online closed day
+    // IS allowed through: it owes nothing, and letting it settle for zero is
+    // how the driver's "fares this cycle" figure gets tidied up without
+    // waiting for their next ride to roll the day.
+    if (closed.gross <= 0 && closed.cash <= 0) {
+      throw new HttpsError('failed-precondition', 'No commission is due right now.');
     }
 
     const cashFare = cycleCashFare(snap);
-    // Target-bonus credit pays first and is spent here; the wallet only has to
+    // The driver's bonus pays first and is spent here; the wallet only has to
     // cover what is left, which is often nothing.
     const breakdown = applyCommissionCredit({
       tx,
       driverId: ctx.uid,
       driverSnap: snap,
       settings,
+      today,
       source: 'wallet',
     });
     if (breakdown.creditApplied > 0) {
@@ -388,7 +409,7 @@ export const payCommission = onCall(async (req) => {
         amount: -due,
         cycleGrossFare,
         cycleCashFare: cashFare,
-        threshold,
+        settledCashFare: breakdown.settleableCash,
         rate,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -399,7 +420,7 @@ export const payCommission = onCall(async (req) => {
         amount: due,
         cycleGrossFare,
         cycleCashFare: cashFare,
-        threshold,
+        settledCashFare: breakdown.settleableCash,
         rate,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -413,13 +434,16 @@ export const payCommission = onCall(async (req) => {
       );
     }
 
-    // The whole cycle is settled (commission charged on its full cash
-    // portion), so it resets to zero rather than rolling any overflow.
+    // The closed days are settled, so they come off the cycle. The day still
+    // running stays: it is not payable yet, and it may yet cost nothing.
     tx.set(
       driverRef,
       {
-        cycleGrossFare: 0,
-        cycleCashFare: 0,
+        cycleGrossFare: open.gross,
+        cycleCashFare: open.cash,
+        cycleDay: today,
+        cycleGrossToday: open.gross,
+        cycleCashToday: open.cash,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -431,7 +455,8 @@ export const payCommission = onCall(async (req) => {
       grossDue: breakdown.grossDue,
       cycleGrossFare,
       cycleCashFare: cashFare,
-      threshold,
+      settledCashFare: breakdown.settleableCash,
+      settledGrossFare: breakdown.settleableGross,
       rate,
       paidAt: FieldValue.serverTimestamp(),
     });

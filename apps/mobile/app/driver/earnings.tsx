@@ -143,19 +143,31 @@ export default function DriverEarnings() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* ── Today's target ── The driver's reason to take one more ride, at the
             top of the screen they open to ask "how am I doing". */}
-        <DailyTargetCard progress={dailyTarget.progress} bonusBalance={commission.bonus} />
+        <DailyTargetCard
+          progress={dailyTarget.progress}
+          bonusBalance={commission.bonus}
+          todayCashFare={commission.todayCashFare}
+          rate={commission.rate}
+        />
 
-        {/* ── Commission ── What is owed right now, and what the bonus paid.
-            This is the only place the driver can see the two separately: the
-            lock screen only appears once the cycle has matured. */}
+        {/* ── Commission ── Charged by the day. Today's fares are shown apart
+            from what has actually become due, because the difference between
+            them is the whole rule: today is not payable yet, and it is free
+            altogether if the target lands. */}
         <View style={styles.commissionCard}>
-          <Text style={styles.commissionTitle}>Commission this cycle</Text>
+          <Text style={styles.commissionTitle}>Commission</Text>
           <Row
-            label={`Fares collected (of ${commission.threshold.toLocaleString()} PKR)`}
-            value={`${commission.cycleGrossFare.toLocaleString()} PKR`}
+            label="Fares you took today"
+            value={`${commission.todayGrossFare.toLocaleString()} PKR`}
           />
+          {commission.settleableGrossFare > 0 ? (
+            <Row
+              label="Unpaid from earlier days"
+              value={`${commission.settleableGrossFare.toLocaleString()} PKR`}
+            />
+          ) : null}
           <Row
-            label={`Commission at ${Math.round(commission.rate * 100)}%`}
+            label={`Commission due at ${Math.round(commission.rate * 100)}%`}
             value={`${commission.grossDue.toLocaleString()} PKR`}
           />
           {commission.bonusApplied > 0 ? (
@@ -172,9 +184,13 @@ export default function DriverEarnings() {
             bold
           />
           <Text style={styles.commissionNote}>
-            {commission.due === 0
-              ? 'Nothing to pay right now. Commission is taken from your bonus automatically.'
-              : `Payable when your cycle reaches ${commission.threshold.toLocaleString()} PKR of fares.`}
+            {commission.due > 0
+              ? 'Clear this to start taking rides again.'
+              : dailyTarget.progress.commissionWaived
+                ? "Today's rides are commission-free — you hit the target."
+                : commission.dailyTargetEnabled
+                  ? `Nothing to pay right now. Finish ${commission.dailyTargetRides} ${commission.dailyTargetPoolOnly ? 'pool rides' : 'rides'} today and the day stays free; otherwise ${Math.round(commission.rate * 100)}% of today's cash is due at midnight.`
+                  : `Today's commission becomes due at midnight.`}
           </Text>
         </View>
 

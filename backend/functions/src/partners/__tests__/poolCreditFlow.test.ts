@@ -94,6 +94,12 @@ async function pending(uid: string): Promise<number> {
 
 beforeEach(async () => {
   await clearFirestore();
+  // The partner rates are a cut of the PLATFORM COMMISSION, so this suite pins
+  // the commission rate instead of inheriting it. The arithmetic below is
+  // calibrated to a Rs 100 commission on a Rs 1,000 fare; leaving it to the
+  // platform default would mean re-tuning every number here each time the
+  // commission rate moves, which is not what these tests are about.
+  await db().doc('config/commissionSettings').set({ rate: 0.10 });
   await db().doc(`users/${AHMED}`).set({ gender: 'male', displayName: 'Ahmed', mixedRideOk: false });
   await db().doc(`users/${BILAL}`).set({ gender: 'male', displayName: 'Bilal', mixedRideOk: false });
   await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true });

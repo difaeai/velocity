@@ -2,28 +2,37 @@
  * Recording one completed ride against the driver's daily target.
  *
  * This runs inside the settlement transaction of every path a ride can finish
- * on — `completeTrip` for ordinary and booked-pool rides, `completePoolRide`
- * for the driver-offered pools — so the target counts the same ride once,
- * whichever subsystem carried it, and can never be credited twice by a
- * double-tapped "end ride".
+ * on — `completeTrip` for ordinary, booked-pool and en-route rides,
+ * `completePoolRide` for the driver-offered pools — so the target counts the
+ * same ride once, whichever subsystem carried it, and can never be credited
+ * twice by a double-tapped "end ride".
  *
- * TWO RULES AT ONCE. Crossing the target does two separate things, and they are
- * different kinds of money:
+ * ONLY POOL RIDES COUNT, while the admin leaves `dailyTargetPoolOnly` on. A solo
+ * ride is still recorded on the day (and still owes its commission), it just
+ * does not move the counter. `isPoolRide` is the caller's answer to that, taken
+ * from the same `pool` flag the rest of the codebase uses.
  *
- *   the bonus    a flat PKR grant, once per day. Straightforward.
+ * TWO RULES AT ONCE. Crossing the target does two separate things:
+ *
  *   the waiver   the day's rides stop being commissionable. Rides from the
  *                moment of crossing onward simply never enter `cycleCashFare`.
  *                Rides from EARLIER the same day are already in it, so instead
  *                of reaching back into the cycle counters they are credited
  *                the commission they accrued. Same money, and it leaves the
- *                cycle arithmetic alone — which matters, because three other
- *                files write those two fields and a retroactive subtraction is
- *                the kind of thing one of them would eventually forget.
+ *                cycle arithmetic alone — which matters, because the day-roll
+ *                in ./cycle.ts reads those fields and a retroactive subtraction
+ *                is the kind of thing one of the two would eventually forget.
+ *   the bonus    a flat PKR grant, once per day. Ships at 0 — the waiver is the
+ *                reward now — and survives only as an admin lever.
  *
  * The retroactive part is capped at what is genuinely still owed
  * (`min(today's cash, the cycle's cash)`). A driver who settled at noon and
  * hits the target at six has already paid the morning's commission, and
  * crediting it again would be a gift, not a waiver.
+ *
+ * GRANTED ONCE. `granted` on the day document is the idempotency guard. It used
+ * to be `bonusGranted > 0`, which stopped working the moment the bonus went to
+ * zero: the waiver would have been re-granted on every ride after the sixteenth.
  *
  * WHAT THIS DOES NOT WRITE. It never touches the driver document. It returns
  * the credit delta and lets the caller fold it into the single `tx.set` the
@@ -60,14 +69,18 @@ export function readDailyTargetDay(
   if (!snap?.exists) return emptyDay(day);
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   const ids = snap.get('riderIds');
+  const bonusGranted = num(snap.get('bonusGranted'));
   return {
     day,
     rides: num(snap.get('rides')),
+    poolRides: num(snap.get('poolRides')),
     qualifyingRides: num(snap.get('qualifyingRides')),
     grossFare: num(snap.get('grossFare')),
     cashFare: num(snap.get('cashFare')),
     riderIds: Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [],
-    bonusGranted: num(snap.get('bonusGranted')),
+    // Days written before `granted` existed are recognised by their bonus.
+    granted: snap.get('granted') === true || bonusGranted > 0,
+    bonusGranted,
     waiverGranted: num(snap.get('waiverGranted')),
   };
 }
@@ -88,6 +101,8 @@ export interface RecordRideInput {
   /** Everyone carried. Pool rides pass every member, so a full car counts once
    *  as a ride but as several distinct passengers. */
   riderIds: string[];
+  /** Was this a pool / sharing ride? The target only counts those. */
+  isPoolRide: boolean;
   /** For the credit ledger, so a grant can be traced to the ride that earned it. */
   rideId: string;
 }
@@ -95,7 +110,12 @@ export interface RecordRideInput {
 export interface RecordRideResult {
   /** Where the day stands now, for the push and the response payload. */
   progress: DailyTargetProgress;
-  /** PKR of bonus granted by THIS ride (non-zero only on the crossing ride). */
+  /**
+   * THIS ride is the one that completed the target. True exactly once a day,
+   * which is what the "today is commission-free" push keys off.
+   */
+  granted: boolean;
+  /** PKR of cash bonus granted by THIS ride. 0 unless an admin set a bonus. */
   bonusGranted: number;
   /** PKR credited for commission already accrued today, on the crossing ride. */
   waiverGranted: number;
@@ -123,11 +143,12 @@ export interface RecordRideResult {
 export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResult {
   const {
     tx, driverId, driverSnap, daySnap, day, settings,
-    grossFare, cashFare, riderIds, rideId,
+    grossFare, cashFare, riderIds, isPoolRide, rideId,
   } = input;
 
   const before = readDailyTargetDay(daySnap, day);
-  const qualifies = settings.dailyTargetEnabled && rideQualifies(grossFare, settings);
+  const qualifies =
+    settings.dailyTargetEnabled && rideQualifies(grossFare, settings, isPoolRide);
 
   const newRiderIds = [...before.riderIds];
   for (const uid of riderIds) {
@@ -139,21 +160,24 @@ export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResul
   const after: DailyTargetDay = {
     day,
     rides: before.rides + 1,
+    poolRides: before.poolRides + (isPoolRide ? 1 : 0),
     qualifyingRides: before.qualifyingRides + (qualifies ? 1 : 0),
     grossFare: before.grossFare + grossFare,
     cashFare: before.cashFare + cashFare,
     riderIds: newRiderIds,
+    granted: before.granted,
     bonusGranted: before.bonusGranted,
     waiverGranted: before.waiverGranted,
   };
 
   const progress = dailyTargetProgress(after, settings);
 
-  // The bonus is granted exactly once per day — on the ride that completes
-  // every requirement. `before.bonusGranted` is the idempotency guard.
+  // Granted exactly once per day — on the ride that completes every
+  // requirement. `before.granted` is the idempotency guard.
   let bonusGranted = 0;
   let waiverGranted = 0;
-  if (settings.dailyTargetEnabled && progress.met && before.bonusGranted === 0) {
+  const granting = settings.dailyTargetEnabled && progress.met && !before.granted;
+  if (granting) {
     bonusGranted = Math.round(settings.dailyTargetBonus);
 
     if (settings.dailyTargetWaivesCommission) {
@@ -172,17 +196,20 @@ export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResul
     {
       day,
       rides: after.rides,
+      poolRides: after.poolRides,
       qualifyingRides: after.qualifyingRides,
       grossFare: after.grossFare,
       cashFare: after.cashFare,
       riderIds: after.riderIds,
+      granted: before.granted || granting,
       bonusGranted: before.bonusGranted + bonusGranted,
       waiverGranted: before.waiverGranted + waiverGranted,
       target: progress.target,
+      poolOnly: progress.poolOnly,
       bonus: progress.bonus,
       met: progress.met,
       commissionWaived: progress.commissionWaived,
-      ...(bonusGranted > 0 ? { metAt: FieldValue.serverTimestamp() } : {}),
+      ...(granting ? { metAt: FieldValue.serverTimestamp() } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -203,10 +230,12 @@ export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResul
       rides: after.qualifyingRides,
       createdAt: FieldValue.serverTimestamp(),
     });
+  }
+  if (granting) {
     tx.set(
       db.doc('system/counters'),
       {
-        commissionCreditGranted: FieldValue.increment(creditDelta),
+        ...(creditDelta > 0 ? { commissionCreditGranted: FieldValue.increment(creditDelta) } : {}),
         dailyTargetsMet: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -216,6 +245,7 @@ export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResul
 
   return {
     progress,
+    granted: granting,
     bonusGranted,
     waiverGranted,
     creditDelta,
@@ -237,13 +267,15 @@ export interface DailyTargetOutcome {
   dailyTargetBonus: number;
   dailyTargetCredit: number;
   dailyTargetNudge: boolean;
+  /** True on the ride that completed the target. */
+  dailyTargetMet?: boolean;
 }
 
 /**
  * Tell the driver where the target stands, right after a ride settles.
  *
  * Two messages and no others. "One more ride" is the only one that changes
- * behaviour, and "you earned it" is the only one that has to arrive — a bonus
+ * behaviour, and "today is free" is the only one that has to arrive — a reward
  * the driver has to go looking for is not an incentive. Everything in between
  * is on the progress card they can already see.
  *
@@ -255,16 +287,24 @@ export async function notifyDailyTarget(
   rideId?: string,
 ): Promise<void> {
   const data = rideId ? { tripId: rideId } : undefined;
+  const rides = outcome.dailyTarget.poolOnly ? 'pool rides' : 'rides';
   try {
-    if (outcome.dailyTargetBonus > 0) {
-      const extra = outcome.dailyTargetCredit - outcome.dailyTargetBonus;
+    if (outcome.dailyTargetMet || outcome.dailyTargetBonus > 0) {
+      const waived = outcome.dailyTargetCredit - outcome.dailyTargetBonus;
+      const bonusLine =
+        outcome.dailyTargetBonus > 0
+          ? ` Your PKR ${outcome.dailyTargetBonus.toLocaleString()} bonus is unlocked.`
+          : '';
+      const waivedLine =
+        waived > 0
+          ? ` PKR ${waived.toLocaleString()} of commission you had already run up today is cancelled.`
+          : '';
       await sendToUser(
         driverId,
         '🎯 Daily target complete!',
-        `${outcome.dailyTarget.target} rides done — your PKR ${outcome.dailyTargetBonus.toLocaleString()} bonus is unlocked` +
-          (extra > 0
-            ? `, plus PKR ${extra.toLocaleString()} of today's commission waived.`
-            : '. Today\'s rides are commission-free.'),
+        `${outcome.dailyTarget.target} ${rides} done — today's rides cost you no commission.` +
+          bonusLine +
+          waivedLine,
         data,
       );
       return;
@@ -273,7 +313,9 @@ export async function notifyDailyTarget(
       await sendToUser(
         driverId,
         '🔥 One more ride!',
-        `One more ride today unlocks your PKR ${outcome.dailyTarget.bonus.toLocaleString()} bonus.`,
+        outcome.dailyTarget.bonus > 0
+          ? `One more pool ride makes today commission-free and unlocks your PKR ${outcome.dailyTarget.bonus.toLocaleString()} bonus.`
+          : `One more pool ride today and you pay no commission on the whole day.`,
         data,
       );
     }

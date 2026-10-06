@@ -13,10 +13,13 @@ import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
 import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { pktDayKey, pktPreviousDay } from '../../domain/dailyTarget';
 import { submitCommissionSettlement, adminReviewCommissionSettlement } from '../commissionSettlement';
 
 const DRIVER = 'driver-settle';
 const ADMIN = 'admin-1';
+/** Fares stamped with yesterday are fares from a day that has closed — due now. */
+const YESTERDAY = pktPreviousDay(pktDayKey());
 
 function req<T>(data: T, uid: string, role: string): CallableRequest<T> {
   return {
@@ -28,12 +31,17 @@ function req<T>(data: T, uid: string, role: string): CallableRequest<T> {
 }
 
 async function seedLockedDriver() {
-  await db().doc('config/commissionSettings').set({ rate: 0.15, threshold: 5000 });
+  await db().doc('config/commissionSettings').set({ rate: 0.15 });
   await db().doc('config/settlementAccounts').set({ easypaisaNumber: '03001234567', accountTitle: 'Velocity' });
   await db().doc(`drivers/${DRIVER}`).set({
     verificationStatus: 'approved',
     cycleGrossFare: 5000,
     cycleCashFare: 5000, // 15% → 750 due
+    // The day these fares came from has ended, which is what makes them
+    // payable and the driver locked. See domain/commission.ts.
+    cycleDay: YESTERDAY,
+    cycleGrossToday: 0,
+    cycleCashToday: 0,
   });
 }
 
@@ -70,9 +78,18 @@ describe('submitCommissionSettlement (no AI key → admin review)', () => {
     ).rejects.toThrow(/Invalid screenshot path/);
   });
 
-  it('refuses when no commission is due', async () => {
-    await db().doc('config/commissionSettings').set({ rate: 0.15, threshold: 5000 });
-    await db().doc(`drivers/${DRIVER}`).set({ verificationStatus: 'approved', cycleGrossFare: 1000, cycleCashFare: 1000 });
+  it('refuses while the day is still running', async () => {
+    // PKR 1,000 taken today: not payable until midnight, and not at all if the
+    // driver reaches the target.
+    await db().doc('config/commissionSettings').set({ rate: 0.15 });
+    await db().doc(`drivers/${DRIVER}`).set({
+      verificationStatus: 'approved',
+      cycleGrossFare: 1000,
+      cycleCashFare: 1000,
+      cycleDay: pktDayKey(),
+      cycleGrossToday: 1000,
+      cycleCashToday: 1000,
+    });
     await expect(
       submitCommissionSettlement.run(
         req({ proofPath: `drivers/${DRIVER}/documents/settlement-1` }, DRIVER, 'driver'),

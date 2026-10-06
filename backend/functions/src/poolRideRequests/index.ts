@@ -7,6 +7,7 @@ import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 import { firstNameOf } from '../trips/poolRoster';
@@ -164,8 +165,9 @@ export const driverRespondToRequest = onCall(async (req) => {
   // Fetch driver profile for name/vehicle info.
   const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver profile not found.');
-  // Locked drivers must settle their commission cycle before taking new work.
-  assertCommissionClear(driverSnap, await getCommissionSettings());
+  // A day that ended short of the target leaves commission owing, and it has to
+  // be cleared before the driver can take new work.
+  assertCommissionClear(driverSnap, await getCommissionSettings(), pktDayKey());
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);

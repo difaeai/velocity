@@ -9,8 +9,14 @@
 
 import { RideType, Settlement } from './types';
 
-/** Platform commission taken from each gross fare. */
-export const COMMISSION_RATE = 0.1;
+/**
+ * Platform commission taken from each gross fare — the fallback only.
+ *
+ * The live figure is admin-set on `config/commissionSettings` and every
+ * settlement passes it in; this constant is what applies when no config exists
+ * at all. Kept in step with `DEFAULT_COMMISSION.rate` in ./commission.ts.
+ */
+export const COMMISSION_RATE = 0.05;
 
 /** Recommended base fare per ride type, in PKR. */
 export const BASE_FARES: Record<RideType, number> = {

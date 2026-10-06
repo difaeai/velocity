@@ -31,7 +31,6 @@ import {
 import {
   assertCommissionClear,
   commissionCredit,
-  cycleCashFare,
   getCommissionSettings,
 } from '../domain/commission';
 import {
@@ -40,7 +39,7 @@ import {
   recordRideOnDailyTarget,
   todayKey,
 } from '../drivers/dailyTarget';
-import { ledgerCreditSpend } from '../drivers/commissionCredit';
+import { applyRideToCycle } from '../drivers/cycle';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import {
   assertOutstandingClear,
@@ -453,8 +452,9 @@ export const placeBid = onCall(async (req) => {
   if (driverSnap.get('online') !== true) {
     throw new HttpsError('failed-precondition', 'Go online before bidding.');
   }
-  // Locked drivers must settle their commission cycle before taking new work.
-  assertCommissionClear(driverSnap, commissionSettings);
+  // A day that ended short of the target leaves commission owing, and it has to
+  // be cleared before the driver can take new work.
+  assertCommissionClear(driverSnap, commissionSettings, todayKey());
   // As must drivers who racked up unpaid cancellation fees.
   assertOutstandingClear(driverWalletSnap, cancellationSettings, 'driver');
   // …and drivers who have not photographed the car they are driving: the
@@ -1041,8 +1041,8 @@ export const completeTrip = onCall(async (req) => {
   const tripRef    = db.doc(`trips/${tripId}`);
   const driverRef  = db.doc(`drivers/${ctx.uid}`);
 
-  // Commission rate/threshold and the daily ride target are admin-configurable
-  // from the dashboard (Commission page) and apply app-wide.
+  // The commission rate and the daily ride target are admin-configurable from
+  // the dashboard (Commission page) and apply app-wide.
   const commissionSettings = await getCommissionSettings();
   const commissionRate = commissionSettings.rate;
 
@@ -1273,9 +1273,10 @@ export const completeTrip = onCall(async (req) => {
       },
       { merge: true },
     );
-    // The daily ride target. Counts this ride against today's goal, grants the
-    // bonus on the ride that completes it, and hands back the cash fare that is
-    // actually commissionable — zero once today's commission is waived.
+    // The daily ride target. Counts this ride against today's goal — only if
+    // it is a pool ride, while the admin leaves `dailyTargetPoolOnly` on — and
+    // hands back the cash fare that is actually commissionable, which is zero
+    // once today's target is met and the day has gone commission-free.
     const target = recordRideOnDailyTarget({
       tx,
       driverId: ctx.uid,
@@ -1288,73 +1289,33 @@ export const completeTrip = onCall(async (req) => {
       // A full car is one ride but several distinct passengers, which is what
       // the anti-farming check on the day actually cares about.
       riderIds: poolMembers.length > 0 ? poolMembers : [passengerId],
+      // `pool` covers both kinds the booking side can produce: a pool the rider
+      // booked, and a solo trip the driver turned into one by picking somebody
+      // up en route (trips/enRoute.ts sets the flag when it seals a rider in).
+      isPoolRide: isPool,
       rideId: tripId,
     });
 
-    // Accumulate cycle earnings for commission lock tracking. Cash fares also
-    // grow the settleable (owed) portion; wallet commission was collected just
-    // above, so a cycle earned entirely online hits the threshold owing
-    // nothing and clears itself without locking the driver.
-    const prevGross = (driverSnap.get('cycleGrossFare') as number | undefined) ?? 0;
-    const prevCash  = cycleCashFare(driverSnap);
-    let newGross = prevGross + grossFare;
-    let newCash  = prevCash + target.commissionableCashFare;
-
-    // What the cycle owes, and who is paying it. The credit balance includes
-    // anything this very ride just earned, so the ride that completes the daily
-    // target can settle the cycle it also completed.
-    const cashDue      = Math.round(newCash * commissionSettings.rate);
-    const creditAfter  = commissionCredit(driverSnap) + target.creditDelta;
-    const creditApplied = Math.min(creditAfter, cashDue);
-    const netDue       = cashDue - creditApplied;
-
-    // A matured cycle the driver does not have to find money for clears itself
-    // rather than locking them: either it was earned online (commission already
-    // taken) or their target credit covers it. This is the whole point of the
-    // credit — "it comes off the 2,000, I don't pay separately".
-    if (newGross >= commissionSettings.threshold && netDue === 0) {
-      ledgerCreditSpend({
-        tx,
-        driverId: ctx.uid,
-        source: 'auto_clear',
-        ref: tripId,
-        grossDue: cashDue,
-        creditApplied,
-        due: 0,
-      });
-      if (cashDue > 0) {
-        // Revenue really was earned on this cycle; the credit is what paid it.
-        tx.set(db.collection('platformLedger').doc(), {
-          type: 'ride_commission',
-          source: 'daily_target_credit',
-          driverId: ctx.uid,
-          tripId,
-          amount: cashDue,
-          paidFromCredit: creditApplied,
-          cycleGrossFare: newGross,
-          cycleCashFare: newCash,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
-      tx.set(driverRef.collection('commissionPayments').doc(), {
-        amount: cashDue,
-        paidFromCredit: creditApplied,
-        threshold: commissionSettings.threshold,
-        rate: commissionSettings.rate,
-        cycleGrossFare: newGross,
-        cycleCashFare: newCash,
-        auto: true,
-        paidAt: FieldValue.serverTimestamp(),
-      });
-      newGross = 0;
-      newCash  = 0;
-    }
+    // Fold the ride into the commission cycle, and roll the day while we are
+    // here: anything left over from a day that has already ended is payable
+    // now, and clears itself if the driver's bonus covers it. Wallet commission
+    // was collected just above, so an all-online day owes nothing and never
+    // locks anybody. See drivers/cycle.ts.
+    const cycle = applyRideToCycle({
+      tx,
+      driverId: ctx.uid,
+      driverSnap,
+      settings: commissionSettings,
+      today: targetDay,
+      grossFare,
+      commissionableCashFare: target.commissionableCashFare,
+      rideId: tripId,
+    });
     tx.set(
       driverRef,
       {
         tripsCount: FieldValue.increment(1),
-        cycleGrossFare: newGross,
-        cycleCashFare: newCash,
+        ...cycle.fields,
         // Credit earned by this ride. Spending it is `ledgerCreditSpend`'s own
         // write, so the two never race through the same field expression.
         ...(target.creditDelta > 0
@@ -1393,11 +1354,15 @@ export const completeTrip = onCall(async (req) => {
       ...s,
       franchiseCut,
       velocityNet,
-      // Net of credit, like everywhere else the driver is shown a "due".
-      commissionLocked: newGross >= commissionSettings.threshold && netDue > 0,
-      commissionDue: netDue,
-      commissionCredit: Math.max(0, creditAfter - creditApplied),
+      // Net of the bonus, like everywhere else the driver is shown a "due".
+      commissionLocked: cycle.locked,
+      commissionDue: cycle.due,
+      commissionCredit: Math.max(
+        0,
+        commissionCredit(driverSnap) + target.creditDelta - cycle.creditApplied,
+      ),
       dailyTarget: target.progress,
+      dailyTargetMet: target.granted,
       dailyTargetBonus: target.bonusGranted,
       dailyTargetCredit: target.creditDelta,
       dailyTargetNudge: target.nudge,
@@ -1438,7 +1403,7 @@ export const completeTrip = onCall(async (req) => {
     await sendToUser(
       ctx.uid,
       '🔒 Commission due',
-      `Your earnings cycle is complete. Settle PKR ${settlement.commissionDue} with Velocity Rides to keep receiving rides.`,
+      `Yesterday fell short of the target, so PKR ${settlement.commissionDue} of commission is due. Pay it to Velocity Rides to start taking rides again.`,
       { tripId },
     );
   }

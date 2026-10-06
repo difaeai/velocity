@@ -89,7 +89,7 @@ export function settlementChannel(methods: PaymentMethod[]): 'cash' | 'wallet' {
 }
 
 // ── Fare logic (mirrors the backend; the server remains authoritative) ──
-export const COMMISSION_RATE = 0.1;
+export const COMMISSION_RATE = 0.05;
 export const MAX_SEATS = 4;
 export const BASE_FARES: Record<RideType, number> = {
   bike: 100,
