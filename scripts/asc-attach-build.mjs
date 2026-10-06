@@ -20,8 +20,9 @@
  *   node --dns-result-order=ipv4first scripts/asc-attach-build.mjs \
  *     --short 1.15.0 --build 13 --whats-new notes.txt
  *
- * Credentials: the same three as the uploader — ASC_KEY_PATH, ASC_KEY_ID
- * (defaults to the id in the filename), ASC_ISSUER_ID, ASC_APP_ID.
+ * Credentials: the same as the uploader, as flags or env — --key /
+ * ASC_KEY_PATH, --key-id / ASC_KEY_ID (defaults to the id in the filename),
+ * --issuer / ASC_ISSUER_ID, ASC_APP_ID.
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { createSign } from 'node:crypto';
@@ -45,7 +46,9 @@ if (!short || !build) {
 }
 
 function resolveKey() {
-  if (process.env.ASC_KEY_PATH) return process.env.ASC_KEY_PATH;
+  const given = arg('key', process.env.ASC_KEY_PATH);
+  // `~` is the shell's job, and a quoted flag value never reaches the shell.
+  if (given) return given.startsWith('~/') ? join(homedir(), given.slice(2)) : given;
   const dir = join(homedir(), '.appstoreconnect');
   if (!existsSync(dir)) throw new Error(`No ASC_KEY_PATH and no ${dir}`);
   const keys = readdirSync(dir).filter((f) => /^AuthKey_.+\.p8$/.test(f));
@@ -60,9 +63,11 @@ function resolveKey() {
 }
 
 const keyPath = resolveKey();
-const keyId = process.env.ASC_KEY_ID ?? basename(keyPath).replace(/^AuthKey_|\.p8$/g, '');
-const issuer = process.env.ASC_ISSUER_ID;
-if (!issuer) throw new Error('ASC_ISSUER_ID is required (App Store Connect → Users and Access → Integrations).');
+const keyId = arg('key-id', process.env.ASC_KEY_ID) ?? basename(keyPath).replace(/^AuthKey_|\.p8$/g, '');
+const issuer = arg('issuer', process.env.ASC_ISSUER_ID);
+if (!issuer) {
+  throw new Error('--issuer (or ASC_ISSUER_ID) is required — App Store Connect → Users and Access → Integrations.');
+}
 const p8 = readFileSync(keyPath);
 
 function jwt() {

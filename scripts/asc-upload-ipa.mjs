@@ -14,16 +14,21 @@
  *
  * Usage:
  *   node --dns-result-order=ipv4first scripts/asc-upload-ipa.mjs \
- *     --ipa velocity-1.14.0-ios12.ipa --short 1.14.0 --build 12
+ *     --ipa velocity-1.15.0-ios13.ipa --short 1.15.0 --build 13 \
+ *     --key ~/.appstoreconnect/AuthKey_XXXXXXXX.p8 --issuer <uuid>
  *
- * Credentials, none of which live in this repo:
- *   ASC_KEY_PATH   the .p8 App Store Connect API key (NOT the APNs key — see
- *                  docs; mixing the two is the classic mistake here)
- *   ASC_KEY_ID     defaults to the id parsed out of the AuthKey_<id>.p8 name
- *   ASC_ISSUER_ID  required
- *   ASC_APP_ID     numeric app id; defaults to Velocity Rides
+ * Credentials, none of which live in this repo. Either flags or env:
+ *   --key    / ASC_KEY_PATH   the .p8 App Store Connect API key (NOT the APNs
+ *                             key — mixing the two is the classic mistake here)
+ *   --key-id / ASC_KEY_ID     defaults to the id in the AuthKey_<id>.p8 name
+ *   --issuer / ASC_ISSUER_ID  required
+ *              ASC_APP_ID     numeric app id; defaults to Velocity Rides
  *
- * With no ASC_KEY_PATH it looks for exactly one AuthKey_*.p8 in
+ * The flags exist so the whole invocation is one self-contained command line —
+ * neither value is a secret (the key PATH is not the key) and a permission
+ * allow-rule can then cover the real call rather than a shape nobody uses.
+ *
+ * With neither given it looks for exactly one AuthKey_*.p8 in
  * ~/.appstoreconnect and refuses to guess when there are several, because that
  * directory holds the APNs key too.
  */
@@ -48,7 +53,9 @@ if (!ipaPath || !short || !build) {
 }
 
 function resolveKey() {
-  if (process.env.ASC_KEY_PATH) return process.env.ASC_KEY_PATH;
+  const given = arg('key', process.env.ASC_KEY_PATH);
+  // `~` is the shell's job, and a quoted flag value never reaches the shell.
+  if (given) return given.startsWith('~/') ? join(homedir(), given.slice(2)) : given;
   const dir = join(homedir(), '.appstoreconnect');
   if (!existsSync(dir)) throw new Error(`No ASC_KEY_PATH and no ${dir}`);
   const keys = readdirSync(dir).filter((f) => /^AuthKey_.+\.p8$/.test(f));
@@ -63,9 +70,11 @@ function resolveKey() {
 }
 
 const keyPath = resolveKey();
-const keyId = process.env.ASC_KEY_ID ?? basename(keyPath).replace(/^AuthKey_|\.p8$/g, '');
-const issuer = process.env.ASC_ISSUER_ID;
-if (!issuer) throw new Error('ASC_ISSUER_ID is required (App Store Connect → Users and Access → Integrations).');
+const keyId = arg('key-id', process.env.ASC_KEY_ID) ?? basename(keyPath).replace(/^AuthKey_|\.p8$/g, '');
+const issuer = arg('issuer', process.env.ASC_ISSUER_ID);
+if (!issuer) {
+  throw new Error('--issuer (or ASC_ISSUER_ID) is required — App Store Connect → Users and Access → Integrations.');
+}
 const p8 = readFileSync(keyPath);
 
 /** Minted per call: an upload outlives a single short-lived token. */
