@@ -1,0 +1,132 @@
+VELOCITY RIDES 1.15.0  ·  Android versionCode 40  ·  iOS build 13
+=================================================================
+
+ONE CHANGE, AND IT IS THE DRIVER'S MONEY. Commission drops from 10% to 5%, and
+it is now charged BY THE DAY: a driver who completes 16 pool rides in a day
+pays nothing at all for that day. Everything else in this build already shipped
+in 1.14.0.
+
+VERSION STATE, verified against the APIs on 6 Oct 2026 (not from the release
+log — check the stores, not this file):
+
+  iOS      1.14.0 (build 12) is READY_FOR_SALE. Apple takes no new build
+           against a released version, so 1.15.0 is REQUIRED here.
+  Android  Play's state could not be read from this machine (no Play API
+           credentials). If vc39 never went up, this build also carries
+           1.14.0's Safety Centre, live trip links and Rapid Response for the
+           first time — check the Play bundle explorer before writing the
+           notes.
+
+The backend half of this change is ALREADY LIVE: the Cloud Functions deploy for
+commit 760a537 finished successfully on 6 Oct. So the 5% rate, the 16-pool-ride
+free day and the midnight lock are in force for every driver right now, served
+by the server. This build is what makes the driver's APP show it correctly —
+until a driver updates, their app draws the old "15 rides → PKR 2,000 bonus"
+card while the server charges them under the new rule. That is the reason to
+roll this out quickly rather than at leisure.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+For drivers: commission is now 5%, not 10%
+• Complete 16 pool rides in a day and that whole day costs you NO commission
+• Fall short and the day costs 5% of the cash you took, due at midnight
+• Nothing is owed while the day is still running — you have the full day
+• Your app shows the live count and what the day will cost if you stop now
+
+Velocity Rides: ride-hailing for Pakistan where you name the fare.
+
+
+APP STORE "WHAT'S NEW" (set on version 1.15.0 through the API)
+--------------------------------------------------------------
+NEW IN THIS VERSION
+
+FOR DRIVERS: COMMISSION IS HALVED, AND A FULL DAY IS FREE
+
+Velocity Rides' commission is now 5% of the cash you collect, down from 10%,
+and it is charged by the day.
+
+Complete 16 pool rides in one day and that whole day costs you no commission at
+all. Fall short and the day costs 5% of the cash you took that day, payable
+after midnight — you clear it by transfer with a screenshot, and your account
+unlocks as soon as it is verified.
+
+Nothing is ever owed while the day is still running. You have the full day to
+reach the target, and your app shows the live count, every condition still
+missing, and exactly what the day will cost you if you stop now. Only pool and
+sharing rides count toward the target; a solo ride still earns you its fare.
+
+The separate PKR 2,000 daily bonus is gone, replaced by the free day it was
+paying for.
+
+
+WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
+----------------------------------------------------------------
+Merged 760a537 off main, 6 Oct 2026.
+
+  - Commission rate 10% → 5%, and the unit of charging is now a PAKISTAN DAY
+    rather than a running cycle. 16 qualifying POOL rides in a day → that day
+    owes nothing; fewer → the day owes 5% of its cash, and that becomes payable
+    the moment the day closes at midnight. The driver cannot accept new work
+    until they clear it.
+  - The PKR 5,000 settle threshold is GONE and must not come back. At intercity
+    fares it fired at about the fourth ride of the day, so it would have locked
+    every driver short of the sixteen it was meant to reward. Nothing is owed
+    mid-day now.
+  - The separate PKR 2,000 bonus is removed. `dailyTargetBonus` survives as an
+    admin lever at 0 and every bonus surface in the app hides itself while it
+    is zero.
+  - Only pool / sharing rides count (`dailyTargetPoolOnly`, admin-togglable,
+    on). A solo ride still earns its fare and still owes its commission; it
+    just does not move the counter.
+  - Which day a fare belongs to is DERIVED, not swept: three new driver fields
+    (`cycleDay`, `cycleGrossToday`, `cycleCashToday`) make the open day and the
+    closed days separable at read time. At 23:59 a short day locks nobody; at
+    00:00 the same figures lock the driver, with no write in between and no job
+    in the money path. A driver mid-cycle at deploy has no `cycleDay`, so their
+    cycle reads as open — one day of grace.
+  - `notifyClosedCommissionDays` runs 00:05 Asia/Karachi and pushes the drivers
+    whose day closed owing, with the amount. It writes no money fields; the
+    lock does not depend on it.
+  - `granted` on the day document replaces `bonusGranted > 0` as the
+    once-per-day guard. With the bonus at 0 that test is always false, and the
+    waiver would have been re-granted on every ride after the sixteenth.
+  - The day-roll and the auto-clear now live in one place
+    (`drivers/cycle.ts`). completeTrip and completePoolRide had written that
+    arithmetic separately and only one of them cleared a cycle the bonus had
+    covered.
+  - Settling removes the closed days and KEEPS the open one, which may yet cost
+    the driver nothing. Account deletion is the one place the open day is also
+    charged, or "delete account" is the cheapest way to skip a day.
+  - Driver app, admin Commission page, support AI brief, public site FAQ and
+    the Urdu strings all follow. Admin page refuses a target that rewards
+    nothing (waiver off AND bonus 0).
+
+Verified before the build: backend 776 tests / 55 files, mobile 150 tests
+(12 of them new, pinning the app's copy of the rule against the backend's),
+backend + mobile + web typechecks clean, eslint clean. CI green on 760a537 and
+the Cloud Functions deploy succeeded.
+
+`config/commissionSettings` does not exist in production, so the shipped
+defaults are what apply — no migration and nothing to re-save in the admin.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.15.0-vc40.aab (repo root) to Play Console.
+  2. Paste the "WHAT'S NEW" block above as the release notes.
+  3. Roll it into EVERY track that still holds an older build. Otherwise the
+     AD_ID rejection comes back (vc3/vc6/vc8 have no AD_ID permission).
+  4. After the rollout is live: admin console → App version →
+     version 1.15.0 AND build 40. Without the build number nobody is prompted.
+
+iOS:
+  1. Build 13 is uploaded to App Store Connect and attached to a new 1.15.0
+     version record with the What's New text above (done from the session via
+     the Build Upload API — the ASC web UI does not accept an .ipa).
+  2. The only step left is the human one: Submit for Review.
+  3. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.15.0 AND build 13. Never before — a published iOS version
+     higher than what Apple has released prompts every iPhone to update to a
+     build they cannot get, which is the Guideline 4 rejection from 17 Sep.
