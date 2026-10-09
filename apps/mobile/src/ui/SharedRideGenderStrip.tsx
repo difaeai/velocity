@@ -114,10 +114,17 @@ export function SharedRideGenderStrip() {
         />
       </View>
 
+      {/* Two different situations, and telling them apart matters: signup
+          offers Male / Female / Other, and someone who deliberately chose
+          "Other" is not someone who left the field empty. Both block
+          same-gender matching — the server seats by male/female — but only one
+          of them is missing information. */}
       {unknownGender ? (
         <Pressable onPress={() => router.push('/passenger/profile')}>
           <Text style={styles.hint}>
-            Your profile has no gender set — add it so same-gender rides can be matched →
+            {gender === 'other'
+              ? 'Same-gender matching needs male or female — change it on your profile, or share with any gender →'
+              : 'Your profile has no gender set — add it so same-gender rides can be matched →'}
           </Text>
         </Pressable>
       ) : null}
