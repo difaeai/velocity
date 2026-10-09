@@ -250,6 +250,12 @@ export interface SuggestedRide {
   companions: PoolCompanion[];
   /** Epoch-ms a driverless pool stops gathering riders. */
   joinWindowEndsAt: number | null;
+  /** Epoch-ms this car leaves. Only driver-posted rides are scheduled; null otherwise. */
+  departureAtMs: number | null;
+  /** Epoch-ms the pool was put up. */
+  postedAtMs: number | null;
+  /** Epoch-ms a driverless pool request gives up waiting for a driver. */
+  expiresAtMs: number | null;
   /** True when Join sends a request to the driver instead of taking the seat. */
   needsDriverApproval: boolean;
   rideType: string | null;
