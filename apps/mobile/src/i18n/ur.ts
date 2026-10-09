@@ -1495,4 +1495,22 @@ export const UR: Record<string, string> = {
   "Stop sharing this ride?": "اس سفر کی شیئرنگ بند کریں؟",
   "Keep sharing": "شیئرنگ جاری رکھیں",
   "Stop sharing": "شیئرنگ بند کریں",
+
+  // ── Home: ride sharing tiles + the one gender question ──────────────
+  "Solo or ride sharing": "اکیلے یا رائیڈ شیئرنگ",
+  "Ride sharing": "رائیڈ شیئرنگ",
+  "Shared rides": "مشترکہ سواریاں",
+  "Looking for seats near you…": "آپ کے قریب سیٹیں تلاش کی جا رہی ہیں…",
+  "Intercity seats — pick a city and a day": "بین الشہری سیٹیں — شہر اور دن منتخب کریں",
+  "Who will you share with?": "آپ کس کے ساتھ سواری شیئر کریں گے؟",
+  "Shared rides only — riding solo is unaffected": "صرف مشترکہ سواریوں پر لاگو — اکیلے سفر پر کوئی اثر نہیں",
+  "Choose who you are willing to share a car with before you take a shared seat": "مشترکہ سیٹ لینے سے پہلے منتخب کریں کہ آپ کس کے ساتھ گاڑی شیئر کرنا چاہیں گے",
+  "CHOOSE": "منتخب کریں",
+  "♂♀ Any gender": "♂♀ کوئی بھی جنس",
+  "♂ Men only": "♂ صرف مرد",
+  "♀ Women only": "♀ صرف خواتین",
+  "Same gender only": "صرف ہم جنس",
+  "Your profile has no gender set — add it so same-gender rides can be matched →": "آپ کی پروفائل میں جنس درج نہیں — اسے شامل کریں تاکہ ہم جنس سواریاں ملائی جا سکیں →",
+  "Couriers — send a parcel": "کورئیر — پارسل بھیجیں",
+  "Book a ride for yourself": "اپنے لیے سواری بک کریں",
 };

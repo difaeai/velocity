@@ -367,10 +367,10 @@ export default function SuggestedRidesScreen() {
               >
                 <Text style={styles.prefNoteTxt}>
                   {pref === 'any_gender'
-                    ? 'Showing pools of any gender, as you chose on the home screen.'
+                    ? 'Showing shared rides of any gender, as you chose on the home screen.'
                     : pref === 'same_gender'
-                      ? 'Showing only pools you can share with, as you chose on the home screen.'
-                      : 'You have not chosen a gender preference yet — only same-gender pools are shown.'}
+                      ? 'Showing only shared rides you can share with, as you chose on the home screen.'
+                      : 'You have not chosen a gender preference yet — only same-gender rides are shown.'}
                   {'  '}Change →
                 </Text>
               </Pressable>

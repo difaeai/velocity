@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -37,16 +37,13 @@ import { DEFAULT_SNAP_POINTS, DraggableSheet } from '../../src/ui/DraggableSheet
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
 import { NewsTicker } from '../../src/ui/NewsTicker';
-import { GENDER_PREF_PROMPT, SharedRideGenderCard } from '../../src/ui/SharedRideGenderCard';
-import { useGenderPref } from '../../src/hooks/genderPref';
+import { SharedRideGenderStrip } from '../../src/ui/SharedRideGenderStrip';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
-  CourierIcon,
   IntercityIcon,
   MicIcon,
   SearchIcon,
-  type ServiceIconProps,
 } from '../../src/ui/ServiceIcons';
 import { PoolIcon } from '../../src/ui/RideIcons';
 import { isRecognitionAvailable } from '../../src/voice/speech';
@@ -128,13 +125,6 @@ export default function PassengerHome() {
   // worth a tap.
   const suggested = useSuggestedRides(coords);
 
-  // Who this rider will share a car with. Until they have answered, the app
-  // treats them as same-gender-only and quietly filters the pool feed down —
-  // so "Where to?" carries the prompt and the selector sits under it. The
-  // answer itself is enforced server-side off `mixedRideOk`; see genderPref.
-  const genderPref = useGenderPref();
-  const needsGenderPref = genderPref.loaded && genderPref.pref === null;
-
   // "♀ 2 women's · ♂ 1 men's · 3 open" — only the groups that exist, so the
   // line never pads itself out with zeroes.
   const suggestedSplit = (() => {
@@ -146,6 +136,12 @@ export default function PassengerHome() {
     if (open) parts.push(`${open} open`);
     return parts.length > 0 ? parts.join(' · ') : null;
   })();
+
+  // The one lime line on the shared-rides tile: who is in those cars if we know,
+  // otherwise the cheapest seat going. Never both — the tile is half a screen
+  // wide and a second line of detail is what makes it a wall of text.
+  const suggestedAccent =
+    suggestedSplit ?? (suggested.cheapestFare ? `From PKR ${suggested.cheapestFare}` : null);
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -338,50 +334,43 @@ export default function PassengerHome() {
           </Pressable>
         ) : null}
 
-        {/* ── The two ways into a ride, side by side.
-             "Where to?" is the ONE way into a city ride — pool discovery
-             ("rides going your way") used to sit here as a second entry point
-             doing the same job; it now lives inside this flow, right after the
-             destination is set, so there is only one path to follow.
-
-             Speaking is that same job by a different route — the one that works
-             for riders who cannot comfortably read or type. It used to sit in
-             its own full-width card UNDER "Where to?", and the pair cost the
-             sheet ~165px before a single feature below them was visible. On one
-             row they cost roughly half that, which is what lifts Services and
-             the cards under it into view without a scroll.
+        {/* ── Start a ride ─────────────────────────────────────────────────
+             The destination, and the same job by voice for riders who cannot
+             comfortably read or type. Nothing else: this card is the way into a
+             ride of ANY kind, and a rider heading somewhere alone must be able
+             to go from here to a driver without answering a question about
+             sharing. (The sharing preference used to be welded to the bottom of
+             this card. It governs shared seats only, so it now lives with them,
+             below.)
 
              "Where to?" takes every pixel the voice tile does not, because it
-             is the primary action; the voice side shrinks to a fixed-width mic
-             with its name under it, which is all it needs to be recognised and
-             tapped. When there is no speech recogniser (typically no-GMS
-             handsets) it is not rendered at all and "Where to?" fills the row
-             on its own. ── */}
+             is the primary action; the voice side is a fixed-width mic with its
+             name under it, which is all it needs to be recognised and tapped.
+             When there is no speech recogniser (typically no-GMS handsets) it
+             is not rendered at all and "Where to?" fills the row on its own. ── */}
         <View style={styles.heroRow}>
-          <Pressable style={styles.searchHero} onPress={() => router.push('/passenger/booking')}>
+          <Pressable
+            style={({ pressed }) => [styles.searchHero, pressed && { opacity: 0.8 }]}
+            onPress={() => router.push('/passenger/booking')}
+            accessibilityRole="button"
+            accessibilityLabel="Where to? Set your destination"
+          >
             <View style={styles.searchHeroIcon}>
               <SearchIcon size={22} color="#0b0d0c" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.searchHeroTitle}>Where to?</Text>
-              {/* The gender prompt replaces the strapline rather than joining it:
-                  a rider who has not said who they will share with is already
-                  being shown a filtered pool feed, and that is worth more than
-                  "Pool or ride solo". Kept short because this card is only as
-                  wide as the voice tile leaves it — the sentence in full is on
-                  the selector directly below, which has the whole row. */}
-              <Text
-                style={[styles.searchHeroSub, needsGenderPref && styles.searchHeroSubPrompt]}
-                numberOfLines={2}
-              >
-                {needsGenderPref ? 'Choose your gender preference first' : 'Pool or ride solo'}
+              {/* "Ride sharing", never "pool": this line is read by someone who
+                  has not chosen yet, and "pool" is not the word they use. */}
+              <Text style={styles.searchHeroSub} numberOfLines={1}>
+                Solo or ride sharing
               </Text>
             </View>
           </Pressable>
 
           {voiceAvailable ? (
             <Pressable
-              style={styles.voiceHero}
+              style={({ pressed }) => [styles.voiceHero, pressed && { opacity: 0.8 }]}
               onPress={() => router.push('/passenger/voice')}
               accessibilityRole="button"
               accessibilityLabel="Book a ride by speaking"
@@ -398,84 +387,93 @@ export default function PassengerHome() {
           ) : null}
         </View>
 
-        {/* ── Who will you share with? ─────────────────────────────────────
-             Between the ways of starting a ride and the list of rides already
-             going, because it decides what that list is allowed to contain.
-             One answer here is the rule for every shared surface in the app —
-             Suggested Rides below, the pool step in booking, en-route pickups,
-             and the join calls the server will accept. ── */}
-        <SharedRideGenderCard />
+        {/* ── Ride sharing ──────────────────────────────────────
+             Two ways to take a seat in a car that is going anyway, side by side
+             because they are the same offer at two distances: shared rides
+             around this rider now, and the intercity board for another day.
 
-        {/* ── Suggested Rides ──────────────────────────────────────────────
-             Shared cars near this rider that still have a seat, whichever way
-             they were created — a pool somebody booked, riders clubbing
-             together, or a driver selling seats on a route they are already
-             driving.
+             City to City used to be a tile in a "Services" grid next to
+             Couriers — which put a bus journey and a parcel in the same breath.
+             Couriers has moved to the drawer (it is not a ride), so the two
+             journeys share a row and the section says what they are.
 
-             It sits here, under the two ways of STARTING a ride, because it is
-             the third one: not "where do you want to go" but "somebody is
-             already going, do you want in". That question only used to be
-             askable from inside the booking flow, after a destination had been
-             typed — which is no use at all to the rider who has not decided
-             anything yet and simply wants to know if a cheap seat exists.
+             Boxes rather than two full-width rows: the pair costs the sheet one
+             tile's height instead of two, which is what keeps Travel Partner
+             and Earn on the first screen. ── */}
+        <Text style={styles.sectionLabel}>Ride sharing</Text>
 
-             Full cars never appear (the server drops them), so every row here
-             is a seat that can actually be taken. ── */}
-        <Pressable
-          style={({ pressed }) => [styles.suggestedRow, pressed && { opacity: 0.85 }]}
-          onPress={() => router.push('/passenger/suggested-rides')}
-          accessibilityRole="button"
-          accessibilityLabel="Suggested Rides — shared cars near you with a seat free"
-        >
-          <View style={styles.suggestedIcon}>
-            <PoolIcon size={19} color={colors.primary} accent={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.suggestedTitle}>Suggested Rides</Text>
-            <Text style={styles.suggestedSub} numberOfLines={1}>
+        <View style={styles.rideTiles}>
+          {/* Shared cars near this rider that still have a seat, whichever way
+              they were created — a shared ride somebody booked, riders clubbing
+              together, or a driver selling seats on a route they are already
+              driving. Full cars never appear (the server drops them), so the
+              count is seats that can actually be taken. */}
+          <Pressable
+            style={({ pressed }) => [styles.rideTile, styles.rideTileLime, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push('/passenger/suggested-rides')}
+            accessibilityRole="button"
+            accessibilityLabel="Shared rides — cars near you with a seat free"
+          >
+            <View style={styles.rideTileTop}>
+              <View style={styles.rideTileIconLime}>
+                <PoolIcon size={19} color="#ccff00" accent="#ccff00" />
+              </View>
+              {suggested.count > 0 ? (
+                <View style={styles.suggestedCount}>
+                  <Text style={styles.suggestedCountTxt}>{suggested.count}</Text>
+                </View>
+              ) : (
+                <Text style={styles.suggestedArrow}>→</Text>
+              )}
+            </View>
+            <Text style={styles.rideTileTitle} numberOfLines={1}>Shared rides</Text>
+            <Text style={styles.rideTileSub} numberOfLines={2}>
               {!suggested.loaded
-                ? 'Looking for shared rides around you…'
+                ? 'Looking for seats near you…'
                 : suggested.count === 0
-                  ? `No shared seats within ${HOME_SUGGESTED_RADIUS_KM} km right now — tap to search wider`
+                  ? `None within ${HOME_SUGGESTED_RADIUS_KM} km — tap to search wider`
                   : suggested.nearestDestination
                     ? `${suggested.count} going your way · ${suggested.nearestDestination}`
-                      + (suggested.cheapestFare ? ` · from PKR ${suggested.cheapestFare}` : '')
-                    : `${suggested.count} shared ride${suggested.count === 1 ? '' : 's'} with a seat free`}
+                    : `${suggested.count} seat${suggested.count === 1 ? '' : 's'} free near you`}
             </Text>
             {/* Which of those cars are the women's, the men's and the mixed
-                ones. A rider's first question about a shared seat is who else
-                is in it, and making them open the list to find out is making
-                them open the list for nothing. */}
-            {suggestedSplit ? (
-              <Text style={styles.suggestedSplit} numberOfLines={1}>{suggestedSplit}</Text>
+                ones — or, failing a tally, the cheapest seat. A rider's first
+                question about a shared seat is who else is in it, and making
+                them open the list to find out is making them open it for
+                nothing. */}
+            {suggestedAccent ? (
+              <Text style={styles.rideTileAccent} numberOfLines={1}>{suggestedAccent}</Text>
             ) : null}
-          </View>
-          {suggested.count > 0 ? (
-            <View style={styles.suggestedCount}>
-              <Text style={styles.suggestedCountTxt}>{suggested.count}</Text>
-            </View>
-          ) : (
-            <Text style={styles.suggestedArrow}>→</Text>
-          )}
-        </Pressable>
+          </Pressable>
 
-        {/* ── Services — city rides live in "Where to?", so only the two
-             services that are NOT plain city rides get tiles ── */}
-        <Text style={styles.sectionLabel}>Services</Text>
-        <View style={styles.serviceGrid}>
-          <ServiceTile
-            title="City to City"
-            sub="Intercity seats"
-            Icon={IntercityIcon}
+          {/* The same offer over a longer distance. Keeps the tile geometry and
+              drops the lime: that edge means "near you, right now", and an
+              intercity seat is neither. */}
+          <Pressable
+            style={({ pressed }) => [styles.rideTile, pressed && { opacity: 0.85 }]}
             onPress={() => router.push('/passenger/city-to-city')}
-          />
-          <ServiceTile
-            title="Couriers"
-            sub="Send a parcel"
-            Icon={CourierIcon}
-            onPress={() => router.push('/passenger/couriers')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="City to City — intercity seats between Pakistani cities"
+          >
+            <View style={styles.rideTileTop}>
+              <View style={styles.rideTileIcon}>
+                <IntercityIcon size={19} color="#ffffff" />
+              </View>
+              <Text style={styles.suggestedArrow}>→</Text>
+            </View>
+            <Text style={styles.rideTileTitle} numberOfLines={1}>City to City</Text>
+            <Text style={styles.rideTileSub} numberOfLines={2}>
+              Intercity seats — pick a city and a day
+            </Text>
+          </Pressable>
         </View>
+
+        {/* ── Who will you share with? ────────────────────────────
+             Under the tiles it governs, not in the way of "Where to?": the
+             answer decides which shared cars the app shows and which joins the
+             server accepts, and it has no bearing at all on a solo ride. A
+             rider who always travels alone can ignore it forever. ── */}
+        <SharedRideGenderStrip />
 
         {/* ── Travel Partner card ── */}
         <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
@@ -550,9 +548,19 @@ export default function PassengerHome() {
                     <Text style={styles.menuItemText}>Special Rides</Text>
                   </Pressable>
 
+                  {/* Sending a parcel is not booking a ride, and on the home
+                      screen it was a tile of equal weight beside the intercity
+                      board — the one errand in a list of journeys. It lives
+                      here now; home is rides only. */}
+                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/couriers')}>
+                    <Text style={styles.menuItemIcon}>📦</Text>
+                    <Text style={styles.menuItemText}>Couriers — send a parcel</Text>
+                  </Pressable>
+
                   {/* City to City and Notifications intentionally live only on
-                      the home screen (a service tile and the header bell) —
-                      duplicating them here just made the drawer longer. */}
+                      the home screen (a row under Suggested Rides and the
+                      header bell) — duplicating them here just made the drawer
+                      longer. */}
 
                   <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/daily-routes')}>
                     <Text style={styles.menuItemIcon}>🛣️</Text>
@@ -642,43 +650,6 @@ export default function PassengerHome() {
       </Modal>
 
     </View>
-  );
-}
-
-/**
- * One service in the home grid. All four tiles are the same size — the old
- * layout gave City Rides a double-width card and squeezed the rest, which is
- * what made the grid look lopsided. The lead service is marked by a lime tint
- * instead, so the hierarchy reads without breaking the geometry.
- */
-function ServiceTile({
-  title,
-  sub,
-  Icon,
-  featured = false,
-  onPress,
-}: {
-  title: string;
-  sub: string;
-  Icon: (props: ServiceIconProps) => ReactElement;
-  featured?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.serviceTile,
-        featured && styles.serviceTileFeatured,
-        pressed && styles.serviceTilePressed,
-      ]}
-      onPress={onPress}
-    >
-      <View style={[styles.serviceIconWrap, featured && styles.serviceIconWrapFeatured]}>
-        <Icon size={26} color={featured ? colors.primary : '#ffffff'} />
-      </View>
-      <Text style={styles.serviceTitle}>{title}</Text>
-      <Text style={styles.serviceSub} numberOfLines={1}>{sub}</Text>
-    </Pressable>
   );
 }
 
@@ -959,7 +930,7 @@ const styles = themed(() => StyleSheet.create({
   },
 
   /* ── "Where to?" + "Bol kar book karein", one row ──
-     `stretch` is the point of the row: the two cards have different content
+     `stretch` is the point of the row: the two sides have different content
      heights (one is icon-beside-text, the other icon-above-text) and without it
      the shorter one would float with a ragged bottom edge next to the taller. */
   heroRow: {
@@ -968,10 +939,10 @@ const styles = themed(() => StyleSheet.create({
     gap: 10,
   },
   /* ── "Where to?" hero — the sheet's primary action ──
-     Takes every pixel the voice tile does not. The two are no longer split by
-     ratio: the voice side is a fixed-width icon tile (see below), so this grows
-     with the screen instead of being pegged to a share of it — the wider the
-     handset, the more of it goes to the thing people actually came to tap. */
+     Takes every pixel the voice tile does not. The two are not split by ratio:
+     the voice side is a fixed-width icon tile (see below), so this grows with
+     the screen instead of being pegged to a share of it — the wider the
+     handset, the more of it goes to the thing people came to tap. */
   searchHero: {
     flex: 1,
     flexDirection: 'row',
@@ -1050,18 +1021,8 @@ const styles = themed(() => StyleSheet.create({
     color: '#8f9694',
     marginTop: 2,
   },
-  /* The same line, when it is carrying the gender prompt instead of the
-     strapline: lime and bold, because it is an instruction, not a caption.
-     Smaller than the strapline so two lines of it cost the row less height
-     than one line of 13px plus a wrap would. */
-  searchHeroSubPrompt: {
-    fontSize: 11.5,
-    lineHeight: 14.5,
-    fontWeight: '800',
-    color: colors.primary,
-  },
 
-  /* ── Services ── */
+  /* ── Section heading, e.g. "Rides already going" ── */
   sectionLabel: {
     fontSize: 11,
     fontWeight: '800',
@@ -1069,22 +1030,55 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: 1.1,
     textTransform: 'uppercase',
     marginTop: 2,
+    marginBottom: -2,
   },
-  /* Suggested Rides — one row, lime-edged, directly under the hero pair. A
-     card here would have cost the sheet another 90px and pushed Services off
-     the first screen; a row earns its place at a third of that. */
-  suggestedRow: {
+  /* ── The two ride-sharing tiles, one row ──
+     Lime as a literal, not colors.primary: this sheet is dark in BOTH themes,
+     and in light mode colors.primary darkens to olive — which on a dark sheet
+     is a dim smudge where the brand accent should be.
+     `stretch` (the row default) is doing real work: the shared-rides tile
+     carries up to three lines of live text and City to City two, and without
+     equal heights the pair would sit on a ragged baseline. flex:1 each rather
+     than a computed half-width, so the gutter is exact on every handset. */
+  rideTiles: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    backgroundColor: 'rgba(204,255,0,0.07)',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  rideTile: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
+    borderColor: 'rgba(255,255,255,0.10)',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 11,
+    gap: 2,
   },
-  suggestedIcon: {
+  /* Lime means "near you, right now" — which is exactly what the shared-rides
+     tile is, and exactly what the intercity one is not. */
+  rideTileLime: {
+    backgroundColor: 'rgba(204,255,0,0.07)',
+    borderColor: 'rgba(204,255,0,0.35)',
+  },
+  /* Icon left, count or arrow right, on one line above the text: at half the
+     sheet's width there is no room for the icon-beside-text layout these two
+     used as full rows. */
+  rideTileTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 7,
+  },
+  rideTileIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  rideTileIconLime: {
     width: 34,
     height: 34,
     borderRadius: 12,
@@ -1092,62 +1086,23 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(204,255,0,0.12)',
   },
-  suggestedTitle: { color: '#ffffff', fontSize: 14.5, fontWeight: '900' },
-  suggestedSub: { color: '#9aa2a0', fontSize: 11.5, fontWeight: '600', marginTop: 1 },
-  /* The gender breakdown, one line under the summary. Lime rather than grey:
-     it answers a different question from the line above it and should not read
-     as a continuation of it. */
-  suggestedSplit: { color: colors.primary, fontSize: 10.5, fontWeight: '800', marginTop: 2 },
+  rideTileTitle: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
+  rideTileSub: { color: '#9aa2a0', fontSize: 11, fontWeight: '600', lineHeight: 14.5 },
+  /* The gender breakdown (or the cheapest seat), one line under the summary.
+     Lime rather than grey: it answers a different question from the line above
+     it and should not read as a continuation of it. */
+  rideTileAccent: { color: '#ccff00', fontSize: 10.5, fontWeight: '800', marginTop: 2 },
   suggestedCount: {
     minWidth: 26,
     height: 26,
     paddingHorizontal: 7,
     borderRadius: 13,
-    backgroundColor: colors.primary,
+    backgroundColor: '#ccff00',
     alignItems: 'center',
     justifyContent: 'center',
   },
   suggestedCountTxt: { color: '#0b0d0c', fontSize: 12.5, fontWeight: '900' },
   suggestedArrow: { color: '#7d8482', fontSize: 16, fontWeight: '800' },
-  serviceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  serviceTile: {
-    // Two per row: half the sheet's content width, minus half the 10px gutter.
-    width: (width - 40 - 10) / 2,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    padding: 14,
-    gap: 2,
-  },
-  serviceTileFeatured: {
-    backgroundColor: 'rgba(204,255,0,0.08)',
-    borderColor: 'rgba(204,255,0,0.30)',
-  },
-  serviceTilePressed: { opacity: 0.65 },
-  serviceIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  serviceIconWrapFeatured: { backgroundColor: 'rgba(204,255,0,0.12)' },
-  serviceTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  serviceSub: {
-    fontSize: 11,
-    color: '#8f9694',
-  },
   drawerOverlay: {
     flex: 1,
     flexDirection: 'row',

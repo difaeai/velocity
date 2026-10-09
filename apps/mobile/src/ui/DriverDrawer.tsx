@@ -116,7 +116,9 @@ export function DriverDrawer({
             styles.scrollContent,
             {
               paddingTop: Math.max(insets.top, 24) + 4,
-              paddingBottom: Math.max(insets.bottom, 20) + 16,
+              // The pinned "Ride as Passenger" footer owns the bottom inset now;
+              // this only needs to clear the last nav row off the divider.
+              paddingBottom: 12,
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -196,7 +198,10 @@ export function DriverDrawer({
           <View style={styles.divider} />
 
           <View style={styles.navSection}>
-            <NavItem icon="🧍" label="Ride as Passenger"      onPress={() => go('/passenger/home')} />
+            {/* "Ride as Passenger" used to be a NavItem here — one grey line in
+                a list of twelve, for the one action that changes which half of
+                the app you are in. It is now the lime button pinned under this
+                scroll view, where it cannot be missed. */}
             <NavItem
               icon={getThemeMode() === 'dark' ? '☀️' : '🌙'}
               label={getThemeMode() === 'dark' ? 'Light Mode' : 'Dark Mode'}
@@ -222,6 +227,28 @@ export function DriverDrawer({
             <NavItem icon="🚪" label="Sign out" onPress={() => { onClose(); setTimeout(onSignOut, 220); }} danger />
           </View>
         </ScrollView>
+
+        {/* ── Ride as Passenger ──
+            Pinned below the scroll view, full width and brand lime, because
+            this is the drawer's second job: every driver is also a rider, and
+            as a nav row among a dozen others most of them never saw it. It
+            does not scroll away, and it mirrors the passenger drawer, where
+            "Driver mode" sits in exactly this spot. */}
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+          <Pressable
+            style={({ pressed }) => [styles.passengerBtn, pressed && styles.passengerBtnPressed]}
+            onPress={() => go('/passenger/home')}
+            accessibilityRole="button"
+            accessibilityLabel="Ride as Passenger — switch to the rider side of the app"
+          >
+            <Text style={styles.passengerBtnIcon}>🧍</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.passengerBtnLabel}>Ride as Passenger</Text>
+              <Text style={styles.passengerBtnSub}>Book a ride for yourself</Text>
+            </View>
+            <Text style={styles.passengerBtnGo}>→</Text>
+          </Pressable>
+        </View>
       </Animated.View>
     </Modal>
   );
@@ -296,4 +323,34 @@ const styles = themed(() => StyleSheet.create({
   navLabel:      { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   divider:       { height: 1, backgroundColor: colors.glassChip, marginHorizontal: 16, marginVertical: 2 },
+
+  /* ── Pinned "Ride as Passenger" footer ── */
+  footer: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.glassChip,
+    backgroundColor: '#1a1c1c',
+  },
+  /* Deliberately heavy: 16px of vertical padding and a solid lime fill, so it
+     reads as a switch between two apps rather than one more menu entry.
+
+     Brand lime as a literal, not colors.primary: this panel is hardcoded dark
+     in both themes, and in light mode colors.primary darkens to olive — olive
+     under this near-black label is the one combination here that fails to
+     read. */
+  passengerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#ccff00',
+    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingVertical: 16,
+  },
+  passengerBtnPressed: { opacity: 0.82 },
+  passengerBtnIcon:  { fontSize: 22 },
+  passengerBtnLabel: { fontSize: 16.5, fontWeight: '900', color: '#0b0d0c', letterSpacing: -0.2 },
+  passengerBtnSub:   { fontSize: 11.5, fontWeight: '700', color: 'rgba(11,13,12,0.65)', marginTop: 1 },
+  passengerBtnGo:    { fontSize: 19, fontWeight: '900', color: '#0b0d0c' },
 }));
