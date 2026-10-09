@@ -94,6 +94,17 @@ export interface SuggestedRide {
   companions: { firstName: string; gender: string }[];
   /** Epoch-ms a driverless pool stops gathering riders. Null once it has a driver. */
   joinWindowEndsAt: number | null;
+  /**
+   * When the car actually leaves, epoch-ms — only driver-posted rides carry a
+   * real departure time, because only they are scheduled. Null everywhere else,
+   * and the screen says "leaving now" or "leaves by <window>" instead of
+   * inventing a clock time nobody promised.
+   */
+  departureAtMs: number | null;
+  /** When the pool was put up, epoch-ms. "Posted 6 min ago" is a freshness cue. */
+  postedAtMs: number | null;
+  /** Epoch-ms a driverless pool request gives up waiting for a driver. */
+  expiresAtMs: number | null;
   /** True when Join sends a request to a driver instead of taking the seat. */
   needsDriverApproval: boolean;
   rideType: string | null;
@@ -106,6 +117,20 @@ function windowEndOf(d: FirebaseFirestore.DocumentData): number | null {
   const ms = (d.createdAt as { toDate?: () => Date } | undefined)?.toDate?.()?.getTime();
   return typeof ms === 'number' ? ms + POOL_JOIN_WINDOW_MS : null;
 }
+
+/** Epoch-ms of a Firestore Timestamp, or null when the field is absent/odd. */
+function msOf(value: unknown): number | null {
+  const ms = (value as { toDate?: () => Date } | undefined)?.toDate?.()?.getTime();
+  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * How long after its departure time a driver-posted ride still belongs in the
+ * feed. Nothing sweeps `poolRides`, so without this a seat on a car that left
+ * yesterday evening is offered forever — and now that rows carry the departure
+ * time, offered with the stale time printed on them.
+ */
+const DEPARTED_GRACE_MS = 15 * 60 * 1000;
 
 function expired(value: unknown, now: Date): boolean {
   const d = value as { toDate?: () => Date } | undefined;
@@ -216,6 +241,11 @@ export const getSuggestedRides = onCall(async (req) => {
           .filter((r) => r.uid !== ctx.uid)
           .map((r) => ({ firstName: r.firstName, gender: r.gender })),
         joinWindowEndsAt: windowEnd,
+        // A booked pool leaves as soon as it has a driver — there is no clock
+        // time to show, so none is claimed.
+        departureAtMs: null,
+        postedAtMs: msOf(d.createdAt),
+        expiresAtMs: null,
         needsDriverApproval: hasDriver,
         rideType: (d.rideType as string | undefined) ?? null,
       });
@@ -282,6 +312,11 @@ export const getSuggestedRides = onCall(async (req) => {
             .filter((uid) => uid !== ctx.uid)
             .map((uid) => ({ firstName: names[uid] ?? 'Rider', gender: 'unspecified' })),
           joinWindowEndsAt: null,
+          departureAtMs: null,
+          postedAtMs: msOf(d.createdAt),
+          // Only an open request is still counting down; once a driver has it,
+          // the expiry stopped mattering.
+          expiresAtMs: d.status === 'open' ? msOf(d.expiresAt) : null,
           needsDriverApproval: d.driverId != null,
           rideType: null,
         });
@@ -308,6 +343,11 @@ export const getSuggestedRides = onCall(async (req) => {
         (d.takenSeats as number) ?? 0,
         d.maxSeats as number,
       )) continue;
+
+      // The one source with a scheduled departure, so the one source that can
+      // go stale: a ride whose time has passed is not a suggestion.
+      const departureAtMs = msOf(d.departureTime);
+      if (departureAtMs !== null && departureAtMs + DEPARTED_GRACE_MS < now.getTime()) continue;
 
       const pLat = (d.pickup?.lat as number | undefined) ?? 0;
       const pLng = (d.pickup?.lng as number | undefined) ?? 0;
@@ -337,6 +377,9 @@ export const getSuggestedRides = onCall(async (req) => {
         driverVehicle: (d.vehicleLabel as string | null) ?? null,
         companions: [],
         joinWindowEndsAt: null,
+        departureAtMs,
+        postedAtMs: msOf(d.createdAt),
+        expiresAtMs: null,
         // The driver posted these seats to be taken, so taking one is not a
         // request — that is the whole offer.
         needsDriverApproval: false,

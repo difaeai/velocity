@@ -151,11 +151,17 @@ export function poolAudience(ride: {
   return 'open';
 }
 
-/** Section headings for a feed split by audience. */
+/**
+ * Section headings for a feed split by audience.
+ *
+ * "Rides", not "pools": this is read by a rider, and the app says ride sharing
+ * everywhere a rider can see. The `pool*` identifiers underneath keep their
+ * names — they are the schema, not the wording.
+ */
 export const POOL_AUDIENCE_LABEL: Record<PoolAudience, string> = {
-  female: '♀ Women’s pools',
-  male: '♂ Men’s pools',
-  mixed: '♂♀ Mixed pools',
+  female: '♀ Women’s rides',
+  male: '♂ Men’s rides',
+  mixed: '♂♀ Mixed rides',
   open: '👥 Open — no one aboard yet',
 };
 
@@ -173,6 +179,14 @@ export const POOL_AUDIENCE_NOTE: Record<PoolAudience, string> = {
   male: 'Only men are aboard or allowed',
   mixed: 'Men and women already sharing',
   open: 'The first rider sets who can join',
+};
+
+/** The same four groups as a filter chip, with no heading grammar. */
+export const POOL_AUDIENCE_FILTER: Record<PoolAudience, string> = {
+  female: '♀ Women',
+  male: '♂ Men',
+  mixed: '♂♀ Mixed',
+  open: '👥 Open',
 };
 
 export function poolGenderSummary(males: number, females: number): string {
