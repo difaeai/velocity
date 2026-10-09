@@ -1,0 +1,135 @@
+VELOCITY RIDES 1.16.0  ·  Android versionCode 41  ·  iOS build 14
+=================================================================
+
+TWO CHANGES, BOTH ABOUT SHARED RIDES. The Shared rides screen is rebuilt — a
+search box, separate lists for women's, men's and mixed cars, a new Areas view,
+and a departure time on every ride. Behind it, abandoned shared-ride offers now
+expire instead of living in the database for ever.
+
+VERSION STATE, verified against the App Store Connect API on 9 Oct 2026 (not
+from the release log — check the stores, not this file):
+
+  iOS      1.15.0 (build 13) is READY_FOR_SALE, as are 1.14.0, 1.13.0 and
+           everything back to 1.9.0. Apple takes no new build against a
+           released version, so 1.16.0 is REQUIRED here. Highest build on
+           Apple's side is 13, so this one is 14.
+  Android  Play's state cannot be read from this machine (no Play API
+           credentials). EAS has built vc38 (1.13.0), vc39 (1.14.0) and vc40
+           (1.15.0); which of them actually reached Play is only answerable in
+           the Play bundle explorer. Check it before writing the notes — if
+           vc40 never went up, this build is also carrying the 5% daily
+           commission change to Android for the first time.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Shared rides, rebuilt around the questions you actually ask:
+
+• Search any area — see the cars going there AND the ones starting there
+• Women's, men's and mixed rides are separate lists now, so you know whose car
+  it is before you tap
+• New Areas view: which areas have rides, what leaves soonest, cheapest seat
+• Every ride shows when it leaves
+• Cars whose driver never set off no longer sit in the list
+
+Velocity Rides: ride-hailing for Pakistan where you name the fare.
+
+
+APP STORE "WHAT'S NEW" (set on version 1.16.0 through the API)
+--------------------------------------------------------------
+NEW IN THIS VERSION
+
+SHARED RIDES, REBUILT
+
+Tapping Shared rides used to open one flat list of whatever was nearby. It is
+now built around the three questions riders actually ask.
+
+Is anything going my way? There is a search box at the top. Type an area and
+you get the cars going TO it as well as the ones starting FROM it, with a line
+saying which is which.
+
+Whose car is it? Women's rides, men's rides and mixed ones are now separate
+lists under their own headings, with chips to show only one of them. That
+question deserves a heading, not small print on a row.
+
+Where could I get to? The new Areas view gives you one card per destination —
+how many rides go there, what leaves soonest, the cheapest seat, and which
+pickup points feed it. Tap a card to see those rides.
+
+And every ride now tells you when it leaves — a real departure time where the
+driver scheduled one, "leaving now" where a driver is already confirmed, and
+the honest truth where a car is still gathering riders or still looking for a
+driver. No ride claims a time nobody promised.
+
+Cars whose driver never set off are now closed properly instead of sitting in
+the list for ever, and if a seat of yours is released you are told, with
+nothing charged.
+
+
+WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
+----------------------------------------------------------------
+Two merges off main, 9 Oct 2026: 620773f (the screen) and bc8d8af (the sweep).
+
+  - app/passenger/suggested-rides.tsx rebuilt: a location search matched
+    against BOTH ends of every journey, audience chips with counts, one list
+    per audience, a Rides|Areas switch, and a time line per row. The pure
+    logic sits in src/lib/rideSearch.ts with 24 unit tests, so the search,
+    grouping and time wording are tested without a renderer.
+  - getSuggestedRides now returns departureAtMs / postedAtMs / expiresAtMs.
+    Only driver-posted poolRides carry a real departureTime, so only they get
+    a clock time; the other two subsystems get a window, a wait, or nothing.
+    This asymmetry is the whole point — a guessed departure puts somebody on a
+    road at a time nobody promised.
+  - joinPoolRide can return queued:true (the car already carries both genders,
+    so the seat waits for a same-gender pair). The screen alerted "You are in"
+    either way. Fixed, and the honest outcome is now shown.
+  - Nothing swept poolRides, so a driver's posted ride stayed 'open' for ever.
+    That was not only feed clutter: hasLiveWork() in drivers/vehicles.ts counts
+    an open pool ride as live work, so one forgotten ride locked that driver
+    out of ever switching cars. sweepStaleSharedRides (every 10 minutes) now
+    ends both abandoned poolRides and expired poolRideRequests.
+  - Two clocks, deliberately different, both in poolRides/lifecycle.ts: feeds
+    hide a departed car after 15 minutes, the sweep only retires it after 90.
+    Hiding costs nobody anything; cancelling is a decision about somebody's
+    ride. The hide window must never grow past the expire window.
+  - Expired seats and queued pairings are marked, and the leader and riders get
+    one push each — but only for an expiry inside the last 24 hours, so the
+    first run did not blast the whole backlog. A picked-up seat is never
+    rewritten: that journey happened.
+  - pool-request/[id].tsx used to fall back to the "open" status line for any
+    status it did not know, so an expired pool read "Waiting for driver" for
+    ever. It now has a real expired line and an honest unknown-status fallback.
+    pool-ride.tsx warns when a seat was released instead of showing a green
+    "Seat Reserved", and drops departed cars from its nearby list.
+  - Two composite indexes added for the sweep's scans (poolRides
+    status+createdAt, poolRideRequests status+expiresAt). The emulator does not
+    enforce indexes, so without these the sweep would have passed every test
+    and failed in production.
+
+Verified before the build: backend 800 tests / 57 files on the Firestore
+emulator, mobile 180 tests, both typechecks clean, backend eslint clean, and
+`expo export` bundles both platforms. CI green on 620773f and bc8d8af, and the
+Cloud Functions deploy for both succeeded — so the new feed fields and the
+sweep are ALREADY LIVE on the server. This build is the app half.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.16.0-vc41.aab (repo root) to Play Console.
+  2. Paste the "WHAT'S NEW" block above as the release notes.
+  3. Roll it into EVERY track that still holds an older build. Otherwise the
+     AD_ID rejection comes back (vc3/vc6/vc8 have no AD_ID permission).
+  4. After the rollout is live: admin console → App version →
+     version 1.16.0 AND build 41. Without the build number nobody is prompted.
+
+iOS:
+  1. Build 14 uploaded to App Store Connect with the Build Upload API
+     (scripts/asc-upload-ipa.mjs — the ASC web UI does not accept an .ipa) and
+     attached to a new 1.16.0 version record with the What's New text above
+     (scripts/asc-attach-build.mjs).
+  2. The only step left is the human one: Submit for Review.
+  3. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.16.0 AND build 14. Never before — a published iOS version
+     higher than what Apple has released prompts every iPhone to update to a
+     build they cannot get, which is the Guideline 4 rejection from 17 Sep.
