@@ -18,7 +18,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
-type Status = 'open' | 'negotiating' | 'active' | 'full' | 'cancelled' | 'completed';
+type Status = 'open' | 'negotiating' | 'active' | 'full' | 'cancelled' | 'expired' | 'completed';
 
 interface PoolRequest {
   id: string;
@@ -72,8 +72,15 @@ const STATUS_META: Record<Status, { label: string; color: string; desc: string }
   active:      { label: 'Ride confirmed',         color: '#22c55e', desc: 'Fare agreed. Other passengers can join.' },
   full:        { label: 'Ride full',              color: '#6b7280', desc: 'All seats are taken.' },
   cancelled:   { label: 'Cancelled',              color: '#ef4444', desc: 'This ride request was cancelled.' },
+  /* Written by the backend sweep when nobody drove the pool. It is a real
+     ending, so it gets a real line — the screen used to fall back to "open"
+     and keep promising a driver who was never coming. */
+  expired:     { label: 'Expired',                color: '#6b7280', desc: 'No driver took this pool in time. Nothing was charged — you can book again.' },
   completed:   { label: 'Completed',              color: '#22c55e', desc: 'Ride completed.' },
 };
+
+/** A status this build has never heard of. Says nothing rather than the wrong thing. */
+const UNKNOWN_STATUS = { label: 'Not available', color: '#6b7280', desc: 'This ride request is no longer active.' };
 
 export default function PoolRequestDetailScreen() {
   const router = useRouter();
@@ -192,7 +199,7 @@ export default function PoolRequestDetailScreen() {
     );
   }
 
-  const meta = STATUS_META[request.status] ?? STATUS_META.open;
+  const meta = STATUS_META[request.status] ?? UNKNOWN_STATUS;
   const slotsLeft = request.totalSlots - request.filledSlots;
   const activeFare = request.agreedFarePerSeat ?? request.proposedFarePerSeat;
 
