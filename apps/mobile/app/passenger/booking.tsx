@@ -24,7 +24,8 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
-import { poolGenderSummary } from '../../src/lib/genderAccess';
+import { POOL_AUDIENCE_CHIP, poolAudience, poolGenderSummary } from '../../src/lib/genderAccess';
+import { useGenderPref } from '../../src/hooks/genderPref';
 import { usePassengerTrips, useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
 import {
   usePlacesAutocomplete,
@@ -385,7 +386,17 @@ export default function Booking() {
   // Voice booking can arrive with a passenger count already spoken ("do banday
   // hain"). The typed flow has no seat picker and never calls the setter.
   const [seats, setSeats] = useState(voicePrefill?.seats ?? 1);
-  const [gender] = useState<Gender>('unspecified');
+  /**
+   * The rider's gender, from their profile — this used to be a `useState`
+   * pinned to 'unspecified', which meant every pool booked here was created
+   * with an empty gender tally. createTrip now reads the profile itself and
+   * ignores what we send, so this is for the scheduled-ride path and the
+   * driver feed; it is still read from the one source of truth rather than
+   * guessed, so the two can never disagree.
+   */
+  const { gender: profileGender } = useGenderPref();
+  const gender: Gender =
+    profileGender === 'male' || profileGender === 'female' ? profileGender : 'unspecified';
   const [autoAccept, setAutoAccept] = useState(false);
   /**
    * Everything the rider is willing to pay with. A list, not a choice: a rider
@@ -1217,9 +1228,11 @@ export default function Booking() {
                       </Text>
                       {/* Who's already in the car. Riders decide on this before
                           fare — sharing with the opposite gender is a real
-                          consideration here. */}
+                          consideration here. Named as the women's / men's /
+                          mixed car first, then the count, because that is the
+                          order the question is actually asked in. */}
                       <Text style={styles.matchGender} numberOfLines={1}>
-                        {poolGenderSummary(p.males, p.females)}
+                        {POOL_AUDIENCE_CHIP[poolAudience(p)]} · {poolGenderSummary(p.males, p.females)}
                         {p.companions && p.companions.length > 0
                           ? ` · with ${p.companions.map((c) => c.firstName).join(', ')}`
                           : ''}

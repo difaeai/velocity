@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '../api/client';
+import { poolAudience, type PoolAudience } from '../lib/genderAccess';
 import { useForegroundInterval } from './useForegroundInterval';
 import type { Coords } from './location';
 
@@ -34,15 +35,24 @@ export interface SuggestedRidesSummary {
   nearestDestination: string | null;
   /** The cheapest seat on offer, for "from PKR 180". */
   cheapestFare: number | null;
+  /**
+   * How those cars break down into women's, men's, mixed and not-yet-boarded —
+   * the first thing a rider here wants to know about a shared seat, and worth
+   * saying on the home row rather than only inside the list.
+   */
+  byAudience: Record<PoolAudience, number>;
   /** False until the first poll lands, so the row can stay hidden until then. */
   loaded: boolean;
 }
+
+const NO_AUDIENCE: Record<PoolAudience, number> = { female: 0, male: 0, mixed: 0, open: 0 };
 
 const EMPTY: SuggestedRidesSummary = {
   count: 0,
   withDriver: 0,
   nearestDestination: null,
   cheapestFare: null,
+  byAudience: NO_AUDIENCE,
   loaded: false,
 };
 
@@ -94,6 +104,8 @@ export function useSuggestedRides(coords: Coords | null): SuggestedRidesSummary 
         radiusKm: HOME_SUGGESTED_RADIUS_KM,
       });
       if (ticket !== seq.current) return;
+      const byAudience = { ...NO_AUDIENCE };
+      for (const r of rides) byAudience[poolAudience(r)] += 1;
       // Rows arrive nearest-first, so the first one is the nearest.
       setState({
         count: rides.length,
@@ -102,6 +114,7 @@ export function useSuggestedRides(coords: Coords | null): SuggestedRidesSummary 
         cheapestFare: rides.length
           ? rides.reduce((min, r) => Math.min(min, r.farePerSeat), rides[0]!.farePerSeat)
           : null,
+        byAudience,
         loaded: true,
       });
     } catch {

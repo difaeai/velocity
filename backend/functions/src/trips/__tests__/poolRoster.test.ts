@@ -81,7 +81,14 @@ async function runningPool() {
 
 beforeEach(async () => {
   await clearFirestore();
-  await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq', phoneNumber: '+923001111111' });
+  // The gender here, not the one in the booking request, is what the pool is
+  // built from — createTrip reads the profile. Without it this "man's pool"
+  // would be a pool with nobody's gender known.
+  await db().doc(`users/${HOST}`).set({
+    name: 'Usman Tariq',
+    gender: 'male',
+    phoneNumber: '+923001111111',
+  });
   // She opted into mixed rides: the host is a man, and joining a man's pool
   // now takes that consent like every other way into a shared car.
   await db().doc(`users/${RIDER}`).set({

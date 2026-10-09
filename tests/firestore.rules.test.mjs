@@ -115,6 +115,25 @@ test('privilege escalation via profile write is blocked', async () => {
   await assertFails(updateDoc(doc(passenger, 'users/passenger1'), { role: 'admin' }));
 });
 
+test('a rider can record who they will share a car with', async () => {
+  // The home-screen selector writes both fields in one update: mixedRideOk is
+  // what every gender gate in the app reads, and sharedRideGenderPref is the
+  // explicit answer that tells "chose same-gender" apart from "never asked".
+  // Leave either off the whitelist and the selector fails silently — the chip
+  // moves, the write is rejected, and the preference never applies anywhere.
+  await assertSucceeds(updateDoc(doc(passenger, 'users/passenger1'), {
+    sharedRideGenderPref: 'any_gender',
+    mixedRideOk: true,
+  }));
+  await assertSucceeds(updateDoc(doc(passenger, 'users/passenger1'), {
+    sharedRideGenderPref: 'same_gender',
+    mixedRideOk: false,
+  }));
+  // Still nobody else's to set — being able to flip a stranger's preference is
+  // being able to seat them next to whoever you like.
+  await assertFails(updateDoc(doc(driver, 'users/passenger1'), { mixedRideOk: true }));
+});
+
 test('a user cannot read or write someone else’s profile', async () => {
   await assertFails(getDoc(doc(driver, 'users/passenger1')));
   await assertFails(updateDoc(doc(driver, 'users/passenger1'), { displayName: 'hax' }));

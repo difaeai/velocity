@@ -15,12 +15,10 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   collection,
   doc,
-  getDoc,
   limit,
   onSnapshot,
   orderBy,
   query,
-  updateDoc,
   where,
 } from 'firebase/firestore';
 import type { Timestamp } from 'firebase/firestore';
@@ -40,6 +38,7 @@ import {
   isRideVisibleToUser,
   type GenderComposition,
 } from '../../src/lib/genderAccess';
+import { useGenderPref } from '../../src/hooks/genderPref';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -339,9 +338,18 @@ export default function PoolRideScreen() {
 
   const [step, setStep]               = useState<Step>('browse');
   const [destination, setDestination] = useState(params.preDestination ?? '');
-  const [mixedRideOk, setMixedRideOk] = useState(false);
-  const [mixedRideSaving, setMixedRideSaving] = useState(false);
-  const [userGender, setUserGender]   = useState('unspecified');
+  /**
+   * One shared answer to "who will you share with?", read from the same store
+   * the home-screen selector writes. This screen used to hold its own copy
+   * loaded with a single `getDoc`, which meant a choice made on home never
+   * arrived here and a toggle here never reached home. See hooks/genderPref.
+   */
+  const {
+    gender: userGender,
+    mixedRideOk,
+    saving: mixedRideSaving,
+    choose,
+  } = useGenderPref();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [allRides, setAllRides]       = useState<PoolRide[]>([]);
   const [loadingRides, setLoadingRides] = useState(true);
@@ -403,36 +411,20 @@ export default function PoolRideScreen() {
     setDestPredictionsOpen(false);
   }
 
-  // Load user gender + mixed-ride preference from profile
-  useEffect(() => {
-    if (!user) return;
-    getDoc(doc(db, 'users', user.uid))
-      .then((snap) => {
-        const data = snap.data();
-        const g = data?.gender as string | undefined;
-        if (g) setUserGender(g);
-        if (typeof data?.mixedRideOk === 'boolean') setMixedRideOk(data.mixedRideOk);
-      })
-      .catch(() => {});
-  }, [user]);
-
   async function persistMixedRideOk(value: boolean) {
-    if (!user) return;
-    setMixedRideSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { mixedRideOk: value });
-      setMixedRideOk(value);
+      await choose(value ? 'any_gender' : 'same_gender');
+      // Turning it off withdraws the consent the rules screen collected, so the
+      // acceptance has to be withdrawn with it.
       if (!value) setRulesAccepted(false);
     } catch {
       Alert.alert('Could not save preference', 'Please try again.');
-    } finally {
-      setMixedRideSaving(false);
     }
   }
 
   function promptMixedRideOk(value: boolean) {
     if (!value) {
-      persistMixedRideOk(false);
+      void persistMixedRideOk(false);
       return;
     }
     Alert.alert(
@@ -440,7 +432,7 @@ export default function PoolRideScreen() {
       'In Pakistan, sharing a car with the opposite gender requires both parties to opt in.\n\nBy enabling this you accept:\n• Only join pools where seating is culturally appropriate\n• 2+ male or 2+ female pools stay same-gender only\n• A 1M+1F pool closes when a third passenger joins\n• Misrepresenting your gender leads to a permanent pool ban\n\nDo you accept these rules?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'I Accept', onPress: () => persistMixedRideOk(true) },
+        { text: 'I Accept', onPress: () => void persistMixedRideOk(true) },
       ],
     );
   }

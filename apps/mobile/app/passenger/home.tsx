@@ -37,6 +37,8 @@ import { DEFAULT_SNAP_POINTS, DraggableSheet } from '../../src/ui/DraggableSheet
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
 import { NewsTicker } from '../../src/ui/NewsTicker';
+import { GENDER_PREF_PROMPT, SharedRideGenderCard } from '../../src/ui/SharedRideGenderCard';
+import { useGenderPref } from '../../src/hooks/genderPref';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
@@ -125,6 +127,25 @@ export default function PassengerHome() {
   // and "three cars are going your way right now", and only the second one is
   // worth a tap.
   const suggested = useSuggestedRides(coords);
+
+  // Who this rider will share a car with. Until they have answered, the app
+  // treats them as same-gender-only and quietly filters the pool feed down —
+  // so "Where to?" carries the prompt and the selector sits under it. The
+  // answer itself is enforced server-side off `mixedRideOk`; see genderPref.
+  const genderPref = useGenderPref();
+  const needsGenderPref = genderPref.loaded && genderPref.pref === null;
+
+  // "♀ 2 women's · ♂ 1 men's · 3 open" — only the groups that exist, so the
+  // line never pads itself out with zeroes.
+  const suggestedSplit = (() => {
+    const { female, male, mixed, open } = suggested.byAudience;
+    const parts: string[] = [];
+    if (female) parts.push(`♀ ${female} women’s`);
+    if (male) parts.push(`♂ ${male} men’s`);
+    if (mixed) parts.push(`♂♀ ${mixed} mixed`);
+    if (open) parts.push(`${open} open`);
+    return parts.length > 0 ? parts.join(' · ') : null;
+  })();
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -343,8 +364,17 @@ export default function PassengerHome() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.searchHeroTitle}>Where to?</Text>
-              <Text style={styles.searchHeroSub} numberOfLines={1}>
-                Pool or ride solo
+              {/* The gender prompt replaces the strapline rather than joining it:
+                  a rider who has not said who they will share with is already
+                  being shown a filtered pool feed, and that is worth more than
+                  "Pool or ride solo". Kept short because this card is only as
+                  wide as the voice tile leaves it — the sentence in full is on
+                  the selector directly below, which has the whole row. */}
+              <Text
+                style={[styles.searchHeroSub, needsGenderPref && styles.searchHeroSubPrompt]}
+                numberOfLines={2}
+              >
+                {needsGenderPref ? 'Choose your gender preference first' : 'Pool or ride solo'}
               </Text>
             </View>
           </Pressable>
@@ -367,6 +397,14 @@ export default function PassengerHome() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* ── Who will you share with? ─────────────────────────────────────
+             Between the ways of starting a ride and the list of rides already
+             going, because it decides what that list is allowed to contain.
+             One answer here is the rule for every shared surface in the app —
+             Suggested Rides below, the pool step in booking, en-route pickups,
+             and the join calls the server will accept. ── */}
+        <SharedRideGenderCard />
 
         {/* ── Suggested Rides ──────────────────────────────────────────────
              Shared cars near this rider that still have a seat, whichever way
@@ -404,6 +442,13 @@ export default function PassengerHome() {
                       + (suggested.cheapestFare ? ` · from PKR ${suggested.cheapestFare}` : '')
                     : `${suggested.count} shared ride${suggested.count === 1 ? '' : 's'} with a seat free`}
             </Text>
+            {/* Which of those cars are the women's, the men's and the mixed
+                ones. A rider's first question about a shared seat is who else
+                is in it, and making them open the list to find out is making
+                them open the list for nothing. */}
+            {suggestedSplit ? (
+              <Text style={styles.suggestedSplit} numberOfLines={1}>{suggestedSplit}</Text>
+            ) : null}
           </View>
           {suggested.count > 0 ? (
             <View style={styles.suggestedCount}>
@@ -1005,6 +1050,16 @@ const styles = themed(() => StyleSheet.create({
     color: '#8f9694',
     marginTop: 2,
   },
+  /* The same line, when it is carrying the gender prompt instead of the
+     strapline: lime and bold, because it is an instruction, not a caption.
+     Smaller than the strapline so two lines of it cost the row less height
+     than one line of 13px plus a wrap would. */
+  searchHeroSubPrompt: {
+    fontSize: 11.5,
+    lineHeight: 14.5,
+    fontWeight: '800',
+    color: colors.primary,
+  },
 
   /* ── Services ── */
   sectionLabel: {
@@ -1039,6 +1094,10 @@ const styles = themed(() => StyleSheet.create({
   },
   suggestedTitle: { color: '#ffffff', fontSize: 14.5, fontWeight: '900' },
   suggestedSub: { color: '#9aa2a0', fontSize: 11.5, fontWeight: '600', marginTop: 1 },
+  /* The gender breakdown, one line under the summary. Lime rather than grey:
+     it answers a different question from the line above it and should not read
+     as a continuation of it. */
+  suggestedSplit: { color: colors.primary, fontSize: 10.5, fontWeight: '800', marginTop: 2 },
   suggestedCount: {
     minWidth: 26,
     height: 26,

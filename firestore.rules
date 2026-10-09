@@ -57,12 +57,16 @@ service cloud.firestore {
       // create only happens during the race before onUserCreate trigger fires
       allow create: if isOwner(userId);
       // update: owner may only touch safe profile fields — role is server-only.
-      // mixedRideOk is the pool-ride opposite-gender opt-in toggled from the
-      // nearby-rides screens.
+      // mixedRideOk is the pool-ride opposite-gender opt-in, and
+      // sharedRideGenderPref the explicit answer behind it ('same_gender' /
+      // 'any_gender'). Both are written together by the home-screen selector —
+      // see apps/mobile/src/hooks/genderPref.ts. mixedRideOk stays the flag
+      // every gate reads; the pref only tells "chose same-gender" apart from
+      // "never asked", so it must be writable alongside it.
       allow update: if isOwner(userId)
                     && onlyChanges(['displayName', 'name', 'gender', 'dob', 'age',
                                     'profileComplete', 'photoURL', 'lastActive', 'updatedAt',
-                                    'mixedRideOk']);
+                                    'mixedRideOk', 'sharedRideGenderPref']);
       allow update, delete: if isAdmin();
 
       // Saved places (home / work / favourites) — owner-managed bookmarks.

@@ -45,6 +45,10 @@ const BASE_TRIP = {
   // Everybody in these fixtures is a woman unless a test says otherwise: joining
   // a booking pool runs the car's gender rules now, and what most of these tests
   // are about (seats, fares, the queue) has nothing to do with them.
+  //
+  // What makes them women is the profile seeded in `beforeEach`, not this field
+  // — createTrip reads the caller's profile and ignores what the request says.
+  // It stays here because shipped app versions still send it.
   passengerGender: 'female' as const,
   pool: true,
   paymentMethod: 'cash' as const,
@@ -432,11 +436,16 @@ describe('visibility', () => {
   });
 
   it('carries the driver and the people already aboard, so the rider picks a car', async () => {
-    await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq' });
+    await db().doc(`users/${HOST}`).set({ name: 'Usman Tariq', gender: 'male' });
     // A man browsing a man's pool: the gender rules have nothing to hide here.
     await db().doc(`users/${JOINER}`).set({ displayName: 'Joiner', gender: 'male' });
-    // The host's gender on the roster is the one they BOOKED with, not whatever
-    // their profile says — that is the figure the pool's tally is built from.
+    // The host's gender on the roster — and so the pool's whole tally — is the
+    // one on their PROFILE. It used to be whatever the booking request claimed,
+    // which meant the app's hardcoded 'unspecified' emptied the tally on every
+    // pool booked through it, and meant a request could claim a gender to be
+    // seated somewhere these rules exist to keep it out of. The request field
+    // is still accepted and ignored; passing 'male' here no longer does
+    // anything, and the seed above is what makes this a man's pool.
     const { tripId } = await createPool(HOST, { passengerGender: 'male' });
     await confirmWithDriver(tripId);
 
@@ -510,6 +519,48 @@ describe('gender tally', () => {
     expect(pool.males).toBe(1);
     expect(pool.females).toBe(1);
     expect(pool.riders).toBe(2);
+  });
+
+  it('builds the tally from the profile, not from what the request claims', async () => {
+    // The booking screen sent a hardcoded 'unspecified' on every ride it ever
+    // created, so this tally came out empty for every pool booked through it:
+    // the feed said "no one aboard" for a car with a woman in it, and since an
+    // unknown-gender passenger needs everybody else's mixed-ride consent, a
+    // same-gender-only rider could not join any of them.
+    await db().doc(`users/${HOST}`).set({ displayName: 'Host', gender: 'female' });
+
+    const { tripId } = await createPool(HOST, { passengerGender: 'unspecified' });
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.poolGenders).toEqual({ male: 0, female: 1 });
+    expect(trip.passengerGender).toBe('female');
+    expect(trip.poolRoster[0].gender).toBe('female');
+    // The driver-facing mirror has to agree, or the two feeds disagree about
+    // who is in the car.
+    expect((await db().doc(`openRequests/${tripId}`).get()).get('poolGenders'))
+      .toEqual({ male: 0, female: 1 });
+  });
+
+  it('refuses a request that claims a gender the profile does not have', async () => {
+    // Being seated in a women's pool is exactly what a man would claim to be a
+    // woman for, so the claim cannot be the thing we act on.
+    await db().doc(`users/${HOST}`).set({ displayName: 'Host', gender: 'male' });
+
+    const { tripId } = await createPool(HOST, { passengerGender: 'female' });
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.passengerGender).toBe('male');
+    expect(trip.poolGenders).toEqual({ male: 1, female: 0 });
+  });
+
+  it('falls back to unspecified when the profile has no gender at all', async () => {
+    await db().doc(`users/${HOST}`).set({ displayName: 'Host' });
+
+    const { tripId } = await createPool(HOST, { passengerGender: 'female' });
+
+    const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
+    expect(trip.passengerGender).toBe('unspecified');
+    expect(trip.poolGenders).toEqual({ male: 0, female: 0 });
   });
 });
 
