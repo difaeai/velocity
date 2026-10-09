@@ -307,6 +307,13 @@ export { sendTripMessage } from './trips/chat';
 // rides that were cancelled, taken, or simply abandoned mid-request.
 export { sweepStaleOpenRequests } from './trips/sweepStaleRequests';
 
+// The same job for the two shared-ride offer collections: a driver's posted
+// ride whose departure time came and went without boarding, and a riders' pool
+// that ran out of time without a driver. Neither had an ending of its own —
+// and an abandoned pool ride also counted as "live work", which locked its
+// driver out of ever switching cars.
+export { sweepStaleSharedRides } from './poolRides/sweepStaleSharedRides';
+
 // Scheduled rides — auto-book recurring rides from the Book Ride screen
 export { upsertScheduledRide, deleteScheduledRide, runScheduledRides } from './scheduledRides';
 

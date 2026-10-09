@@ -49,6 +49,7 @@ import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { haversineKm } from './index';
 import { rosterForTrip } from './poolRoster';
 import { POOL_JOIN_WINDOW_MS } from './poolShare';
+import { rideHasDeparted, timestampMs } from '../poolRides/lifecycle';
 
 const schema = z.object({
   lat: z.number().min(-90).max(90),
@@ -117,20 +118,6 @@ function windowEndOf(d: FirebaseFirestore.DocumentData): number | null {
   const ms = (d.createdAt as { toDate?: () => Date } | undefined)?.toDate?.()?.getTime();
   return typeof ms === 'number' ? ms + POOL_JOIN_WINDOW_MS : null;
 }
-
-/** Epoch-ms of a Firestore Timestamp, or null when the field is absent/odd. */
-function msOf(value: unknown): number | null {
-  const ms = (value as { toDate?: () => Date } | undefined)?.toDate?.()?.getTime();
-  return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
-}
-
-/**
- * How long after its departure time a driver-posted ride still belongs in the
- * feed. Nothing sweeps `poolRides`, so without this a seat on a car that left
- * yesterday evening is offered forever — and now that rows carry the departure
- * time, offered with the stale time printed on them.
- */
-const DEPARTED_GRACE_MS = 15 * 60 * 1000;
 
 function expired(value: unknown, now: Date): boolean {
   const d = value as { toDate?: () => Date } | undefined;
@@ -244,7 +231,7 @@ export const getSuggestedRides = onCall(async (req) => {
         // A booked pool leaves as soon as it has a driver — there is no clock
         // time to show, so none is claimed.
         departureAtMs: null,
-        postedAtMs: msOf(d.createdAt),
+        postedAtMs: timestampMs(d.createdAt),
         expiresAtMs: null,
         needsDriverApproval: hasDriver,
         rideType: (d.rideType as string | undefined) ?? null,
@@ -313,10 +300,10 @@ export const getSuggestedRides = onCall(async (req) => {
             .map((uid) => ({ firstName: names[uid] ?? 'Rider', gender: 'unspecified' })),
           joinWindowEndsAt: null,
           departureAtMs: null,
-          postedAtMs: msOf(d.createdAt),
+          postedAtMs: timestampMs(d.createdAt),
           // Only an open request is still counting down; once a driver has it,
           // the expiry stopped mattering.
-          expiresAtMs: d.status === 'open' ? msOf(d.expiresAt) : null,
+          expiresAtMs: d.status === 'open' ? timestampMs(d.expiresAt) : null,
           needsDriverApproval: d.driverId != null,
           rideType: null,
         });
@@ -345,9 +332,11 @@ export const getSuggestedRides = onCall(async (req) => {
       )) continue;
 
       // The one source with a scheduled departure, so the one source that can
-      // go stale: a ride whose time has passed is not a suggestion.
-      const departureAtMs = msOf(d.departureTime);
-      if (departureAtMs !== null && departureAtMs + DEPARTED_GRACE_MS < now.getTime()) continue;
+      // go stale: a ride whose time has passed is not a suggestion. The sweep
+      // (poolRides/sweepStaleSharedRides.ts) retires it for real, much later —
+      // hiding a row is cheap, cancelling somebody's ride is not.
+      const departureAtMs = timestampMs(d.departureTime);
+      if (rideHasDeparted(d.departureTime, now.getTime())) continue;
 
       const pLat = (d.pickup?.lat as number | undefined) ?? 0;
       const pLng = (d.pickup?.lng as number | undefined) ?? 0;
@@ -378,7 +367,7 @@ export const getSuggestedRides = onCall(async (req) => {
         companions: [],
         joinWindowEndsAt: null,
         departureAtMs,
-        postedAtMs: msOf(d.createdAt),
+        postedAtMs: timestampMs(d.createdAt),
         expiresAtMs: null,
         // The driver posted these seats to be taken, so taking one is not a
         // request — that is the whole offer.

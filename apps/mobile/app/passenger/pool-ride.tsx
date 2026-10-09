@@ -120,6 +120,16 @@ export function fareBreakdown(soloFare: number): FareRow[] {
 
 const MAX_NEARBY_KM = 1.0;
 
+/**
+ * How long after its departure time a posted ride stays in this list.
+ *
+ * Mirrors POOL_RIDE_HIDE_AFTER_DEPARTURE_MS in the backend's
+ * poolRides/lifecycle.ts. It must stay SHORTER than the sweep's own window
+ * there: hiding a late car costs nobody anything, and the sweep is what
+ * actually ends the ride.
+ */
+const DEPARTED_HIDE_MS = 15 * 60 * 1000;
+
 interface RideCategory {
   key: string;
   icon: string;
@@ -513,6 +523,16 @@ export default function PoolRideScreen() {
 
         // Only show rides with free seats
         rides = rides.filter((r) => r.takenSeats < r.maxSeats);
+
+        // And only rides that have not already left. This list is ordered by
+        // departure time, so a car whose time has gone sits at the very top of
+        // it until the backend sweep retires the document (90 min past
+        // departure — see poolRides/lifecycle.ts, which holds both windows).
+        const now = Date.now();
+        rides = rides.filter((r) => {
+          const departs = r.departureTime?.toMillis?.();
+          return typeof departs !== 'number' || departs + DEPARTED_HIDE_MS >= now;
+        });
         setAllRides(rides);
         setLoadingRides(false);
       },
@@ -660,8 +680,22 @@ export default function PoolRideScreen() {
 
   if (step === 'confirmed' && selected) {
     // Status banners shown to passenger based on real-time booking status
+    /* A seat can be taken away from under a passenger: the sweep releases it
+       when the driver never set off (status 'expired'), and the driver can drop
+       a rider ('cancelled'). Either way the screen below says "Seat Reserved",
+       so the banner has to say the opposite loudly. */
+    const seatGone = bookingStatus === 'expired' || bookingStatus === 'cancelled';
+
     const StatusBanner =
-      bookingStatus === 'driver_arrived' ? (
+      seatGone ? (
+        <View style={[styles.arrivedBanner, { backgroundColor: '#ef444422' }]}>
+          <Text style={[styles.arrivedBannerText, { color: '#ef4444' }]}>
+            {bookingStatus === 'expired'
+              ? '⚠️ This ride was closed — the driver never set off. Your seat was released and nothing was charged.'
+              : '⚠️ Your seat on this ride was cancelled. Nothing was charged.'}
+          </Text>
+        </View>
+      ) : bookingStatus === 'driver_arrived' ? (
         <View style={styles.arrivedBanner}>
           <Text style={styles.arrivedBannerText}>🚗 Your driver has arrived at your pickup!</Text>
         </View>
@@ -683,13 +717,16 @@ export default function PoolRideScreen() {
 
           <View style={styles.confirmedCircle}>
             <Text style={styles.confirmedEmoji}>
-              {bookingStatus === 'driver_arrived' ? '🚗'
+              {seatGone ? '⚠️'
+               : bookingStatus === 'driver_arrived' ? '🚗'
                : bookingStatus === 'picked_up' ? '🎉'
                : '✅'}
             </Text>
           </View>
-          <Text style={styles.confirmedTitle}>Seat Reserved</Text>
-          <Text style={styles.confirmedSub}>Your pool ride is booked</Text>
+          <Text style={styles.confirmedTitle}>{seatGone ? 'Seat released' : 'Seat Reserved'}</Text>
+          <Text style={styles.confirmedSub}>
+            {seatGone ? 'This ride is no longer running' : 'Your pool ride is booked'}
+          </Text>
 
           {/* Chat with driver button */}
           <Pressable style={styles.chatDriverBtn} onPress={() => setChatOpen(true)}>

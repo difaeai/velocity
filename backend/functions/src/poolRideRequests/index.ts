@@ -10,6 +10,7 @@ import { assertCommissionClear, getCommissionSettings } from '../domain/commissi
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
+import { rideHasDeparted } from '../poolRides/lifecycle';
 import { firstNameOf } from '../trips/poolRoster';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
@@ -897,6 +898,9 @@ export const getNearbyActiveRides = onCall(async (req) => {
     const distKmVal = distKm(lat, lng, pLat, pLng);
     if (distKmVal > radiusKm) continue;
     if ((d.maxSeats as number) - (d.takenSeats as number) <= 0) continue; // full
+    // A car whose departure time has gone is not a seat, whatever the document
+    // still says. The sweep retires it properly later (see poolRides/lifecycle.ts).
+    if (rideHasDeparted(d.departureTime, Date.now())) continue;
 
     rides.push({
       type:                'ride',
