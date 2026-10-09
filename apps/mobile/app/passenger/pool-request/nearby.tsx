@@ -13,17 +13,14 @@ import {
 import { Text, TextInput } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-
 import { api } from '../../../src/api/client';
 import type { NearbyActiveRide } from '../../../src/api/client';
-import { useAuth } from '../../../src/auth/AuthContext';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { usePlacesAutocomplete, fetchPlaceDetail, type PlacePrediction } from '../../../src/hooks/places';
-import { db } from '../../../src/firebase';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { isRideVisibleToUser } from '../../../src/lib/genderAccess';
+import { useGenderPref, type SharedRideGenderPref } from '../../../src/hooks/genderPref';
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -122,16 +119,24 @@ function RideCard({ ride, onJoin }: { ride: NearbyActiveRide; onJoin: () => void
 
 export default function NearbyRidesScreen() {
   const router = useRouter();
-  const { user } = useAuth();
   const { coords, status: locStatus, request: requestLocation } = useCurrentLocation();
 
   const [rides, setRides]             = useState<NearbyActiveRide[]>([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
   const [joining, setJoining]         = useState<string | null>(null);
-  const [userGender, setUserGender]   = useState('unspecified');
-  const [mixedRideOk, setMixedRideOk] = useState(false);
-  const [mixedRideSaving, setMixedRideSaving] = useState(false);
+  /**
+   * The same preference the home screen asks for, out of the same store — this
+   * screen used to keep its own copy, read once with a `getDoc`, so a choice
+   * made on home did not reach it and a toggle here did not reach home. One
+   * answer, one writer. See hooks/genderPref.
+   */
+  const {
+    gender: userGender,
+    mixedRideOk,
+    saving: mixedRideSaving,
+    choose,
+  } = useGenderPref();
 
   // Drop-off picker for joining a pool request. Every joiner is dropped within
   // the pool's drop zone (dropRadiusM around the leader's destination).
@@ -149,33 +154,9 @@ export default function NearbyRidesScreen() {
     sessionTokenRef.current,
   );
 
-  useEffect(() => {
-    if (!user) return;
-    getDoc(doc(db, 'users', user.uid))
-      .then((snap) => {
-        const data = snap.data();
-        if (data?.gender) setUserGender(data.gender as string);
-        if (typeof data?.mixedRideOk === 'boolean') setMixedRideOk(data.mixedRideOk);
-      })
-      .catch(() => {});
-  }, [user]);
-
-  async function persistMixedRideOk(value: boolean) {
-    if (!user) return;
-    setMixedRideSaving(true);
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { mixedRideOk: value });
-      setMixedRideOk(value);
-    } catch {
-      Alert.alert('Could not save preference', 'Please try again.');
-    } finally {
-      setMixedRideSaving(false);
-    }
-  }
-
   function promptMixedRideOk(value: boolean) {
     if (!value) {
-      persistMixedRideOk(false);
+      void persist('same_gender');
       return;
     }
     Alert.alert(
@@ -183,9 +164,17 @@ export default function NearbyRidesScreen() {
       'Enable this to see and join pools that may include opposite-gender passengers, following Pakistani cultural seating rules.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Enable', onPress: () => persistMixedRideOk(true) },
+        { text: 'Enable', onPress: () => void persist('any_gender') },
       ],
     );
+  }
+
+  async function persist(next: SharedRideGenderPref) {
+    try {
+      await choose(next);
+    } catch {
+      Alert.alert('Could not save preference', 'Please try again.');
+    }
   }
 
   const load = useCallback(async () => {

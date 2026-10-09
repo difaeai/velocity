@@ -120,6 +120,19 @@ const createTripSchema = z.object({
   rideType: z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']),
   offeredFare: z.number().int().positive(),
   seats: z.number().int().min(1).max(MAX_SEATS),
+  /**
+   * Accepted for wire compatibility with shipped app versions and then IGNORED
+   * — the gender written on the trip is read from the caller's profile below.
+   *
+   * It has to be, twice over. The booking screen sent a hardcoded
+   * 'unspecified' for every ride it ever created, so every pool booked through
+   * it carried an empty gender tally: nearby riders saw "no one aboard" for a
+   * car that had someone in it, and because an unknown-gender passenger needs
+   * everyone else's mixed-ride opt-in, same-gender-only riders could not join
+   * any of them. And a field the client fills is a field the client can lie
+   * about — claiming 'female' to be seated in a women's pool is exactly what
+   * these rules exist to prevent.
+   */
   passengerGender: z.enum(['male', 'female', 'unspecified']),
   pool: z.boolean().optional(),
   // Pool rides only. public → nearby riders can discover and join; private →
@@ -196,6 +209,17 @@ export const createTrip = onCall(async (req) => {
       tx.get(userRef),
       tx.get(db.doc(`wallets/${ctx.uid}`)),
     ]);
+    /**
+     * The gender this trip is recorded under — from the profile, never from the
+     * request. Everything downstream is built on it: the pool's running tally,
+     * the roster entry, `computeGenderAccess`, who the pool is offered to in
+     * Suggested Rides, and which en-route pickups a driver may add. See the
+     * note on `passengerGender` in the schema above.
+     */
+    const profileGender = userSnap.get('gender');
+    const passengerGender =
+      profileGender === 'male' || profileGender === 'female' ? profileGender : 'unspecified';
+
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     if (activeTripId) {
       const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
@@ -240,7 +264,7 @@ export const createTrip = onCall(async (req) => {
       id: tripRef.id,
       status: 'requested' as TripStatus,
       passengerId: ctx.uid,
-      passengerGender: data.passengerGender,
+      passengerGender,
       driverId: null,
       rideType: data.rideType,
       offeredFare: finalFare,
@@ -262,7 +286,7 @@ export const createTrip = onCall(async (req) => {
                 uid: ctx.uid,
                 name: (userSnap.get('name') as string | undefined)
                   ?? (userSnap.get('displayName') as string | undefined),
-                gender: data.passengerGender,
+                gender: passengerGender,
                 pickup: data.pickup,
                 dropoff: data.dropoff,
               }),
@@ -272,8 +296,8 @@ export const createTrip = onCall(async (req) => {
             // Running gender tally so nearby riders can see the make-up of a
             // pool before joining (names are never exposed — just the counts).
             poolGenders: {
-              male:   data.passengerGender === 'male'   ? 1 : 0,
-              female: data.passengerGender === 'female' ? 1 : 0,
+              male:   passengerGender === 'male'   ? 1 : 0,
+              female: passengerGender === 'female' ? 1 : 0,
             },
           }
         : {}),
@@ -297,7 +321,7 @@ export const createTrip = onCall(async (req) => {
       rideType: data.rideType,
       offeredFare: finalFare,
       seats: data.seats,
-      passengerGender: data.passengerGender,
+      passengerGender,
       passengerName: (userSnap.get('name') as string | undefined) ?? 'Passenger',
       passengerRating: (userSnap.get('rating') as number | undefined) ?? 5,
       passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
@@ -312,8 +336,8 @@ export const createTrip = onCall(async (req) => {
             maxPoolRiders: MAX_POOL_RIDERS,
             poolPerSeatFare: finalFare,
             poolGenders: {
-              male:   data.passengerGender === 'male'   ? 1 : 0,
-              female: data.passengerGender === 'female' ? 1 : 0,
+              male:   passengerGender === 'male'   ? 1 : 0,
+              female: passengerGender === 'female' ? 1 : 0,
             },
           }
         : {}),

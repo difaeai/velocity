@@ -124,6 +124,57 @@ export function genderLabel(gender: string): string {
  * sharing the car with the opposite gender, which the cultural seating rules
  * in `canJoinPool` then enforce for real.
  */
+/**
+ * Which pool this is, in the only terms a rider cares about: is it the women's
+ * car, the men's car, a mixed one, or nobody's yet.
+ *
+ * The driver's hard preference wins where it exists — a "Women only" route is a
+ * women's car whether or not anyone has boarded. Otherwise it is read off who is
+ * actually aboard, because that is what the seating rules in `computeGenderAccess`
+ * will go on to enforce: a car with two men in it is a men's car from then on,
+ * nobody declared it one.
+ */
+export type PoolAudience = 'female' | 'male' | 'mixed' | 'open';
+
+export function poolAudience(ride: {
+  genderPref?: string;
+  males?: number;
+  females?: number;
+}): PoolAudience {
+  if (ride.genderPref === 'female_only') return 'female';
+  if (ride.genderPref === 'male_only') return 'male';
+  const males = ride.males ?? 0;
+  const females = ride.females ?? 0;
+  if (males > 0 && females > 0) return 'mixed';
+  if (females > 0) return 'female';
+  if (males > 0) return 'male';
+  return 'open';
+}
+
+/** Section headings for a feed split by audience. */
+export const POOL_AUDIENCE_LABEL: Record<PoolAudience, string> = {
+  female: '♀ Women’s pools',
+  male: '♂ Men’s pools',
+  mixed: '♂♀ Mixed pools',
+  open: '👥 Open — no one aboard yet',
+};
+
+/** The same thing as a chip on a single row. */
+export const POOL_AUDIENCE_CHIP: Record<PoolAudience, string> = {
+  female: '♀ Women',
+  male: '♂ Men',
+  mixed: '♂♀ Mixed',
+  open: '👥 Open',
+};
+
+/** What a heading needs to say about why these rides are grouped together. */
+export const POOL_AUDIENCE_NOTE: Record<PoolAudience, string> = {
+  female: 'Only women are aboard or allowed',
+  male: 'Only men are aboard or allowed',
+  mixed: 'Men and women already sharing',
+  open: 'The first rider sets who can join',
+};
+
 export function poolGenderSummary(males: number, females: number): string {
   if (males <= 0 && females <= 0) return '👥 Empty — you’d be first';
   const parts: string[] = [];

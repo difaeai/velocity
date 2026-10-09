@@ -18,14 +18,18 @@
  *  - The fare on a row is what THIS rider would pay, and it is not negotiable.
  *    Whoever started the pool set it; a joiner takes it or does not join.
  *  - A row either seats you or asks a driver, and it says which before the tap.
+ *  - Women's pools, men's pools and mixed ones are listed separately, under
+ *    their own headings. One flat list made the rider read every row's small
+ *    print to answer the first question they actually have — "is this the
+ *    women's car?" — and that question deserves a heading, not a footnote.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   View,
 } from 'react-native';
@@ -38,7 +42,15 @@ import { api, type SuggestedRide } from '../../src/api/client';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
-import { poolGenderSummary } from '../../src/lib/genderAccess';
+import {
+  POOL_AUDIENCE_CHIP,
+  POOL_AUDIENCE_LABEL,
+  POOL_AUDIENCE_NOTE,
+  poolAudience,
+  poolGenderSummary,
+  type PoolAudience,
+} from '../../src/lib/genderAccess';
+import { useGenderPref } from '../../src/hooks/genderPref';
 import { PoolIcon } from '../../src/ui/RideIcons';
 
 /** How far out to look, in the rider's own words. */
@@ -50,10 +62,39 @@ const GENDER_LABEL: Record<string, string> = {
   female_only: '♀ Females only',
 };
 
+/**
+ * Heading order. A rider's own kind first — that is the list they came for —
+ * then mixed, then the empty cars anyone may start. Whichever sections are
+ * empty simply do not render.
+ */
+const AUDIENCE_ORDER: Record<string, PoolAudience[]> = {
+  female: ['female', 'mixed', 'open', 'male'],
+  male: ['male', 'mixed', 'open', 'female'],
+  unspecified: ['open', 'female', 'male', 'mixed'],
+};
+
 /** "7:12" — how long a gathering pool has left to take riders. */
 function countdown(endsAt: number, now: number): string {
   const secs = Math.ceil(Math.max(0, endsAt - now) / 1000);
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+/* Audience colours, kept as functions rather than a style map so the themed()
+   sheet stays statically typed: pink for women's cars, blue for men's, lime for
+   the ones anyone may join. The glyph carries the meaning on its own — the
+   colour is only there to make the groups scannable. */
+function audienceTint(a: PoolAudience) {
+  if (a === 'female') return styles.tintFemale;
+  if (a === 'male') return styles.tintMale;
+  if (a === 'mixed') return styles.tintMixed;
+  return styles.tintOpen;
+}
+
+function audienceInk(a: PoolAudience) {
+  if (a === 'female') return styles.inkFemale;
+  if (a === 'male') return styles.inkMale;
+  if (a === 'mixed') return styles.inkMixed;
+  return styles.inkOpen;
 }
 
 function RideRow({
@@ -68,6 +109,7 @@ function RideRow({
   onPress: () => void;
 }) {
   const gathering = !ride.hasDriver && ride.joinWindowEndsAt != null;
+  const audience = poolAudience(ride);
 
   return (
     <Pressable
@@ -75,7 +117,10 @@ function RideRow({
       onPress={onPress}
       disabled={busy}
       accessibilityRole="button"
-      accessibilityLabel={`Join a shared ride to ${ride.destinationAreaName} for ${ride.farePerSeat} rupees`}
+      accessibilityLabel={
+        `${POOL_AUDIENCE_CHIP[audience]} pool. `
+        + `Join a shared ride to ${ride.destinationAreaName} for ${ride.farePerSeat} rupees`
+      }
     >
       <View style={styles.cardHead}>
         <View style={styles.iconWrap}>
@@ -90,6 +135,17 @@ function RideRow({
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={styles.fare}>PKR {ride.farePerSeat}</Text>
           <Text style={styles.fareSub}>per seat</Text>
+        </View>
+      </View>
+
+      {/* The same answer as the section heading, repeated on the row — rows get
+          screenshotted, shared and scrolled past their heading, and "which car
+          is this" must survive all three. */}
+      <View style={styles.audienceRow}>
+        <View style={[styles.audienceChip, audienceTint(audience)]}>
+          <Text style={[styles.audienceTxt, audienceInk(audience)]}>
+            {POOL_AUDIENCE_CHIP[audience]}
+          </Text>
         </View>
       </View>
 
@@ -133,6 +189,9 @@ function RideRow({
 export default function SuggestedRidesScreen() {
   const router = useRouter();
   const { coords, request: requestLocation } = useCurrentLocation();
+  // Read, not asked for, here: the choice is made on home and this screen only
+  // reports it, so the rider understands why the list looks the way it does.
+  const { pref, gender } = useGenderPref();
 
   const [rides, setRides] = useState<SuggestedRide[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +221,31 @@ export default function SuggestedRidesScreen() {
   }, [coords?.lat, coords?.lng, radiusKm]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * One list per audience, in the order that puts the rider's own kind of car
+   * at the top. The server has already dropped every pool the gender rules keep
+   * this rider out of, so a section that renders is a section they can join —
+   * the headings explain the shape of the list, they do not promise more of it.
+   */
+  const sections = useMemo(() => {
+    const order = AUDIENCE_ORDER[gender] ?? AUDIENCE_ORDER.unspecified!;
+    const buckets = new Map<PoolAudience, SuggestedRide[]>();
+    for (const ride of rides ?? []) {
+      const key = poolAudience(ride);
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(ride);
+      else buckets.set(key, [ride]);
+    }
+    return order
+      .filter((a) => (buckets.get(a)?.length ?? 0) > 0)
+      .map((a) => ({
+        audience: a,
+        title: POOL_AUDIENCE_LABEL[a],
+        note: POOL_AUDIENCE_NOTE[a],
+        data: buckets.get(a)!,
+      }));
+  }, [rides, gender]);
 
   /**
    * Take the seat, or ask for it. Which call to make is decided by which
@@ -249,16 +333,49 @@ export default function SuggestedRidesScreen() {
           <Text style={styles.emptySub}>Looking for shared rides around you…</Text>
         </View>
       ) : (
-        <FlatList
-          data={rides ?? []}
+        <SectionList
+          sections={sections}
           keyExtractor={(r) => `${r.kind}:${r.id}`}
           contentContainerStyle={styles.list}
+          stickySectionHeadersEnabled={false}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.primary} />
           }
           renderItem={({ item }) => (
             <RideRow ride={item} now={now} busy={busyId === item.id} onPress={() => void join(item)} />
           )}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <Text style={styles.sectionNote}>
+                {section.note} · {section.data.length} ride
+                {section.data.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+          )}
+          ListHeaderComponent={
+            /* Why the list is as short as it is. A rider on same-gender-only is
+               seeing a deliberately narrow slice, and without this the missing
+               cars read as "Velocity has nothing" rather than "I asked for
+               this" — with a tap back to home to change the answer. */
+            (rides ?? []).length > 0 ? (
+              <Pressable
+                style={styles.prefNote}
+                onPress={goBack}
+                accessibilityRole="button"
+                accessibilityLabel="Change who you will share a ride with"
+              >
+                <Text style={styles.prefNoteTxt}>
+                  {pref === 'any_gender'
+                    ? 'Showing pools of any gender, as you chose on the home screen.'
+                    : pref === 'same_gender'
+                      ? 'Showing only pools you can share with, as you chose on the home screen.'
+                      : 'You have not chosen a gender preference yet — only same-gender pools are shown.'}
+                  {'  '}Change →
+                </Text>
+              </Pressable>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyTitle}>Nothing going your way yet</Text>
@@ -317,6 +434,38 @@ const styles = themed(() => StyleSheet.create({
   pickup: { color: colors.muted, fontSize: 11.5, fontWeight: '600', marginTop: 1 },
   fare: { color: colors.primary, fontSize: 16, fontWeight: '900' },
   fareSub: { color: colors.muted, fontSize: 10, fontWeight: '700' },
+
+  /* ── One list per audience ── */
+  sectionHead: { paddingTop: 10, gap: 2 },
+  sectionTitle: { color: colors.text, fontSize: 14, fontWeight: '900', letterSpacing: -0.2 },
+  sectionNote: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+
+  prefNote: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+    borderRadius: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  prefNoteTxt: { color: colors.text, fontSize: 11.5, fontWeight: '700', lineHeight: 16 },
+
+  audienceRow: { flexDirection: 'row' },
+  audienceChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  audienceTxt: { fontSize: 10.5, fontWeight: '900', letterSpacing: 0.2 },
+  tintFemale: { backgroundColor: 'rgba(236,72,153,0.14)', borderColor: 'rgba(236,72,153,0.45)' },
+  tintMale: { backgroundColor: 'rgba(59,130,246,0.14)', borderColor: 'rgba(59,130,246,0.45)' },
+  tintMixed: { backgroundColor: 'rgba(168,85,247,0.14)', borderColor: 'rgba(168,85,247,0.45)' },
+  tintOpen: { backgroundColor: colors.glassLime, borderColor: colors.glassLimeBorder },
+  inkFemale: { color: '#ec4899' },
+  inkMale: { color: '#3b82f6' },
+  inkMixed: { color: '#a855f7' },
+  inkOpen: { color: colors.primary },
 
   state: { fontSize: 12, fontWeight: '800' },
   stateDriver: { color: '#22c55e' },
