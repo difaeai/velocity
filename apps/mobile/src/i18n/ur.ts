@@ -1511,6 +1511,7 @@ export const UR: Record<string, string> = {
   "♀ Women only": "♀ صرف خواتین",
   "Same gender only": "صرف ہم جنس",
   "Your profile has no gender set — add it so same-gender rides can be matched →": "آپ کی پروفائل میں جنس درج نہیں — اسے شامل کریں تاکہ ہم جنس سواریاں ملائی جا سکیں →",
+  "Same-gender matching needs male or female — change it on your profile, or share with any gender →": "ہم جنس میلان کے لیے مرد یا خاتون درج ہونا ضروری ہے — پروفائل میں تبدیل کریں، یا کسی بھی جنس کے ساتھ شیئر کریں →",
   "Couriers — send a parcel": "کورئیر — پارسل بھیجیں",
   "Book a ride for yourself": "اپنے لیے سواری بک کریں",
 };
