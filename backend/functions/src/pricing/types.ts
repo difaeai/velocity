@@ -192,11 +192,46 @@ export interface QueueSettings {
   graceSec: number;
 }
 
+/**
+ * Offering a shared ride to one driver at a time.
+ *
+ * WHY THIS LIVES BESIDE `QueueSettings` AND NOT IN ITS OWN DOCUMENT
+ * ----------------------------------------------------------------
+ * Because it is the same policy, enforced harder. `queue` tiers who may claim
+ * an open request *first*; this decides who may *see* a shared ride at all, and
+ * it orders candidates by the very same seniority — `pricing/driverQueue.ts`
+ * answers both questions. Splitting them across two config documents would let
+ * an admin disable one and leave the other ordering drivers by a rule nobody
+ * had chosen.
+ */
+export interface DispatchSettings {
+  /** Off → every nearby driver sees every open pool, first tap wins (the old behaviour). */
+  enabled: boolean;
+  /**
+   * Seconds one driver holds the ride exclusively before the offer lapses and
+   * moves on. Long enough to read a card and decide, short enough that eight
+   * refusals still beat a rider's patience.
+   */
+  offerSeconds: number;
+  /** How many drivers are tried one at a time before the ride opens to all. */
+  maxOffers: number;
+  /** Candidate search radius around the pickup, in metres. */
+  radiusM: number;
+  /**
+   * The backstop. However the sequence is going, past this age every nearby
+   * driver may take the ride — the same guarantee `queue.openToAllAfterSec`
+   * makes, for the same reason: no rider is ever held hostage to an ordering
+   * policy.
+   */
+  openToAllAfterSec: number;
+}
+
 export interface PricingEngineConfig {
   fuel: FuelSettings;
   peak: PeakSettings;
   integrity: IntegritySettings;
   queue: QueueSettings;
+  dispatch: DispatchSettings;
   updatedAt: number;
   updatedBy?: string;
 }
@@ -274,6 +309,17 @@ export const DEFAULT_PRICING_CONFIG: PricingEngineConfig = {
     tierSeconds: 8,
     openToAllAfterSec: 60,
     graceSec: 90,
+  },
+  dispatch: {
+    enabled: true,
+    // 25s × 8 drivers is 200s of sequence against a 240s backstop, so the
+    // ladder finishes on its own merits rather than being cut off mid-way by
+    // `openToAllAfterSec` — which is there for the cases the ladder cannot
+    // reach, not as the usual exit.
+    offerSeconds: 25,
+    maxOffers: 8,
+    radiusM: 5000,
+    openToAllAfterSec: 240,
   },
   // Zero, not Date.now(): a module constant evaluated at import time would make
   // "when were these settings last changed" mean "when did this instance start".

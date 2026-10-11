@@ -295,6 +295,11 @@ export {
   getNearbyActiveRides,
 } from './poolRideRequests';
 
+// Moves a shared ride on when the driver holding it never answered. The ladder
+// itself advances on refusals and on feed polls; this is the minute-by-minute
+// backstop for the pool whose offered driver simply closed the app.
+export { sweepPoolDispatch } from './poolRideRequests/sweepDispatch';
+
 // Stamps `drivers/{uid}.geohash` from the location the handset already writes,
 // so the passenger map and the ride broadcast can find drivers by cell instead
 // of reading every online driver in the country per call. Centralising that one
@@ -330,7 +335,7 @@ export { sweepStaleSharedRides } from './poolRides/sweepStaleSharedRides';
 export { upsertScheduledRide, deleteScheduledRide, runScheduledRides } from './scheduledRides';
 
 // Fare engine — estimate, bid validation, pooling quote, admin seeding
-export { getFareEstimate, submitBid, getPoolingQuote, getSharedRideFare, seedFareConfig } from './fare';
+export { getFareEstimate, getFareContext, submitBid, getPoolingQuote, getSharedRideFare, seedFareConfig } from './fare';
 export {
   getMarketComparison, reportCompetitorQuote,
   adminUpsertMarketRates, adminDeleteMarketRates, adminFitMarketRates, adminMarketPosition,

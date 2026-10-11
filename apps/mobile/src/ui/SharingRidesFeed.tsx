@@ -38,6 +38,7 @@ import { colors } from '../config';
 import { themed } from '../theme';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import { DRIVER_TAB_BAR_HEIGHT } from './DriverTabBar';
+import { OfferCountdown } from './OfferCountdown';
 
 /** Mirrors POOL_NO_JOINER_WINDOW_MS on the backend. */
 const NO_JOINER_WINDOW_MS = 10 * 60 * 1000;
@@ -315,6 +316,8 @@ function PoolRequestBox({
 }) {
   return (
     <View style={styles.card}>
+      {/* The exclusive hold, when this ride is this driver's alone. */}
+      <OfferCountdown exclusive={req.exclusive} offerExpiresAt={req.offerExpiresAt} />
       <View style={styles.cardHeader}>
         <Text style={styles.distLabel}>{req.distanceKm} km away</Text>
         <View style={styles.genderBadge}>
@@ -445,6 +448,15 @@ export function SharingRidesFeed({
     AsyncStorage.setItem(RADIUS_KEY, String(km)).catch(() => {});
   }
 
+  /**
+   * Pass on a ride — locally at once, and on the server too.
+   *
+   * The server half is what makes the offer ladder work: it records the refusal
+   * and hands the pool to the next driver in the zone queue. Without it a
+   * refusal was known only to this handset, which is how this screen behaved
+   * until now. Not awaited, because the driver is already looking at the next
+   * card and a lapsed offer advances the ladder regardless.
+   */
   function reject(requestId: string) {
     setRejectedIds((prev) => new Set([...prev, requestId]));
     AsyncStorage.getItem(REJECT_KEY).then((raw) => {
@@ -452,6 +464,8 @@ export function SharingRidesFeed({
       const updated = [...existing.filter((e) => e.id !== requestId), { id: requestId, at: Date.now() }];
       AsyncStorage.setItem(REJECT_KEY, JSON.stringify(updated));
     }).catch(() => {});
+
+    api.driverRespondToRequest({ requestId, action: 'reject' }).catch(() => {});
   }
 
   async function accept(req: NearbyPoolRequest) {

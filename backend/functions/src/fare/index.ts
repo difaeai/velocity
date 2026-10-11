@@ -1,4 +1,4 @@
-export { getFareEstimate, submitBid, getPoolingQuote, getSharedRideFare, seedFareConfig } from './fareFunctions';
+export { getFareEstimate, getFareContext, submitBid, getPoolingQuote, getSharedRideFare, seedFareConfig } from './fareFunctions';
 export {
   getMarketComparison, reportCompetitorQuote,
   adminUpsertMarketRates, adminDeleteMarketRates, adminFitMarketRates, adminMarketPosition,

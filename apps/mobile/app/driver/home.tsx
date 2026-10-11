@@ -138,7 +138,16 @@ export default function DriverHome() {
   const switchRideMode = useCallback((m: 'solo' | 'sharing') => {
     setRideMode(m);
     AsyncStorage.setItem(RIDE_MODE_KEY, m).catch(() => {});
-  }, []);
+    // Also on the driver document, because the server has to know. Shared rides
+    // are now offered to one driver at a time, and a driver in Solo mode who is
+    // handed a pool offer burns a rung of that ladder and 25 seconds of the
+    // rider's time saying nothing. The backend treats a MISSING `rideMode` as
+    // available — every build before this one writes none — so this only ever
+    // takes a driver out of the pool ladder, never into it.
+    if (uid) {
+      setDoc(doc(db, 'drivers', uid), { rideMode: m }, { merge: true }).catch(() => {});
+    }
+  }, [uid]);
   // A push only reaches a backgrounded app. With the trip screen open —
   // which is exactly where a driver sits while the passenger is writing —
   // Android shows nothing, so the button has to carry the news itself.

@@ -13,6 +13,9 @@ import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 import { rideHasDeparted } from '../poolRides/lifecycle';
 import { firstNameOf } from '../trips/poolRoster';
+import { loadPricingConfig } from '../pricing/config';
+import { advancePoolLadder, declinePoolOffer, INITIAL_DISPATCH } from './dispatch';
+import { describeOffer, offerIsLive, poolVisibleToDriver, readDispatch } from './dispatchLadder';
 
 type GenderPref = 'male_only' | 'female_only' | 'any';
 
@@ -128,10 +131,19 @@ export const createPoolRideRequest = onCall(async (req) => {
     driverPlate:         null,
     driverGender:        null,
     status:              'open',
+    // The offer ladder starts empty but PRESENT — see `readDispatch` for why a
+    // missing `dispatch` has to keep meaning "broadcast, as before".
+    dispatch:            INITIAL_DISPATCH,
     expiresAt,
     createdAt:           FieldValue.serverTimestamp(),
     updatedAt:           FieldValue.serverTimestamp(),
   });
+
+  // Offer it to the most senior nearby driver before returning, so the leader's
+  // screen already shows somebody considering it. Awaited rather than
+  // fire-and-forget: a function instance that returns can be frozen mid-promise,
+  // and an un-offered pool would then sit until the sweeper noticed.
+  await advancePoolLadder(ref.id);
 
   return { ok: true, requestId: ref.id };
 });
@@ -140,7 +152,10 @@ export const createPoolRideRequest = onCall(async (req) => {
 
 const DriverRespondSchema = z.object({
   requestId:           docId,
-  action:              z.enum(['accept', 'counter']),
+  // 'reject' is the answer the ladder in dispatchLadder.ts is built on: before
+  // it, a driver could accept or ignore, and ignoring told the dispatcher
+  // nothing it could act on.
+  action:              z.enum(['accept', 'reject', 'counter']),
   counterFarePerSeat:  z.number().int().min(50).max(10000).optional(),
 });
 
@@ -159,6 +174,21 @@ export const driverRespondToRequest = onCall(async (req) => {
     );
   }
 
+  // A refusal needs none of the checks below it: a driver saying no to a ride
+  // does not have to have photographed their car or cleared yesterday's
+  // commission first, and making them would leave the ladder stuck on a driver
+  // who cannot even decline.
+  if (action === 'reject') {
+    const outcome = await declinePoolOffer(requestId, ctx.uid);
+    if (!outcome.ok && outcome.reason === 'gone') {
+      throw new HttpsError('not-found', 'Ride request not found.');
+    }
+    // 'taken' and 'not_open' are not errors worth surfacing — the driver is
+    // passing on a ride that has already moved on, and the answer they want is
+    // the same either way: it is gone from your feed.
+    return { ok: true, status: 'declined' };
+  }
+
   // Fetch driver profile for name/vehicle info.
   const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
   if (!driverSnap.exists) throw new HttpsError('not-found', 'Driver profile not found.');
@@ -171,6 +201,7 @@ export const driverRespondToRequest = onCall(async (req) => {
   const driverData = driverSnap.data()!;
 
   const reqRef = db.doc(`poolRideRequests/${requestId}`);
+  const dispatchSettings = (await loadPricingConfig()).dispatch;
 
   let newStatus: string;
   await db.runTransaction(async (tx) => {
@@ -186,6 +217,26 @@ export const driverRespondToRequest = onCall(async (req) => {
     }
     if (data.driverId !== null) {
       throw new HttpsError('failed-precondition', 'Another driver has already responded to this request.');
+    }
+
+    // The exclusive hold. Without this the ladder would be advisory: a driver
+    // whose feed still held a cached card — or a patched build calling the
+    // callable directly — could take a ride that is somebody else's for the
+    // next twenty seconds, and the queue would mean nothing again.
+    const { dispatch, legacy } = readDispatch(data);
+    if (
+      dispatchSettings.enabled &&
+      !legacy &&
+      offerIsLive(dispatch, Date.now()) &&
+      dispatch.offeredDriverId !== ctx.uid
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Another driver is being offered this ride right now. It will come to you if they pass.',
+      );
+    }
+    if (dispatch.declined.includes(ctx.uid)) {
+      throw new HttpsError('failed-precondition', 'You have already passed on this ride.');
     }
 
     // Gender check: driver gender vs request gender pref.
@@ -213,6 +264,10 @@ export const driverRespondToRequest = onCall(async (req) => {
       activatedAt:        FieldValue.serverTimestamp(),
       goAnyway:           { leader: null, driver: null },
       goAnywayConfirmed:  false,
+      // The ladder is over. `status` alone would stop it — nothing advances a
+      // pool that is not 'open' — but a document still naming an open offer on
+      // a ride that has a driver reads as a bug to the next person debugging one.
+      dispatch:           { ...dispatch, offeredDriverId: null, offeredAt: null, offerExpiresAt: null, openToAll: false },
       updatedAt:          FieldValue.serverTimestamp(),
     });
   });
@@ -732,9 +787,15 @@ export const getNearbyPoolRequests = onCall(async (req) => {
   const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
   const driverGender: string = driverSnap.exists ? (driverSnap.data()!.gender ?? 'unspecified') : 'unspecified';
 
+  const dispatchSettings = (await loadPricingConfig()).dispatch;
   const radiusM = radiusKm * 1000;
   const bounds = geohashQueryBounds([lat, lng], radiusM);
   const now = new Date();
+  const nowMs = now.getTime();
+  // Pools this read found with a lapsed offer. Advanced after the loop, not in
+  // it: the ladder's own transaction must not run while this is still reading,
+  // and a feed poll should not wait on somebody else's dispatch to answer.
+  const toAdvance: string[] = [];
 
   const snapshots = await Promise.all(
     bounds.map((b) =>
@@ -768,6 +829,22 @@ export const getNearbyPoolRequests = onCall(async (req) => {
       // Gender match: driver must match the request's pref.
       if (!genderAllowed(driverGender, d.genderPref as GenderPref)) continue;
 
+      // The ladder. Before this, every nearby gender-matching driver saw every
+      // open pool and the first tap won; now a pool under offer belongs to one
+      // driver until they answer or their time runs out.
+      const { dispatch, legacy } = readDispatch(d);
+      const createdAtMs = (d.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? null;
+      const visibility = poolVisibleToDriver({
+        dispatch,
+        legacy,
+        driverId: ctx.uid,
+        createdAtMs,
+        settings: dispatchSettings,
+        now: nowMs,
+      });
+      if (visibility.reason === 'lapsed_gap') toAdvance.push(doc.id);
+      if (!visibility.visible) continue;
+
       // Who is in the pool — first name and what each of them pays, in join
       // order, so the driver can weigh the whole pool before accepting.
       const farePerSeat = (d.agreedFarePerSeat ?? d.proposedFarePerSeat) as number;
@@ -795,12 +872,33 @@ export const getNearbyPoolRequests = onCall(async (req) => {
         totalFare:           farePerSeat * (d.filledSlots as number),
         totalFareIfFull:     farePerSeat * (d.totalSlots as number),
         distanceKm:          Math.round(distKmVal * 10) / 10,
+        // The countdown. `exclusive` is what the card keys its "Yours for 20s"
+        // banner and its Pass button off; an open-to-all pool carries neither.
+        exclusive:           visibility.exclusive,
+        offerExpiresAt:      visibility.offerExpiresAt,
+        offerNote:           visibility.exclusive && visibility.offerExpiresAt
+                               ? describeOffer(visibility.offerExpiresAt, nowMs)
+                               : null,
       });
     }
   }
 
-  // Sort nearest first.
-  results.sort((a: any, b: any) => a.distanceKm - b.distanceKm);
+  // A ride this driver is holding comes first however far away it is — it is
+  // the only one with a clock on it. The rest stay nearest-first.
+  results.sort((a: any, b: any) =>
+    Number(b.exclusive) - Number(a.exclusive) || a.distanceKm - b.distanceKm);
+
+  // Lapsed ladders this read walked past, moved on now — which is what keeps
+  // the hand-off between drivers feeling instant instead of waiting on the
+  // one-minute sweeper. Awaited, because a promise left running after a
+  // function returns can be frozen before it commits; bounded to five, so one
+  // driver opening the app in a stale city does not pay to repair all of it.
+  // The rides these offers go to appear in this driver's NEXT poll, not this
+  // response — they are not theirs to see, which is rather the point.
+  for (const requestId of toAdvance.slice(0, 5)) {
+    await advancePoolLadder(requestId, { now: nowMs });
+  }
+
   return { requests: results };
 });
 

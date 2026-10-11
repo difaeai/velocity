@@ -7,6 +7,7 @@ import {
 } from './fareEngine';
 import { comparisonFor } from './marketFunctions';
 import { sharedRideFare } from './sharedRideFare';
+import { fareCityIdsFor, loadFareConfigFor } from './cityConfig';
 import { loadFuelPrices, loadPricingConfig } from '../pricing/config';
 import { describeFuelAdjustment, fuelFactorFor, withFuelAdjustedRates } from '../pricing/fuel';
 import { riderPeakLabel } from '../pricing/peak';
@@ -149,6 +150,97 @@ export const getFareEstimate = onCall({ region: REGION }, async (req) => {
       savingsPct: comparison.savingsPct,
       guaranteeMet: comparison.guaranteeMet,
       engineFare: comparison.engineFare,
+    },
+  };
+});
+
+/**
+ * The rate card the rider should be priced against, with today's fuel in it.
+ * ----------------------------------------------------------------------------
+ * WHY THIS EXISTS, AND WHY IT IS NOT `getFareEstimate`
+ * ---------------------------------------------------
+ * The booking screen priced riders from `fareConfig/{CITY_ID}` read straight
+ * out of Firestore, and ran the maths in the app's own copy of the engine. That
+ * document is deliberately never fuel-adjusted — `pricing/fuel.ts` derives the
+ * adjustment on read and leaves the stored card as the human authored it — so
+ * the screen the rider actually uses was pricing off the un-adjusted table.
+ * The pricing engine moved what the server charges and validates, and left what
+ * the rider was shown exactly where it had always been.
+ *
+ * It could not simply call `getFareEstimate` instead. That callable prices ONE
+ * class for ONE trip, and the booking screen prices every class at once so the
+ * rider can compare the tiles, re-pricing them all each time they change the
+ * route. Five callables per tap on a screen that is currently instant is not a
+ * trade worth making — the market-rates read a few lines above says the same
+ * thing about its own data for the same reason.
+ *
+ * So the server hands over the adjusted CARD and the app keeps doing the
+ * arithmetic. One call per route, every class correct, and three things fixed
+ * at once:
+ *
+ *  · FUEL REACHES THE RIDER. A notified price revision moves the displayed
+ *    fare the same morning it moves the charged one.
+ *  · THE DISPLAY/VALIDATION SEAM CLOSES. `offeredFareBounds` and
+ *    `minAcceptableBid` are computed from the adjusted card server-side. While
+ *    the app priced from the un-adjusted one, a fuel price ABOVE the configured
+ *    baseline meant the rider's auto-filled offer could fall under the server's
+ *    floor and be clamped up — a rider charged more than the screen showed.
+ *    Today's pump price sits below baseline, so rates are cut and the server
+ *    comes in under the display, which is why nothing has surfaced yet. It
+ *    would have flipped the day fuel rose past the baseline.
+ *  · THE CITY IS RESOLVED FROM THE PICKUP. The screen hardcoded
+ *    `islamabad_rawalpindi` while every server path resolves the city from
+ *    coordinates, so a Karachi rider was shown Islamabad's rates and charged
+ *    Karachi's.
+ *
+ * `peak` and `fuel` ride along because the screen needs them for the same
+ * reason it needs the card, and a second round-trip for two labels would be
+ * silly. The rider-facing explanation of both is in ui/PriceNotice.tsx.
+ */
+export const getFareContext = onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const lat = Number((req.data as Record<string, unknown>)?.lat);
+  const lng = Number((req.data as Record<string, unknown>)?.lng);
+  const hasPickup = Number.isFinite(lat) && Number.isFinite(lng);
+  const pickup = hasPickup ? { lat, lng } : null;
+
+  const cityId = fareCityIdsFor(pickup)[0]!;
+  // The fuel-adjusted card, through the one function every priced path loads
+  // its rates with — so the rider is shown the table the trip will be created
+  // from, not a second opinion about it.
+  const config = (await loadFareConfigFor(pickup)) ?? await loadCityConfig(cityId);
+
+  const pricing = await loadPricingConfig();
+  const fuelPrices = await loadFuelPrices();
+
+  // A category has to be named to describe fuel, because the fuel SHARE differs
+  // per class — a rickshaw's rate is nearly all fuel, a luxury car's is mostly
+  // the car. 'mini' is the screen's default selection.
+  const category = (((req.data as Record<string, unknown>)?.category as VehicleCategory) ?? 'mini');
+  const fuel = fuelFactorFor(category, fuelPrices, pricing.fuel);
+
+  const zone = hasPickup
+    ? await peakFactorForZone(cityId, (req.data as Record<string, unknown>)?.geohash as string | undefined)
+    : { multiplier: 1 };
+
+  return {
+    cityId,
+    config,
+    /**
+     * The multiplier the app must pass into `calculateFare` as
+     * `surgeMultiplier`. Without it the app would price at 1.0 and the server
+     * would validate at the zone's real factor — the same seam again.
+     */
+    peak: {
+      multiplier: zone.multiplier,
+      label: riderPeakLabel(zone.multiplier),
+      maxMultiplier: Math.min(pricing.peak.maxMultiplier, config.surge.maxMultiplier),
+    },
+    fuel: {
+      note: describeFuelAdjustment(fuel),
+      pricePkr: fuel.pricePkr,
+      product: fuel.product,
     },
   };
 });
