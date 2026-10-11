@@ -904,6 +904,56 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ----- The Pricing Engine's four collections ----------------------------
+    // All written exclusively by Cloud Functions through the Admin SDK, which
+    // bypasses these rules — so `write: if false` here costs the engine nothing
+    // and closes every one of them to clients.
+    //
+    // They are also closed to clients for READING, which is the less obvious
+    // half. Unlike fareConfig above (a published rate card every rider is
+    // entitled to check), these documents are the engine's working state:
+    //
+    //  · surge/* and pricingZones/* say how many drivers are in a cell right
+    //    now and how many riders are waiting. That is a live map of Velocity's
+    //    supply, and a competitor with a passenger account could poll it.
+    //  · pricingZones/* additionally contains the zone's driver queue, which
+    //    names every driver in the area. No rider should ever hold that list,
+    //    and no driver should be able to read their rivals' positions.
+    //  · driverPresence/* is a driver's own online/offline history and their
+    //    churn flag. The owner may read it — being able to see "you have gone
+    //    offline six times this hour, which is why you keep losing your place"
+    //    is the difference between a rule and a punishment nobody explained.
+    //
+    // Everything the apps legitimately need from these four is served by the
+    // callables in pricing/functions.ts, shaped per caller: a rider gets a
+    // multiplier and a label, a driver gets their own rank and nobody else's.
+
+    // The multiplier fare/fareFunctions.ts reads on every quote.
+    match /surge/{zoneKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Per-zone samples, the peak decision, the shock verdict and the queue.
+    match /pricingZones/{zoneKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Confirmed pump prices: `current`, plus one document per effective date so
+    // a fare queried months later can be checked against what was believed on
+    // the day rather than what is believed now.
+    match /fuelPrices/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // One document per driver: their presence log and churn score.
+    match /driverPresence/{driverId} {
+      allow read: if isOwner(driverId) || isAdmin();
+      allow write: if false;
+    }
+
     // ----- notifications/{uid}/items/{notifId} -------------------------------
     // In-app notification feed. Written only server-side (notifyUser /
     // broadcastNotification via Admin SDK). The owner may read and mark read.

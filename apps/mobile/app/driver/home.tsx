@@ -33,6 +33,7 @@ import {
   useDriverActiveTrip,
   useDriverPoolRides,
   useDriverProfile,
+  useDriverQueue,
   useOpenRequests,
   useDailyTarget,
   useOutstanding,
@@ -43,6 +44,7 @@ import { CommissionLock } from '../../src/ui/CommissionLock';
 import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
+import { offlineWarning, queueBanner } from '../../src/lib/driverQueue';
 import { themed } from '../../src/theme';
 import { PrimaryButton } from '../../src/ui/components';
 import { MapPlaceholder } from '../../src/ui/MapPlaceholder';
@@ -96,7 +98,17 @@ export default function DriverHome() {
   // Read by the location publisher, which is built once when the driver goes
   // online and would otherwise capture whatever trip existed at that moment.
   const activeTripRef = useRef<string | null>(null);
-  const liveRequests = useOpenRequests(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
+  // Where this driver stands in the queue for the area they are sitting in, and
+  // the feed ordered by it: whoever came online first gets first refusal, and
+  // the longest-waiting request comes first within what they may take. Both are
+  // advisory here — `placeBid` enforces the same rule server-side.
+  const queue = useDriverQueue(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
+  const liveRequests = useOpenRequests(
+    online && !activeTrip,
+    driverCoords?.lat,
+    driverCoords?.lng,
+    queue,
+  );
   const commission = useCommissionStatus(profile);
   const commissionLocked = commission.locked;
   // Today's ride count against the admin-set target, straight off the day
@@ -405,6 +417,30 @@ export default function DriverHome() {
   }
 
   /**
+   * Going offline costs the driver their place in the queue, so say so first.
+   *
+   * This is the rule drivers will resent most if they meet it by accident —
+   * stepping away for ten minutes and coming back to the bottom of the list.
+   * Warning before the fact turns it from something done to them into a choice
+   * they made, and the grace window means a short break genuinely is free.
+   *
+   * Only prompts when they actually hold a place worth losing; otherwise it
+   * goes straight through, because a confirm dialog on every toggle would be
+   * the kind of friction drivers rightly complain about.
+   */
+  function confirmGoOffline() {
+    const warning = offlineWarning(queue);
+    if (!warning) {
+      setOnline(false);
+      return;
+    }
+    Alert.alert('Go offline?', warning, [
+      { text: 'Stay online', style: 'cancel' },
+      { text: 'Go offline', style: 'destructive', onPress: () => setOnline(false) },
+    ]);
+  }
+
+  /**
    * One-time pointer to WhatsApp ride alerts.
    *
    * It offers, it does not switch anything on. Consent for a WhatsApp message
@@ -505,7 +541,7 @@ export default function DriverHome() {
           <Pressable
             style={[styles.toggleHalf, !online && styles.toggleOffActive]}
             disabled={busy}
-            onPress={() => setOnline(false)}
+            onPress={confirmGoOffline}
           >
             <Text style={[styles.toggleTxt, !online && styles.toggleOffTxt]}>Offline</Text>
           </Pressable>
@@ -823,6 +859,17 @@ export default function DriverHome() {
             contentContainerStyle={{ paddingBottom: DRIVER_TAB_BAR_HEIGHT }}
             ListHeaderComponent={
               <>
+                {/* Where this driver stands. Shown above the feed because it is
+                    the explanation for the order the feed is in — without it,
+                    "opens to you in 8s" on a card reads as a fault. */}
+                {queueBanner(queue) !== null && (
+                  <View style={styles.queueStrip}>
+                    <Text style={styles.queueStripTxt}>{queueBanner(queue)}</Text>
+                    <Text style={styles.queueStripHint}>
+                      First come, first served. Staying online keeps your place.
+                    </Text>
+                  </View>
+                )}
                 {/* Not carrying anyone, but going somewhere anyway. Say where, and
                     pool riders standing on that road show up here. */}
                 <Pressable style={styles.routeCta} onPress={() => router.push('/driver/en-route')}>
@@ -1142,6 +1189,18 @@ const styles = themed(() => StyleSheet.create({
   },
   enRouteCtaTitle: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   enRouteCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  queueStrip: {
+    backgroundColor: colors.glassLime,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+  },
+  queueStripTxt: { color: colors.primary, fontSize: 13, fontWeight: '800' },
+  queueStripHint: { color: colors.muted, fontSize: 11, marginTop: 2 },
   routeCta: {
     backgroundColor: colors.surface,
     borderWidth: 1,

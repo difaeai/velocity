@@ -51,6 +51,7 @@ import { franchiseCutFor, franchiseRateFrom } from '../domain/franchise';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
 import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
 import { generateShareCode, writeTripDocuments } from './poolTripFactory';
+import { claimGateFor, waitMessage } from '../pricing/claimGate';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 
@@ -496,6 +497,31 @@ export const placeBid = onCall(async (req) => {
   if (tripSnap.get('status') !== 'requested') {
     throw new HttpsError('failed-precondition', 'This trip is no longer open for bids.');
   }
+
+  /**
+   * Whose turn is it?
+   *
+   * This is where the FIFO queue is enforced, and it has to be here rather than
+   * in the driver app, because the app's copy of the check is only a courtesy
+   * to honest builds — a patched one would simply ignore it. A bid IS the claim
+   * on a shared ride (see the comment below), so gating `placeBid` gates the
+   * thing drivers are actually racing for.
+   *
+   * `claimGateFor` fails open on every kind of not-knowing — no queue for the
+   * zone, a stale queue, an unreadable config, a thrown exception. One ride
+   * served out of turn is a far smaller harm than a driver who cannot work, so
+   * the queue is never allowed to become a precondition for bidding at all.
+   * See pricing/claimGate.ts.
+   */
+  const claim = await claimGateFor({
+    driverId: ctx.uid,
+    pickup: tripSnap.get('pickup') as { lat: number; lng: number } | undefined,
+    requestCreatedAtMs: (tripSnap.get('createdAt') as Timestamp | undefined)?.toMillis(),
+  });
+  if (!claim.allowed) {
+    throw new HttpsError('failed-precondition', waitMessage(claim));
+  }
+
   /**
    * On a shared ride a bid is not an offer — it is an acceptance.
    *

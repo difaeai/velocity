@@ -1382,9 +1382,50 @@ export const api = {
   // ── Fare engine ───────────────────────────────────────────────────────────
   getFareEstimate: callable<
     { cityId: string; category: string; distanceKm: number; durationMin: number; geohash?: string },
-    { recommendedFare: number; minAcceptableBid: number; suggestedMaxBid: number; surgeApplied: number }
+    {
+      recommendedFare: number;
+      minAcceptableBid: number;
+      suggestedMaxBid: number;
+      surgeApplied: number;
+      /** Null label = nothing to show. See pricing/peak.ts. */
+      peak?: { multiplier: number; label: string | null; maxMultiplier: number };
+      fuel?: { note: string | null; pricePkr: number | null; product: 'petrol' | 'diesel' };
+    }
   >('getFareEstimate'),
   seedFareConfig: callable<Record<string, never>, { seeded: string[] }>('seedFareConfig'),
+
+  // ── Pricing engine ────────────────────────────────────────────────────────
+  // The apps cannot read surge/*, pricingZones/* or fuelPrices/* directly —
+  // those are closed in firestore.rules, because a zone document carries the
+  // area's whole driver queue and a live reading of Velocity's supply. These
+  // two callables are the shaped views of it: a rider gets a multiplier and a
+  // label, a driver gets their own queue position and nobody else's.
+  getPricingSnapshot: callable<
+    { pickup: { lat: number; lng: number }; category?: string; forDriver?: boolean },
+    {
+      peak: { multiplier: number; label: string | null; maxMultiplier: number };
+      fuel: { note: string | null; pricePkr: number | null; product: 'petrol' | 'diesel' };
+    }
+  >('getPricingSnapshot'),
+  getDriverQueueStatus: callable<
+    { location: { lat: number; lng: number } },
+    {
+      enabled: boolean;
+      /** Zero-based; null when this driver is not in the zone's queue yet. */
+      rank: number | null;
+      position: number | null;
+      queueSize: number;
+      label: string;
+      /** How long after a request appears this driver may bid on it. */
+      claimDelayMs: number;
+      queuedSince: number | null;
+      /** How long they may drop offline without losing their place. */
+      graceSec: number;
+      openToAllAfterSec: number;
+      zone: string;
+      queueAgeMs: number | null;
+    }
+  >('getDriverQueueStatus'),
 
   // ── Intercity travel ──────────────────────────────────────────────────────
   createIntercityBooking: callable<

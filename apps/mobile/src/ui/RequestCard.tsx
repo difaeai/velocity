@@ -25,6 +25,7 @@ import { colors } from '../config';
 import { themed } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { timeAgo } from '../lib/timeAgo';
+import { opensInLabel } from '../lib/driverQueue';
 import { PAYMENT_METHOD_SHORT, RIDE_TYPE_LABELS, type PaymentMethod } from '../domain/types';
 import type { OpenRequest } from '../hooks/driver';
 
@@ -82,6 +83,10 @@ export function RequestCard({
   locked,
 }: Props) {
   const dx = useMemo(() => new Animated.Value(0), []);
+
+  // Null when this request is the driver's to take. The hook recomputes
+  // `opensInMs` every second, so this counts down on its own.
+  const opensIn = opensInLabel(r.opensInMs ?? 0);
 
   // Rebuilt whenever the parent hands down a fresh callback. React Native
   // dispatches touch events through the view's *current* props, so swapping the
@@ -168,7 +173,16 @@ export function RequestCard({
           </Text>
         </View>
       )}
-      <Pressable style={styles.cardInner} onPress={onOpen} disabled={locked}>
+      {/* Not this driver's turn yet. The row is shown rather than hidden: a
+          feed that silently drops work looks broken, and the countdown is what
+          makes the queue legible. Tapping is refused here AND server-side in
+          placeBid, so a patched build gains nothing. */}
+      {opensIn !== null && (
+        <View style={styles.queueBanner}>
+          <Text style={styles.queueBannerTxt}>⏳ {opensIn}</Text>
+        </View>
+      )}
+      <Pressable style={styles.cardInner} onPress={onOpen} disabled={locked || opensIn !== null}>
         {/* Passenger */}
         <View style={styles.who}>
           <View style={styles.avatar}>
@@ -229,6 +243,20 @@ export function RequestCard({
 }
 
 const styles = themed(() => StyleSheet.create({
+  // The queue banner. Deliberately quiet — the informational blue, not the
+  // danger red: nothing has gone wrong, the drivers who were waiting before
+  // this one are simply getting their turn.
+  queueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 8,
+  },
+  queueBannerTxt: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.secondary,
+  },
   card: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
