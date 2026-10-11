@@ -3,7 +3,7 @@
     "name": "Velocity Rides",
     "slug": "velocity",
     "scheme": "velocity",
-    "version": "1.16.0",
+    "version": "1.17.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -74,7 +74,10 @@
         {
           "ios": {
             "useFrameworks": "static",
-            "forceStaticLinking": ["RNFBApp", "RNFBAuth"]
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBAuth"
+            ]
           }
         }
       ],
@@ -109,7 +112,9 @@
         {
           "microphonePermission": "Velocity Rides uses your microphone so you can book a ride by speaking instead of typing.",
           "speechRecognitionPermission": "Velocity Rides turns your speech into a ride booking. Recognition happens on your device.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ]
     ],
