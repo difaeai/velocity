@@ -34,6 +34,17 @@ export interface CityFareConfig {
     enabled: boolean;
     /** Hard cap so surge never gets abusive, e.g. 1.8 */
     maxMultiplier: number;
+    /**
+     * Lowest multiplier the engine will honour. Absent means 1.0 — the fare is
+     * never discounted below the card.
+     *
+     * Set below 1.0 to let `pricing/peak.ts` advertise a cheaper ride in a zone
+     * with idle drivers, which is the other half of managing demand and supply.
+     * `minAcceptableBid` is computed from `bidFloorPerKm` and is unaffected, so
+     * a discount can only ever come out of the platform's margin and never out
+     * of what the driver is guaranteed.
+     */
+    minMultiplier?: number;
   };
   pooling: {
     enabled: boolean;
@@ -141,8 +152,14 @@ export function calculateFare(cfg: CityFareConfig, trip: TripInput): FareEstimat
   const waitCharge     = billableWait* r.waitPerMin;
   const subtotal = Math.max(r.minFare, r.base + distanceCharge + timeCharge + waitCharge);
 
+  // The floor defaults to 1.0, so a config written before `minMultiplier`
+  // existed behaves exactly as it did: surge may raise a fare and never lower
+  // one. A city that opts into the idle-supply discount sets it below 1.
   const surge = cfg.surge.enabled
-    ? Math.min(Math.max(trip.surgeMultiplier ?? 1, 1), cfg.surge.maxMultiplier)
+    ? Math.min(
+        Math.max(trip.surgeMultiplier ?? 1, cfg.surge.minMultiplier ?? 1),
+        cfg.surge.maxMultiplier,
+      )
     : 1;
 
   const recommendedFare  = round5(subtotal * surge);

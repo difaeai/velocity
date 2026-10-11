@@ -463,3 +463,24 @@ export {
 
 // What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta
 export { refreshPlatformCosts, adminRefreshPlatformCosts } from './costs';
+
+// ── Pricing Engine ──────────────────────────────────────────────────────────
+// Fuel-linked per-km rates, a capped demand/supply peak factor, detection of
+// manufactured scarcity, and a FIFO driver queue. See src/pricing/index.ts.
+//
+// `refreshFuelPrices` runs daily at 06:15 Asia/Karachi; `runPricingTick` every
+// minute. The tick is what finally writes `surge/{cityId}_{zone}`, which the
+// fare engine has been reading — and defaulting to 1.0 — since it was written.
+export {
+  getPricingSnapshot,
+  getDriverQueueStatus,
+  adminGetPricingEngine,
+  adminUpdatePricingEngine,
+  adminRefreshFuelPrices,
+  adminRunPricingTick,
+  adminSetFuelPrice,
+  adminClearSupplyFreeze,
+  seedPricingEngine,
+  refreshFuelPrices,
+  runPricingTick,
+} from './pricing';

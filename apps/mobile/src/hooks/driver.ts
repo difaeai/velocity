@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
+import { api } from '../api/client';
 import { db } from '../firebase';
 import { distanceMeters } from '../lib/geo';
+import { orderFeed, type QueuePosition } from '../lib/driverQueue';
 import { evaluateVehicleCheck, type VehicleCheckStatus } from '../domain/vehicleCheck';
 import {
   DEFAULT_DAILY_TARGET,
@@ -212,6 +214,12 @@ export interface OpenRequest {
   dropoff?: { address?: string; lat?: number; lng?: number };
   createdAt?: { seconds: number };
   /**
+   * Set by the FIFO queue: how long until this driver may bid on this request.
+   * 0 or absent means they may take it now. Drivers ahead of them in the queue
+   * get first refusal — see src/lib/driverQueue.ts.
+   */
+  opensInMs?: number;
+  /**
    * Pool request: more riders can join before (and during) the ride, so the car
    * makes several pickups and several drop-offs. Solo requests are one pickup,
    * one drop-off. The driver's feed has to make that difference obvious — the
@@ -306,7 +314,75 @@ function requestAgeMs(r: OpenRequest, now: number): number {
   return seconds ? now - seconds * 1000 : 0;
 }
 
-export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?: number): OpenRequest[] {
+/**
+ * This driver's place in the queue for where they are standing.
+ *
+ * Polled rather than watched: the queue document is closed to clients in
+ * firestore.rules (it names every driver in the area, which no driver should be
+ * able to read), so it comes through a callable that returns only this driver's
+ * own rank. 30 seconds, because the pricing tick only rebuilds the queue once a
+ * minute — polling faster would ask the same question twice for one answer.
+ *
+ * Returns null until the first answer arrives, and keeps the last known
+ * position if a poll fails. An unknown rank is treated as the tail of the queue
+ * everywhere it is used, never as the head.
+ */
+export function useDriverQueue(
+  enabled: boolean,
+  driverLat?: number,
+  driverLng?: number,
+): QueuePosition | null {
+  const [queue, setQueue] = useState<QueuePosition | null>(null);
+
+  // Rounded to ~1km so ordinary driving does not restart the poller on every
+  // GPS tick; the zone it resolves to is ~5km wide anyway.
+  const cell = driverLat !== undefined && driverLng !== undefined
+    ? `${driverLat.toFixed(2)},${driverLng.toFixed(2)}`
+    : null;
+
+  useEffect(() => {
+    if (!enabled || !cell) return;
+    const [lat, lng] = cell.split(',').map(Number) as [number, number];
+    let alive = true;
+
+    const poll = async () => {
+      try {
+        const status = await api.getDriverQueueStatus({ location: { lat, lng } });
+        if (alive) setQueue(status);
+      } catch {
+        // Keep whatever we had. A failed poll must not promote this driver to
+        // the head of the queue, and must not empty their feed either.
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => void poll(), QUEUE_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [enabled, cell]);
+
+  // Derived, not cleared in the effect: a position must not survive going
+  // offline or losing GPS, and deriving it means there is no stale value to
+  // reset — which also keeps the disabled case out of the effect body.
+  return enabled && cell ? queue : null;
+}
+
+/** How often the driver's queue position is refreshed while the feed is open. */
+const QUEUE_POLL_MS = 30_000;
+
+export function useOpenRequests(
+  enabled: boolean,
+  driverLat?: number,
+  driverLng?: number,
+  /**
+   * This driver's queue position, from `useDriverQueue`. Omitted or null and
+   * the feed behaves exactly as it did before the queue existed: everything
+   * claimable, nearest first.
+   */
+  queue?: QueuePosition | null,
+): OpenRequest[] {
   const [rows, setRows] = useState<OpenRequest[]>([]);
   // The unfiltered live feed. Ageing is applied on top of this by the ticker
   // below, so a request can drop off without Firestore sending anything.
@@ -323,12 +399,32 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
    * updated the signature the ticker would repaint once more for no reason on
    * its next beat, and if only the ticker did, every snapshot would.
    */
+  // Read through a ref so `publish` stays referentially stable: the snapshot
+  // listener and the one-second ticker both depend on it, and recreating it
+  // every time the queue position refreshes would tear down and rebuild the
+  // Firestore listener twice a minute for nothing.
+  // Written in an effect rather than during render — a ref assignment in the
+  // render body is the bug this rule exists for. The one-second ticker calls
+  // `publish` again immediately afterwards, so a new queue position reaches the
+  // feed's ordering within a tick of arriving.
+  const queueRef = useRef<QueuePosition | null>(queue ?? null);
+  useEffect(() => {
+    queueRef.current = queue ?? null;
+  }, [queue]);
+
   const publish = useCallback((next: OpenRequest[], now: number) => {
-    const signature =
-      next.map((r) => r.tripId).join(',') + '|' + next.map((r) => ageLabelBucket(r, now)).join(',');
+    // Claimable first, longest-waiting first within them; the rest follow with
+    // a countdown. Ordering happens here rather than in the listener so that
+    // the ticker re-orders as requests age past this driver's tier.
+    const ordered = orderFeed(next, queueRef.current, now).map(({ request, opensInMs }) =>
+      opensInMs === (request.opensInMs ?? 0) ? request : { ...request, opensInMs },
+    );
+    const signature = ordered
+      .map((r) => `${r.tripId}:${ageLabelBucket(r, now)}:${Math.ceil((r.opensInMs ?? 0) / 1000)}`)
+      .join(',');
     if (signature === renderedSigRef.current) return;
     renderedSigRef.current = signature;
-    setRows(next);
+    setRows(ordered);
   }, []);
 
   useEffect(() => {
@@ -353,8 +449,10 @@ export function useOpenRequests(enabled: boolean, driverLat?: number, driverLng?
               ? distanceMeters(driverLat, driverLng, r.pickup.lat, r.pickup.lng)
               : undefined,
         }));
-      // Nearest first — a request with no pickup coords sorts last rather than
-      // jumping to the top of the list.
+      // Nearest first, as a tie-break only: `publish` re-orders the surviving
+      // set by how long each request has been waiting, because the queue serves
+      // drivers in turn and triages requests by age, not by proximity. A
+      // request with no pickup coords sorts last rather than jumping to the top.
       withDistance.sort((a, b) => (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity));
       const now = Date.now();
       liveRef.current = withDistance;

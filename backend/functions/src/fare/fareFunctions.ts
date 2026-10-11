@@ -7,6 +7,9 @@ import {
 } from './fareEngine';
 import { comparisonFor } from './marketFunctions';
 import { sharedRideFare } from './sharedRideFare';
+import { loadFuelPrices, loadPricingConfig } from '../pricing/config';
+import { describeFuelAdjustment, fuelFactorFor, withFuelAdjustedRates } from '../pricing/fuel';
+import { riderPeakLabel } from '../pricing/peak';
 
 const REGION = 'asia-south1';
 const db = () => getFirestore();
@@ -16,7 +19,13 @@ const db = () => getFirestore();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const configCache  = new Map<string, { cfg: CityFareConfig; at: number }>();
 
-async function loadCityConfig(cityId: string): Promise<CityFareConfig> {
+/**
+ * The stored card, cached. Deliberately NOT fuel-adjusted: the cache would then
+ * hold a fare that was right five minutes ago at a price that has since been
+ * re-notified, and the whole point of deriving fuel on read is that it cannot
+ * go stale. `loadCityConfig` layers fuel on top of this, outside the cache.
+ */
+async function loadStoredCityConfig(cityId: string): Promise<CityFareConfig> {
   const hit = configCache.get(cityId);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.cfg;
 
@@ -27,6 +36,24 @@ async function loadCityConfig(cityId: string): Promise<CityFareConfig> {
   const cfg = snap.data() as CityFareConfig;
   configCache.set(cityId, { cfg, at: Date.now() });
   return cfg;
+}
+
+/**
+ * The rates this city is charging today, fuel included.
+ *
+ * The mirror of `fare/cityConfig.ts:loadFareConfigFor` for the callables, which
+ * are handed a `cityId` rather than a coordinate. Both apply the same fuel
+ * factor from the same confirmed price, so a quote from the booking screen and
+ * a quote from `createTrip` cannot disagree about what a kilometre costs.
+ */
+async function loadCityConfig(cityId: string): Promise<CityFareConfig> {
+  const stored = await loadStoredCityConfig(cityId);
+  try {
+    const [pricing, prices] = await Promise.all([loadPricingConfig(), loadFuelPrices()]);
+    return withFuelAdjustedRates(stored, prices, pricing.fuel).config;
+  } catch {
+    return stored;
+  }
 }
 
 // ── Input parsing ─────────────────────────────────────────────────────────────
@@ -56,13 +83,37 @@ function parseTrip(data: Record<string, unknown>): { cityId: string; trip: TripI
 
 // ── Surge lookup (server-side only — never trust client surge) ────────────────
 
+/**
+ * The zone's peak factor, as written by `pricing/engine.ts` once a minute.
+ *
+ * Three things this does NOT do, each on purpose:
+ *
+ *  · It does not trust a client-supplied multiplier. The caller supplies a
+ *    geohash; the number comes from the server's own document.
+ *  · It does not serve an expired factor. `expiresAt` is stamped by the tick,
+ *    and past it this returns 1.0 — so if the tick dies, fares fall back to
+ *    normal instead of holding whatever the last run happened to say for ever.
+ *    A pricing engine that fails must fail to 1.0.
+ *  · It does not accept a factor above the engine's own ceiling, even from its
+ *    own document. A hand-edited or half-written `surge/*` doc cannot raise a
+ *    fare past `maxMultiplier`.
+ */
 async function getZoneSurge(cityId: string, geohash?: string): Promise<number> {
   try {
     if (!geohash) return 1.0;
-    const zone = geohash.substring(0, 5); // ~5 km cell
+    const pricing = await loadPricingConfig();
+    if (!pricing.peak.enabled) return 1.0;
+
+    const zone = geohash.substring(0, Math.max(1, Math.trunc(pricing.peak.zonePrecision)));
     const snap = await db().doc(`surge/${cityId}_${zone}`).get();
-    const m    = snap.exists ? Number(snap.data()?.multiplier) : 1.0;
-    return Number.isFinite(m) && m >= 1 ? m : 1.0;
+    if (!snap.exists) return 1.0;
+
+    const expiresAt = Number(snap.data()?.expiresAt);
+    if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return 1.0;
+
+    const m = Number(snap.data()?.multiplier);
+    if (!Number.isFinite(m) || m <= 0) return 1.0;
+    return Math.min(Math.max(m, pricing.peak.minMultiplier), pricing.peak.maxMultiplier);
   } catch {
     return 1.0;
   }
@@ -87,9 +138,26 @@ export const getFareEstimate = onCall({ region: REGION }, async (req) => {
     est.recommendedFare, est.minAcceptableBid,
   );
 
+  // Why this fare is what it is, in the same payload as the number. A rider
+  // being charged a peak factor is owed the reason next to the price, and a
+  // rider who is NOT gets `label: null` and sees no badge at all.
+  const pricing = await loadPricingConfig();
+  const fuelPrices = await loadFuelPrices();
+  const fuel = fuelFactorFor(trip.category, fuelPrices, pricing.fuel);
+
   return {
     ...est,
     recommendedFare: comparison.available ? comparison.velocityFare : est.recommendedFare,
+    peak: {
+      multiplier: est.surgeApplied,
+      label: riderPeakLabel(est.surgeApplied),
+      maxMultiplier: Math.min(pricing.peak.maxMultiplier, cfg.surge.maxMultiplier),
+    },
+    fuel: {
+      note: describeFuelAdjustment(fuel),
+      pricePkr: fuel.pricePkr,
+      product: fuel.product,
+    },
     market: {
       available: comparison.available,
       competitors: comparison.competitors,

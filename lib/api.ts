@@ -636,6 +636,163 @@ export const costsApi = {
   refresh: callable<Record<string, never>, CostRefreshOutcome>('adminRefreshPlatformCosts'),
 };
 
+// ── Pricing engine ──────────────────────────────────────────────────────────
+// Fuel-linked per-km rates, the capped peak factor, the manufactured-scarcity
+// detector and the FIFO driver queue. Backend: backend/functions/src/pricing.
+
+/** A believed pump price and how well corroborated it is. */
+export interface FuelPriceRow {
+  product: 'petrol' | 'diesel';
+  pricePkr: number | null;
+  effectiveDate: string | null;
+  /** Days since it was confirmed. Null when there is no price at all. */
+  ageDays: number | null;
+  /** How many independent sources agreed. One means somebody typed it in. */
+  confirmations: number;
+  sources: string[];
+}
+
+/** One zone's live state, as the desk lists it. */
+export interface PricingZoneRow {
+  key: string;
+  cityId?: string;
+  zone?: string;
+  multiplier: number;
+  onlineDrivers: number;
+  availableDrivers: number;
+  openRequests: number;
+  queueSize: number;
+  /** True while a suspected walk-out is holding the factor down. */
+  frozen: boolean;
+  reason: string;
+  explanation: string | null;
+  shock: string | null;
+  suspicious: boolean;
+  updatedAt?: number;
+}
+
+export interface PricingEngineSettings {
+  fuel: {
+    enabled: boolean;
+    baseline: { petrol: number; diesel: number };
+    agreementTolerance: number;
+    minConfirmations: number;
+    maxStepPct: number;
+    maxAgeDays: number;
+    maxAdjustmentPct: number;
+  };
+  peak: {
+    enabled: boolean;
+    maxMultiplier: number;
+    minMultiplier: number;
+    rampUpPerTick: number;
+    rampDownPerTick: number;
+    bands: { ratio: number; multiplier: number }[];
+    minActivity: number;
+    zonePrecision: number;
+    staleAfterSec: number;
+  };
+  integrity: {
+    enabled: boolean;
+    dropPct: number;
+    lookbackSec: number;
+    maxSuddenSamples: number;
+    freezeMinutes: number;
+    returnWindowSec: number;
+    maxCyclesPerHour: number;
+    minSupplyForShock: number;
+  };
+  queue: {
+    enabled: boolean;
+    tierSize: number;
+    tierSeconds: number;
+    openToAllAfterSec: number;
+    graceSec: number;
+  };
+  updatedAt: number;
+  updatedBy?: string;
+}
+
+export interface PricingDashboard {
+  config: PricingEngineSettings;
+  defaults: PricingEngineSettings;
+  fuel: {
+    prices: FuelPriceRow[];
+    baseline: { petrol: number; diesel: number };
+    stale: boolean;
+  };
+  zones: PricingZoneRow[];
+  summary: {
+    zonesTracked: number;
+    surging: number;
+    frozen: number;
+    flaggedDrivers: number;
+  };
+  flaggedDrivers: {
+    driverId: string;
+    cyclesLastHour?: number;
+    lastOpportunisticReturnAt?: number;
+    updatedAt?: number;
+  }[];
+}
+
+/** What one fuel run saw, source by source. The audit trail for a price move. */
+export interface FuelRunReport {
+  ranAt: number;
+  sources: { sourceId: string; rows: number; error?: string }[];
+  products: {
+    product: 'petrol' | 'diesel';
+    pricePkr: number | null;
+    previousPkr: number | null;
+    confirmations: number;
+    rejection?: string;
+    stepLimited?: boolean;
+    observed: { sourceId: string; pricePkr: number }[];
+  }[];
+  changed: boolean;
+  /** True when no product could be confirmed — the state worth acting on. */
+  degraded: boolean;
+}
+
+/** Settings are sent as a partial: anything omitted keeps its current value. */
+export type PricingSettingsPatch = {
+  fuel?: Partial<PricingEngineSettings['fuel']>;
+  peak?: Partial<PricingEngineSettings['peak']>;
+  integrity?: Partial<PricingEngineSettings['integrity']>;
+  queue?: Partial<PricingEngineSettings['queue']>;
+};
+
+export const pricingApi = {
+  dashboard: callable<Record<string, never>, PricingDashboard>('adminGetPricingEngine'),
+  update: callable<PricingSettingsPatch, { config: PricingEngineSettings }>('adminUpdatePricingEngine'),
+  /** Ask the fuel mirrors now, and see exactly what each one said. */
+  refreshFuel: callable<Record<string, never>, { report: FuelRunReport }>('adminRefreshFuelPrices'),
+  /** Run the minute tick now — for watching a settings change land. */
+  runTick: callable<
+    Record<string, never>,
+    {
+      report: {
+        ranAt: number;
+        zonesConsidered: number;
+        zonesPriced: number;
+        surging: number;
+        frozen: number;
+        joined: number;
+        forfeited: number;
+        truncated: boolean;
+      };
+    }
+  >('adminRunPricingTick'),
+  /** The escape hatch for the day both mirrors are wrong. */
+  setFuelPrice: callable<
+    { product: 'petrol' | 'diesel'; pricePkr: number; effectiveDate: string },
+    { price: FuelPriceRow }
+  >('adminSetFuelPrice'),
+  /** Release a freeze the detector got wrong — a cordon, a power cut. */
+  clearFreeze: callable<{ zoneKey: string }, { cleared: string }>('adminClearSupplyFreeze'),
+  seed: callable<Record<string, never>, { seeded: boolean }>('seedPricingEngine'),
+};
+
 // ── Social desk ─────────────────────────────────────────────────────────────
 
 export const SOCIAL_PLATFORMS = [

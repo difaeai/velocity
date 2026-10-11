@@ -15,6 +15,7 @@ Companion documents: [ARCHITECTURE](ARCHITECTURE.md) · [PAYMENTS](PAYMENTS.md) 
 1. [What Velocity is](#1-what-velocity-is)
 2. [Accounts, identity and roles](#2-accounts-identity-and-roles)
 3. [City rides — the core product](#3-city-rides--the-core-product)
+    - [3a. The Pricing Engine](#3a-the-pricing-engine)
 4. [Ride pooling](#4-ride-pooling)
 5. [En-route pickups and driver routes](#5-en-route-pickups-and-driver-routes)
 6. [The driver experience](#6-the-driver-experience)
@@ -328,6 +329,153 @@ else's ride.**
 ### 3.9 Support
 
 `app/passenger/support-chat.tsx` — in-app support thread.
+
+---
+
+## 3a. The Pricing Engine
+
+`backend/functions/src/pricing/`. Four jobs that were previously done by hand,
+or not at all. Settings live in `adminConfig/pricingEngine` (catalogue in code,
+amounts in Firestore); the desk is **Admin → Pricing engine**
+(`app/(app)/dashboard/pricing`).
+
+The four pure modules — `fuel.ts`, `peak.ts`, `supplyIntegrity.ts`,
+`driverQueue.ts` — contain every decision that moves somebody's money and need
+no Firebase to test. `engine.ts` (the tick) and `fuelJob.ts` do the I/O.
+
+### 3a.1 Fuel-linked per-km rates
+
+The government re-notifies petrol and diesel prices on its own schedule, and
+nobody can hand-edit `fareConfig/{cityId}` the morning after each one — so until
+this existed, **the driver absorbed every increase**.
+
+- `refreshFuelPrices` runs daily at **06:15 Asia/Karachi**. Daily, not
+  fortnightly, because the notification schedule slips and off-cycle revisions
+  happen.
+- **No single source is believed.** There is no official OGRA API; every
+  machine-readable feed is somebody's scraper in front of a PDF. Checked on
+  2026-10-11, four sites claiming the official rate published Rs.336.03,
+  Rs.393.64, Rs.398.30 and Rs.336.15 for the same litre. A price is confirmed
+  only when `minConfirmations` (2) independent sources land within
+  `agreementTolerance` (1%) of each other; short of that the previous confirmed
+  price stands and the desk says why.
+- Three clamps: **`fuelShare`** (fuel is 26–38% of a per-km rate by class, not
+  all of it), **`maxStepPct`** (one update may move the believed price 15% at
+  most), **`maxAdjustmentPct`** (hard stop 35% from baseline, however far the
+  pump has gone — past that the rate cards need re-authoring by a human).
+- **Never compounds.** Every factor is measured from `fuel.baseline`, the price
+  the rate cards were authored against — never from yesterday's adjusted value.
+  Move the baseline only when the cards are re-authored.
+- **The stored rate card is never rewritten.** The adjustment is derived on read
+  in `fare/cityConfig.ts:loadFareConfigFor` — the one chokepoint solo fares,
+  shared fares, en-route legs and offer bounds all share — so switching the
+  engine off restores the authored rates exactly. `loadStoredFareConfigFor` is
+  the un-adjusted card, for the admin desk.
+- `adminSetFuelPrice` types a price in by hand for the day both mirrors are
+  wrong. It is stored with one confirmation and the admin's uid as the source,
+  so a hand-typed price is never mistaken for a corroborated one.
+
+### 3a.2 The peak factor
+
+`fare/fareFunctions.ts:getZoneSurge` has read `surge/{cityId}_{zone}` since the
+fare engine was written, and **nothing in the repository ever wrote that
+document** — so the multiplier was 1.0 for every ride Velocity has ever priced.
+`runPricingTick` (every minute) is the missing half.
+
+- Demand/supply per ~5 km geohash zone → a banded multiplier, capped at
+  **1.25x** by the engine (`peak.maxMultiplier`), separately from and more
+  tightly than the city's own `surge.maxMultiplier` of 1.8. Both apply; the
+  lower wins.
+- **It ramps**: +0.05 a minute up, −0.10 down. Relief is twice as fast as the
+  rise, and a rider refreshing the screen cannot be quoted 1.0 then 1.25.
+- **It ignores quiet zones**: below `minActivity` (4 riders + drivers) the factor
+  is 1.0. Two requests and one driver at 4am is noise, and noise at 1.25x is a
+  rider overcharged for nothing.
+- **It can discount.** `peak.minMultiplier` defaults to 1.0 (off); set below 1
+  and an idle zone advertises a cheaper ride. `minAcceptableBid` is unaffected,
+  so a discount only ever comes out of the platform's margin.
+- **It expires.** The written document carries `expiresAt`; past it `getZoneSurge`
+  returns 1.0. **A pricing engine that fails must fail to 1.0**, not pin the last
+  multiplier it managed to write.
+
+### 3a.3 Manufactured scarcity
+
+A multiplier driven by how many drivers are online is a multiplier drivers can
+drive: go offline together, wait for the price to rise, come back and collect.
+
+`supplyIntegrity.ts` fires only when all four hold — the fall is at least
+`dropPct` (35%) of the window's baseline, it happened within
+`maxSuddenSamples` (2) ticks, **demand did not fall with it**, and the zone had
+at least `minSupplyForShock` (5) drivers. A shift ending fails the suddenness
+test; a city going to sleep fails the demand test.
+
+When it fires the factor is **frozen at its pre-drop value** for
+`freezeMinutes` (30) — the attack's whole payoff is the higher factor, so
+denying the factor removes the incentive without accusing anybody. The freeze is
+a ceiling, never a floor: if demand falls during it, the rider still gets the
+lower price. `adminClearSupplyFreeze` releases a zone when an operator knows
+what really happened (a cordon, a power cut).
+
+Per-driver churn (`driverPresence/{driverId}`) is logged and scored, and
+`cyclesLastHour > maxCyclesPerHour` flags a driver on the desk. **Nothing
+automatic follows beyond the queue place they already lost** — a driver on bad
+signal looks identical from here, and that evidence is far too weak to ban on.
+
+### 3a.4 The FIFO driver queue
+
+Requests used to be broadcast to every nearby driver at once, sorted by
+distance, first tap wins. That rewards staring at the screen and the fastest
+phone, which is not something Velocity should pay for.
+
+- Each zone has an ordered queue. A driver's place is set by **when their current
+  unbroken online run began**. The first `tierSize` (3) drivers may claim a new
+  request immediately, the next tier `tierSeconds` (8) later, and so on.
+- **Going offline forfeits the place.** Positions 1-2-3-4-5; number 2 goes
+  offline and comes back; they are now number 5. This is also the second half of
+  the defence above: going offline to force the price up already gains nothing,
+  and now costs something. `graceSec` (90) is the concession — a dropped packet
+  or a tunnel is not a decision to stop working.
+- **No request is ever stranded.** Past `openToAllAfterSec` (60) every driver may
+  claim whatever their rank. A rider waiting is worse than a driver served out
+  of turn.
+- Enforced server-side in **`placeBid`** (there is no `acceptTrip` — drivers bid
+  and passengers accept, and on a shared ride a bid *is* the acceptance). The
+  app's copy in `apps/mobile/src/lib/driverQueue.ts` only orders the feed and
+  shows "opens to you in 8s"; a patched build meets the same gate.
+- **The gate fails open on every kind of not-knowing** — no queue for the zone, a
+  queue older than 5 minutes, unreadable config, any exception. Wrongly allowing
+  a claim serves one ride out of order; wrongly refusing one stops a driver
+  working and leaves a rider uncollected, and if the tick has died that is every
+  driver and every rider.
+- A driver not in a zone's queue (parked across a cell boundary, or newer than
+  the snapshot) gets the **tail's** delay, not the full wait. Geohash edges are
+  arbitrary and must not cost somebody their income.
+
+### 3a.5 Why a scheduled tick and not a trigger
+
+The obvious design is `onDocumentWritten` on `drivers/{uid}`. The driver app
+writes that document every 30 seconds while online, so at 1,200 online drivers
+the trigger is ~3.4M invocations a day, almost all no-ops — and Firestore
+triggers cannot be filtered by field, so an early `return` still pays. One
+scheduled run a minute is 1,440 invocations a day, supply is at most 60 seconds
+stale, and the factor can only move 0.05 a tick anyway. Supply is read per zone
+and only for **warm** zones (a request waiting, or a sample inside
+`staleAfterSec`), capped at `MAX_ZONES_PER_TICK`.
+
+### 3a.6 What the apps show
+
+- Rider: `apps/mobile/src/ui/PriceNotice.tsx` renders the peak label with **the
+  ceiling stated** ("fares here never rise more than 25%") and the fuel note
+  naming the pump price so the claim is checkable. **Renders nothing** at 1.0
+  with no fuel move, which is most fares.
+- Driver: the queue strip above the feed, a per-card "opens to you in Ns"
+  countdown, and a confirmation before going offline that states what the place
+  costs.
+- All four collections (`surge`, `pricingZones`, `fuelPrices`, `driverPresence`)
+  are **closed to clients** in `firestore.rules` — a zone document is a live map
+  of Velocity's supply and names every driver in the area. The apps reach them
+  only through `getPricingSnapshot` and `getDriverQueueStatus`, shaped per
+  caller. A driver sees their own rank and nobody else's.
 
 ---
 
@@ -2048,7 +2196,8 @@ re-enables a feature app-wide with no deploy.
 
 | Document | Contents |
 |---|---|
-| `fareConfig/{cityId}` | Full fare engine config per city |
+| `fareConfig/{cityId}` | Full fare engine config per city. Optional `surge.minMultiplier` (defaults to 1) lets the peak factor discount an idle zone |
+| `adminConfig/pricingEngine` | Pricing Engine caps — fuel baseline/share/step, peak ceiling and ramp, scarcity detector, queue tiers. Partial: anything omitted keeps its coded default ([§3a](#3a-the-pricing-engine)) |
 | `config/commissionSettings` | `rate` (0.10), `threshold` (5000) |
 | `config/cancellationSettings` | `passengerFeeRate` (0.05), `driverFeeRate` (0.08), `outstandingLimit` (300) |
 | `config/poolSettings` | `dropRadiusM` (default 1000) |
@@ -2164,7 +2313,14 @@ Grouped as exported from `backend/functions/src/index.ts`.
 `getCommuteDemand` · `upsertScheduledRide` · `deleteScheduledRide` ·
 `runScheduledRides`
 
-**Fares** `getFareEstimate` · `submitBid` · `getPoolingQuote` · `seedFareConfig`
+**Fares** `getFareEstimate` · `submitBid` · `getPoolingQuote` ·
+`getSharedRideFare` · `seedFareConfig`
+
+**Pricing engine** `getPricingSnapshot` · `getDriverQueueStatus` ·
+`adminGetPricingEngine` · `adminUpdatePricingEngine` · `adminRefreshFuelPrices` ·
+`adminRunPricingTick` · `adminSetFuelPrice` · `adminClearSupplyFreeze` ·
+`seedPricingEngine` — plus the schedules `refreshFuelPrices` (daily 06:15
+Asia/Karachi) and `runPricingTick` (every minute)
 
 **Ratings & safety** `submitRating` · `raiseSafetyEvent` · `resolveSafetyEvent`
 
