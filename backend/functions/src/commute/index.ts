@@ -171,3 +171,199 @@ export const getCommuteDemand = onCall(async (req) => {
 
   return { demand };
 });
+
+// ── getCommuteMatches (rider) — the missing half ─────────────────────────────
+
+/**
+ * How many other riders take this rider's commute, and who they are by gender.
+ * ----------------------------------------------------------------------------
+ * WHY THIS EXISTS
+ * ---------------
+ * Commute schedules were write-only for riders. They were saved by riders and
+ * read by exactly one thing — `getCommuteDemand`, which shows DRIVERS where the
+ * demand is. So two women who both travel Gulberg → Blue Area at 08:30 every
+ * weekday had no way of ever learning the other existed. The data to pair them
+ * was sitting in the same collection the whole time.
+ *
+ * That gap is why shared rides struggle to form. A pool booked on the spot needs
+ * two strangers to want the same journey within the same ten minutes, and in a
+ * city with few riders online that almost never happens — the pool opens, nobody
+ * joins, and the host pays the solo fare. Nobody loses money, but the saving the
+ * app advertised never arrives, and a rider who sees that twice stops believing
+ * in shared rides.
+ *
+ * A commute does not need simultaneity. It needs RECURRENCE: the same journey,
+ * declared once, matched against everyone else who declared it. The matching
+ * window becomes days wide instead of minutes wide, which is the difference
+ * between a feature that works at our volume and one that needs Uber's.
+ *
+ * WHAT IS RETURNED, AND WHAT NEVER IS
+ * -----------------------------------
+ * Counts and area names. Never a uid, never a home address, never a coordinate,
+ * never a name — the same discipline `getCommuteDemand` already applies to the
+ * driver side, for the same reason: "four women take your route" is all a rider
+ * needs in order to decide to share, and anything more identifies a stranger's
+ * home and daily movements to somebody who has not met them.
+ *
+ * Pairing people up by name happens later and by consent, when a shared ride is
+ * actually formed and each rider chooses to take a seat in it.
+ * ----------------------------------------------------------------------------
+ */
+
+/** How close two homes must be to count as the same pickup area. */
+const MATCH_HOME_RADIUS_KM = 3;
+/** How close two destinations must be to count as the same journey. */
+const MATCH_DEST_RADIUS_KM = 3;
+/** How far apart two departure times may be and still share a car, in minutes. */
+const MATCH_TIME_WINDOW_MIN = 30;
+
+/** "08:30" to minutes past midnight. Null for anything malformed. */
+function minutesOfDay(time: unknown): number | null {
+  if (typeof time !== 'string') return null;
+  const [h, m] = time.split(':');
+  const hh = parseInt(h ?? '', 10);
+  const mm = parseInt(m ?? '', 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return hh * 60 + mm;
+}
+
+/**
+ * Whether two riders would accept each other's company.
+ *
+ * Both sides' preferences have to hold, not just the caller's. A woman who asked
+ * for women only must not be counted as a match for a man simply because he is
+ * open to anyone — her preference is the binding one for her seat, and counting
+ * her would promise him a companion who will not share with him.
+ */
+function commuteGenderCompatible(
+  myGender: string,
+  myPref: string,
+  theirGender: string,
+  theirPref: string,
+): boolean {
+  const accepts = (pref: string, otherGender: string) =>
+    pref === 'any'
+    || (pref === 'male_only' && otherGender === 'male')
+    || (pref === 'female_only' && otherGender === 'female');
+  return accepts(myPref, theirGender) && accepts(theirPref, myGender);
+}
+
+/** A rider's own gender, for the both-sides compatibility test. */
+async function riderGenderOf(uid: string): Promise<string> {
+  const snap = await db.doc(`users/${uid}`).get();
+  return (snap.exists ? (snap.data()!.gender as string | undefined) : undefined) ?? 'unspecified';
+}
+
+export const getCommuteMatches = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+
+  const [mineSnap, meSnap] = await Promise.all([
+    db.doc(`commuteSchedules/${uid}`).get(),
+    db.doc(`users/${uid}`).get(),
+  ]);
+  // No saved commute means nothing to match against — not an error, just an
+  // empty answer the screen renders as its "save your route" prompt.
+  if (!mineSnap.exists || mineSnap.get('active') !== true) {
+    return {
+      hasSchedule: false,
+      total: 0,
+      males: 0,
+      females: 0,
+      destinationAreaName: null,
+      morningTime: null,
+      days: [],
+      slots: [],
+    };
+  }
+  const mine = mineSnap.data()!;
+  const myGender = (meSnap.exists ? (meSnap.data()!.gender as string | undefined) : undefined)
+    ?? 'unspecified';
+  const myPref = (mine.genderPref as string) ?? 'any';
+  const myTime = minutesOfDay(mine.morningTime);
+  const myDays: string[] = Array.isArray(mine.activeDays) ? mine.activeDays : [];
+
+  const radiusM = MATCH_HOME_RADIUS_KM * 1000;
+  const bounds = geohashQueryBounds([mine.homeLat as number, mine.homeLng as number], radiusM);
+  const snapshots = await Promise.all(
+    bounds.map((b) =>
+      db.collection('commuteSchedules')
+        .where('active', '==', true)
+        .where('homeGeohash', '>=', b[0])
+        .where('homeGeohash', '<=', b[1])
+        .get()
+    )
+  );
+
+  /** One matched rider, reduced to the only two things we will reveal. */
+  const matches: { gender: string; days: string[] }[] = [];
+  const slots = new Map<string, { time: string; destinationAreaName: string; count: number }>();
+  const seen = new Set<string>();
+
+  for (const snap of snapshots) {
+    for (const doc of snap.docs) {
+      if (doc.id === uid || seen.has(doc.id)) continue;
+      seen.add(doc.id);
+      const d = doc.data();
+
+      // Same pickup area.
+      if (distanceBetween(
+        [mine.homeLat as number, mine.homeLng as number],
+        [d.homeLat as number, d.homeLng as number],
+      ) > MATCH_HOME_RADIUS_KM) continue;
+
+      // Same destination — a shared car is one journey, not two that happen to
+      // start together.
+      if (distanceBetween(
+        [mine.destinationLat as number, mine.destinationLng as number],
+        [d.destinationLat as number, d.destinationLng as number],
+      ) > MATCH_DEST_RADIUS_KM) continue;
+
+      // Close enough in time to be the same car.
+      const theirTime = minutesOfDay(d.morningTime);
+      if (myTime === null || theirTime === null) continue;
+      if (Math.abs(myTime - theirTime) > MATCH_TIME_WINDOW_MIN) continue;
+
+      // At least one day both of them travel.
+      const theirDays: string[] = Array.isArray(d.activeDays) ? d.activeDays : [];
+      const sharedDays = myDays.filter((day) => theirDays.includes(day));
+      if (sharedDays.length === 0) continue;
+
+      // Both sides have to be willing. See `commuteGenderCompatible`.
+      const theirGender = await riderGenderOf(doc.id);
+      if (!commuteGenderCompatible(myGender, myPref, theirGender, (d.genderPref as string) ?? 'any')) {
+        continue;
+      }
+
+      matches.push({ gender: theirGender, days: sharedDays });
+
+      const time = roundTo15(d.morningTime as string);
+      const destName = d.destinationAreaName as string;
+      const key = `${time}::${destName}`;
+      const slot = slots.get(key) ?? { time, destinationAreaName: destName, count: 0 };
+      slot.count += 1;
+      slots.set(key, slot);
+    }
+  }
+
+  // Which days of the caller's week actually have somebody else on them. A
+  // rider who travels six days and has company on two should see that, not a
+  // single number that implies every morning is covered.
+  const dayCounts = new Map<string, number>();
+  for (const m of matches) {
+    for (const day of m.days) dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+  }
+
+  return {
+    hasSchedule: true,
+    total: matches.length,
+    males: matches.filter((m) => m.gender === 'male').length,
+    females: matches.filter((m) => m.gender === 'female').length,
+    destinationAreaName: (mine.destinationAreaName as string) ?? null,
+    morningTime: (mine.morningTime as string) ?? null,
+    days: Array.from(dayCounts.entries())
+      .map(([day, count]) => ({ day, count }))
+      .sort((a, b) => b.count - a.count),
+    slots: Array.from(slots.values()).sort((a, b) => a.time.localeCompare(b.time)),
+  };
+});

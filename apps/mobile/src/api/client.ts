@@ -129,11 +129,47 @@ export interface AddVehicleInput {
   photoUrl?: string;
 }
 
+/**
+ * Who is actually travelling.
+ *
+ * The one gender-related thing a client may send, and it names a RELATIONSHIP
+ * rather than a gender on purpose: the server derives the seat's gender from
+ * the caller's own profile, so a rider can never assert a gender they do not
+ * have. 'other' means "a person of the other gender is travelling" — the only
+ * answer that changes anything, since a seat for someone of your own gender
+ * matches exactly the same rides as a seat for yourself.
+ */
+export type BookedFor = 'self' | 'other';
+
+/** The one fare a shared ride costs, as the server computed it. */
+export interface SharedFareQuote {
+  /** The whole-car fare. Nobody can move it — not the host, not the driver. */
+  fare: number;
+  /** What each rider pays at 1, 2, 3 and 4 aboard. */
+  perSeat: number[];
+  /**
+   * The cheapest other app's estimate for this trip, when there is a fresh
+   * rate card for the city. Null when there is none — never a guess.
+   */
+  comparedTo: number | null;
+  cityId: string | null;
+}
+
 export interface CreateTripInput {
   rideType: RideType;
+  /**
+   * What the rider offers the driver — SOLO RIDES ONLY.
+   *
+   * On a shared ride this is ignored by the backend, which prices the ride
+   * itself (see `getSharedRideFare`). A shared ride has one fare that nobody
+   * can move: a host who could haggle could lose the car for every rider who
+   * had already taken a seat in it.
+   */
   offeredFare: number;
   seats: number;
   passengerGender: Gender;
+  /** Who the seat is for. Omitted means the rider themselves. */
+  bookedFor?: BookedFor;
   pool?: boolean;
   /** Pool rides only: public → discoverable nearby, private → link-only. */
   poolVisibility?: PoolVisibility;
@@ -215,6 +251,15 @@ export interface PoolJoinRequest {
   farePerSeat: number;
   /** Where they get out — pool requests only; null on booking-flow pools. */
   dropoffAreaName?: string | null;
+  /**
+   * True when the booker is not the passenger. The gender above is then the
+   * booker's word rather than a verified profile, which is the one fact that
+   * makes this decision different from any other — and the reason the riders
+   * already in the car are shown the queue at all.
+   */
+  bookedForOther?: boolean;
+  /** Who answers: the driver, or the host on a ride that has none yet. */
+  vetBy?: 'driver' | 'host';
 }
 
 /** Which pooling subsystem a suggested seat lives in. */
@@ -672,7 +717,7 @@ export const api = {
    * with them — the rider is NOT in the car until that driver accepts.
    */
   joinPoolTrip: callable<
-    { code: string },
+    { code: string; bookedFor?: BookedFor },
     {
       ok: boolean;
       tripId: string;
@@ -680,8 +725,60 @@ export const api = {
       perSeatFare: number;
       alreadyJoined: boolean;
       pending?: boolean;
+      /**
+       * Who has to say yes. 'driver' once a driver is carrying the ride;
+       * 'host' when there is none and the seat still needs vetting, which
+       * happens when it was booked for somebody else.
+       */
+      vetBy?: 'driver' | 'host' | null;
+      bookedForOther?: boolean;
     }
   >('joinPoolTrip'),
+  /**
+   * Somebody already in the car refuses a passenger who asked to join it.
+   *
+   * Binding, not advisory: one refusal closes the request. The driver decides
+   * who rides in their car, but they are not the person who will be sitting in
+   * the back seat, and the case this exists for — a seat booked by one person
+   * for another — is exactly where the driver knows least.
+   */
+  coRiderObjectToPoolJoin: callable<
+    { tripId: string; riderId: string },
+    { ok: boolean; rejected: boolean }
+  >('coRiderObjectToPoolJoin'),
+  /**
+   * The one fare a shared ride between these two points costs.
+   *
+   * There is no stepper on a shared ride and no bidding: this is the price.
+   * `createTrip` recomputes the same number from the same function when the
+   * ride is booked, so what the rider was shown cannot drift from what the
+   * driver is offered.
+   */
+  getSharedRideFare: callable<
+    { rideType: RideType; pickup: { lat: number; lng: number }; dropoff: { lat: number; lng: number } },
+    SharedFareQuote
+  >('getSharedRideFare'),
+  /**
+   * How many other riders take this rider's own saved commute, by gender.
+   *
+   * Counts and area names only — never a uid, a name or an address. This is
+   * what lets shared rides form at all at our volume: a commute is matched on
+   * RECURRENCE (the same journey declared once) instead of on two strangers
+   * happening to be online in the same ten minutes.
+   */
+  getCommuteMatches: callable<
+    Record<string, never>,
+    {
+      hasSchedule: boolean;
+      total: number;
+      males: number;
+      females: number;
+      destinationAreaName: string | null;
+      morningTime: string | null;
+      days: { day: string; count: number }[];
+      slots: { time: string; destinationAreaName: string; count: number }[];
+    }
+  >('getCommuteMatches'),
   /** The driver's yes or no on somebody asking for a seat in their pool. */
   driverRespondToPoolJoin: callable<
     { tripId: string; riderId: string; action: 'accept' | 'reject' },
@@ -706,6 +803,12 @@ export const api = {
       destLat?: number;
       destLng?: number;
       destRadiusKm?: number;
+      /**
+       * Who the seat is for. 'other' rebuilds the feed for a passenger of the
+       * other gender, so a rider booking for a sibling is shown the rides that
+       * person can actually share.
+       */
+      bookedFor?: BookedFor;
     },
     { rides: SuggestedRide[] }
   >('getSuggestedRides'),
@@ -1134,6 +1237,8 @@ export const api = {
       requestId: string;
       // Optional drop-off inside the pool's drop zone; omitted = same destination.
       dropoffLat?: number; dropoffLng?: number; dropoffAreaName?: string;
+      /** Who the seat is for. Omitted means the rider themselves. */
+      bookedFor?: BookedFor;
     },
     { ok: boolean; farePerSeat: number; pending?: boolean }
   >('joinPoolRideRequest'),
@@ -1153,8 +1258,14 @@ export const api = {
       dropoffAddress: string;
       // Optional drop-off pin — must fall inside the ride's drop zone.
       dropoffLat?: number; dropoffLng?: number;
+      /** Who the seat is for. Omitted means the rider themselves. */
+      bookedFor?: BookedFor;
     },
-    { ok: boolean; queued: boolean; waitingSameGender?: number }
+    {
+      ok: boolean; queued: boolean; waitingSameGender?: number;
+      /** True when the seat went to the driver to vet, not into the queue. */
+      vetting?: boolean;
+    }
   >('joinPoolRide'),
   driverAcceptPoolBatch: callable<
     { rideId: string; gender: 'male' | 'female' },

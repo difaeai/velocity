@@ -50,7 +50,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 
-import { api, type SuggestedRide } from '../../src/api/client';
+import { api, type BookedFor, type SuggestedRide } from '../../src/api/client';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
@@ -315,6 +315,19 @@ export default function SuggestedRidesScreen() {
   const [query, setQuery] = useState('');
   /** null = every audience. One value = only that list. */
   const [onlyAudience, setOnlyAudience] = useState<PoolAudience | null>(null);
+  /**
+   * Who the rider is taking a seat for. Set ONCE here and it governs
+   * everything below it — which rides the feed returns and what every Join
+   * sends — rather than being asked again on each tap.
+   *
+   * It has to drive the feed and not just the join, because the two must agree:
+   * a woman booking for her brother who is shown women's rides is being offered
+   * seats whose Join can only fail, and a feed that offers an impossible tap is
+   * worse than one that offers nothing. Deliberately NOT remembered between
+   * visits — booking for somebody else is the exception, and a sticky setting
+   * would quietly keep showing one rider the wrong half of the city.
+   */
+  const [bookedFor, setBookedFor] = useState<BookedFor>('self');
 
   // One ticker for every countdown on the screen, rather than one per row.
   useEffect(() => {
@@ -326,7 +339,9 @@ export default function SuggestedRidesScreen() {
     if (!coords) return;
     setLoading(true);
     try {
-      const r = await api.getSuggestedRides({ lat: coords.lat, lng: coords.lng, radiusKm });
+      const r = await api.getSuggestedRides({
+        lat: coords.lat, lng: coords.lng, radiusKm, bookedFor,
+      });
       setRides(r.rides);
     } catch {
       // Discovery is best-effort — an empty list reads better than an error box
@@ -335,7 +350,7 @@ export default function SuggestedRidesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [coords?.lat, coords?.lng, radiusKm]);
+  }, [coords?.lat, coords?.lng, radiusKm, bookedFor]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -427,14 +442,16 @@ export default function SuggestedRidesScreen() {
     // gender mix, the fare breakdown) and it is a better place to decide from
     // than a row.
     if (ride.kind === 'trip') {
-      router.push(`/passenger/pool-join/${ride.id}` as Parameters<typeof router.push>[0]);
+      router.push(
+        `/passenger/pool-join/${ride.id}?bookedFor=${bookedFor}` as Parameters<typeof router.push>[0],
+      );
       return;
     }
 
     setBusyId(ride.id);
     try {
       if (ride.kind === 'request') {
-        const res = await api.joinPoolRideRequest({ requestId: ride.id });
+        const res = await api.joinPoolRideRequest({ requestId: ride.id, bookedFor });
         Alert.alert(
           res.pending ? 'Asked the driver' : 'You are in 🎉',
           res.pending
@@ -449,8 +466,15 @@ export default function SuggestedRidesScreen() {
           pickupLng: coords.lng,
           pickupAddress: 'Current location',
           dropoffAddress: ride.destinationAreaName,
+          bookedFor,
         });
-        if (res.queued) {
+        if (res.vetting) {
+          Alert.alert(
+            'Asked the driver',
+            'You booked this seat for someone else, so the driver has to agree before it is '
+            + 'yours. You will get a notification either way.',
+          );
+        } else if (res.queued) {
           // The car already holds a man and a woman, so the back row waits for
           // a same-gender pair. Nobody has a seat yet, and the rider must know.
           Alert.alert(
@@ -495,6 +519,38 @@ export default function SuggestedRidesScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      {/* ── Who the seat is for ──
+           One control, set once, and it governs the whole screen: the feed is
+           rebuilt for that passenger and every Join sends the same answer. A
+           rider taking a seat for themselves — almost everybody — never has to
+           touch it, so it costs the common path one glance and no taps. ── */}
+      <View style={styles.forWhoRow}>
+        <Text style={styles.forWhoLabel}>Booking for</Text>
+        {(['self', 'other'] as BookedFor[]).map((v) => {
+          const on = bookedFor === v;
+          return (
+            <Pressable
+              key={v}
+              style={[styles.forWhoChip, on && styles.forWhoChipOn]}
+              onPress={() => setBookedFor(v)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={v === 'self' ? 'Booking for me' : 'Booking for someone else'}
+            >
+              <Text style={[styles.forWhoTxt, on && styles.forWhoTxtOn]}>
+                {v === 'self' ? 'Me' : 'Someone else'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {bookedFor === 'other' ? (
+        <Text style={styles.forWhoNote}>
+          Showing rides for a passenger of the other gender. The riders already in a car
+          are told the seat was booked by someone else, and they can decline it.
+        </Text>
+      ) : null}
 
       <View style={styles.tabRow}>
         {(['rides', 'areas'] as Tab[]).map((t) => {
@@ -749,6 +805,28 @@ const styles = themed(() => StyleSheet.create({
   searchClear: { color: colors.muted, fontSize: 15, fontWeight: '900', paddingHorizontal: 4 },
 
   /* ── Rides | Areas ── */
+  /* ── "Booking for" ── see the note at its usage: it drives the feed, not
+     just the join, so the two can never disagree. ── */
+  forWhoRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginHorizontal: 16, marginBottom: 10,
+  },
+  forWhoLabel: {
+    color: colors.muted, fontSize: 11, fontWeight: '800',
+    letterSpacing: 0.3, marginRight: 2,
+  },
+  forWhoChip: {
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 9,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+  },
+  forWhoChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  forWhoTxt: { color: colors.muted, fontSize: 12, fontWeight: '800' },
+  forWhoTxtOn: { color: colors.primary },
+  forWhoNote: {
+    marginHorizontal: 16, marginBottom: 10,
+    color: colors.muted, fontSize: 11, lineHeight: 15, fontWeight: '600',
+  },
+
   tabRow: {
     flexDirection: 'row', gap: 6, marginHorizontal: 16, marginBottom: 10,
     backgroundColor: colors.card, borderRadius: 12, padding: 4,

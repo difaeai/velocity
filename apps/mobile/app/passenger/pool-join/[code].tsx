@@ -23,15 +23,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 
-import { api, type PoolTripByCode } from '../../../src/api/client';
+import { api, type BookedFor, type PoolTripByCode } from '../../../src/api/client';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
 import { poolGenderSummary } from '../../../src/lib/genderAccess';
 
 export default function PoolJoinScreen() {
-  const params = useLocalSearchParams<{ code: string }>();
+  const params = useLocalSearchParams<{ code: string; bookedFor?: string }>();
   const code = (Array.isArray(params.code) ? params.code[0] : params.code) ?? '';
+  /**
+   * Who the seat is for, carried over from the shared-rides list so the answer
+   * the rider already gave there is not asked again. A share link opened cold
+   * has no answer, which means 'self' — the overwhelming majority, and the one
+   * a link is almost always sent for.
+   */
+  const bookedFor: BookedFor =
+    (Array.isArray(params.bookedFor) ? params.bookedFor[0] : params.bookedFor) === 'other'
+      ? 'other'
+      : 'self';
   const router = useRouter();
 
   const [info, setInfo]       = useState<PoolTripByCode | null>(null);
@@ -84,16 +94,24 @@ export default function PoolJoinScreen() {
   async function join() {
     setJoining(true);
     try {
-      const res = await api.joinPoolTrip({ code });
+      const res = await api.joinPoolTrip({ code, bookedFor });
       // A pool with a driver does not seat anyone on a tap — the driver decides.
       // Sending the rider to a trip screen for a seat they do not have yet
       // would be the app telling them they are in a car they are not in.
       if (res.pending) {
         await refresh();
+        // Who has to say yes depends on whether the ride has a driver yet, and
+        // telling the rider to wait for "the driver" on a ride that has none
+        // would leave them watching for an answer nobody was going to give.
+        const askedHost = res.vetBy === 'host';
         Alert.alert(
-          'Asked the driver',
-          'The driver has to agree before you take this seat — you will get a notification either way. '
-            + 'Nothing about the fare changes: it is set by the rider who started this pool.',
+          askedHost ? 'Asked the rider whose ride this is' : 'Asked the driver',
+          (askedHost
+            ? 'This ride has no driver yet, so the rider who started it has to agree before you '
+              + 'take the seat. '
+            : 'The driver has to agree before you take this seat. ')
+          + 'You will get a notification either way. The fare does not change — a shared ride '
+          + 'has one fixed fare.',
         );
         return;
       }

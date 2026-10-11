@@ -37,6 +37,7 @@ import { LiveMap } from '../../../src/ui/LiveMap';
 import { RatingModal } from '../../../src/ui/RatingModal';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard';
+import { PoolJoinRequestsCard } from '../../../src/ui/PoolJoinRequestsCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
@@ -865,6 +866,21 @@ export default function TripScreen() {
             back seat. It used to read `trip.poolRiders`, which only an en-route
             trip ever has, so on an ordinary shared booking it never rendered
             at all and nobody was told they were sharing. */}
+        {/* Somebody asking for a seat in this car.
+             Shown from the moment the ride exists, not only once a driver has
+             taken it: a ride still gathering riders is exactly when a seat
+             booked for somebody else has to be vetted, and the host is the one
+             who answers because there is no driver to ask yet.
+
+             `canDecide` is the host of a driverless ride. Everybody else aboard
+             gets the refusal, which is binding on its own — see the card. */}
+        {trip.pool && ['requested', 'matched', 'arriving', 'arrived'].includes(trip.status) && (
+          <PoolJoinRequestsCard
+            tripId={tripId}
+            canDecide={!trip.driverId && trip.passengerId === user?.uid}
+          />
+        )}
+
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status)
           && trip.pool && (
           <PoolRidersCard

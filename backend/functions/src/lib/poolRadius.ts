@@ -10,7 +10,21 @@
  * The radius is, in priority order:
  *   1. the per-ride radius the driver set when posting the offer,
  *   2. the admin-configured default (config/poolSettings.dropRadiusM),
- *   3. the hard default of 1 km.
+ *   3. the hard default below.
+ *
+ * ON THE SIZE OF THAT DEFAULT
+ * ---------------------------
+ * It was 1 km, and 1 km is too far to walk at the END of a journey here. A
+ * rider will happily walk a few hundred metres to a pickup point they know by
+ * name — that is how a wagon stop already works — but asking them to finish a
+ * paid ride half a mile from where they were going, in Lahore in June, on roads
+ * with no footpath, is the point at which they stop using shared rides. Uber's
+ * Express Pool made exactly this trade and it was the first thing to fail.
+ *
+ * 400 m is roughly a five-minute walk and is about as far as that goodwill
+ * stretches. Drivers can still set a wider zone per ride, and admins can move
+ * the default, so nothing here is a ceiling — it is the answer when nobody has
+ * said otherwise, and it should be the kind one.
  *
  * The driver must also END the ride while still inside the drop zone —
  * completePoolRide rejects completion attempts from outside it (with a small
@@ -18,8 +32,11 @@
  */
 import { db } from './firebase';
 
-/** Hard default: joiners must be dropped within 1 km of the pool destination. */
-export const DEFAULT_POOL_DROP_RADIUS_M = 1000;
+/**
+ * Hard default: joiners are dropped within a short walk of the pool
+ * destination. See the note on the size of this above.
+ */
+export const DEFAULT_POOL_DROP_RADIUS_M = 400;
 
 /** GPS slack added when checking the driver's end-of-ride position. */
 export const DRIVER_END_RIDE_SLACK_M = 250;

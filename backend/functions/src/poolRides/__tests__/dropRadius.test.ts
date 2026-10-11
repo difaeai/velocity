@@ -84,7 +84,9 @@ describe('pure radius helpers', () => {
     expect(effectiveDropRadiusM(null, 750)).toBe(750);
     expect(effectiveDropRadiusM(0, 1000)).toBe(1000);      // insane values ignored
     expect(effectiveDropRadiusM(99999, 1000)).toBe(1000);
-    expect(DEFAULT_POOL_DROP_RADIUS_M).toBe(1000);
+    // A short walk, not a kilometre. Finishing a paid ride that far from the
+    // destination is where riders abandon shared rides — see lib/poolRadius.
+    expect(DEFAULT_POOL_DROP_RADIUS_M).toBe(400);
   });
 
   it('hasRealCoords rejects the (0,0) placeholder', () => {

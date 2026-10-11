@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { requiresVettingToJoin, resolveSeatOccupant, normalizeGender } from '../lib/seatGender';
 import { notifyUser, sendToUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import {
@@ -459,6 +460,11 @@ const JoinRideSchema = z.object({
   // when omitted the joiner is treated as going to the pool destination.
   dropoffLat:     z.number().min(-90).max(90).optional(),
   dropoffLng:     z.number().min(-180).max(180).optional(),
+  /**
+   * Who is taking the seat — see lib/seatGender. Names a relationship, never a
+   * gender, so the server stays the only thing that decides a seat's gender.
+   */
+  bookedFor:      z.enum(['self', 'other']).nullish(),
 });
 
 /**
@@ -494,7 +500,11 @@ export const joinPoolRide = onCall(async (req) => {
       'Your account is blocked from pool rides due to a gender misrepresentation report. Contact support if this is a mistake.',
     );
   }
-  const joinerGender    = (userData.gender    as string)  ?? 'unspecified';
+  // The gender of the person who will be IN the seat, which is not always the
+  // account holder's — a rider booking for a sibling of the other gender gets
+  // that sibling matched, not themselves. See lib/seatGender.
+  const seat            = resolveSeatOccupant(userData.gender, p.data.bookedFor ?? null);
+  const joinerGender    = seat.seatGender;
   const mixedRideOk     = (userData.mixedRideOk as boolean) ?? false;
   const joinerName      = (userData.name       as string)  ?? 'Passenger';
   const joinerPhone     = (userData.phone      as string | null) ?? null;
@@ -505,6 +515,12 @@ export const joinPoolRide = onCall(async (req) => {
   // gender instead of confirmed, and the driver is only told once two riders
   // of the same gender are waiting (so the back row stays same-gender).
   let queuedResult: { waitingSameGender: number; driverId: string } | null = null;
+  /**
+   * Set when the seat went to the driver to vet rather than being taken. Held
+   * on an object rather than in a bare `let` so the assignment inside the
+   * transaction below survives control-flow narrowing.
+   */
+  const vetting: { result: { driverId: string } | null } = { result: null };
 
   await db.runTransaction(async (tx) => {
     const rideSnap = await tx.get(rideRef);
@@ -555,6 +571,12 @@ export const joinPoolRide = onCall(async (req) => {
 
     const currentComposition = computeGenderAccess(maleSeats, femaleSeats, ride.maxSeats as number, driverPref);
 
+    /** Who is already in the car, for the vetting test below. */
+    const aboardGenders = [
+      ...Array<'male'>(maleSeats).fill('male'),
+      ...Array<'female'>(femaleSeats).fill('female'),
+    ].map(normalizeGender);
+
     const check = canJoinPool({
       currentComposition,
       maleSeats,
@@ -564,6 +586,41 @@ export const joinPoolRide = onCall(async (req) => {
       otherSeats: Math.max(0, ((ride.takenSeats as number) ?? 0) - maleSeats - femaleSeats),
     });
     if (!check.allowed) throw new HttpsError('permission-denied', check.reason);
+
+    /**
+     * A seat booked for somebody else never takes an instant place in a
+     * single-gender car. The composition rules would allow it — the derived
+     * gender fits — but the gender on this seat is the booker's word rather
+     * than a verified profile, and the people already in that car chose a
+     * single-gender ride. So the driver is asked, which is what they are for.
+     * See lib/seatGender.
+     */
+    if (requiresVettingToJoin(seat, aboardGenders)) {
+      const vetRef  = db.doc(`poolRides/${rideId}/joinRequests/${ctx.uid}`);
+      const vetSnap = await tx.get(vetRef);
+      if (vetSnap.exists && vetSnap.get('status') === 'queued') {
+        throw new HttpsError('already-exists', 'You already have a pending request for this ride.');
+      }
+      tx.set(vetRef, {
+        userId:         ctx.uid,
+        userName:       joinerName,
+        userPhone:      joinerPhone,
+        userGender:     joinerGender,
+        bookedForOther: true,
+        vetReason:      'booked_for_other',
+        pickupAddress,
+        pickupLat,
+        pickupLng,
+        dropoffAddress,
+        dropoffLat:     dropoffLat ?? null,
+        dropoffLng:     dropoffLng ?? null,
+        fare:           ride.perSeatFare,
+        status:         'queued',
+        createdAt:      FieldValue.serverTimestamp(),
+      });
+      vetting.result = { driverId: ride.driverId as string };
+      return;
+    }
 
     // ── Mixed-car batching rule ────────────────────────────────────────────
     // With one male and one female already seated, a lone joiner of either
@@ -670,6 +727,17 @@ export const joinPoolRide = onCall(async (req) => {
     }
     logger.info('Pool join queued (mixed car)', { rideId, uid: ctx.uid, gender: joinerGender, waitingSameGender });
     return { ok: true, queued: true, waitingSameGender };
+  }
+
+  if (vetting.result) {
+    await notifyUser(
+      vetting.result.driverId,
+      'Someone wants a seat on your route 🙋',
+      'The seat was booked for another passenger, so it needs your approval. Open your route to accept or decline.',
+      'ride',
+    ).catch(() => {});
+    logger.info('Pool join sent for vetting', { rideId, uid: ctx.uid, gender: joinerGender });
+    return { ok: true, queued: true, vetting: true, waitingSameGender: 0 };
   }
 
   logger.info('Passenger joined pool ride', { rideId, uid: ctx.uid, gender: joinerGender });
