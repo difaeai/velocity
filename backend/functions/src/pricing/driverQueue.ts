@@ -191,7 +191,9 @@ export interface ClaimDecision {
 /**
  * May this driver take this request yet?
  *
- * The authoritative copy of this question is asked server-side in `acceptTrip`.
+ * The authoritative copy of this question is asked server-side in `placeBid`
+ * (there is no `acceptTrip` — drivers bid, passengers accept, and on a shared
+ * ride a bid is the acceptance).
  * The driver app asks it too, so the feed can show "yours in 8s" instead of
  * letting a driver tap something that will be refused — but a client-side
  * answer is only ever a courtesy, and a patched build that ignores it meets the

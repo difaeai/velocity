@@ -9,7 +9,7 @@
  *   supplyIntegrity.ts  telling real scarcity from manufactured scarcity
  *   driverQueue.ts      first come, first served; offline forfeits your place
  *   engine.ts           the once-a-minute tick that computes and writes it all
- *   claimGate.ts        the server-side "is it your turn" used by acceptTrip
+ *   claimGate.ts        the server-side "is it your turn" used by placeBid
  *   config.ts           loading the settings and the believed fuel price
  *   functions.ts        the callable surface
  *

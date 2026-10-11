@@ -4,8 +4,13 @@
  * The driver app asks `driverQueue.claimDecision` too, so the feed can show
  * "yours in 8s" rather than letting somebody tap a request that will bounce.
  * But a client-side check is a courtesy to honest builds. This is the one that
- * decides, and it lives in its own file so that wiring it into `acceptTrip` is
- * an import and two lines rather than a refactor of somebody else's function.
+ * decides, and it lives in its own file so that wiring it into `placeBid` is an
+ * import and two lines rather than a refactor of somebody else's function.
+ *
+ * `placeBid`, not an accept: there is no `acceptTrip` in this codebase. Drivers
+ * bid and passengers choose a bid — and on a shared ride, where the fare is
+ * fixed, a bid IS the acceptance. So bidding is the thing drivers race for and
+ * the only place a queue can be enforced.
  *
  * FAILS OPEN, ALWAYS
  * ------------------
