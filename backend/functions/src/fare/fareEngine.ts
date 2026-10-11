@@ -35,14 +35,18 @@ export interface CityFareConfig {
     /** Hard cap so surge never gets abusive, e.g. 1.8 */
     maxMultiplier: number;
     /**
-     * Lowest multiplier the engine will honour. Absent means 1.0 — the fare is
-     * never discounted below the card.
+     * Lowest multiplier the engine will honour — a DISCOUNT floor. Absent means
+     * 1.0, so the fare is never discounted below the card.
      *
      * Set below 1.0 to let `pricing/peak.ts` advertise a cheaper ride in a zone
      * with idle drivers, which is the other half of managing demand and supply.
      * `minAcceptableBid` is computed from `bidFloorPerKm` and is unaffected, so
      * a discount can only ever come out of the platform's margin and never out
      * of what the driver is guaranteed.
+     *
+     * Values ABOVE 1.0 are clamped away in `calculateFare` and cannot raise a
+     * fare. Raising fares is the peak factor's job: capped at `maxMultiplier`,
+     * and recorded in a `surge/*` document that says why.
      */
     minMultiplier?: number;
   };
@@ -155,11 +159,17 @@ export function calculateFare(cfg: CityFareConfig, trip: TripInput): FareEstimat
   // The floor defaults to 1.0, so a config written before `minMultiplier`
   // existed behaves exactly as it did: surge may raise a fare and never lower
   // one. A city that opts into the idle-supply discount sets it below 1.
+  //
+  // Capped at 1 by `Math.min` so the field can only ever be what it is
+  // documented to be — a discount floor. Without that cap, a city table with
+  // `minMultiplier: 1.5` would multiply EVERY fare in that city by 1.5 with no
+  // zone document behind it, no tick involved and nothing recording that it
+  // happened: a blanket price rise wearing the clothes of a floor. Raising
+  // fares is the peak factor's job, it is capped at `maxMultiplier`, and it
+  // leaves a `surge/*` document saying why.
+  const discountFloor = Math.min(cfg.surge.minMultiplier ?? 1, 1);
   const surge = cfg.surge.enabled
-    ? Math.min(
-        Math.max(trip.surgeMultiplier ?? 1, cfg.surge.minMultiplier ?? 1),
-        cfg.surge.maxMultiplier,
-      )
+    ? Math.min(Math.max(trip.surgeMultiplier ?? 1, discountFloor), cfg.surge.maxMultiplier)
     : 1;
 
   const recommendedFare  = round5(subtotal * surge);

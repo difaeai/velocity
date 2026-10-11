@@ -10,6 +10,7 @@ import { sharedRideFare } from './sharedRideFare';
 import { loadFuelPrices, loadPricingConfig } from '../pricing/config';
 import { describeFuelAdjustment, fuelFactorFor, withFuelAdjustedRates } from '../pricing/fuel';
 import { riderPeakLabel } from '../pricing/peak';
+import { peakFactorForZone } from '../pricing/zoneFactor';
 
 const REGION = 'asia-south1';
 const db = () => getFirestore();
@@ -86,37 +87,18 @@ function parseTrip(data: Record<string, unknown>): { cityId: string; trip: TripI
 /**
  * The zone's peak factor, as written by `pricing/engine.ts` once a minute.
  *
- * Three things this does NOT do, each on purpose:
+ * A thin wrapper over `pricing/zoneFactor.ts`, which owns the expiry check, the
+ * ceiling clamp and the never-throw guarantee — this file, pricing/functions.ts
+ * and fare/sharedRideFare.ts all read the same document and had begun growing
+ * their own copies of those guards, which is how one of them ends up serving a
+ * stale multiplier for ever while the others do not.
  *
- *  · It does not trust a client-supplied multiplier. The caller supplies a
- *    geohash; the number comes from the server's own document.
- *  · It does not serve an expired factor. `expiresAt` is stamped by the tick,
- *    and past it this returns 1.0 — so if the tick dies, fares fall back to
- *    normal instead of holding whatever the last run happened to say for ever.
- *    A pricing engine that fails must fail to 1.0.
- *  · It does not accept a factor above the engine's own ceiling, even from its
- *    own document. A hand-edited or half-written `surge/*` doc cannot raise a
- *    fare past `maxMultiplier`.
+ * What stays here is the one thing specific to these callables: the client
+ * supplies a GEOHASH and never a multiplier. The number itself always comes
+ * from the server's own document.
  */
 async function getZoneSurge(cityId: string, geohash?: string): Promise<number> {
-  try {
-    if (!geohash) return 1.0;
-    const pricing = await loadPricingConfig();
-    if (!pricing.peak.enabled) return 1.0;
-
-    const zone = geohash.substring(0, Math.max(1, Math.trunc(pricing.peak.zonePrecision)));
-    const snap = await db().doc(`surge/${cityId}_${zone}`).get();
-    if (!snap.exists) return 1.0;
-
-    const expiresAt = Number(snap.data()?.expiresAt);
-    if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return 1.0;
-
-    const m = Number(snap.data()?.multiplier);
-    if (!Number.isFinite(m) || m <= 0) return 1.0;
-    return Math.min(Math.max(m, pricing.peak.minMultiplier), pricing.peak.maxMultiplier);
-  } catch {
-    return 1.0;
-  }
+  return (await peakFactorForZone(cityId, geohash)).multiplier;
 }
 
 // ── Callable endpoints ────────────────────────────────────────────────────────
