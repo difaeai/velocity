@@ -63,34 +63,72 @@ console.log(head);
 console.log('-'.repeat(head.length));
 for (const r of rows) console.log(cols.map((c) => String(r[c]).padEnd(15)).join(''));
 
-console.log('\n\nSAME MODEL AFTER THE THREE FIXES');
-console.log('(geohash-bound driver query -> ~25 drivers read instead of all D,');
-console.log(' nearbyActivity cadence 30s -> 60s, capped scans trimmed 800 -> 250)\n');
+/**
+ * AS SHIPPED in 38b2ed5. Two changes, and only two:
+ *   - the driver lookup is geohash-bounded (lib/nearbyDrivers.ts), so the
+ *     `onlineDrivers` term becomes "drivers within the radius" — set by local
+ *     density, not by national fleet size
+ *   - the idle poll went 30s -> 60s, halving the call rate
+ *
+ * The capped scans were deliberately NOT trimmed. They are already bounded and
+ * do not grow with the user base: `userPresence` is queried by geohash cell,
+ * and open `trips`/`poolRideRequests` are short-lived, so their caps are
+ * ceilings that are rarely reached rather than costs that are always paid.
+ * Trimming them would buy reads at the price of a less accurate "people
+ * nearby" count, which is a product call, not a performance one.
+ *
+ * So two rows per concurrency: the worst case where every cap binds at once,
+ * and the realistic case. The realistic presence figure is the cell-block
+ * population, which saturates its own 400 cap in a dense city and is why the
+ * two rows converge as concurrency rises.
+ */
+const BOUNDED_DRIVERS = 25;   // drivers inside a 2-6 km radius, typical city
+const CAPS_WORST = 400 + 200 + 200;
 
-function fixed(C) {
+function shipped(C, realistic) {
   const D = Math.round(DRIVER_SHARE * C);
   const passengers = C - D;
-  const nearbyReadsCall = 25 + 250;            // geohash-bounded + trimmed caps
-  const nearbyReadsSec = (C / 60) * nearbyReadsCall;
+  // Realistic: presence fills its cell block (capped at 400), and open requests
+  // are however many are actually live nationally -- roughly bookings/sec x the
+  // ~60s a request stays open, not the 200 ceiling.
   const bookingsSec = (passengers * RIDES_PER_USER_HOUR) / 3600;
-  const bcastReadsSec = bookingsSec * 25;
+  const liveRequests = Math.min(200, Math.round(bookingsSec * 60));
+  const caps = realistic
+    ? Math.min(400, Math.round(C * 0.4)) + liveRequests + Math.min(200, liveRequests * 2)
+    : CAPS_WORST;
+
+  const nearbyReadsCall = BOUNDED_DRIVERS + caps;
+  const nearbyReadsSec = (C / 60) * nearbyReadsCall;
+  const bcastReadsSec = bookingsSec * BOUNDED_DRIVERS;
   const readsSec = nearbyReadsSec + bcastReadsSec;
-  const writesSec = D / 30 + C / 180 + bookingsSec * 3;
+  // The sweeper adds one full scan of online drivers per minute, nationally.
+  const sweepReadsSec = D / 60;
+  const writesSec = D / 30 + C / 180 + bookingsSec * 3 + D / 60;
   const secPerMonth = PEAK_HOURS_PER_DAY * 3600 * 30;
-  const costMonth = readsSec * secPerMonth * READ_PRICE + writesSec * secPerMonth * WRITE_PRICE;
+  const total = readsSec + sweepReadsSec;
+  const costMonth = total * secPerMonth * READ_PRICE + writesSec * secPerMonth * WRITE_PRICE;
   return {
     concurrent: C, onlineDrivers: D, readsPerCall: nearbyReadsCall,
-    readsPerSec: Math.round(readsSec), writesPerSec: Math.round(writesSec),
-    readsPerDay: Math.round(readsSec * PEAK_HOURS_PER_DAY * 3600 / 1e6) + 'M',
+    readsPerSec: Math.round(total), writesPerSec: Math.round(writesSec),
+    readsPerDay: Math.round(total * PEAK_HOURS_PER_DAY * 3600 / 1e6) + 'M',
     costPerMonth: '$' + Math.round(costMonth).toLocaleString(),
   };
 }
-const rows2 = [100, 250, 500, 1000, 2500, 5000, 10000].map(fixed);
-console.log(head);
-console.log('-'.repeat(head.length));
-for (const r of rows2) console.log(cols.map((c) => String(r[c]).padEnd(15)).join(''));
 
-const a = rows.find((r) => r.concurrent === 10000), b = rows2.find((r) => r.concurrent === 10000);
-console.log('\nAt 10,000 concurrent: ' + a.readsPerSec.toLocaleString() + ' reads/s -> ' +
-  b.readsPerSec.toLocaleString() + ' reads/s  (' +
-  (a.readsPerSec / b.readsPerSec).toFixed(0) + 'x less work, ' + a.costPerMonth + ' -> ' + b.costPerMonth + ')');
+for (const [label, realistic] of [['worst case — every cap binds', false], ['realistic', true]]) {
+  console.log('\n\nAS SHIPPED (38b2ed5): geohash-bounded drivers + 60s poll — ' + label + '\n');
+  const r = [100, 250, 500, 1000, 2500, 5000, 10000].map((C) => shipped(C, realistic));
+  console.log(head);
+  console.log('-'.repeat(head.length));
+  for (const x of r) console.log(cols.map((c) => String(x[c]).padEnd(15)).join(''));
+}
+
+const a = rows.find((r) => r.concurrent === 10000);
+const w = shipped(10000, false), g = shipped(10000, true);
+console.log('\nAt 10,000 concurrent, reads/sec: ' + a.readsPerSec.toLocaleString() + ' before -> ' +
+  w.readsPerSec.toLocaleString() + ' worst case (' + (a.readsPerSec / w.readsPerSec).toFixed(1) + 'x) -> ' +
+  g.readsPerSec.toLocaleString() + ' realistic (' + (a.readsPerSec / g.readsPerSec).toFixed(1) + 'x)');
+console.log('Cost/month: ' + a.costPerMonth + ' -> ' + w.costPerMonth + ' -> ' + g.costPerMonth);
+console.log('\nThe remaining lever is the presence cap (400 reads/call in a dense cell).');
+console.log('Cutting it trades the accuracy of the "people nearby" count for reads;');
+console.log('the structural fix at this scale is precomputed per-cell counts, not a smaller cap.');
