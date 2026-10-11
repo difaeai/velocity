@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { api } from '../../src/api/client';
 import type { NearbyPoolRequest } from '../../src/api/client';
+import { OfferCountdown } from '../../src/ui/OfferCountdown';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
@@ -43,6 +44,8 @@ function RequestCard({
 
   return (
     <View style={styles.card}>
+      {/* The exclusive hold, when this ride is this driver's alone. */}
+      <OfferCountdown exclusive={req.exclusive} offerExpiresAt={req.offerExpiresAt} />
       <View style={styles.cardHeader}>
         <Text style={styles.distLabel}>{req.distanceKm} km away</Text>
         <View style={styles.genderBadge}>
@@ -161,6 +164,19 @@ export default function PoolRequestsScreen() {
     }
   }
 
+  /**
+   * Pass on a ride.
+   *
+   * This used to hide the card in AsyncStorage and stop there, so a refusal was
+   * known only to the phone that made it: the pool stayed in every other
+   * driver's feed and the dispatcher learned nothing it could act on. Now it
+   * tells the server, which records the refusal and offers the ride to the next
+   * driver in the zone queue straight away.
+   *
+   * The local hide stays, and happens first — the card disappears on the tap
+   * rather than after a round-trip, and it also covers the open-to-all case
+   * where this driver wants a ride out of their feed for an hour.
+   */
   function reject(requestId: string) {
     setRejectedIds((prev) => new Set([...prev, requestId]));
     AsyncStorage.getItem(REJECT_KEY).then((raw) => {
@@ -168,6 +184,11 @@ export default function PoolRequestsScreen() {
       const updated = [...existing.filter((e) => e.id !== requestId), { id: requestId, at: Date.now() }];
       AsyncStorage.setItem(REJECT_KEY, JSON.stringify(updated));
     }).catch(() => {});
+
+    // Not awaited and never surfaced: the driver has moved on, and a failed
+    // refusal costs them nothing — the offer lapses on its own and the ladder
+    // advances anyway.
+    api.driverRespondToRequest({ requestId, action: 'reject' }).catch(() => {});
   }
 
   const visible = useMemo(

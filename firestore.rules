@@ -157,8 +157,14 @@ service cloud.firestore {
       // drivers/geohashSweeper.ts keeps it current after that.
       allow update: if isOwner(driverId)
                     && isDriver()
+                    // `rideMode` is Solo|Sharing, written when the driver flips
+                    // the selector on their home screen. The pool offer ladder
+                    // reads it to skip drivers who have chosen solo work. Safe
+                    // for the handset to own: the only thing a driver can do by
+                    // lying about it is take themselves OUT of shared-ride
+                    // offers, and absent already means "available".
                     && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
-                                    'appActiveAt',
+                                    'appActiveAt', 'rideMode',
                                     'poolPickupRadiusM', 'poolDropoffRadiusM'])
                     && (!goingOnline() || carPhotoIsLive());
       allow update: if isAdmin();
@@ -804,6 +810,21 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         uid() in resource.data.passengers
         || resource.data.driverId == uid()
+        // The driver currently holding the exclusive offer, who is not yet
+        // `driverId` and may never be. They need this to watch their own
+        // countdown live rather than discover at the next poll that the ride
+        // they were deciding on has already gone to somebody else.
+        //
+        // Reading one pool they have been offered is strictly less than
+        // `getNearbyPoolRequests` already returns them about it, so this
+        // discloses nothing new — it only makes it timely.
+        //
+        // Read through `get` with defaults, NOT as `resource.data.dispatch
+        // .offeredDriverId`: every pool created before the ladder shipped has
+        // no `dispatch` map, and a missing-field access is an error rather than
+        // a false — which, in an `||` chain, denies the whole read. That would
+        // have broken admin reads of the entire existing backlog.
+        || resource.data.get('dispatch', {}).get('offeredDriverId', '') == uid()
         || isAdmin()
       );
       allow write: if false;

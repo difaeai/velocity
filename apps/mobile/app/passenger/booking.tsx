@@ -83,6 +83,7 @@ import {
   DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap, restateAgainstOffer,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
+import { PriceNotice } from '../../src/ui/PriceNotice';
 import { EdgeFade } from '../../src/ui/components';
 
 /** A booking dictated on the voice screen, ready to seed this screen's state. */
@@ -349,13 +350,39 @@ export default function Booking() {
     else requestLocation();
   }
 
-  // Fare engine config from Firestore (city-level rates set by admin)
+  /**
+   * The rate card to price this rider against — fuel-adjusted, from the server.
+   *
+   * This used to be `getDoc(doc(db, 'fareConfig', CITY_ID))`. Two bugs in one
+   * line, both of which made the rider's screen disagree with the money:
+   *
+   *  · The STORED card is never fuel-adjusted. `pricing/fuel.ts` derives the
+   *    adjustment on read and deliberately leaves the document as the admin
+   *    authored it, so reading it directly priced the rider off a table the
+   *    pricing engine had already moved. Fuel reached what the server charged
+   *    and validated, and never reached what the rider was shown.
+   *  · CITY_ID was hardcoded to Islamabad/Rawalpindi while every server path
+   *    resolves the city from the pickup coordinates. A Karachi rider saw
+   *    Islamabad's rates on a trip priced from Karachi's.
+   *
+   * `peak` comes back in the same call and is fed into `calculateFare` below as
+   * `surgeMultiplier`, because pricing the app at 1.0 while the server
+   * validates at the zone's real factor is the same disagreement wearing a
+   * different hat.
+   */
   const [fareConfig, setFareConfig] = useState<CityFareConfig | null>(null);
-  useEffect(() => {
-    getDoc(doc(db, 'fareConfig', CITY_ID)).then((snap) => {
-      if (snap.exists()) setFareConfig(snap.data() as CityFareConfig);
-    }).catch(() => {});
-  }, []);
+  /**
+   * The city the SERVER resolved from the pickup, not the one this screen
+   * assumed. `CITY_ID` remains the value everything starts at and falls back to
+   * — a rider with location off is priced exactly as they were before — but
+   * once the pickup is known, this is the city whose rate card and whose
+   * competitor rates apply. Karachi has its own of both.
+   */
+  const [cityId, setCityId] = useState<string>(CITY_ID);
+  const [priceCtx, setPriceCtx] = useState<{
+    peak: { multiplier: number; label: string | null; maxMultiplier: number };
+    fuel: { note: string | null };
+  } | null>(null);
 
   // What the other apps charge here, and the rule for staying under them.
   // Read straight from Firestore rather than through a callable: the rider
@@ -366,15 +393,19 @@ export default function Booking() {
   const [marketRates, setMarketRates] = useState<CityMarketRates | null>(null);
   const [marketSettings, setMarketSettings] = useState<MarketComparisonSettings>(DEFAULT_MARKET_SETTINGS);
   useEffect(() => {
-    getDoc(doc(db, 'marketRates', CITY_ID)).then((snap) => {
+    // Keyed on the resolved city: the comparison sets the displayed fare in the
+    // "rates available" regime, so holding Islamabad's competitor card against
+    // a Karachi trip would undercut the wrong numbers.
+    getDoc(doc(db, 'marketRates', cityId)).then((snap) => {
       if (snap.exists()) setMarketRates(snap.data() as CityMarketRates);
+      else setMarketRates(null);
     }).catch(() => {});
     getDoc(doc(db, 'config', 'marketComparison')).then((snap) => {
       if (snap.exists()) {
         setMarketSettings({ ...DEFAULT_MARKET_SETTINGS, ...(snap.data() as Partial<MarketComparisonSettings>) });
       }
     }).catch(() => {});
-  }, []);
+  }, [cityId]);
 
   // Details state — one explicit booking mode; Solo and Pool can never be
   // "selected" at the same time, and one CTA reflects the active mode.
@@ -387,6 +418,28 @@ export default function Booking() {
     voicePrefill && !voicePrefill.pool ? 'solo' : 'pool',
   );
   const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
+
+  useEffect(() => {
+    let alive = true;
+    api.getFareContext({
+      // Before the first fix the pickup was not sent at all. Without coords the
+      // server falls back to the default city, which is what this screen always
+      // assumed — so a rider with location off is no worse off than before.
+      ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+      category: RIDE_TO_CAT[rideType],
+    }).then((res) => {
+      if (!alive) return;
+      setFareConfig(res.config);
+      setCityId(res.cityId);
+      setPriceCtx({ peak: res.peak, fuel: res.fuel });
+    }).catch(() => {
+      // Leave the card null and let the screen's built-in BASE_FARES stand, as
+      // it already does before this resolves. A fare estimate that cannot be
+      // fetched must not block the rider from booking — the server prices the
+      // trip authoritatively at creation either way.
+    });
+    return () => { alive = false; };
+  }, [coords?.lat, coords?.lng, rideType]);
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
   const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
   /**
@@ -468,8 +521,19 @@ export default function Booking() {
 
   // Compute engine estimate whenever route + config are available
   const distKm = coords && dropoffCoords ? haversineKm(coords, dropoffCoords) : null;
+  // `surgeMultiplier` is the zone's live peak factor from the server. Omitting
+  // it priced this screen at 1.0 while `offeredFareBounds` validated the offer
+  // against the real factor — so the rider could be shown a fare the server
+  // would then refuse as below the floor. Pool fares do NOT come through here:
+  // `getSharedRideFare` prices those server-side and already carries the
+  // factor, so passing it again would apply it twice.
   const engineEst = fareConfig && distKm
-    ? calculateFare(fareConfig, { category: RIDE_TO_CAT[rideType], distanceKm: distKm, durationMin: Math.round(distKm * 3.5) })
+    ? calculateFare(fareConfig, {
+        category: RIDE_TO_CAT[rideType],
+        distanceKm: distKm,
+        durationMin: Math.round(distKm * 3.5),
+        surgeMultiplier: priceCtx?.peak.multiplier,
+      })
     : null;
 
   // Auto-fill the offer from the admin-configured fare engine — but never
@@ -499,6 +563,7 @@ export default function Booking() {
           category: RIDE_TO_CAT[rt],
           distanceKm: distKm,
           durationMin: Math.round(distKm * 3.5),
+          surgeMultiplier: priceCtx?.peak.multiplier,
         })
       : null;
     if (!est || !distKm) {
@@ -857,7 +922,7 @@ export default function Booking() {
     if (!distKm) return;
     try {
       await api.reportCompetitorQuote({
-        cityId: CITY_ID,
+        cityId,
         competitor,
         category: RIDE_TO_CAT[rideType],
         quotedFare,
@@ -1197,6 +1262,19 @@ export default function Booking() {
             // reaches a release build.
             showEmptyReason={role === 'admin' || __DEV__}
             emptyReason={marketNow.emptyReason}
+          />
+          {/* Why this fare is what it is, beside the number rather than in a
+              help article: the zone's peak factor with its ceiling stated, and
+              the notified pump price when fuel has moved the per-km rate.
+              Renders nothing at all in the ordinary case — see PriceNotice. */}
+          <PriceNotice
+            peak={priceCtx?.peak}
+            fuel={priceCtx?.fuel}
+            // A shared ride is sold at a fixed price taken at creation, so a
+            // "fares may rise" line on it would describe something that cannot
+            // happen to this rider. The fuel line stays: that is a cost which
+            // already moved, not a fare that still might.
+            hidePeak={mode === 'pool'}
           />
         </View>
       </SafeAreaView>

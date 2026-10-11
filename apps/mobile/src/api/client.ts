@@ -8,7 +8,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
-import type { VehicleCategory } from '../lib/fareEngine';
+import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
 import type {
   Competitor, CompetitorCategoryRates, MarketComparison,
 } from '../lib/marketRates';
@@ -1262,8 +1262,13 @@ export const api = {
     },
     { ok: boolean; requestId: string }
   >('createPoolRideRequest'),
+  /**
+   * 'reject' is a real answer, not a hidden card: it records the refusal and
+   * hands the ride to the next driver in the zone queue immediately. Ignoring
+   * an offer does the same thing when it lapses, just slower.
+   */
   driverRespondToRequest: callable<
-    { requestId: string; action: 'accept' | 'counter'; counterFarePerSeat?: number },
+    { requestId: string; action: 'accept' | 'reject' | 'counter'; counterFarePerSeat?: number },
     { ok: boolean; status: string }
   >('driverRespondToRequest'),
   leaderRespondToOffer: callable<
@@ -1392,6 +1397,26 @@ export const api = {
       fuel?: { note: string | null; pricePkr: number | null; product: 'petrol' | 'diesel' };
     }
   >('getFareEstimate'),
+  /**
+   * The rate card to price this rider against, with today's fuel price already
+   * in it, plus the zone's peak factor and the labels for both.
+   *
+   * The booking screen used to read `fareConfig/{cityId}` from Firestore and
+   * price against that. The stored card is deliberately never fuel-adjusted —
+   * the adjustment is derived on read, server-side — so the screen was showing
+   * un-adjusted fares while the server charged and validated adjusted ones.
+   * This is the one call that closes that gap, and the app keeps doing the
+   * arithmetic so switching vehicle class stays instant.
+   */
+  getFareContext: callable<
+    { lat?: number; lng?: number; category?: string; geohash?: string },
+    {
+      cityId: string;
+      config: CityFareConfig;
+      peak: { multiplier: number; label: string | null; maxMultiplier: number };
+      fuel: { note: string | null; pricePkr: number | null; product: 'petrol' | 'diesel' };
+    }
+  >('getFareContext'),
   seedFareConfig: callable<Record<string, never>, { seeded: string[] }>('seedFareConfig'),
 
   // ── Pricing engine ────────────────────────────────────────────────────────
@@ -2045,6 +2070,16 @@ export interface NearbyPoolRequest {
   /** farePerSeat × totalSlots — what the pool pays if every seat fills. */
   totalFareIfFull: number;
   distanceKm: number;
+  /**
+   * This ride is offered to THIS driver alone until `offerExpiresAt`, and
+   * nobody else can take it in the meantime. False means the offer ladder has
+   * finished with it and it is open to every nearby driver, first tap wins.
+   */
+  exclusive?: boolean;
+  /** Epoch ms the exclusive hold ends. Null when there is no hold. */
+  offerExpiresAt?: number | null;
+  /** The server's own wording for the countdown, when there is one. */
+  offerNote?: string | null;
 }
 
 export interface NearbyActiveRide {

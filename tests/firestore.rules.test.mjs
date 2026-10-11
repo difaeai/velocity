@@ -84,6 +84,15 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'poolRideRequests/poolReq1/joinRequests/asker1'), {
     riderId: 'asker1', riderName: 'Asker', status: 'pending', farePerSeat: 200,
   });
+  // Under offer to driver9, who is not (yet) its driver.
+  await setDoc(doc(db, 'poolRideRequests/poolReqOffered'), {
+    leaderId: 'passenger1', driverId: null, status: 'open',
+    passengers: ['passenger1'],
+    dispatch: {
+      offeredDriverId: 'driver9', offeredAt: Date.now(),
+      offerExpiresAt: Date.now() + 25000, offers: 1, declined: [], openToAll: false,
+    },
+  });
   await setDoc(doc(db, 'wallets/passenger1'), { uid: 'passenger1', balance: 0 });
   await setDoc(doc(db, 'openRequests/trip1'), { tripId: 'trip1', rideType: 'ac', offeredFare: 500 });
   await setDoc(doc(db, 'payouts/payout1'), { driverId: 'driver1', amount: 500, status: 'pending' });
@@ -165,6 +174,41 @@ test('driver may toggle presence but not self-verify', async () => {
   await assertSucceeds(updateDoc(doc(driver, 'drivers/driver1'), { online: true }));
   await assertFails(updateDoc(doc(driver, 'drivers/driver1'), { verificationStatus: 'approved' }));
   await assertFails(updateDoc(doc(driver, 'drivers/driver1'), { rating: 5 }));
+});
+
+test('driver may choose solo or sharing work, and the server reads it', async () => {
+  // The pool offer ladder skips drivers who have chosen solo. Safe for the
+  // handset to own: lying about it can only take a driver OUT of pool offers,
+  // and an absent value already means available.
+  await assertSucceeds(updateDoc(doc(driver, 'drivers/driver1'), { rideMode: 'solo' }));
+  await assertSucceeds(updateDoc(doc(driver, 'drivers/driver1'), { rideMode: 'sharing' }));
+});
+
+test('a driver offered a shared ride may read it before they are its driver', async () => {
+  const offeredTo = testEnv.authenticatedContext('driver9', { role: 'driver' }).firestore();
+  const otherDriver = testEnv.authenticatedContext('driver8', { role: 'driver' }).firestore();
+
+  // They hold the exclusive offer and are NOT yet `driverId` — they need the
+  // document to watch their own countdown rather than discover at the next
+  // poll that the ride already went to somebody else.
+  await assertSucceeds(getDoc(doc(offeredTo, 'poolRideRequests/poolReqOffered')));
+  await assertFails(getDoc(doc(otherDriver, 'poolRideRequests/poolReqOffered')));
+  // Reading it never means writing it.
+  await assertFails(updateDoc(doc(offeredTo, 'poolRideRequests/poolReqOffered'), { driverId: 'driver9' }));
+});
+
+test('a pool created before the offer ladder is still readable', async () => {
+  // `poolReq1` has no `dispatch` map at all, as every pool created before the
+  // ladder shipped does. The read rule has to reach that field through `get`
+  // with a default — a missing-field access is an ERROR, not a false, and in an
+  // `||` chain it would have denied the whole existing backlog to its own
+  // participants and to admins.
+  await assertSucceeds(getDoc(doc(passenger, 'poolRideRequests/poolReq1')));
+  await assertSucceeds(getDoc(doc(driver, 'poolRideRequests/poolReq1')));
+  await assertSucceeds(getDoc(doc(admin, 'poolRideRequests/poolReq1')));
+
+  const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
+  await assertFails(getDoc(doc(stranger, 'poolRideRequests/poolReq1')));
 });
 
 test('going online requires a live photo of the car being driven', async () => {

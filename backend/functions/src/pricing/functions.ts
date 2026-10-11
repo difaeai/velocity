@@ -285,6 +285,19 @@ const configSchema = z.object({
     })
     .partial()
     .optional(),
+  // `openToAllAfterSec` is floored at 30 and capped at 900: below 30 the ladder
+  // never gets past its first driver, and above 900 a pool nobody has taken is
+  // still invisible to most of the city a quarter of an hour in.
+  dispatch: z
+    .object({
+      enabled: z.boolean(),
+      offerSeconds: z.number().int().min(10).max(120),
+      maxOffers: z.number().int().min(1).max(25),
+      radiusM: z.number().int().min(500).max(20000),
+      openToAllAfterSec: z.number().int().min(30).max(900),
+    })
+    .partial()
+    .optional(),
 });
 
 export const adminUpdatePricingEngine = onCall({ region: REGION }, async (req) => {

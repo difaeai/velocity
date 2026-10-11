@@ -74,6 +74,7 @@ function mergeConfig(stored: Record<string, unknown> | undefined): PricingEngine
     peak: section('peak'),
     integrity: section('integrity'),
     queue: section('queue'),
+    dispatch: section('dispatch'),
     updatedAt: typeof stored.updatedAt === 'number' ? stored.updatedAt : base.updatedAt,
     ...(typeof stored.updatedBy === 'string' ? { updatedBy: stored.updatedBy } : {}),
   };
