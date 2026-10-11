@@ -1,0 +1,159 @@
+VELOCITY RIDES 1.17.0  ·  Android versionCode 42  ·  iOS build 15
+=================================================================
+
+TWO CHANGES. A shared ride is now offered to ONE driver at a time instead of
+being a race between everybody nearby, and a driver can finally say no — which
+passes the ride to the next driver in the queue. Separately, the fare the rider
+is SHOWN now carries the daily fuel adjustment that the server was already
+charging and validating against.
+
+VERSION STATE — check the stores, not this file. Per the release log before
+this one, iOS build 14 (1.16.0) was uploaded to App Store Connect and left at
+the human "Submit for Review" step, and the 1.16.0 AAB (vc41) had not reached
+Play. If either is still true, this build supersedes it:
+
+  iOS      Highest build EAS has produced is now 15. If 1.16.0/build 14 was
+           never submitted, submit 1.17.0/build 15 instead and skip it.
+  Android  Play's state cannot be read from this machine (no Play API
+           credentials). If vc41 never went up, this build carries BOTH
+           releases' changes to Android for the first time — say so in the
+           Play notes if you roll it out that way.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Shared rides now come to you one driver at a time.
+
+• A shared ride is offered to you alone for 25 seconds — no more racing
+  everybody nearby to tap first
+• Waiting longer in an area means you get asked first
+• Pass on a ride and it goes straight to the next driver, not back into
+  everyone's list
+• Pick Solo mode and you will not be offered shared rides at all
+
+Riders: your fare now shows the day's fuel price and why it moved.
+
+
+APP STORE "WHAT'S NEW" (set on version 1.17.0 through the API)
+--------------------------------------------------------------
+NEW IN THIS VERSION
+
+SHARED RIDES COME TO ONE DRIVER AT A TIME
+
+A shared ride used to appear in every nearby driver's list at once, and the
+first driver to tap it got it. That rewarded whoever had the fastest phone and
+the best signal, and it meant the four hours you had already spent online
+counted for nothing.
+
+Now a ride is offered to one driver, exclusively, for 25 seconds, and the
+driver asked first is the one who has been online longest in that area. There
+is a countdown on the card so you can see the ride is actually yours.
+
+AND YOU CAN SAY NO
+
+Passing on a ride is a real answer now. Tap Pass and the ride goes immediately
+to the next driver in the queue — it does not sit in your list, and it does not
+come back. Ignoring an offer does the same thing when the 25 seconds run out,
+just more slowly.
+
+If nobody takes it, the ride opens up to every driver nearby rather than
+waiting. No rider is ever left holding a ride the queue could not place.
+
+SOLO MODE IS RESPECTED
+
+Choosing Solo on your home screen now means you are not offered shared rides
+at all, instead of being handed pools you did not want.
+
+FOR RIDERS: THE FARE EXPLAINS ITSELF
+
+Fuel prices in Pakistan change by government notification, and Velocity already
+moved its per-kilometre rates with them. The price on your booking screen now
+moves with them too, and tells you the pump price it was worked out from. When
+an area is busy you also see the busy factor and, next to it, the most it can
+ever add — because a price that rises without a stated ceiling is the thing
+nobody trusts about ride-hailing.
+
+
+WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
+----------------------------------------------------------------
+One merge off main, 12 Oct 2026: d027a89 (87caa6a inside it).
+
+  - poolRideRequests/dispatchLadder.ts (pure) + dispatch.ts (Firestore) +
+    sweepDispatch.ts. A pool is offered to one driver for 25s, ordered by the
+    SAME zone queue that gates placeBid; refusal or lapse records the driver in
+    dispatch.declined and advances. Exits to broadcast after 8 offers, 240s, or
+    when no candidate is left — an ordering policy must never become a
+    precondition for the marketplace working.
+  - driverRespondToRequest takes action:'reject'. Before this the enum was
+    'accept' | 'counter' (counter is dead), so a driver had no way to say no.
+    The Reject button existed on BOTH driver screens and wrote only to
+    AsyncStorage — a refusal was known to one handset and nothing else.
+  - Candidates are filtered by every gate the accept path enforces (gender, car
+    photo, commission owing, pool membership) so a rung is never spent on a
+    driver who would be refused at the last moment. Plus the new
+    drivers/{uid}.rideMode: 'solo' drivers are skipped, and ABSENT must keep
+    meaning available — no build already on a phone writes it.
+  - A missing `dispatch` map means BROADCAST, not "empty ladder". Every pool
+    created before this shipped has no such field, and reading it as empty
+    would have hidden the whole open-pool backlog from every driver on deploy.
+    Same care in firestore.rules: the offered-driver read uses
+    resource.data.get('dispatch', {}).get('offeredDriverId', '') because a
+    missing-field access in rules is an ERROR, not a false, and in an || chain
+    it denies the whole read — it would have broken admin reads of that backlog.
+  - getFareContext (fare/fareFunctions.ts) returns the FUEL-ADJUSTED rate card
+    plus the zone's peak factor in one call. booking.tsx read
+    fareConfig/{CITY_ID} straight from Firestore and priced with the app's own
+    engine; that document is deliberately never fuel-adjusted, so the pricing
+    engine moved what the server CHARGED and left the rider's screen pricing
+    off the un-adjusted table, with PriceNotice.tsx built and imported nowhere.
+    One call, not one per vehicle class — the screen prices every class locally
+    and switching class must stay instant.
+  - That also closed a live overcharge seam: offeredFareBounds is
+    fuel-adjusted, so once the notified pump price rose ABOVE the configured
+    baseline, the rider's auto-filled offer could fall under the server's
+    minAcceptableBid and be clamped up — charged more than the screen showed.
+    Today's price sits below baseline, which is the only reason it had not
+    surfaced yet.
+  - booking.tsx hardcoded CITY_ID = 'islamabad_rawalpindi' while every server
+    path resolves the city from the pickup coordinates. A Karachi rider was
+    shown Islamabad's rates AND held against Islamabad's competitor card. The
+    city now comes from the server with CITY_ID only as the no-location
+    fallback.
+  - One composite index added (poolRideRequests status + dispatch
+    .offerExpiresAt) for the sweeper. The deploy pipeline's index step is
+    continue-on-error, so this one was verified by running the sweeper's exact
+    query against production rather than trusting a green run.
+
+Verified before the build: backend 1069 tests / 71 files on the Firestore
+emulator (74 new), all 34 security-rules tests, both typechecks clean, backend
+eslint clean. CI and Deploy Cloud Functions both green on d027a89, and
+getFareContext + sweepPoolDispatch are confirmed live in asia-south1 — so the
+ladder and the adjusted card are ALREADY serving on the server. This build is
+the app half: the Pass button that tells the server, the countdown, rideMode,
+and PriceNotice.
+
+NOTE ON THE PRICING ENGINE'S FIRST RUN: as of this build fuelPrices/current did
+not exist in production — refreshFuelPrices is scheduled 06:15 Asia/Karachi and
+had not had a slot since it deployed. Until it runs (or an admin taps Refresh
+on Admin → Pricing engine) the fuel factor is 1.0 and fares stand exactly at
+the authored rate card. That is the designed fallback, not a fault.
+
+
+ROLLOUT CHECKLIST
+-----------------
+Android:
+  1. Upload velocity-1.17.0-vc42.aab (repo root) to Play Console.
+  2. Paste the "WHAT'S NEW" block above as the release notes.
+  3. Roll it into EVERY track that still holds an older build. Otherwise the
+     AD_ID rejection comes back (vc3/vc6/vc8 have no AD_ID permission).
+  4. After the rollout is live: admin console → App version →
+     version 1.17.0 AND build 42. Without the build number nobody is prompted.
+
+iOS:
+  1. Build 15 uploaded to App Store Connect and attached to a 1.17.0 version
+     record with the What's New text above.
+  2. The only step left is the human one: Submit for Review.
+  3. Only after Apple RELEASES the build: admin console → App version → the
+     iOS section → 1.17.0 AND build 15. Never before — a published iOS version
+     higher than what Apple has released prompts every iPhone to update to a
+     build they cannot get, which is the Guideline 4 rejection from 17 Sep.
