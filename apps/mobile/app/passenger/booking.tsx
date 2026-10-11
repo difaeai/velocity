@@ -16,7 +16,13 @@ import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '../../src/firebase';
-import { api, type CommuteDay, type SuggestedRide } from '../../src/api/client';
+import {
+  api,
+  type BookedFor,
+  type CommuteDay,
+  type SharedFareQuote,
+  type SuggestedRide,
+} from '../../src/api/client';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { AdBanner } from '../../src/ads';
@@ -383,6 +389,26 @@ export default function Booking() {
   const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
   const [fare, setFare] = useState<number>(BASE_FARES.mini);
   const [fareText, setFareText] = useState<string>(String(BASE_FARES.mini));
+  /**
+   * The one fare a shared ride costs, straight from the server.
+   *
+   * A shared ride has no stepper and no bidding. The host used to name the
+   * fare, and that is the single thing that broke pools most often: haggle it
+   * somewhere no driver will go and everyone who had already taken a seat loses
+   * the car. So the number is the server's, the rider is shown it rather than
+   * asked for it, and `createTrip` recomputes the same figure when the ride is
+   * actually booked — the client cannot move it even by lying.
+   */
+  const [sharedQuote, setSharedQuote] = useState<SharedFareQuote | null>(null);
+  const [sharedQuoteLoading, setSharedQuoteLoading] = useState(false);
+  /**
+   * Who is travelling. Asked ONLY on a shared ride, because it is the only
+   * place the answer changes anything: a woman booking for her brother needs to
+   * be shown men's rides, not hers. A solo rider is never asked — the question
+   * has no bearing on a car nobody else is getting into, and putting it in
+   * everybody's path is how a booking flow loses people.
+   */
+  const [bookedFor, setBookedFor] = useState<BookedFor>('self');
   // Voice booking can arrive with a passenger count already spoken ("do banday
   // hain"). The typed flow has no seat picker and never calls the setter.
   const [seats, setSeats] = useState(voicePrefill?.seats ?? 1);
@@ -495,6 +521,33 @@ export default function Booking() {
       emptyReason: comparison.available ? null : describeMarketGap(comparison, marketSettings),
     };
   };
+
+  /**
+   * Keep the shared-ride fare in step with the route and the vehicle.
+   *
+   * Only fetched in sharing mode: a solo rider never sees this number, and a
+   * call per keystroke on a screen they are not looking at is waste. Failure is
+   * silent and leaves the quote null, which the card below renders as "working
+   * it out" rather than as an error — the fare is re-derived server-side at
+   * booking time regardless, so a missing quote never books a wrong price.
+   */
+  useEffect(() => {
+    if (stage === 'route' || mode !== 'pool' || !coords || !dropoffCoords) {
+      setSharedQuote(null);
+      return;
+    }
+    let alive = true;
+    setSharedQuoteLoading(true);
+    api.getSharedRideFare({
+      rideType,
+      pickup: { lat: coords.lat, lng: coords.lng },
+      dropoff: { lat: dropoffCoords.lat, lng: dropoffCoords.lng },
+    })
+      .then((q) => { if (alive) setSharedQuote(q); })
+      .catch(() => { if (alive) setSharedQuote(null); })
+      .finally(() => { if (alive) setSharedQuoteLoading(false); });
+    return () => { alive = false; };
+  }, [stage, mode, rideType, coords?.lat, coords?.lng, dropoffCoords?.lat, dropoffCoords?.lng]);
 
   const marketNow = marketFor(rideType);
 
@@ -755,17 +808,24 @@ export default function Booking() {
       const destCoords = dropoffCoords ?? { lat: coords.lat, lng: coords.lng };
       const res = await api.createTrip({
         rideType,
-        // Pool rides offer the FULL solo fare too — the per-seat discount only
-        // materialises as riders actually join (never send a discounted fare,
-        // it would fall below the fare-engine floor and be rejected).
-        offeredFare: safeFare,
+        /**
+         * Solo only. On a shared ride the backend ignores this outright and
+         * prices the trip itself, so the number sent here has no effect — we
+         * still send the quote we displayed rather than a stale stepper value,
+         * so the request and the screen agree if anyone ever reads both.
+         */
+        offeredFare: isPool ? (sharedQuote?.fare ?? safeFare) : safeFare,
         seats: isPool ? 1 : seats,
         passengerGender: gender,
+        /** Asked only on shared rides; a solo ride is always the rider's own. */
+        bookedFor: isPool ? bookedFor : undefined,
         pool: isPool,
         poolVisibility: isPool ? poolVisibility : undefined,
         paymentMethods,
         preferFemaleDriver: false,
-        promoCode: promoCode.trim() || undefined,
+        // Promos apply to solo rides only — a discount would move the one
+        // number a shared ride's per-seat fares are all a fraction of.
+        promoCode: isPool ? undefined : (promoCode.trim() || undefined),
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
         dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
       });
@@ -1302,15 +1362,21 @@ export default function Booking() {
                   <View style={styles.pickTick}><Text style={styles.pickTickTxt}>✓</Text></View>
                 ) : null}
               </View>
-              <Text style={styles.pickPrice}>PKR {fare}</Text>
+              {/* The shared fare, which is a different number from the solo
+                  one and no longer the same as whatever the stepper says. Both
+                  cards used to show `fare` on purpose, because a pool WAS the
+                  solo fare until someone joined. It is not any more: a shared
+                  ride is priced as a shared ride from the start. */}
+              <Text style={styles.pickPrice}>
+                {sharedQuote ? `PKR ${sharedQuote.fare}` : `PKR ${fare}`}
+              </Text>
               {/* Two lines, not four. This sentence set the height of both
-                  cards — Solo is only as tall as Share Ride is — and every line
-                  of it pushed the fare stepper, the one control the rider came
-                  here to use, further under the fold. The clause that had to
-                  survive the cut is "going your way": who can join is the thing
-                  riders get wrong about pooling. */}
+                  cards — Solo is only as tall as Share Ride is. The clause that
+                  had to survive the cut is "going your way": who can join is
+                  the thing riders get wrong about sharing. */}
               <Text style={styles.pickSub}>
-                Others going your way can join for 10 min — then PKR {poolShareFare} each.
+                Others going your way can join for 10 min — then PKR{' '}
+                {sharedQuote?.perSeat[sharedQuote.perSeat.length - 1] ?? poolShareFare} each.
               </Text>
               <View style={styles.saveBadge}>
                 <Text style={styles.saveBadgeText}>SAVE {maxSavePct}%</Text>
@@ -1375,7 +1441,103 @@ export default function Booking() {
               })}
           </ScrollView>
 
-          {/* ── 3. What you offer the driver ── */}
+          {/* ── 3. The fare ──
+               Two different things depending on the ride, because they ARE two
+               different things.
+
+               A shared ride has a price: one number, computed by the server,
+               that nobody can move. The host used to own it, and that was the
+               commonest way a pool died — haggle it somewhere no driver will go
+               and every rider who had already taken a seat loses the car. There
+               is nothing to steer here, so there is no stepper to steer it with.
+
+               A solo ride keeps the stepper and the bidding exactly as they
+               were. A negotiation that fails there costs nobody but the two
+               people having it. ── */}
+          {mode === 'pool' ? (
+            <>
+              <Text style={styles.stepLabel}>THE FARE</Text>
+              <View style={styles.fareCard}>
+                <View style={styles.fixedFareRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fixedFareAmount}>
+                      {sharedQuote ? `PKR ${sharedQuote.fare}` : sharedQuoteLoading ? 'Working it out…' : `PKR ${fare}`}
+                    </Text>
+                    <Text style={styles.fixedFareNote}>
+                      Fixed — the same for every rider. No bargaining on shared rides.
+                    </Text>
+                  </View>
+                  <View style={styles.fixedFareLock}>
+                    <Text style={styles.fixedFareLockTxt}>✓</Text>
+                  </View>
+                </View>
+
+                {/* What the car costs each person as it fills. The saving is
+                    here, not in a negotiation — which is the thing riders get
+                    wrong about sharing. */}
+                {sharedQuote ? (
+                  <View style={styles.seatLadder}>
+                    {sharedQuote.perSeat.map((amount, i) => (
+                      <View key={i} style={[styles.seatRung, i === 0 && styles.seatRungNow]}>
+                        <Text style={[styles.seatRungWho, i === 0 && styles.seatRungWhoNow]}>
+                          {i === 0 ? 'Just you' : `${i + 1} sharing`}
+                        </Text>
+                        <Text style={[styles.seatRungAmount, i === 0 && styles.seatRungAmountNow]}>
+                          {amount}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {/* Only ever shown when there is a real rate card behind it. */}
+                {sharedQuote?.comparedTo ? (
+                  <Text style={styles.fareRangeHint}>
+                    {distKm ? `~${distKm.toFixed(1)} km · ` : ''}
+                    Other apps around PKR {sharedQuote.comparedTo} for this trip
+                  </Text>
+                ) : null}
+              </View>
+
+              {/* ── Who is actually travelling ──
+                   The question that stops a man being seated in a women's ride
+                   by accident. A rider booking for a sibling of the other
+                   gender is matched against the rides that PERSON can share,
+                   not the ones the booker can.
+
+                   It sits here, inside the sharing branch, and nowhere else: a
+                   solo rider is never asked, because for them the answer
+                   changes nothing at all. ── */}
+              <Text style={styles.stepLabel}>WHO IS THIS RIDE FOR?</Text>
+              <View style={styles.forWhoRow}>
+                {([
+                  { key: 'self' as BookedFor, label: 'Me' },
+                  { key: 'other' as BookedFor, label: 'Someone else' },
+                ]).map((opt) => {
+                  const on = bookedFor === opt.key;
+                  return (
+                    <Pressable
+                      key={opt.key}
+                      style={[styles.forWhoChip, on && styles.forWhoChipOn]}
+                      onPress={() => setBookedFor(opt.key)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                    >
+                      <Text style={[styles.forWhoTxt, on && styles.forWhoTxtOn]}>{opt.label}</Text>
+                      {on ? <Text style={styles.forWhoTick}>✓</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {bookedFor === 'other' ? (
+                <Text style={styles.forWhoNote}>
+                  We will match this ride for them, not for you. The riders already in a
+                  car are told the seat was booked by someone else, and they can decline it.
+                </Text>
+              ) : null}
+            </>
+          ) : (
+          <>
           <Text style={styles.stepLabel}>WHAT WILL YOU PAY?</Text>
           <View style={styles.fareCard}>
             <View style={styles.fareStepperRow}>
@@ -1415,6 +1577,8 @@ export default function Booking() {
                 : `Allowed range PKR ${fareMin}–${fareMax}`}
             </Text>
           </View>
+          </>
+          )}
 
           {/* ── 5. How you will pay ──
                The last thing between the rider and a driver, and the one part
@@ -2673,6 +2837,117 @@ const styles = themed(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
+  },
+
+  /* ── The shared ride's one fare ──
+     Deliberately not stepper-shaped. The solo card is built around a control
+     the rider operates; this one is built around a number they are being told,
+     and it should not look like something that can be nudged. ── */
+  fixedFareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  fixedFareAmount: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  fixedFareNote: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8cc840',
+    marginTop: 2,
+  },
+  fixedFareLock: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  fixedFareLockTxt: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0b0f0c',
+  },
+
+  /* Where the saving actually comes from: the car filling up, not a haggle. */
+  seatLadder: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  seatRung: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.glassLimeBorder,
+  },
+  seatRungNow: {
+    borderColor: colors.primary,
+    backgroundColor: colors.glassLime,
+  },
+  seatRungWho: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.2,
+  },
+  seatRungWhoNow: { color: colors.primary },
+  seatRungAmount: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.text,
+    marginTop: 1,
+  },
+  seatRungAmountNow: { color: colors.primary },
+
+  /* ── "Who is this ride for?" ── sharing only; see the note at its usage. */
+  forWhoRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 8,
+  },
+  forWhoChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  forWhoChipOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.glassLime,
+  },
+  forWhoTxt: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.muted,
+  },
+  forWhoTxtOn: { color: colors.primary },
+  forWhoTick: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+  forWhoNote: {
+    marginHorizontal: 20,
+    marginTop: 6,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: colors.muted,
   },
 
   sectionLabel: {

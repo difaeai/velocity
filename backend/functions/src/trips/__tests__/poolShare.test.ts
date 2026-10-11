@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
 import { poolPerSeatFare } from '../../domain/fares';
-import { createTrip } from '../index';
+import { createTrip, raiseTripFare } from '../index';
 import {
   getPoolTripByCode,
   joinPoolTrip,
@@ -142,9 +142,36 @@ describe('createTrip (pool)', () => {
     expect(feed.poolRiders).toBe(1);
   });
 
-  it('rejects a discounted per-seat fare below the floor (the old client bug)', async () => {
-    // 35% of 400 = 140 < mini floor 280 — the backend must refuse it.
-    await expect(createPool(HOST, { offeredFare: 140 })).rejects.toThrow(/must be between/);
+  it('ignores whatever fare the client sends and prices the pool itself', async () => {
+    // A shared ride's fare is not the rider's to name: `createTrip` computes it
+    // from the fare engine and the market undercut, clamped to the driver
+    // floor, and never reads `offeredFare` at all. This used to be a validation
+    // ("140 is below the mini floor of 280, refuse it"), which left the host
+    // owning the number — and a host who owns the number can haggle a pool into
+    // losing its driver after other riders have already taken seats.
+    //
+    // So the guarantee is now stronger than a bounds check: an absurd fare does
+    // not fail, it simply has no effect.
+    // Two different riders: one person cannot hold two active trips, which is
+    // the rule being tested elsewhere.
+    const low  = await createPool(HOST,   { offeredFare: 140 });
+    const high = await createPool(JOINER, { offeredFare: 3000 });
+
+    const lowTrip  = (await db().doc(`trips/${low.tripId}`).get()).data()!;
+    const highTrip = (await db().doc(`trips/${high.tripId}`).get()).data()!;
+
+    // Same route, same ride type → same fare, whatever the client asked for.
+    expect(lowTrip.offeredFare).toBe(highTrip.offeredFare);
+    expect(lowTrip.offeredFare).not.toBe(140);
+    expect(highTrip.offeredFare).not.toBe(3000);
+    // And never below what a driver will accept for this trip.
+    expect(lowTrip.offeredFare).toBeGreaterThanOrEqual(280);
+  });
+
+  it('refuses to let the host move a shared ride’s fare afterwards', async () => {
+    const { tripId } = await createPool(HOST);
+    await expect(raiseTripFare.run(makeReq({ tripId, fare: 900 }, HOST)))
+      .rejects.toThrow(/fixed/i);
   });
 
   it('does not issue share codes for solo trips', async () => {
@@ -265,7 +292,7 @@ describe('joinPoolTrip', () => {
 
     // Asking twice is not a second request.
     await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
-      .rejects.toThrow(/already with the driver/);
+      .rejects.toThrow(/already waiting for an answer/);
   });
 
   it('writes the joiner onto the roster so everybody knows who is in the car', async () => {
@@ -360,12 +387,32 @@ describe('driverRespondToPoolJoin', () => {
 
   it('SECURITY: only the assigned driver decides who rides in their car', async () => {
     const { tripId } = await poolWithRequest();
-    // Not the host either — the leader owns the fare, the driver owns the car.
+    // Not the host either. The driver owns the car, so the driver says who is
+    // in it — and that is still true now that a shared ride's fare belongs to
+    // nobody at all.
     await expect(
       driverRespondToPoolJoin.run(makeReq({ tripId, riderId: JOINER, action: 'accept' }, HOST)),
     ).rejects.toThrow(/driver can answer/);
-    await expect(getPoolJoinRequests.run(makeReq({ tripId }, HOST)))
-      .rejects.toThrow(/driver can see/);
+  });
+
+  it('lets the riders aboard SEE the queue, because any of them may refuse it', async () => {
+    // The host used to be refused this list, which was right while the driver
+    // was the only person who could act on it. A co-rider's refusal is binding
+    // now (see coRiderObjectToPoolJoin), and nobody can answer a request they
+    // are not allowed to look at.
+    //
+    // What they see is a first name, a gender and a seat fare — all of which
+    // the roster and the join announcements already tell them about anyone who
+    // ends up in the car.
+    const { tripId } = await poolWithRequest();
+    const seen = await getPoolJoinRequests.run(makeReq({ tripId }, HOST));
+    expect(seen.requests).toHaveLength(1);
+    expect(seen.requests[0].riderId).toBe(JOINER);
+
+    // A stranger still gets nothing.
+    await db().doc('users/pool-outsider').set({ displayName: 'Nobody' });
+    await expect(getPoolJoinRequests.run(makeReq({ tripId }, 'pool-outsider')))
+      .rejects.toThrow(/driver and the riders in it/);
   });
 
   it('shows the driver the queue, and lets the rider withdraw from it', async () => {

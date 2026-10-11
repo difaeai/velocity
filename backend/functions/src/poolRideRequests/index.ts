@@ -5,6 +5,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { computeGenderAccess, canJoinPool } from '../lib/genderAccess';
+import { resolveSeatOccupant } from '../lib/seatGender';
 import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { pktDayKey } from '../domain/dailyTarget';
@@ -35,11 +36,6 @@ export const POOL_JOIN_RADIUS_M = 2000;
 
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   return distanceBetween([lat1, lng1], [lat2, lng2]);
-}
-
-async function getUserGender(uid: string): Promise<string> {
-  const snap = await db.doc(`users/${uid}`).get();
-  return snap.exists ? (snap.data()!.gender ?? 'unspecified') : 'unspecified';
 }
 
 async function getUserMixedRideOk(uid: string): Promise<boolean> {
@@ -288,6 +284,8 @@ const JoinSchema = z.object({
   dropoffLat:      z.number().min(-90).max(90).optional(),
   dropoffLng:      z.number().min(-180).max(180).optional(),
   dropoffAreaName: z.string().trim().min(1).max(120).optional(),
+  /** Who is taking the seat — see lib/seatGender. */
+  bookedFor:       z.enum(['self', 'other']).nullish(),
 });
 
 export const joinPoolRideRequest = onCall(async (req) => {
@@ -297,8 +295,13 @@ export const joinPoolRideRequest = onCall(async (req) => {
   const { requestId, dropoffLat, dropoffLng, dropoffAreaName } = p.data;
   const adminDropRadiusM = await getAdminDropRadiusM();
 
-  const passengerGender = await getUserGender(ctx.uid);
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
+  // The seat's own gender, not the booker's profile gender. See lib/seatGender.
+  const seat = resolveSeatOccupant(
+    userSnap.exists ? userSnap.data()!.gender : null,
+    p.data.bookedFor ?? null,
+  );
+  const passengerGender = seat.seatGender;
   if (userSnap.exists && userSnap.data()!.poolBookingBlocked === true) {
     throw new HttpsError(
       'permission-denied',

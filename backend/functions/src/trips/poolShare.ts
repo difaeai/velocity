@@ -18,11 +18,15 @@
  *
  * WHO DECIDES WHAT
  * ----------------
- * The person who STARTED the pool owns the fare: they name the offer, they take
- * or refuse a driver's bid, and they are the only one who can raise it (see
- * `raiseTripFare`). Everyone who joins afterwards takes the pool's per-seat fare
- * as it stands — there is no second negotiation, and no joiner can move a price
- * the host already agreed.
+ * NOBODY owns the fare. It is computed server-side when the pool is created
+ * (see fare/sharedRideFare) and it cannot be moved by the host, by a joiner or
+ * by the driver: `raiseTripFare` refuses pool trips outright and a driver's bid
+ * on a pool is an acceptance at the stated price rather than an offer.
+ *
+ * This used to be the host's to name, and that was the single biggest reason
+ * pools fell apart — a host haggling could lose the car for everyone who had
+ * already taken a seat in it. Negotiation now lives only on solo rides, where a
+ * failed one costs nobody but the two people having it.
  *
  * The DRIVER owns the car. Before one is confirmed a pool is just riders
  * gathering, so joining is immediate; once a driver has agreed to carry this
@@ -43,6 +47,14 @@ import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { ACTIVE_STATUSES, haversineKm } from './index';
 import { firstNameOf, joinerRosterEntry, rosterForTrip } from './poolRoster';
 import { computeGenderAccess } from '../lib/genderAccess';
+import {
+  BOOKED_FOR_OTHER_NOTE,
+  normalizeGender,
+  requiresVettingToJoin,
+  resolveSeatOccupant,
+  type BookedFor,
+  type SeatOccupant,
+} from '../lib/seatGender';
 import {
   agreedGrossOf,
   loadFareConfig,
@@ -122,7 +134,15 @@ function withinJoinWindow(d: FirebaseFirestore.DocumentData, now = Date.now()): 
   return ends === null || ends > now;
 }
 
-const codeSchema = z.object({ code: z.string().trim().min(4).max(16) });
+const codeSchema = z.object({
+  code: z.string().trim().min(4).max(16),
+  /**
+   * Who is taking the seat — the joiner themselves, or somebody they are
+   * booking for. Names a relationship, never a gender; lib/seatGender turns it
+   * into one against the caller's own profile. Absent means 'self'.
+   */
+  bookedFor: z.enum(['self', 'other']).nullish(),
+});
 
 async function tripRefByCode(rawCode: string) {
   const code = rawCode.trim().toUpperCase();
@@ -256,6 +276,13 @@ async function seatRiderOnPool(
   snap: FirebaseFirestore.DocumentSnapshot,
   riderUid: string,
   cfg: CityFareConfig,
+  /**
+   * Who is actually taking the seat. Omitted means "the account holder,
+   * themselves" — the behaviour from before seats carried their own gender.
+   * The driver-approval path passes the occupant recorded on the request, so
+   * the person seated is the person the driver said yes to.
+   */
+  seat?: SeatOccupant,
 ): Promise<SeatResult> {
   const members = (snap.get('poolMembers') as string[] | undefined)
     ?? [snap.get('passengerId') as string];
@@ -273,7 +300,8 @@ async function seatRiderOnPool(
   // A rider on another active trip can't be in two cars at once.
   const userSnap = await tx.get(db.doc(`users/${riderUid}`));
   const activeTripId = userSnap.get('activeTripId') as string | undefined;
-  const joinerGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+  const occupant = seat ?? resolveSeatOccupant(userSnap.get('gender'), null);
+  const joinerGender = occupant.seatGender;
   if (activeTripId && activeTripId !== tripRef.id) {
     const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
     if (activeSnap.exists && ACTIVE_STATUSES.has(activeSnap.get('status') as TripStatus)) {
@@ -303,6 +331,7 @@ async function seatRiderOnPool(
       uid: riderUid,
       name: joinerName,
       gender: joinerGender,
+      bookedForOther: occupant.bookedForOther,
       pickup: snap.get('pickup'),
       dropoff: snap.get('dropoff'),
     }),
@@ -392,12 +421,19 @@ interface SeatResult {
 /** Everything a join produced, for the callables that start one. */
 export interface JoinOutcome extends SeatResult {
   alreadyJoined: boolean;
-  /** True when the join went to the driver as a request rather than a seat. */
+  /** True when the join went out as a request rather than becoming a seat. */
   pending: boolean;
   /** Pending requests: what the driver really gains by accepting. */
   driverEarnExtra: number | null;
   /** Pending requests: the driver's total if they accept. */
   driverTotal: number | null;
+  /**
+   * Who answers a pending request — the driver when the ride has one, otherwise
+   * the host whose ride it is. Null when nothing is pending.
+   */
+  vetBy?: 'driver' | 'host' | null;
+  /** True when the seat was booked by somebody other than its passenger. */
+  bookedForOther?: boolean;
 }
 
 /** First name of a user, for pushes and request rows. Never the full name. */
@@ -468,7 +504,7 @@ export const joinPoolTrip = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid pool code.');
   const { tripRef } = await tripRefByCode(parsed.data.code);
 
-  const result = await joinPoolTripAsRider(ctx.uid, tripRef);
+  const result = await joinPoolTripAsRider(ctx.uid, tripRef, parsed.data.bookedFor ?? null);
   return {
     ok: true,
     tripId: result.tripId,
@@ -490,6 +526,7 @@ export const joinPoolTrip = onCall(async (req) => {
 export async function joinPoolTripAsRider(
   uid: string,
   tripRef: FirebaseFirestore.DocumentReference,
+  bookedFor: BookedFor | null = null,
 ): Promise<JoinOutcome> {
   const pre = await tripRef.get();
   const cfg = await loadFareConfig((pre.get('pickup') as { lat: number; lng: number } | undefined) ?? null);
@@ -524,37 +561,56 @@ export async function joinPoolTripAsRider(
       throw new HttpsError('failed-precondition', 'This pool ride is already full.');
     }
 
-    // Still gathering: nobody to ask, so seat them now.
-    if (status === AWAITING_DRIVER) {
+    /**
+     * Who is taking the seat, resolved before either branch because it decides
+     * WHICH branch applies. A seat booked for somebody of the other gender may
+     * not take an instant place in a single-gender car even while the pool is
+     * still gathering — there would be nobody in the loop at all, and "nobody
+     * to ask" is the wrong answer when the seat's occupant is somebody we are
+     * taking the booker's word for. See lib/seatGender.
+     */
+    const seatSnap = await tx.get(db.doc(`users/${uid}`));
+    const seat = resolveSeatOccupant(seatSnap.get('gender'), bookedFor);
+    const aboardGenders = rosterForTrip(trip).map((r) => normalizeGender(r.gender));
+    const needsVetting = requiresVettingToJoin(seat, aboardGenders);
+
+    // Still gathering and nothing to vet: nobody to ask, so seat them now.
+    if (status === AWAITING_DRIVER && !needsVetting) {
       if (!withinJoinWindow(trip)) {
         throw new HttpsError('failed-precondition', WINDOW_CLOSED_MESSAGE);
       }
-      const seated = await seatRiderOnPool(tx, tripRef, snap, uid, cfg);
+      const seated = await seatRiderOnPool(tx, tripRef, snap, uid, cfg, seat);
       return { ...seated, alreadyJoined: false, pending: false, driverEarnExtra: null, driverTotal: null };
     }
 
-    if (!JOINABLE_STATUSES.has(status)) {
+    if (status === AWAITING_DRIVER) {
+      // Gathering, but this seat has to be vetted. The pool has no driver, so
+      // the person who answers is the one whose ride it is: the host.
+      if (!withinJoinWindow(trip)) {
+        throw new HttpsError('failed-precondition', WINDOW_CLOSED_MESSAGE);
+      }
+    } else if (!JOINABLE_STATUSES.has(status)) {
       throw new HttpsError('failed-precondition', 'This pool ride has already departed or ended.');
     }
 
-    // Driver confirmed: the driver decides.
+    // Somebody has to say yes: the driver if there is one, otherwise the host.
     const reqRef  = tripRef.collection('joinRequests').doc(uid);
     const reqSnap = await tx.get(reqRef);
     if (reqSnap.exists && reqSnap.get('status') === 'pending') {
-      throw new HttpsError('already-exists', 'Your request is already with the driver.');
+      throw new HttpsError('already-exists', 'Your request for this seat is already waiting for an answer.');
     }
-    // One refusal is an answer. Re-asking the same driver from the same screen
-    // would only be a way to pester them into it.
+    // One refusal is an answer. Re-asking from the same screen would only be a
+    // way to pester somebody into it.
     if (reqSnap.exists && reqSnap.get('status') === 'rejected') {
       throw new HttpsError(
         'failed-precondition',
-        'The driver could not take you on this ride. Book your own shared ride instead.',
+        'This shared ride could not take you. Book your own and let others join you.',
       );
     }
 
     // Refused here rather than at approval time: "you already have a ride" is
-    // useful now, and useless after a driver has held a seat for you.
-    const userSnap = await tx.get(db.doc(`users/${uid}`));
+    // useful now, and useless after a seat has been held for you.
+    const userSnap = seatSnap;
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     if (activeTripId && activeTripId !== tripRef.id) {
       const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
@@ -565,7 +621,7 @@ export async function joinPoolTripAsRider(
 
     // The same goes for the car's gender rules: they are checked now, before
     // anybody waits on a driver for a seat the rules would refuse anyway.
-    const joinerGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+    const joinerGender = seat.seatGender;
     const gate = poolJoinGenderGate(trip, joinerGender, userSnap.get('mixedRideOk') === true);
     if (!gate.allowed) throw new HttpsError('permission-denied', gate.reason);
 
@@ -583,17 +639,35 @@ export async function joinPoolTripAsRider(
       : poolPerSeatFare(soloFare, members.length + 1) * (members.length + 1);
     const driverEarnExtra = driverTotal - agreedGrossOf(trip);
 
+    const driverId = (snap.get('driverId') as string | null) ?? null;
     tx.set(reqRef, {
       tripId:      tripRef.id,
       riderId:     uid,
       riderName,
       riderGender: joinerGender,
+      /**
+       * Shown to the driver and to every co-rider before anybody answers. A
+       * seat somebody booked on another person's behalf is the one case where
+       * the gender on the request is a claim rather than a verified fact, and
+       * the people getting into the car are entitled to know that.
+       */
+      bookedForOther: seat.bookedForOther,
+      /** Why this is a request at all, so the UI can say the true reason. */
+      vetReason: needsVetting ? 'booked_for_other' : 'driver_confirmed',
+      /** Who answers: the driver when there is one, otherwise the host. */
+      vetBy: driverId ? 'driver' : 'host',
       // What the driver would collect from them. Fixed by the pool's tier —
       // the rider did not choose it and cannot move it.
       farePerSeat: fareIfSeated,
       driverEarnExtra,
       driverTotalAfter: driverTotal,
       status:      'pending',
+      /**
+       * Any co-rider may object, and an objection is binding (see
+       * `coRiderObjectToPoolJoin`). Seeded empty so the field always exists for
+       * the rules and the driver's UI to read.
+       */
+      objections:  [] as string[],
       createdAt:   FieldValue.serverTimestamp(),
     });
 
@@ -608,24 +682,63 @@ export async function joinPoolTripAsRider(
       pending: true,
       driverEarnExtra,
       driverTotal,
+      vetBy: driverId ? 'driver' : 'host',
+      bookedForOther: seat.bookedForOther,
     };
   });
 
   if (result.pending) {
-    if (result.driverId) {
-      const name = await riderFirstName(uid);
+    const name = await riderFirstName(uid);
+    const forOther = result.bookedForOther === true;
+
+    if (result.vetBy === 'driver' && result.driverId) {
       const extra = result.driverEarnExtra ?? 0;
       const total = result.driverTotal ?? 0;
+      const money = extra > 0
+        ? `PKR ${extra} more for you if you take them (they pay PKR ${result.perSeatFare}).`
+        : `Your total would go from PKR ${total - extra} to PKR ${total} if you take them (they pay PKR ${result.perSeatFare}).`;
       await sendToUser(
         result.driverId,
         `🙋 ${name} wants to share your ride`,
-        extra > 0
-          ? `PKR ${extra} more for you if you take them (they pay PKR ${result.perSeatFare}). Open the trip to accept or decline.`
-          : `Your total would go from PKR ${total - extra} to PKR ${total} if you take them (they pay PKR ${result.perSeatFare}). Open the trip to accept or decline.`,
+        forOther
+          ? `${money} ${BOOKED_FOR_OTHER_NOTE} Open the trip to accept or decline.`
+          : `${money} Open the trip to accept or decline.`,
+        { tripId: result.tripId },
+      );
+    } else if (result.vetBy === 'host') {
+      /**
+       * No driver yet, so the person who answers is the host. This path exists
+       * only for a seat that has to be vetted — an ordinary joiner is seated
+       * instantly and nobody is asked anything.
+       */
+      await sendToUser(
+        result.members[0] ?? '',
+        `🙋 ${name} wants a seat in your shared ride`,
+        `${BOOKED_FOR_OTHER_NOTE} They would pay PKR ${result.perSeatFare}. `
+        + 'Open your ride to accept or decline.',
         { tripId: result.tripId },
       );
     }
-    logger.info('Pool join requested', { tripId: result.tripId, rider: uid });
+
+    /**
+     * Everybody already in the car is told too, because any one of them may
+     * refuse and their refusal is final (see `coRiderObjectToPoolJoin`). They
+     * are the people who will be sitting next to this passenger, and asking the
+     * driver to guess on their behalf is how a woman ends up sharing a back
+     * seat she never agreed to.
+     */
+    const coRiders = result.members.filter((m) => m !== uid && m !== result.members[0]);
+    if (forOther && coRiders.length > 0) {
+      await sendToUsers(
+        coRiders,
+        `🙋 Someone wants to join your shared ride`,
+        `${BOOKED_FOR_OTHER_NOTE} Open the ride to say whether that is alright with you.`,
+        { tripId: result.tripId },
+      );
+    }
+    logger.info('Pool join requested', {
+      tripId: result.tripId, rider: uid, vetBy: result.vetBy, forOther,
+    });
   } else if (!result.alreadyJoined) {
     await announceJoin(result, uid);
     logger.info('Pool joined', { tripId: result.tripId, joiner: uid, riders: result.riders });
@@ -665,14 +778,41 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
     if (!snap.exists || snap.get('pool') !== true) {
       throw new HttpsError('not-found', 'Pool ride not found.');
     }
-    if (snap.get('driverId') !== ctx.uid) {
-      throw new HttpsError('permission-denied', 'Only this ride’s driver can answer join requests.');
+    /**
+     * Who may answer. The driver owns the car, so it is theirs to decide — but
+     * a ride that has no driver yet still gets vetting requests (a seat booked
+     * for somebody else never takes an instant place in a single-gender car),
+     * and those are the host's to answer. Exactly one of the two is in charge
+     * at any moment, and it is whichever one the request was addressed to.
+     */
+    const rideDriverId = (snap.get('driverId') as string | null) ?? null;
+    const hostId = (snap.get('passengerId') as string | undefined) ?? null;
+    const answerer = rideDriverId ?? hostId;
+    if (answerer !== ctx.uid) {
+      throw new HttpsError(
+        'permission-denied',
+        rideDriverId
+          ? 'Only this ride’s driver can answer join requests.'
+          : 'Only the rider whose shared ride this is can answer join requests.',
+      );
     }
     if (!reqSnap.exists || reqSnap.get('status') !== 'pending') {
       throw new HttpsError('failed-precondition', 'That request has already been answered.');
     }
+    /**
+     * A co-rider's refusal is binding, so accepting over the top of one is not
+     * a decision the driver gets to make. Checked here as well as in the
+     * objection call, because the two can race and the seat is what matters.
+     */
+    const objections = (reqSnap.get('objections') as string[] | undefined) ?? [];
+    if (action === 'accept' && objections.length > 0) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Someone already in the car has refused this passenger, so the seat cannot be given.',
+      );
+    }
     const status = snap.get('status') as TripStatus;
-    if (!JOINABLE_STATUSES.has(status)) {
+    if (!JOINABLE_STATUSES.has(status) && status !== AWAITING_DRIVER) {
       tx.set(reqRef, { status: 'expired', decidedAt: FieldValue.serverTimestamp() }, { merge: true });
       throw new HttpsError('failed-precondition', 'This ride has already departed or ended.');
     }
@@ -690,7 +830,16 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
       };
     }
 
-    const seated = await seatRiderOnPool(tx, tripRef, snap, riderId, cfg);
+    /**
+     * Seat the person the answerer actually said yes to. The occupant was
+     * settled when the request was made; re-deriving it from the account's
+     * profile here would seat the BOOKER's gender and quietly undo the whole
+     * point of asking who was travelling.
+     */
+    const seated = await seatRiderOnPool(tx, tripRef, snap, riderId, cfg, {
+      seatGender: normalizeGender(reqSnap.get('riderGender')),
+      bookedForOther: reqSnap.get('bookedForOther') === true,
+    });
     tx.set(reqRef, {
       status: 'accepted',
       decidedAt: FieldValue.serverTimestamp(),
@@ -719,6 +868,103 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
   }
 
   return { ok: true, accepted: outcome.accepted };
+});
+
+// ── coRiderObjectToPoolJoin ──────────────────────────────────────────────────
+
+const objectSchema = z.object({
+  tripId:  docId,
+  riderId: docId,
+});
+
+/**
+ * Somebody already in the car refuses a passenger who has asked to join it.
+ *
+ * WHY THIS IS BINDING, AND NOT ADVICE
+ * -----------------------------------
+ * The driver decides who rides in their car, and that stays true. But the
+ * driver is not the person who will be sitting in the back seat next to a
+ * stranger, and the one case this whole mechanism exists for — a seat booked by
+ * one person for another, where the gender on the request is a claim rather
+ * than a verified fact — is precisely the case where the driver has the least
+ * information and the co-riders have the most at stake.
+ *
+ * So a refusal from anyone aboard ends the request. Not a vote, not a signal
+ * for the driver to weigh: an answer. A woman who says she will not share the
+ * back seat with this passenger does not need three other people to agree with
+ * her, and asking her to make that case to a driver over the phone is asking
+ * her to do something she will simply not do — she will cancel the ride
+ * instead, and we will have learned nothing about why.
+ *
+ * The passenger is told the seat is unavailable and never told who refused or
+ * why. An objection that identified its author would be an invitation to argue
+ * with them at the kerb.
+ */
+export const coRiderObjectToPoolJoin = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'coRiderObjectToPoolJoin', 20, 60);
+  const parsed = objectSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide the ride and the rider you are answering about.');
+  const { tripId, riderId } = parsed.data;
+
+  const tripRef = db.doc(`trips/${tripId}`);
+  const reqRef  = tripRef.collection('joinRequests').doc(riderId);
+
+  const outcome = await db.runTransaction(async (tx) => {
+    const [snap, reqSnap] = await Promise.all([tx.get(tripRef), tx.get(reqRef)]);
+    if (!snap.exists || snap.get('pool') !== true) {
+      throw new HttpsError('not-found', 'Shared ride not found.');
+    }
+    const members = (snap.get('poolMembers') as string[] | undefined)
+      ?? [snap.get('passengerId') as string];
+    if (!members.includes(ctx.uid)) {
+      throw new HttpsError(
+        'permission-denied',
+        'Only the riders already in this car can answer for it.',
+      );
+    }
+    if (ctx.uid === riderId) {
+      throw new HttpsError('failed-precondition', 'That is your own seat.');
+    }
+    if (!reqSnap.exists || reqSnap.get('status') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'That request has already been answered.');
+    }
+
+    // One refusal is enough, so the request closes here rather than waiting for
+    // the driver to action it. Recording the objector as well as the rejection
+    // keeps the decision auditable without ever showing it to the passenger.
+    tx.set(reqRef, {
+      status:       'rejected',
+      rejectedBy:   'co_rider',
+      objections:   FieldValue.arrayUnion(ctx.uid),
+      decidedAt:    FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      driverId: (snap.get('driverId') as string | null) ?? null,
+      hostId:   (snap.get('passengerId') as string | undefined) ?? null,
+    };
+  });
+
+  await sendToUser(
+    riderId,
+    'That shared ride could not take you',
+    'The seat is not available. Book your own shared ride and let others join you.',
+    { tripId },
+  );
+  // Whoever would otherwise have been deciding is told the answer is already in,
+  // so they are not left looking at a request that no longer needs them.
+  const toTell = outcome.driverId ?? outcome.hostId;
+  if (toTell && toTell !== ctx.uid) {
+    await sendToUser(
+      toTell,
+      'A seat request was declined',
+      'Someone already in the car refused that passenger, so the request is closed.',
+      { tripId },
+    );
+  }
+  logger.info('Pool join refused by co-rider', { tripId, rider: riderId, by: ctx.uid });
+  return { ok: true, rejected: true };
 });
 
 // ---------------------------------------------------------------------------
@@ -754,8 +1000,23 @@ export const getPoolJoinRequests = onCall(async (req) => {
 
   const snap = await tripRef.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
-  if (snap.get('driverId') !== ctx.uid) {
-    throw new HttpsError('permission-denied', 'Only this ride’s driver can see join requests.');
+
+  /**
+   * Who may see the queue: the driver, and everybody already in the car.
+   *
+   * It used to be the driver alone, which was right while they were the only
+   * person who could answer. They are not any more — a ride with no driver yet
+   * sends vetting requests to the host, and any co-rider may refuse one. People
+   * cannot answer a request they are not allowed to look at.
+   */
+  const driverId = (snap.get('driverId') as string | null) ?? null;
+  const members = (snap.get('poolMembers') as string[] | undefined)
+    ?? [snap.get('passengerId') as string];
+  if (driverId !== ctx.uid && !members.includes(ctx.uid)) {
+    throw new HttpsError(
+      'permission-denied',
+      'Only this ride’s driver and the riders in it can see join requests.',
+    );
   }
 
   const rows = await tripRef.collection('joinRequests').where('status', '==', 'pending').get();
@@ -765,6 +1026,13 @@ export const getPoolJoinRequests = onCall(async (req) => {
       riderName:   (d.get('riderName') as string | undefined) ?? 'A rider',
       riderGender: (d.get('riderGender') as string | undefined) ?? 'unspecified',
       farePerSeat: (d.get('farePerSeat') as number | undefined) ?? 0,
+      /**
+       * The one fact that makes this decision different from an ordinary one,
+       * and the reason co-riders are shown the queue at all: the gender above
+       * is what the booker says, not what a profile proves.
+       */
+      bookedForOther: d.get('bookedForOther') === true,
+      vetBy:          (d.get('vetBy') as string | undefined) ?? 'driver',
     })),
   };
 });

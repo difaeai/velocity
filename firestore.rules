@@ -262,15 +262,25 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // Riders asking the driver for one of this pool's free seats. Written
-      // only by joinPoolTrip / driverRespondToPoolJoin (Admin SDK). The rider
-      // watches their own request go from pending to accepted or rejected; the
-      // driver reads the queue they have to answer.
+      // Riders asking for one of this pool's free seats. Written only by
+      // joinPoolTrip / driverRespondToPoolJoin / coRiderObjectToPoolJoin
+      // (Admin SDK). The rider watches their own request go from pending to
+      // accepted or rejected.
+      //
+      // Read by the driver, AND by everyone already in the car. It used to be
+      // the driver alone, which was right while they were the only person who
+      // could act on it. They are not any more: a ride with no driver yet sends
+      // vetting requests to the host, and any co-rider may refuse one outright
+      // (see coRiderObjectToPoolJoin). People cannot answer a request they are
+      // not allowed to look at, and this has to stay in step with the same
+      // decision in `getPoolJoinRequests` — the callable grants exactly this.
       match /joinRequests/{riderId} {
         allow read: if isAdmin()
                     || (isSignedIn() && riderId == uid())
                     || (isSignedIn()
-                        && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+                        && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid())
+                    || (isSignedIn()
+                        && uid() in get(/databases/$(database)/documents/trips/$(tripId)).data.poolMembers);
         allow write: if false;
       }
 

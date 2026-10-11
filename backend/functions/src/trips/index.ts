@@ -53,6 +53,8 @@ import { franchiseCutFor, franchiseRateFrom } from '../domain/franchise';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
 import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
 import { hostRosterEntry } from './poolRoster';
+import { resolveSeatOccupant } from '../lib/seatGender';
+import { sharedRideFare } from '../fare/sharedRideFare';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -134,6 +136,14 @@ const createTripSchema = z.object({
    * these rules exist to prevent.
    */
   passengerGender: z.enum(['male', 'female', 'unspecified']),
+  /**
+   * Who is actually travelling — the ONE gender input a client may send, and it
+   * names a relationship rather than a gender so it stays unspoofable. The
+   * server turns it into the seat's gender against the caller's own profile;
+   * see lib/seatGender. Absent (every shipped app version) means 'self', which
+   * is the behaviour that was there before.
+   */
+  bookedFor: z.enum(['self', 'other']).nullish(),
   pool: z.boolean().optional(),
   // Pool rides only. public → nearby riders can discover and join; private →
   // joinable only through the share link. Nullish because the mobile SDK
@@ -184,15 +194,33 @@ export const createTrip = onCall(async (req) => {
   //
   // Pool trips offer the full solo fare too — the per-seat discount only
   // materialises as riders actually join — so the same bounds apply.
+  const isPool = data.pool ?? false;
+
+  /**
+   * What this ride costs — and, for a shared ride, who decides.
+   *
+   * SOLO: the rider names their own fare and we only check it is sane. That is
+   * the bidding model the app was built on and it still applies, because a solo
+   * negotiation that fails costs nobody but the two people having it.
+   *
+   * SHARED: the rider names nothing. The fare is computed server-side by
+   * `sharedRideFare` and the client's `offeredFare` is ignored outright — not
+   * clamped, ignored. A host who could move a pool's fare could break the ride
+   * of everyone who had already joined it, which is why this is enforced here
+   * and not merely hidden in the UI: the only way to be sure a fare cannot be
+   * negotiated is for the server never to read the number. See fare/sharedRideFare.
+   */
+  const quote = isPool ? await sharedRideFare(data.rideType, data.pickup, data.dropoff) : null;
   const [{ min: fareMin, max: fareMax }, cancellationSettings] = await Promise.all([
     offeredFareBounds(data.rideType, data.pickup, data.dropoff),
     getCancellationSettings(),
   ]);
-  if (data.offeredFare < fareMin || data.offeredFare > fareMax) {
+  if (!isPool && (data.offeredFare < fareMin || data.offeredFare > fareMax)) {
     invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
+  /** The fare before any promo. For a pool this is final and stays final. */
+  const askedFare = quote ? quote.fare : data.offeredFare;
 
-  const isPool = data.pool ?? false;
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;
   // The fare after any promo discount, lifted out of the transaction so the
@@ -210,15 +238,22 @@ export const createTrip = onCall(async (req) => {
       tx.get(db.doc(`wallets/${ctx.uid}`)),
     ]);
     /**
-     * The gender this trip is recorded under — from the profile, never from the
-     * request. Everything downstream is built on it: the pool's running tally,
-     * the roster entry, `computeGenderAccess`, who the pool is offered to in
-     * Suggested Rides, and which en-route pickups a driver may add. See the
-     * note on `passengerGender` in the schema above.
+     * The gender this trip is recorded under — the gender of the person who
+     * will be IN the seat, which is not always the person who booked it.
+     * Everything downstream is built on it: the pool's running tally, the
+     * roster entry, `computeGenderAccess`, who the pool is offered to in
+     * Suggested Rides, and which en-route pickups a driver may add.
+     *
+     * It is still derived server-side from the caller's own profile and still
+     * cannot be dictated by the client — `bookedFor` names a relationship, and
+     * lib/seatGender turns that into a gender. A rider booking for a sibling of
+     * the other gender gets that sibling's gender on the seat, which is the
+     * whole point: the ride then matches the rides that person can actually
+     * share, instead of the booker's.
      */
-    const profileGender = userSnap.get('gender');
-    const passengerGender =
-      profileGender === 'male' || profileGender === 'female' ? profileGender : 'unspecified';
+    const seat = resolveSeatOccupant(userSnap.get('gender'), data.bookedFor ?? null);
+    const passengerGender = seat.seatGender;
+    const bookedForOther = seat.bookedForOther;
 
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     if (activeTripId) {
@@ -235,8 +270,17 @@ export const createTrip = onCall(async (req) => {
     // passenger can already not afford so drivers don't bid on dead trips.
     const walletBalance = (walletSnap.get('balance') as number | undefined) ?? 0;
 
-    // Validate promo code if provided
+    // Validate promo code if provided.
+    //
+    // Not on a shared ride. A promo moves the number the driver is offered, and
+    // on a pool that is the one number everybody's seat price is a fraction of —
+    // a discount would push the driver's offer under the floor the fixed fare
+    // was built to respect, which is how a pool loses its driver. Refused out
+    // loud rather than silently dropped, so nobody thinks a discount applied.
     let promoDiscount = 0;
+    if (data.promoCode && isPool) {
+      invalid('Promo codes don’t apply to shared rides — that fare is already the lowest we offer.');
+    }
     if (data.promoCode) {
       const promoSnap = await tx.get(db.doc(`promoCodes/${data.promoCode.toUpperCase()}`));
       if (promoSnap.exists && promoSnap.get('active') === true) {
@@ -250,7 +294,7 @@ export const createTrip = onCall(async (req) => {
       }
     }
 
-    const finalFare = Math.max(50, data.offeredFare - promoDiscount);
+    const finalFare = Math.max(50, askedFare - promoDiscount);
     broadcastFare = finalFare;
 
     if (paymentMethod === 'wallet' && walletBalance < finalFare) {
@@ -265,6 +309,13 @@ export const createTrip = onCall(async (req) => {
       status: 'requested' as TripStatus,
       passengerId: ctx.uid,
       passengerGender,
+      /**
+       * The booker is not the passenger. Co-riders and the driver are told so
+       * before they agree to share a car with this seat, and it is what makes
+       * an opposite-gender seat a request instead of a seating — see
+       * lib/seatGender and `requiresVettingToJoin`.
+       */
+      bookedForOther,
       driverId: null,
       rideType: data.rideType,
       offeredFare: finalFare,
@@ -287,6 +338,7 @@ export const createTrip = onCall(async (req) => {
                 name: (userSnap.get('name') as string | undefined)
                   ?? (userSnap.get('displayName') as string | undefined),
                 gender: passengerGender,
+                bookedForOther,
                 pickup: data.pickup,
                 dropoff: data.dropoff,
               }),
@@ -322,6 +374,7 @@ export const createTrip = onCall(async (req) => {
       offeredFare: finalFare,
       seats: data.seats,
       passengerGender,
+      bookedForOther,
       passengerName: (userSnap.get('name') as string | undefined) ?? 'Passenger',
       passengerRating: (userSnap.get('rating') as number | undefined) ?? 5,
       passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
@@ -493,13 +546,27 @@ export const placeBid = onCall(async (req) => {
   if (tripSnap.get('status') !== 'requested') {
     throw new HttpsError('failed-precondition', 'This trip is no longer open for bids.');
   }
-  const bidBounds = await offeredFareBounds(
-    tripSnap.get('rideType'),
-    tripSnap.get('pickup'),
-    tripSnap.get('dropoff'),
-  );
-  if (fare < bidBounds.min || fare > bidBounds.max) {
-    invalid('Bid fare is outside the allowed range.');
+  /**
+   * On a shared ride a bid is not an offer — it is an acceptance.
+   *
+   * The fare is fixed and the driver's choice is the whole job at that price,
+   * yes or no (which is what the driver's own Sharing feed has always told
+   * them: "pool fares are fixed"). So whatever number the driver's app sends is
+   * replaced with the ride's own fare rather than rejected: a counter-offer is
+   * not a thing that can exist here, and failing the call would only strand
+   * driver builds that still send one.
+   */
+  const isPoolBid = tripSnap.get('pool') === true;
+  const bidFare = isPoolBid ? (tripSnap.get('offeredFare') as number) : fare;
+  if (!isPoolBid) {
+    const bidBounds = await offeredFareBounds(
+      tripSnap.get('rideType'),
+      tripSnap.get('pickup'),
+      tripSnap.get('dropoff'),
+    );
+    if (bidFare < bidBounds.min || bidFare > bidBounds.max) {
+      invalid('Bid fare is outside the allowed range.');
+    }
   }
 
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
@@ -517,7 +584,7 @@ export const placeBid = onCall(async (req) => {
     id: bidRef.id,
     tripId,
     driverId: ctx.uid,
-    fare,
+    fare: bidFare,
     status: 'pending',
     driverInfo,
     // Snapshot of the driver's position so the passenger's map can show the
@@ -529,10 +596,17 @@ export const placeBid = onCall(async (req) => {
   // Notify passenger of the new bid
   const passengerId = (await db.doc(`trips/${tripId}`).get()).get('passengerId') as string | undefined;
   if (passengerId) {
-    await sendToUser(passengerId, '🚗 New driver offer', `A driver offered PKR ${fare} for your ride`, { tripId });
+    await sendToUser(
+      passengerId,
+      isPoolBid ? '🚗 A driver will take your shared ride' : '🚗 New driver offer',
+      isPoolBid
+        ? `A driver accepted PKR ${bidFare} for your shared ride — open it to confirm.`
+        : `A driver offered PKR ${bidFare} for your ride`,
+      { tripId },
+    );
   }
 
-  logger.info('Bid placed', { tripId, driver: ctx.uid, fare });
+  logger.info('Bid placed', { tripId, driver: ctx.uid, fare: bidFare, pool: isPoolBid });
   return { ok: true, bidId: bidRef.id };
 });
 
@@ -571,6 +645,24 @@ export const raiseTripFare = onCall(async (req) => {
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('passengerId') !== ctx.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
+    }
+    /**
+     * Not on a shared ride, and this is the rule the whole fixed-fare model
+     * rests on. The host used to own the fare and could raise it to attract a
+     * driver — but a pool's per-seat price is a fraction of that number, so
+     * raising it re-prices every rider who already agreed to a seat, on a ride
+     * they had already committed to. And when the host instead moved it
+     * somewhere no driver would go, everyone aboard lost the car.
+     *
+     * A shared ride's fare is set once, by the server, and nobody moves it.
+     * See fare/sharedRideFare.
+     */
+    if (snap.get('pool') === true) {
+      throw new HttpsError(
+        'failed-precondition',
+        'A shared ride’s fare is fixed — it is the same for everyone and cannot be changed. '
+        + 'Book a solo ride if you want to name your own fare.',
+      );
     }
     if (snap.get('status') !== 'requested') {
       throw new HttpsError('failed-precondition', 'This trip is no longer open.');

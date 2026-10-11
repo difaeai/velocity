@@ -43,6 +43,7 @@ import { geohashQueryBounds, distanceBetween } from 'geofire-common';
 import { db } from '../lib/firebase';
 import { requireAuth, invalid } from '../lib/guards';
 import { canJoinPool, computeGenderAccess, type DriverGenderPref } from '../lib/genderAccess';
+import { resolveSeatOccupant } from '../lib/seatGender';
 import { poolJoinGenderGate } from './enRoute';
 import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
@@ -64,6 +65,14 @@ const schema = z.object({
   destLat: z.number().min(-90).max(90).optional(),
   destLng: z.number().min(-180).max(180).optional(),
   destRadiusKm: z.number().min(0.5).max(25).default(5),
+  /**
+   * Who the seat is for. A rider booking for somebody of the other gender must
+   * be shown the rides THAT person can share, not the ones the booker can —
+   * otherwise a woman booking for her brother is offered women's rides and the
+   * Join she taps can only ever fail, or worse, succeed. Names a relationship,
+   * never a gender; lib/seatGender derives the rest from the caller's profile.
+   */
+  bookedFor: z.enum(['self', 'other']).nullish(),
 });
 
 /** Which subsystem a seat lives in — decides which join call the screen makes. */
@@ -135,7 +144,13 @@ export const getSuggestedRides = onCall(async (req) => {
 
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const ownTripId = userSnap.get('activeTripId') as string | undefined;
-  const myGender = (userSnap.get('gender') as string | undefined) ?? 'unspecified';
+  /**
+   * The gender the feed is built for: the SEAT's, not necessarily the account's.
+   * See lib/seatGender — this is the same derivation every join call applies, so
+   * what the feed offers and what a join accepts cannot disagree.
+   */
+  const seat = resolveSeatOccupant(userSnap.get('gender'), parsed.data.bookedFor ?? null);
+  const myGender = seat.seatGender;
   const myMixedOk = userSnap.get('mixedRideOk') === true;
 
   /** The gender rules of a pool request or a driver's pool ride, for this caller. */

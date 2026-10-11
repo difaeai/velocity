@@ -38,6 +38,7 @@ import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
 import { NewsTicker } from '../../src/ui/NewsTicker';
 import { SharedRideGenderStrip } from '../../src/ui/SharedRideGenderStrip';
+import { CommuteMatchCard } from '../../src/ui/CommuteMatchCard';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import {
@@ -474,6 +475,19 @@ export default function PassengerHome() {
              server accepts, and it has no bearing at all on a solo ride. A
              rider who always travels alone can ignore it forever. ── */}
         <SharedRideGenderStrip />
+
+        {/* ── Your daily route ──
+             Directly under the shared-ride tiles, because it is the same offer
+             on a different clock: those tiles answer "is anyone going my way
+             RIGHT NOW", and at our volume the honest answer is often no. This
+             one answers "who goes my way every day", which is a question we can
+             nearly always answer — and it is how a shared ride actually comes
+             to exist here.
+
+             The screen behind it has been built and reachable only three taps
+             deep inside a browser most riders never open, which is why riders
+             who take identical commutes have never found each other. ── */}
+        <CommuteMatchCard onPress={() => router.push('/passenger/commute')} />
 
         {/* ── Travel Partner card ── */}
         <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />

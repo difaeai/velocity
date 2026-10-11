@@ -54,8 +54,17 @@ export interface PoolRosterEntry {
   uid: string;
   /** First name only — every co-rider can read this document. */
   firstName: string;
-  /** 'male' | 'female' | 'unspecified'. Drives the make-up shown before joining. */
+  /**
+   * The gender of the person in the seat — not necessarily the account holder's.
+   * Drives the make-up shown before joining. See lib/seatGender.
+   */
   gender: string;
+  /**
+   * True when whoever booked this seat is not the person travelling in it.
+   * Co-riders read it before they agree to share the car, which is the whole
+   * reason it lives on a document they can read.
+   */
+  bookedForOther?: boolean;
   kind: PoolRosterKind;
   pickupAddress: string | null;
   dropoffAddress: string | null;
@@ -89,6 +98,8 @@ export function hostRosterEntry(args: {
   uid: string;
   name: unknown;
   gender: unknown;
+  /** Absent is the same as false — every caller that predates seat gender. */
+  bookedForOther?: unknown;
   pickup: unknown;
   dropoff: unknown;
 }): PoolRosterEntry {
@@ -96,6 +107,7 @@ export function hostRosterEntry(args: {
     uid: args.uid,
     firstName: firstNameOf(args.name),
     gender: typeof args.gender === 'string' ? args.gender : 'unspecified',
+    bookedForOther: args.bookedForOther === true,
     kind: 'host',
     pickupAddress: addressOf(args.pickup),
     dropoffAddress: addressOf(args.dropoff),
@@ -114,6 +126,7 @@ export function joinerRosterEntry(args: {
   uid: string;
   name: unknown;
   gender: unknown;
+  bookedForOther?: unknown;
   pickup: unknown;
   dropoff: unknown;
 }): PoolRosterEntry {

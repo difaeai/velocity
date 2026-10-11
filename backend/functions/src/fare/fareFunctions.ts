@@ -6,6 +6,7 @@ import {
   DEFAULT_ISLAMABAD_RAWALPINDI, DEFAULT_KARACHI,
 } from './fareEngine';
 import { comparisonFor } from './marketFunctions';
+import { sharedRideFare } from './sharedRideFare';
 
 const REGION = 'asia-south1';
 const db = () => getFirestore();
@@ -139,6 +140,42 @@ export const getPoolingQuote = onCall({ region: REGION }, async (req) => {
   const cfg = await loadCityConfig(cityId);
   trip.surgeMultiplier = await getZoneSurge(cityId, req.data?.geohash as string);
   return calculatePoolingSplit(cfg, trip, detours);
+});
+
+/**
+ * The one fare a shared ride between these two points costs.
+ *
+ * The booking screen shows this number and no stepper: a shared ride has a
+ * price, not an opening offer. `createTrip` computes the same thing from the
+ * same function when the ride is actually booked, so what the rider was shown
+ * and what the driver is offered cannot drift apart — and a client that sends a
+ * different number is simply ignored. See fare/sharedRideFare.
+ */
+export const getSharedRideFare = onCall({ region: REGION }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const d = (req.data ?? {}) as Record<string, unknown>;
+  const rideType = typeof d.rideType === 'string' ? d.rideType : 'mini';
+  const pickup = d.pickup as { lat?: unknown; lng?: unknown } | undefined;
+  const dropoff = d.dropoff as { lat?: unknown; lng?: unknown } | undefined;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const pLat = num(pickup?.lat), pLng = num(pickup?.lng);
+  const dLat = num(dropoff?.lat), dLng = num(dropoff?.lng);
+  if (pLat === null || pLng === null || dLat === null || dLng === null) {
+    throw new HttpsError('invalid-argument', 'pickup and dropoff coordinates are required.');
+  }
+
+  const quote = await sharedRideFare(
+    rideType,
+    { lat: pLat, lng: pLng },
+    { lat: dLat, lng: dLng },
+  );
+  return {
+    fare: quote.fare,
+    perSeat: quote.perSeat,
+    /** What the other apps would have charged, when we know. Never invented. */
+    comparedTo: quote.undercutFrom,
+    cityId: quote.cityId,
+  };
 });
 
 /** Admin-only: write default configs for ISB/RWP and Karachi. */
