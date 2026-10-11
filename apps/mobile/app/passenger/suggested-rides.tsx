@@ -50,7 +50,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 
-import { api, type BookedFor, type SuggestedRide } from '../../src/api/client';
+import {
+  api,
+  type BookedFor,
+  type PickupPoint,
+  type SuggestedRide,
+} from '../../src/api/client';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
@@ -301,7 +306,7 @@ function AreaCard({
 
 export default function SuggestedRidesScreen() {
   const router = useRouter();
-  const { coords, request: requestLocation } = useCurrentLocation();
+  const { coords, address, request: requestLocation } = useCurrentLocation();
   // Read, not asked for, here: the choice is made on home and this screen only
   // reports it, so the rider understands why the list looks the way it does.
   const { pref, gender } = useGenderPref();
@@ -328,6 +333,17 @@ export default function SuggestedRidesScreen() {
    * would quietly keep showing one rider the wrong half of the city.
    */
   const [bookedFor, setBookedFor] = useState<BookedFor>('self');
+  /**
+   * Named spots nearby the rider could be collected from, and the one they
+   * picked. Until this existed, a join sent the driver the literal string
+   * "Current location" as the pickup address — a thing no driver can find and
+   * no rider can be told to wait at. A real name fixes that, and it also pulls
+   * several joiners onto the same spot so the car drives a line rather than a
+   * zigzag between four kerbs. Empty whenever our own places registry has
+   * nothing nearby, which is the normal case in a city without traffic yet.
+   */
+  const [points, setPoints] = useState<PickupPoint[]>([]);
+  const [pickPoint, setPickPoint] = useState<PickupPoint | null>(null);
 
   // One ticker for every countdown on the screen, rather than one per row.
   useEffect(() => {
@@ -353,6 +369,17 @@ export default function SuggestedRidesScreen() {
   }, [coords?.lat, coords?.lng, radiusKm, bookedFor]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Best-effort: no points simply means the rider is collected where they
+  // stand, exactly as before this existed.
+  useEffect(() => {
+    if (!coords) return;
+    let alive = true;
+    api.getPickupPoints({ lat: coords.lat, lng: coords.lng })
+      .then((r) => { if (alive) setPoints(r.points); })
+      .catch(() => { if (alive) setPoints([]); });
+    return () => { alive = false; };
+  }, [coords?.lat, coords?.lng]);
 
   const tokens = useMemo(() => searchTokens(query), [query]);
 
@@ -462,9 +489,11 @@ export default function SuggestedRidesScreen() {
         if (!coords) { requestLocation(); return; }
         const res = await api.joinPoolRide({
           rideId: ride.id,
-          pickupLat: coords.lat,
-          pickupLng: coords.lng,
-          pickupAddress: 'Current location',
+          // The named point when the rider chose one, otherwise where they
+          // actually are. Never the old "Current location" placeholder.
+          pickupLat: pickPoint?.lat ?? coords.lat,
+          pickupLng: pickPoint?.lng ?? coords.lng,
+          pickupAddress: pickPoint?.name ?? (address || 'Where I am standing'),
           dropoffAddress: ride.destinationAreaName,
           bookedFor,
         });
@@ -550,6 +579,48 @@ export default function SuggestedRidesScreen() {
           Showing rides for a passenger of the other gender. The riders already in a car
           are told the seat was booked by someone else, and they can decline it.
         </Text>
+      ) : null}
+
+      {/* ── Where you will be picked up ──
+           Only rendered when our own places registry actually has somewhere
+           nearby. A list of one generated corner is worse than no list: the
+           whole reason a named point works here is that riders already wait at
+           named stops for a wagon, and a name they do not recognise has none of
+           that. "Where I am" stays the default. ── */}
+      {points.length > 0 ? (
+        <View style={styles.pointRow}>
+          <Text style={styles.forWhoLabel}>Pick up at</Text>
+          <Pressable
+            style={[styles.pointChip, pickPoint === null && styles.pointChipOn]}
+            onPress={() => setPickPoint(null)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: pickPoint === null }}
+          >
+            <Text style={[styles.pointTxt, pickPoint === null && styles.pointTxtOn]}>
+              Where I am
+            </Text>
+          </Pressable>
+          {points.map((p) => {
+            const on = pickPoint?.placeId === p.placeId;
+            return (
+              <Pressable
+                key={p.placeId}
+                style={[styles.pointChip, on && styles.pointChipOn]}
+                onPress={() => setPickPoint(on ? null : p)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`Pick up at ${p.name}, ${p.walkM} metres walk`}
+              >
+                <Text style={[styles.pointTxt, on && styles.pointTxtOn]} numberOfLines={1}>
+                  {p.name}
+                </Text>
+                {/* The walk is what the rider is being asked to pay, so it is
+                    on the chip rather than buried in a detail screen. */}
+                <Text style={[styles.pointWalk, on && styles.pointTxtOn]}>{p.walkM}m</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       ) : null}
 
       <View style={styles.tabRow}>
@@ -826,6 +897,22 @@ const styles = themed(() => StyleSheet.create({
     marginHorizontal: 16, marginBottom: 10,
     color: colors.muted, fontSize: 11, lineHeight: 15, fontWeight: '600',
   },
+
+  /* ── Named pickup points ── see the note at their usage. ── */
+  pointRow: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6,
+    marginHorizontal: 16, marginBottom: 10,
+  },
+  pointChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+    maxWidth: 180,
+  },
+  pointChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  pointTxt: { color: colors.muted, fontSize: 12, fontWeight: '800', flexShrink: 1 },
+  pointTxtOn: { color: colors.primary },
+  pointWalk: { color: colors.muted, fontSize: 10, fontWeight: '700' },
 
   tabRow: {
     flexDirection: 'row', gap: 6, marginHorizontal: 16, marginBottom: 10,

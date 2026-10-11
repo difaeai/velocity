@@ -71,7 +71,17 @@ async function seedDriver(uid = DRIVER) {
   });
 }
 
+/** A pool booked by a build that shows the server's fixed fare — i.e. current. */
 const makePool = (overrides: Record<string, unknown> = {}, uid = HOST) =>
+  createTrip.run(
+    makeReq({ ...BASE, pool: true, sharedFareFixed: true, ...overrides }, uid),
+  ) as Promise<{ tripId: string }>;
+
+/**
+ * A pool booked by a build shipped before the fixed fare — it sends no
+ * capability and showed the rider its own stepper value.
+ */
+const makeLegacyPool = (overrides: Record<string, unknown> = {}, uid = HOST) =>
   createTrip.run(makeReq({ ...BASE, pool: true, ...overrides }, uid)) as Promise<{ tripId: string }>;
 
 const tripDoc = async (tripId: string) => (await db().doc(`trips/${tripId}`).get()).data()!;
@@ -139,6 +149,42 @@ describe('createTrip prices a shared ride itself', () => {
     const feed = (await db().doc(`openRequests/${tripId}`).get()).data()!;
     expect(feed.offeredFare).toBe(quoted.fare);
     expect(feed.poolPerSeatFare).toBe(quoted.fare);
+  });
+});
+
+describe('a build that predates the fixed fare is never charged above what it showed', () => {
+  // The backend went live before the app did, so for a while the Play build put
+  // a stepper on the sharing card, showed whatever it was set to, and the server
+  // wrote a different number. When the server's was higher, the rider was
+  // charged more than they had just agreed to — the app lying about a price.
+
+  it('uses the rider’s own figure when the server’s is higher', async () => {
+    const quoted = await sharedRideFare('mini', PICKUP, DROPOFF);
+    const below = Math.max(300, quoted.fare - 100);
+    const { tripId } = await makeLegacyPool({ offeredFare: below });
+    // What they saw is what they get. Never the higher server figure.
+    expect((await tripDoc(tripId)).offeredFare).toBe(below);
+  });
+
+  it('uses the server’s figure when that is cheaper, so the rider gains', async () => {
+    const quoted = await sharedRideFare('mini', PICKUP, DROPOFF);
+    const above = quoted.fare + 200;
+    const { tripId } = await makeLegacyPool({ offeredFare: above });
+    expect((await tripDoc(tripId)).offeredFare).toBe(quoted.fare);
+  });
+
+  it('still bounds-checks a fare such a build names', async () => {
+    // 140 is under the mini floor of 280. An old build naming it is the bug the
+    // original validation existed for, and it is still caught.
+    await expect(makeLegacyPool({ offeredFare: 140 }))
+      .rejects.toThrow(/must be between/);
+  });
+
+  it('ignores the number outright once the build declares the capability', async () => {
+    const quoted = await sharedRideFare('mini', PICKUP, DROPOFF);
+    // Below the floor AND absurd — neither matters any more.
+    const { tripId } = await makePool({ offeredFare: 1 });
+    expect((await tripDoc(tripId)).offeredFare).toBe(quoted.fare);
   });
 });
 

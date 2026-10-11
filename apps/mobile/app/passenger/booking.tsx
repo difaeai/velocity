@@ -819,6 +819,13 @@ export default function Booking() {
         passengerGender: gender,
         /** Asked only on shared rides; a solo ride is always the rider's own. */
         bookedFor: isPool ? bookedFor : undefined,
+        /**
+         * This screen shows the server's fixed fare for a shared ride (no
+         * stepper), so the backend may book at that figure. Builds that still
+         * showed a stepper do not send this and are never charged above what
+         * they displayed — see createTrip's fare block.
+         */
+        sharedFareFixed: true,
         pool: isPool,
         poolVisibility: isPool ? poolVisibility : undefined,
         paymentMethods,

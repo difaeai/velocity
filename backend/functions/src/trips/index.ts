@@ -145,6 +145,18 @@ const createTripSchema = z.object({
    * is the behaviour that was there before.
    */
   bookedFor: z.enum(['self', 'other']).nullish(),
+  /**
+   * "This build knows a shared ride's fare is the server's, and is showing the
+   * rider that number."
+   *
+   * A capability, not a preference — the client cannot turn the fixed fare off
+   * by omitting it, it can only tell us whether it was DISPLAYING the fixed
+   * fare when the rider pressed the button. Builds shipped before 2026-10-11
+   * never send it, and they showed the rider their own stepper value, so
+   * charging them the server's figure instead could quote one price and book a
+   * higher one. See the fare block below.
+   */
+  sharedFareFixed: z.boolean().nullish(),
   pool: z.boolean().optional(),
   // Pool rides only. public → nearby riders can discover and join; private →
   // joinable only through the share link. Nullish because the mobile SDK
@@ -209,18 +221,41 @@ export const createTrip = onCall(async (req) => {
    * clamped, ignored. A host who could move a pool's fare could break the ride
    * of everyone who had already joined it, which is why this is enforced here
    * and not merely hidden in the UI: the only way to be sure a fare cannot be
-   * negotiated is for the server never to read the number. See fare/sharedRideFare.
+   * negotiated is for the server never to read the number.
+   *
+   * SHARED, FROM A BUILD THAT PREDATES ALL THAT: those builds put a stepper on
+   * the sharing card and showed the rider whatever it was set to. The backend
+   * went live before the app did, so for a while every shared ride booked from
+   * the Play build was quoted one fare on screen and written at another — and
+   * when the server's figure was the higher of the two, the rider was charged
+   * more than they had just agreed to. That is not a rounding difference; it is
+   * the app lying about a price.
+   *
+   * So an un-acked client is never charged above what it displayed. Its offer
+   * is still bounds-checked exactly as it always was, and the ride is then
+   * written at the LOWER of the two: the server's fare when that is cheaper
+   * (the rider gains, and the fixed-fare model still applies), otherwise the
+   * number the rider actually saw. The old negotiability lingers only for those
+   * builds and only downward, and it disappears as people update.
    */
+  const clientShowsFixedFare = data.sharedFareFixed === true;
   const quote = isPool ? await sharedRideFare(data.rideType, data.pickup, data.dropoff) : null;
   const [{ min: fareMin, max: fareMax }, cancellationSettings] = await Promise.all([
     offeredFareBounds(data.rideType, data.pickup, data.dropoff),
     getCancellationSettings(),
   ]);
-  if (!isPool && (data.offeredFare < fareMin || data.offeredFare > fareMax)) {
+  // Bounds still police every fare a client names: solo always, and a shared
+  // ride from a build that is still naming one.
+  if ((!isPool || !clientShowsFixedFare)
+      && (data.offeredFare < fareMin || data.offeredFare > fareMax)) {
     invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
   /** The fare before any promo. For a pool this is final and stays final. */
-  const askedFare = quote ? quote.fare : data.offeredFare;
+  const askedFare = !quote
+    ? data.offeredFare
+    : clientShowsFixedFare
+      ? quote.fare
+      : Math.min(quote.fare, data.offeredFare);
 
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;

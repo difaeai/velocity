@@ -51,6 +51,11 @@ const BASE_TRIP = {
   // It stays here because shipped app versions still send it.
   passengerGender: 'female' as const,
   pool: true,
+  // These fixtures speak for the current app, which shows the server's fixed
+  // shared fare rather than a stepper. Without this the backend treats the
+  // caller as a pre-fixed-fare build and honours the number it sent — see the
+  // fare block in createTrip.
+  sharedFareFixed: true,
   paymentMethod: 'cash' as const,
   pickup: PICKUP,
   dropoff: DROPOFF,

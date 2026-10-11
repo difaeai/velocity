@@ -141,6 +141,19 @@ export interface AddVehicleInput {
  */
 export type BookedFor = 'self' | 'other';
 
+/** A named place a rider can be told to wait at, by name. */
+export interface PickupPoint {
+  /** `velocity:<id>` — our own places registry, never a Google coordinate. */
+  placeId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  /** How far the rider walks to it, in metres. */
+  walkM: number;
+  /** Metres it adds to the journey. Negative = it is closer to the destination. */
+  detourM: number | null;
+}
+
 /** The one fare a shared ride costs, as the server computed it. */
 export interface SharedFareQuote {
   /** The whole-car fare. Nobody can move it — not the host, not the driver. */
@@ -170,6 +183,16 @@ export interface CreateTripInput {
   passengerGender: Gender;
   /** Who the seat is for. Omitted means the rider themselves. */
   bookedFor?: BookedFor;
+  /**
+   * Declares that this build is SHOWING the rider the server's fixed shared
+   * fare, so the backend may book at that figure.
+   *
+   * A capability, not a preference. Builds that predate the fixed fare put a
+   * stepper on the sharing card and showed whatever it was set to; the backend
+   * never charges such a build more than it displayed. Always send `true` from
+   * here — this app reads the fare from `getSharedRideFare`.
+   */
+  sharedFareFixed?: boolean;
   pool?: boolean;
   /** Pool rides only: public → discoverable nearby, private → link-only. */
   poolVisibility?: PoolVisibility;
@@ -766,6 +789,20 @@ export const api = {
    * RECURRENCE (the same journey declared once) instead of on two strangers
    * happening to be online in the same ten minutes.
    */
+  /**
+   * Named spots near the rider they could be collected from instead of a raw
+   * coordinate. Empty whenever our own places registry has nothing nearby,
+   * which is the normal case until a city has traffic — callers fall back to
+   * the rider's own position.
+   */
+  getPickupPoints: callable<
+    {
+      lat: number; lng: number;
+      destLat?: number; destLng?: number;
+      walkM?: number;
+    },
+    { points: PickupPoint[]; maxWalkM: number }
+  >('getPickupPoints'),
   getCommuteMatches: callable<
     Record<string, never>,
     {

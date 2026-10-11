@@ -254,27 +254,36 @@ async function riderGenderOf(uid: string): Promise<string> {
   return (snap.exists ? (snap.data()!.gender as string | undefined) : undefined) ?? 'unspecified';
 }
 
-export const getCommuteMatches = onCall(async (req) => {
-  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
-  const uid = req.auth.uid;
-
+/**
+ * Everyone who shares a rider's commute, as uids plus the two public facts.
+ *
+ * Lifted out of `getCommuteMatches` so the formation cron below runs the exact
+ * same definition of "on this route". Two codepaths with two slightly different
+ * ideas of who matches is how a rider gets told four people share their route
+ * and then gets a ride offered to two of them.
+ *
+ * Returns uids because a caller that forms a ride needs to know WHO. The
+ * callable strips them back out before anything reaches a client — see the
+ * privacy note on this module.
+ */
+export async function commuteGroupFor(uid: string): Promise<{
+  mine: FirebaseFirestore.DocumentData | null;
+  members: {
+    uid: string;
+    gender: string;
+    /** Days both this rider and the caller travel. */
+    days: string[];
+    /** Their departure, rounded to the quarter hour, for the slot view. */
+    time: string;
+    destinationAreaName: string;
+  }[];
+}> {
   const [mineSnap, meSnap] = await Promise.all([
     db.doc(`commuteSchedules/${uid}`).get(),
     db.doc(`users/${uid}`).get(),
   ]);
-  // No saved commute means nothing to match against — not an error, just an
-  // empty answer the screen renders as its "save your route" prompt.
   if (!mineSnap.exists || mineSnap.get('active') !== true) {
-    return {
-      hasSchedule: false,
-      total: 0,
-      males: 0,
-      females: 0,
-      destinationAreaName: null,
-      morningTime: null,
-      days: [],
-      slots: [],
-    };
+    return { mine: null, members: [] };
   }
   const mine = mineSnap.data()!;
   const myGender = (meSnap.exists ? (meSnap.data()!.gender as string | undefined) : undefined)
@@ -283,8 +292,10 @@ export const getCommuteMatches = onCall(async (req) => {
   const myTime = minutesOfDay(mine.morningTime);
   const myDays: string[] = Array.isArray(mine.activeDays) ? mine.activeDays : [];
 
-  const radiusM = MATCH_HOME_RADIUS_KM * 1000;
-  const bounds = geohashQueryBounds([mine.homeLat as number, mine.homeLng as number], radiusM);
+  const bounds = geohashQueryBounds(
+    [mine.homeLat as number, mine.homeLng as number],
+    MATCH_HOME_RADIUS_KM * 1000,
+  );
   const snapshots = await Promise.all(
     bounds.map((b) =>
       db.collection('commuteSchedules')
@@ -295,9 +306,9 @@ export const getCommuteMatches = onCall(async (req) => {
     )
   );
 
-  /** One matched rider, reduced to the only two things we will reveal. */
-  const matches: { gender: string; days: string[] }[] = [];
-  const slots = new Map<string, { time: string; destinationAreaName: string; count: number }>();
+  const members: {
+    uid: string; gender: string; days: string[]; time: string; destinationAreaName: string;
+  }[] = [];
   const seen = new Set<string>();
 
   for (const snap of snapshots) {
@@ -335,15 +346,53 @@ export const getCommuteMatches = onCall(async (req) => {
         continue;
       }
 
-      matches.push({ gender: theirGender, days: sharedDays });
-
-      const time = roundTo15(d.morningTime as string);
-      const destName = d.destinationAreaName as string;
-      const key = `${time}::${destName}`;
-      const slot = slots.get(key) ?? { time, destinationAreaName: destName, count: 0 };
-      slot.count += 1;
-      slots.set(key, slot);
+      members.push({
+        uid: doc.id,
+        gender: theirGender,
+        days: sharedDays,
+        time: roundTo15(d.morningTime as string),
+        destinationAreaName: (d.destinationAreaName as string) ?? 'their destination',
+      });
     }
+  }
+
+  return { mine, members };
+}
+
+export const getCommuteMatches = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+
+  const group = await commuteGroupFor(uid);
+  // No saved commute means nothing to match against — not an error, just an
+  // empty answer the screen renders as its "save your route" prompt.
+  if (!group.mine) {
+    return {
+      hasSchedule: false,
+      total: 0,
+      males: 0,
+      females: 0,
+      destinationAreaName: null,
+      morningTime: null,
+      days: [],
+      slots: [],
+    };
+  }
+  const mine = group.mine;
+
+  /**
+   * Reduce the group to what a client may see. `commuteGroupFor` knows the
+   * uids; nothing below ever puts one in the response — see the privacy note
+   * at the top of this section.
+   */
+  const matches = group.members;
+  const slots = new Map<string, { time: string; destinationAreaName: string; count: number }>();
+  for (const m of matches) {
+    const key = `${m.time}::${m.destinationAreaName}`;
+    const slot = slots.get(key)
+      ?? { time: m.time, destinationAreaName: m.destinationAreaName, count: 0 };
+    slot.count += 1;
+    slots.set(key, slot);
   }
 
   // Which days of the caller's week actually have somebody else on them. A

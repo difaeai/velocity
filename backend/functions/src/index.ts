@@ -207,6 +207,7 @@ export { sweepMapsCache } from './maps/sweepMapsCache';
 // Velocity's own map — first-party places, built from completed trips. Unlike the
 // Maps cache above, nothing here expires, because nothing here is Google's.
 export { promoteTripLocations } from './locations/promote';
+export { getPickupPoints } from './locations/pickupPoints';
 export {
   adminListVelocityLocations,
   adminReviewVelocityLocation,
@@ -305,6 +306,7 @@ export { sweepDriverGeohashes } from './drivers/geohashSweeper';
 export {
   upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand, getCommuteMatches,
 } from './commute';
+export { runCommuteRideFormation } from './commute/formRides';
 
 // Shared rides stop more than once. Dropping one rider is not ending the trip.
 export { dropOffRider } from './trips/dropOff';
