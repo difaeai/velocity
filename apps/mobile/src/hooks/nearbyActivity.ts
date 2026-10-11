@@ -53,8 +53,17 @@ const EMPTY: NearbyActivityState = {
   loaded: false,
 };
 
-/** Longest we let the picture go stale while the screen is open. */
-const POLL_MS = 30_000;
+/**
+ * Longest we let the picture go stale while the screen is open.
+ *
+ * Every tick is a server-side proximity query billed per document it reads, so
+ * this interval is the single biggest lever on what the home map costs: halving
+ * the rate halves the bill at every concurrency. 60 s is the idle ceiling, not
+ * the usual wait — `MOVE_THRESHOLD` below still refetches within a tick of any
+ * real movement, which is when a stale map is actually noticeable. Standing
+ * still and watching the same street is the case worth being slow about.
+ */
+const POLL_MS = 60_000;
 
 /** How often the loop wakes to ask "is a poll due?". Cheap; no network involved. */
 const TICK_MS = 6_000;

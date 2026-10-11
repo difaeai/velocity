@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as admin from 'firebase-admin';
+import { geohashForLocation } from 'geofire-common';
 
 import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
 import { encodeGeohash } from '../../lib/geohash';
@@ -47,6 +48,17 @@ function call(uid = ME, radiusKm?: number): Promise<Result> {
   return run(makeReq({ lat: HERE.lat, lng: HERE.lng, ...(radiusKm ? { radiusKm } : {}) }, uid));
 }
 
+/**
+ * A driver document as production actually holds one.
+ *
+ * `geohash` is stamped alongside `lastLocation` because that is the state the
+ * sweeper in drivers/geohashSweeper.ts maintains, and the cell is what
+ * `queryNearbyDriverDocs` looks drivers up by — a fixture with a position but no
+ * cell is a driver the live query cannot see either, so seeding one would be
+ * testing a state production never rests in. A driver with no location gets no
+ * cell, which is exactly what the sweeper does with them: both are invisible,
+ * and several tests below rely on that.
+ */
 async function seedDriver(
   uid: string,
   loc: { lat: number; lng: number } | null,
@@ -58,7 +70,7 @@ async function seedDriver(
     fullName: 'Very Identifiable Person',
     plate: 'ABC-123',
     vehicleLabel: 'Toyota Corolla',
-    ...(loc ? { lastLocation: loc } : {}),
+    ...(loc ? { lastLocation: loc, geohash: geohashForLocation([loc.lat, loc.lng]) } : {}),
     lastSeenAt: admin.firestore.Timestamp.now(),
     ...overrides,
   });

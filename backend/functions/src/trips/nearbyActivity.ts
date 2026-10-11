@@ -50,6 +50,7 @@ import { z } from 'zod';
 import { haversineM } from '../lib/corridor';
 import { db, Timestamp } from '../lib/firebase';
 import { neighborGeohashes } from '../lib/geohash';
+import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { requireAuth, invalid } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 
@@ -188,11 +189,11 @@ export const getNearbyActivity = onCall(async (req) => {
   const cells = neighborGeohashes(lat, lng, PRESENCE_CELL_PRECISION);
   const presenceRadiusM = Math.min(radiusKm, PRESENCE_MAX_RADIUS_KM) * 1000;
 
-  const [driverSnap, presenceSnap, tripSnap, poolSnap] = await Promise.all([
-    db.collection('drivers')
-      .where('online', '==', true)
-      .where('verificationStatus', '==', 'approved')
-      .get(),
+  const [driverDocs, presenceSnap, tripSnap, poolSnap] = await Promise.all([
+    // Bounded by geography, not by collection size. This used to read every
+    // online driver in the country on every poll of every open home screen —
+    // see lib/nearbyDrivers.ts for what that cost.
+    queryNearbyDriverDocs(lat, lng, radiusM),
     // `neighborGeohashes` returns at most 9 values, well inside Firestore's
     // 30-value cap on `in`.
     db.collection('userPresence')
@@ -213,7 +214,7 @@ export const getNearbyActivity = onCall(async (req) => {
   const drivers: Pin[] = [];
   // Anyone drawn as a vehicle must not also be drawn as a dot — one person, one pin.
   const drawnAsVehicle = new Set<string>();
-  for (const doc of driverSnap.docs) {
+  for (const doc of driverDocs) {
     // A driver browsing the passenger app must not see their own car as
     // "another driver nearby" — that reads as one phantom of extra supply.
     if (doc.id === ctx.uid) continue;

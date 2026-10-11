@@ -294,6 +294,13 @@ export {
   getNearbyActiveRides,
 } from './poolRideRequests';
 
+// Stamps `drivers/{uid}.geohash` from the location the handset already writes,
+// so the passenger map and the ride broadcast can find drivers by cell instead
+// of reading every online driver in the country per call. Centralising that one
+// scan here is what makes the per-request cost independent of fleet size —
+// lib/nearbyDrivers.ts has the numbers.
+export { sweepDriverGeohashes } from './drivers/geohashSweeper';
+
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export {
   upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand, getCommuteMatches,

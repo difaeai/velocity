@@ -16,6 +16,7 @@ import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import { rateLimit } from '../lib/ratelimit';
 import { encodeGeohash } from '../lib/geohash';
+import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { sendToUser, sendToUsers } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
 import {
@@ -466,13 +467,13 @@ export async function broadcastTripToNearbyDrivers(
   const settingsSnap = await db.doc('config/rideSettings').get();
   const radiusKm = (settingsSnap.get('searchRadiusKm') as number) ?? 2;
 
-  const driversSnap = await db.collection('drivers')
-    .where('online', '==', true)
-    .where('verificationStatus', '==', 'approved')
-    .get();
+  // Bounded by geography rather than reading every online driver in the
+  // country — see lib/nearbyDrivers.ts. The haversine check below still decides
+  // who actually gets the push, so this only narrows the candidates.
+  const driverDocs = await queryNearbyDriverDocs(pickup.lat, pickup.lng, radiusKm * 1000);
 
   const nearbyUids: string[] = [];
-  for (const d of driversSnap.docs) {
+  for (const d of driverDocs) {
     const loc = d.get('lastLocation') as { lat: number; lng: number } | undefined;
     if (!loc?.lat || !loc?.lng) continue;
     if (haversineKm(pickup.lat, pickup.lng, loc.lat, loc.lng) <= radiusKm) {
