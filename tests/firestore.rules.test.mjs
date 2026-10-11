@@ -434,7 +434,7 @@ test('social access tokens are unreadable by everyone, admins included', async (
   await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
 });
 
-test('a seat request is visible to its rider and to the driver deciding it, and nobody else', async () => {
+test('a seat request is visible to its rider, the driver and the car — nobody else', async () => {
   const asker = testEnv.authenticatedContext('asker1', { role: 'passenger' }).firestore();
   const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
 
@@ -443,17 +443,31 @@ test('a seat request is visible to its rider and to the driver deciding it, and 
   await assertSucceeds(getDoc(doc(driver, 'trips/poolTrip2/joinRequests/asker1')));
   await assertSucceeds(getDoc(doc(admin, 'trips/poolTrip2/joinRequests/asker1')));
 
-  // Not the pool's host: the leader owns the fare, the driver owns the car, and
-  // who else is asking to get in is the driver's business.
-  await assertFails(getDoc(doc(passenger, 'trips/poolTrip2/joinRequests/asker1')));
+  // The riders already in the car, too — passenger1 is in poolTrip2's
+  // poolMembers. This used to be refused, which was right while the driver was
+  // the only person who could act on the queue. They are not any more: a ride
+  // with no driver yet sends vetting requests to the host, and ANY co-rider can
+  // refuse one outright (coRiderObjectToPoolJoin), binding on its own. Nobody
+  // can answer a request they are not allowed to look at.
+  //
+  // What they see is a first name, a gender and a seat fare — all of which the
+  // roster and the join announcements already tell them about anyone who ends
+  // up sharing the car. This has to stay in step with the same decision in
+  // `getPoolJoinRequests`, which grants exactly this.
+  await assertSucceeds(getDoc(doc(passenger, 'trips/poolTrip2/joinRequests/asker1')));
+
+  // Somebody with no seat in this car still gets nothing.
   await assertFails(getDoc(doc(stranger, 'trips/poolTrip2/joinRequests/asker1')));
 
-  // Every write goes through joinPoolTrip / driverRespondToPoolJoin. A client
-  // that could write here could seat itself in a stranger's car, or answer a
-  // request on the driver's behalf.
+  // Every write goes through joinPoolTrip / driverRespondToPoolJoin /
+  // coRiderObjectToPoolJoin. A client that could write here could seat itself
+  // in a stranger's car, answer a request on the driver's behalf, or forge a
+  // co-rider's refusal. Reading the queue is widened above; writing to it is
+  // not, and a co-rider's refusal still has to go through the callable.
   await assertFails(setDoc(doc(asker, 'trips/poolTrip2/joinRequests/asker1'), { status: 'accepted' }));
   await assertFails(updateDoc(doc(driver, 'trips/poolTrip2/joinRequests/asker1'), { status: 'accepted' }));
   await assertFails(setDoc(doc(stranger, 'trips/poolTrip2/joinRequests/stranger1'), { status: 'pending' }));
+  await assertFails(updateDoc(doc(passenger, 'trips/poolTrip2/joinRequests/asker1'), { status: 'rejected' }));
 });
 
 test('the same rule holds for seat requests on pool ride requests', async () => {
