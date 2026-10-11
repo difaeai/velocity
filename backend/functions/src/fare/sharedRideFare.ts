@@ -63,6 +63,7 @@ import { MAX_POOL_RIDERS, poolPerSeatFare, fareBounds } from '../domain/fares';
 import { calculateFare, type CityFareConfig, type VehicleCategory } from './fareEngine';
 import { loadFareConfigFor } from './cityConfig';
 import { comparisonFor } from './marketFunctions';
+import { peakFactorForPoint } from '../pricing/zoneFactor';
 
 /** Ride types the app sells → the engine's vehicle categories. */
 const RIDE_TO_ENGINE_CAT: Record<string, VehicleCategory> = {
@@ -87,6 +88,12 @@ export interface SharedFareQuote {
   undercutFrom: number | null;
   /** Which city table priced it, for support questions. */
   cityId: string | null;
+  /**
+   * The zone's peak factor at the moment the ride was priced. 1 when the zone
+   * was ordinary, which is most of the time. Kept on the quote so the booking
+   * screen can say why, and so support can answer "why was this one dearer".
+   */
+  peakMultiplier: number;
 }
 
 const haversineKm = (
@@ -130,7 +137,25 @@ export async function sharedRideFare(
   try {
     const cfg: CityFareConfig | null = await loadFareConfigFor(pickup);
     if (cfg) {
-      const est = calculateFare(cfg, { category, distanceKm, durationMin });
+      // The zone's peak factor, which a shared ride DOES carry.
+      //
+      // "Fixed" has always meant not negotiable, not frozen in time: nobody —
+      // host, joiner or driver — can move this number, and that is unchanged.
+      // What it now reflects is when the ride is being taken, the same way it
+      // already reflects what fuel costs that morning.
+      //
+      // It is locked at creation. The fare is written onto the trip document
+      // and the per-seat ladder is derived from the stored figure, so a rider
+      // who joins an hour later pays the price the ride was created at, not
+      // whatever the zone is doing when they tap join. That is the property
+      // that keeps a joiner's "what will this cost me" answerable.
+      const peak = await peakFactorForPoint(pickup);
+      const est = calculateFare(cfg, {
+        category,
+        distanceKm,
+        durationMin,
+        surgeMultiplier: peak.multiplier,
+      });
       const { comparison } = await comparisonFor(
         cfg.cityId,
         category,
@@ -139,6 +164,9 @@ export async function sharedRideFare(
         est.recommendedFare,
         est.minAcceptableBid,
       );
+      // The floor still wins over everything, peak factor included. A fare
+      // below `minAcceptableBid` is a ride no driver will take, and an empty
+      // pool is worse for the rider than a slightly dearer one.
       const fare = Math.max(comparison.velocityFare, est.minAcceptableBid);
       return {
         fare,
@@ -147,6 +175,7 @@ export async function sharedRideFare(
         engineFare: est.recommendedFare,
         undercutFrom: comparison.cheapest?.fare ?? null,
         cityId: cfg.cityId,
+        peakMultiplier: est.surgeApplied,
       };
     }
     logger.warn('sharedRideFare: no city fare table for pickup', { pickup });
@@ -164,5 +193,8 @@ export async function sharedRideFare(
     engineFare: bounds.base,
     undercutFrom: null,
     cityId: null,
+    // No city table means no zone pricing either — the static base fare is
+    // already a last resort and is not the place to start applying factors.
+    peakMultiplier: 1,
   };
 }

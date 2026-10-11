@@ -394,6 +394,22 @@ document** — so the multiplier was 1.0 for every ride Velocity has ever priced
 - **It can discount.** `peak.minMultiplier` defaults to 1.0 (off); set below 1
   and an idle zone advertises a cheaper ride. `minAcceptableBid` is unaffected,
   so a discount only ever comes out of the platform's margin.
+- **It applies to shared rides too**, since 2026-10-12. `sharedRideFare` passes
+  the zone factor and reports it as `peakMultiplier` on the quote. "Fixed" still
+  means *not negotiable* — nobody, host, joiner or driver, can move the number —
+  and the fare is **locked at creation**, so a rider joining an hour later pays
+  what the ride was created at rather than whatever the zone is doing then. The
+  `minAcceptableBid` clamp wins over the factor in both directions.
+- **`surge.minMultiplier` on a city table is a discount floor only.** Values
+  above 1 are clamped away in `calculateFare`. Without that, a table carrying
+  `minMultiplier: 1.5` would multiply every fare in the city by 1.5 with no zone
+  document behind it and nothing recording it — and `fareConfig/{cityId}` is
+  admin-writable, so it is one careless edit away. Raising fares is the peak
+  factor's job: capped, and evidenced by a `surge/*` document.
+- One read, three callers. `pricing/zoneFactor.ts` owns the expiry check, the
+  ceiling clamp and the never-throw guarantee; `fare/fareFunctions.ts`,
+  `pricing/functions.ts` and `fare/sharedRideFare.ts` all go through it rather
+  than growing their own copies of those guards.
 - **It expires.** The written document carries `expiresAt`; past it `getZoneSurge`
   returns 1.0. **A pricing engine that fails must fail to 1.0**, not pin the last
   multiplier it managed to write.
@@ -2196,7 +2212,7 @@ re-enables a feature app-wide with no deploy.
 
 | Document | Contents |
 |---|---|
-| `fareConfig/{cityId}` | Full fare engine config per city. Optional `surge.minMultiplier` (defaults to 1) lets the peak factor discount an idle zone |
+| `fareConfig/{cityId}` | Full fare engine config per city. Optional `surge.minMultiplier` (defaults to 1) lets the peak factor discount an idle zone; it is a **discount floor only** — values above 1 are clamped away and cannot raise a fare |
 | `adminConfig/pricingEngine` | Pricing Engine caps — fuel baseline/share/step, peak ceiling and ramp, scarcity detector, queue tiers. Partial: anything omitted keeps its coded default ([§3a](#3a-the-pricing-engine)) |
 | `config/commissionSettings` | `rate` (0.10), `threshold` (5000) |
 | `config/cancellationSettings` | `passengerFeeRate` (0.05), `driverFeeRate` (0.08), `outstandingLimit` (300) |

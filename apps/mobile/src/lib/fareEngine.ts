@@ -34,6 +34,12 @@ export interface CityFareConfig {
     enabled: boolean;
     /** Hard cap so surge never gets abusive, e.g. 1.8 */
     maxMultiplier: number;
+    /**
+     * A DISCOUNT floor. Absent means 1.0 — the fare is never cut below the
+     * card. Values above 1.0 are clamped away below and cannot raise a fare;
+     * raising fares is the peak factor's job, and it is capped and recorded.
+     */
+    minMultiplier?: number;
   };
   pooling: {
     enabled: boolean;
@@ -141,8 +147,13 @@ export function calculateFare(cfg: CityFareConfig, trip: TripInput): FareEstimat
   const waitCharge     = billableWait* r.waitPerMin;
   const subtotal = Math.max(r.minFare, r.base + distanceCharge + timeCharge + waitCharge);
 
+  // Kept in step with backend/functions/src/fare/fareEngine.ts, which is the
+  // authoritative copy. This screen does not currently pass a multiplier at
+  // all, so the clamp changes nothing today — it is here so the two engines do
+  // not quietly diverge the day it does.
+  const discountFloor = Math.min(cfg.surge.minMultiplier ?? 1, 1);
   const surge = cfg.surge.enabled
-    ? Math.min(Math.max(trip.surgeMultiplier ?? 1, 1), cfg.surge.maxMultiplier)
+    ? Math.min(Math.max(trip.surgeMultiplier ?? 1, discountFloor), cfg.surge.maxMultiplier)
     : 1;
 
   const recommendedFare  = round5(subtotal * surge);

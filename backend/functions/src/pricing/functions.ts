@@ -24,7 +24,6 @@ import { fareCityIdsFor } from '../fare/cityConfig';
 import type { VehicleCategory } from '../fare/fareEngine';
 import {
   CONFIG_DOC,
-  SURGE_COLLECTION,
   ZONE_COLLECTION,
   invalidatePricingCache,
   loadFuelPrices,
@@ -37,6 +36,7 @@ import { fuelStatus, runFuelRefresh } from './fuelJob';
 import { runTick } from './engine';
 import { driverPeakLabel, explainPeak, riderPeakLabel } from './peak';
 import { describeShock } from './supplyIntegrity';
+import { peakFactorForPoint } from './zoneFactor';
 import {
   DEFAULT_PRICING_CONFIG,
   FUEL_PRODUCTS,
@@ -50,35 +50,6 @@ const coords = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
 });
-
-/**
- * The live multiplier for a zone, straight from the document the fare engine
- * reads — including its expiry, so a dead tick reads as 1.0 here too.
- */
-async function liveMultiplier(
-  pickup: { lat: number; lng: number },
-  precision: number,
-  now: number,
-): Promise<{ multiplier: number; key: string; stale: boolean }> {
-  const cityId = fareCityIdsFor(pickup)[0]!;
-  const key = zoneKey(cityId, encodeGeohash(pickup.lat, pickup.lng, precision));
-  try {
-    const snap = await db.doc(`${SURGE_COLLECTION}/${key}`).get();
-    if (!snap.exists) return { multiplier: 1, key, stale: false };
-    const expiresAt = snap.get('expiresAt') as number | undefined;
-    if (typeof expiresAt === 'number' && expiresAt < now) {
-      return { multiplier: 1, key, stale: true };
-    }
-    const multiplier = Number(snap.get('multiplier'));
-    return {
-      multiplier: Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1,
-      key,
-      stale: false,
-    };
-  } catch {
-    return { multiplier: 1, key, stale: false };
-  }
-}
 
 /**
  * What a rider should be told about the price right now, before they book.
@@ -102,7 +73,7 @@ export const getPricingSnapshot = onCall({ region: REGION }, async (req) => {
   const now = Date.now();
   const config = await loadPricingConfig();
   const [{ multiplier }, prices] = await Promise.all([
-    liveMultiplier(pickup, Math.max(1, Math.trunc(config.peak.zonePrecision)), now),
+    peakFactorForPoint(pickup, now),
     loadFuelPrices(),
   ]);
 
