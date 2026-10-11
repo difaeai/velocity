@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,8 +16,22 @@ import { db as firestoreDb } from '../../src/firebase';
 import { api } from '../../src/api/client';
 import type { PoolGenderPref, CommuteDay } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
+import { useCurrentLocation } from '../../src/hooks/location';
+import {
+  usePlacesAutocomplete,
+  fetchPlaceDetail,
+  type PlacePrediction,
+} from '../../src/hooks/places';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
+
+// Places API (New) requires session tokens to be UUID v4.
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const DAYS: { key: CommuteDay; label: string }[] = [
   { key: 'mon', label: 'Mon' },
@@ -102,6 +116,30 @@ export default function CommuteScheduleScreen() {
   const [activeDays, setActiveDays]       = useState<CommuteDay[]>(['mon', 'tue', 'wed', 'thu', 'fri']);
   const [genderPref, setGenderPref]       = useState<PoolGenderPref>('any');
   const [active, setActive]               = useState(true);
+  /**
+   * Book it for me automatically. Off unless the rider asks — it is the only
+   * setting here that spends money on a morning they have not opened the app.
+   */
+  const [autoBook, setAutoBook]           = useState(false);
+
+  /**
+   * COORDINATES. This screen used to send `homeLat/homeLng/destinationLat/
+   * destinationLng` as literal zeros — it collected area NAMES and never a
+   * position — so every saved route sat at (0, 0) and the whole feature was
+   * dead: no driver was ever within 5 km of a schedule, and rider-to-rider
+   * matching would have paired every commuter in the country with every other.
+   * The backend now refuses a route without real places, so they are collected
+   * here: home from GPS, destination from the places picker.
+   */
+  const { coords, address: gpsAddress, status: locStatus, request: requestLocation } =
+    useCurrentLocation();
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [showPredictions, setShowPredictions] = useState(false);
+  const sessionTokenRef = useRef(uuidv4());
+  const { predictions } = usePlacesAutocomplete(
+    showPredictions ? destAreaName : '',
+    sessionTokenRef.current,
+  );
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -115,12 +153,35 @@ export default function CommuteScheduleScreen() {
         setActiveDays((d.activeDays as CommuteDay[]) ?? ['mon', 'tue', 'wed', 'thu', 'fri']);
         setGenderPref((d.genderPref as PoolGenderPref) ?? 'any');
         setActive(d.active ?? true);
+        setAutoBook(d.autoBook === true);
+        // A route saved by a newer build has a real pin; one saved by an older
+        // build has (0, 0), which is no pin at all and must be re-picked.
+        const savedLat = d.destinationLat as number | undefined;
+        const savedLng = d.destinationLng as number | undefined;
+        if (typeof savedLat === 'number' && typeof savedLng === 'number'
+            && !(savedLat === 0 && savedLng === 0)) {
+          setDestCoords({ lat: savedLat, lng: savedLng });
+        }
         setHasExisting(true);
       }
       setLoading(false);
     });
     return unsub;
   }, [user?.uid]);
+
+  // The label is the rider's to edit; the coordinates stay from GPS, so the
+  // matching works off where they actually are rather than what they typed.
+  useEffect(() => {
+    if (gpsAddress) setHomeAreaName((prev) => (prev.trim() ? prev : gpsAddress));
+  }, [gpsAddress]);
+
+  async function selectPrediction(pred: PlacePrediction) {
+    setDestAreaName(pred.fullText);
+    setShowPredictions(false);
+    const detail = await fetchPlaceDetail(pred, sessionTokenRef.current);
+    if (detail) setDestCoords({ lat: detail.lat, lng: detail.lng });
+    sessionTokenRef.current = uuidv4(); // rotate: the detail call closed the billing session
+  }
 
   function toggleDay(day: CommuteDay) {
     setActiveDays((prev) =>
@@ -132,21 +193,39 @@ export default function CommuteScheduleScreen() {
     if (!homeAreaName.trim()) { Alert.alert('Required', 'Enter your home area name.'); return; }
     if (!destAreaName.trim()) { Alert.alert('Required', 'Enter your destination area name.'); return; }
     if (activeDays.length === 0) { Alert.alert('Required', 'Select at least one active day.'); return; }
+    if (!coords) {
+      Alert.alert(
+        'Location needed',
+        'Turn on location so we know where to pick you up. Your route is matched on where '
+        + 'you actually start, not on the name you typed.',
+      );
+      requestLocation();
+      return;
+    }
+    if (!destCoords) {
+      Alert.alert(
+        'Pick your destination',
+        'Choose your destination from the suggestions so we have the real place, not just '
+        + 'its name.',
+      );
+      return;
+    }
 
     setSaving(true);
     try {
       await api.upsertCommuteSchedule({
         homeAreaName:        homeAreaName.trim(),
-        homeLat:             0,
-        homeLng:             0,
+        homeLat:             coords.lat,
+        homeLng:             coords.lng,
         destinationAreaName: destAreaName.trim(),
-        destinationLat:      0,
-        destinationLng:      0,
+        destinationLat:      destCoords.lat,
+        destinationLng:      destCoords.lng,
         morningTime,
         eveningTime,
         activeDays,
         genderPref,
         active,
+        autoBook,
       });
       Alert.alert('Saved!', 'Your commute schedule has been saved. Drivers in your area will see anonymised demand data — never your personal details.');
     } catch (e: any) {
@@ -246,10 +325,80 @@ export default function CommuteScheduleScreen() {
                 placeholder="Destination area (e.g. Blue Area)"
                 placeholderTextColor={colors.muted}
                 value={destAreaName}
-                onChangeText={setDestAreaName}
+                onChangeText={(t) => {
+                  setDestAreaName(t);
+                  // Typing invalidates the pin: the name and the place must
+                  // not be allowed to disagree.
+                  setDestCoords(null);
+                  setShowPredictions(true);
+                }}
               />
+              {destCoords ? <Text style={styles.pinOk}>📍</Text> : null}
             </View>
           </View>
+
+          {/* Real places, not names. Without a pin the backend refuses the
+              route — see the note on the coordinate state. */}
+          {showPredictions && predictions.length > 0 ? (
+            <View style={styles.predictionsBox}>
+              {predictions.slice(0, 5).map((pred) => (
+                <Pressable
+                  key={pred.placeId}
+                  style={styles.predictionRow}
+                  onPress={() => selectPrediction(pred)}
+                >
+                  <Text style={styles.predictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                  {!!pred.secondaryText ? (
+                    <Text style={styles.predictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Where we will actually collect them from. */}
+          {coords ? (
+            <Text style={styles.gpsOk}>📍 Pickup pinned to where you are now</Text>
+          ) : locStatus === 'denied' || locStatus === 'unavailable' ? (
+            <Pressable onPress={requestLocation}>
+              <Text style={styles.gpsErr}>
+                ⚠️ Location is off — we cannot match your route without it. Tap to enable.
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.gpsWait}>Getting your location…</Text>
+          )}
+        </View>
+
+        {/* ── Book it for me ──
+             The only setting on this screen that spends money on a morning the
+             rider has not opened the app, so it says exactly what it does,
+             including the part that protects them: a fresh booking is free to
+             cancel because no driver has committed to it yet. ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>BOOK IT FOR ME</Text>
+          <Pressable
+            style={[styles.autoCard, autoBook && styles.autoCardOn]}
+            onPress={() => setAutoBook((v) => !v)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: autoBook }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.autoTitle, autoBook && styles.autoTitleOn]}>
+                {autoBook ? 'On — we book this route for you' : 'Off — we only remind you'}
+              </Text>
+              <Text style={styles.autoSub}>
+                {autoBook
+                  ? 'Ten minutes before you leave, we book the shared ride and seat the others '
+                    + 'on your route in it. Free to cancel until a driver accepts.'
+                  : 'We will send you a notification when people on your route are leaving, and '
+                    + 'you decide.'}
+              </Text>
+            </View>
+            <View style={[styles.autoKnob, autoBook && styles.autoKnobOn]}>
+              <Text style={styles.autoKnobTxt}>{autoBook ? '✓' : ''}</Text>
+            </View>
+          </Pressable>
         </View>
 
         {/* Morning time */}
@@ -336,6 +485,54 @@ export default function CommuteScheduleScreen() {
 }
 
 const styles = themed(() => StyleSheet.create({
+  /* ── The destination picker, GPS line and auto-book card ──
+     This screen collected area names and no coordinates at all, which is why
+     it needed these; see the note on the coordinate state. ── */
+  pinOk: { fontSize: 13, marginLeft: 6 },
+  predictionsBox: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    overflow: 'hidden',
+  },
+  predictionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  predictionMain: { fontSize: 13, fontWeight: '800', color: colors.text },
+  predictionSub: { fontSize: 11, fontWeight: '600', color: colors.muted, marginTop: 1 },
+  gpsOk: { marginTop: 8, fontSize: 11, fontWeight: '700', color: colors.primary },
+  gpsErr: { marginTop: 8, fontSize: 11, fontWeight: '700', color: '#ef4444', lineHeight: 15 },
+  gpsWait: { marginTop: 8, fontSize: 11, fontWeight: '600', color: colors.muted },
+
+  autoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  autoCardOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  autoTitle: { fontSize: 13, fontWeight: '900', color: colors.muted },
+  autoTitleOn: { color: colors.primary },
+  autoSub: {
+    fontSize: 11, lineHeight: 15, fontWeight: '600', color: colors.muted, marginTop: 3,
+  },
+  autoKnob: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  autoKnobOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  autoKnobTxt: { fontSize: 13, fontWeight: '900', color: '#0b0f0c' },
+
   safe:           { flex: 1, backgroundColor: colors.background },
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:        { width: 40 },

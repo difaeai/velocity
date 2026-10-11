@@ -8,14 +8,12 @@
  */
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
-import { randomInt } from 'crypto';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
 import { rateLimit } from '../lib/ratelimit';
-import { encodeGeohash } from '../lib/geohash';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { sendToUser, sendToUsers } from '../lib/fcm';
 import { HttpsError } from 'firebase-functions/v2/https';
@@ -23,7 +21,6 @@ import {
   DriverPublicInfo, TripStatus, PaymentMethod, PAYMENT_METHODS, settlementChannel,
 } from '../domain/types';
 import {
-  MAX_POOL_RIDERS,
   MAX_SEATS,
   computeSettlement,
   fareBounds,
@@ -53,7 +50,7 @@ import { loadFareConfigFor } from '../fare/cityConfig';
 import { franchiseCutFor, franchiseRateFrom } from '../domain/franchise';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
 import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
-import { hostRosterEntry } from './poolRoster';
+import { generateShareCode, writeTripDocuments } from './poolTripFactory';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 
@@ -340,55 +337,23 @@ export const createTrip = onCall(async (req) => {
       );
     }
 
-    tx.set(tripRef, {
-      id: tripRef.id,
-      status: 'requested' as TripStatus,
-      passengerId: ctx.uid,
-      passengerGender,
-      /**
-       * The booker is not the passenger. Co-riders and the driver are told so
-       * before they agree to share a car with this seat, and it is what makes
-       * an opposite-gender seat a request instead of a seating — see
-       * lib/seatGender and `requiresVettingToJoin`.
-       */
-      bookedForOther,
-      driverId: null,
+    /**
+     * One write, one shape. The trip, the public request feed, the share-code
+     * lookup and the rider's activeTripId all land together — see
+     * trips/poolTripFactory for why they are no longer written here by hand.
+     * Everything above this line is createTrip's own rules: bounds, wallet,
+     * promo, the fixed shared fare, the seat's gender.
+     */
+    writeTripDocuments(tx, tripRef, {
+      uid: ctx.uid,
       rideType: data.rideType,
-      offeredFare: finalFare,
-      fare: null,
+      fare: finalFare,
       seats: data.seats,
+      passengerGender,
+      bookedForOther,
       pool: isPool,
-      ...(isPool
-        ? {
-            poolVisibility,
-            shareCode,
-            poolMembers: [ctx.uid],
-            // Who is in the car, by name. Seeded here so a pool has a roster
-            // from the moment it exists — the drop-off list and the "sharing
-            // this car" card both read it, and a pool whose first entry only
-            // appeared when somebody joined left the host invisible on their
-            // own ride. See trips/poolRoster.
-            poolRoster: [
-              hostRosterEntry({
-                uid: ctx.uid,
-                name: (userSnap.get('name') as string | undefined)
-                  ?? (userSnap.get('displayName') as string | undefined),
-                gender: passengerGender,
-                bookedForOther,
-                pickup: data.pickup,
-                dropoff: data.dropoff,
-              }),
-            ],
-            poolPerSeatFare: finalFare, // just the host so far → full fare
-            maxPoolRiders: MAX_POOL_RIDERS,
-            // Running gender tally so nearby riders can see the make-up of a
-            // pool before joining (names are never exposed — just the counts).
-            poolGenders: {
-              male:   passengerGender === 'male'   ? 1 : 0,
-              female: passengerGender === 'female' ? 1 : 0,
-            },
-          }
-        : {}),
+      poolVisibility,
+      shareCode,
       paymentMethod,
       paymentMethods,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
@@ -396,55 +361,11 @@ export const createTrip = onCall(async (req) => {
       promoDiscount,
       pickup: data.pickup,
       dropoff: data.dropoff,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      passengerName: (userSnap.get('name') as string | undefined)
+        ?? (userSnap.get('displayName') as string | undefined),
+      passengerRating: userSnap.get('rating') as number | undefined,
+      passengerRatingCount: userSnap.get('ratingCount') as number | undefined,
     });
-    tx.set(userRef, { activeTripId: tripRef.id }, { merge: true });
-    // Public-safe feed that approved online drivers can read to discover work.
-    // Carries the passenger's display name and rating (never their uid, phone
-    // or photo) so the driver's request list can show who is hailing them.
-    const pickupGeohash = encodeGeohash(data.pickup.lat, data.pickup.lng, 6);
-    tx.set(db.doc(`openRequests/${tripRef.id}`), {
-      tripId: tripRef.id,
-      rideType: data.rideType,
-      offeredFare: finalFare,
-      seats: data.seats,
-      passengerGender,
-      bookedForOther,
-      passengerName: (userSnap.get('name') as string | undefined) ?? 'Passenger',
-      passengerRating: (userSnap.get('rating') as number | undefined) ?? 5,
-      passengerRatingCount: (userSnap.get('ratingCount') as number | undefined) ?? 0,
-      pool: isPool,
-      ...(isPool
-        ? {
-            poolVisibility,
-            shareCode,
-            poolRiders: 1,
-            // Mirrored so the driver feed can say "1 rider now, up to 4"
-            // without hard-coding the cap on the client.
-            maxPoolRiders: MAX_POOL_RIDERS,
-            poolPerSeatFare: finalFare,
-            poolGenders: {
-              male:   passengerGender === 'male'   ? 1 : 0,
-              female: passengerGender === 'female' ? 1 : 0,
-            },
-          }
-        : {}),
-      paymentMethod,
-      paymentMethods,
-      preferFemaleDriver: data.preferFemaleDriver ?? false,
-      pickup: data.pickup,
-      dropoff: data.dropoff,
-      pickupGeohash,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    // Share-code → trip lookup used by the pool invite link / join flow.
-    if (isPool && shareCode) {
-      tx.set(db.doc(`poolShareCodes/${shareCode}`), {
-        tripId: tripRef.id,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
   });
 
   logger.info('Trip created', { tripId: tripRef.id, passenger: ctx.uid });
@@ -475,13 +396,6 @@ export const createTrip = onCall(async (req) => {
 });
 
 // Unambiguous alphabet (no 0/O/1/I/L) — codes get read out loud and retyped.
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-function generateShareCode(len = 8): string {
-  let out = '';
-  for (let i = 0; i < len; i += 1) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-  return out;
-}
-
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const toRad = (d: number) => d * Math.PI / 180;

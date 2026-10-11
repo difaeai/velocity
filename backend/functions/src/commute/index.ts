@@ -4,6 +4,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 
 import { db, FieldValue } from '../lib/firebase';
 import { requireRole, invalid } from '../lib/guards';
+import { hasRealCoords } from '../lib/poolRadius';
 
 // ── upsertCommuteSchedule ─────────────────────────────────────────────────────
 
@@ -19,6 +20,17 @@ const UpsertSchema = z.object({
   activeDays:          z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).min(1).max(7),
   genderPref:          z.enum(['male_only', 'female_only', 'any']),
   active:              z.boolean().optional().default(true),
+  /**
+   * Book the shared ride for me automatically, every morning this route runs.
+   *
+   * Off by default and it must stay that way. This is the one field on the
+   * schedule that spends the rider's money without them touching the app that
+   * morning, so it is opt-in, per schedule, and revocable — see
+   * commute/formRides for what the cron does with it and the guards around it.
+   */
+  autoBook:            z.boolean().optional().default(false),
+  /** Which car to book when auto-booking. Ignored unless autoBook is on. */
+  autoBookRideType:    z.enum(['bike', 'auto', 'mini', 'ac', 'comfort', 'xl']).optional(),
 });
 
 export const upsertCommuteSchedule = onCall(async (req) => {
@@ -29,6 +41,28 @@ export const upsertCommuteSchedule = onCall(async (req) => {
   const p = UpsertSchema.safeParse(req.data);
   if (!p.success) invalid(p.error.issues[0]?.message ?? 'Invalid data.');
   const d = p.data;
+
+  /**
+   * A commute with no coordinates is not a commute.
+   *
+   * Builds up to 2026-10-11 sent `homeLat/homeLng/destinationLat/destinationLng`
+   * as literal zeros — the screen collected area NAMES and never a position. So
+   * every schedule ever saved sat at (0, 0) in the Gulf of Guinea, which meant
+   * `getCommuteDemand` showed no driver anything (nobody is within 5 km of
+   * there) and any rider-to-rider matching would have paired every commuter in
+   * the country with every other, since they were all at the same point.
+   *
+   * Refused out loud rather than stored, because stored is how it stayed broken
+   * and invisible for months. And it matters far more now than it did then: a
+   * schedule like this reaching `runCommuteRideFormation` would auto-book a real
+   * car from (0, 0).
+   */
+  if (!hasRealCoords(d.homeLat, d.homeLng) || !hasRealCoords(d.destinationLat, d.destinationLng)) {
+    invalid(
+      'Pick your home and destination on the map — a saved route needs real places, '
+      + 'not just their names. Update the app if you do not see the pickers.',
+    );
+  }
 
   const homeGeohash = geohashForLocation([d.homeLat, d.homeLng]);
   const destGeohash = geohashForLocation([d.destinationLat, d.destinationLng]);
@@ -49,6 +83,9 @@ export const upsertCommuteSchedule = onCall(async (req) => {
       activeDays:          d.activeDays,
       genderPref:          d.genderPref,
       active:              d.active ?? true,
+      autoBook:            d.autoBook ?? false,
+      // A bike cannot be shared, so it is never a valid auto-book choice.
+      autoBookRideType:    d.autoBookRideType === 'bike' ? 'mini' : (d.autoBookRideType ?? 'mini'),
       updatedAt:           FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -130,7 +167,9 @@ export const getCommuteDemand = onCall(async (req) => {
 
       const d = doc.data();
 
-      // Precise distance.
+      // Precise distance. Schedules saved at (0, 0) by a pre-2026-10-11 build
+      // are skipped rather than measured — see `upsertCommuteSchedule`.
+      if (!hasRealCoords(d.homeLat, d.homeLng)) continue;
       const distKm = distanceBetween([lat, lng], [d.homeLat as number, d.homeLng as number]);
       if (distKm > radiusKm) continue;
 
@@ -276,6 +315,8 @@ export async function commuteGroupFor(uid: string): Promise<{
     /** Their departure, rounded to the quarter hour, for the slot view. */
     time: string;
     destinationAreaName: string;
+    /** Whether they asked us to book this route for them automatically. */
+    autoBook: boolean;
   }[];
 }> {
   const [mineSnap, meSnap] = await Promise.all([
@@ -286,6 +327,13 @@ export async function commuteGroupFor(uid: string): Promise<{
     return { mine: null, members: [] };
   }
   const mine = mineSnap.data()!;
+  // Schedules saved by a build that sent (0, 0) — see the note in
+  // `upsertCommuteSchedule`. They cannot be matched, and treating them as
+  // matchable would pair every commuter in the country with every other.
+  if (!hasRealCoords(mine.homeLat, mine.homeLng)
+      || !hasRealCoords(mine.destinationLat, mine.destinationLng)) {
+    return { mine: null, members: [] };
+  }
   const myGender = (meSnap.exists ? (meSnap.data()!.gender as string | undefined) : undefined)
     ?? 'unspecified';
   const myPref = (mine.genderPref as string) ?? 'any';
@@ -307,7 +355,8 @@ export async function commuteGroupFor(uid: string): Promise<{
   );
 
   const members: {
-    uid: string; gender: string; days: string[]; time: string; destinationAreaName: string;
+    uid: string; gender: string; days: string[]; time: string;
+    destinationAreaName: string; autoBook: boolean;
   }[] = [];
   const seen = new Set<string>();
 
@@ -316,6 +365,8 @@ export async function commuteGroupFor(uid: string): Promise<{
       if (doc.id === uid || seen.has(doc.id)) continue;
       seen.add(doc.id);
       const d = doc.data();
+      if (!hasRealCoords(d.homeLat, d.homeLng)
+          || !hasRealCoords(d.destinationLat, d.destinationLng)) continue;
 
       // Same pickup area.
       if (distanceBetween(
@@ -352,6 +403,7 @@ export async function commuteGroupFor(uid: string): Promise<{
         days: sharedDays,
         time: roundTo15(d.morningTime as string),
         destinationAreaName: (d.destinationAreaName as string) ?? 'their destination',
+        autoBook: d.autoBook === true,
       });
     }
   }

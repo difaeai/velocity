@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { isNudgeDue, nudgeBody, karachiNow } from '../formRides';
+import { isNudgeDue, nudgeBody, karachiNow, groupKey, MAX_AUTO_STRIKES } from '../formRides';
 
 /** The common case: a weekday commuter leaving at 08:30. */
 const WEEKDAY = {
@@ -123,5 +123,56 @@ describe('karachiNow', () => {
     expect(now.date).toBe('2026-10-13');
     expect(now.day).toBe('tue');
     expect(now.minutes).toBe(30);
+  });
+});
+
+describe('groupKey', () => {
+  it('is the same for every member of a group, whoever is computing it', () => {
+    // THE correctness property. Members depart up to half an hour apart, so
+    // they come due on different ticks, and each one computes the group from
+    // their own point of view. If their keys differed, four riders on one route
+    // would claim four separate rides and share nothing.
+    const a = groupKey(['uidA', 'uidB', 'uidC'], '2026-10-12');
+    const b = groupKey(['uidC', 'uidA', 'uidB'], '2026-10-12');
+    const c = groupKey(['uidB', 'uidC', 'uidA'], '2026-10-12');
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+
+  it('ignores a duplicate member', () => {
+    // The caller builds the crew as [self, ...others], and a bug upstream that
+    // included self twice must not split the group off from itself.
+    expect(groupKey(['uidA', 'uidB', 'uidA'], '2026-10-12'))
+      .toBe(groupKey(['uidA', 'uidB'], '2026-10-12'));
+  });
+
+  it('is a different key for a different group', () => {
+    expect(groupKey(['uidA', 'uidB'], '2026-10-12'))
+      .not.toBe(groupKey(['uidA', 'uidC'], '2026-10-12'));
+  });
+
+  it('is a different key each day, so yesterday’s ride is never joined', () => {
+    expect(groupKey(['uidA', 'uidB'], '2026-10-12'))
+      .not.toBe(groupKey(['uidA', 'uidB'], '2026-10-13'));
+  });
+
+  it('carries no uid in the key itself', () => {
+    // The key ends up in document paths and logs; the membership of a commute
+    // group is exactly what this feature does not disclose.
+    const key = groupKey(['uidA', 'uidB'], '2026-10-12');
+    expect(key).not.toContain('uidA');
+    expect(key).not.toContain('uidB');
+    expect(key.endsWith('_2026-10-12')).toBe(true);
+  });
+});
+
+describe('the auto-booking fence', () => {
+  it('gives up after a small number of cancelled rides, not a large one', () => {
+    // Auto-booking spends money on a morning the rider has not opened the app.
+    // Two unwanted cars is enough to conclude we are wrong about them; waiting
+    // for five would mean five cancellations, and once a driver has accepted
+    // one of those it costs the rider a fee.
+    expect(MAX_AUTO_STRIKES).toBe(2);
+    expect(MAX_AUTO_STRIKES).toBeLessThanOrEqual(3);
   });
 });

@@ -147,6 +147,14 @@ service cloud.firestore {
       // paid WhatsApp message on somebody who is looking at the app already.
       // Self-reported and therefore only ever used to send LESS: a driver who
       // lied about it would only suppress their own alerts.
+      // NOTE on `geohash`: deliberately NOT writable here. The cell that
+      // lib/nearbyDrivers.ts queries on must be in geofire's format at full
+      // precision — "long stored, short queried" — and the app has no
+      // geofire-common. Two geohash implementations drifting apart would make
+      // drivers invisible rather than merely stale, which is far worse than the
+      // problem it would solve, so the format stays owned by one place: the
+      // server. The driver app calls `stampDriverCell` when it goes online and
+      // drivers/geohashSweeper.ts keeps it current after that.
       allow update: if isOwner(driverId)
                     && isDriver()
                     && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
@@ -818,6 +826,22 @@ service cloud.firestore {
     // the exact home/destination coordinates are NEVER returned to drivers.
     match /commuteSchedules/{userId} {
       allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ----- commuteRideClaims/{groupKeyAndDate} -------------------------------
+    // One document per commute group per day, holding the shared ride that
+    // group's members auto-book onto. Written only by runCommuteRideFormation
+    // (commute/formRides.ts), inside the transaction that reads it — that
+    // read-and-write is the lock that stops four riders on one route creating
+    // four separate pools.
+    //
+    // Closed to clients entirely, reads included: the document lists the uids
+    // of everyone who commutes together, which is precisely the thing the
+    // commute feature never discloses. Riders learn about their ride from their
+    // own trip document and their push, never from here.
+    match /commuteRideClaims/{claimId} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 

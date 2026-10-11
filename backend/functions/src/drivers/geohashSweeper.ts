@@ -35,10 +35,13 @@
  * index churn proportional to real movement.
  */
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { geohashForLocation } from 'geofire-common';
+import { z } from 'zod';
 
 import { db } from '../lib/firebase';
+import { invalid, requireRole } from '../lib/guards';
 import { DRIVER_GEOHASH_FIELD } from '../lib/nearbyDrivers';
 
 const REGION = 'asia-south1';
@@ -100,3 +103,67 @@ export const sweepDriverGeohashes = onSchedule(
     }
   },
 );
+
+// ── stampDriverCell ──────────────────────────────────────────────────────────
+
+/**
+ * Stamp this driver's cell immediately, instead of waiting for the sweep.
+ * ----------------------------------------------------------------------------
+ * THE WINDOW THIS CLOSES
+ * ----------------------
+ * The sweep above runs once a minute, so a driver who has just gone online can
+ * be unfindable for up to 60 seconds — no stamped cell means
+ * `queryNearbyDriverDocs` cannot see them, so no ride broadcast reaches them.
+ * That is the worst possible minute to be invisible: a driver starting a shift
+ * is a driver who wants work, and a shared ride that is still gathering riders
+ * only has a ten-minute window to find a car at all.
+ *
+ * The driver app calls this once, right after it goes online. One invocation
+ * per shift start.
+ *
+ * WHY NOT A DOCUMENT TRIGGER, AND WHY NOT THE HANDSET
+ * --------------------------------------------------
+ * An `onDocumentWritten` on `drivers/{uid}` would be fresher still and was the
+ * obvious idea. It is also ~3.4M invocations a day: the app writes that
+ * document every 30 seconds per online driver (see the driver home screen's
+ * location loop), Firestore triggers cannot be filtered by field, and an early
+ * return still pays for the invocation. 1,440 scheduled runs plus a few
+ * thousand of these is three orders of magnitude cheaper for the same result.
+ *
+ * Letting the handset write the cell itself would be cheaper again, and is
+ * rejected for a different reason: the cell has to be in geofire's format at
+ * full precision — "long stored, short queried", see lib/nearbyDrivers.ts — and
+ * the app has no geofire-common. A second geohash implementation that drifted
+ * from this one would make drivers *invisible* rather than merely stale, which
+ * is worse than the problem being solved. The format stays owned by one place.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO
+ * --------------------------------
+ * It does not set `online`. Going online is gated in firestore.rules on a live
+ * car photo (`carPhotoIsLive`), and a callable writing `online` with the Admin
+ * SDK would sail straight past that gate — a driver could take rides in a car
+ * nobody has seen. The app keeps writing `online` itself, under the rules, and
+ * this only writes the cell.
+ */
+const stampSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
+export const stampDriverCell = onCall({ region: REGION }, async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const parsed = stampSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide your current coordinates.');
+  const { lat, lng } = parsed.data;
+
+  const geohash = geohashForLocation([lat, lng]);
+  // Only the cell. `lastLocation` and `lastSeenAt` are the handset's to write,
+  // and `online` is the rules' to gate — see the note above.
+  await db.doc(`drivers/${ctx.uid}`).set(
+    { [DRIVER_GEOHASH_FIELD]: geohash },
+    { merge: true },
+  );
+
+  logger.info('stampDriverCell', { uid: ctx.uid });
+  return { ok: true, geohash };
+});

@@ -190,6 +190,34 @@ describe('getCommuteMatches', () => {
     });
   });
 
+  it('ignores a route saved at (0, 0) — and so never pairs everybody with everybody', async () => {
+    // Builds up to 2026-10-11 sent the coordinates as literal zeros: the screen
+    // collected area NAMES and never a position. Every schedule ever saved sat
+    // at the same point in the Gulf of Guinea, so a distance check between any
+    // two of them was 0 and they would ALL have matched each other regardless
+    // of which city they were in. Worse, such a schedule reaching the formation
+    // cron would auto-book a real car from (0, 0).
+    await seedRider(ME, 'female');
+    await seedRider('legacyZero', 'female', {
+      home: { lat: 0, lng: 0 },
+      dest: { lat: 0, lng: 0 },
+    });
+
+    const res = await ask();
+    expect(res.total).toBe(0);
+  });
+
+  it('tells a rider whose OWN route is (0, 0) that they have no usable schedule', async () => {
+    // Their saved row exists but cannot be matched, so the screen must show the
+    // "save your route" state and prompt them to pick real places — not a
+    // confident "0 riders on your route".
+    await seedRider(ME, 'female', { home: { lat: 0, lng: 0 }, dest: { lat: 0, lng: 0 } });
+    await seedRider('real', 'female');
+
+    const res = await ask();
+    expect(res.hasSchedule).toBe(false);
+  });
+
   it('PRIVACY: returns counts and area names, never a person', async () => {
     await seedRider(ME, 'female');
     await seedRider('w1', 'female');

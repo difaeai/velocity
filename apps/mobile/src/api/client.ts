@@ -803,6 +803,17 @@ export const api = {
     },
     { points: PickupPoint[]; maxWalkM: number }
   >('getPickupPoints'),
+  /**
+   * Stamp this driver's map cell now rather than waiting for the once-a-minute
+   * sweep. Called right after going online: until the cell exists the ride
+   * broadcast cannot see this driver at all, and that is the worst minute to be
+   * invisible. Writes only the cell — `online` stays the app's to write, under
+   * the rules that gate it on a live car photo.
+   */
+  stampDriverCell: callable<
+    { lat: number; lng: number },
+    { ok: boolean; geohash: string }
+  >('stampDriverCell'),
   getCommuteMatches: callable<
     Record<string, never>,
     {
@@ -2047,6 +2058,17 @@ export interface CommuteScheduleInput {
   activeDays: CommuteDay[];
   genderPref: PoolGenderPref;
   active?: boolean;
+  /**
+   * Book this route for me automatically each morning it runs.
+   *
+   * The one setting in the app that spends money without the rider opening it
+   * that day, so it is off by default. A fresh booking sits at `requested`,
+   * where cancelling is free, and the backend switches this off by itself if
+   * the rides it books keep getting cancelled.
+   */
+  autoBook?: boolean;
+  /** Which car to auto-book. Bikes cannot be shared, so never 'bike'. */
+  autoBookRideType?: RideType;
 }
 
 export interface CommuteDemandSlot {

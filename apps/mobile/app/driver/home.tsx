@@ -291,6 +291,8 @@ export default function DriverHome() {
   useEffect(() => {
     let watchId: ReturnType<typeof setInterval> | undefined;
     if (online) {
+      /** Stamped once per shift, not per ping — see `stampDriverCell`. */
+      let cellStamped = false;
       const publish = (lat: number, lng: number) => {
         setDriverCoords({ lat, lng });
         if (uid) {
@@ -298,6 +300,22 @@ export default function DriverHome() {
             lastLocation: { lat, lng },
             lastSeenAt: serverTimestamp(),
           }, { merge: true }).catch(() => {});
+          /**
+           * The map cell the ride broadcast queries on. A sweep stamps it once
+           * a minute, which leaves a driver who has JUST gone online invisible
+           * for up to 60 seconds — the worst minute to be invisible, since a
+           * shared ride only has ten of them to find a car. So we ask the
+           * server to stamp it now, once, on the first fix of the shift.
+           *
+           * Server-side on purpose: the cell must be in geofire's format at
+           * full precision, and a second implementation on the phone drifting
+           * from that one would make drivers invisible rather than stale.
+           * Best-effort — the sweep is still the backstop.
+           */
+          if (!cellStamped) {
+            cellStamped = true;
+            api.stampDriverCell({ lat, lng }).catch(() => { cellStamped = false; });
+          }
         }
         // Relay the same fix onto the live trip. The passenger cannot read
         // drivers/{uid} — that document is the driver's own — so this copy is

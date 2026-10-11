@@ -300,7 +300,7 @@ export {
 // of reading every online driver in the country per call. Centralising that one
 // scan here is what makes the per-request cost independent of fleet size —
 // lib/nearbyDrivers.ts has the numbers.
-export { sweepDriverGeohashes } from './drivers/geohashSweeper';
+export { sweepDriverGeohashes, stampDriverCell } from './drivers/geohashSweeper';
 
 // Commute schedules — daily route registration + anonymised driver demand (Task 3)
 export {
