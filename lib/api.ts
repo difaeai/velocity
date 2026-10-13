@@ -114,6 +114,36 @@ export interface DriverCommissionReport {
 }
 
 /** Admin-only backend actions (each guarded by requireAdmin server-side). */
+/**
+ * What the daily market run did — see backend/functions/src/fare/marketRefresh.ts.
+ * One row per city × competitor × vehicle class it considered.
+ */
+export interface MarketRunRow {
+  cityId: string;
+  competitor: 'indrive' | 'yango';
+  category: 'moto' | 'rickshaw' | 'mini' | 'ac_car' | 'luxury';
+  outcome:
+    | 'no_reports' | 'insufficient_data' | 'poor_fit'
+    | 'confirmed' | 'updated' | 'created' | 'rejected_jump';
+  reportCount: number;
+  previousFare: number | null;
+  newFare: number | null;
+  movePct: number | null;
+  fitError: number | null;
+  ageDaysBefore: number | null;
+}
+
+export interface MarketRunReport {
+  ranAt: number;
+  citiesScanned: number;
+  reportsConsidered: number;
+  rows: MarketRunRow[];
+  updated: number;
+  confirmed: number;
+  wentStale: { cityId: string; competitor: string; category: string; ageDays: number }[];
+  degraded: boolean;
+}
+
 export const adminApi = {
   // ── Market desk ─────────────────────────────────────────────────────────
   // Competitor rate cards and the undercut rule. Nothing here scrapes anyone:
@@ -155,6 +185,17 @@ export const adminApi = {
     { cityId: string; distanceKm?: number; durationMin?: number },
     { cityId: string; distanceKm: number; durationMin: number; undercutPct: number; rows: unknown[] }
   >('adminMarketPosition'),
+  /**
+   * The daily run that refits every rate card from rider reports, and the
+   * report of what it last did. Running it by hand is for the desk — the
+   * schedule does this at 05:40 Asia/Karachi without being asked.
+   */
+  adminRefreshMarketRates: callable<Record<string, never>, { ok: boolean; report: MarketRunReport }>(
+    'adminRefreshMarketRates',
+  ),
+  adminMarketRunReport: callable<Record<string, never>, { ok: boolean; report: MarketRunReport | null }>(
+    'adminMarketRunReport',
+  ),
   approveDriver: callable<{ driverId: string }, { ok: boolean }>('approveDriver'),
   rejectDriver: callable<
     { driverId: string; reason?: string; suspend?: boolean; rejectedSections?: string[] },

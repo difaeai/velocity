@@ -168,6 +168,23 @@ export function MarketCompare({
 
   const { competitors, cheapest, velocityFare, savings, savingsPct, guaranteeMet } = comparison;
 
+  /**
+   * How old the freshest evidence behind these numbers is.
+   *
+   * Neither competitor publishes a fare, so this panel is never a live quote
+   * and has always said so. What it did not say was HOW old — and now that the
+   * cards refit themselves every morning from rider reports
+   * (backend fare/marketRefresh.ts), the age is the difference between a number
+   * confirmed yesterday and the last one anybody checked. A rider who can see
+   * that is a rider who can judge it.
+   */
+  const freshestDays = Math.min(...competitors.map((c) => c.ageDays));
+  const checkedLabel =
+    !Number.isFinite(freshestDays) ? null
+      : freshestDays < 1 ? 'Checked today'
+        : freshestDays < 2 ? 'Checked yesterday'
+          : `Checked ${Math.round(freshestDays)} days ago`;
+
   /* ── The strip that floats over the route ──
        Three lines and a badge. It used to be nine, and at that height it ran
        from under the route card all the way into the booking sheet, sitting on
@@ -213,7 +230,9 @@ export function MarketCompare({
                 Close to the market on a trip this short
               </Text>
             )}
-            <Text style={styles.mapNote}>Estimated, not a live quote</Text>
+            <Text style={styles.mapNote}>
+              {checkedLabel ? `${checkedLabel} · not a live quote` : 'Estimated, not a live quote'}
+            </Text>
             {onReport ? (
               <Pressable onPress={() => setReportOpen(true)} hitSlop={8}>
                 <Text style={styles.mapReport}>Saw another price?</Text>
@@ -278,8 +297,12 @@ export function MarketCompare({
         </Text>
       )}
 
-      <Text style={styles.disclaimer}>{disclaimer}</Text>
+      <Text style={styles.disclaimer}>
+        {checkedLabel ? `${checkedLabel}. ` : ''}{disclaimer}
+      </Text>
 
+      {/* The only thing keeping these cards true. Every report feeds the daily
+          refit, so this link is not feedback — it is the data source. */}
       {onReport ? (
         <Pressable onPress={() => setReportOpen(true)} hitSlop={8}>
           <Text style={styles.reportLink}>Seen a different price? Tell us →</Text>

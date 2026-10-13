@@ -77,6 +77,7 @@ import {
   type RideAreaGroup,
 } from '../../src/lib/rideSearch';
 import { useGenderPref } from '../../src/hooks/genderPref';
+import { BookingForPicker } from '../../src/ui/BookingForPicker';
 import { PoolIcon } from '../../src/ui/RideIcons';
 
 /** How far out to look, in the rider's own words. */
@@ -553,33 +554,18 @@ export default function SuggestedRidesScreen() {
            One control, set once, and it governs the whole screen: the feed is
            rebuilt for that passenger and every Join sends the same answer. A
            rider taking a seat for themselves — almost everybody — never has to
-           touch it, so it costs the common path one glance and no taps. ── */}
+           touch it, so it costs the common path one glance and no taps.
+
+           Same control as the booking sheet's, and for the same reason: the
+           question is about the passenger's GENDER, so it asks for one and
+           fills in the booker's own by default. What it sends is still a
+           relationship — see BookingForPicker. ── */}
       <View style={styles.forWhoRow}>
-        <Text style={styles.forWhoLabel}>Booking for</Text>
-        {(['self', 'other'] as BookedFor[]).map((v) => {
-          const on = bookedFor === v;
-          return (
-            <Pressable
-              key={v}
-              style={[styles.forWhoChip, on && styles.forWhoChipOn]}
-              onPress={() => setBookedFor(v)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={v === 'self' ? 'Booking for me' : 'Booking for someone else'}
-            >
-              <Text style={[styles.forWhoTxt, on && styles.forWhoTxtOn]}>
-                {v === 'self' ? 'Me' : 'Someone else'}
-              </Text>
-            </Pressable>
-          );
-        })}
+        <Text style={styles.forWhoLabel}>This seat is for</Text>
+        <View style={{ flex: 1 }}>
+          <BookingForPicker value={bookedFor} onChange={setBookedFor} gender={gender} />
+        </View>
       </View>
-      {bookedFor === 'other' ? (
-        <Text style={styles.forWhoNote}>
-          Showing rides for a passenger of the other gender. The riders already in a car
-          are told the seat was booked by someone else, and they can decline it.
-        </Text>
-      ) : null}
 
       {/* ── Where you will be picked up ──
            Only rendered when our own places registry actually has somewhere
@@ -885,17 +871,6 @@ const styles = themed(() => StyleSheet.create({
   forWhoLabel: {
     color: colors.muted, fontSize: 11, fontWeight: '800',
     letterSpacing: 0.3, marginRight: 2,
-  },
-  forWhoChip: {
-    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 9,
-    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
-  },
-  forWhoChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  forWhoTxt: { color: colors.muted, fontSize: 12, fontWeight: '800' },
-  forWhoTxtOn: { color: colors.primary },
-  forWhoNote: {
-    marginHorizontal: 16, marginBottom: 10,
-    color: colors.muted, fontSize: 11, lineHeight: 15, fontWeight: '600',
   },
 
   /* ── Named pickup points ── see the note at their usage. ── */

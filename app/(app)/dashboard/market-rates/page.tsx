@@ -24,7 +24,7 @@ import Link from 'next/link';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
-import { adminApi } from '@/lib/api';
+import { adminApi, type MarketRunReport } from '@/lib/api';
 import { colors } from '@/lib/config';
 import { Button, Card } from '@/components/ui';
 
@@ -141,6 +141,8 @@ export default function MarketRatesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The last nightly refit's report. Null until it has run once. */
+  const [run, setRun] = useState<MarketRunReport | null>(null);
 
   // Which card is open in the editor, as "competitor:category".
   const [editing, setEditing] = useState<string | null>(null);
@@ -224,6 +226,37 @@ export default function MarketRatesPage() {
   function flash(msg: string) {
     setNotice(msg);
     setTimeout(() => setNotice(null), 3500);
+  }
+
+  /**
+   * What the nightly refit last did. Read once on mount rather than with the
+   * city data: the run is global, so re-reading it every time somebody switches
+   * city would be a call per tab-press for a report that has not changed.
+   */
+  useEffect(() => {
+    let alive = true;
+    void adminApi.adminMarketRunReport({} as Record<string, never>)
+      .then((res) => { if (alive) setRun(res.report); })
+      .catch(() => { /* the cards below are still worth showing without it */ });
+    return () => { alive = false; };
+  }, []);
+
+  async function runRefreshNow() {
+    setBusy('refresh');
+    setError(null);
+    try {
+      const res = await adminApi.adminRefreshMarketRates({} as Record<string, never>);
+      setRun(res.report);
+      flash(
+        `Run finished — ${res.report.updated} card(s) refitted, ${res.report.confirmed} confirmed, `
+        + `from ${res.report.reportsConsidered} rider report(s).`,
+      );
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not run the refresh.');
+    } finally {
+      setBusy(null);
+    }
   }
 
   function openEditor(competitor: Competitor, category: VehicleCategory) {
@@ -324,6 +357,10 @@ export default function MarketRatesPage() {
   }
 
   const behind = position.filter((r) => r.available && !r.guaranteeMet);
+  /** Rows worth a human's attention: everything the run refused to act on. */
+  const runProblems = (run?.rows ?? []).filter(
+    (r) => r.outcome === 'poor_fit' || r.outcome === 'rejected_jump',
+  );
 
   if (loading) return <div style={{ color: colors.muted, padding: 20 }}>Loading…</div>;
 
@@ -356,6 +393,115 @@ export default function MarketRatesPage() {
 
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
       {notice && <div style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>✓ {notice}</div>}
+
+      {/* ── 0. The nightly refit ──
+           Cards used to go stale because keeping them fresh meant a human
+           pressing "Fit from reports" on each one, every few weeks. A scheduled
+           job now does it at 05:40 Asia/Karachi for every city and class, and
+           this is the record of what it decided. Everything it refused to do is
+           listed, because a refusal is the interesting half: it means we are
+           still pricing against an older card than we would like. ── */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 22 }}>🔄</span>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: colors.text }}>Nightly refit</div>
+            <div style={{ fontSize: 12, color: colors.muted }}>
+              05:40 Asia/Karachi, every day — every card refitted from the rider reports of the
+              last {settings.maxAgeDays} days. No competitor is ever scraped; there is no lawful
+              source to scrape.
+            </div>
+          </div>
+          <Button onClick={runRefreshNow} disabled={busy === 'refresh'}>
+            {busy === 'refresh' ? 'Running…' : 'Run now'}
+          </Button>
+        </div>
+
+        {run ? (
+          <>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13, marginBottom: 10 }}>
+              <span style={{ color: colors.muted }}>
+                Last run <strong style={{ color: colors.text }}>
+                  {new Date(run.ranAt).toLocaleString('en-PK')}
+                </strong>
+              </span>
+              <span style={{ color: colors.muted }}>
+                <strong style={{ color: colors.text }}>{run.reportsConsidered}</strong> rider reports
+              </span>
+              <span style={{ color: colors.muted }}>
+                <strong style={{ color: colors.primary }}>{run.updated}</strong> refitted
+              </span>
+              <span style={{ color: colors.muted }}>
+                <strong style={{ color: colors.text }}>{run.confirmed}</strong> confirmed
+              </span>
+              <span style={{ color: colors.muted }}>
+                <strong style={{ color: run.wentStale.length ? colors.danger : colors.text }}>
+                  {run.wentStale.length}
+                </strong> gone stale
+              </span>
+            </div>
+
+            {run.degraded && (
+              <div style={{
+                border: `1px solid ${colors.danger}`, background: `${colors.danger}18`,
+                borderRadius: 10, padding: 12, marginBottom: 10, fontSize: 13, lineHeight: 1.5,
+              }}>
+                <strong style={{ color: colors.danger }}>Reports came in and none of them produced a card.</strong>{' '}
+                That is a data problem rather than a quiet fortnight — check the reports for
+                nonsense distances or fares before trusting the next run.
+              </div>
+            )}
+
+            {runProblems.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 620 }}>
+                  <thead>
+                    <tr style={{ color: colors.muted, textAlign: 'left' }}>
+                      <th style={{ padding: '6px 6px' }}>City</th>
+                      <th style={{ padding: '6px 6px' }}>Competitor</th>
+                      <th style={{ padding: '6px 6px' }}>Class</th>
+                      <th style={{ padding: '6px 6px' }}>Reports</th>
+                      <th style={{ padding: '6px 6px' }}>What it refused, and why</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runProblems.map((r, i) => (
+                      <tr key={i} style={{ borderTop: `1px solid ${colors.border}` }}>
+                        <td style={{ padding: '6px 6px', color: colors.muted }}>{r.cityId}</td>
+                        <td style={{ padding: '6px 6px', color: colors.text }}>{r.competitor}</td>
+                        <td style={{ padding: '6px 6px', color: colors.text }}>
+                          {CATEGORIES.find((c) => c.key === r.category)?.label ?? r.category}
+                        </td>
+                        <td style={{ padding: '6px 6px', color: colors.muted }}>{r.reportCount}</td>
+                        <td style={{ padding: '6px 6px', color: colors.muted, lineHeight: 1.45 }}>
+                          {r.outcome === 'poor_fit'
+                            ? `The reports do not describe one rate card (off by ${
+                                r.fitError != null ? `${Math.round(r.fitError * 100)}%` : 'too much'
+                              } on average). Card kept as it was.`
+                            : `Would have moved the fare ${
+                                r.movePct != null ? `${Math.round(r.movePct * 100)}%` : 'a long way'
+                              } in a day against a card that is still fresh. Card kept — confirm it by hand if the market really did move.`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {runProblems.length === 0 && !run.degraded && (
+              <div style={{ fontSize: 12.5, color: colors.muted }}>
+                Nothing was refused on the last run.
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: colors.muted }}>
+            It has not run yet — or the report has not been written. Press <strong>Run now</strong> to
+            do it immediately.
+          </div>
+        )}
+      </Card>
 
       {/* ── 1. Where we stand ── */}
       <Card style={{ marginBottom: 24 }}>

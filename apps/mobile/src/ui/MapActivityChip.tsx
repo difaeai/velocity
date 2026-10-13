@@ -25,6 +25,13 @@ import { themed } from '../theme';
  * segment, because "2 waiting" is the number that tells a driver-curious user
  * there is money on the table right now.
  *
+ * WITH NOTHING AROUND, THIS RENDERS NOTHING. It used to say "Quiet around you
+ * right now" — true, and worth exactly one line of a rider's attention the
+ * first time they read it. That strip of map belongs to the sharing-preference
+ * pill now (see ShareGenderSelector), which has something to ask rather than
+ * something to report, and two chips stacked over the same corner is one chip
+ * too many. A quiet map already says "quiet" by itself.
+ *
  * Non-interactive on purpose. It floats over a map the user pans and pinches, so
  * it must never swallow a gesture; anything actionable belongs in the sheet.
  */
@@ -41,42 +48,37 @@ export function MapActivityChip({
   passengerCount: number;
   waitingCount: number;
 }) {
-  const quiet = driverCount === 0 && passengerCount === 0;
+  // Nothing online and nobody around: no chip at all. See the file note.
+  if (driverCount === 0 && passengerCount === 0) return null;
 
   return (
     <View style={styles.chip} pointerEvents="none">
-      {quiet ? (
-        <Text style={styles.quietText}>Quiet around you right now</Text>
-      ) : (
+      <View style={styles.item}>
+        <CarMarkIcon size={13} color={colors.text} accent={colors.primary} />
+        <Text style={styles.count}>{carCount}</Text>
+        <Text style={styles.label}>{carCount === 1 ? 'car' : 'cars'}</Text>
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.item}>
+        <BikeMarkIcon size={13} color={colors.text} accent={colors.primary} />
+        <Text style={styles.count}>{bikeCount}</Text>
+        <Text style={styles.label}>{bikeCount === 1 ? 'bike' : 'bikes'}</Text>
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.item}>
+        <RiderMarkIcon size={12} color="#ef4444" />
+        <Text style={styles.count}>{passengerCount}</Text>
+        <Text style={styles.label}>{passengerCount === 1 ? 'passenger' : 'passengers'}</Text>
+      </View>
+      {waitingCount > 0 ? (
         <>
-          <View style={styles.item}>
-            <CarMarkIcon size={13} color={colors.text} accent={colors.primary} />
-            <Text style={styles.count}>{carCount}</Text>
-            <Text style={styles.label}>{carCount === 1 ? 'car' : 'cars'}</Text>
-          </View>
           <View style={styles.divider} />
           <View style={styles.item}>
-            <BikeMarkIcon size={13} color={colors.text} accent={colors.primary} />
-            <Text style={styles.count}>{bikeCount}</Text>
-            <Text style={styles.label}>{bikeCount === 1 ? 'bike' : 'bikes'}</Text>
+            <Text style={styles.waitingCount}>{waitingCount}</Text>
+            <Text style={styles.label}>waiting</Text>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.item}>
-            <RiderMarkIcon size={12} color="#ef4444" />
-            <Text style={styles.count}>{passengerCount}</Text>
-            <Text style={styles.label}>{passengerCount === 1 ? 'passenger' : 'passengers'}</Text>
-          </View>
-          {waitingCount > 0 ? (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.item}>
-                <Text style={styles.waitingCount}>{waitingCount}</Text>
-                <Text style={styles.label}>waiting</Text>
-              </View>
-            </>
-          ) : null}
         </>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -112,5 +114,4 @@ const styles = themed(() => StyleSheet.create({
     height: 12,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
-  quietText: { fontSize: 10.5, fontWeight: '700', color: colors.muted },
 }));
