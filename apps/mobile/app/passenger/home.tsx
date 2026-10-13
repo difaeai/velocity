@@ -550,7 +550,7 @@ export default function PassengerHome() {
       <ShareGenderSheet
         open={genderSheet !== null}
         onClose={() => setGenderSheet(null)}
-        onChosen={() => genderSheet?.next?.()}
+        onChosen={genderSheet?.next ?? undefined}
         reason={
           genderSheet?.next
             ? 'One question before your first shared seat. It decides which shared cars we show you and who can sit beside you — riding solo is never affected.'

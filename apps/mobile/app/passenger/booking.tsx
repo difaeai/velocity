@@ -2138,9 +2138,9 @@ export default function Booking() {
           rider has not given; the Sharing card is one tap away either way. */}
       <ShareGenderSheet
         open={genderGateOpen}
-        onClose={() => {
+        onClose={(chosen) => {
           setGenderGateOpen(false);
-          if (needsShareGender) setMode('solo');
+          if (!chosen) setMode('solo');
         }}
         onChosen={() => {
           setMode('pool');
