@@ -42,7 +42,7 @@ import { Text } from './Text';
 
 import { api } from '../api/client';
 // Colours here are light-on-dark literals, not theme tokens: this card sits in
-// the home sheet, which is dark in BOTH themes — see SharedRideGenderStrip.
+// the home sheet, which is dark in BOTH themes — see ShareGenderSelector.
 import { themed } from '../theme';
 
 interface Matches {

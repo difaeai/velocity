@@ -1,9 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  Dimensions,
-  Linking,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,24 +29,22 @@ import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/sug
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
-import { comingSoon } from '../../src/ui/components';
 import { DEFAULT_SNAP_POINTS, DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { MapActivityChip } from '../../src/ui/MapActivityChip';
 import { NewsTicker } from '../../src/ui/NewsTicker';
-import { SharedRideGenderStrip } from '../../src/ui/SharedRideGenderStrip';
+import {
+  ShareGenderPill,
+  ShareGenderSheet,
+  useNeedsShareGender,
+} from '../../src/ui/ShareGenderSelector';
+import { PassengerDrawer } from '../../src/ui/PassengerDrawer';
 import { CommuteMatchCard } from '../../src/ui/CommuteMatchCard';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
-import {
-  IntercityIcon,
-  MicIcon,
-  SearchIcon,
-} from '../../src/ui/ServiceIcons';
-import { PoolIcon } from '../../src/ui/RideIcons';
+import { MicIcon, SearchIcon } from '../../src/ui/ServiceIcons';
+import { PoolIcon, SoloIcon } from '../../src/ui/RideIcons';
 import { isRecognitionAvailable } from '../../src/voice/speech';
-
-const { width } = Dimensions.get('window');
 
 /**
  * Which DEFAULT_SNAP_POINTS height the booking sheet opens at. Named here because
@@ -173,21 +168,39 @@ export default function PassengerHome() {
 
   const pickupLabel = currentAddress ?? (coords ? 'Current location' : 'Set pickup location');
 
-  const navTo = (path: string) => {
+  const navTo = useCallback((path: string) => {
     setDrawerOpen(false);
-    router.push(path);
-  };
-  const soon = (feature: string) => {
-    setDrawerOpen(false);
-    comingSoon(feature);
-  };
-  const goDriverMode = () => {
+    // The drawer is a Modal: pushing a route out from under one that is still
+    // on screen leaves the overlay behind on Android. Let it close first.
+    setTimeout(() => router.push(path as Parameters<typeof router.push>[0]), 200);
+  }, [router]);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const goProfile = useCallback(() => navTo('/passenger/profile'), [navTo]);
+  const goDriverMode = useCallback(() => {
     setDrawerOpen(false);
     // Already signed in — becoming a driver never re-asks for a number/OTP.
     // useDriverEntry decides: registration steps, application status, or the
     // driver home if an admin has already approved them.
     driverEntry.go();
-  };
+  }, [driverEntry]);
+  const doSignOut = useCallback(() => {
+    setDrawerOpen(false);
+    signOut();
+  }, [signOut]);
+
+  /* ── The sharing-preference gate ─────────────────────────────────
+     Every way into a shared seat passes through here. With the question
+     unanswered the tap opens the chooser instead of the screen, and the screen
+     follows the moment an answer is saved — so the rider is interrupted once,
+     ever, and lands exactly where they were going. A rider who only ever
+     travels alone never meets it. See src/ui/ShareGenderSelector.tsx. ── */
+  const needsShareGender = useNeedsShareGender();
+  const [genderSheet, setGenderSheet] = useState<{ next: (() => void) | null } | null>(null);
+  const goSharing = useCallback((path: string) => {
+    const open = () => router.push(path as Parameters<typeof router.push>[0]);
+    if (needsShareGender) setGenderSheet({ next: open });
+    else open();
+  }, [needsShareGender, router]);
 
   return (
     <View style={styles.container}>
@@ -278,6 +291,15 @@ export default function PassengerHome() {
             waitingCount={activity.waitingCount}
           />
         ) : null}
+
+        {/* Who this rider will share a car with — the question that used to sit
+            in a card at the bottom of the sheet, where it was below the fold on
+            a small handset and cost the ride tiles a block of height. On the map
+            it costs the sheet nothing, it is visible the moment the app opens,
+            and it is where a shared-ride tap is sent when it has not been
+            answered. The activity chip above renders nothing on a quiet map, so
+            on most first opens this pill has the strip to itself. */}
+        <ShareGenderPill onPress={() => setGenderSheet({ next: null })} />
       </SafeAreaView>
 
       {/* 3. Bottom Booking Sheet — drag the grabber to resize it, or tap the
@@ -388,30 +410,32 @@ export default function PassengerHome() {
           ) : null}
         </View>
 
-        {/* ── Ride sharing ──────────────────────────────────────
-             Two ways to take a seat in a car that is going anyway, side by side
-             because they are the same offer at two distances: shared rides
-             around this rider now, and the intercity board for another day.
+        {/* ── The two ways to ride ──────────────────────────────
+             Share a car, or have it to yourself. Side by side because that is
+             the actual choice in front of a rider, and it belongs here rather
+             than three taps deep inside the booking sheet.
 
-             City to City used to be a tile in a "Services" grid next to
-             Couriers — which put a bus journey and a parcel in the same breath.
-             Couriers has moved to the drawer (it is not a ride), so the two
-             journeys share a row and the section says what they are.
+             City to City used to hold the right-hand tile. It is a journey
+             planned for another day, not one hailed off the map in front of
+             you, so it has moved to the drawer under Special Rides and this
+             row asks the one question home should be asking.
 
-             Boxes rather than two full-width rows: the pair costs the sheet one
-             tile's height instead of two, which is what keeps Travel Partner
-             and Earn on the first screen. ── */}
-        <Text style={styles.sectionLabel}>Ride sharing</Text>
+             Who you will share WITH is asked on the map now, not under these
+             tiles — see ShareGenderPill. ── */}
+        <Text style={styles.sectionLabel}>How will you ride?</Text>
 
         <View style={styles.rideTiles}>
           {/* Shared cars near this rider that still have a seat, whichever way
               they were created — a shared ride somebody booked, riders clubbing
               together, or a driver selling seats on a route they are already
               driving. Full cars never appear (the server drops them), so the
-              count is seats that can actually be taken. */}
+              count is seats that can actually be taken.
+
+              Tapping it with the sharing preference unanswered opens the
+              chooser first and comes back here — see goSharing. */}
           <Pressable
             style={({ pressed }) => [styles.rideTile, styles.rideTileLime, pressed && { opacity: 0.85 }]}
-            onPress={() => router.push('/passenger/suggested-rides')}
+            onPress={() => goSharing('/passenger/suggested-rides')}
             accessibilityRole="button"
             accessibilityLabel="Shared rides — cars near you with a seat free"
           >
@@ -447,34 +471,34 @@ export default function PassengerHome() {
             ) : null}
           </Pressable>
 
-          {/* The same offer over a longer distance. Keeps the tile geometry and
-              drops the lime: that edge means "near you, right now", and an
-              intercity seat is neither. */}
+          {/* The whole car, to yourself. Straight into the booking flow with
+              Solo already chosen (`mode=solo`), because a rider who tapped
+              "Ride Solo" has already answered the only question the ride sheet
+              would have asked them about sharing.
+
+              No lime: that edge means "shared, near you, right now", and a solo
+              car is the one ride where nothing is happening around you. */}
           <Pressable
             style={({ pressed }) => [styles.rideTile, pressed && { opacity: 0.85 }]}
-            onPress={() => router.push('/passenger/city-to-city')}
+            onPress={() => router.push('/passenger/booking?mode=solo')}
             accessibilityRole="button"
-            accessibilityLabel="City to City — intercity seats between Pakistani cities"
+            accessibilityLabel="Ride Solo — the whole car to yourself"
           >
             <View style={styles.rideTileTop}>
               <View style={styles.rideTileIcon}>
-                <IntercityIcon size={19} color="#ffffff" />
+                <SoloIcon size={19} color="#ffffff" />
               </View>
               <Text style={styles.suggestedArrow}>→</Text>
             </View>
-            <Text style={styles.rideTileTitle} numberOfLines={1}>City to City</Text>
+            <Text style={styles.rideTileTitle} numberOfLines={1}>Ride Solo</Text>
             <Text style={styles.rideTileSub} numberOfLines={2}>
-              Intercity seats — pick a city and a day
+              The whole car to yourself — nobody else joins
+            </Text>
+            <Text style={styles.rideTileAccentMuted} numberOfLines={1}>
+              Name your own fare
             </Text>
           </Pressable>
         </View>
-
-        {/* ── Who will you share with? ────────────────────────────
-             Under the tiles it governs, not in the way of "Where to?": the
-             answer decides which shared cars the app shows and which joins the
-             server accepts, and it has no bearing at all on a solo ride. A
-             rider who always travels alone can ignore it forever. ── */}
-        <SharedRideGenderStrip />
 
         {/* ── Your daily route ──
              Directly under the shared-ride tiles, because it is the same offer
@@ -499,169 +523,40 @@ export default function PassengerHome() {
         </ScrollView>
       </DraggableSheet>
 
-      {/* 5. Custom Slide-out Side Drawer Menu Overlay */}
-      <Modal
+      {/* 5. The menu — every feature in the app, drawn and animated.
+             It was ~180 lines of inline Modal here; it is its own component now
+             because it has real behaviour (a staggered entrance, press
+             feedback, pulsing unread badges) that has no business living in the
+             middle of the home screen. See src/ui/PassengerDrawer.tsx. */}
+      <PassengerDrawer
         visible={drawerOpen}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setDrawerOpen(false)}
-      >
-        <View style={styles.drawerOverlay}>
-          {/* Drawer Content — rendered first so it sits on the LEFT */}
-          <View style={styles.drawerContent}>
-            <SafeAreaView style={styles.drawerSafeArea}>
-              <ScrollView contentContainerStyle={styles.drawerScroll}>
-                {/* User Header Profile */}
-                <Pressable
-                  style={styles.profileHeader}
-                  onPress={() => {
-                    setDrawerOpen(false);
-                    router.push('/passenger/profile');
-                  }}
-                >
-                  <View style={styles.avatarCircle}>
-                    <Text style={styles.avatarSmile}>☺</Text>
-                  </View>
-                  <View style={styles.profileInfo}>
-                    <Text style={styles.profileName} numberOfLines={1}>
-                      {user?.displayName ?? user?.email ?? 'Your account'}
-                    </Text>
-                    {user?.email ? (
-                      <Text style={styles.profileEmail} numberOfLines={1}>{user.email}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.profileArrow}>➔</Text>
-                </Pressable>
+        onClose={closeDrawer}
+        name={user?.displayName ?? user?.email ?? 'Your account'}
+        email={user?.email ?? null}
+        isDriver={role === 'driver'}
+        walletHidden={walletHidden}
+        walletLabel={walletLabel}
+        messagesUnread={messagesUnread}
+        supportUnread={supportUnread}
+        onNavigate={navTo}
+        onProfile={goProfile}
+        onDriverMode={goDriverMode}
+        onSignOut={doSignOut}
+      />
 
-                {/* List Items */}
-                <View style={styles.menuList}>
-                  <Pressable style={[styles.menuItem, styles.menuItemActive]} onPress={() => setDrawerOpen(false)}>
-                    <Text style={styles.menuItemIcon}>🚗</Text>
-                    <Text style={[styles.menuItemText, styles.menuItemTextActive]}>City</Text>
-                  </Pressable>
-
-                  {/* Hidden until the wallet economy officially launches — until
-                      then the app presents itself as cash-only. */}
-                  {walletHidden ? null : (
-                    <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/wallet')}>
-                      <Text style={styles.menuItemIcon}>💳</Text>
-                      <Text style={styles.menuItemText}>{walletLabel}</Text>
-                    </Pressable>
-                  )}
-
-                  {/* Straight to the advertising screen — no hub in between. The
-                      business-delivery quote form that used to share this entry
-                      was removed (2026-09-15). */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/business-ads')}>
-                    <Text style={styles.menuItemIcon}>📣</Text>
-                    <Text style={styles.menuItemText}>Find my Customers</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/special-rides')}>
-                    <Text style={styles.menuItemIcon}>🚗</Text>
-                    <Text style={styles.menuItemText}>Special Rides</Text>
-                  </Pressable>
-
-                  {/* Sending a parcel is not booking a ride, and on the home
-                      screen it was a tile of equal weight beside the intercity
-                      board — the one errand in a list of journeys. It lives
-                      here now; home is rides only. */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/couriers')}>
-                    <Text style={styles.menuItemIcon}>📦</Text>
-                    <Text style={styles.menuItemText}>Couriers — send a parcel</Text>
-                  </Pressable>
-
-                  {/* City to City and Notifications intentionally live only on
-                      the home screen (a row under Suggested Rides and the
-                      header bell) — duplicating them here just made the drawer
-                      longer. */}
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/daily-routes')}>
-                    <Text style={styles.menuItemIcon}>🛣️</Text>
-                    <Text style={styles.menuItemText}>My routes</Text>
-                  </Pressable>
-
-                  {/* Gender-aware pool discovery. The booking flow finds pools on
-                      the route you just typed; this browses every shared ride
-                      nearby and honours the mixed-gender seating rules, so it
-                      needs its own way in. */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/pool-request/nearby')}>
-                    <Text style={styles.menuItemIcon}>👥</Text>
-                    <Text style={styles.menuItemText}>Nearby sharing rides</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate')}>
-                    <Text style={styles.menuItemIcon}>🤝</Text>
-                    <Text style={styles.menuItemText}>Travel Partner</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/earn')}>
-                    <Text style={styles.menuItemIcon}>💸</Text>
-                    <Text style={styles.menuItemText}>Earn with Velocity Rides</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/travel-mate/matches')}>
-                    <Text style={styles.menuItemIcon}>💬</Text>
-                    <Text style={styles.menuItemText}>Matches & Groups</Text>
-                  </Pressable>
-
-                  {/* Every conversation in the app: Travel Partner, the driver
-                      of a ride, and the businesses whose offers this rider
-                      asked about. Replaces the old "My questions" row, which
-                      was one of those three and pretended to be all of them. */}
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/messages')}>
-                    <Text style={styles.menuItemIcon}>✉️</Text>
-                    <Text style={[styles.menuItemText, styles.menuItemTextGrow]}>Messages</Text>
-                    {messagesUnread > 0 ? (
-                      <View style={styles.menuBadge}>
-                        <Text style={styles.menuBadgeText}>
-                          {messagesUnread > 9 ? '9+' : messagesUnread}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/safety')}>
-                    <Text style={styles.menuItemIcon}>🛡️</Text>
-                    <Text style={styles.menuItemText}>Safety Centre</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/passenger/settings')}>
-                    <Text style={styles.menuItemIcon}>⚙️</Text>
-                    <Text style={styles.menuItemText}>Settings</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => navTo('/support')}>
-                    <Text style={styles.menuItemIcon}>⚡</Text>
-                    <Text style={[styles.menuItemText, styles.menuItemTextGrow]}>Help & complaints</Text>
-                    {supportUnread > 0 ? (
-                      <View style={styles.menuBadge}>
-                        <Text style={styles.menuBadgeText}>
-                          {supportUnread > 9 ? '9+' : supportUnread}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </Pressable>
-
-                  <Pressable style={styles.menuItem} onPress={() => { setDrawerOpen(false); signOut(); }}>
-                    <Text style={styles.menuItemIcon}>🚪</Text>
-                    <Text style={[styles.menuItemText, { color: colors.danger }]}>Sign out</Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-
-              {/* Bottom Driver Mode Trigger */}
-              <View style={styles.drawerFooter}>
-                <Pressable style={styles.driverModeButton} onPress={goDriverMode}>
-                  <Text style={styles.driverModeText}>{role === 'driver' ? 'Driver mode' : 'Become a driver'}</Text>
-                </Pressable>
-              </View>
-            </SafeAreaView>
-          </View>
-          {/* Backdrop on the RIGHT — tapping closes the drawer */}
-          <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
-        </View>
-      </Modal>
+      {/* The sharing-preference chooser. Opened by the map pill, and by any
+          shared-ride tap made before the question has been answered — in which
+          case `next` carries that tap on to where it was going. */}
+      <ShareGenderSheet
+        open={genderSheet !== null}
+        onClose={() => setGenderSheet(null)}
+        onChosen={() => genderSheet?.next?.()}
+        reason={
+          genderSheet?.next
+            ? 'One question before your first shared seat. It decides which shared cars we show you and who can sit beside you — riding solo is never affected.'
+            : null
+        }
+      />
 
     </View>
   );
@@ -1106,6 +1001,10 @@ const styles = themed(() => StyleSheet.create({
      Lime rather than grey: it answers a different question from the line above
      it and should not read as a continuation of it. */
   rideTileAccent: { color: '#ccff00', fontSize: 10.5, fontWeight: '800', marginTop: 2 },
+  /* The same line on the non-lime tile. Grey rather than lime for the same
+     reason that tile has no lime edge: Solo is not the "right now, near you"
+     offer, and painting its footnote brand-colour would say it was. */
+  rideTileAccentMuted: { color: '#7d8482', fontSize: 10.5, fontWeight: '800', marginTop: 2 },
   suggestedCount: {
     minWidth: 26,
     height: 26,
@@ -1117,117 +1016,6 @@ const styles = themed(() => StyleSheet.create({
   },
   suggestedCountTxt: { color: '#0b0d0c', fontSize: 12.5, fontWeight: '900' },
   suggestedArrow: { color: '#7d8482', fontSize: 16, fontWeight: '800' },
-  drawerOverlay: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  drawerBackdrop: {
-    flex: 1,
-  },
-  drawerContent: {
-    width: width * 0.78,
-    height: '100%',
-    backgroundColor: 'rgba(16,18,17,0.94)',
-    borderRightWidth: 1,
-    borderRightColor: colors.glassStrong,
-  },
-  drawerSafeArea: {
-    flex: 1,
-  },
-  drawerScroll: {
-    paddingBottom: 20,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassStrong,
-  },
-  avatarCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.glassStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarSmile: {
-    fontSize: 28,
-    color: '#ffffff',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  profileEmail: {
-    fontSize: 12,
-    color: '#8a8c8c',
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  stars: {
-    color: '#ffc107',
-    fontSize: 10,
-  },
-  ratingValue: {
-    fontSize: 11,
-    color: '#8a8c8c',
-  },
-  profileArrow: {
-    color: '#8a8c8c',
-    fontSize: 14,
-  },
-  menuList: {
-    paddingVertical: 10,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    gap: 14,
-  },
-  menuItemActive: {
-    backgroundColor: colors.glassStrong,
-  },
-  menuItemIcon: {
-    fontSize: 18,
-  },
-  menuItemText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#d1d5db',
-  },
-  /** Only rows carrying a trailing badge need the label to take the slack. */
-  menuItemTextGrow: {
-    flex: 1,
-  },
-  menuBadge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 6,
-    backgroundColor: colors.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuBadgeText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
   hamburgerDot: {
     position: 'absolute',
     top: 7,
@@ -1240,28 +1028,6 @@ const styles = themed(() => StyleSheet.create({
     // Matches the button's own fill, not a theme token: that fill is a fixed
     // rgba because the button floats over the map in both themes.
     borderColor: 'rgba(18,21,20,0.95)',
-  },
-  menuItemTextActive: {
-    color: '#ffffff',
-    fontWeight: '800',
-  },
-  drawerFooter: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: colors.glassStrong,
-    gap: 16,
-  },
-  driverModeButton: {
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: '#ccff00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  driverModeText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '900',
   },
 }));
 

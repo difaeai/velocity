@@ -340,6 +340,12 @@ export {
   getMarketComparison, reportCompetitorQuote,
   adminUpsertMarketRates, adminDeleteMarketRates, adminFitMarketRates, adminMarketPosition,
 } from './fare';
+// …and the daily run that keeps those cards true without anyone pressing a
+// button. See fare/marketRefresh.ts — it refits from rider reports only; there
+// is still no lawful source for a competitor's published fare.
+export {
+  refreshMarketRates, adminRefreshMarketRates, adminMarketRunReport,
+} from './fare';
 
 // Intercity travel — booking, chat, admin trip management
 export {

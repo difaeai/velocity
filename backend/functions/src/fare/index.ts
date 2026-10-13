@@ -3,5 +3,8 @@ export {
   getMarketComparison, reportCompetitorQuote,
   adminUpsertMarketRates, adminDeleteMarketRates, adminFitMarketRates, adminMarketPosition,
 } from './marketFunctions';
+export {
+  refreshMarketRates, adminRefreshMarketRates, adminMarketRunReport,
+} from './marketRefresh';
 export * from './fareEngine';
 export * from './marketRates';

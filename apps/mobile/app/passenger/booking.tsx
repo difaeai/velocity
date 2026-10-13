@@ -83,6 +83,8 @@ import {
   DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap, restateAgainstOffer,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
+import { BookingForPicker } from '../../src/ui/BookingForPicker';
+import { ShareGenderSheet, useNeedsShareGender } from '../../src/ui/ShareGenderSelector';
 import { PriceNotice } from '../../src/ui/PriceNotice';
 import { EdgeFade } from '../../src/ui/components';
 
@@ -240,6 +242,8 @@ export default function Booking() {
     voiceRideType?: string;
     voicePool?: string;
     voiceSeats?: string;
+    /** 'solo' when home's Ride Solo tile opened this screen — see below. */
+    mode?: string;
   }>();
   const { user, role } = useAuth();
   // The ride sheet is absolutely pinned to the screen bottom; edge-to-edge
@@ -415,7 +419,11 @@ export default function Booking() {
   // themselves is one tap away. A voice booking that explicitly said "alone"
   // still gets Solo.
   const [mode, setMode] = useState<'solo' | 'pool'>(
-    voicePrefill && !voicePrefill.pool ? 'solo' : 'pool',
+    // Home's "Ride Solo" tile is an answer to this question, not a shortcut to
+    // the screen that asks it: arriving with mode=solo means the rider has
+    // already said they want the car to themselves, and re-defaulting them into
+    // sharing would be overruling the tap they just made.
+    params.mode === 'solo' || (voicePrefill && !voicePrefill.pool) ? 'solo' : 'pool',
   );
   const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
 
@@ -462,6 +470,14 @@ export default function Booking() {
    * everybody's path is how a booking flow loses people.
    */
   const [bookedFor, setBookedFor] = useState<BookedFor>('self');
+  /**
+   * Whether this rider still owes us the "who will you share with?" answer, and
+   * the sheet that collects it. Sharing is this screen's DEFAULT mode, so the
+   * gate also has to fire for a rider who never touches the selector at all —
+   * see the effect below.
+   */
+  const needsShareGender = useNeedsShareGender();
+  const [genderGateOpen, setGenderGateOpen] = useState(false);
   // Voice booking can arrive with a passenger count already spoken ("do banday
   // hain"). The typed flow has no seat picker and never calls the setter.
   const [seats, setSeats] = useState(voicePrefill?.seats ?? 1);
@@ -675,6 +691,23 @@ export default function Booking() {
     return marketFor(rt).fare;
   }
 
+  /**
+   * Sharing is this screen's default mode, so most riders reach a shared-seat
+   * price without ever touching the Solo/Sharing selector that `pickMode`
+   * guards. This is that path's gate: the first time the ride sheet is shown
+   * with sharing active and the question unanswered, ask it.
+   *
+   * Once per visit — the ref is what stops a rider who dismissed the sheet
+   * from being handed it again on the next render.
+   */
+  const genderGateShown = useRef(false);
+  useEffect(() => {
+    if (stage !== 'ride' || mode !== 'pool') return;
+    if (!needsShareGender || genderGateShown.current) return;
+    genderGateShown.current = true;
+    setGenderGateOpen(true);
+  }, [stage, mode, needsShareGender]);
+
   function selectRide(rt: RideType) {
     setRideType(rt);
     if (rt === 'bike' && mode === 'pool') {
@@ -686,6 +719,14 @@ export default function Booking() {
   }
 
   function pickMode(next: 'solo' | 'pool') {
+    // Reaching for a shared seat without having said who you will share with.
+    // Home gates its own shared-ride tiles the same way; this is the other door
+    // into the same thing, and a rider who typed a destination first must not
+    // slip past the question. The switch happens as soon as it is answered.
+    if (next === 'pool' && needsShareGender) {
+      setGenderGateOpen(true);
+      return;
+    }
     setMode(next);
     if (next === 'pool' && rideType === 'bike') selectRide('mini'); // bikes have one seat — nothing to pool
   }
@@ -1590,36 +1631,21 @@ export default function Booking() {
                    gender is matched against the rides that PERSON can share,
                    not the ones the booker can.
 
+                   It was a pair of chips reading "Me / Someone else", which is
+                   true and tells a rider nothing about what the answer does. It
+                   asks for the passenger's GENDER now, and defaults to the
+                   booker's own — so the common case needs no tap and the
+                   uncommon one is named in the words it actually matters in.
+                   What goes on the wire is unchanged and still a relationship,
+                   never a gender: see BookingForPicker.
+
                    It sits here, inside the sharing branch, and nowhere else: a
                    solo rider is never asked, because for them the answer
                    changes nothing at all. ── */}
-              <Text style={styles.stepLabel}>WHO IS THIS RIDE FOR?</Text>
-              <View style={styles.forWhoRow}>
-                {([
-                  { key: 'self' as BookedFor, label: 'Me' },
-                  { key: 'other' as BookedFor, label: 'Someone else' },
-                ]).map((opt) => {
-                  const on = bookedFor === opt.key;
-                  return (
-                    <Pressable
-                      key={opt.key}
-                      style={[styles.forWhoChip, on && styles.forWhoChipOn]}
-                      onPress={() => setBookedFor(opt.key)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
-                    >
-                      <Text style={[styles.forWhoTxt, on && styles.forWhoTxtOn]}>{opt.label}</Text>
-                      {on ? <Text style={styles.forWhoTick}>✓</Text> : null}
-                    </Pressable>
-                  );
-                })}
+              <Text style={styles.stepLabel}>WHICH GENDER IS THIS RIDE FOR?</Text>
+              <View style={styles.forWhoWrap}>
+                <BookingForPicker value={bookedFor} onChange={setBookedFor} gender={profileGender} />
               </View>
-              {bookedFor === 'other' ? (
-                <Text style={styles.forWhoNote}>
-                  We will match this ride for them, not for you. The riders already in a
-                  car are told the seat was booked by someone else, and they can decline it.
-                </Text>
-              ) : null}
             </>
           ) : (
           <>
@@ -2105,6 +2131,24 @@ export default function Booking() {
           </View>
         </View>
       </Modal>
+
+      {/* "Who will you share with?" — asked before a shared seat is priced,
+          never after. Dismissing it without answering drops this booking to
+          Solo rather than quietly booking a shared ride on a preference the
+          rider has not given; the Sharing card is one tap away either way. */}
+      <ShareGenderSheet
+        open={genderGateOpen}
+        onClose={() => {
+          setGenderGateOpen(false);
+          if (needsShareGender) setMode('solo');
+        }}
+        onChosen={() => {
+          setMode('pool');
+          if (rideType === 'bike') selectRide('mini');
+        }}
+        reason={'One question before a shared seat. It decides which shared cars you are offered '
+          + 'and who can sit beside you — riding solo is never affected.'}
+      />
     </View>
   );
 }
@@ -2992,49 +3036,13 @@ const styles = themed(() => StyleSheet.create({
   },
   seatRungAmountNow: { color: colors.primary },
 
-  /* ── "Who is this ride for?" ── sharing only; see the note at its usage. */
-  forWhoRow: {
-    flexDirection: 'row',
-    gap: 8,
+  /* ── "Which gender is this ride for?" ── sharing only; see the note at
+     its usage. The control draws itself (BookingForPicker); this only gives it
+     the same 20px gutter every other block on this full-bleed sheet takes. */
+  forWhoWrap: {
     marginHorizontal: 20,
     marginTop: 8,
   },
-  forWhoChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-  },
-  forWhoChipOn: {
-    borderColor: colors.primary,
-    backgroundColor: colors.glassLime,
-  },
-  forWhoTxt: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.muted,
-  },
-  forWhoTxtOn: { color: colors.primary },
-  forWhoTick: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: colors.primary,
-  },
-  forWhoNote: {
-    marginHorizontal: 20,
-    marginTop: 6,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '600',
-    color: colors.muted,
-  },
-
   sectionLabel: {
     fontSize: 10.5,
     fontWeight: '800',

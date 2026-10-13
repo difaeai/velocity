@@ -533,6 +533,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- marketRuns/{id} ------------------------------------------------
+    // What the daily market run did last time it ran: which rate cards it
+    // refitted from rider reports, which it confirmed, and which it refused to
+    // move and why (fare/marketRefresh.ts). Operational diagnostics for the
+    // market desk, written only by the scheduled job.
+    match /marketRuns/{runId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- paymentIntents/{id} & payouts/{id} -----------------------------
     // Wallet top-up intents and driver payout requests. Written only by the
     // backend; the owner and admins may read.
