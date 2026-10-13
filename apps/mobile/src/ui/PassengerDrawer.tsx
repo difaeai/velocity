@@ -14,19 +14,34 @@
  *  · Nothing moved, so nothing led the eye. A list that arrives all at once is
  *    read as a block of text and scrolled past.
  *
- * So: drawn icons with a lime accent on the identifying detail (DrawerIcons),
- * a plain-English line under every label saying what the feature is for, and
- * the rows arriving in sequence so the eye is walked down the list instead of
+ * So: colourful little illustrations instead of marks (DrawerIcons), a
+ * plain-English line under every label saying what the feature is for, and the
+ * rows arriving in sequence so the eye is walked down the list instead of
  * being handed it.
+ *
+ * The icons went through two rounds. Drawn outlines fixed the duplicate faces
+ * but not the readability: sixteen hairline marks in one grey are still
+ * sixteen things you have to read the label to tell apart. They are now
+ * shaded objects in their real materials — gold coins, a kraft parcel, a steel
+ * shield, paper map and envelope — which is what the handset's emoji had going
+ * for it, with none of what it had against it. Colour is doing the work of
+ * telling rows apart; the lime is kept for the one detail that names each
+ * feature.
  *
  * ── How the animation is driven ─────────────────────────────────────────────
  * ONE Animated.Value for the whole list, not one per row. Each row derives its
  * entrance by interpolating that single value over its own slice of the
  * timeline, so sixteen rows cost one native-driven animation rather than
- * sixteen JS timers. Press feedback is per row (it has to be), and the only
- * thing that animates FOREVER is an unread badge — a pulse that carries
- * information. Decoration that loops behind a closed drawer is battery we are
- * spending on nobody.
+ * sixteen JS timers.
+ *
+ * That same slice is handed to the row's ICON, added to the row's press value,
+ * as a single 0 → 1 → 2 `motion` input: arriving, at rest, held. That is how
+ * the wheels roll in, the pin drops, the letter comes out of the envelope and
+ * the cog turns into place — on one shared native animation, and again under
+ * your finger. Press feedback is per row (it has to be), and the only thing
+ * that animates FOREVER is an unread badge: a pulse that carries information.
+ * Decoration that loops behind a closed drawer is battery we are spending on
+ * nobody.
  */
 import { useEffect, useMemo, useRef } from 'react';
 import {
@@ -45,21 +60,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
-import { CityRideIcon, CourierIcon, IntercityIcon } from './ServiceIcons';
-import { PoolIcon, WalletIcon } from './RideIcons';
 import {
+  CityCarIcon,
+  CityToCityIcon,
   EarnIcon,
   EnvelopeIcon,
   GearIcon,
-  GroupChatIcon,
+  GroupIcon,
   MegaphoneIcon,
+  ParcelIcon,
   PartnerIcon,
   ProfileIcon,
   RapidHelpIcon,
-  RouteIcon,
+  RouteMapIcon,
+  SharedRideIcon,
   ShieldIcon,
   SignOutIcon,
   SpecialRideIcon,
+  WalletCardIcon,
   type DrawerIconProps,
 } from './DrawerIcons';
 
@@ -157,7 +175,7 @@ export function PassengerDrawer({
     const rides: Row[] = [
       {
         key: 'city',
-        Icon: CityRideIcon,
+        Icon: CityCarIcon,
         label: 'City rides',
         blurb: 'Book a car or bike where you are now',
         tint: 'rgba(204,255,0,0.14)',
@@ -178,7 +196,7 @@ export function PassengerDrawer({
          same kind of thing — a ride arranged ahead rather than hailed. */
       {
         key: 'intercity',
-        Icon: IntercityIcon,
+        Icon: CityToCityIcon,
         label: 'City to City',
         blurb: 'Intercity seats — pick a city and a day',
         tint: 'rgba(56,189,248,0.16)',
@@ -186,7 +204,7 @@ export function PassengerDrawer({
       },
       {
         key: 'nearby-pools',
-        Icon: PoolIcon,
+        Icon: SharedRideIcon,
         label: 'Nearby sharing rides',
         blurb: 'Cars going your way with a seat still free',
         tint: 'rgba(204,255,0,0.14)',
@@ -194,7 +212,7 @@ export function PassengerDrawer({
       },
       {
         key: 'routes',
-        Icon: RouteIcon,
+        Icon: RouteMapIcon,
         label: 'My routes',
         blurb: 'The trips you take every day, saved',
         tint: 'rgba(251,146,60,0.16)',
@@ -202,7 +220,7 @@ export function PassengerDrawer({
       },
       {
         key: 'couriers',
-        Icon: CourierIcon,
+        Icon: ParcelIcon,
         label: 'Couriers',
         blurb: 'Send a parcel across town',
         tint: 'rgba(251,146,60,0.16)',
@@ -221,7 +239,7 @@ export function PassengerDrawer({
       },
       {
         key: 'matches',
-        Icon: GroupChatIcon,
+        Icon: GroupIcon,
         label: 'Matches & Groups',
         blurb: 'Your travel partners and their city groups',
         tint: 'rgba(56,189,248,0.16)',
@@ -260,7 +278,7 @@ export function PassengerDrawer({
     if (!walletHidden) {
       account.push({
         key: 'wallet',
-        Icon: WalletIcon,
+        Icon: WalletCardIcon,
         label: walletLabel,
         blurb: 'Your balance and how you pay',
         tint: 'rgba(204,255,0,0.14)',
@@ -334,7 +352,7 @@ export function PassengerDrawer({
               showsVerticalScrollIndicator={false}
             >
               {/* Profile header */}
-              <Cascade stagger={stagger} index={order++}>
+              <Cascade progress={rowProgress(stagger, order++)}>
                 <Pressable
                   style={({ pressed }) => [styles.profileHeader, pressed && { opacity: 0.85 }]}
                   onPress={onProfile}
@@ -354,14 +372,19 @@ export function PassengerDrawer({
 
               {sections.map((section) => (
                 <View key={section.title}>
-                  <Cascade stagger={stagger} index={order++}>
+                  <Cascade progress={rowProgress(stagger, order++)}>
                     <Text style={styles.sectionTitle}>{section.title}</Text>
                   </Cascade>
-                  {section.rows.map((row) => (
-                    <Cascade key={row.key} stagger={stagger} index={order++}>
-                      <DrawerRow row={row} />
-                    </Cascade>
-                  ))}
+                  {section.rows.map((row) => {
+                    // The row and its icon share one slice, so the icon's own
+                    // motion lands exactly as the row does.
+                    const progress = rowProgress(stagger, order++);
+                    return (
+                      <Cascade key={row.key} progress={progress}>
+                        <DrawerRow row={row} progress={progress} />
+                      </Cascade>
+                    );
+                  })}
                 </View>
               ))}
             </ScrollView>
@@ -392,49 +415,48 @@ export function PassengerDrawer({
 }
 
 /**
- * One row's slice of the shared entrance timeline.
+ * One row's slice of the shared entrance timeline, as a plain 0 → 1 value.
  *
  * `index` is its place in the cascade, not its position on screen: later rows
  * start later and every row covers the same span, which is what makes the list
  * read top-to-bottom. The start is capped so a long menu still finishes — a
  * 30th row must not be scheduled to begin after the animation has ended.
+ *
+ * It is pulled out of <Cascade> because the row's icon needs the same slice:
+ * the entrance and the illustration have to be the same event, not two events
+ * that happen to overlap.
  */
-function Cascade({
-  stagger,
-  index,
-  children,
-}: {
-  stagger: Animated.Value;
-  index: number;
-  children: React.ReactNode;
-}) {
+function rowProgress(stagger: Animated.Value, index: number) {
   const start = Math.min(0.68, index * 0.042);
   const end = Math.min(1, start + 0.32);
-  const mid = start + (end - start) * 0.72;
+  return stagger.interpolate({
+    inputRange: [start, end],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+}
 
+function Cascade({
+  progress,
+  children,
+}: {
+  progress: Animated.AnimatedInterpolation<number>;
+  children: React.ReactNode;
+}) {
   return (
     <Animated.View
       style={{
-        opacity: stagger.interpolate({
-          inputRange: [start, end],
-          outputRange: [0, 1],
-          extrapolate: 'clamp',
-        }),
+        opacity: progress,
         transform: [
           {
-            translateX: stagger.interpolate({
-              inputRange: [start, end],
-              outputRange: [-26, 0],
-              extrapolate: 'clamp',
-            }),
+            translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-26, 0] }),
           },
           {
             // A touch of overshoot on the way in. Small enough that it reads as
             // weight rather than as a bounce.
-            scale: stagger.interpolate({
-              inputRange: [start, mid, end],
+            scale: progress.interpolate({
+              inputRange: [0, 0.72, 1],
               outputRange: [0.94, 1.012, 1],
-              extrapolate: 'clamp',
             }),
           },
         ],
@@ -445,7 +467,13 @@ function Cascade({
   );
 }
 
-function DrawerRow({ row }: { row: Row }) {
+function DrawerRow({
+  row,
+  progress,
+}: {
+  row: Row;
+  progress: Animated.AnimatedInterpolation<number>;
+}) {
   const press = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const hasBadge = (row.badge ?? 0) > 0;
@@ -465,6 +493,9 @@ function DrawerRow({ row }: { row: Row }) {
   }, [hasBadge, pulse]);
 
   const body: ColorValue = row.danger ? colors.danger : '#ffffff';
+  /* 0 → 1 as the row arrives, 1 → 2 while it is held. The icon animates itself
+     off this one value; see DrawerIcons. */
+  const motion = Animated.add(progress, press);
 
   return (
     <Pressable
@@ -493,7 +524,7 @@ function DrawerRow({ row }: { row: Row }) {
         ]}
       >
         <View style={[styles.iconTile, { backgroundColor: row.tint }]}>
-          <row.Icon size={21} color={body} accent={row.danger ? colors.danger : LIME} />
+          <row.Icon size={26} color={body} accent={row.danger ? colors.danger : LIME} motion={motion} />
         </View>
 
         <View style={styles.rowText}>
@@ -582,12 +613,12 @@ const styles = themed(() => StyleSheet.create({
     borderRadius: 14,
   },
   rowActive: { backgroundColor: 'rgba(204,255,0,0.08)' },
-  /* 38px tile, 21px mark: big enough to be identified at a glance in a list
-     this long, small enough that two lines of text still fit beside it. */
+  /* 42px tile, 26px illustration: shading needs pixels to read as shading, and
+     this is still small enough that two lines of text fit beside it. */
   iconTile: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
