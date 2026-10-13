@@ -151,7 +151,14 @@ export function ShareGenderSheet({
   reason,
 }: {
   open: boolean;
-  onClose: () => void;
+  /**
+   * Close the sheet. `chosen` says whether an answer was actually saved, and
+   * callers that have to undo something on a dismissal need it: booking drops
+   * back to Solo when this sheet is waved away, and reading `useNeedsShareGender`
+   * instead would read a value captured one render before the answer landed —
+   * so it would drop to Solo even when the rider had just answered.
+   */
+  onClose: (chosen: boolean) => void;
   onChosen?: () => void;
   reason?: string | null;
 }) {
@@ -183,7 +190,7 @@ export function ShareGenderSheet({
           {
             text: 'Open profile',
             onPress: () => {
-              onClose();
+              onClose(false);
               router.push('/passenger/profile');
             },
           },
@@ -193,7 +200,7 @@ export function ShareGenderSheet({
     }
     try {
       await choose(next);
-      onClose();
+      onClose(true);
       // After the sheet is dismissed, never before: pushing a route out from
       // under a Modal that is still mounted leaves the overlay on screen.
       setTimeout(() => onChosen?.(), 180);
@@ -205,8 +212,8 @@ export function ShareGenderSheet({
   const translateY = rise.interpolate({ inputRange: [0, 1], outputRange: [360, 0] });
 
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={() => onClose(false)}>
+      <Pressable style={styles.backdrop} onPress={() => onClose(false)}>
         <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.grabber} />
@@ -249,7 +256,7 @@ export function ShareGenderSheet({
             {unknownGender ? (
               <Pressable
                 onPress={() => {
-                  onClose();
+                  onClose(false);
                   router.push('/passenger/profile');
                 }}
               >
