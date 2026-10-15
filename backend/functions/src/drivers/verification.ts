@@ -29,7 +29,7 @@
  * by the thing that reads them. That is what keeps the trigger from retriggering
  * itself, and it leaves a per-attempt audit trail for free.
  */
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
@@ -392,59 +392,101 @@ async function applyDecision(params: {
 }
 
 /**
- * The worker. Fires once per queued job.
+ * Run one queued job: mark it running, decide, record the outcome.
+ *
+ * Shared by the sweeper below and by nothing else today, but kept separate
+ * from the schedule so the retry path and the first attempt cannot drift.
+ */
+async function processVerificationJob(
+  jobRef: FirebaseFirestore.DocumentReference,
+  driverId: string,
+): Promise<void> {
+  try {
+    await jobRef.update({ status: 'running', startedAt: FieldValue.serverTimestamp() });
+    const decision = await runDriverVerification(driverId);
+    await jobRef.update({
+      status: 'done',
+      decision: decision?.status ?? 'skipped',
+      riskScore: decision?.riskScore ?? null,
+      finishedAt: FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    // A crash must not strand the applicant on "verifying" forever: put them
+    // in the human queue, which is where an unverifiable application belongs.
+    logger.error('Driver verification job failed', { jobId: jobRef.id, driverId, e });
+    await jobRef.update({
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+      finishedAt: FieldValue.serverTimestamp(),
+    });
+    await db.doc(`drivers/${driverId}`).set(
+      {
+        verificationStatus: 'pending',
+        verification: {
+          status: 'review',
+          riskScore: 0,
+          reasons: [
+            {
+              code: 'engine_error',
+              detail: 'The automatic check could not be completed.',
+              severity: 'minor',
+            },
+          ],
+          decidedAt: FieldValue.serverTimestamp(),
+          decidedBy: 'engine',
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+}
+
+/**
+ * The worker: every minute, pick up whatever was queued.
+ *
+ * WHY A SCHEDULE AND NOT A FIRESTORE TRIGGER. An `onDocumentCreated` on the
+ * job collection is the obvious design and was the first one written. It
+ * cannot be deployed here: a Gen-2 Firestore trigger runs on Eventarc, which
+ * needs `roles/eventarc.eventReceiver` and `roles/run.invoker` on the compute
+ * service agent and `roles/iam.serviceAccountTokenCreator` on the Pub/Sub one.
+ * This project has never had an Eventarc function, the deploy service account
+ * cannot grant itself those roles, and the whole deploy fails — taking every
+ * unrelated function down with it. It is the third time this codebase has
+ * reached for a document trigger and backed away; see the notes in
+ * drivers/geohashSweeper.ts and pricing/engine.ts for the other two.
+ *
+ * The cost of the schedule is a driver waiting up to a minute rather than a
+ * few seconds, which is why the app says "Checking your documents…" from the
+ * moment they submit instead of claiming to be done.
  *
  * Generous timeout and memory: six images, downloaded and base64'd, through a
- * vision model at high effort. The default 60 s would cut an honest application
- * off halfway and leave it pending forever.
+ * vision model at high effort.
  */
-export const processDriverVerification = onDocumentCreated(
-  { document: `${VERIFICATION_JOBS}/{jobId}`, timeoutSeconds: 540, memory: '1GiB' },
-  async (event) => {
-    const job = event.data?.data();
-    const jobId = event.params.jobId;
-    if (!job?.driverId) return;
-    const driverId = job.driverId as string;
+const JOBS_PER_RUN = 5;
 
-    try {
-      await event.data!.ref.update({ status: 'running', startedAt: FieldValue.serverTimestamp() });
-      const decision = await runDriverVerification(driverId);
-      await event.data!.ref.update({
-        status: 'done',
-        decision: decision?.status ?? 'skipped',
-        riskScore: decision?.riskScore ?? null,
-        finishedAt: FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      // A crash must not strand the applicant on "verifying" forever: put them
-      // in the human queue, which is where an unverifiable application belongs.
-      logger.error('Driver verification job failed', { jobId, driverId, e });
-      await event.data!.ref.update({
-        status: 'error',
-        error: e instanceof Error ? e.message : String(e),
-        finishedAt: FieldValue.serverTimestamp(),
-      });
-      await db.doc(`drivers/${driverId}`).set(
-        {
-          verificationStatus: 'pending',
-          verification: {
-            status: 'review',
-            riskScore: 0,
-            reasons: [
-              {
-                code: 'engine_error',
-                detail: 'The automatic check could not be completed.',
-                severity: 'minor',
-              },
-            ],
-            decidedAt: FieldValue.serverTimestamp(),
-            decidedBy: 'engine',
-          },
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
+export const sweepDriverVerificationJobs = onSchedule(
+  { schedule: '* * * * *', timeZone: 'Asia/Karachi', timeoutSeconds: 540, memory: '1GiB' },
+  async () => {
+    const snap = await db
+      .collection(VERIFICATION_JOBS)
+      .where('status', '==', 'queued')
+      .limit(JOBS_PER_RUN)
+      .get();
+    if (snap.empty) return;
+
+    // Sequentially, not in parallel: each job is six images through a vision
+    // model, and five of those at once in one instance is how a 1 GiB function
+    // runs out of memory and fails all five instead of finishing one.
+    for (const doc of snap.docs) {
+      const driverId = doc.get('driverId') as string | undefined;
+      if (!driverId) {
+        await doc.ref.update({ status: 'error', error: 'Job has no driverId.' });
+        continue;
+      }
+      await processVerificationJob(doc.ref, driverId);
     }
+    logger.info('Driver verification sweep complete', { processed: snap.size });
   },
 );
 

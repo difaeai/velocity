@@ -57,13 +57,19 @@ export { deleteMyAccount } from './users/deleteAccount';
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
 
-// The verification engine: a driver submits and, seconds later, is driving,
+// The verification engine: a driver submits and, a minute later, is driving,
 // told exactly what to fix, or in a queue a human clears. `submitDriverOnboarding`
 // writes a job rather than waiting — the vision pass over six documents is far
-// too slow to hold a callable open on a phone — and `processDriverVerification`
+// too slow to hold a callable open on a phone — and `sweepDriverVerificationJobs`
 // does the work and writes the verdict onto the driver doc the app streams.
+//
+// A schedule rather than a Firestore trigger, which would be the obvious
+// design: a Gen-2 document trigger runs on Eventarc, this project has never
+// had one, and the deploy service account cannot grant itself the service-agent
+// roles it would need — so the whole deploy fails, taking every unrelated
+// function with it. See the note on the sweeper itself.
 export {
-  processDriverVerification,
+  sweepDriverVerificationJobs,
   adminRerunDriverVerification,
   adminVerificationSettings,
 } from './drivers/verification';
