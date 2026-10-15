@@ -55,6 +55,9 @@ const APP_NAV: NavGroup[] = [
     title: 'Operations',
     items: [
       { href: '/dashboard/live-ops', label: '🗺️ Live ops map' },
+      // Live ops is the rides happening now; this is every ride that ever did.
+      // Next to each other because an operator moves between the two mid-call.
+      { href: '/dashboard/rides', label: '🧾 Ride record' },
       { href: '/dashboard/locations', label: '📍 Locations' },
       { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
       { href: '/dashboard/pricing', label: '🧮 Pricing engine' },

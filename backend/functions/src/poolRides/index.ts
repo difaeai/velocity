@@ -247,6 +247,9 @@ export const completePoolRide = onCall(async (req) => {
         startedAt:
           (preRide.get('allBoardedAt') as FirebaseFirestore.Timestamp | undefined)?.toDate() ??
           null,
+        // The window a driver cannot shrink by boarding people late. See fraud.ts.
+        requestedAt:
+          (preRide.get('createdAt') as FirebaseFirestore.Timestamp | undefined)?.toDate() ?? null,
       })
     : null;
 

@@ -66,6 +66,23 @@ export interface PoolRosterEntry {
    */
   bookedForOther?: boolean;
   kind: PoolRosterKind;
+  /**
+   * What fellow riders made of this person, as it stood when they got in.
+   *
+   * A snapshot, not a live figure, and stored here rather than looked up for a
+   * blunt reason: "Shared rides near you" renders a hundred cars at a time, and
+   * reading a user document per rider to decorate that list would be three
+   * hundred reads to draw one feed. The number moves slowly — a rider gains a
+   * rating per shared ride — so a copy taken at boarding is accurate enough for
+   * a feed. The screen where it actually decides something, the join screen,
+   * reads it live instead; see getPoolJoinInfo.
+   *
+   * RAW, deliberately: the "too few ratings to show a number" rule lives in
+   * coRiderStanding() and is applied where the value is displayed, so stored
+   * rosters do not bake in a threshold that may change.
+   */
+  coRiderRating?: number | null;
+  coRiderRatingCount?: number;
   pickupAddress: string | null;
   dropoffAddress: string | null;
   /**
@@ -100,6 +117,9 @@ export function hostRosterEntry(args: {
   gender: unknown;
   /** Absent is the same as false — every caller that predates seat gender. */
   bookedForOther?: unknown;
+  /** From the caller's own user document, where the call site already has it. */
+  coRiderRating?: unknown;
+  coRiderRatingCount?: unknown;
   pickup: unknown;
   dropoff: unknown;
 }): PoolRosterEntry {
@@ -109,6 +129,11 @@ export function hostRosterEntry(args: {
     gender: typeof args.gender === 'string' ? args.gender : 'unspecified',
     bookedForOther: args.bookedForOther === true,
     kind: 'host',
+    // Concrete values, never undefined: these entries go into an array field
+    // and Firestore rejects undefined inside one.
+    coRiderRating: typeof args.coRiderRating === 'number' ? args.coRiderRating : null,
+    coRiderRatingCount:
+      typeof args.coRiderRatingCount === 'number' ? args.coRiderRatingCount : 0,
     pickupAddress: addressOf(args.pickup),
     dropoffAddress: addressOf(args.dropoff),
     joinedAt: Timestamp.now(),
@@ -127,6 +152,8 @@ export function joinerRosterEntry(args: {
   name: unknown;
   gender: unknown;
   bookedForOther?: unknown;
+  coRiderRating?: unknown;
+  coRiderRatingCount?: unknown;
   pickup: unknown;
   dropoff: unknown;
 }): PoolRosterEntry {
@@ -143,6 +170,8 @@ export function enRouteRosterEntry(args: {
   uid: string;
   name: unknown;
   gender: unknown;
+  coRiderRating?: unknown;
+  coRiderRatingCount?: unknown;
   pickup: unknown;
   dropoff: unknown;
 }): PoolRosterEntry {

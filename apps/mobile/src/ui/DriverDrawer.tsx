@@ -161,6 +161,11 @@ export function DriverDrawer({
                 find this switches to lying about what they drive instead. */}
             <NavItem icon="🚗" label="Your cars"              onPress={() => go('/driver/vehicles')} />
             <NavItem icon="📊" label="Earnings"               onPress={() => go('/driver/earnings')} />
+            {/* Next to Earnings because drivers reach for the two together, and
+                because they answer different questions: Earnings is the money,
+                this is the rides — day by day, including the cancelled ones the
+                wallet ledger never records. */}
+            <NavItem icon="🧾" label="Your rides"             onPress={() => go('/driver/ride-history')} />
             {/* Hidden until the wallet economy officially launches — the app
                 presents itself as cash-only until then. Commission settlement
                 does not depend on this screen: a locked driver gets the whole

@@ -49,6 +49,7 @@ import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { haversineKm } from './index';
 import { rosterForTrip } from './poolRoster';
+import { coRiderStanding } from '../ratings/coRiders';
 import { POOL_JOIN_WINDOW_MS } from './poolShare';
 import { rideHasDeparted, timestampMs } from '../poolRides/lifecycle';
 
@@ -241,7 +242,16 @@ export const getSuggestedRides = onCall(async (req) => {
         driverVehicle: driver?.vehicleLabel ?? null,
         companions: rosterForTrip(d)
           .filter((r) => r.uid !== ctx.uid)
-          .map((r) => ({ firstName: r.firstName, gender: r.gender })),
+          .map((r) => ({
+            firstName: r.firstName,
+            gender: r.gender,
+            // Snapshot, not a live read — one read per rider would be hundreds
+            // to draw this feed. See PoolRosterEntry.coRiderRating.
+            ...coRiderStanding({
+              coRiderRating: r.coRiderRating,
+              coRiderRatingCount: r.coRiderRatingCount,
+            }),
+          })),
         joinWindowEndsAt: windowEnd,
         // A booked pool leaves as soon as it has a driver — there is no clock
         // time to show, so none is claimed.

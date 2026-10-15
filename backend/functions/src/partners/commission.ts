@@ -122,6 +122,8 @@ export interface PrepareArgs {
   pickup?: { lat: number; lng: number } | null;
   dropoff?: { lat: number; lng: number } | null;
   startedAt?: Date | null;
+  /** Server-stamped request time — the speed check's trustworthy window. */
+  requestedAt?: Date | null;
 }
 
 /** Run before the settlement transaction. Never throws — a failure here must
@@ -146,6 +148,7 @@ export async function preparePartnerCredit(args: PrepareArgs): Promise<PartnerCr
       pickup: args.pickup ?? null,
       dropoff: args.dropoff ?? null,
       startedAt: args.startedAt ?? null,
+      requestedAt: args.requestedAt ?? null,
       completedAt: new Date(),
     });
 

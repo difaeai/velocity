@@ -28,6 +28,7 @@ import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../../src/domain/types';
 import { poolGenderSummary } from '../../../src/lib/genderAccess';
+import { coRiderStandingLabel } from '../../../src/lib/coRider';
 
 export default function PoolJoinScreen() {
   const params = useLocalSearchParams<{ code: string; bookedFor?: string }>();
@@ -255,6 +256,13 @@ export default function PoolJoinScreen() {
                   <Text key={`${c.firstName}-${i}`} style={styles.companionRow}>
                     {c.gender === 'female' ? '♀' : c.gender === 'male' ? '♂' : '•'} {c.firstName}
                     {c.kind === 'host' ? '  · started this ride' : ''}
+                    {/* What riders before you made of them. The backend reads
+                        this live for THIS screen — it is where the number
+                        actually changes a decision. Null means too few
+                        ratings to say, so it says that instead of a figure. */}
+                    {coRiderStandingLabel(c.coRiderRating, c.coRiderRatingCount)
+                      ? `  · ${coRiderStandingLabel(c.coRiderRating, c.coRiderRatingCount)}`
+                      : ''}
                   </Text>
                 ))}
               </View>

@@ -92,6 +92,14 @@ export interface TripSeed {
   passengerName?: string;
   passengerRating?: number;
   passengerRatingCount?: number;
+  /**
+   * What fellow RIDERS make of them — a different judgement from
+   * `passengerRating`, which is what drivers make of them. Seeded onto the pool
+   * roster so the shared-ride feeds can show it without a read per rider; see
+   * PoolRosterEntry.coRiderRating.
+   */
+  coRiderRating?: number;
+  coRiderRatingCount?: number;
 
   /**
    * Anything the caller wants on the trip document that is particular to how
@@ -160,6 +168,8 @@ export function writeTripDocuments(
               name: seed.passengerName,
               gender: seed.passengerGender,
               bookedForOther: seed.bookedForOther,
+              coRiderRating: seed.coRiderRating,
+              coRiderRatingCount: seed.coRiderRatingCount,
               pickup: seed.pickup,
               dropoff: seed.dropoff,
             }),

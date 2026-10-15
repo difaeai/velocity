@@ -161,6 +161,14 @@ export interface PoolRosterEntry {
   gender: Gender | string;
   /** 'host' booked the ride · 'share' joined it by link or from discovery. */
   kind: 'host' | 'share' | 'enroute';
+  /**
+   * What fellow riders made of them, as it stood when they boarded. Raw — the
+   * "too few ratings to show a number" rule is the backend's coRiderStanding(),
+   * so read these through a payload that has applied it rather than rendering
+   * them directly. Absent on rides taken before co-rider ratings shipped.
+   */
+  coRiderRating?: number | null;
+  coRiderRatingCount?: number;
   pickupAddress: string | null;
   dropoffAddress: string | null;
   joinedAt?: { seconds: number } | null;

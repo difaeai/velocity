@@ -1183,6 +1183,9 @@ export const acceptEnRouteRider = onCall(async (req) => {
             uid: candidate.uid,
             name: candidate.name,
             gender: candidate.gender,
+            // Free of charge: `userSnap` is already read above for the gate.
+            coRiderRating: userSnap.get('coRiderRating') as number | undefined,
+            coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
             pickup: candidate.pickup,
             dropoff: candidate.dropoff,
           }),

@@ -366,6 +366,8 @@ export const createTrip = onCall(async (req) => {
         ?? (userSnap.get('displayName') as string | undefined),
       passengerRating: userSnap.get('rating') as number | undefined,
       passengerRatingCount: userSnap.get('ratingCount') as number | undefined,
+      coRiderRating: userSnap.get('coRiderRating') as number | undefined,
+      coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
     });
   });
 
@@ -878,7 +880,17 @@ export const updateTripStatus = onCall(async (req) => {
     if (!DRIVER_TRANSITIONS.has(`${from}->${to}`)) {
       throw new HttpsError('failed-precondition', `Illegal transition ${from} → ${to}.`);
     }
-    const extra = to === 'arrived' ? { arrivedAt: FieldValue.serverTimestamp() } : {};
+    // Stamp the clock each state turns, so the trip document can answer "when
+    // did this ride actually start" on its own. `arrivedAt` was already here;
+    // `startedAt` was the hole — the moment the wheels moved existed nowhere,
+    // so a ride history or a file for the police could say when a driver turned
+    // up and when everyone got out, and not when the journey began.
+    const stamps: Partial<Record<typeof to, string>> = {
+      arrived: 'arrivedAt',
+      in_progress: 'startedAt',
+    };
+    const stamp = stamps[to];
+    const extra = stamp ? { [stamp]: FieldValue.serverTimestamp() } : {};
     tx.set(
       tripRef,
       { status: to, updatedAt: FieldValue.serverTimestamp(), ...extra },
@@ -1169,6 +1181,8 @@ export const completeTrip = onCall(async (req) => {
     pickup: (preTrip.get('pickup') as { lat: number; lng: number } | undefined) ?? null,
     dropoff: (preTrip.get('dropoff') as { lat: number; lng: number } | undefined) ?? null,
     startedAt: (preTrip.get('startedAt') as Timestamp | undefined)?.toDate() ?? null,
+    // The window a driver cannot shrink by tapping Start late. See fraud.ts.
+    requestedAt: (preTrip.get('createdAt') as Timestamp | undefined)?.toDate() ?? null,
   });
 
   const settlement = await db.runTransaction(async (tx) => {

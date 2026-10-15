@@ -31,6 +31,7 @@ import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
 import type { PoolRider, PoolRosterEntry } from '../domain/types';
+import { coRiderStandingLabel } from '../lib/coRider';
 
 const GENDER_MARK: Record<string, string> = {
   male: '♂',
@@ -58,6 +59,13 @@ export interface SharedRider {
   soloFare: number | null;
   /** True once the driver has let them out. */
   droppedOff: boolean;
+  /**
+   * What previous co-riders made of them, raw off the roster snapshot. Run
+   * through coRiderStandingLabel() before showing it — null here means "never
+   * recorded", which is not the same as a low score.
+   */
+  coRiderRating?: number | null;
+  coRiderRatingCount?: number;
 }
 
 /**
@@ -81,6 +89,12 @@ export function sharedRidersFrom(
 ): SharedRider[] {
   const enRoute = trip.poolRiders ?? [];
   if (enRoute.length > 0) {
+    // `poolRiders` carries the fare split and not the reputation, so the
+    // standing is pulled across from the roster, which is written for en-route
+    // riders too. A rider with no roster row simply has no standing to show.
+    const standing = new Map(
+      (trip.poolRoster ?? []).map((r) => [r.uid, r] as const),
+    );
     return enRoute.map((r) => ({
       uid: r.uid,
       name: r.name?.split(' ')[0] ?? 'Rider',
@@ -91,6 +105,8 @@ export function sharedRidersFrom(
       fare: r.uid === youUid ? r.fare : null,
       soloFare: r.uid === youUid ? r.soloFare : null,
       droppedOff: false,
+      coRiderRating: standing.get(r.uid)?.coRiderRating ?? null,
+      coRiderRatingCount: standing.get(r.uid)?.coRiderRatingCount ?? 0,
     }));
   }
 
@@ -107,6 +123,8 @@ export function sharedRidersFrom(
       fare: r.uid === youUid ? (trip.poolPerSeatFare ?? null) : null,
       soloFare: null,
       droppedOff: !!r.droppedAt,
+      coRiderRating: r.coRiderRating ?? null,
+      coRiderRatingCount: r.coRiderRatingCount ?? 0,
     }));
   }
 
@@ -168,7 +186,12 @@ export function PoolRidersCard({
             <Text style={styles.detail} numberOfLines={1}>
               {r.pickupAddress ?? 'Pickup'} → {r.dropoffAddress ?? 'Drop-off'}
             </Text>
-            <Text style={styles.kind}>{KIND_LABEL[r.kind] ?? 'in this car'}</Text>
+            <Text style={styles.kind}>
+              {KIND_LABEL[r.kind] ?? 'in this car'}
+              {coRiderStandingLabel(r.coRiderRating, r.coRiderRatingCount)
+                ? ` · ${coRiderStandingLabel(r.coRiderRating, r.coRiderRatingCount)}`
+                : ''}
+            </Text>
           </View>
         </View>
       ))}

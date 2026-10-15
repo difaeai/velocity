@@ -22,6 +22,12 @@ export default defineConfig({
       'src/payments/__tests__/**/*.test.ts',
       'src/scheduledRides/__tests__/**/*.test.ts',
       'src/trips/__tests__/**/*.test.ts',
+      // Rider↔driver and rider↔rider ratings, and the admin ride record. Added
+      // explicitly because this list is a whitelist, not a glob over src — a
+      // suite in a directory nobody added here runs green locally and is never
+      // run by `npm test`, which is the worst of both worlds.
+      'src/ratings/__tests__/**/*.test.ts',
+      'src/admin/__tests__/**/*.test.ts',
       'src/partners/__tests__/**/*.test.ts',
       'src/dailyRoutes/__tests__/**/*.test.ts',
       'src/businessAds/__tests__/**/*.test.ts',

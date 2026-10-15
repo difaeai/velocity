@@ -46,6 +46,7 @@ import { TripStatus } from '../domain/types';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { ACTIVE_STATUSES, haversineKm } from './index';
 import { firstNameOf, joinerRosterEntry, rosterForTrip } from './poolRoster';
+import { coRiderStanding } from '../ratings/coRiders';
 import { computeGenderAccess } from '../lib/genderAccess';
 import {
   BOOKED_FOR_OTHER_NOTE,
@@ -183,9 +184,20 @@ export const getPoolTripByCode = onCall(async (req) => {
   // screen, so it answers the two questions riders actually ask before they
   // tap Join: who else is aboard, and who is driving. Names are first names —
   // the roster is deliberately not a directory of the people in the car.
-  const companions = rosterForTrip(snap.data() ?? {})
-    .filter((r) => r.uid !== ctx.uid)
-    .map((r) => ({ firstName: r.firstName, gender: r.gender, kind: r.kind }));
+  const rosterHere = rosterForTrip(snap.data() ?? {}).filter((r) => r.uid !== ctx.uid);
+  // Unlike the feeds, this screen reads each companion's standing LIVE. It is
+  // one car and at most three people, and it is the screen where the number
+  // actually decides something — a rider staring at "Join" deserves the rating
+  // as it is now, not as it was when that person boarded.
+  const companionSnaps = rosterHere.length
+    ? await db.getAll(...rosterHere.map((r) => db.doc(`users/${r.uid}`)))
+    : [];
+  const companions = rosterHere.map((r, i) => ({
+    firstName: r.firstName,
+    gender: r.gender,
+    kind: r.kind,
+    ...coRiderStanding(companionSnaps[i]?.data()),
+  }));
 
   const awaitingDriver = status === AWAITING_DRIVER;
   const gathering = awaitingDriver && withinJoinWindow(snap.data() ?? {});
@@ -332,6 +344,9 @@ async function seatRiderOnPool(
       name: joinerName,
       gender: joinerGender,
       bookedForOther: occupant.bookedForOther,
+      // Free of charge: `userSnap` is already read above for the gender gate.
+      coRiderRating: userSnap.get('coRiderRating') as number | undefined,
+      coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
       pickup: snap.get('pickup'),
       dropoff: snap.get('dropoff'),
     }),
@@ -1115,8 +1130,20 @@ interface PoolFeedRow {
   /** Who is driving, so the rider is choosing a car and not just a price. */
   driverName: string | null;
   driverVehicle: string | null;
-  /** First names of the people already aboard. Never full names, never uids. */
-  companions: { firstName: string; gender: string }[];
+  /**
+   * First names of the people already aboard, with what previous co-riders made
+   * of them. Never full names, never uids.
+   *
+   * `coRiderRating` is null when too few people have rated somebody to show a
+   * number — the threshold lives in ratings/coRiders, and the count comes
+   * through regardless so a screen can say how solid the figure is.
+   */
+  companions: {
+    firstName: string;
+    gender: string;
+    coRiderRating: number | null;
+    coRiderRatingCount: number;
+  }[];
   /** Where the ride is in its journey, for "picking up now" vs "on the way". */
   status: TripStatus;
   /**
@@ -1225,10 +1252,20 @@ export const getNearbyPublicPoolTrips = onCall(async (req) => {
       driverName:    driver?.displayName  ?? null,
       driverVehicle: driver?.vehicleLabel ?? null,
       // First names only. Enough to know a car has two women and a man in it
-      // and decide whether to get in; not enough to identify anybody.
+      // and decide whether to get in; not enough to identify anybody. The
+      // standing comes from the roster snapshot rather than a live read — this
+      // is a feed of up to a hundred cars, and see PoolRosterEntry.coRiderRating
+      // for why that trade is the right way round here.
       companions: rosterForTrip(d)
         .filter((r) => r.uid !== ctx.uid)
-        .map((r) => ({ firstName: r.firstName, gender: r.gender })),
+        .map((r) => ({
+          firstName: r.firstName,
+          gender: r.gender,
+          ...coRiderStanding({
+            coRiderRating: r.coRiderRating,
+            coRiderRatingCount: r.coRiderRatingCount,
+          }),
+        })),
       status: (d.status as TripStatus) ?? 'matched',
       joinWindowEndsAt: hasDriver ? null : joinWindowEndsAt(d),
       needsDriverApproval: hasDriver,

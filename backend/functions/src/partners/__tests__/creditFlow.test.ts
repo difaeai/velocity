@@ -125,6 +125,18 @@ async function runRide(): Promise<{ tripId: string; settlement: Record<string, n
   await updateTripStatus.run(driverReq({ tripId, to: 'arriving' }));
   await updateTripStatus.run(driverReq({ tripId, to: 'arrived' }));
   await updateTripStatus.run(driverReq({ tripId, to: 'in_progress' }));
+
+  // A test walks the whole state machine in milliseconds, which on the clock
+  // reads as 4 km covered instantly — and the partner fraud check is right to
+  // call that GPS manipulation, which earns the ride zero credit and makes
+  // every expectation below read as a pricing bug (see partners/fraud.ts, and
+  // the arm's own suite in fraudGps.test.ts). So the ride is back-dated to look
+  // like a ride: requested half an hour ago, driving for twenty minutes.
+  const minutesAgo = (min: number) => new Date(Date.now() - min * 60_000);
+  await db()
+    .doc(`trips/${tripId}`)
+    .set({ createdAt: minutesAgo(30), startedAt: minutesAgo(20) }, { merge: true });
+
   await completeTrip.run(driverReq({ tripId }));
 
   const trip = await db().doc(`trips/${tripId}`).get();

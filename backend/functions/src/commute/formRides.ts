@@ -225,6 +225,8 @@ async function bookRideForHost(args: {
         ?? (userSnap.get('displayName') as string | undefined),
       passengerRating: userSnap.get('rating') as number | undefined,
       passengerRatingCount: userSnap.get('ratingCount') as number | undefined,
+      coRiderRating: userSnap.get('coRiderRating') as number | undefined,
+      coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
       // So support can tell at a glance why a rider has a trip they do not
       // remember booking, and so the strike check can find it tomorrow.
       provenance: { autoBooked: true, commuteFormed: true },

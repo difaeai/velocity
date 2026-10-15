@@ -508,7 +508,12 @@ describe('visibility', () => {
       hasDriver: boolean;
       driverName: string | null;
       driverVehicle: string | null;
-      companions: { firstName: string; gender: string }[];
+      companions: {
+        firstName: string;
+        gender: string;
+        coRiderRating: number | null;
+        coRiderRatingCount: number;
+      }[];
       riders: number;
       perSeatFareIfYouJoin: number;
       status: string;
@@ -517,7 +522,12 @@ describe('visibility', () => {
     expect(pool.driverName).toBe('Bilal Khan');
     expect(pool.driverVehicle).toBe('Toyota Corolla');
     expect(pool.status).toBe('matched');
-    expect(pool.companions).toEqual([{ firstName: 'Usman', gender: 'male' }]);
+    // A rider nobody has rated yet comes through with a null average and a zero
+    // count — never a 0.0 that would read as a terrible co-rider. The threshold
+    // that withholds the number lives in ratings/coRiders.
+    expect(pool.companions).toEqual([
+      { firstName: 'Usman', gender: 'male', coRiderRating: null, coRiderRatingCount: 0 },
+    ]);
     expect(pool.riders).toBe(1);
     expect(pool.perSeatFareIfYouJoin).toBe(240); // 2 riders → 60% of 400
   });

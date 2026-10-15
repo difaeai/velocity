@@ -82,6 +82,19 @@ function distanceKm(a: Point, b: Point): number {
 
 /** No vehicle in a Pakistani city sustains this. Above it, the GPS is lying. */
 const IMPOSSIBLE_SPEED_KMH = 200;
+// NOTE ON THE SPEED CHECK BELOW. It was dormant from launch until 2026-10-16:
+// it divides by the gap between `startedAt` and `completedAt`, and nothing in
+// the codebase ever wrote `trips.startedAt`, so every ride arrived with a null
+// start and the whole arm was skipped. `completeTrip` was passing the field the
+// entire time, so it read like a working check while being dead on arrival.
+//
+// Switching it on needed care, because the obvious reading of it is wrong in
+// both directions. A driver taps Start, so the gap it measures is theirs to
+// choose: tapping late makes an honest ride look impossible, and tapping late
+// is ALSO how a fabricated one would hide. Neither a minimum duration nor a
+// clamp fixes that — one opens a hole at ninety seconds, the other accuses
+// every driver who starts a long run late. So the window is taken from a
+// server-stamped event instead; see `requestedAt` on AssessArgs.
 /** Rides shorter than this between the same pair, inside the window, look staged. */
 const LOOP_WINDOW_HOURS = 24;
 const LOOP_MAX_RIDES = 4;
@@ -105,7 +118,25 @@ export interface AssessArgs {
   passengerPartnerId: string | null;
   pickup?: Point | null;
   dropoff?: Point | null;
+  /**
+   * When the DRIVER said the journey began. Server-stamped, but the driver
+   * chooses the moment they tap, so the window it opens is theirs to shrink.
+   * Never the only basis for the speed check — see `requestedAt`.
+   */
   startedAt?: Date | null;
+  /**
+   * When the ride was REQUESTED — `trips.createdAt`, written by the server
+   * before any driver was involved.
+   *
+   * This is the field that makes the speed check mean anything. A driver
+   * passing off two hundred fabricated kilometres only has to delay one tap to
+   * make `startedAt` say ninety seconds; they cannot make the gap between the
+   * rider's request and their own completion shorter than it really was,
+   * because neither end of it is theirs to write. A fabricated ride can then
+   * only escape by actually waiting out the time its claimed distance implies,
+   * which is the economics of the fraud gone.
+   */
+  requestedAt?: Date | null;
   completedAt?: Date | null;
 }
 
@@ -141,12 +172,23 @@ export async function assessRide(args: AssessArgs): Promise<FraudAssessment> {
   }
 
   // ── GPS manipulation ─────────────────────────────────────────────────────
-  const { pickup, dropoff, startedAt, completedAt } = args;
-  if (pickup && dropoff) {
+  // The time available is deliberately the LONGEST window the trip document can
+  // evidence, not the shortest: being generous about elapsed time is being
+  // conservative about the accusation, and a false positive here silently costs
+  // an honest partner money. Two windows are offered and the longer wins —
+  // `requestedAt` is the one a driver cannot compress, and it is what stops a
+  // late Start tap from reading as teleportation. A driver who forgets to tap
+  // until they arrive on a Lahore run would otherwise show 380 km in a minute.
+  const { pickup, dropoff, startedAt, requestedAt, completedAt } = args;
+  if (pickup && dropoff && completedAt) {
     const km = distanceKm(pickup, dropoff);
-    if (startedAt && completedAt) {
-      const hours = (completedAt.getTime() - startedAt.getTime()) / 3_600_000;
-      if (hours > 0 && km / hours > IMPOSSIBLE_SPEED_KMH) {
+    const windows = [startedAt, requestedAt]
+      .filter((t): t is Date => t instanceof Date)
+      .map((t) => completedAt.getTime() - t.getTime());
+    const elapsedMs = windows.length ? Math.max(...windows) : 0;
+    const hours = elapsedMs / 3_600_000;
+    {
+      if (elapsedMs > 0 && km / hours > IMPOSSIBLE_SPEED_KMH) {
         const partnerId = driverPartnerId ?? passengerPartnerId;
         if (partnerId) {
           return flag(

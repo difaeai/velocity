@@ -35,6 +35,7 @@ import { Badge, Card, PrimaryButton } from '../../../src/ui/components';
 import { MapPlaceholder } from '../../../src/ui/MapPlaceholder';
 import { LiveMap } from '../../../src/ui/LiveMap';
 import { RatingModal } from '../../../src/ui/RatingModal';
+import { CoRiderRatingSheet, type CoRiderTarget } from '../../../src/ui/CoRiderRatingSheet';
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard';
 import { PoolJoinRequestsCard } from '../../../src/ui/PoolJoinRequestsCard';
@@ -85,6 +86,10 @@ export default function TripScreen() {
   const [nowMs,        setNowMs]        = useState(() => Date.now());
   const [adjustedFare, setAdjustedFare] = useState(0);
   const [showRating,   setShowRating]   = useState(false);
+  // Who else was in the car, and whether this rider has rated them yet.
+  // Fetched once the ride completes; empty on a solo ride.
+  const [coRiders,     setCoRiders]     = useState<CoRiderTarget[]>([]);
+  const [coRiderSheetDismissed, setCoRiderSheetDismissed] = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
   // Same reason as the driver side: a push is invisible to an app already in
   // the foreground, and the rider is usually watching this very screen.
@@ -105,6 +110,32 @@ export default function TripScreen() {
   useEffect(() => {
     if (trip?.status === 'completed' && !trip.passengerRated) setShowRating(true);
   }, [trip?.status, trip?.passengerRated]);
+
+  // Once the ride is over, find out who else was in the car. A solo ride, or a
+  // ride this rider was not on, answers with an empty list and nothing happens.
+  // Failure is swallowed on purpose: a rating prompt that could not load is not
+  // worth putting an error on top of somebody's receipt.
+  useEffect(() => {
+    if (trip?.status !== 'completed' || !tripId) return;
+    let alive = true;
+    api
+      .getCoRiderRatingTargets({ tripId })
+      .then((res) => { if (alive) setCoRiders(res.targets); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [trip?.status, tripId]);
+
+  /**
+   * Whether to offer the co-rider sheet — derived, not stored.
+   *
+   * Queued behind the driver rating rather than stacked on top of it: two
+   * sheets racing to the front of a just-finished ride is how both get
+   * dismissed. Deriving it also means the sheet closes by itself once the last
+   * rider has been rated, and once this rider waves it away it stays away for
+   * this visit — it is offered again next time they open the ride.
+   */
+  const showCoRiders =
+    !showRating && !coRiderSheetDismissed && coRiders.some((c) => !c.alreadyRated);
 
   // Countdown timer. The same beat drives the pool joining window, so a rider
   // watching their shared ride fill up sees the clock move rather than a
@@ -149,6 +180,24 @@ export default function TripScreen() {
     if (!tripId) return;
     await api.submitRating({ tripId, stars, comment: comment || undefined, targetRole: 'driver' });
     setShowRating(false);
+  }
+
+  /**
+   * One co-rider rated. Errors are thrown rather than caught so the sheet can
+   * show them inline and keep the rider on the same person — a failed write
+   * that silently advances looks exactly like a successful one.
+   */
+  async function handleRateCoRider(target: CoRiderTarget, stars: number, comment: string) {
+    if (!tripId) return;
+    await api.submitCoRiderRating({
+      tripId,
+      targetUid: target.uid,
+      stars,
+      comment: comment || undefined,
+    });
+    setCoRiders((cur) =>
+      cur.map((c) => (c.uid === target.uid ? { ...c, alreadyRated: true } : c)),
+    );
   }
 
   /**
@@ -994,6 +1043,15 @@ export default function TripScreen() {
         targetName={trip.driverInfo?.displayName ?? 'Driver'}
         onSubmit={handleRate}
         onSkip={() => setShowRating(false)}
+      />
+
+      {/* And the people they shared the car with — the other half of the trust
+          a shared ride runs on. Opens only after the driver sheet is gone. */}
+      <CoRiderRatingSheet
+        visible={showCoRiders}
+        targets={coRiders}
+        onSubmit={handleRateCoRider}
+        onClose={() => setCoRiderSheetDismissed(true)}
       />
 
       {/* In-ride chat */}

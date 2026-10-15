@@ -639,6 +639,12 @@ export interface RideHistoryPage {
    */
   filteredInCode: string[];
   scanned: number;
+  /**
+   * False when the result is a capped snapshot rather than a page. The rider
+   * view merges two queries (rides booked + rides joined) and so has no single
+   * cursor to carry; it answers the most recent RIDER_MODE_CAP instead.
+   */
+  pageable: boolean;
 }
 
 /** One person on a ride, by full identity. Admin-only, by definition. */

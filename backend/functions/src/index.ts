@@ -57,6 +57,27 @@ export { deleteMyAccount } from './users/deleteAccount';
 // Driver onboarding & verification
 export { submitDriverOnboarding, approveDriver, rejectDriver, adminCreateDriver, updateDriver, deleteDriver, payCommission, claimDriverRole } from './drivers';
 
+// The verification engine: a driver submits and, seconds later, is driving,
+// told exactly what to fix, or in a queue a human clears. `submitDriverOnboarding`
+// writes a job rather than waiting — the vision pass over six documents is far
+// too slow to hold a callable open on a phone — and `processDriverVerification`
+// does the work and writes the verdict onto the driver doc the app streams.
+export {
+  processDriverVerification,
+  adminRerunDriverVerification,
+  adminVerificationSettings,
+} from './drivers/verification';
+
+// The live face scan in front of the papers. The SERVER picks which poses to
+// ask for, after the applicant has started, so a photograph of a photograph
+// cannot pass: see domain/faceScan.ts.
+export { startFaceScan, submitFaceScan } from './drivers/faceScan';
+
+// 02:00 Pakistan time: the papers of every approved driver, checked again.
+// Expiry dates were collected at onboarding and, until this job, never read a
+// second time — a licence valid in March is not valid in October.
+export { sweepDriverDocumentExpiry } from './drivers/documentExpiry';
+
 // The driver's cars, and the photo that says which one they are driving today.
 // Adding a car needs an admin's eyes on its papers; photographing the active car
 // counts immediately and is reviewed afterwards, so a shift is never lost to a
@@ -146,6 +167,15 @@ export { getSuggestedRides } from './trips/suggestedRides';
 
 // Ratings (post-trip)
 export { submitRating } from './ratings';
+
+// Riders rating the people they shared the car with. A separate relationship
+// from submitRating's rider↔driver one, and a separate average — see
+// ratings/coRiders for why the two are never added together.
+export { getCoRiderRatingTargets, submitCoRiderRating } from './ratings/coRiders';
+
+// The ride record: the admin desk's ledger of every trip, and the full file on
+// any one of them. Built for the call that starts "the police are asking".
+export { adminListRides, adminGetRideDetail, adminSearchRideParties } from './admin/rideHistory';
 
 // Pool ride management
 export {
