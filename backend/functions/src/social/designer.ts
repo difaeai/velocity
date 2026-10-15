@@ -64,7 +64,7 @@ async function directFrames(params: {
 
   const { data } = await generateJson<{ frames?: unknown }>({
     model: params.settings.textModel,
-    system: `${systemFor(params.employee, params.settings)}
+    system: `${systemFor(params.employee, params.settings, params.format)}
 
 You are writing prompts for whoever makes this picture, not describing a mood. Each prompt names: the subject and what they are doing, the setting, the time of day and light, the lens and framing, and where the lime accent sits. One sentence of story, then the craft. It has to work as a brief for a person and as a prompt for an image tool, because it will be used as both.
 

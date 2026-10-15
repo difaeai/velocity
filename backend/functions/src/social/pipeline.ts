@@ -331,8 +331,15 @@ async function runTeam(params: {
         script,
         caption: `${caption}\n\n${hashtags.map((h) => `#${h}`).join(' ')}`.trim(),
         hashtags,
+        quality: drafted.quality,
       });
-      await done('script', writer, script.viralHook || script.hook);
+      // The scorecard goes in the work log too, so the console shows what the
+      // checks thought next to the name of whoever wrote it.
+      await done(
+        'script',
+        writer,
+        `${script.viralHook || script.hook} — checks: ${Math.round(drafted.quality.score)}/100 ${drafted.quality.verdict}`,
+      );
     } catch (e) {
       const message = (e as Error).message;
       await failed('script', writer, message);
@@ -543,6 +550,7 @@ async function createPost(opts: {
     media: [],
     targets,
     results: {},
+    quality: null,
     revisions: [],
     error: null,
     approvedBy: null,
@@ -663,23 +671,34 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
 
 /** One scheduled day: whatever formats today calls for, all of them queued. */
 async function runDaily(date: string): Promise<string> {
-  const wanted = Math.max(1, Math.min((await getSocialSettings()).postsPerDay, FORMATS.length));
+  const settings = await getSocialSettings();
+  const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
   const made: string[] = [];
 
-  for (let i = 0; i < wanted; i++) {
-    // Re-read: nextFormat advances the stored index, so a second piece the same
-    // morning has to see the first one's advance or it makes the same format
-    // twice and then skips itself on the duplicate id.
-    const format = await nextFormat(await getSocialSettings());
+  /** Queue one piece, unless this date already has that format. */
+  const queue = async (format: ContentFormat): Promise<void> => {
     const id = postIdFor(date, format);
-    if ((await postRef(id).get()).exists) continue;
+    if ((await postRef(id).get()).exists) return;
     try {
       await createPost({ date, format });
       made.push(format);
     } catch (e) {
       logger.error('social: a scheduled piece failed', { date, format, message: (e as Error).message });
     }
+  };
+
+  for (let i = 0; i < wanted; i++) {
+    // Re-read: nextFormat advances the stored index, so a second piece the same
+    // morning has to see the first one's advance or it makes the same format
+    // twice and then skips itself on the duplicate id.
+    await queue(await nextFormat(await getSocialSettings()));
   }
+
+  // The story is not part of the rotation — it goes out every day the desk
+  // runs, because an account with a ring on it most days reads as a company
+  // somebody works at. `queue` is a no-op if the rotation already landed on a
+  // story this morning, so this never doubles up.
+  if (settings.dailyStory) await queue('story');
 
   return made.length ? `Queued ${made.join(', ')} for ${date}.` : `Nothing new to queue for ${date}.`;
 }
@@ -852,6 +871,7 @@ export const adminRequestSocialChanges = onCall(
       await patch(postId, {
         caption: `${rewritten.caption}\n\n${rewritten.hashtags.map((h) => `#${h}`).join(' ')}`.trim(),
         hashtags: rewritten.hashtags,
+        quality: rewritten.quality,
         status: 'awaiting_approval' as PostStatus,
       });
       await setWork(postId, 'script', {

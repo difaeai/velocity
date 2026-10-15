@@ -8,6 +8,9 @@
  * Hire nobody who designs and the design stage honestly reports that there is
  * no designer, rather than silently producing nothing.
  */
+import type { QualityReport } from './lint';
+
+export type { QualityReport };
 
 /** Every network the desk knows about. The doc id in `socialAccounts` is this. */
 export const PLATFORMS = [
@@ -573,6 +576,13 @@ export interface SocialPost {
   media: MediaAsset[];
   targets: Platform[];
   results: Partial<Record<Platform, PublishResult>>;
+  /**
+   * What the deterministic checks in `lint.ts` made of the writing — the hook
+   * panel, the caption lint, the machine-voice panel and the beat timings.
+   * Costs nothing to produce and is shown in the queue, so a piece can be
+   * waved through or sent back without reading it end to end first.
+   */
+  quality: QualityReport | null;
   /** Every round of feedback this post has been through. */
   revisions: Revision[];
   error: string | null;
@@ -669,6 +679,16 @@ export interface SocialSettings {
   runHour: number;
   /** How many pieces a day, each the next format up. */
   postsPerDay: number;
+  /**
+   * A story every day, on top of the rotation.
+   *
+   * Stories are not a format you take a turn at — an account with a ring on it
+   * most days reads as a company somebody works at, and an account without one
+   * reads as a logo. The rotation is for the feed, which is a different job:
+   * a reel reaches people who do not follow us, a story is for the people who
+   * already do. So this is its own switch rather than another slot.
+   */
+  dailyStory: boolean;
   /** Where a finished post goes — filtered per format by what each takes. */
   platforms: Platform[];
 
@@ -715,6 +735,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
   runHour: 10,
   postsPerDay: 1,
+  dailyStory: true,
   platforms: ['facebook', 'instagram'],
 
   angles: [...DEFAULT_ANGLES],
