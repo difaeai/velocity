@@ -258,7 +258,25 @@ export async function runDriverVerification(driverId: string): Promise<Verificat
     config,
   });
 
-  await applyDecision({ driverId, decision, report, duplicates, config, by: 'engine' });
+  // Remember the licence number the model read, so the duplicate check above
+  // can use it NEXT time. Nothing else in the system ever captures it — the
+  // onboarding form does not ask for one — so without this the licence arm of
+  // findDuplicates would be a query that can never match anything.
+  //
+  // It is only ever a growing index: the first driver on a licence is checked
+  // against nobody, and everyone after them is checked against the first.
+  const licenseNumber =
+    report?.documents.find((d) => d.kind === 'license')?.fields.idNumber?.trim() || null;
+
+  await applyDecision({
+    driverId,
+    decision,
+    report,
+    duplicates,
+    config,
+    by: 'engine',
+    licenseNumber,
+  });
   return decision;
 }
 
@@ -277,9 +295,14 @@ async function applyDecision(params: {
   duplicates: DuplicateHit[];
   config: VerificationConfig;
   by: string;
+  /** Read off the licence, for the next applicant's duplicate check. */
+  licenseNumber?: string | null;
 }): Promise<void> {
   const { driverId, decision, config, by } = params;
   const ref = db.doc(`drivers/${driverId}`);
+  // Only written when we actually read one — a null here would wipe a number
+  // an earlier, clearer photograph had already given us.
+  const licensePatch = params.licenseNumber ? { licenseNumber: params.licenseNumber } : {};
 
   const verification = {
     status: decision.status,
@@ -304,6 +327,7 @@ async function applyDecision(params: {
         reviewReason: null,
         rejectedSections: [],
         verification,
+        ...licensePatch,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -326,6 +350,7 @@ async function applyDecision(params: {
         rejectedSections: decision.rejectedSections,
         reviewedBy: 'ai',
         verification,
+        ...licensePatch,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -337,6 +362,7 @@ async function applyDecision(params: {
         verificationStatus: 'pending',
         reviewReason: null,
         verification,
+        ...licensePatch,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
