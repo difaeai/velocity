@@ -78,6 +78,7 @@ so you can veto the idea rather than the execution.
       ├─ market read        research assistant (grounded Google Search)
       ├─ search brief       SEO expert — before a word is written
       ├─ the script         content writer
+      │    └─ the checks    free, in code — one scoped rewrite if they fail
       ├─ YouTube & Google   Google SEO expert
       ├─ the pictures       designer
       ├─ the cut           video editor            (video formats only)
@@ -118,6 +119,73 @@ output, and no guaranteed-income language ("earn X per month").
 
 ---
 
+## 2a. The playbook, and the checks that cost nothing
+
+Everyone on the desk is given the same craft, and it is given to them **once, in
+code**, rather than typed into the brief box every morning.
+
+### The playbook
+
+[`playbook.ts`](../backend/functions/src/social/playbook.ts) carries what is
+actually known about getting reach on Instagram in 2026: the ranking order
+(sends beat saves beat comments beat watch time, and likes are worth almost
+nothing), the 26 hook formulas with the trap that ruins each one, the
+125-character fold a caption lives or dies at, the five-hashtag cap, the story
+frame order and which sticker does which job, the Reels safe zone in pixels, the
+stock vocabulary that makes writing read as machine-written, and the triage
+order for answering a thread.
+
+It is distilled from three open MIT skill packs —
+[instagram-agent-skill](https://github.com/Jakeschincariol/instagram-agent-skill),
+[instagram-skills](https://github.com/sergebulaev/instagram-skills) and
+[video-edit-skill](https://github.com/tenfoldmarc/video-edit-skill) — and it is
+**sliced per role**. The designer never sees the hook formulas; the writer never
+sees the sticker table. A block nobody in that seat will use is a block we pay
+for eight times a week to no effect.
+
+The hard rules still outrank it. A hook formula is a *shape*, never a fact:
+"{N}% of {group}" is a template for a sentence, not permission to invent a
+statistic, and the FACTS block remains the only place a number may come from.
+
+### The checks
+
+[`lint.ts`](../backend/functions/src/social/lint.ts) is the half of the same
+craft that can be decided arithmetically, ported from the Python tools in the
+first pack. It runs on every piece, in Cloud Functions, on plain strings:
+
+| Check | What it catches |
+|---|---|
+| **The hook panel** | Length, specificity, stakes, frontloading and who it speaks to — plus the dealbreakers: a greeting, "stop scrolling", a video preamble, a hashtag or an emoji in the hook. |
+| **The caption lint** | Exactly what the feed shows before "… more", a first line that gets cut mid-clause, a sixth hashtag, generic tags, two asks or none, a dead link. |
+| **The voice panel** | Sentence-length variation, concreteness, stock vocabulary density, the typographic fingerprint, and the shapes models default to. |
+| **The beat sheet** | Ninety words of script in a twenty-second cut, a hook that takes five seconds to say, a beat with nothing changing on screen, no loop back to the first line. |
+
+**It is free.** A quality gate that costs a model call per piece is a gate that
+doubles the bill; this one is a few milliseconds of regex. It only spends a call
+when it actually found something, and then exactly one: a scoped rewrite that is
+kept only if it scored better than the draft it replaced. Never a loop — an
+unattended run that can call itself until it is happy is one that can spend a
+month's budget overnight.
+
+The scorecard is stored on the piece and shown in the queue, so "the hook scores
+42 and there are six hashtags" is a reason to send something back without
+reading it end to end first.
+
+**What the number is not.** The pack's own measurement, repeated here because it
+decides how much weight to put on it: against hooks written deliberately badly
+the panel separates well (AUC 0.83); between one good writer's hits and that
+same writer's misses it is close to a coin flip (AUC 0.56). It is a floor, not a
+judge. Nothing that only reads text can tell you which of two good hooks will
+travel.
+
+One deliberate departure from the Python: a check that cannot judge a piece of
+text — burstiness needs four sentences — is left out of the arithmetic instead
+of scoring a neutral 50 that drags the verdict down. Instagram captions are
+three sentences long, and a gate that flags everything is one people learn to
+click past.
+
+---
+
 ## 3. Formats
 
 The format decides which stages run and where the piece can go.
@@ -129,6 +197,13 @@ The format decides which stages run and where the piece can go.
 | **Carousel** | 4:5 ×5 | Five slide briefs, art-directed as one set | Instagram, Facebook, Threads |
 | **Post** | 4:5 | One image brief | Instagram, Facebook, Threads, X, LinkedIn |
 | **Story** | 9:16 | One frame brief | Instagram, Facebook |
+
+A story is also the one format that is **not** only a rotation slot. With *A
+story every day* on (the default), the desk queues one every day it runs, on top
+of whatever the rotation landed on, and skips it on a day the rotation already
+made one. Stories are for the people who already follow us — a ring on the
+profile most days is the difference between a company somebody works at and a
+logo — while a reel is what reaches the people who do not.
 
 `PLATFORM_FORMATS` in [`types.ts`](../backend/functions/src/social/types.ts) is
 the matrix everything trusts: the console greys out what an adapter cannot do,

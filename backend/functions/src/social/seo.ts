@@ -65,11 +65,11 @@ export async function seoPass(params: {
   try {
     const { data } = await generateJson<Record<string, unknown>>({
       model: params.settings.textModel,
-      system: `${systemFor(params.employee, params.settings)}
+      system: `${systemFor(params.employee, params.settings, params.format)}
 
 You are briefing the writer *before* they write, so your words end up inside the piece rather than stapled to the end of it.
 
-Hashtags: five to eight, no # prefix. Choose them because a human types them into the search box, not because they are big. Two or three should be local (a city, a route, a Pakistani phrase people actually use).
+Hashtags: exactly FIVE, no # prefix. Instagram capped a caption at five on 18 December 2025 and tags past the fifth do nothing at all. Size them rather than chasing volume: two niche (small enough that we can actually rank in them, a route or a city), two mid (the category somebody browses), one broad. Choose each because a human types it into the search box, not because it is big, and keep most of them local. Never #viral, #fyp, #explore, #trending, #instagood or #reels — they describe nothing and they rank for nothing.
 
 Alt text: one per frame, in order, ${spec.slides} of them. A real description of the picture for someone who cannot see it — not a keyword list.
 
@@ -77,7 +77,7 @@ Reply with one JSON object and nothing else:
 {
   "searchIntent": "the query this piece should answer, in the words someone would type",
   "keywords": ["4-8 phrases that belong in the spoken or on-screen copy"],
-  "hashtags": ["5-8 tags, no # prefix"],
+  "hashtags": ["exactly 5 tags, no # prefix: 2 niche, 2 mid, 1 broad"],
   "altTexts": ["one per frame, in order"],
   "note": "one line for the console: the call you made and why"
 }`,

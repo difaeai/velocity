@@ -68,6 +68,7 @@ export default function AutomationPage() {
         enabled: settings.enabled,
         runHour: settings.runHour,
         postsPerDay: settings.postsPerDay,
+        dailyStory: settings.dailyStory,
         platforms: settings.platforms,
         formats: settings.formats,
         angles: settings.angles,
@@ -178,6 +179,24 @@ export default function AutomationPage() {
             </select>
           </Field>
         </div>
+
+        <label
+          style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, cursor: 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.dailyStory}
+            onChange={(e) => edit({ dailyStory: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13 }}>
+            A story every day, on top of the rotation
+            <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
+              Stories are for the people who already follow us, and a ring on the profile most days is the
+              difference between a company and a logo. Skipped on a day the rotation already made one.
+            </span>
+          </span>
+        </label>
 
         <p style={{ fontSize: 12.5, color: colors.muted, marginTop: 14, marginBottom: 0 }}>
           Nothing publishes itself. Every piece stops in the approval queue for you to approve, send back, reject or

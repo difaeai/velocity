@@ -56,7 +56,7 @@ export async function planCut(params: {
   try {
     const { data } = await generateJson<{ prompt?: unknown; note?: unknown }>({
       model: params.settings.textModel,
-      system: `${systemFor(params.employee, params.settings)}
+      system: `${systemFor(params.employee, params.settings, params.format)}
 
 You are writing a single brief for whoever makes this video — a person with a camera and an editor, or a text-to-video tool. Assume no second take and no chance to ask you a question, so the brief carries everything: the shot order with rough timings, camera movement, lighting, wardrobe, the spoken voiceover verbatim, the on-screen text verbatim, and what the audio bed is doing.
 

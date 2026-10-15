@@ -81,7 +81,7 @@ export async function planDistribution(params: {
   try {
     const { data } = await generateJson<{ captions?: Record<string, unknown>; targets?: unknown; note?: unknown }>({
       model: params.settings.textModel,
-      system: `${systemFor(params.employee, params.settings)}
+      system: `${systemFor(params.employee, params.settings, params.format)}
 
 You are adapting one finished piece for each network it is going to, and deciding where it belongs.
 

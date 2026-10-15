@@ -11,6 +11,7 @@
  */
 import { employeeIntro } from './employees';
 import { generateJson } from './claude';
+import { playbookFor, playbookForStandup } from './playbook';
 import {
   FORMAT_SPECS,
   ROLE_SPECS,
@@ -52,9 +53,31 @@ export function standingInstructions(settings: SocialSettings): string {
     : '';
 }
 
-/** The system prompt one employee starts from. */
-export function systemFor(employee: Employee, settings: SocialSettings): string {
-  return [employeeIntro(employee), '', BRAND, '', HARD_RULES, '', standingInstructions(settings)]
+/**
+ * The system prompt one employee starts from.
+ *
+ * Four things, every time: who they are, what we sell, the rules nobody
+ * overrides, and the craft their seat works to — then whatever the admin has
+ * told the whole team. The playbook is sliced by role rather than pasted whole
+ * (see `playbook.ts`), so the designer is not paying for the hook formulas and
+ * the writer is not paying for the sticker table.
+ */
+export function systemFor(
+  employee: Employee,
+  settings: SocialSettings,
+  format: ContentFormat | null = null,
+): string {
+  return [
+    employeeIntro(employee),
+    '',
+    BRAND,
+    '',
+    HARD_RULES,
+    '',
+    playbookFor(employee.role, format),
+    '',
+    standingInstructions(settings),
+  ]
     .join('\n')
     .trim();
 }
@@ -114,6 +137,8 @@ ${BRAND}
 
 ${HARD_RULES}
 
+${playbookForStandup(params.format)}
+
 IN THE ROOM TODAY:
 ${roster(params.team)}
 
@@ -128,7 +153,7 @@ Reply with one JSON object and nothing else:
   "concept": "one sentence, concrete, filmable",
   "audience": "who exactly this is for",
   "why": "why this today",
-  "hookDirection": "the shape of the opening — not the words, the writer writes those",
+  "hookDirection": "the shape of the opening — name one of the 26 formulas by number and name, and say what it is pointed at. Not the words: the writer writes those",
   "visualDirection": "what the designer is making: subject, light, colour, type treatment",
   "editDirection": "what the editor is cutting: pacing, the interrupt, the sound. Empty string for still formats.",
   "distribution": "what the manager does with it: per-network angle, best time, what to say to the first ten comments",

@@ -338,6 +338,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
                   Why it should travel: {post.script.viralHook}
                 </div>
               ) : null}
+              <Scorecard quality={post.quality} />
             </div>
           ) : (
             <div style={{ fontSize: 13, color: colors.muted }}>
@@ -867,6 +868,90 @@ function Brief({ label, overlay, text }: { label: string; overlay: string; text:
         </button>
       </div>
       <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>{text}</p>
+    </div>
+  );
+}
+
+/**
+ * The checks, in one line you can read without opening anything.
+ *
+ * These are scored in the backend in code — no model call, no cost — so they
+ * are on every piece, and the point of showing them here is that "the hook
+ * scores 42 and the caption is over the hashtag cap" is a reason to send
+ * something back without reading it end to end first.
+ *
+ * The number is a floor, not a verdict. It catches a hook that opens on a
+ * greeting and a script that will not fit the cut; it cannot tell you which of
+ * two good hooks will travel. Nothing that only reads text can.
+ */
+function Scorecard({ quality }: { quality: SocialPostDoc['quality'] }) {
+  const [open, setOpen] = useState(false);
+  if (!quality) return null;
+
+  const tone =
+    quality.verdict === 'FIX' ? '#ff6b6b' : quality.verdict === 'REVIEW' ? '#ffd166' : '#28c76f';
+
+  const parts = [
+    `hook ${Math.round(quality.hook.score)} ${quality.hook.verdict.toLowerCase()}`,
+    `caption ${quality.caption.verdict.toLowerCase()}`,
+    `${quality.caption.hashtags} tag${quality.caption.hashtags === 1 ? '' : 's'}`,
+    quality.human.verdict === 'PASS' ? 'reads human' : `voice ${quality.human.verdict.toLowerCase()}`,
+    quality.timing ? `${quality.timing.seconds.toFixed(0)}s of script` : '',
+  ].filter(Boolean);
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '5px 9px',
+          border: `1px solid ${tone}40`,
+          borderRadius: 7,
+          background: `${tone}12`,
+          color: colors.text,
+          font: 'inherit',
+          fontSize: 11.5,
+          cursor: quality.notes.length ? 'pointer' : 'default',
+        }}
+      >
+        <span style={{ fontWeight: 900, color: tone }}>{Math.round(quality.score)}/100</span>
+        <span style={{ color: colors.muted }}>{parts.join(' · ')}</span>
+        {quality.notes.length ? (
+          <span style={{ color: colors.muted, fontWeight: 800 }}>{open ? '▴' : '▾'}</span>
+        ) : null}
+      </button>
+
+      {open && quality.notes.length ? (
+        <ul style={{ margin: '7px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.6, color: colors.muted }}>
+          {quality.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {open && quality.caption.visible ? (
+        <div style={{ marginTop: 7 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: colors.muted, marginBottom: 3 }}>
+            WHAT THE FEED SHOWS BEFORE &ldquo;… MORE&rdquo;
+          </div>
+          <div
+            style={{
+              padding: 8,
+              border: `1px dashed ${colors.border}`,
+              borderRadius: 6,
+              fontSize: 12,
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {quality.caption.visible}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
