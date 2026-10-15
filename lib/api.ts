@@ -223,6 +223,7 @@ export const adminApi = {
         minDaysBeforeExpiry?: number;
         requireHighConfidence?: boolean;
         rejectOnDuplicateCnic?: boolean;
+        requireFaceScan?: boolean;
       };
     },
     {
@@ -234,6 +235,7 @@ export const adminApi = {
         minDaysBeforeExpiry: number;
         requireHighConfidence: boolean;
         rejectOnDuplicateCnic: boolean;
+        requireFaceScan: boolean;
       };
       aiConfigured: boolean;
     }
@@ -1207,6 +1209,8 @@ export interface SocialSettings {
   enabled: boolean;
   runHour: number;
   postsPerDay: number;
+  /** A story every day on top of the rotation, rather than a turn at a slot. */
+  dailyStory: boolean;
   platforms: SocialPlatform[];
 
   angles: string[];
@@ -1362,9 +1366,32 @@ export interface SocialPostDoc {
   results: Partial<
     Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>
   >;
+  /**
+   * What the backend's own checks made of the writing, scored in code rather
+   * than by a model: the hook panel, the caption lint against the 125-character
+   * fold and the five-hashtag cap, the machine-voice panel, and the beat
+   * timings. Absent on anything written before the checks existed.
+   */
+  quality?: SocialQualityReport | null;
   revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;
+}
+
+/**
+ * The scorecard. Mirrors `QualityReport` in `backend/functions/src/social/lint.ts`
+ * — the two have to move together, and the queue reads this one.
+ */
+export interface SocialQualityReport {
+  atMs: number;
+  score: number;
+  verdict: 'READY' | 'REVIEW' | 'FIX';
+  hook: { text: string; score: number; verdict: 'STRONG' | 'OK' | 'WEAK'; weakest: string | null };
+  caption: { score: number; verdict: 'READY' | 'REVIEW' | 'FIX'; visible: string; hashtags: number };
+  human: { score: number; verdict: 'PASS' | 'REVIEW' | 'FLAGGED'; weakest: string | null };
+  timing: { seconds: number; target: number | null; overruns: boolean } | null;
+  /** What would have to change, in the words the writer was handed. */
+  notes: string[];
 }
 
 /** Everything on a piece that can be shown, in either shape. */

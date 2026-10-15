@@ -307,6 +307,21 @@ export interface VerificationConfig {
   requireHighConfidence: boolean;
   /** Treat a CNIC already held by another driver as fatal rather than review. */
   rejectOnDuplicateCnic: boolean;
+  /**
+   * Whether an application without a live face scan is refused.
+   *
+   * SHIPS OFF, and that is not timidity. The scan needs expo-camera, which is a
+   * native dependency — so until a build carrying it reaches the stores, every
+   * driver on the current app physically cannot do one. Refusing them would
+   * mean a backend that rejects every new driver in the country for failing a
+   * step their app does not have.
+   *
+   * Turn it on from the Drivers dashboard once the new AAB/IPA is live, and
+   * leave a few days for drivers to update. Until then a missing scan is simply
+   * not held against anyone; a FAILED one still goes to a human, because
+   * failing it means they had the screen and something went wrong on it.
+   */
+  requireFaceScan: boolean;
 }
 
 export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
@@ -317,6 +332,7 @@ export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
   warnDaysBeforeExpiry: [30, 14, 7, 3, 1],
   requireHighConfidence: true,
   rejectOnDuplicateCnic: true,
+  requireFaceScan: false,
 };
 
 /**
@@ -543,6 +559,8 @@ const WEIGHTS = {
   faceUnclear: 12,
   faceScanMissing: 50,
   faceScanFailed: 70,
+  /** Below autoRejectMinRisk on purpose — see the call site. */
+  faceScanFailedOptional: 30,
   faceScanReview: 25,
   faceScanStale: 20,
   nameMismatch: 40,
@@ -638,19 +656,33 @@ export function decideDriverVerification(params: {
   //        borrowed; a head that turns on command when asked, seconds ago, in a
   //        sequence the server chose, cannot be.
   if (faceScan.status === 'missing') {
-    add(
-      'face_scan_missing',
-      'The driver has not completed a live face scan.',
-      'fatal',
-      WEIGHTS.faceScanMissing,
-      'basic',
-    );
+    // Silent while the requirement is off: a driver whose app has no face-scan
+    // screen has not failed anything, and a reason on their file saying they
+    // skipped a step that does not exist would be read by an admin as a mark
+    // against them. See VerificationConfig.requireFaceScan.
+    if (config.requireFaceScan) {
+      add(
+        'face_scan_missing',
+        'The driver has not completed a live face scan.',
+        'fatal',
+        WEIGHTS.faceScanMissing,
+        'basic',
+      );
+    }
   } else if (faceScan.status === 'failed') {
+    // Not gated on the flag. Failing a scan means they HAD the screen and
+    // something on it went wrong — a screen held to the camera, two different
+    // faces — which is worth acting on whether or not the step is compulsory.
     add(
       'face_scan_failed',
       'The live face scan did not pass — the poses asked for were not performed by a live person.',
-      'fatal',
-      WEIGHTS.faceScanFailed,
+      config.requireFaceScan ? 'fatal' : 'major',
+      // Weighted DOWN while the scan is optional, and not only to dodge the
+      // reject threshold: a driver who tried an optional step and failed it
+      // must not end up worse off than one who never tried. The scan has its
+      // own retry path for bad light and shaky hands, so a single failure is
+      // a reason to look, not a reason to refuse.
+      config.requireFaceScan ? WEIGHTS.faceScanFailed : WEIGHTS.faceScanFailedOptional,
       'basic',
     );
   } else if (faceScan.status === 'review') {
@@ -661,7 +693,7 @@ export function decideDriverVerification(params: {
       WEIGHTS.faceScanReview,
       'basic',
     );
-  } else if (!faceScanIsFresh(faceScan.passedAtMs, now)) {
+  } else if (config.requireFaceScan && !faceScanIsFresh(faceScan.passedAtMs, now)) {
     // Passed, but long enough ago that it is no longer evidence about today.
     add(
       'face_scan_stale',

@@ -477,28 +477,63 @@ describe('decideDriverVerification — the decision is writable to Firestore', (
   });
 });
 
-describe('decideDriverVerification — the face scan gate', () => {
+describe('decideDriverVerification — the face scan gate, once required', () => {
+  const required = { requireFaceScan: true };
+
   it('refuses an application with no face scan at all', () => {
-    const d = decide({ faceScan: { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null } });
+    const d = decide({
+      faceScan: { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null },
+      config: required,
+    });
     expect(d.status).toBe('rejected');
     expect(d.reasons.map((r) => r.code)).toContain('face_scan_missing');
     expect(d.rejectedSections).toContain('basic');
   });
 
   it('refuses an application whose face scan failed', () => {
-    const d = decide({ faceScan: { status: 'failed', matchesDocuments: 'unclear', passedAtMs: null } });
+    const d = decide({
+      faceScan: { status: 'failed', matchesDocuments: 'unclear', passedAtMs: null },
+      config: required,
+    });
     expect(d.status).toBe('rejected');
   });
 
   it('sends an unscoreable face scan to a human', () => {
-    const d = decide({ faceScan: { status: 'review', matchesDocuments: 'unclear', passedAtMs: null } });
+    const d = decide({
+      faceScan: { status: 'review', matchesDocuments: 'unclear', passedAtMs: null },
+      config: required,
+    });
     expect(d.status).toBe('review');
   });
 
   it('asks again for a scan that has gone stale', () => {
-    const d = decide({ faceScan: { ...PASSED_SCAN, passedAtMs: NOW - 400 * DAY } });
+    const d = decide({ faceScan: { ...PASSED_SCAN, passedAtMs: NOW - 400 * DAY }, config: required });
     expect(d.status).toBe('review');
     expect(d.reasons.map((r) => r.code)).toContain('face_scan_stale');
+  });
+});
+
+describe('decideDriverVerification — the face scan gate, before the app can do one', () => {
+  // This is the default, and it has to hold: the scan needs a native build, so
+  // until that build is in the stores every driver would fail a step their app
+  // does not have. Getting this wrong refuses every new driver in the country.
+  it('does not hold a missing scan against a driver, and still approves', () => {
+    const d = decide({ faceScan: { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null } });
+    expect(d.status).toBe('approved');
+    expect(d.reasons.map((r) => r.code)).not.toContain('face_scan_missing');
+  });
+
+  it('ignores a stale scan too', () => {
+    const d = decide({ faceScan: { ...PASSED_SCAN, passedAtMs: NOW - 400 * DAY } });
+    expect(d.status).toBe('approved');
+  });
+
+  it('still sends a FAILED scan to a human — they had the screen', () => {
+    // Attempting and failing means the build supports it and something on it
+    // went wrong: a screen held up to the camera, two different faces.
+    const d = decide({ faceScan: { status: 'failed', matchesDocuments: 'unclear', passedAtMs: null } });
+    expect(d.status).toBe('review');
+    expect(d.reasons.map((r) => r.code)).toContain('face_scan_failed');
   });
 });
 

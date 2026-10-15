@@ -1268,6 +1268,7 @@ function EngineSettings() {
     autoApproveMaxRisk: number;
     autoRejectMinRisk: number;
     minDaysBeforeExpiry: number;
+    requireFaceScan: boolean;
   } | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1363,6 +1364,25 @@ function EngineSettings() {
               onCommit={(v) => save({ minDaysBeforeExpiry: v })}
             />
           </div>
+
+          {/* The one setting with a prerequisite outside this dashboard. */}
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <Button
+                variant={config.requireFaceScan ? 'primary' : 'ghost'}
+                disabled={busy}
+                onClick={() => save({ requireFaceScan: !config.requireFaceScan })}
+              >
+                {config.requireFaceScan ? '✓ Face scan required' : 'Face scan optional'}
+              </Button>
+              <div style={{ fontSize: 12, color: colors.muted, flex: 1, minWidth: 260, lineHeight: 1.6 }}>
+                {config.requireFaceScan
+                  ? 'An application without a live face scan is refused. Only correct while the app in the stores has the face-scan screen.'
+                  : 'Turn this on only once the new app build is live in both stores and drivers have had a few days to update. Before then, drivers physically cannot do a face scan, and requiring one would refuse every new driver. A scan that was attempted and failed is still sent here either way.'}
+              </div>
+            </div>
+          </div>
+
           {err && <div style={{ color: colors.danger, fontSize: 12 }}>{err}</div>}
         </div>
       )}

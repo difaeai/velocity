@@ -23,7 +23,7 @@ import {
 import { applyCommissionCredit } from './commissionCredit';
 import { todayKey } from './dailyTarget';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
-import { enqueueDriverVerification } from './verification';
+import { enqueueDriverVerification, getVerificationConfig } from './verification';
 import { rateLimit } from '../lib/ratelimit';
 
 const onboardingSchema = z.object({
@@ -83,8 +83,14 @@ export const submitDriverOnboarding = onCall(async (req) => {
   // it proves a live person was holding the phone. Refusing here rather than
   // at the verification step means the driver is told while they are still on
   // the form, not two minutes later by a push notification.
-  const faceScanStatus = current?.faceScan?.status as string | undefined;
-  if (faceScanStatus !== 'passed') {
+  //
+  // Gated, and it has to be: the scan needs a build carrying expo-camera, so
+  // enforcing it before that build is in the stores would refuse every new
+  // driver in the country for skipping a screen their app does not have. The
+  // flag ships off and is turned on from the Drivers dashboard once the new
+  // binary is live. See VerificationConfig.requireFaceScan.
+  const { requireFaceScan } = await getVerificationConfig();
+  if (requireFaceScan && current?.faceScan?.status !== 'passed') {
     invalid('Complete the face scan before submitting your application.');
   }
 

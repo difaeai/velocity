@@ -469,6 +469,7 @@ export const adminVerificationSettings = onCall(async (req) => {
           warnDaysBeforeExpiry: z.array(z.number().min(0).max(365)).max(8).optional(),
           requireHighConfidence: z.boolean().optional(),
           rejectOnDuplicateCnic: z.boolean().optional(),
+          requireFaceScan: z.boolean().optional(),
         })
         .optional(),
     })
