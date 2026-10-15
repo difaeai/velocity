@@ -299,7 +299,15 @@ export const approveDriver = onCall(async (req) => {
 
   const ref = db.doc(`drivers/${driverId}`);
   const snap = await ref.get();
-  if (!snap.exists) invalid('Driver has not submitted onboarding.');
+  // Existence is no longer proof of a submission: the face scan writes
+  // drivers/{uid} the moment it passes, which is before the applicant has
+  // filled in a single document. Approving one of those would hand the driver
+  // role to somebody whose papers nobody has ever seen, so the status field —
+  // which only submitDriverOnboarding and adminCreateDriver ever set — is what
+  // is checked now.
+  if (!snap.exists || !snap.get('verificationStatus')) {
+    invalid('Driver has not submitted onboarding.');
+  }
 
   // What the engine had decided, so an override is visible as an override.
   // A human approving over a `rejected` verdict is the single most interesting
