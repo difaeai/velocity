@@ -444,6 +444,39 @@ describe('decideDriverVerification — what must NOT reject on its own', () => {
   });
 });
 
+describe('decideDriverVerification — the decision is writable to Firestore', () => {
+  // The whole decision is stored on drivers/{uid}.verification, and the Admin
+  // SDK throws on an undefined value because this backend does not set
+  // ignoreUndefinedProperties. An `undefined` anywhere in here would crash the
+  // verification job rather than failing a check, so every application would
+  // land in the review queue by accident and nobody would know why.
+  function assertNoUndefined(value: unknown, path = 'decision'): void {
+    expect(value, `${path} is undefined`).not.toBeUndefined();
+    if (value && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value)) assertNoUndefined(v, `${path}.${k}`);
+    }
+  }
+
+  it('carries no undefined through a reason without a section', () => {
+    // 'medium_confidence' and 'name_unclear' both attach to no section, and
+    // between them they appear on a large share of real applications.
+    const d = decide({
+      report: cleanReport({
+        overallConfidence: 'medium',
+        crossChecks: { ...cleanReport().crossChecks, nameConsistency: 'unclear' },
+      }),
+    });
+    expect(d.reasons.some((r) => !('section' in r))).toBe(true);
+    assertNoUndefined(d);
+  });
+
+  it('carries no undefined on an approval, a rejection or a review', () => {
+    assertNoUndefined(decide());
+    assertNoUndefined(decide({ faceScan: { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null } }));
+    assertNoUndefined(decide({ report: null }));
+  });
+});
+
 describe('decideDriverVerification — the face scan gate', () => {
   it('refuses an application with no face scan at all', () => {
     const d = decide({ faceScan: { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null } });

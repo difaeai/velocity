@@ -607,7 +607,13 @@ export function decideDriverVerification(params: {
     weight: number,
     section?: SectionKey,
   ): void => {
-    reasons.push({ code, detail, severity, section });
+    // `section` is OMITTED rather than set to undefined when there isn't one.
+    // The whole decision is written to Firestore, and the Admin SDK throws on
+    // an undefined value unless ignoreUndefinedProperties is set, which this
+    // backend deliberately does not set. A reason with no section is ordinary
+    // — "the names could not be compared", "the model was only moderately
+    // confident" — so this would have thrown on most applications.
+    reasons.push(section ? { code, detail, severity, section } : { code, detail, severity });
     risk += weight;
     if (section && severity !== 'minor') sections.add(section);
   };
