@@ -8,6 +8,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
+import type { FaceChallenge } from '../domain/faceScan';
 import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
 import type {
   Competitor, CompetitorCategoryRates, MarketComparison,
@@ -217,6 +218,17 @@ export interface PoolCompanion {
   gender: Gender | string;
   /** How they came to be aboard — 'host' booked it, 'share' joined it. */
   kind?: 'host' | 'share' | 'enroute';
+  /**
+   * What previous co-riders made of them — the reputation that used to belong
+   * only to the driver.
+   *
+   * Null means "not enough ratings to say", NOT zero: show "New" rather than a
+   * number. The backend withholds the average below a threshold so one sour
+   * rating cannot brand somebody (see ratings/coRiders), and the count comes
+   * through regardless so the screen can say how solid the number is.
+   */
+  coRiderRating?: number | null;
+  coRiderRatingCount?: number;
 }
 
 export interface PoolTripByCode {
@@ -620,6 +632,41 @@ export const api = {
   submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
     'submitDriverOnboarding',
   ),
+
+  // ── The live face scan ────────────────────────────────────────────────────
+  /**
+   * Begin a face scan and find out which poses to ask for.
+   *
+   * The poses come from the SERVER, after this call — the applicant cannot
+   * know them in advance, which is the whole reason a photograph of a
+   * photograph cannot pass. Expires in three minutes; start a new one rather
+   * than reusing a stale `scanId`.
+   */
+  startFaceScan: callable<
+    Record<string, never>,
+    {
+      ok: boolean;
+      scanId: string;
+      challenges: { challenge: FaceChallenge; prompt: string }[];
+      expiresAtMs: number;
+      frames: number;
+    }
+  >('startFaceScan'),
+  /**
+   * Hand in the captured frames, in the order the poses were asked, and get a
+   * verdict back. Single-use: a scan id is spent whether it passes or not.
+   */
+  submitFaceScan: callable<
+    { scanId: string; framePaths: string[] },
+    {
+      ok: boolean;
+      status: 'passed' | 'failed' | 'review';
+      message: string;
+      posesMatched: number;
+      posesAsked: number;
+      canRetry: boolean;
+    }
+  >('submitFaceScan'),
 
   // ── The driver's cars ─────────────────────────────────────────────────────
   /**
@@ -1685,6 +1732,33 @@ export const api = {
     { bookingId: string; reason?: string },
     { ok: boolean; message: string }
   >('cancelSpecialRidesBooking'),
+
+  // ── Co-rider ratings ──────────────────────────────────────────────────────
+  // Riders rating the people they shared the car with. A different relationship
+  // from submitRating above, which is the rider↔driver one, and a separate
+  // average: see the backend's ratings/coRiders.
+  //
+  // `coRiderRating` is null when too few people have rated them to show a
+  // number — the screen says "New rider", it does not print a zero.
+  getCoRiderRatingTargets: callable<
+    { tripId: string },
+    {
+      targets: {
+        uid: string;
+        firstName: string;
+        gender: string;
+        alreadyRated: boolean;
+        coRiderRating: number | null;
+        coRiderRatingCount: number;
+      }[];
+      /** When the window shuts. Null on a ride with no clock to read. */
+      closesAtMs: number | null;
+    }
+  >('getCoRiderRatingTargets'),
+  submitCoRiderRating: callable<
+    { tripId: string; targetUid: string; stars: number; comment?: string },
+    { ok: boolean }
+  >('submitCoRiderRating'),
 };
 
 // ── Find your Customers types ────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,11 +10,21 @@ import { OnbButton, StepHeader, oc } from '../../../src/ui/onboarding';
 import { themed } from '../../../src/theme';
 import { PRIVACY_URL, TERMS_URL } from '../../../src/share/links';
 
-const SECTIONS: { key: SectionKey; label: string; route: string }[] = [
+const SECTIONS: { key: SectionKey; label: string; hint?: string; route: string }[] = [
   { key: 'basic', label: 'Basic info', route: '/passenger/become-driver/basic-info' },
   { key: 'license', label: 'Driver licence', route: '/passenger/become-driver/license' },
   { key: 'cnic', label: 'CNIC', route: '/passenger/become-driver/cnic' },
   { key: 'vehicle', label: 'Vehicle info', route: '/passenger/become-driver/vehicle' },
+  // Last on purpose. The scan compares the driver's live face against the CNIC
+  // photo, so it is worth more once the CNIC is already uploaded — and a driver
+  // asked to show their face before they have typed anything is a driver who
+  // wonders what they have walked into.
+  {
+    key: 'faceScan',
+    label: 'Face scan',
+    hint: 'A few seconds on camera to show it is really you',
+    route: '/passenger/become-driver/face-scan',
+  },
 ];
 
 export default function Checklist() {
@@ -23,6 +33,7 @@ export default function Checklist() {
   const profile = useDriverProfile(user?.uid);
   const { complete, allComplete, submitting, error, submit } = useOnboarding();
   const status = profile?.verificationStatus;
+  const verifying = profile?.verification?.status === 'verifying';
 
   async function onSubmit() {
     const ok = await submit();
@@ -49,9 +60,26 @@ export default function Checklist() {
           </View>
         ) : null}
         {status === 'pending' ? (
-          <View style={styles.pending}>
-            <Text style={styles.pendingText}>Your application is under review.</Text>
-          </View>
+          // Two different waits that look identical from outside and are not:
+          // the engine is reading the documents right now (seconds), or it has
+          // finished and handed the application to a person (hours). Saying
+          // which is the difference between a driver who waits and a driver who
+          // resubmits four times.
+          verifying ? (
+            <View style={styles.checking}>
+              <ActivityIndicator color={oc.green} />
+              <Text style={styles.checkingText}>
+                Checking your documents… this usually takes under a minute.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.pending}>
+              <Text style={styles.pendingText}>
+                Your application is with our team for review. We will let you know as soon as it is
+                done.
+              </Text>
+            </View>
+          )
         ) : null}
 
         <View style={styles.card}>
@@ -74,9 +102,11 @@ export default function Checklist() {
                   <Text style={[styles.rowLabel, rejected && { color: '#c0392b' }]}>
                     {s.label}
                   </Text>
-                  {rejected && (
-                    <Text style={styles.rejectedTag}>Admin requested changes — tap to update</Text>
-                  )}
+                  {rejected ? (
+                    <Text style={styles.rejectedTag}>Changes requested — tap to update</Text>
+                  ) : !done && s.hint ? (
+                    <Text style={styles.rowHint}>{s.hint}</Text>
+                  ) : null}
                 </View>
                 <View style={styles.rowRight}>
                   {rejected ? (
@@ -102,14 +132,24 @@ export default function Checklist() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <OnbButton
-          label={status === 'pending' ? 'Submitted — under review' : 'Submit application'}
+          label={
+            status === 'pending'
+              ? verifying
+                ? 'Checking your documents…'
+                : 'Submitted — under review'
+              : 'Submit application'
+          }
           onPress={onSubmit}
           loading={submitting}
           disabled={!allComplete || status === 'pending'}
           disabledHint={
             status === 'pending'
-              ? 'Your application is already with our team — we will notify you once it is reviewed.'
-              : 'Complete all the sections above first — the incomplete ones are marked with !'
+              ? verifying
+                ? 'We are reading your documents now. This screen will update on its own.'
+                : 'Your application is already with our team — we will notify you once it is reviewed.'
+              : !complete.faceScan
+                ? 'Finish the face scan — it is the one step we cannot accept a photo for.'
+                : 'Complete all the sections above first — the incomplete ones are marked with !'
           }
         />
         <Text style={styles.terms}>
@@ -140,7 +180,13 @@ const styles = themed(() => StyleSheet.create({
   rejectedDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#e74c3c', alignItems: 'center', justifyContent: 'center' },
   rejectedDotText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   pending: { backgroundColor: oc.note, borderColor: '#f5d384', borderWidth: 1, borderRadius: 12, padding: 14 },
-  pendingText: { color: oc.noteText, fontWeight: '700', fontSize: 14 },
+  pendingText: { color: oc.noteText, fontWeight: '700', fontSize: 14, lineHeight: 20 },
+  checking: {
+    backgroundColor: '#eaf7ee', borderColor: '#b7e3c4', borderWidth: 1, borderRadius: 12,
+    padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  checkingText: { flex: 1, color: '#1b7a2e', fontWeight: '700', fontSize: 14, lineHeight: 20 },
+  rowHint: { fontSize: 12, color: oc.sub, fontWeight: '600', marginTop: 2 },
   card: { backgroundColor: oc.card, borderRadius: 18, overflow: 'hidden' },
   row: {
     flexDirection: 'row',

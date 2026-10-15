@@ -94,6 +94,35 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- driverFaceScans/{scanId} ----------------------------------------
+    // One live face scan: the poses the SERVER chose, and what the model made
+    // of the frames that came back. Written only by startFaceScan /
+    // submitFaceScan.
+    //
+    // NO CLIENT READ, not even by the owner — and that is the whole point. The
+    // poses are the secret: an applicant who could read this document before
+    // submitting would know what they were about to be asked and could hold up
+    // a prepared photograph for each one, which is exactly the attack the scan
+    // exists to stop. The applicant learns the poses from the callable's return
+    // value, one scan at a time, and the verdict reaches them on their own
+    // driver document (drivers/{uid}.faceScan) instead.
+    match /driverFaceScans/{scanId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- driverVerificationJobs/{jobId} -----------------------------------
+    // The queue the verification engine works through — one document per
+    // submission, written by submitDriverOnboarding and consumed by the
+    // processDriverVerification trigger. A client that could create one could
+    // make us re-run a paid vision pass on any driver at will, so creation is
+    // server-only; a client that could read one would see another applicant's
+    // risk score. Admins read it as an audit trail of every attempt.
+    match /driverVerificationJobs/{jobId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- drivers/{uid} ---------------------------------------------------
     // Driver operational doc. Verification, rating, earnings and commission are
     // server-only. The driver may update ONLY presence/location fields so GPS

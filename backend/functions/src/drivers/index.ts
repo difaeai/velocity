@@ -23,6 +23,8 @@ import {
 import { applyCommissionCredit } from './commissionCredit';
 import { todayKey } from './dailyTarget';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
+import { enqueueDriverVerification } from './verification';
+import { rateLimit } from '../lib/ratelimit';
 
 const onboardingSchema = z.object({
   fullName:            z.string().min(2).max(120),
@@ -71,6 +73,21 @@ export const submitDriverOnboarding = onCall(async (req) => {
     invalid('Driver is already approved.');
   }
 
+  // Every submission costs a vision pass over six photographs, so a resubmit
+  // loop is a real bill rather than a nuisance. Five an hour is far more than
+  // an honest driver fixing a rejected section needs, and far less than a
+  // script would want.
+  await rateLimit(ctx.uid, 'submitDriverOnboarding', 5, 3600);
+
+  // The face scan is the one thing that cannot be redone from a stored file:
+  // it proves a live person was holding the phone. Refusing here rather than
+  // at the verification step means the driver is told while they are still on
+  // the form, not two minutes later by a push notification.
+  const faceScanStatus = current?.faceScan?.status as string | undefined;
+  if (faceScanStatus !== 'passed') {
+    invalid('Complete the face scan before submitting your application.');
+  }
+
   await ref.set(
     {
       driverId: ctx.uid,
@@ -82,14 +99,31 @@ export const submitDriverOnboarding = onCall(async (req) => {
       // Clear any previous rejection data on resubmission
       reviewReason: null,
       rejectedSections: [],
+      // The engine has not looked yet. The app shows this as "Checking your
+      // documents…" and swaps it for the verdict when the job lands, so a
+      // resubmission never sits showing the previous rejection.
+      verification: {
+        status: 'verifying',
+        riskScore: null,
+        reasons: [],
+        startedAt: FieldValue.serverTimestamp(),
+      },
       submittedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
 
-  logger.info('Driver onboarding submitted', { uid: ctx.uid });
-  return { ok: true, verificationStatus: 'pending' };
+  // Hand off to the verification engine and return. The vision pass over six
+  // documents takes tens of seconds — far too long to hold a callable open on
+  // a phone — so the verdict arrives on the driver doc, which the app streams.
+  const jobId = await enqueueDriverVerification(
+    ctx.uid,
+    current?.verificationStatus ? 'resubmission' : 'onboarding',
+  );
+
+  logger.info('Driver onboarding submitted', { uid: ctx.uid, jobId });
+  return { ok: true, verificationStatus: 'pending', verification: 'verifying' };
 });
 
 const adminCreateDriverSchema = z.object({
@@ -261,12 +295,26 @@ export const approveDriver = onCall(async (req) => {
   const snap = await ref.get();
   if (!snap.exists) invalid('Driver has not submitted onboarding.');
 
+  // What the engine had decided, so an override is visible as an override.
+  // A human approving over a `rejected` verdict is the single most interesting
+  // row in this system — it is either the engine being too harsh or an admin
+  // being talked into something, and both are worth being able to find later.
+  const engineVerdict = (snap.get('verification.status') as string | undefined) ?? null;
+
   await applyRole(driverId, 'driver');
   await ref.set(
     {
       verificationStatus: 'approved',
       approvedBy: admin.uid,
       approvedAt: FieldValue.serverTimestamp(),
+      reviewReason: null,
+      rejectedSections: [],
+      verification: {
+        status: 'approved',
+        decidedBy: admin.uid,
+        decidedAt: FieldValue.serverTimestamp(),
+        overrodeEngine: engineVerdict && engineVerdict !== 'approved' ? engineVerdict : null,
+      },
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -298,7 +346,9 @@ export const rejectDriver = onCall(async (req) => {
   const { driverId, reason, suspend, rejectedSections } = parsed.data;
 
   const ref = db.doc(`drivers/${driverId}`);
-  if (!(await ref.get()).exists) invalid('Unknown driver.');
+  const snap = await ref.get();
+  if (!snap.exists) invalid('Unknown driver.');
+  const engineVerdict = (snap.get('verification.status') as string | undefined) ?? null;
 
   // Drop the driver role back to passenger so they lose driver privileges.
   await applyRole(driverId, 'passenger');
@@ -310,6 +360,12 @@ export const rejectDriver = onCall(async (req) => {
       reviewReason:     reason ?? null,
       rejectedSections: rejectedSections ?? [],
       reviewedBy:       admin.uid,
+      verification: {
+        status: 'rejected',
+        decidedBy: admin.uid,
+        decidedAt: FieldValue.serverTimestamp(),
+        overrodeEngine: engineVerdict && engineVerdict !== 'rejected' ? engineVerdict : null,
+      },
       updatedAt:        FieldValue.serverTimestamp(),
     },
     { merge: true },

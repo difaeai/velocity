@@ -42,6 +42,11 @@ export default function ApplicationSubmitted() {
   if (role === 'driver') return <Redirect href="/driver/home" />;
 
   const rejected = status === 'rejected' || status === 'suspended';
+  // The engine has the application in hand right now, as opposed to a human
+  // having it. Seconds rather than hours, and worth saying so — a driver told
+  // "under review" with no end in sight resubmits, and each resubmission costs
+  // us another pass over six documents.
+  const verifying = profile?.verification?.status === 'verifying';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -70,18 +75,31 @@ export default function ApplicationSubmitted() {
               />
             </View>
           </>
-        ) : (
+        ) : verifying ? (
           <>
-            <Text style={styles.title}>Application submitted</Text>
+            <Text style={styles.title}>Checking your documents</Text>
             <Text style={styles.subtitle}>
-              Your details have been sent to our team for review. You’ll be
-              approved shortly — this screen will take you straight to your
-              driver dashboard the moment you’re approved.
+              We are reading your licence, CNIC and vehicle papers now. This usually takes under a
+              minute, and this screen will change on its own — you do not have to wait here.
             </Text>
 
             <View style={styles.statusRow}>
               <ActivityIndicator color={oc.green} />
-              <Text style={styles.statusText}>Waiting for admin approval…</Text>
+              <Text style={styles.statusText}>Verifying…</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Application submitted</Text>
+            <Text style={styles.subtitle}>
+              Your documents have been checked and passed to our team for a final look. We will
+              notify you as soon as it is done, and this screen will take you straight to your
+              driver dashboard the moment you are approved.
+            </Text>
+
+            <View style={styles.statusRow}>
+              <ActivityIndicator color={oc.green} />
+              <Text style={styles.statusText}>With our team…</Text>
             </View>
           </>
         )}

@@ -6,7 +6,14 @@ import { uploadDriverDoc, type UploadResult } from '../lib/uploadDoc';
 import { api } from '../api/client';
 import type { RideType } from '../domain/types';
 
-export type SectionKey = 'basic' | 'license' | 'cnic' | 'vehicle';
+/**
+ * `faceScan` is a section like the others on the checklist, but unlike the
+ * others it is not satisfied by anything in `OnboardingData`: the only thing
+ * that completes it is a `passed` verdict the backend wrote onto the driver
+ * document. There is deliberately no local state for it — a flag the handset
+ * could set would be a flag a patched handset could set.
+ */
+export type SectionKey = 'basic' | 'license' | 'cnic' | 'vehicle' | 'faceScan';
 
 export interface OnboardingData {
   photo: string | null;
@@ -121,6 +128,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       data.plate.trim().length > 2 &&
       !!data.vehicleDoc &&
       !!data.vehiclePhoto,
+    // Read straight off the server's verdict, never from local state. The
+    // backend refuses the submission too, so this is the courteous half of a
+    // rule that is enforced somewhere a patched build cannot reach.
+    faceScan: profile?.faceScan?.status === 'passed',
   };
   const allComplete = Object.values(complete).every(Boolean);
 

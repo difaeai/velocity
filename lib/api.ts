@@ -197,6 +197,47 @@ export const adminApi = {
     'adminMarketRunReport',
   ),
   approveDriver: callable<{ driverId: string }, { ok: boolean }>('approveDriver'),
+  /**
+   * Run the verification engine over one driver again.
+   *
+   * The same code path the automatic check uses, so an admin pressing this gets
+   * the answer the engine would give today — useful after a threshold change,
+   * or when a driver swears the document it refused is the right one.
+   */
+  adminRerunDriverVerification: callable<
+    { driverId: string },
+    {
+      ok: boolean;
+      status: 'approved' | 'rejected' | 'review' | 'skipped';
+      riskScore: number | null;
+      reasons: { code: string; detail: string; severity: 'fatal' | 'major' | 'minor' }[];
+    }
+  >('adminRerunDriverVerification'),
+  /** Read or change the engine's thresholds; omit `patch` to just read them. */
+  adminVerificationSettings: callable<
+    {
+      patch?: {
+        mode?: 'full' | 'suggest' | 'off';
+        autoApproveMaxRisk?: number;
+        autoRejectMinRisk?: number;
+        minDaysBeforeExpiry?: number;
+        requireHighConfidence?: boolean;
+        rejectOnDuplicateCnic?: boolean;
+      };
+    },
+    {
+      ok: boolean;
+      config: {
+        mode: 'full' | 'suggest' | 'off';
+        autoApproveMaxRisk: number;
+        autoRejectMinRisk: number;
+        minDaysBeforeExpiry: number;
+        requireHighConfidence: boolean;
+        rejectOnDuplicateCnic: boolean;
+      };
+      aiConfigured: boolean;
+    }
+  >('adminVerificationSettings'),
   rejectDriver: callable<
     { driverId: string; reason?: string; suspend?: boolean; rejectedSections?: string[] },
     { ok: boolean }
@@ -532,7 +573,188 @@ export const adminApi = {
     Record<string, never>,
     { ok: boolean; scanned: number; stamped: number; ads: number; viewers: number }
   >('adminBackfillBusinessAdViewers'),
+
+  // ── The ride record ──────────────────────────────────────────────────────
+  // Every trip the platform has run, and the full file on any one of them.
+  // See backend/functions/src/admin/rideHistory.ts — in particular why only one
+  // equality filter reaches Firestore and the rest are applied in memory.
+  adminListRides: callable<RideHistoryFilters, RideHistoryPage>('adminListRides'),
+  adminGetRideDetail: callable<{ tripId: string }, RideDetail>('adminGetRideDetail'),
+  adminSearchRideParties: callable<
+    { term: string },
+    { people: RideParty[] }
+  >('adminSearchRideParties'),
 };
+
+/** What the ride ledger can be narrowed by. Every field is optional. */
+export interface RideHistoryFilters {
+  driverId?: string;
+  passengerId?: string;
+  riderId?: string;
+  status?: string;
+  pool?: boolean;
+  fromMs?: number;
+  toMs?: number;
+  limit?: number;
+  beforeMs?: number;
+}
+
+/** One row of the ledger. Names and plate are as they were ON THE DAY. */
+export interface RideHistoryRow {
+  id: string;
+  status: string | null;
+  rideType: string | null;
+  pool: boolean;
+  driverId: string | null;
+  driverName: string | null;
+  plate: string | null;
+  passengerId: string | null;
+  passengerName: string | null;
+  riders: number;
+  riderNames: string[];
+  pickupAddress: string | null;
+  dropoffAddress: string | null;
+  fare: number | null;
+  grossFare: number | null;
+  commission: number | null;
+  driverPayout: number | null;
+  paymentMethod: string | null;
+  createdAtMs: number | null;
+  completedAtMs: number | null;
+  cancelledByRole: string | null;
+  hasSafetyEvent: boolean;
+  disputed: boolean;
+}
+
+export interface RideHistoryPage {
+  rides: RideHistoryRow[];
+  /** Feed back as `beforeMs` for the next page; null when the list is done. */
+  nextBeforeMs: number | null;
+  /**
+   * Filters that could not be pushed into a Firestore index and were applied
+   * over the page instead. Shown in the UI because it explains why a page can
+   * come back shorter than the limit asked for.
+   */
+  filteredInCode: string[];
+  scanned: number;
+}
+
+/** One person on a ride, by full identity. Admin-only, by definition. */
+export interface RideRiderFile {
+  uid: string;
+  name: string | null;
+  phone: string | null;
+  gender: string | null;
+  cnic: string | null;
+  accountCreatedMs: number | null;
+  banned: boolean;
+  /** What drivers make of them. */
+  driverGivenRating: number | null;
+  driverGivenRatingCount: number;
+  /** What fellow riders make of them — anonymous everywhere but here. */
+  coRiderRating: number | null;
+  coRiderRatingCount: number;
+  fareOnThisRide: number | null;
+}
+
+export interface RideDetail {
+  ride: {
+    id: string;
+    status: string | null;
+    rideType: string | null;
+    pool: boolean;
+    poolVisibility: string | null;
+    seats: number | null;
+    pickup: { lat?: number; lng?: number; address?: string } | null;
+    dropoff: { lat?: number; lng?: number; address?: string } | null;
+    route: string | null;
+    lastDriverLocation: { lat: number; lng: number } | null;
+    lastDriverLocationMs: number | null;
+    mergedIntoTripId: string | null;
+  };
+  timeline: {
+    requestedMs: number | null;
+    arrivedMs: number | null;
+    startedMs: number | null;
+    completedMs: number | null;
+    cancelledMs: number | null;
+    lastWriteMs: number | null;
+  };
+  driver: {
+    uid: string;
+    nameAtRide: string | null;
+    plateAtRide: string | null;
+    vehicleAtRide: string | null;
+    phoneAtRide: string | null;
+    nameNow: string | null;
+    phoneNow: string | null;
+    cnic: string | null;
+    licenseNumber: string | null;
+    plateNow: string | null;
+    vehicleNow: string | null;
+    verificationStatusNow: string | null;
+    ratingNow: number | null;
+    ratingCountNow: number;
+  } | null;
+  riders: RideRiderFile[];
+  money: {
+    offeredFare: number | null;
+    fare: number | null;
+    paymentMethod: string | null;
+    paymentMethods: string[] | null;
+    settlement: {
+      grossFare: number;
+      commission: number;
+      driverPayout: number;
+      passengerShare: number;
+      seats: number;
+    } | null;
+    perSeatFare: number | null;
+    poolFares: Record<string, number> | null;
+    cancellationFee: { amount: number; rate: number; role: string } | null;
+    cancelledBy: string | null;
+    cancelledByRole: string | null;
+    cancelReason: string | null;
+  };
+  ratings: {
+    id: string;
+    targetRole: string | null;
+    raterId: string | null;
+    targetUid: string | null;
+    stars: number | null;
+    comment: string | null;
+    createdAtMs: number | null;
+  }[];
+  safetyEvents: {
+    id: string;
+    kind: string | null;
+    critical: boolean;
+    status: string | null;
+    reportedBy: string | null;
+    reportedByRole: string | null;
+    location: { lat: number; lng: number } | null;
+    note: string | null;
+    createdAtMs: number | null;
+  }[];
+  disputes: {
+    id: string;
+    status: string | null;
+    reason: string | null;
+    raisedBy: string | null;
+    resolution: string | null;
+    createdAtMs: number | null;
+  }[];
+}
+
+/** A driver or rider found by phone or name, for the ledger's filter. */
+export interface RideParty {
+  uid: string;
+  name: string | null;
+  phone: string | null;
+  role: string;
+  gender: string | null;
+  banned: boolean;
+}
 
 /* ── franchise portal ─────────────────────────────────────────────────────
  * Called from the Pro partner's own web portal, not from the admin console.

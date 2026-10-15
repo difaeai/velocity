@@ -45,6 +45,16 @@ interface DriverRow {
   activeVehicleId?: string;
   /** True while one of this driver's cars is waiting on a review here. */
   vehicleReviewPending?: boolean;
+  /** What the verification engine made of this application. */
+  verification?: VerificationRecord;
+  /** The live face scan the driver did before submitting. */
+  faceScan?: {
+    status?: 'pending' | 'passed' | 'failed' | 'review';
+    matchesDocuments?: 'match' | 'mismatch' | 'unclear';
+    posesMatched?: number;
+    posesAsked?: number;
+    reasons?: string[];
+  };
   /** The photo the driver took of the car they are driving right now. */
   vehicleCheck?: {
     status?: 'pending' | 'approved' | 'rejected';
@@ -54,6 +64,33 @@ interface DriverRow {
     confirmedAt?: { seconds: number };
     reason?: string | null;
   };
+}
+
+/**
+ * The engine's verdict, as it lands on `drivers/{uid}.verification`.
+ *
+ * `status: 'verifying'` means it is reading the documents right now; the other
+ * values are settled. `decidedBy` is 'engine' for an automatic decision and an
+ * admin uid when a human overrode it — and `overrodeEngine` names what it
+ * overrode, which is the row worth going back and looking at later.
+ */
+interface VerificationRecord {
+  status?: 'verifying' | 'approved' | 'rejected' | 'review' | 'rerunning';
+  riskScore?: number | null;
+  reasons?: { code: string; detail: string; severity: 'fatal' | 'major' | 'minor'; section?: string }[];
+  expiries?: Record<string, { state: string; daysLeft: number | null; resolved: string | null; conflict?: boolean }>;
+  duplicates?: { field: string; value: string; driverId: string; status: string; banned: boolean }[];
+  report?: {
+    crossChecks?: Record<string, string>;
+    fraudSignals?: string[];
+    overallConfidence?: string;
+    summary?: string;
+    documents?: { kind: string; looksLike: string; legible: boolean; tampering: string; notes?: string }[];
+  } | null;
+  aiChecked?: boolean;
+  mode?: string;
+  decidedBy?: string;
+  overrodeEngine?: string | null;
 }
 
 interface VehicleRow {
@@ -379,6 +416,8 @@ export default function DriversPage() {
         </Card>
       )}
 
+      <EngineSettings />
+
       {/* ── Tabs ── */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: `1px solid ${colors.border}`, borderRadius: 10, overflow: 'hidden' }}>
         {([
@@ -577,6 +616,17 @@ export default function DriversPage() {
                           {d.reviewReason}
                         </div>
                       </Section>
+                    )}
+
+                    {/* What the engine found. Above the documents on purpose:
+                        it tells the reviewer where to look before they start
+                        clicking through six photographs. */}
+                    {tab !== 'active' && (
+                      <VerificationPanel
+                        driverId={d.id}
+                        verification={d.verification}
+                        faceScan={d.faceScan}
+                      />
                     )}
 
                     {/* Documents (only for pending) */}
@@ -1198,6 +1248,350 @@ function expiryStatus(expiry?: string): 'expired' | 'soon' | 'ok' | null {
   if (diff < 0) return 'expired';
   if (diff < 30 * 24 * 60 * 60 * 1000) return 'soon';
   return 'ok';
+}
+
+/**
+ * The engine's one switch, where the people who live with it can reach it.
+ *
+ * Three modes, and the middle one is the one that matters: `suggest` runs every
+ * check and records every verdict but lets nothing through without a person.
+ * That is how you find out whether to trust the thing before you let it decide
+ * — watch a week of its verdicts against your own, then turn it to `full`.
+ *
+ * Deliberately on this page rather than in a settings screen somewhere else: a
+ * switch that turns off automatic rejections belongs next to the list of people
+ * who were automatically rejected.
+ */
+function EngineSettings() {
+  const [config, setConfig] = useState<{
+    mode: 'full' | 'suggest' | 'off';
+    autoApproveMaxRisk: number;
+    autoRejectMinRisk: number;
+    minDaysBeforeExpiry: number;
+  } | null>(null);
+  const [aiConfigured, setAiConfigured] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    adminApi
+      .adminVerificationSettings({})
+      .then((r) => { setConfig(r.config); setAiConfigured(r.aiConfigured); })
+      .catch(() => undefined);
+  }, []);
+
+  async function save(patch: Record<string, unknown>) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await adminApi.adminVerificationSettings({ patch });
+      setConfig(r.config);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!config) return null;
+
+  const modeColor =
+    config.mode === 'full' ? colors.primary : config.mode === 'suggest' ? '#f59e0b' : colors.muted;
+  const modeLabel =
+    config.mode === 'full' ? 'Deciding automatically'
+      : config.mode === 'suggest' ? 'Advising only — every driver still waits for a human'
+        : 'Off — no automatic checks';
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>Verification engine</div>
+        <Badge label={modeLabel} color={modeColor} />
+        {!aiConfigured && (
+          <Badge label="No ANTHROPIC_API_KEY — everything goes to review" color={colors.danger} />
+        )}
+        <button
+          onClick={() => setOpen((o) => !o)}
+          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: colors.muted, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}
+        >
+          {open ? 'Hide settings' : 'Settings'}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(['full', 'suggest', 'off'] as const).map((m) => (
+              <Button
+                key={m}
+                variant={config.mode === m ? 'primary' : 'ghost'}
+                disabled={busy}
+                onClick={() => save({ mode: m })}
+              >
+                {m === 'full' ? 'Decide automatically' : m === 'suggest' ? 'Advise only' : 'Off'}
+              </Button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: colors.muted, lineHeight: 1.6 }}>
+            <strong style={{ color: colors.text }}>Decide automatically</strong> — a clean
+            application is approved and a clearly bad one refused, both within seconds. Anything in
+            between still reaches this queue.<br />
+            <strong style={{ color: colors.text }}>Advise only</strong> — every check runs and every
+            verdict is recorded, but nothing is decided. Use this to see whether you agree with it
+            before you let it act.<br />
+            <strong style={{ color: colors.text }}>Off</strong> — no AI reading at all. The
+            duplicate-CNIC and expiry checks still run, and everything lands here.
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'end' }}>
+            <NumberKnob
+              label="Approve at or below risk"
+              value={config.autoApproveMaxRisk}
+              disabled={busy}
+              onCommit={(v) => save({ autoApproveMaxRisk: v })}
+            />
+            <NumberKnob
+              label="Reject at or above risk"
+              value={config.autoRejectMinRisk}
+              disabled={busy}
+              onCommit={(v) => save({ autoRejectMinRisk: v })}
+            />
+            <NumberKnob
+              label="Min days before a document expires"
+              value={config.minDaysBeforeExpiry}
+              disabled={busy}
+              onCommit={(v) => save({ minDaysBeforeExpiry: v })}
+            />
+          </div>
+          {err && <div style={{ color: colors.danger, fontSize: 12 }}>{err}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** A number you can type into, that only saves when you have finished typing. */
+function NumberKnob({
+  label, value, disabled, onCommit,
+}: { label: string; value: number; disabled?: boolean; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: colors.muted, marginBottom: 4 }}>
+        {label}
+      </label>
+      <input
+        type="number"
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        // Saved on blur rather than on every keystroke: typing "60" over "10"
+        // passes through "6", and a threshold that briefly reads 6 would be a
+        // threshold that briefly rejects almost everybody.
+        onBlur={() => {
+          const n = Number(draft);
+          if (Number.isFinite(n) && n !== value) onCommit(n);
+          else setDraft(String(value));
+        }}
+        style={{
+          width: 90, padding: '6px 10px', borderRadius: 8,
+          border: `1px solid ${colors.border}`, background: colors.bg, color: colors.text,
+          fontSize: 14, fontWeight: 700,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * What the engine found, for the human who has to make the call after it.
+ *
+ * Written to be read in ten seconds by someone with forty applications to get
+ * through: the verdict and the risk number first, then the specific things that
+ * were wrong, then the raw model read underneath for anyone who wants to argue
+ * with it. The point is never to tell the admin what to do — the approve and
+ * reject buttons are theirs — it is to put the evidence in front of them so the
+ * decision is theirs on purpose rather than by default.
+ */
+function VerificationPanel({
+  driverId,
+  verification,
+  faceScan,
+  onRechecked,
+}: {
+  driverId: string;
+  verification?: VerificationRecord;
+  faceScan?: DriverRow['faceScan'];
+  onRechecked?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const status = verification?.status;
+  const risk = verification?.riskScore ?? null;
+  const reasons = verification?.reasons ?? [];
+  const duplicates = verification?.duplicates ?? [];
+  const report = verification?.report;
+
+  const verdictColor =
+    status === 'approved' ? colors.primary
+      : status === 'rejected' ? colors.danger
+        : status === 'verifying' || status === 'rerunning' ? '#6366f1'
+          : '#f59e0b';
+
+  const verdictLabel =
+    status === 'approved' ? 'Engine approved'
+      : status === 'rejected' ? 'Engine rejected'
+        : status === 'verifying' ? 'Reading documents…'
+          : status === 'rerunning' ? 'Re-checking…'
+            : status === 'review' ? 'Needs a human'
+              : 'Not checked';
+
+  async function recheck() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await adminApi.adminRerunDriverVerification({ driverId });
+      onRechecked?.();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Re-check failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // A driver who submitted before the engine existed has no record at all.
+  // Say so plainly rather than rendering an empty box that looks like a pass.
+  if (!verification) {
+    return (
+      <Section title="Automatic verification">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, color: colors.muted }}>
+            This application has not been through the engine.
+          </div>
+          <Button variant="ghost" disabled={busy} onClick={recheck}>
+            {busy ? 'Checking…' : 'Run check now'}
+          </Button>
+        </div>
+        {err && <div style={{ color: colors.danger, fontSize: 12, marginTop: 6 }}>{err}</div>}
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Automatic verification">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+        <Badge label={verdictLabel} color={verdictColor} />
+        {risk !== null && (
+          <div style={{ fontSize: 13, fontWeight: 700, color: colors.text }}>
+            Risk{' '}
+            <span style={{ color: risk >= 60 ? colors.danger : risk >= 20 ? '#f59e0b' : colors.primary }}>
+              {risk}
+            </span>
+            <span style={{ color: colors.muted, fontWeight: 600 }}>/100</span>
+          </div>
+        )}
+        {faceScan?.status && (
+          <Badge
+            label={`Face scan: ${faceScan.status}${
+              faceScan.posesAsked ? ` (${faceScan.posesMatched ?? 0}/${faceScan.posesAsked} poses)` : ''
+            }`}
+            color={faceScan.status === 'passed' ? colors.primary : colors.danger}
+          />
+        )}
+        {faceScan?.matchesDocuments && faceScan.matchesDocuments !== 'match' && (
+          <Badge
+            label={`Face vs ID: ${faceScan.matchesDocuments}`}
+            color={faceScan.matchesDocuments === 'mismatch' ? colors.danger : '#f59e0b'}
+          />
+        )}
+        {verification.aiChecked === false && <Badge label="No AI — deterministic checks only" color={colors.muted} />}
+        {verification.mode && verification.mode !== 'full' && (
+          <Badge label={`Mode: ${verification.mode}`} color="#6366f1" />
+        )}
+        {verification.overrodeEngine && (
+          <Badge label={`Human overrode: ${verification.overrodeEngine}`} color="#8b5cf6" />
+        )}
+        <div style={{ marginLeft: 'auto' }}>
+          <Button variant="ghost" disabled={busy} onClick={recheck}>
+            {busy ? 'Checking…' : '↻ Re-check'}
+          </Button>
+        </div>
+      </div>
+      {err && <div style={{ color: colors.danger, fontSize: 12, marginBottom: 8 }}>{err}</div>}
+
+      {/* Identity reuse first — it is a fact rather than a judgement, and it is
+          the one finding that should stop an admin approving on autopilot. */}
+      {duplicates.length > 0 && (
+        <div style={{ background: '#fff5f5', border: `1px solid ${colors.danger}`, borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: colors.danger, marginBottom: 4 }}>
+            ALREADY ON THE PLATFORM
+          </div>
+          {duplicates.map((dup, i) => (
+            <div key={i} style={{ fontSize: 13, color: colors.danger }}>
+              {dup.field} <code>{dup.value}</code> → driver{' '}
+              <code>{dup.driverId}</code> ({dup.status}){dup.banned ? ' — BANNED ACCOUNT' : ''}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reasons.length > 0 ? (
+        <div style={{ display: 'grid', gap: 6 }}>
+          {reasons.map((r, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex', gap: 10, alignItems: 'baseline',
+                background: colors.bg, borderRadius: 8, padding: '8px 12px',
+                borderLeft: `3px solid ${
+                  r.severity === 'fatal' ? colors.danger : r.severity === 'major' ? '#f59e0b' : colors.border
+                }`,
+              }}
+            >
+              <span style={{ fontSize: 10, fontWeight: 800, color: colors.muted, minWidth: 48, textTransform: 'uppercase' }}>
+                {r.severity}
+              </span>
+              <span style={{ fontSize: 13, color: colors.text, flex: 1 }}>{r.detail}</span>
+              <code style={{ fontSize: 10, color: colors.muted }}>{r.code}</code>
+            </div>
+          ))}
+        </div>
+      ) : status === 'approved' ? (
+        <div style={{ fontSize: 13, color: colors.muted }}>Nothing was found wrong with this application.</div>
+      ) : null}
+
+      {report?.summary && (
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ fontSize: 12, fontWeight: 700, color: colors.muted, cursor: 'pointer' }}>
+            What the model actually read
+          </summary>
+          <div style={{ fontSize: 13, color: colors.text, marginTop: 8, lineHeight: 1.6 }}>
+            <div style={{ marginBottom: 8 }}>{report.summary}</div>
+            {report.crossChecks && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {Object.entries(report.crossChecks).map(([k, v]) => (
+                  <Badge
+                    key={k}
+                    label={`${k.replace(/Consistency$/, '')}: ${v}`}
+                    color={v === 'match' ? colors.primary : v === 'mismatch' ? colors.danger : colors.muted}
+                  />
+                ))}
+              </div>
+            )}
+            {(report.documents ?? []).map((doc, i) => (
+              <div key={i} style={{ fontSize: 12, color: colors.muted, paddingLeft: 8 }}>
+                <strong style={{ color: colors.text }}>{doc.kind}</strong> — reads as {doc.looksLike},{' '}
+                {doc.legible ? 'legible' : 'not legible'}, tampering: {doc.tampering}
+                {doc.notes ? ` — ${doc.notes}` : ''}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </Section>
+  );
 }
 
 function DocImage({ label, url, expiry }: { label: string; url?: string; expiry?: string }) {

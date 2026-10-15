@@ -15,6 +15,7 @@ import {
   type DailyTargetProgress,
   type DailyTargetSettings,
 } from '../domain/dailyTarget';
+import type { FaceScanState } from '../domain/faceScan';
 import type { PaymentMethod, RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
@@ -87,6 +88,25 @@ export interface DriverProfile {
   };
   /** True while one of this driver's cars is waiting on an admin's review. */
   vehicleReviewPending?: boolean;
+  /**
+   * The live face scan. Written only by the backend (drivers/faceScan.ts) —
+   * `status: 'passed'` is the one thing that opens the submit button, so the
+   * app reads it and never writes it.
+   */
+  faceScan?: FaceScanState;
+  /**
+   * What the verification engine made of this application. Present from the
+   * moment the driver submits (`status: 'verifying'`) and replaced by the
+   * verdict seconds later; the app streams this document, so the screen
+   * changes under the driver without a refresh.
+   */
+  verification?: {
+    status?: 'verifying' | 'approved' | 'rejected' | 'review' | 'rerunning';
+    riskScore?: number | null;
+    reasons?: { code: string; detail: string; severity: 'fatal' | 'major' | 'minor' }[];
+    decidedAt?: { seconds: number };
+    decidedBy?: string;
+  };
   // ── Submitted application details — used to re-fill the onboarding forms on
   //    resubmission so a rejection only costs the driver the rejected sections.
   cnic?: string;

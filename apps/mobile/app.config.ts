@@ -173,6 +173,19 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
     plugins: [
       ...(config.plugins ?? []),
       [
+        // The front camera, for the driver's live face scan (see
+        // app/passenger/become-driver/face-scan.tsx). Only the camera is
+        // declared: the scan captures stills, so asking for the microphone
+        // would be a permission prompt we never use, on a screen where a
+        // driver is already being asked to trust us with their face.
+        'expo-camera',
+        {
+          cameraPermission:
+            'Velocity Rides uses the camera to scan your face and photograph your documents when you register as a driver.',
+          recordAudioAndroid: false,
+        },
+      ],
+      [
         'react-native-google-mobile-ads',
         {
           androidAppId,
