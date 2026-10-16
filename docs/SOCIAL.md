@@ -212,6 +212,43 @@ to YouTube. Still formats skip the editing and ads stages entirely.
 
 ---
 
+## 3a. The desk cuts its own reels
+
+A video run no longer stops at a brief. With *Cut the reel here* on (the
+default), [`reel.ts`](../backend/functions/src/social/reel.ts) renders a
+finished 1080x1920 MP4 from the script the writer already wrote, and attaches it
+to the piece through the same storage path a hand-made file takes — so it
+reaches the queue, and publishes, exactly as one always did.
+
+**It costs nothing per video.** Every open tool that claims to automate short
+video turns out to need something paid behind it: a stock-footage key, a
+text-to-speech model, an image model per frame, or a rendering service. This is
+ffmpeg, two OFL fonts and the script. The only cost is the CPU seconds, which is
+why the run functions moved from 1GiB to 2GiB — on Cloud Functions the memory
+tier is what buys the CPU.
+
+What it makes is a **kinetic typography reel**: the hook, then one line per
+beat, moving on near-black and lime, cut to the timings `lint.ts` already
+computes from the spoken script. That is not a consolation format — the feed is
+watched muted, and words are what survive that. When slides have been attached
+they become the backdrop with a slow push-in behind a scrim; with none, the
+typography carries it alone.
+
+| Decision | Why |
+|---|---|
+| The hook is capped at 2.5–4s | Sharing the clock by line length gives the longest line the most time, and the longest line is the hook. Seven seconds of opening would contradict the one rule the playbook is built on. |
+| Nothing is drawn in the top 240px, below y=1470, or in the right-hand column | Instagram's own interface sits there. Text placed there is text nobody reads. |
+| Moving parts are `overlay`, never `drawbox` | `drawbox` reads `t` as its thickness option and leaves an animated expression frozen at frame one. It renders a bar that never moves and looks fine until you check a later frame. |
+| The words go in files, not in the filter graph | A caption with an apostrophe in it is otherwise a quoting problem three layers deep. |
+| An attached video is never overwritten | If somebody shot the real thing, that is the piece. |
+| A failed render is not a failed run | The brief, the script and the frames survive, and the queue still offers the upload control. |
+
+`planReel` and `filterGraph` are pure functions, so the timings, the wrapping
+and the safe zone are tested in CI, which has no ffmpeg in it. Only the render
+itself spawns anything.
+
+---
+
 ## 4. The queue — four decisions
 
 | Action | What happens |
@@ -251,7 +288,8 @@ to be said twice.
 
 | Where | Applies to | Example |
 |---|---|---|
-| **Employees → standing instructions** | everyone, every job, forever | "We are recruiting drivers in Lahore this month." "Never say cheapest." |
+| **Employees → brief the team** | everyone, every job, forever | Five boxes: who we are, what you want from a post, what you mean by viral, how people who reply are answered, and what must never happen. Written once on the first day and read on every job after it. Each box goes only to the people it is for. |
+| **Employees → standing instructions** | everyone, every job, forever | The short note box for what is true *now*: "We are recruiting drivers in Lahore this month." "Never say cheapest." |
 | **Employees → an individual's card** | that person, until they leave | "Rang: street light only, no studio shots." |
 | **Queue → ask for changes** | one piece | "This hook is weak, open on the hands." |
 

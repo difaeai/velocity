@@ -22,6 +22,7 @@ import { claudeReady } from './claude';
 import { tokenVaultReady } from './secrets';
 import {
   DEFAULT_SETTINGS,
+  EMPTY_BRIEF,
   FORMATS,
   PLATFORMS,
   type ContentFormat,
@@ -33,7 +34,14 @@ const SETTINGS_PATH = 'system/socialAutomation';
 export async function getSocialSettings(): Promise<SocialSettings> {
   const snap = await db.doc(SETTINGS_PATH).get();
   const stored = (snap.data() as Partial<SocialSettings> | undefined) ?? {};
-  return { ...DEFAULT_SETTINGS, ...stored };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    // A spread would replace the whole brief with whatever subset was last
+    // written, so a document saved before a field existed would leave that
+    // field undefined and every `.trim()` downstream would throw.
+    brief: { ...EMPTY_BRIEF, ...(stored.brief ?? {}) },
+  };
 }
 
 export async function recordRun(status: string): Promise<void> {
@@ -64,12 +72,25 @@ const settingsSchema = z.object({
   runHour: z.number().int().min(0).max(23).optional(),
   postsPerDay: z.number().int().min(1).max(5).optional(),
   dailyStory: z.boolean().optional(),
+  autoRenderVideo: z.boolean().optional(),
   platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional(),
 
   angles: z.array(z.string().min(2).max(60)).min(1).max(30).optional(),
   formats: z.array(z.enum(FORMATS)).min(1).max(20).optional(),
 
   crewInstructions: z.string().max(4000).optional(),
+  // The long brief is read on every job forever, so the limits are generous:
+  // a paragraph that stops one bad post a day is worth more than the tokens.
+  brief: z
+    .object({
+      about: z.string().max(6000),
+      posts: z.string().max(6000),
+      viral: z.string().max(6000),
+      comments: z.string().max(6000),
+      avoid: z.string().max(6000),
+    })
+    .partial()
+    .optional(),
 
   researchEnabled: z.boolean().optional(),
   competitors: z

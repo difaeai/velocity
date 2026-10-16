@@ -29,12 +29,16 @@
  * from the console without a redeploy; the post id carries the date and the
  * format, so a retried tick cannot produce a duplicate.
  */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, storage } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { dayKey } from '../analytics';
 import { loadCredentials, markAccountError, publishableAccounts } from './accounts';
@@ -45,6 +49,7 @@ import { activeTeam, assign, creditWork, teamRefs } from './employees';
 import { claudeReady } from './claude';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
+import { planReel, renderReel } from './reel';
 import { runResearch } from './research';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
 import { adPass, searchPass, seoPass } from './seo';
@@ -63,6 +68,7 @@ import {
   type ContentFormat,
   type Employee,
   type MediaAsset,
+  type PostScript,
   type Platform,
   type PostStatus,
   type Revision,
@@ -433,12 +439,24 @@ async function runTeam(params: {
           feedback,
         });
         await patch(params.id, { cut });
+
+        // The brief is written; now actually make the thing. The renderer
+        // needs no key and no model — it is ffmpeg and the script — so the
+        // normal outcome of a video run is a video rather than a brief waiting
+        // for somebody with an afternoon. A file attached by hand still wins:
+        // `renderAndAttach` leaves an existing one alone.
+        const rendered = settings.autoRenderVideo
+          ? await renderAndAttach({ id: params.id, format: params.format, script })
+          : null;
+
         await setWork(params.id, 'video', {
-          state: 'briefed',
+          state: rendered ? 'done' : 'briefed',
           employeeId: editor.id,
           name: editor.name,
           role: editor.role,
-          note: `${cut.note} Make the video and attach it from the queue.`,
+          note: rendered
+            ? `${cut.note} Cut it — ${rendered}. Replace it from the queue if you shoot your own.`
+            : `${cut.note} Make the video and attach it from the queue.`,
         });
         await creditWork(editor.id);
       } catch (e) {
@@ -510,6 +528,100 @@ async function runTeam(params: {
 
   // The day always ends here. Approval is a human's job.
   await patch(params.id, { status: 'awaiting_approval' as PostStatus });
+}
+
+/**
+ * Render the reel and hang it on the piece.
+ *
+ * Returns a line for the work log, or null if nothing was made — a failure
+ * here is never fatal. The brief, the script and the frames all survive, the
+ * queue still offers the upload control it always did, and the next morning's
+ * run is unaffected. A missing video is a worse post; a failed run is no post.
+ *
+ * An existing video is never overwritten. If somebody shot the real thing and
+ * attached it, that is the piece, and a generated one replacing it overnight
+ * would be the single most annoying thing this desk could do.
+ */
+async function renderAndAttach(params: {
+  id: string;
+  format: ContentFormat;
+  script: PostScript;
+}): Promise<string | null> {
+  const spec = FORMAT_SPECS[params.format];
+  if (spec.kind !== 'video') return null;
+
+  const existing = (await postRef(params.id).get()).data() as SocialPost | undefined;
+  const media = postMedia(existing ?? {});
+  if (media.some((m) => m.kind === 'video' && m.url)) return null;
+
+  try {
+    // Slides already attached to this piece become the backdrop. Almost always
+    // there are none, which is the case the typography is built for.
+    const images = media.filter((m) => m.kind === 'image' && m.storagePath).slice(0, 6);
+    const local = await downloadForRender(images);
+
+    try {
+      const plan = planReel({ script: params.script, format: params.format });
+      const bytes = await renderReel(plan, { localImages: local.paths });
+      const stored = await storeVideo(params.id, bytes);
+
+      const asset: MediaAsset = {
+        kind: 'video',
+        provider: 'velocity-render',
+        model: null,
+        jobId: null,
+        storagePath: stored.path,
+        url: stored.url,
+        urlExpiresAtMs: stored.expiresAtMs,
+        durationSec: plan.seconds,
+        aspect: spec.aspect,
+        slide: 1,
+        alt: params.script.hook,
+      };
+
+      // Slides stay: a carousel's images and the reel made from them are both
+      // the piece, and the publisher picks by format.
+      await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset] });
+      return `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB`;
+    } finally {
+      await local.cleanup();
+    }
+  } catch (e) {
+    logger.error('social: could not render the reel', {
+      id: params.id,
+      message: (e as Error).message,
+    });
+    return null;
+  }
+}
+
+/** Pull attached slides onto local disk so ffmpeg can read them. */
+async function downloadForRender(
+  images: MediaAsset[],
+): Promise<{ paths: string[]; cleanup: () => Promise<void> }> {
+  if (!images.length) return { paths: [], cleanup: async () => {} };
+
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-slides-'));
+  const cleanup = async () => {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  };
+
+  try {
+    const paths: string[] = [];
+    for (const [i, image] of images.entries()) {
+      const [bytes] = await storage.bucket().file(image.storagePath as string).download();
+      const file = path.join(dir, `slide-${i}.png`);
+      await writeFile(file, bytes);
+      paths.push(file);
+    }
+    return { paths, cleanup };
+  } catch (e) {
+    // A slide that will not download is not worth losing the video over: the
+    // typography render needs no images at all.
+    logger.warn('social: could not fetch the slides for the render', { message: (e as Error).message });
+    await cleanup();
+    return { paths: [], cleanup: async () => {} };
+  }
 }
 
 /** Create the document, then put the team on it. */
@@ -713,7 +825,10 @@ export const socialDailyContent = onSchedule(
     timeZone: 'Asia/Karachi',
     region: REGION,
     timeoutSeconds: RUN_TIMEOUT_SECONDS,
-    memory: '1GiB',
+    // 2GiB rather than 1 because a run can now end in an ffmpeg render, and
+    // on Cloud Functions the memory tier is what buys the CPU that finishes
+    // it in seconds rather than minutes.
+    memory: '2GiB',
   },
   async () => {
     const settings = await getSocialSettings();
@@ -750,7 +865,7 @@ const formatSchema = z.enum(FORMATS);
 
 /** "Put the team on it" — the same run the scheduler does, on demand. */
 export const adminGenerateSocialPost = onCall(
-  { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
+  { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
     requireAdmin(req);
     const parsed = z
@@ -819,7 +934,7 @@ const SCOPE_STAGES: Record<RevisionScope, Stage[]> = {
  * being true.
  */
 export const adminRequestSocialChanges = onCall(
-  { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
+  { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
     const ctx = requireAdmin(req);
     const parsed = z

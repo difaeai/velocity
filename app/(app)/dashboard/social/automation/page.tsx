@@ -69,6 +69,7 @@ export default function AutomationPage() {
         runHour: settings.runHour,
         postsPerDay: settings.postsPerDay,
         dailyStory: settings.dailyStory,
+        autoRenderVideo: settings.autoRenderVideo,
         platforms: settings.platforms,
         formats: settings.formats,
         angles: settings.angles,
@@ -194,6 +195,25 @@ export default function AutomationPage() {
             <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
               Stories are for the people who already follow us, and a ring on the profile most days is the
               difference between a company and a logo. Skipped on a day the rotation already made one.
+            </span>
+          </span>
+        </label>
+
+        <label
+          style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 12, cursor: 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.autoRenderVideo}
+            onChange={(e) => edit({ autoRenderVideo: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13 }}>
+            Cut the reel here, not just the brief
+            <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
+              A finished vertical video, made from the script on our own machines — no key, no model, nothing
+              per video. Slides you have attached become the backdrop; with none, the words carry it. A file you
+              attach yourself is never overwritten. Off, a video run stops at the cut brief for you to shoot.
             </span>
           </span>
         </label>
