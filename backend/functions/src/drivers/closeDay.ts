@@ -27,6 +27,7 @@ import {
   readCycle,
 } from '../domain/commission';
 import { pktDayKey, pktPreviousDay } from '../domain/dailyTarget';
+import { trySettleCommissionFromWallet } from './autoSettle';
 
 /**
  * How many drivers one run will look at.
@@ -55,9 +56,46 @@ export const notifyClosedCommissionDays = onSchedule(
     }
 
     let told = 0;
+    let paid = 0;
     for (const driverSnap of snap.docs) {
       const breakdown = commissionBreakdown(driverSnap, settings, today);
       if (breakdown.due <= 0) continue;
+
+      // Take it out of the balance first, if there is one. A driver who keeps
+      // a balance never sees a lock at all — they wake up to a receipt instead
+      // of a bill, which is the whole point of them keeping it there.
+      //
+      // Nothing here depends on it working. A failed or short settlement
+      // leaves the cycle exactly as it was and falls through to the push
+      // below, so the money rule is still the one in domain/commission.ts and
+      // this job is still only a messenger.
+      const settled = await trySettleCommissionFromWallet({
+        driverId: driverSnap.id,
+        today,
+        settings,
+        trigger: 'day_close',
+      });
+      if (settled?.status === 'settled') {
+        if (settled.amountPaid > 0) {
+          try {
+            await sendToUser(
+              driverSnap.id,
+              '✅ Commission paid from your balance',
+              `PKR ${settled.amountPaid.toLocaleString()} of commission was taken from your Velocity balance, ` +
+                `so you are clear to drive today. Nothing to pay and nothing to upload.`,
+            );
+            paid += 1;
+          } catch (e) {
+            // The money moved; only the receipt failed. The driver is unlocked
+            // either way and will see it in their balance.
+            logger.warn('closeDay: settled receipt push failed', {
+              driverId: driverSnap.id,
+              error: (e as Error).message,
+            });
+          }
+        }
+        continue;
+      }
 
       // Was it yesterday that closed, or has this debt been sitting there? The
       // wording changes, because "yesterday fell short" is wrong on day three
@@ -74,7 +112,13 @@ export const notifyClosedCommissionDays = onSchedule(
           (fresh
             ? `Yesterday ended on fewer than ${target} ${rides}, so ${Math.round(settings.rate * 100)}% of the cash you took — PKR ${breakdown.due.toLocaleString()} — is due now. `
             : `PKR ${breakdown.due.toLocaleString()} of commission is still unpaid from an earlier day. `) +
-            `Pay it and upload the screenshot to start taking rides again. ` +
+            // A driver who had SOME balance is told the exact top-up that
+            // clears them, because that is the shortest road back on the road:
+            // the top-up settles itself the moment it lands (payments/credit.ts)
+            // with no screenshot and no wait for a human to look at it.
+            (settled?.status === 'short' && settled.balance > 0
+              ? `Your balance covers PKR ${settled.balance.toLocaleString()} of it — top up PKR ${settled.shortfall.toLocaleString()} and it clears itself. `
+              : `Pay it and upload the screenshot to start taking rides again. `) +
             `${target} ${rides} in a day and that day costs you nothing.`,
         );
         told += 1;
@@ -87,9 +131,10 @@ export const notifyClosedCommissionDays = onSchedule(
       }
     }
 
-    logger.info('closeDay: notified drivers with commission due', {
+    logger.info('closeDay: settled or notified drivers with commission due', {
       day: today,
       checked: snap.size,
+      paid,
       told,
     });
   },
