@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { uploadDriverDoc } from '../lib/uploadDoc';
+import { BankTransferTopUpSheet } from './BankTransferTopUp';
 import {
   useLatestCommissionSettlement,
   useSettlementAccounts,
@@ -56,6 +57,7 @@ export function CommissionLock({
   const settlement = useLatestCommissionSettlement(uid);
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<PayMethod>('easypaisa');
+  const [balanceOpen, setBalanceOpen] = useState(false);
 
   const {
     due,
@@ -254,6 +256,35 @@ export function CommissionLock({
         </Text>
       </View>
 
+      {/* ── The way to stop seeing this screen ──────────────────────────────
+          Settling above clears today's bill and nothing more; the next short
+          day locks the driver again. A balance is what makes the charge
+          invisible: autoSettle takes the commission at midnight on its own.
+          It is the same transfer-and-screenshot flow, so it costs the driver
+          no new learning — only a different reason for doing it. */}
+      {available.length > 0 && (
+        <Pressable onPress={() => setBalanceOpen(true)} style={styles.balanceCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.balanceTitle}>Or keep a balance instead</Text>
+            <Text style={styles.balanceBody}>
+              With enough balance, commission is taken automatically at midnight and you never hit
+              this screen. Same transfer, same screenshot — it just doesn&apos;t run out after one
+              day.
+            </Text>
+          </View>
+          <Text style={styles.balanceChevron}>›</Text>
+        </Pressable>
+      )}
+
+      <BankTransferTopUpSheet
+        visible={balanceOpen}
+        onClose={() => setBalanceOpen(false)}
+        uid={uid}
+        suggestedAmount={due}
+        unlockAtAmount={due}
+        intro={`Add PKR ${due.toLocaleString()} or more and today's commission is cleared automatically the moment it lands — anything above it stays as balance for the days after.`}
+      />
+
       {/* ── Blurred incoming rides ── */}
       <View style={styles.blurSection}>
         <Text style={styles.blurTitle}>
@@ -369,6 +400,22 @@ const styles = themed(() => StyleSheet.create({
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   busyText: { fontSize: 13, color: colors.muted },
   aiNotice: { fontSize: 11, color: colors.muted, lineHeight: 16 },
+
+  // Deliberately quieter than the settle card above it: clearing the bill is
+  // what unlocks the app right now, and this must not compete with it.
+  balanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+  },
+  balanceTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  balanceBody: { fontSize: 12, color: colors.muted, lineHeight: 18, marginTop: 4 },
+  balanceChevron: { fontSize: 22, color: colors.muted },
 
   blurSection: {
     backgroundColor: colors.surface,

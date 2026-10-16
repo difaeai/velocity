@@ -1111,6 +1111,23 @@ export const api = {
     { proofPath: string; method?: 'easypaisa' | 'jazzcash' | 'bank' },
     { ok: boolean; settlementId: string; status: 'approved' | 'rejected' | 'pending_review'; amountDue: number; reason: string | null }
   >('submitCommissionSettlement'),
+  /**
+   * Fund the balance by bank transfer: pay Velocity from any banking app,
+   * upload the receipt, and our own OCR engine credits it on the spot. An
+   * `approved` result means the money is already in the balance — and
+   * `commissionSettled` says how much of a lock it cleared on the way in.
+   */
+  submitManualTopup: callable<
+    { proofPath: string; amount: number; method?: 'easypaisa' | 'jazzcash' | 'bank' },
+    {
+      ok: boolean;
+      topupId: string;
+      status: 'approved' | 'rejected' | 'pending_review';
+      credited: number;
+      commissionSettled?: number;
+      message: string;
+    }
+  >('submitManualTopup'),
   submitCancellationFeeSettlement: callable<
     { proofPath: string; method?: 'easypaisa' | 'jazzcash' | 'bank' },
     { ok: boolean; settlementId: string; status: 'approved' | 'rejected' | 'pending_review'; amountDue: number; reason: string | null }

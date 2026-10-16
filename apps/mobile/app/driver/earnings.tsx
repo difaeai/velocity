@@ -19,6 +19,7 @@ import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
+import { BankTransferTopUpSheet } from '../../src/ui/BankTransferTopUp';
 import {
   useCommissionCredits,
   useCommissionStatus,
@@ -82,6 +83,7 @@ export default function DriverEarnings() {
   const dailyTarget = useDailyTarget(uid);
   const credits = useCommissionCredits(uid);
 
+  const [balanceOpen, setBalanceOpen] = useState(false);
   const [period, setPeriod]       = useState<Period>('week');
   const [rows, setRows]           = useState<TxRow[]>([]);
   const [summary, setSummary]     = useState<Summary>({ trips: 0, cashTrips: 0, walletTrips: 0, grossFare: 0, walletEarned: 0 });
@@ -192,7 +194,34 @@ export default function DriverEarnings() {
                   ? `Nothing to pay right now. Finish ${commission.dailyTargetRides} ${commission.dailyTargetPoolOnly ? 'pool rides' : 'rides'} today and the day stays free; otherwise ${Math.round(commission.rate * 100)}% of today's cash is due at midnight.`
                   : `Today's commission becomes due at midnight.`}
           </Text>
+
+          {/* ── Pre-fund it ────────────────────────────────────────────────
+              The only entry into the top-up flow a driver can reach before
+              they are locked out. The sheet it opens is mounted from the
+              commission lock too, but that one only appears once the day has
+              already closed short — by then this is damage control rather
+              than a choice. Deliberately not a wallet surface: the wallet is
+              removed while `walletTopupEnabled` is false, and this path needs
+              no gateway, so hanging it off the wallet would strand it behind
+              an unrelated flag. */}
+          <Pressable onPress={() => setBalanceOpen(true)} style={styles.topupBtn}>
+            <Text style={styles.topupBtnText}>
+              {commission.due > 0 ? '🏦 Add balance & clear this' : '🏦 Add balance'}
+            </Text>
+          </Pressable>
+          <Text style={styles.topupHint}>
+            Transfer from any banking app and upload the receipt. With a balance, commission is
+            taken automatically at midnight — no screenshots, no lock screens.
+          </Text>
         </View>
+
+        <BankTransferTopUpSheet
+          visible={balanceOpen}
+          onClose={() => setBalanceOpen(false)}
+          uid={uid}
+          suggestedAmount={commission.due > 0 ? commission.due : undefined}
+          unlockAtAmount={commission.due > 0 ? commission.due : undefined}
+        />
 
         {/* ── Credit statement ── */}
         {credits.length > 0 ? (
@@ -399,6 +428,17 @@ const styles = themed(() => StyleSheet.create({
   commissionTitle: { fontSize: 14, fontWeight: '900', color: colors.text, marginBottom: 10 },
   commissionDivider: { height: 1, backgroundColor: colors.border, marginVertical: 8 },
   commissionNote: { fontSize: 11.5, color: colors.muted, lineHeight: 17, marginTop: 8 },
+  topupBtn: {
+    marginTop: 12,
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: `${colors.primary}18`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}55`,
+  },
+  topupBtnText: { fontSize: 13.5, fontWeight: '900', color: colors.primary },
+  topupHint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginTop: 6 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3, gap: 10 },
   rowLabel: { fontSize: 13, color: colors.muted, flex: 1 },
   rowValue: { fontSize: 13, fontWeight: '700', color: colors.text },

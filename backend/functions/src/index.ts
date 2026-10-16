@@ -230,6 +230,11 @@ export {
   adminSetSettlementAccounts,
 } from './payments';
 
+// Topping up by bank transfer + a screenshot our own OCR engine verifies — the
+// path that works before a gateway merchant account exists. See
+// payments/manualTopup.ts and domain/topupProof.ts.
+export { submitManualTopup, adminReviewManualTopup } from './payments/manualTopup';
+
 // Maps proxy — Places + directions run with the server key, never the client's
 export {
   placesAutocomplete,

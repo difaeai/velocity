@@ -35,6 +35,28 @@ export async function uploadSettlementProof(uid: string, uri: string): Promise<U
 }
 
 /**
+ * Receipt for money sent to Velocity to fund a balance, rather than to clear a
+ * specific debt. Shares `settlements/{uid}/` with the fee proofs above, because
+ * `submitManualTopup` refuses any path outside that prefix — the prefix is what
+ * proves the caller uploaded the receipt themselves. The `topup-` name is for
+ * whoever is looking at the bucket later; nothing parses it.
+ *
+ * The content type is set explicitly for the same reason as the Special Rides
+ * papers: a blob read back off a local file does not always carry its type, and
+ * both the storage rule and `submitManualTopup` refuse anything that is not an
+ * `image/*`. A receipt rejected for a missing header would look to the driver
+ * like their payment was refused.
+ */
+export async function uploadTopupProof(
+  uid: string,
+  uri: string,
+  mime?: string | null,
+): Promise<UploadResult> {
+  const path = `settlements/${uid}/topup-${Date.now()}`;
+  return upload(path, uri, mime?.startsWith('image/') ? mime : 'image/jpeg');
+}
+
+/**
  * Passenger CNIC photo — the identity gate in front of the courier flow. Lives
  * under `cnic/{uid}/` (readable only by the owner and admins, per storage.rules).
  */

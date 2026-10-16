@@ -633,6 +633,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- manualTopups/{id} ----------------------------------------------
+    // Bank-transfer top-ups and what our OCR engine made of the receipt. The
+    // payer reads their own so the app can show "credited" / "being checked";
+    // everything on it is written by the backend.
+    match /manualTopups/{topupId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == uid());
+      allow write: if false;
+    }
+
+    // ----- manualTopupProofs/{sha256} & manualTopupRefs/{refKey} ----------
+    // The spent-receipt ledger: one image digest and one bank reference may
+    // each be credited exactly once, ever. NOBODY reads these, not even their
+    // owner and not even an admin from a client — a client that can read them
+    // can enumerate which references are still unspent, which is the one piece
+    // of knowledge that makes forging a receipt worth trying. The backend uses
+    // the Admin SDK, which these rules do not apply to.
+    match /manualTopupProofs/{sha} {
+      allow read, write: if false;
+    }
+    match /manualTopupRefs/{refKey} {
+      allow read, write: if false;
+    }
+
     // ----- openRequests/{tripId} ------------------------------------------
     // Public-safe feed of open ride requests, written only by the backend.
     // Approved drivers (driver role) read it to discover work; the full trip

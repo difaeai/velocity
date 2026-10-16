@@ -72,6 +72,7 @@ const APP_NAV: NavGroup[] = [
       { href: '/dashboard/payouts', label: '💳 Payouts' },
       { href: '/dashboard/commission', label: '📋 Commission' },
       { href: '/dashboard/settlements', label: '🧾 Settlements' },
+      { href: '/dashboard/manual-topups', label: '🏦 Balance top-ups' },
       { href: '/dashboard/cancellations', label: '🚫 Cancellation fees' },
     ],
   },
