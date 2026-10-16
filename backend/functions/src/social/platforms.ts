@@ -420,23 +420,36 @@ async function instagramRecentPosts(
       `&limit=${Math.min(limit, 50)}&access_token=${encodeURIComponent(c.accessToken)}`,
   );
 
-  const posts: PostPerformance[] = [];
-  for (const media of list.data ?? []) {
-    const metrics = media.media_type === 'VIDEO' ? 'reach,saved,shares,plays' : 'reach,saved,shares';
-    let values: Record<string, number> = {};
+  /**
+   * One insights request, returning nought rather than throwing.
+   *
+   * Graph rejects the *whole* request if any single metric name is wrong for
+   * that media type, and Instagram renames these regularly — `plays` became
+   * `views` for reels after v21. Asking for the core three separately from the
+   * video-only one means a renamed metric costs us that one number instead of
+   * silently zeroing reach for every post and producing an empty analysis that
+   * looks like a quiet week.
+   */
+  const metrics = async (mediaId: string, names: string): Promise<Record<string, number>> => {
     try {
       const res = await call<{ data?: { name: string; values?: { value?: number }[] }[] }>(
         'instagram',
-        `${GRAPH}/${media.id}/insights?metric=${metrics}&access_token=${encodeURIComponent(c.accessToken)}`,
+        `${GRAPH}/${mediaId}/insights?metric=${names}&access_token=${encodeURIComponent(c.accessToken)}`,
       );
-      values = Object.fromEntries(
-        (res.data ?? []).map((m) => [m.name, m.values?.[0]?.value ?? 0]),
-      );
+      return Object.fromEntries((res.data ?? []).map((m) => [m.name, m.values?.[0]?.value ?? 0]));
     } catch (e) {
-      // A post older than the insights window, or a type that does not carry
-      // one of these metrics, is not a reason to lose the other forty posts.
-      logger.warn('social: no insights for one media', { id: media.id, message: (e as Error).message });
+      // A post older than the insights window, or a metric this media type
+      // does not carry, is not a reason to lose the other forty posts.
+      logger.warn('social: no insights for one media', { id: mediaId, names, message: (e as Error).message });
+      return {};
     }
+  };
+
+  const posts: PostPerformance[] = [];
+  for (const media of list.data ?? []) {
+    const values = await metrics(media.id, 'reach,saved,shares');
+    const video =
+      media.media_type === 'VIDEO' ? await metrics(media.id, 'plays') : ({} as Record<string, number>);
 
     posts.push({
       platform: 'instagram',
@@ -450,7 +463,7 @@ async function instagramRecentPosts(
       sends: values.shares ?? 0,
       comments: media.comments_count ?? 0,
       likes: media.like_count ?? 0,
-      plays: values.plays ?? 0,
+      plays: video.plays ?? video.views ?? 0,
     });
   }
   return posts;
