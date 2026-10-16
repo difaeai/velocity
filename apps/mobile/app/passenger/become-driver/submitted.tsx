@@ -47,6 +47,16 @@ export default function ApplicationSubmitted() {
   // "under review" with no end in sight resubmits, and each resubmission costs
   // us another pass over six documents.
   const verifying = profile?.verification?.status === 'verifying';
+  /**
+   * The papers are in and the face scan is not.
+   *
+   * Nothing is reading this application and nothing will until the scan is
+   * done, so this screen must not say "under review" — it has to hand them the
+   * step they still owe. The entry routing sends such a driver to the checklist
+   * instead; this branch is for the one who was already standing here when
+   * their own submission landed.
+   */
+  const awaitingFaceScan = profile?.verification?.status === 'awaiting_face_scan';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -72,6 +82,21 @@ export default function ApplicationSubmitted() {
               <OnbButton
                 label="Update application"
                 onPress={() => router.replace('/passenger/become-driver/checklist')}
+              />
+            </View>
+          </>
+        ) : awaitingFaceScan ? (
+          <>
+            <Text style={styles.title}>One last step</Text>
+            <Text style={styles.subtitle}>
+              Your documents are saved. Now a quick face scan, so we can see that the documents you
+              uploaded are yours — it takes about fifteen seconds, and it is what sends your
+              application off to be checked.
+            </Text>
+            <View style={styles.actions}>
+              <OnbButton
+                label="Start face scan"
+                onPress={() => router.replace('/passenger/become-driver/face-scan')}
               />
             </View>
           </>

@@ -8,7 +8,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
-import type { FaceChallenge } from '../domain/faceScan';
+import type { FaceAgreement, FaceChallenge, FaceScanPurpose } from '../domain/faceScan';
 import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
 import type {
   Competitor, CompetitorCategoryRates, MarketComparison,
@@ -101,6 +101,16 @@ export interface DriverOnboardingInput {
   licenseExpiry?: string;
   cnicExpiry?: string;
   vehicleDocExpiry?: string;
+  /**
+   * "I am going to the face scan now."
+   *
+   * This build has a face-scan screen and is about to open it, which tells the
+   * backend to store the papers and hold the verdict until the scan lands —
+   * documents first, face last, then one decision on all the evidence. Always
+   * sent by this app; absent from older builds, which are decided immediately
+   * on the uploaded photograph instead.
+   */
+  withFaceScan?: boolean;
 }
 
 /** One car on the driver's account, as the backend hands it back. */
@@ -629,9 +639,21 @@ export const api = {
    * a ride is still running or money is owed in either direction.
    */
   deleteMyAccount: callable<{ confirm: 'DELETE' }, { ok: boolean }>('deleteMyAccount'),
-  submitDriverOnboarding: callable<DriverOnboardingInput, { ok: boolean; verificationStatus: string }>(
-    'submitDriverOnboarding',
-  ),
+  submitDriverOnboarding: callable<
+    DriverOnboardingInput,
+    {
+      ok: boolean;
+      verificationStatus: string;
+      /** `awaiting_face_scan` while the last step is still to do. */
+      verification: string;
+      /**
+       * True when the documents are stored and the engine is deliberately
+       * waiting for the face scan. The app goes straight to the camera; the
+       * scan itself is what starts the verification.
+       */
+      needsFaceScan: boolean;
+    }
+  >('submitDriverOnboarding'),
 
   // ── The live face scan ────────────────────────────────────────────────────
   /**
@@ -643,10 +665,11 @@ export const api = {
    * than reusing a stale `scanId`.
    */
   startFaceScan: callable<
-    Record<string, never>,
+    { purpose?: FaceScanPurpose },
     {
       ok: boolean;
       scanId: string;
+      purpose: FaceScanPurpose;
       challenges: { challenge: FaceChallenge; prompt: string }[];
       expiresAtMs: number;
       frames: number;
@@ -660,10 +683,23 @@ export const api = {
     { scanId: string; framePaths: string[] },
     {
       ok: boolean;
+      /** Read from the stored scan, never from what the app asked for. */
+      purpose: FaceScanPurpose;
       status: 'passed' | 'failed' | 'review';
       message: string;
+      /**
+       * Whose face it was. For an onboarding scan: both identity documents
+       * combined — a `match` means the CNIC and the licence. For a daily check:
+       * the comparison against the enrolled face.
+       */
+      identity: FaceAgreement;
       posesMatched: number;
       posesAsked: number;
+      /**
+       * Onboarding only: true when this pass has sent the application to the
+       * verification engine, so the app can go straight to the status screen.
+       */
+      submitted?: boolean;
       canRetry: boolean;
     }
   >('submitFaceScan'),

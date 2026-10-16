@@ -708,9 +708,50 @@ photo and vehicle photos (up to 6 extra), with optional DOB and document expiry
 dates. It sets `drivers/{uid}.verificationStatus = 'pending'` and **does not**
 grant the driver role.
 
+**The order is the feature: papers first, face last, then one decision.**
+
+1. The four document sections are filled in and uploaded. `submitDriverOnboarding`
+   stores them, stamps `documentsStoredAt`, and deliberately decides **nothing**
+   — `verification.status = 'awaiting_face_scan'`.
+2. The applicant goes straight to the live face scan (`startFaceScan` /
+   `submitFaceScan`, `domain/faceScan.ts`). The server picks the poses after
+   they start, scores the frames against what it asked, and compares the
+   straight-on frame with the photographs on the CNIC **and** the licence that
+   were stored a second ago. A scan cannot even be started before those two
+   documents exist.
+3. Passing the scan is what enqueues the verification engine
+   (`drivers/verification.ts`, worked by a once-a-minute sweeper), which reads
+   all six documents on our own machine — no API key, see
+   `lib/driverVerificationLocal.ts` — and decides: approve, reject, or review.
+   An applicant who abandons the camera is released into the queue after 30
+   minutes so nothing is ever stranded.
+
+**Identity is a gate, not a score** (`IDENTITY_MUST_BE_PROVEN`). Nothing is
+auto-approved unless the applicant's own face was positively matched to the
+photograph on their own CNIC and their own licence — either card alone can be
+borrowed. And nothing is ever auto-**rejected** for a face that did not match
+(`FACE_MISMATCH_IS_REVIEW_ONLY`): a decade-old laminated card portrait reads the
+same way, so a person decides. The vehicle papers are held to a looser standard
+on purpose — a car registered to a father, or a plate OCR'd one character short,
+is a note on the file and never decisive.
+
+**The daily face check** (`domain/faceCheckIn.ts`) answers the question papers
+cannot: the first time an approved driver opens the app each Pakistan day, two
+frames are compared against the face enrolled when they were approved
+(`driverFaceEnrolment/{uid}`, server-only). Selfie against selfie, which is why
+this is the only face comparison allowed to stop somebody driving — and it stops
+the **day**, never the account: no ban, no role change, retry whenever. An
+undecided reading lets them through and flags it for an admin. Enforced in three
+places that must agree: the server guards beside `assertVehicleConfirmed`, the
+`online` transition in `firestore.rules`, and the app
+(`src/domain/faceCheckIn.ts`). Admin switch: **Daily face check**, off until the
+app build carrying the camera screen is live.
+
 `approveDriver` (admin) grants the `driver` claim; `rejectDriver` rejects or
-suspends and revokes it. Admin page: **Driver approvals**. Document expiry dates
-are tracked so an expired licence can be caught.
+suspends and revokes it. Admin page: **Driver approvals**, which also carries the
+engine's thresholds, its three modes (`full` / `suggest` / `off`) and the face
+switches. Document expiry dates are re-checked nightly
+(`drivers/documentExpiry.ts`) so an expired licence suspends rather than lingers.
 
 ### 6.2 Driver home
 

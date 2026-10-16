@@ -44,6 +44,22 @@ const onboardingSchema = z.object({
   licenseExpiry:       z.string().max(20).optional(),
   cnicExpiry:          z.string().max(20).optional(),
   vehicleDocExpiry:    z.string().max(20).optional(),
+  /**
+   * "I am going to the face scan now."
+   *
+   * Capability signalling, not security. The app sends it because it HAS a
+   * face-scan screen and is about to open it, which tells this callable to store
+   * the papers and hold the decision until the scan lands — the sequence the
+   * whole feature rests on (documents first, face last, then a verdict).
+   *
+   * An older build with no camera screen omits it and is decided immediately,
+   * exactly as before, because holding an application for a step that build
+   * cannot perform would strand every driver on it. A patched build that lied
+   * about it would gain nothing: with no live face matched to the two cards, the
+   * identity gate refuses to auto-approve and a human looks instead (see
+   * IDENTITY_MUST_BE_PROVEN).
+   */
+  withFaceScan:        z.boolean().optional(),
 });
 
 /**
@@ -72,20 +88,33 @@ export const submitDriverOnboarding = onCall(async (req) => {
   // script would want.
   await rateLimit(ctx.uid, 'submitDriverOnboarding', 5, 3600);
 
-  // The face scan is the one thing that cannot be redone from a stored file:
-  // it proves a live person was holding the phone. Refusing here rather than
-  // at the verification step means the driver is told while they are still on
-  // the form, not two minutes later by a push notification.
-  //
-  // Gated, and it has to be: the scan needs a build carrying expo-camera, so
-  // enforcing it before that build is in the stores would refuse every new
-  // driver in the country for skipping a screen their app does not have. The
-  // flag ships off and is turned on from the Drivers dashboard once the new
-  // binary is live. See VerificationConfig.requireFaceScan.
+  /**
+   * THE SEQUENCE: papers first, face last, then the verdict.
+   *
+   * The documents are stored here and the decision is deliberately NOT taken
+   * yet. The applicant goes straight from this call to the face scan, which is
+   * then compared — frame against card — with the CNIC and the licence that
+   * were stored a second ago, and it is the scan that starts the engine (see
+   * drivers/faceScan.ts).
+   *
+   * Why not decide now and let the scan refine it afterwards: because the
+   * engine would then approve or refuse an application on the uploaded
+   * photograph, tell the driver so, and have to take it back a minute later.
+   * One decision, on all the evidence, is worth the extra fifteen seconds.
+   *
+   * The hold applies when the scan is compulsory, or when the app says it is
+   * about to do one. An older build does neither and is decided immediately,
+   * on the uploaded photograph — which cannot be auto-approved without the
+   * face matching both cards either way.
+   */
   const { requireFaceScan } = await getVerificationConfig();
-  if (requireFaceScan && current?.faceScan?.status !== 'passed') {
-    invalid('Complete the face scan before submitting your application.');
-  }
+  const waitForFaceScan = requireFaceScan || data.withFaceScan === true;
+
+  // The capability flag is an instruction to this callable, not a field on the
+  // driver — written through to Firestore it would read like a property of the
+  // application itself.
+  const papers: Omit<typeof data, 'withFaceScan'> & { withFaceScan?: boolean } = { ...data };
+  delete papers.withFaceScan;
 
   await ref.set(
     {
@@ -94,15 +123,25 @@ export const submitDriverOnboarding = onCall(async (req) => {
       online: false,
       rating: current?.rating ?? 5.0,
       tripsCount: current?.tripsCount ?? 0,
-      ...data,
+      ...papers,
       // Clear any previous rejection data on resubmission
       reviewReason: null,
       rejectedSections: [],
-      // The engine has not looked yet. The app shows this as "Checking your
-      // documents…" and swaps it for the verdict when the job lands, so a
-      // resubmission never sits showing the previous rejection.
+      /**
+       * When these papers were stored, so a face scan can be told apart from
+       * one taken BEFORE them.
+       *
+       * This is what stops the obvious trick: pass a scan against your own
+       * CNIC, then resubmit with somebody else's papers and keep the pass. A
+       * scan older than the documents it is credited against proves a live
+       * person and nothing more, and the decision engine treats it that way.
+       */
+      documentsStoredAt: FieldValue.serverTimestamp(),
+      // The engine has not looked yet. The app shows `verifying` as "Checking
+      // your documents…" and `awaiting_face_scan` as the camera step still to
+      // do, so a resubmission never sits showing the previous rejection.
       verification: {
-        status: 'verifying',
+        status: waitForFaceScan ? 'awaiting_face_scan' : 'verifying',
         riskScore: null,
         reasons: [],
         startedAt: FieldValue.serverTimestamp(),
@@ -116,13 +155,21 @@ export const submitDriverOnboarding = onCall(async (req) => {
   // Hand off to the verification engine and return. The vision pass over six
   // documents takes tens of seconds — far too long to hold a callable open on
   // a phone — so the verdict arrives on the driver doc, which the app streams.
-  const jobId = await enqueueDriverVerification(
-    ctx.uid,
-    current?.verificationStatus ? 'resubmission' : 'onboarding',
-  );
+  const jobId = waitForFaceScan
+    ? null
+    : await enqueueDriverVerification(
+        ctx.uid,
+        current?.verificationStatus ? 'resubmission' : 'onboarding',
+      );
 
-  logger.info('Driver onboarding submitted', { uid: ctx.uid, jobId });
-  return { ok: true, verificationStatus: 'pending', verification: 'verifying' };
+  logger.info('Driver onboarding submitted', { uid: ctx.uid, jobId, waitForFaceScan });
+  return {
+    ok: true,
+    verificationStatus: 'pending',
+    verification: waitForFaceScan ? 'awaiting_face_scan' : 'verifying',
+    /** The app sends the driver to the camera on this. */
+    needsFaceScan: waitForFaceScan,
+  };
 });
 
 const adminCreateDriverSchema = z.object({
@@ -307,6 +354,7 @@ export const approveDriver = onCall(async (req) => {
   // row in this system — it is either the engine being too harsh or an admin
   // being talked into something, and both are worth being able to find later.
   const engineVerdict = (snap.get('verification.status') as string | undefined) ?? null;
+  const { dailyFaceCheckIn } = await getVerificationConfig();
 
   await applyRole(driverId, 'driver');
   await ref.set(
@@ -322,6 +370,9 @@ export const approveDriver = onCall(async (req) => {
         decidedAt: FieldValue.serverTimestamp(),
         overrodeEngine: engineVerdict && engineVerdict !== 'approved' ? engineVerdict : null,
       },
+      // Same stamp the engine's own approval writes: the daily face check
+      // applies from the moment an account can drive, whoever approved it.
+      faceCheckIn: { required: dailyFaceCheckIn },
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },

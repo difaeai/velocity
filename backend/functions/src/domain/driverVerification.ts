@@ -30,8 +30,15 @@
  * raise a flag and nowhere near good enough to end an application, and the
  * people most often misread are the ones with the least recourse. A face
  * mismatch always routes to a human — see FACE_MISMATCH_IS_REVIEW_ONLY.
+ *
+ * And one judgement is required before anything is approved: that the
+ * applicant's own face was matched to the photograph on their own CNIC and
+ * their own licence. Not being able to establish that is not a refusal, but it
+ * is never an approval either — see IDENTITY_MUST_BE_PROVEN. The vehicle papers
+ * are held to a deliberately looser standard than the identity ones: a car
+ * registered to a father, or bought and not yet transferred, is ordinary here.
  */
-import { FACE_SCAN_VALID_DAYS, faceScanIsFresh } from './faceScan';
+import { FACE_SCAN_VALID_DAYS, combineIdentity, faceScanIsFresh } from './faceScan';
 
 /** The papers a driver submits, in the shape the onboarding form collects them. */
 export type DocumentKind =
@@ -161,7 +168,17 @@ export interface DocumentFinding {
 
 /** Whether the documents agree with each other about who and what they describe. */
 export interface CrossChecks {
+  /**
+   * The best of the two card comparisons — kept because every report written
+   * before the per-card fields existed has only this, and because "is this
+   * applicant on ANY of their papers" is still the first thing an admin asks.
+   * The gate below reads the two fields under it, not this one.
+   */
   faceConsistency: Agreement;
+  /** The uploaded photo against the portrait on the CNIC front. */
+  selfieVsCnic?: Agreement;
+  /** The uploaded photo against the portrait on the driving licence. */
+  selfieVsLicense?: Agreement;
   nameConsistency: Agreement;
   idNumberConsistency: Agreement;
   plateConsistency: Agreement;
@@ -186,10 +203,20 @@ export interface DriverVerificationReport {
  */
 export interface FaceScanState {
   status: 'passed' | 'failed' | 'review' | 'missing';
-  /** Whether the live face matches the photograph on the ID documents. */
+  /** The two card comparisons, combined. Kept for older records and for display. */
   matchesDocuments: Agreement;
+  /** The live face against the CNIC portrait. Absent on pre-identity records. */
+  matchesCnic?: Agreement;
+  /** The live face against the licence portrait. Absent on pre-identity records. */
+  matchesLicense?: Agreement;
   /** When it passed, so a scan from last year can be asked for again. */
   passedAtMs: number | null;
+  /**
+   * Whether the scan happened AFTER the documents it is being credited against
+   * were stored. A scan taken before them was compared with nothing, and must
+   * not stand in for one that was — see the sequence note in ./faceScan.ts.
+   */
+  afterDocuments?: boolean;
 }
 
 /** What the driver typed into the form, to be checked against what they uploaded. */
@@ -278,6 +305,12 @@ export interface VerificationDecision {
   /** One sentence, plain, shown to the driver. Never mentions the risk score. */
   driverMessage: string;
   expiries: Record<ExpiringDocument, ExpiryVerdict>;
+  /**
+   * Whose face these documents were matched to, and on what evidence. Recorded
+   * on every decision — including the ones where it settled nothing — because
+   * "we never managed to check" is exactly what an admin needs to see.
+   */
+  identity: IdentityOutcome;
 }
 
 /**
@@ -322,6 +355,38 @@ export interface VerificationConfig {
    * failing it means they had the screen and something went wrong on it.
    */
   requireFaceScan: boolean;
+  /**
+   * Whether the licence portrait has to match as well as the CNIC one.
+   *
+   * ON, and the CNIC half is not switchable at all: no application is approved
+   * without the applicant's face being positively matched to the photograph on
+   * their own CNIC and their own licence. That is the rule this engine exists
+   * to apply — borrowed papers are the fraud here, and two cards are what make
+   * borrowing them visible.
+   *
+   * The lever exists because licence photographs are the weak link: a laminated
+   * 2011 licence can have a portrait no engine can find a face in at all, and
+   * `unclear` on that one card means a human review for an honest driver. A
+   * fleet drowning in those reviews can fall back to the CNIC alone here. It
+   * does not make a licence MISMATCH acceptable — a mismatch is a mismatch
+   * whatever this says.
+   */
+  requireLicenceFaceMatch: boolean;
+  /**
+   * Whether approved drivers must pass a face check the first time they open
+   * the app each day (domain/faceCheckIn.ts).
+   *
+   * SHIPS OFF, for the same reason as requireFaceScan: the check needs a build
+   * carrying expo-camera, and until that build is in the stores every working
+   * driver in the country would be gated on a screen their app does not have.
+   * Turn it on from the Drivers dashboard once the new AAB/IPA is live and a few
+   * days have passed for drivers to update.
+   *
+   * The flag reaches drivers through `drivers/{uid}.faceCheckIn.required`,
+   * stamped on approval and by the nightly expiry sweep — so flipping it here
+   * takes effect for new drivers at once and for everyone else within a day.
+   */
+  dailyFaceCheckIn: boolean;
 }
 
 export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
@@ -333,6 +398,8 @@ export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
   requireHighConfidence: true,
   rejectOnDuplicateCnic: true,
   requireFaceScan: false,
+  requireLicenceFaceMatch: true,
+  dailyFaceCheckIn: false,
 };
 
 /**
@@ -343,6 +410,29 @@ export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
  * who later wants to make it fatal has to come here and read this first.
  */
 export const FACE_MISMATCH_IS_REVIEW_ONLY = true;
+
+/**
+ * The other half of that rule, and the one that gives this engine its teeth.
+ *
+ * A face mismatch may never REJECT an application. It does not follow that an
+ * unproven face may APPROVE one. Those are different questions with different
+ * costs: refusing an honest applicant on a bad photograph takes away a job,
+ * while approving an applicant whose face was never matched to their papers
+ * puts a stranger in a car with a passenger on documents that are not theirs.
+ *
+ * So: no application is ever auto-approved unless the applicant's own face has
+ * been positively matched to the photograph on their CNIC and on their licence.
+ * Anything short of that — a mismatch, an unreadable portrait, a scan taken
+ * before the documents, no scan at all — is a REVIEW. The engine says "a person
+ * should look at this", which is the honest answer, and a person approves or
+ * refuses it in a minute.
+ *
+ * The vehicle papers are deliberately NOT in this gate. A registration in a
+ * father's name and a car not yet transferred are ordinary here and say nothing
+ * about who is driving; they are recorded as minor findings and shown to an
+ * admin. Identity is the thing that must be certain.
+ */
+export const IDENTITY_MUST_BE_PROVEN = true;
 
 /** Typed and printed dates further apart than this are treated as a conflict. */
 export const DATE_AGREEMENT_DAYS = 45;
@@ -566,8 +656,27 @@ const WEIGHTS = {
   nameMismatch: 40,
   nameUnclear: 10,
   idMismatch: 50,
-  plateMismatch: 30,
-  vehicleMismatch: 20,
+  /**
+   * The identity could not be established either way. Enough to keep an
+   * application out of the auto-approve band on its own (which the structural
+   * gate also does) and nowhere near the reject line, because "we could not
+   * tell" must never cost anybody their application.
+   */
+  identityUnproven: 20,
+  /**
+   * Vehicle findings, deliberately small.
+   *
+   * These were 30 and 20 and `major`, which meant a single wobble in reading a
+   * plate off a registration book held up an otherwise perfect application.
+   * The OCR gets `LEA-482` out of `LEA-4821` on a clean photograph; a car is
+   * commonly registered to a father or a brother, and a car bought last month
+   * has not been transferred yet. None of that says anything about who is
+   * driving, which is what this engine is for. Recorded, shown to an admin,
+   * never decisive — one of them alone still leaves an application inside the
+   * auto-approve band.
+   */
+  plateMismatch: 10,
+  vehicleMismatch: 8,
   duplicateCnicBanned: 100,
   duplicateCnicActive: 80,
   duplicatePlate: 25,
@@ -579,7 +688,8 @@ const WEIGHTS = {
   mediumConfidence: 5,
   typedNameMismatch: 25,
   typedCnicMismatch: 35,
-  typedPlateMismatch: 20,
+  /** Same reasoning as plateMismatch above: a typo in a plate is a typo. */
+  typedPlateMismatch: 10,
   ageImplausible: 30,
   stockImage: 60,
   photocopy: 20,
@@ -589,6 +699,75 @@ const WEIGHTS = {
 /** The youngest a driver may be. LTO Pakistan issues an LTV licence at 18. */
 export const MIN_DRIVER_AGE = 18;
 export const MAX_DRIVER_AGE = 75;
+
+/** Where the face that was compared with the cards came from. */
+export type IdentitySource = 'face_scan' | 'uploaded_photo' | 'none';
+
+export interface IdentityOutcome {
+  /** `match` only when both cards agree it is this person. */
+  agreement: Agreement;
+  cnic: Agreement;
+  license: Agreement;
+  source: IdentitySource;
+  /** True when the applicant may be approved on this evidence. */
+  proven: boolean;
+}
+
+/**
+ * Which face was compared with which cards, and did it settle anything?
+ *
+ * TWO kinds of evidence, in order of how much they are worth:
+ *
+ *   1. The live face scan, when one was done after the documents were stored.
+ *      A head that turned on command, in a sequence the server picked, seconds
+ *      ago — and then measured against the two cards that were just uploaded.
+ *      This is the evidence this whole feature exists to collect.
+ *   2. The uploaded profile photograph, compared with the same two cards by the
+ *      documents pass. Weaker — a photograph can be anybody's — but it is a
+ *      real comparison, and it is all there is for a driver on an app build
+ *      with no face-scan screen.
+ *
+ * With neither, nothing is proven and the application waits for a person. That
+ * is the honest outcome, not a punishment: see IDENTITY_MUST_BE_PROVEN.
+ */
+export function resolveIdentity(params: {
+  faceScan: FaceScanState;
+  crossChecks: CrossChecks | null;
+  /** From the config; the CNIC half is never optional. */
+  requireLicence: boolean;
+}): IdentityOutcome {
+  const { faceScan, crossChecks, requireLicence } = params;
+
+  // The live scan counts only when it passed AND was taken with the documents
+  // already in place. Anything else and we fall back to the photograph, which
+  // at least was compared with the cards that were actually submitted.
+  const scanUsable =
+    faceScan.status === 'passed' &&
+    faceScan.afterDocuments !== false &&
+    (faceScan.matchesCnic !== undefined || faceScan.matchesLicense !== undefined);
+
+  if (scanUsable) {
+    const cnic = faceScan.matchesCnic ?? 'unclear';
+    const license = faceScan.matchesLicense ?? 'unclear';
+    const agreement = combineIdentity({ cnic, license }, requireLicence);
+    return { agreement, cnic, license, source: 'face_scan', proven: agreement === 'match' };
+  }
+
+  if (crossChecks) {
+    const cnic = crossChecks.selfieVsCnic ?? 'unclear';
+    const license = crossChecks.selfieVsLicense ?? 'unclear';
+    const agreement = combineIdentity({ cnic, license }, requireLicence);
+    return { agreement, cnic, license, source: 'uploaded_photo', proven: agreement === 'match' };
+  }
+
+  return {
+    agreement: 'unclear',
+    cnic: 'unclear',
+    license: 'unclear',
+    source: 'none',
+    proven: false,
+  };
+}
 
 /**
  * The whole judgement, in one pure function.
@@ -714,6 +893,19 @@ export function decideDriverVerification(params: {
       'major',
       WEIGHTS.faceMismatch,
       'basic',
+    );
+  }
+
+  // A scan taken before the papers were uploaded proved a live person and
+  // nothing else — there was no card to compare it with. It is not a failure
+  // and the driver is not told off for it; it simply is not the evidence the
+  // gate below needs, so it is recorded and the application goes to a human.
+  if (faceScan.status === 'passed' && faceScan.afterDocuments === false) {
+    add(
+      'face_scan_before_documents',
+      'The face scan was done before the documents were uploaded, so it could not be compared with them.',
+      'minor',
+      WEIGHTS.faceUnclear,
     );
   }
 
@@ -846,6 +1038,14 @@ export function decideDriverVerification(params: {
         ? firstDriverMessage(reasons)
         : 'Your documents are with our team for review. We will let you know shortly.',
       expiries,
+      // The papers were never read, so the only evidence that can exist here is
+      // a live scan — and with the engine off there is nothing to compare it
+      // against either. Recorded as what it is: unestablished.
+      identity: resolveIdentity({
+        faceScan,
+        crossChecks: null,
+        requireLicence: config.requireLicenceFaceMatch,
+      }),
     };
   }
 
@@ -898,11 +1098,42 @@ export function decideDriverVerification(params: {
   } else if (x.faceConsistency === 'unclear') {
     add('face_unclear', 'The selfie could not be compared with the ID photographs.', 'minor', WEIGHTS.faceUnclear);
   }
+  // Vehicle papers: recorded, never decisive. See the WEIGHTS note above them —
+  // a plate misread by one character and a car registered to a relative are
+  // both ordinary, and neither says anything about who is driving.
   if (x.plateConsistency === 'mismatch') {
-    add('plate_mismatch', 'The plate on the registration is not the plate on the car.', 'major', WEIGHTS.plateMismatch, 'vehicle');
+    add('plate_mismatch', 'The plate on the registration is not the plate on the car.', 'minor', WEIGHTS.plateMismatch);
   }
   if (x.vehicleConsistency === 'mismatch') {
-    add('vehicle_mismatch', 'The car photographed is not the car the registration describes.', 'major', WEIGHTS.vehicleMismatch, 'vehicle');
+    add('vehicle_mismatch', 'The car photographed is not the car the registration describes.', 'minor', WEIGHTS.vehicleMismatch);
+  }
+
+  // ── 5b. The identity gate: was this applicant's own face matched to the
+  //        photograph on their own CNIC and their own licence? Nothing is
+  //        approved without it — see IDENTITY_MUST_BE_PROVEN — and nothing is
+  //        refused for it either.
+  const identity = resolveIdentity({
+    faceScan,
+    crossChecks: x,
+    requireLicence: config.requireLicenceFaceMatch,
+  });
+  if (!identity.proven && identity.agreement !== 'mismatch') {
+    // A mismatch has already been reported above, by name, with its own weight.
+    // This reason is for the quieter case: one of the two portraits could not be
+    // compared at all, so the question was never answered.
+    const unreadable =
+      identity.cnic !== 'match' && identity.license !== 'match'
+        ? 'neither identity document'
+        : identity.cnic !== 'match'
+          ? 'the CNIC'
+          : 'the licence';
+    add(
+      'identity_not_proven',
+      `The applicant's face could not be matched against ${unreadable}, so who these documents belong to is unconfirmed.`,
+      'major',
+      WEIGHTS.identityUnproven,
+      'basic',
+    );
   }
 
   // ── 6. Do the documents agree with what the driver typed? A form that does
@@ -941,9 +1172,8 @@ export function decideDriverVerification(params: {
     add(
       'typed_plate_mismatch',
       `The plate typed on the form (${submitted.plate}) is not the plate on the papers (${readPlate}).`,
-      'major',
+      'minor',
       WEIGHTS.typedPlateMismatch,
-      'vehicle',
     );
   }
 
@@ -1019,7 +1249,11 @@ export function decideDriverVerification(params: {
    * licence, a duplicate CNIC, the wrong paper entirely — still rejects, face
    * or no face.
    */
-  const FACE_IDENTITY_CODES = ['face_mismatch', 'face_scan_not_document_holder'];
+  const FACE_IDENTITY_CODES = [
+    'face_mismatch',
+    'face_scan_not_document_holder',
+    'identity_not_proven',
+  ];
   const onlyTheFaceIsSerious =
     reasons.some((r) => FACE_IDENTITY_CODES.includes(r.code)) &&
     reasons
@@ -1034,7 +1268,13 @@ export function decideDriverVerification(params: {
   } else if (
     !hasMajor &&
     riskScore <= config.autoApproveMaxRisk &&
-    (!config.requireHighConfidence || report.overallConfidence === 'high')
+    (!config.requireHighConfidence || report.overallConfidence === 'high') &&
+    // IDENTITY_MUST_BE_PROVEN, enforced structurally and not merely by the
+    // weight above it. `identity.proven` is the whole feature: this applicant's
+    // own face, matched to this applicant's own CNIC and licence. Without it the
+    // application is a stack of paper that may belong to anybody, and the only
+    // safe automatic answer is "a person should look".
+    identity.proven
   ) {
     status = 'approved';
   } else {
@@ -1053,6 +1293,7 @@ export function decideDriverVerification(params: {
           ? firstDriverMessage(reasons)
           : 'Your documents are with our team for review. We will let you know shortly.',
     expiries,
+    identity,
   };
 }
 

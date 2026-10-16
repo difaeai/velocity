@@ -47,12 +47,28 @@ interface DriverRow {
   vehicleReviewPending?: boolean;
   /** What the verification engine made of this application. */
   verification?: VerificationRecord;
-  /** The live face scan the driver did before submitting. */
+  /** The live face scan — the last step of the application, after the papers. */
   faceScan?: {
     status?: 'pending' | 'passed' | 'failed' | 'review';
+    /** The two identity documents combined: a match means both of them. */
     matchesDocuments?: 'match' | 'mismatch' | 'unclear';
+    matchesCnic?: 'match' | 'mismatch' | 'unclear';
+    matchesLicense?: 'match' | 'mismatch' | 'unclear';
     posesMatched?: number;
     posesAsked?: number;
+    reasons?: string[];
+  };
+  /**
+   * The daily face check, for drivers who are already working: is the person
+   * opening the app the driver this account belongs to? `review` means the
+   * comparison was undecided and they were let through — a row worth a look,
+   * especially if the same driver shows it every day.
+   */
+  faceCheckIn?: {
+    day?: string;
+    status?: 'passed' | 'review' | 'failed';
+    required?: boolean;
+    distance?: number | null;
     reasons?: string[];
   };
   /** The photo the driver took of the car they are driving right now. */
@@ -530,6 +546,21 @@ export default function DriversPage() {
                             them is visible without opening every card. */}
                         {(d.vehicleReviewPending || d.vehicleCheck?.status === 'pending') && (
                           <Badge label="🚗 Car review" color={colors.warn} />
+                        )}
+                        {/* Today's face check, when it was anything other than
+                            a clean pass. `review` means the comparison could
+                            not decide and the driver was let through anyway —
+                            which is the right call once and worth asking about
+                            if it is every morning. */}
+                        {tab === 'active' && d.faceCheckIn?.status && d.faceCheckIn.status !== 'passed' && (
+                          <Badge
+                            label={
+                              d.faceCheckIn.status === 'failed'
+                                ? '🙂 Face check failed'
+                                : '🙂 Face check undecided'
+                            }
+                            color={d.faceCheckIn.status === 'failed' ? colors.danger : colors.warn}
+                          />
                         )}
                       </div>
                       <div style={{ color: colors.muted, fontSize: 13 }}>
@@ -1269,6 +1300,8 @@ function EngineSettings() {
     autoRejectMinRisk: number;
     minDaysBeforeExpiry: number;
     requireFaceScan: boolean;
+    requireLicenceFaceMatch: boolean;
+    dailyFaceCheckIn: boolean;
   } | null>(null);
   const [engineReady, setEngineReady] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1365,8 +1398,9 @@ function EngineSettings() {
             />
           </div>
 
-          {/* The one setting with a prerequisite outside this dashboard. */}
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+          {/* The settings with a prerequisite outside this dashboard: all three
+              need the app build that carries the camera screens. */}
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <Button
                 variant={config.requireFaceScan ? 'primary' : 'ghost'}
@@ -1379,6 +1413,39 @@ function EngineSettings() {
                 {config.requireFaceScan
                   ? 'An application without a live face scan is refused. Only correct while the app in the stores has the face-scan screen.'
                   : 'Turn this on only once the new app build is live in both stores and drivers have had a few days to update. Before then, drivers physically cannot do a face scan, and requiring one would refuse every new driver. A scan that was attempted and failed is still sent here either way.'}
+              </div>
+            </div>
+
+            {/* Identity is the gate the engine will not approve past. This knob
+                only chooses how much of it is demanded — never whether a
+                mismatch is acceptable. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <Button
+                variant={config.requireLicenceFaceMatch ? 'primary' : 'ghost'}
+                disabled={busy}
+                onClick={() => save({ requireLicenceFaceMatch: !config.requireLicenceFaceMatch })}
+              >
+                {config.requireLicenceFaceMatch ? '✓ CNIC + licence must match' : 'CNIC only'}
+              </Button>
+              <div style={{ fontSize: 12, color: colors.muted, flex: 1, minWidth: 260, lineHeight: 1.6 }}>
+                {config.requireLicenceFaceMatch
+                  ? 'No application is approved automatically unless the applicant’s face matches the photo on BOTH their CNIC and their licence. Being on one borrowed card is easy; being on two is not.'
+                  : 'The CNIC photo alone decides. Use this only if unreadable licence photographs are filling this queue with honest drivers — a licence that plainly shows somebody else is still a finding either way.'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <Button
+                variant={config.dailyFaceCheckIn ? 'primary' : 'ghost'}
+                disabled={busy}
+                onClick={() => save({ dailyFaceCheckIn: !config.dailyFaceCheckIn })}
+              >
+                {config.dailyFaceCheckIn ? '✓ Daily face check on' : 'Daily face check off'}
+              </Button>
+              <div style={{ fontSize: 12, color: colors.muted, flex: 1, minWidth: 260, lineHeight: 1.6 }}>
+                {config.dailyFaceCheckIn
+                  ? 'Every approved driver does a few seconds on camera the first time they open the app each day, compared against the face enrolled when they were approved. Until it passes they cannot go online or be offered work. New drivers are gated from approval; everyone else by 2 a.m. tomorrow.'
+                  : 'Drivers are never asked. Turn this on once the app build with the camera screen is live — it is what stops an approved account being driven by somebody else months later. Switching it off takes effect for new drivers at once and for the rest overnight.'}
               </div>
             </div>
           </div>
@@ -1520,12 +1587,29 @@ function VerificationPanel({
             color={faceScan.status === 'passed' ? colors.primary : colors.danger}
           />
         )}
-        {faceScan?.matchesDocuments && faceScan.matchesDocuments !== 'match' && (
-          <Badge
-            label={`Face vs ID: ${faceScan.matchesDocuments}`}
-            color={faceScan.matchesDocuments === 'mismatch' ? colors.danger : '#f59e0b'}
-          />
-        )}
+        {/* The identity gate, per document. Nothing is approved automatically
+            without a match on BOTH — so these two badges are the difference
+            between "the engine approved this" and "a person has to look". */}
+        {(['cnic', 'license'] as const).map((card) => {
+          const value = card === 'cnic' ? faceScan?.matchesCnic : faceScan?.matchesLicense;
+          if (!value) return null;
+          return (
+            <Badge
+              key={card}
+              label={`Face vs ${card === 'cnic' ? 'CNIC' : 'licence'}: ${value}`}
+              color={value === 'match' ? colors.primary : value === 'mismatch' ? colors.danger : '#f59e0b'}
+            />
+          );
+        })}
+        {/* Older records only carried the combined answer. */}
+        {faceScan?.matchesDocuments &&
+          faceScan.matchesCnic === undefined &&
+          faceScan.matchesDocuments !== 'match' && (
+            <Badge
+              label={`Face vs ID: ${faceScan.matchesDocuments}`}
+              color={faceScan.matchesDocuments === 'mismatch' ? colors.danger : '#f59e0b'}
+            />
+          )}
         {verification.aiChecked === false && <Badge label="Papers not read — database checks only" color={colors.muted} />}
         {verification.mode && verification.mode !== 'full' && (
           <Badge label={`Mode: ${verification.mode}`} color="#6366f1" />

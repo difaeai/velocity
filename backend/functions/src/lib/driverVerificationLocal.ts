@@ -73,7 +73,7 @@ import {
   slotLabel,
   summarise,
 } from '../domain/localVision';
-import type { FaceChallenge, FaceScanReport } from '../domain/faceScan';
+import { combineIdentity, type FaceChallenge, type FaceScanIdentity, type FaceScanReport } from '../domain/faceScan';
 
 /** Per-image ceiling. A phone photo at quality 0.6 is a tenth of this. */
 const MAX_IMAGE_BYTES = 12_000_000;
@@ -331,13 +331,21 @@ export async function readDriverDocuments(
   const selfie = byKind.get('selfie');
 
   // ── Is the applicant's face the face on their papers?
-  // The CNIC portrait first, the licence second: the CNIC is the document the
-  // whole identity hangs on, and its photograph is the one NADRA took.
-  const cardFaces = [cnicFront?.face, licence?.face].filter((f): f is FaceRead => Boolean(f));
-  const distances = cardFaces
-    .map((card) => faceDistance(selfie?.face?.descriptor ?? null, card.descriptor))
-    .filter((d): d is number => d !== null);
-  const faceToCard = distances.length > 0 ? Math.min(...distances) : null;
+  //
+  // Measured against each card SEPARATELY, and reported that way. The two
+  // answers are not interchangeable: the decision engine requires the applicant
+  // to be on the CNIC *and* on the licence before it will approve anybody (see
+  // IDENTITY_MUST_BE_PROVEN), because either card on its own can be borrowed —
+  // a licence handed over at a checkpoint, a CNIC left with a landlord — and
+  // being on both of them at once is what makes a borrowed set visible.
+  //
+  // The combined `faceConsistency` below is kept as the best of the two, for
+  // older stored reports and for the admin's first glance.
+  const selfieDescriptor = selfie?.face?.descriptor ?? null;
+  const faceToCnic = faceDistance(selfieDescriptor, cnicFront?.face?.descriptor ?? null);
+  const faceToLicence = faceDistance(selfieDescriptor, licence?.face?.descriptor ?? null);
+  const measured = [faceToCnic, faceToLicence].filter((d): d is number => d !== null);
+  const faceToCard = measured.length > 0 ? Math.min(...measured) : null;
 
   // ── Do the papers agree with each other?
   const cnicName = cnicFront?.names.name ?? cnicBack?.names.name ?? null;
@@ -387,6 +395,8 @@ export async function readDriverDocuments(
     documents: examined.map(toFinding),
     crossChecks: {
       faceConsistency: faceAgreement(faceToCard),
+      selfieVsCnic: faceAgreement(faceToCnic),
+      selfieVsLicense: faceAgreement(faceToLicence),
       nameConsistency: namesAgree(cnicName, licenceName),
       idNumberConsistency,
       // Undecided, always: reading the plate off a photograph of the car is
@@ -415,7 +425,8 @@ export async function readDriverDocuments(
     documents: report.documents.length,
     slotsCorrect,
     signals: fraudSignals,
-    faceDistance: faceToCard,
+    faceToCnic,
+    faceToLicence,
     confidence,
   });
   return report;
@@ -442,8 +453,21 @@ export async function readDriverDocuments(
 export async function readFaceScan(params: {
   frames: Array<{ index: number; path: string }>;
   asked: FaceChallenge[];
-  idPhotoPath?: string | null;
-}): Promise<(FaceScanReport & { matchesIdPhoto: Agreement }) | null> {
+  /**
+   * The CNIC front and the licence, when they have been uploaded — so the live
+   * face can be measured against BOTH cards in the same pass. This is why an
+   * onboarding scan is asked for last: before the documents are stored there is
+   * nothing here, and the scan can only prove liveness.
+   */
+  idPhotos?: { cnic?: string | null; license?: string | null };
+  /**
+   * The face enrolled when this driver was approved, as the 128 numbers a
+   * descriptor is. Daily checks measure against this rather than against a card
+   * photograph: both sides are then a phone selfie, which is the comparison
+   * that is reliable enough to stop somebody driving. See domain/faceCheckIn.ts.
+   */
+  reference?: number[] | null;
+}): Promise<(FaceScanReport & FaceScanIdentity) | null> {
   if (params.frames.length === 0) return null;
   if (!(await faceEngineReady())) {
     logger.error('Local verification engine did not start; face scan goes to a human');
@@ -531,16 +555,33 @@ export async function readFaceScan(params: {
   const everyFrameHasAFace = frames.every((f) => f.faceVisible);
   const livePerson = everyFrameHasAFace && framesShowMovement(geometries);
 
-  // The live face against the photograph on the card. Frame 0 is the one used:
-  // it is the straight-ahead frame, and a face comparison wants a front-on shot.
-  let matchesIdPhoto: Agreement = 'unclear';
-  if (params.idPhotoPath) {
-    const bytes = await loadBytes(params.idPhotoPath);
-    // A failure here degrades to a liveness-only check rather than failing the
-    // scan: a scan taken before the documents has nothing to compare against.
-    const cardFace = bytes ? await readFace(bytes) : null;
-    matchesIdPhoto = faceAgreement(faceDistance(descriptors[0], cardFace?.descriptor ?? null));
-  }
+  // The live face against everything we can compare it with. Frame 0 is the one
+  // used throughout: it is the straight-ahead frame, and a face comparison
+  // wants a front-on shot.
+  //
+  // Each comparison degrades to `unclear` on its own rather than failing the
+  // scan. A missing card, an unreadable portrait and a driver with no enrolment
+  // are all ordinary, and none of them is the applicant's fault — what they
+  // cost is an automatic approval, decided in domain/driverVerification.ts.
+  const cardDistance = async (path: string | null | undefined): Promise<number | null> => {
+    if (!path) return null;
+    const bytes = await loadBytes(path);
+    const face = bytes ? await readFace(bytes) : null;
+    return faceDistance(descriptors[0], face?.descriptor ?? null);
+  };
+
+  const cnicDistance = await cardDistance(params.idPhotos?.cnic);
+  const licenseDistance = await cardDistance(params.idPhotos?.license);
+  const referenceDistance = params.reference?.length
+    ? faceDistance(descriptors[0], new Float32Array(params.reference))
+    : null;
+
+  const matchesCnic = faceAgreement(cnicDistance);
+  const matchesLicense = faceAgreement(licenseDistance);
+  // The headline answer, kept in the shape every older record and every admin
+  // badge already expects: both cards, combined by the one rule that decides
+  // what "both" means.
+  const matchesIdPhoto = combineIdentity({ cnic: matchesCnic, license: matchesLicense });
 
   const posesMatched = params.asked.reduce(
     (n, challenge, i) => (frames.find((f) => f.index === i)?.poseObserved === challenge ? n + 1 : n),
@@ -552,17 +593,29 @@ export async function readFaceScan(params: {
       ? 'high'
       : 'medium';
 
-  const report = {
+  const report: FaceScanReport & FaceScanIdentity = {
     frames,
     samePersonAcrossFrames: samePerson,
     livePerson,
     matchesIdPhoto,
+    matchesCnic,
+    matchesLicense,
+    matchesReference: faceAgreement(referenceDistance),
+    distances: { cnic: cnicDistance, license: licenseDistance, reference: referenceDistance },
+    // Frame 0's own descriptor, so a passing scan can become this driver's
+    // enrolled face. Kept out of the frame findings on purpose: it is biometric
+    // data, it belongs in the one server-only place that holds it, and the
+    // caller decides whether this scan earned the right to write it.
+    descriptor: descriptors[0] ? Array.from(descriptors[0]) : null,
     confidence,
     summary: [
       `Scored on this machine: ${posesMatched} of ${params.asked.length} poses matched,`,
       `${frames.filter((f) => f.faceVisible).length} of ${frames.length} frames had a face,`,
       livePerson ? 'the frames differ from one another' : 'the frames do not differ from one another',
-      `and the live face is a ${matchesIdPhoto} against the card.`,
+      `the live face is a ${matchesCnic} against the CNIC and a ${matchesLicense} against the licence`,
+      referenceDistance === null
+        ? '(no enrolled face to compare with).'
+        : `and a ${faceAgreement(referenceDistance)} against the enrolled face.`,
       'Turn direction is not checked, and a video played back at the camera is not detected.',
     ].join(' '),
   };
@@ -570,7 +623,9 @@ export async function readFaceScan(params: {
   logger.info('Face scan read locally', {
     live: report.livePerson,
     samePerson: report.samePersonAcrossFrames,
-    matchesId: report.matchesIdPhoto,
+    matchesCnic,
+    matchesLicense,
+    matchesReference: report.matchesReference,
     posesMatched,
     confidence,
   });

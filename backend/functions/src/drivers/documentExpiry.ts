@@ -102,6 +102,7 @@ export const sweepDriverDocumentExpiry = onSchedule(
     let scanned = 0;
     let warned = 0;
     let suspended = 0;
+    let stamped = 0;
 
     let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
     for (;;) {
@@ -118,6 +119,31 @@ export const sweepDriverDocumentExpiry = onSchedule(
       for (const doc of page.docs) {
         scanned++;
         const driver = doc.data();
+
+        /**
+         * Carry the daily-face-check switch down to the driver document.
+         *
+         * The security rules and the trip guards both have to know whether this
+         * driver is gated on the morning face check, and neither can afford a
+         * second document read to find out — so the flag lives on the driver
+         * record and this is what keeps it in step with `adminConfig`. Written
+         * only when it actually differs, so an unchanged setting costs nothing.
+         *
+         * This is also the only thing that reaches drivers who were approved
+         * before the switch was flipped: turning it on takes effect for new
+         * drivers immediately and for everyone else by two in the morning.
+         */
+        if (driver.faceCheckIn?.required !== config.dailyFaceCheckIn) {
+          await doc.ref.set(
+            {
+              faceCheckIn: { required: config.dailyFaceCheckIn },
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          stamped++;
+        }
+
         const expired: ExpiringDocument[] = [];
         const warnings: Array<{ key: ExpiringDocument; daysLeft: number; threshold: number }> = [];
 
@@ -146,7 +172,7 @@ export const sweepDriverDocumentExpiry = onSchedule(
       if (page.size < PAGE_SIZE) break;
     }
 
-    logger.info('Driver document expiry sweep complete', { scanned, warned, suspended });
+    logger.info('Driver document expiry sweep complete', { scanned, warned, suspended, stamped });
   },
 );
 

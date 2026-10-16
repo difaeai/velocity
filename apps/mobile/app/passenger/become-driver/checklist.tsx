@@ -15,14 +15,17 @@ const SECTIONS: { key: SectionKey; label: string; hint?: string; route: string }
   { key: 'license', label: 'Driver licence', route: '/passenger/become-driver/license' },
   { key: 'cnic', label: 'CNIC', route: '/passenger/become-driver/cnic' },
   { key: 'vehicle', label: 'Vehicle info', route: '/passenger/become-driver/vehicle' },
-  // Last on purpose. The scan compares the driver's live face against the CNIC
-  // photo, so it is worth more once the CNIC is already uploaded — and a driver
-  // asked to show their face before they have typed anything is a driver who
-  // wonders what they have walked into.
+  // Last, and LOCKED until the four above are done.
+  //
+  // Not a presentation choice: the scan is compared with the photographs on the
+  // CNIC and the licence, so until those are uploaded there is nothing for it to
+  // be compared with — and the backend refuses to start one. Pressing it early
+  // would hand the driver an error they did nothing to deserve, so the row says
+  // what it is waiting for instead.
   {
     key: 'faceScan',
     label: 'Face scan',
-    hint: 'A few seconds on camera to show it is really you',
+    hint: 'The last step — a few seconds on camera to show these documents are yours',
     route: '/passenger/become-driver/face-scan',
   },
 ];
@@ -31,17 +34,31 @@ export default function Checklist() {
   const router = useRouter();
   const { user } = useAuth();
   const profile = useDriverProfile(user?.uid);
-  const { complete, allComplete, submitting, error, submit } = useOnboarding();
+  const { complete, documentsComplete, submitting, error, submit } = useOnboarding();
   const status = profile?.verificationStatus;
   const verifying = profile?.verification?.status === 'verifying';
+  /**
+   * The papers are stored and the engine is waiting for the face scan.
+   *
+   * A real state, not a transient one: a driver whose battery died at the camera
+   * comes back to this. The button becomes "Finish face verification" and goes
+   * straight to the camera — their documents are already in, and re-uploading
+   * six photographs to get back to where they were would be absurd.
+   */
+  const awaitingFaceScan = profile?.verification?.status === 'awaiting_face_scan';
 
   async function onSubmit() {
-    const ok = await submit();
-    if (ok) {
-      // Registration is now with admin — show the live "submitted" status screen,
-      // which redirects to the driver home the moment the account is approved.
-      router.replace('/passenger/become-driver/submitted');
+    // Already stored, only the scan outstanding: skip the upload entirely.
+    if (awaitingFaceScan && !complete.faceScan) {
+      router.push('/passenger/become-driver/face-scan');
+      return;
     }
+    const next = await submit();
+    // The face scan is what sends the application off to be decided, so the
+    // camera — not the status screen — is where the driver goes from here.
+    if (next === 'face_scan') router.push('/passenger/become-driver/face-scan');
+    // An older backend decided it on the spot; nothing left to do but wait.
+    else if (next === 'submitted') router.replace('/passenger/become-driver/submitted');
   }
 
   return (
@@ -59,7 +76,14 @@ export default function Checklist() {
             </Text>
           </View>
         ) : null}
-        {status === 'pending' ? (
+        {awaitingFaceScan && !complete.faceScan ? (
+          <View style={styles.checking}>
+            <Text style={styles.checkingText}>
+              Your documents are saved. One last step: the face scan, so we can see these documents
+              are yours.
+            </Text>
+          </View>
+        ) : status === 'pending' ? (
           // Two different waits that look identical from outside and are not:
           // the engine is reading the documents right now (seconds), or it has
           // finished and handed the application to a person (hours). Saying
@@ -90,20 +114,31 @@ export default function Checklist() {
                 ? !done          // if no specific sections, flag incomplete ones
                 : profile.rejectedSections.includes(s.key)
             );
+            // The face scan waits for the papers it is compared against.
+            const locked = s.key === 'faceScan' && !documentsComplete;
             return (
               <Pressable
                 key={s.key}
+                disabled={locked}
                 onPress={() => router.push(s.route)}
                 android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
                 pressRetentionOffset={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={[styles.row, i > 0 && styles.rowBorder, rejected && styles.rowRejected]}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowLabel, rejected && { color: '#c0392b' }]}>
+                  <Text
+                    style={[
+                      styles.rowLabel,
+                      rejected && { color: '#c0392b' },
+                      locked && styles.rowLabelLocked,
+                    ]}
+                  >
                     {s.label}
                   </Text>
                   {rejected ? (
                     <Text style={styles.rejectedTag}>Changes requested — tap to update</Text>
+                  ) : locked ? (
+                    <Text style={styles.rowHint}>Finish the sections above first</Text>
                   ) : !done && s.hint ? (
                     <Text style={styles.rowHint}>{s.hint}</Text>
                   ) : null}
@@ -133,23 +168,25 @@ export default function Checklist() {
 
         <OnbButton
           label={
-            status === 'pending'
-              ? verifying
-                ? 'Checking your documents…'
-                : 'Submitted — under review'
-              : 'Submit application'
+            awaitingFaceScan && !complete.faceScan
+              ? 'Finish face verification'
+              : status === 'pending'
+                ? verifying
+                  ? 'Checking your documents…'
+                  : 'Submitted — under review'
+                : 'Continue to face verification'
           }
           onPress={onSubmit}
           loading={submitting}
-          disabled={!allComplete || status === 'pending'}
+          // The face scan is NOT a precondition of this button — it is where the
+          // button goes. What it needs is the four paper sections.
+          disabled={!documentsComplete || (status === 'pending' && !awaitingFaceScan)}
           disabledHint={
-            status === 'pending'
+            status === 'pending' && !awaitingFaceScan
               ? verifying
                 ? 'We are reading your documents now. This screen will update on its own.'
                 : 'Your application is already with our team — we will notify you once it is reviewed.'
-              : !complete.faceScan
-                ? 'Finish the face scan — it is the one step we cannot accept a photo for.'
-                : 'Complete all the sections above first — the incomplete ones are marked with !'
+              : 'Complete all the sections above first — the incomplete ones are marked with !'
           }
         />
         <Text style={styles.terms}>
@@ -197,6 +234,7 @@ const styles = themed(() => StyleSheet.create({
   },
   rowBorder: { borderTopWidth: 1, borderTopColor: oc.line },
   rowLabel: { fontSize: 16, fontWeight: '600', color: oc.text },
+  rowLabelLocked: { color: oc.sub },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   check: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: oc.green, alignItems: 'center', justifyContent: 'center' },
   checkMark: { color: oc.green, fontSize: 13, fontWeight: '900' },

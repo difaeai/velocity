@@ -38,7 +38,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { auth, db, FieldValue } from '../lib/firebase';
+import { auth, db, FieldValue, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAdmin } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 import { applyRole } from '../users';
@@ -49,6 +49,7 @@ import {
   decideDriverVerification,
   normalizeCnic,
   normalizePlate,
+  type Agreement,
   type DocumentKind,
   type DuplicateHit,
   type FaceScanState,
@@ -178,7 +179,14 @@ async function findDuplicates(params: {
 /** Read the face scan off the driver doc, in the shape the decision wants. */
 function faceScanState(driver: FirebaseFirestore.DocumentData): FaceScanState {
   const scan = driver.faceScan as
-    | { status?: string; matchesDocuments?: string; passedAt?: { toMillis?: () => number } }
+    | {
+        status?: string;
+        matchesDocuments?: string;
+        matchesCnic?: string;
+        matchesLicense?: string;
+        passedAt?: { toMillis?: () => number };
+        checkedAt?: { toMillis?: () => number };
+      }
     | undefined;
   if (!scan?.status) {
     return { status: 'missing', matchesDocuments: 'unclear', passedAtMs: null };
@@ -187,13 +195,41 @@ function faceScanState(driver: FirebaseFirestore.DocumentData): FaceScanState {
     scan.status === 'passed' || scan.status === 'failed' || scan.status === 'review'
       ? scan.status
       : 'missing';
-  const matches =
-    scan.matchesDocuments === 'match' || scan.matchesDocuments === 'mismatch'
-      ? scan.matchesDocuments
-      : 'unclear';
+  const agreement = (value: string | undefined): Agreement =>
+    value === 'match' || value === 'mismatch' ? value : 'unclear';
   const passedAtMs =
     typeof scan.passedAt?.toMillis === 'function' ? scan.passedAt.toMillis() : null;
-  return { status, matchesDocuments: matches, passedAtMs };
+
+  /**
+   * Was this scan taken after the papers it is about to be credited against?
+   *
+   * `documentsStoredAt` is stamped by submitDriverOnboarding. Both timestamps
+   * are the server's own, so the comparison is sound. A driver record from
+   * before either field existed leaves this UNDEFINED rather than false:
+   * "unknown" lets the scan be used (the identity gate still has to find a
+   * match on both cards), whereas false would quietly discard a perfectly good
+   * scan taken by somebody who did nothing wrong.
+   */
+  const storedAt = driver.documentsStoredAt as { toMillis?: () => number } | undefined;
+  const checkedAtMs =
+    typeof scan.checkedAt?.toMillis === 'function' ? scan.checkedAt.toMillis() : null;
+  const afterDocuments =
+    typeof storedAt?.toMillis === 'function' && checkedAtMs !== null
+      ? checkedAtMs >= storedAt.toMillis()
+      : undefined;
+
+  return {
+    status,
+    matchesDocuments: agreement(scan.matchesDocuments),
+    // Only reported when the scan actually carries them: an older record where
+    // the two cards were never measured separately must read as "not measured"
+    // (which falls back to the uploaded photograph) rather than as "unclear on
+    // both", which would look like a comparison that failed.
+    ...(scan.matchesCnic !== undefined ? { matchesCnic: agreement(scan.matchesCnic) } : {}),
+    ...(scan.matchesLicense !== undefined ? { matchesLicense: agreement(scan.matchesLicense) } : {}),
+    ...(afterDocuments !== undefined ? { afterDocuments } : {}),
+    passedAtMs,
+  };
 }
 
 /**
@@ -316,6 +352,10 @@ async function applyDecision(params: {
     reasons: decision.reasons,
     expiries: decision.expiries,
     duplicates: params.duplicates,
+    // Whose face these papers were matched to, and on what evidence. Recorded
+    // on every decision including the ones where it settled nothing — "never
+    // managed to check" is exactly what an admin needs to see.
+    identity: decision.identity,
     report: params.report ?? null,
     // Whether the papers were actually READ, not whether a reader was
     // configured. Those are different questions, and believing the second one
@@ -338,8 +378,16 @@ async function applyDecision(params: {
         reviewReason: null,
         rejectedSections: [],
         verification,
-        ...licensePatch,
+        /**
+         * The daily face check starts the moment an account becomes a driving
+         * account. `required` carries the admin switch down to where the
+         * security rules and the trip guards can see it without a second read;
+         * `day` is deliberately left unset, so the first thing this driver is
+         * asked for is a check (see domain/faceCheckIn.ts, reason 'never').
+         */
+        faceCheckIn: { required: config.dailyFaceCheckIn },
         updatedAt: FieldValue.serverTimestamp(),
+        ...licensePatch,
       },
       { merge: true },
     );
@@ -512,8 +560,50 @@ export const sweepDriverVerificationJobs = onSchedule(
       await processVerificationJob(doc.ref, driverId);
     }
     logger.info('Driver verification sweep complete', { processed: snap.size });
+
+    await releaseStrandedApplications();
   },
 );
+
+/** How long an application may wait at the face-scan step before it is decided. */
+const FACE_SCAN_HOLD_MINUTES = 30;
+
+/**
+ * Nobody is left holding a camera they never opened.
+ *
+ * An application whose papers are stored waits for the face scan — that is the
+ * sequence. If the applicant closes the app at that point, or their battery
+ * dies, or the camera permission is refused, the application would wait for
+ * ever: no job was queued, so nothing is coming to decide it, and the driver
+ * sees "submitted" with nothing happening behind it.
+ *
+ * So after half an hour the engine runs anyway. The verdict will almost
+ * certainly be `review` — no live face was matched to the two cards, which is
+ * the one thing an automatic approval requires — and a human either clears it
+ * or asks them to finish the scan. Either way a person is looking at it, which
+ * is the point.
+ */
+async function releaseStrandedApplications(): Promise<void> {
+  const cutoff = Timestamp.fromMillis(Date.now() - FACE_SCAN_HOLD_MINUTES * 60_000);
+  const stranded = await db
+    .collection('drivers')
+    .where('verification.status', '==', 'awaiting_face_scan')
+    .where('verification.startedAt', '<', cutoff)
+    .limit(10)
+    .get();
+  if (stranded.empty) return;
+
+  for (const doc of stranded.docs) {
+    // Moved out of the holding state FIRST, so a slow job cannot cause the next
+    // sweep to queue the same application a second time.
+    await doc.ref.set(
+      { verification: { status: 'verifying' }, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    await enqueueDriverVerification(doc.id, 'onboarding');
+  }
+  logger.info('Released applications stranded at the face scan', { count: stranded.size });
+}
 
 /** Admin-only: run the engine again on one driver, e.g. after a config change. */
 export const adminRerunDriverVerification = onCall(
@@ -564,6 +654,8 @@ export const adminVerificationSettings = onCall(async (req) => {
           requireHighConfidence: z.boolean().optional(),
           rejectOnDuplicateCnic: z.boolean().optional(),
           requireFaceScan: z.boolean().optional(),
+          requireLicenceFaceMatch: z.boolean().optional(),
+          dailyFaceCheckIn: z.boolean().optional(),
         })
         .optional(),
     })

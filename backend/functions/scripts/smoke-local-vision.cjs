@@ -467,12 +467,27 @@ async function main() {
   check('a human looks rather than the paper being treated as fine', lost.status, 'review');
 
   console.log('\n=== 6. The live face scan ===');
+  // A clean read of a full application, kept aside before the store is cleared
+  // for the frames: the identity case further down needs an application to
+  // judge, and buildApplication() empties the store on every call.
+  const cleanPapers = await engine.readDriverDocuments(
+    await buildApplication({ portraitOnCard: 'sample2.jpg' }),
+    { cnic: IDENTITY.cnic },
+  );
   objects.clear();
   objects.set('f/0.jpg', await sharp(await portrait('sample1.jpg', 689, 689)).jpeg().toBuffer());
   objects.set('f/1.jpg', await sharp(await portrait('sample6.jpg', 689, 689)).jpeg().toBuffer());
   objects.set(
     'f/id.jpg',
     await cardWithPortrait(cnicFront(IDENTITY), 'sample2.jpg', { top: 130, left: 40, w: 230, h: 270 }),
+  );
+
+  // The licence carries a portrait too, and the identity gate wants BOTH: the
+  // live face on the CNIC *and* on the licence. Either card alone can be
+  // borrowed; being on two of them at once is the thing worth proving.
+  objects.set(
+    'f/lic.jpg',
+    await cardWithPortrait(licence(IDENTITY), 'sample2.jpg', { top: 130, left: 40, w: 230, h: 230 }),
   );
 
   t = Date.now();
@@ -483,7 +498,7 @@ async function main() {
       { index: 1, path: 'f/1.jpg' },
     ],
     asked,
-    idPhotoPath: 'f/id.jpg',
+    idPhotos: { cnic: 'f/id.jpg', license: 'f/lic.jpg' },
   });
   console.log(`  scored two frames in ${Date.now() - t} ms`);
   for (const f of scan.frames) {
@@ -494,10 +509,60 @@ async function main() {
   check('one person across the frames', scan.samePersonAcrossFrames, true);
   check('the straight-ahead frame was seen as such', scan.frames[0].poseObserved, 'look_straight');
   check('the smile was seen', scan.frames[1].poseObserved, 'smile');
+  console.log(`    distances: ${JSON.stringify(scan.distances)}`);
   check('the live face is not called a stranger', scan.matchesIdPhoto !== 'mismatch', true);
+  check('it was measured against the CNIC', scan.matchesCnic !== 'unclear', true);
+  check('and against the licence, separately', scan.matchesLicense !== 'unclear', true);
+  // The frame-0 descriptor is what becomes this driver's enrolled face, and
+  // every later daily check is measured against it. A scan that passed without
+  // producing one would enrol nobody and silently leave the daily check with
+  // nothing to compare.
+  check('a descriptor comes back for enrolment', scan.descriptor.length, 128);
   const passed = scoring.scoreFaceScan({ report: scan, asked });
   console.log(`  scan verdict: ${passed.status} — ${passed.message}`);
   check('the scan PASSES', passed.status, 'passed');
+
+  console.log('\n  --- the licence portrait is somebody else ---');
+  objects.set(
+    'f/lic.jpg',
+    await cardWithPortrait(licence(IDENTITY), 'sample5.jpg', { top: 130, left: 40, w: 230, h: 230 }),
+  );
+  const halfBorrowed = await engine.readFaceScan({
+    frames: [
+      { index: 0, path: 'f/0.jpg' },
+      { index: 1, path: 'f/1.jpg' },
+    ],
+    asked,
+    idPhotos: { cnic: 'f/id.jpg', license: 'f/lic.jpg' },
+  });
+  console.log(`    cnic=${halfBorrowed.matchesCnic} licence=${halfBorrowed.matchesLicense}`);
+  check('the licence is not called a match', halfBorrowed.matchesLicense !== 'match', true);
+  // One borrowed card is exactly the case the gate exists for: the scan itself
+  // still passes the camera, and the application cannot be auto-approved.
+  check('the combined answer is not a match', halfBorrowed.matchesIdPhoto !== 'match', true);
+  check(
+    'the camera half still passes',
+    scoring.scoreFaceScan({ report: halfBorrowed, asked }).status,
+    'passed',
+  );
+  const borrowedVerdict = decide.decideDriverVerification({
+    report: cleanPapers,
+    submitted: FORM,
+    duplicates: [],
+    faceScan: {
+      status: 'passed',
+      matchesDocuments: halfBorrowed.matchesIdPhoto,
+      matchesCnic: halfBorrowed.matchesCnic,
+      matchesLicense: halfBorrowed.matchesLicense,
+      passedAtMs: NOW,
+      afterDocuments: true,
+    },
+    now: NOW,
+  });
+  console.log(`  verdict: ${borrowedVerdict.status}, identity ${JSON.stringify(borrowedVerdict.identity)}`);
+  check('so a person decides, and nobody is refused', borrowedVerdict.status, 'review');
+  check('identity is recorded as unproven', borrowedVerdict.identity.proven, false);
+  objects.delete('f/lic.jpg');
 
   console.log('\n  --- the same photograph handed in for both poses ---');
   objects.set('f/1.jpg', objects.get('f/0.jpg'));
@@ -507,7 +572,7 @@ async function main() {
       { index: 1, path: 'f/1.jpg' },
     ],
     asked,
-    idPhotoPath: null,
+    idPhotos: {},
   });
   check('caught as a recapture', replay.frames.some((f) => f.recaptured), true);
   check('and not a live person', replay.livePerson, false);
@@ -523,7 +588,7 @@ async function main() {
       { index: 1, path: 'f/1.jpg' },
     ],
     asked,
-    idPhotoPath: null,
+    idPhotos: {},
   });
   check('the empty frame is reported as empty', noFace.frames[1].faceVisible, false);
   check('and the scan is not live', noFace.livePerson, false);

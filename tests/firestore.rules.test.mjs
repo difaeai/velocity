@@ -148,6 +148,31 @@ test('a user cannot read or write someone else’s profile', async () => {
   await assertFails(updateDoc(doc(driver, 'users/passenger1'), { displayName: 'hax' }));
 });
 
+test('emergency contacts: owner-only, and the limit of five is the rule, not the app', async () => {
+  const contact = (i) => ({ id: `c${i}`, name: `Contact ${i}`, phone: `9230012345${i}${i}`, whatsappCheckedAt: null });
+  const mine = doc(passenger, 'users/passenger1/safety/emergencyContacts');
+
+  // Five is fine.
+  await assertSucceeds(setDoc(mine, { contacts: [1, 2, 3, 4, 5].map(contact), updatedAt: 1 }));
+  await assertSucceeds(getDoc(mine));
+
+  // Six is not. The cap lives here because a modified client would ignore one
+  // that lived only in the app.
+  await assertFails(setDoc(mine, { contacts: [1, 2, 3, 4, 5, 6].map(contact), updatedAt: 2 }));
+
+  // These are other people's phone numbers. Nobody else reads or writes them —
+  // not the driver on the rider's trip, not anyone.
+  await assertFails(getDoc(doc(driver, 'users/passenger1/safety/emergencyContacts')));
+  await assertFails(setDoc(doc(driver, 'users/passenger1/safety/emergencyContacts'), { contacts: [] }));
+
+  // And the shape is pinned: `contacts` must be a list, so a scalar cannot
+  // slip past the size check.
+  await assertFails(setDoc(mine, { contacts: 'all of them' }));
+
+  // No other settings document may be invented through this path.
+  await assertFails(setDoc(doc(passenger, 'users/passenger1/safety/somethingElse'), { contacts: [] }));
+});
+
 test('clients cannot write trips directly (server-authoritative)', async () => {
   await assertFails(setDoc(doc(passenger, 'trips/trip2'), { passengerId: 'passenger1' }));
   await assertFails(updateDoc(doc(driver, 'trips/trip1'), { status: 'completed' }));
@@ -251,6 +276,61 @@ test('going online requires a live photo of the car being driven', async () => {
     );
   });
   await assertSucceeds(updateDoc(doc(unphotographed, 'drivers/driver2'), { online: true }));
+});
+
+test('going online requires today’s face check, once it is switched on', async () => {
+  // The backstop behind the app and the trip guards. Papers prove whose account
+  // this is on the day it is approved; this is what keeps answering the question
+  // afterwards, when the phone could be in anybody's hands.
+  const gated = testEnv.authenticatedContext('driver4', { role: 'driver' }).firestore();
+  const live = () => ({
+    activeVehicleId: 'primary',
+    vehicleCheck: { status: 'approved', vehicleId: 'primary', confirmedAt: new Date() },
+  });
+
+  // Enforced, never done → no going online.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'drivers/driver4'), {
+      driverId: 'driver4', verificationStatus: 'approved', online: false, rating: 5,
+      ...live(),
+      faceCheckIn: { required: true },
+    });
+  });
+  await assertFails(updateDoc(doc(gated, 'drivers/driver4'), { online: true }));
+  // …and going OFFLINE is never blocked by it, whatever the state.
+  await assertSucceeds(updateDoc(doc(gated, 'drivers/driver4'), { online: false }));
+
+  // Yesterday's check is yesterday's.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(ctx.firestore(), 'drivers/driver4'),
+      { faceCheckIn: { required: true, passedAt: new Date(Date.now() - 30 * 60 * 60 * 1000) } },
+      { merge: true },
+    );
+  });
+  await assertFails(updateDoc(doc(gated, 'drivers/driver4'), { online: true }));
+
+  // Done this morning → through.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(
+      doc(ctx.firestore(), 'drivers/driver4'),
+      { faceCheckIn: { required: true, passedAt: new Date() } },
+      { merge: true },
+    );
+  });
+  await assertSucceeds(updateDoc(doc(gated, 'drivers/driver4'), { online: true }));
+
+  // And a driver the check is NOT switched on for is never gated by it — the
+  // default, and the one that must hold while the app in the stores has no
+  // camera screen to satisfy it with.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'drivers/driver5'), {
+      driverId: 'driver5', verificationStatus: 'approved', online: false, rating: 5,
+      ...live(),
+    });
+  });
+  const ungated = testEnv.authenticatedContext('driver5', { role: 'driver' }).firestore();
+  await assertSucceeds(updateDoc(doc(ungated, 'drivers/driver5'), { online: true }));
 });
 
 test('a driver reads their own cars but can never write one', async () => {

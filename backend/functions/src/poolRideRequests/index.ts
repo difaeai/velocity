@@ -10,6 +10,7 @@ import { notifyUser } from '../lib/fcm';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
+import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { distanceM, effectiveDropRadiusM, getAdminDropRadiusM } from '../lib/poolRadius';
 import { rideHasDeparted } from '../poolRides/lifecycle';
 import { firstNameOf } from '../trips/poolRoster';
@@ -198,6 +199,9 @@ export const driverRespondToRequest = onCall(async (req) => {
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
+  // …and, once a day, that the driver about to collect four strangers is the
+  // driver this account belongs to.
+  assertFaceCheckedIn(driverSnap);
   const driverData = driverSnap.data()!;
 
   const reqRef = db.doc(`poolRideRequests/${requestId}`);

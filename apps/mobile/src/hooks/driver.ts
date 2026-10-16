@@ -16,6 +16,11 @@ import {
   type DailyTargetSettings,
 } from '../domain/dailyTarget';
 import type { FaceScanState } from '../domain/faceScan';
+import {
+  evaluateFaceCheckIn,
+  type FaceCheckIn,
+  type FaceCheckInState,
+} from '../domain/faceCheckIn';
 import type { PaymentMethod, RideType, Trip } from '../domain/types';
 
 export interface DriverProfile {
@@ -95,13 +100,33 @@ export interface DriverProfile {
    */
   faceScan?: FaceScanState;
   /**
+   * The daily face check. Written only by the backend (drivers/faceScan.ts).
+   *
+   * `required` is the enforcement switch, stamped from the admin config: when
+   * it is true the driver cannot go online or be handed work until the day's
+   * check has passed. See src/domain/faceCheckIn.ts for the rule and the two
+   * other places that implement it.
+   */
+  faceCheckIn?: FaceCheckIn;
+  /**
    * What the verification engine made of this application. Present from the
    * moment the driver submits (`status: 'verifying'`) and replaced by the
    * verdict seconds later; the app streams this document, so the screen
    * changes under the driver without a refresh.
    */
   verification?: {
-    status?: 'verifying' | 'approved' | 'rejected' | 'review' | 'rerunning';
+    /**
+     * `awaiting_face_scan` is the one the driver can act on: the documents are
+     * stored and the engine is deliberately waiting for the face scan, which is
+     * the last step of an application and the thing that starts the decision.
+     */
+    status?:
+      | 'awaiting_face_scan'
+      | 'verifying'
+      | 'approved'
+      | 'rejected'
+      | 'review'
+      | 'rerunning';
     riskScore?: number | null;
     reasons?: { code: string; detail: string; severity: 'fatal' | 'major' | 'minor' }[];
     decidedAt?: { seconds: number };
@@ -208,6 +233,18 @@ export function useDriverVehicles(uid?: string): DriverVehicle[] {
  */
 export function vehicleCheckStatus(profile: DriverProfile | null): VehicleCheckStatus {
   return evaluateVehicleCheck(profile);
+}
+
+/**
+ * Does this driver owe today's face check?
+ *
+ * Thin wrapper over the pure rule in src/domain/faceCheckIn.ts, for the same
+ * reason as the one above it: the app, the security rules and the backend guard
+ * all have to answer this identically, or a driver gets a button that does
+ * nothing.
+ */
+export function faceCheckInStatus(profile: DriverProfile | null): FaceCheckInState {
+  return evaluateFaceCheckIn(profile);
 }
 
 export interface OpenRequest {

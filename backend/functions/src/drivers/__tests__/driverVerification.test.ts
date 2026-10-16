@@ -222,6 +222,10 @@ function cleanReport(over: Partial<DriverVerificationReport> = {}): DriverVerifi
     ],
     crossChecks: {
       faceConsistency: 'match',
+      // Per card, and both of them: this is what the identity gate reads, and a
+      // clean application is one where the applicant is on BOTH documents.
+      selfieVsCnic: 'match',
+      selfieVsLicense: 'match',
       nameConsistency: 'match',
       idNumberConsistency: 'match',
       plateConsistency: 'match',
@@ -256,7 +260,12 @@ function cleanSubmission(over: Partial<SubmittedDetails> = {}): SubmittedDetails
 const PASSED_SCAN: FaceScanState = {
   status: 'passed',
   matchesDocuments: 'match',
+  // The live face against each identity document on its own. Both, because
+  // that is what IDENTITY_MUST_BE_PROVEN asks for.
+  matchesCnic: 'match',
+  matchesLicense: 'match',
   passedAtMs: NOW - DAY,
+  afterDocuments: true,
 };
 
 function decide(over: {
@@ -534,6 +543,137 @@ describe('decideDriverVerification — the face scan gate, before the app can do
     const d = decide({ faceScan: { status: 'failed', matchesDocuments: 'unclear', passedAtMs: null } });
     expect(d.status).toBe('review');
     expect(d.reasons.map((r) => r.code)).toContain('face_scan_failed');
+  });
+});
+
+// ── The identity gate ────────────────────────────────────────────────────────
+//
+// IDENTITY_MUST_BE_PROVEN. Nothing is approved automatically unless this
+// applicant's own face was matched to the photograph on their own CNIC and
+// their own licence — and nothing is REFUSED for failing to establish it. The
+// two halves of that sentence are the whole feature, and each one has a test.
+
+describe('decideDriverVerification — identity: the face on both cards', () => {
+  const noScan: FaceScanState = {
+    status: 'missing',
+    matchesDocuments: 'unclear',
+    passedAtMs: null,
+  };
+  const cross = (over: Partial<DriverVerificationReport['crossChecks']>) =>
+    cleanReport({ crossChecks: { ...cleanReport().crossChecks, ...over } });
+
+  it('approves when the live scan matches both the CNIC and the licence', () => {
+    const d = decide({ faceScan: PASSED_SCAN });
+    expect(d.status).toBe('approved');
+    expect(d.identity).toMatchObject({ source: 'face_scan', agreement: 'match', proven: true });
+  });
+
+  it('will not approve when the licence photo could not be compared', () => {
+    // The commonest honest case: a laminated 2011 licence whose portrait no
+    // engine can find a face in. Not a refusal — a person looks.
+    const d = decide({ faceScan: { ...PASSED_SCAN, matchesLicense: 'unclear' } });
+    expect(d.status).toBe('review');
+    expect(d.reasons.map((r) => r.code)).toContain('identity_not_proven');
+  });
+
+  it('will not approve when the CNIC photo could not be compared', () => {
+    const d = decide({ faceScan: { ...PASSED_SCAN, matchesCnic: 'unclear' } });
+    expect(d.status).toBe('review');
+  });
+
+  it('never REFUSES an application for a face mismatch alone', () => {
+    // The other half of the rule. A mismatch is a flag for a human, whichever
+    // card it is on, however high the risk score climbs.
+    const d = decide({
+      faceScan: { ...PASSED_SCAN, matchesCnic: 'mismatch', matchesDocuments: 'mismatch' },
+      report: cross({ faceConsistency: 'mismatch', selfieVsCnic: 'mismatch' }),
+    });
+    expect(d.status).toBe('review');
+    expect(d.identity.proven).toBe(false);
+  });
+
+  it('falls back to the uploaded photo when there is no live scan', () => {
+    // Every driver on the current app build. Weaker evidence, and still a real
+    // comparison against both cards — so it can approve.
+    const d = decide({ faceScan: noScan });
+    expect(d.status).toBe('approved');
+    expect(d.identity.source).toBe('uploaded_photo');
+  });
+
+  it('will not approve when the uploaded photo matches only one card', () => {
+    const d = decide({ faceScan: noScan, report: cross({ selfieVsLicense: 'unclear' }) });
+    expect(d.status).toBe('review');
+    expect(d.identity.proven).toBe(false);
+  });
+
+  it('can be told to settle for the CNIC alone', () => {
+    // The admin lever, for a fleet drowning in unreadable licence portraits.
+    const d = decide({
+      faceScan: { ...PASSED_SCAN, matchesLicense: 'unclear' },
+      config: { requireLicenceFaceMatch: false },
+    });
+    expect(d.status).toBe('approved');
+  });
+
+  it('still refuses to settle for a licence that shows somebody else', () => {
+    // The lever softens "could not tell", never "that is a different person".
+    const d = decide({
+      faceScan: { ...PASSED_SCAN, matchesLicense: 'mismatch' },
+      config: { requireLicenceFaceMatch: false },
+    });
+    expect(d.status).toBe('review');
+  });
+
+  it('does not credit a scan taken before the documents were uploaded', () => {
+    // The substitution this stops: pass a scan against your own CNIC, then
+    // resubmit with somebody else's papers and keep the pass. Such a scan
+    // proves a live person and nothing more, so the uploaded photo decides.
+    const d = decide({
+      faceScan: { ...PASSED_SCAN, afterDocuments: false, matchesCnic: 'mismatch' },
+      report: cross({ selfieVsCnic: 'unclear' }),
+    });
+    expect(d.status).toBe('review');
+    expect(d.identity.source).toBe('uploaded_photo');
+    expect(d.reasons.map((r) => r.code)).toContain('face_scan_before_documents');
+  });
+
+  it('records what it found even when it found nothing', () => {
+    const d = decide({ faceScan: noScan, report: null });
+    expect(d.identity).toMatchObject({ proven: false, agreement: 'unclear' });
+  });
+});
+
+// ── The vehicle papers are held to a looser standard ─────────────────────────
+
+describe('decideDriverVerification — the car is not the identity', () => {
+  const cross = (over: Partial<DriverVerificationReport['crossChecks']>) =>
+    cleanReport({ crossChecks: { ...cleanReport().crossChecks, ...over } });
+
+  it('approves despite a plate that does not match the car photo', () => {
+    // The OCR reads LEA-482 off a plate that says LEA-4821. A car registered
+    // to a father, or bought last month and not yet transferred, is ordinary
+    // here. None of it says anything about who is driving.
+    const d = decide({ report: cross({ plateConsistency: 'mismatch' }) });
+    expect(d.status).toBe('approved');
+    expect(d.reasons.map((r) => r.code)).toContain('plate_mismatch');
+  });
+
+  it('approves despite the car not matching its registration', () => {
+    const d = decide({ report: cross({ vehicleConsistency: 'mismatch' }) });
+    expect(d.status).toBe('approved');
+  });
+
+  it('sends both together to a human rather than refusing', () => {
+    const d = decide({
+      report: cross({ plateConsistency: 'mismatch', vehicleConsistency: 'mismatch' }),
+    });
+    expect(d.status).toBe('review');
+  });
+
+  it('a typed plate that disagrees with the papers is still only a note', () => {
+    const d = decide({ submitted: { plate: 'ABC-999' } });
+    expect(d.status).toBe('approved');
+    expect(d.reasons.map((r) => r.code)).toContain('typed_plate_mismatch');
   });
 });
 

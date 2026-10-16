@@ -29,11 +29,31 @@ export type FaceChallenge = (typeof FACE_CHALLENGES)[number];
 
 export type FaceScanStatus = 'pending' | 'passed' | 'failed' | 'review';
 
+/**
+ * What a scan is for.
+ *
+ *   · `onboarding` — the last step of an application, after every document has
+ *     been uploaded. The live face is compared with the photographs on the CNIC
+ *     and the licence that were just submitted, which is the whole reason it
+ *     comes last and not first.
+ *   · `daily` — the first time an approved driver opens the app each day,
+ *     compared against the face enrolled when they were approved. See
+ *     ./faceCheckIn.ts.
+ */
+export type FaceScanPurpose = 'onboarding' | 'daily';
+
+export type FaceAgreement = 'match' | 'mismatch' | 'unclear';
+
 /** How the face scan looks on `drivers/{uid}`, written only by the backend. */
 export interface FaceScanState {
   scanId?: string;
   status?: FaceScanStatus;
-  matchesDocuments?: 'match' | 'mismatch' | 'unclear';
+  /** The two cards combined: a match means both of them. */
+  matchesDocuments?: FaceAgreement;
+  /** Against the CNIC portrait on its own. */
+  matchesCnic?: FaceAgreement;
+  /** Against the licence portrait on its own. */
+  matchesLicense?: FaceAgreement;
   posesMatched?: number;
   posesAsked?: number;
   passedAt?: { seconds: number } | null;
