@@ -473,7 +473,15 @@ export const sweepDriverVerificationJobs = onSchedule(
       .where('status', '==', 'queued')
       .limit(JOBS_PER_RUN)
       .get();
-    if (snap.empty) return;
+    if (snap.empty) {
+      // Says so out loud rather than returning in silence. A sweeper that logs
+      // nothing on an empty queue is indistinguishable in Cloud Logging from
+      // one that is not running at all — and this one runs every minute, so
+      // "no log line" is exactly what a broken schedule looks like too.
+      // `debug` keeps 1,440 of these a day out of the way of real entries.
+      logger.debug('Driver verification sweep: queue empty');
+      return;
+    }
 
     // Sequentially, not in parallel: each job is six images through a vision
     // model, and five of those at once in one instance is how a 1 GiB function

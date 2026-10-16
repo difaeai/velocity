@@ -69,6 +69,7 @@ jobs:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
@@ -95,6 +96,26 @@ jobs:
             echo "· social: token vault READY"
           else
             echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
+          fi
+          # The key every AI feature in the backend reads. There was no path for
+          # it here until 2026-10-16, which meant it had never reached
+          # production — and because each caller degrades politely rather than
+          # erroring, nothing ever said so:
+          #   · the social desk refuses to generate (the one loud failure);
+          #   · commission and cancellation-fee proofs skip verification and
+          #     wait for an admin;
+          #   · support tickets all go to the human desk;
+          #   · driver verification sends every applicant to manual review.
+          # That last one looks exactly like the engine working carefully, which
+          # is why it has its own readiness line below rather than being left to
+          # be noticed. NOT the same key as ANTHROPIC_ADMIN_KEY in
+          # COST_SOURCES_ENV: that one only reads the org's cost report.
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env.velocity-fe379
+            echo "· ai: driver verification, proof checks, support and social READY"
+          else
+            echo "· ai: no ANTHROPIC_API_KEY — driver applications, payment proofs and"
+            echo "      support tickets ALL fall back to humans, and the social desk cannot work"
           fi
           # WhatsApp Cloud API — its own block (WHATSAPP_TOKEN, _PHONE_NUMBER_ID,
           # _TEMPLATE_NAME, _TEMPLATE_LANG, _VERIFY_TOKEN, _APP_SECRET), kept
