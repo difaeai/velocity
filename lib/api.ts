@@ -1250,6 +1250,10 @@ export interface SocialSettings {
   brief: SocialBrief;
   /** Render the reel here rather than stopping at the cut brief. */
   autoRenderVideo: boolean;
+  /** Publish the moment the team is finished, with no gate in front of it. */
+  autoPublish: boolean;
+  /** Read our own numbers daily and feed them back into the standup. */
+  learnFromOwnPage: boolean;
 
   researchEnabled: boolean;
   competitors: SocialCompetitor[];
@@ -1462,6 +1466,55 @@ export interface SocialCommentDoc {
   error: string | null;
 }
 
+/** One of our own posts, measured against this account's own normal. */
+export interface SocialRankedPost {
+  mediaId: string;
+  permalink: string | null;
+  mediaType: string;
+  postedAtMs: number;
+  hook: string;
+  reach: number;
+  saves: number;
+  sends: number;
+  comments: number;
+  /** How far past our own median this went. 1.0 is an ordinary day. */
+  multiple: number;
+  sendRate: number;
+  saveRate: number;
+  hookScore: number;
+}
+
+/** What our own page did, and what the research desk made of it. */
+export interface SocialPageRead {
+  atMs: number;
+  date: string;
+  sampled: number;
+  medianReach: number;
+  best: SocialRankedPost[];
+  worst: SocialRankedPost[];
+  lessons: string[];
+  useMore: string[];
+  useLess: string[];
+  error: string | null;
+}
+
+/** The profile, scored out of 100 against the twelve-point rubric. */
+export interface SocialProfileAudit {
+  atMs: number;
+  score: number;
+  profile: {
+    username: string | null;
+    displayName: string | null;
+    biography: string | null;
+    website: string | null;
+    followers: number | null;
+    posts: number | null;
+  } | null;
+  items: { id: string; label: string; scored: number; outOf: number; why: string; fix: string }[];
+  rewrites: { field: string; now: string; better: string }[];
+  error: string | null;
+}
+
 export const socialApi = {
   connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),
   connect: callable<
@@ -1477,6 +1530,9 @@ export const socialApi = {
   >('adminConnectSocialAccount'),
   verify: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminVerifySocialAccount'),
   disconnect: callable<{ platform: SocialPlatform }, { ok: boolean }>('adminDisconnectSocialAccount'),
+
+  readOwnPage: callable<Record<string, never>, SocialPageRead>('adminReadOwnPage'),
+  auditProfile: callable<Record<string, never>, SocialProfileAudit>('adminAuditProfile'),
 
   roles: callable<Record<string, never>, { roles: SocialRoleOption[] }>('adminGetSocialRoles'),
   hire: callable<

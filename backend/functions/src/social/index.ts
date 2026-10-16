@@ -1,6 +1,7 @@
 /**
  * The social desk: the people you hire, the content they plan and make, the
- * accounts they post to, and the queue you approve everything through.
+ * accounts they post to, the queue you approve everything through, and what
+ * they learn from their own page afterwards.
  *
  * Reading order if you are new to this: types.ts (roles, stages, formats),
  * employees.ts (who works here and who picks up which job), crew.ts (what they
@@ -33,6 +34,13 @@ export {
   adminAttachSocialMedia,
   adminDeleteSocialPost,
 } from './pipeline';
+
+export {
+  socialPageRead,
+  socialProfileAudit,
+  adminReadOwnPage,
+  adminAuditProfile,
+} from './insights';
 
 export {
   socialEngagement,

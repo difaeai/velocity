@@ -506,6 +506,10 @@ export {
   adminSyncSocialComments,
   adminReplySocialComment,
   adminSetCommentStatus,
+  socialPageRead,
+  socialProfileAudit,
+  adminReadOwnPage,
+  adminAuditProfile,
 } from './social';
 
 // What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta

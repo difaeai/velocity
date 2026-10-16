@@ -354,6 +354,152 @@ async function instagramComments(c: PlatformCredentials, mediaId: string): Promi
   }));
 }
 
+/**
+ * One of our own posts, and what the audience did with it.
+ *
+ * `reach` rather than impressions, and `sends`/`saves` before likes, because
+ * that is the order the ranker itself weights them in — a post with 400 likes
+ * and no sends travelled nowhere.
+ */
+export interface PostPerformance {
+  platform: Platform;
+  mediaId: string;
+  permalink: string | null;
+  /** IMAGE, VIDEO, CAROUSEL_ALBUM, REELS — as the network names it. */
+  mediaType: string;
+  caption: string;
+  postedAtMs: number;
+  reach: number;
+  saves: number;
+  sends: number;
+  comments: number;
+  likes: number;
+  /** Reels only. */
+  plays: number;
+}
+
+/** The profile fields a twelve-point audit is scored against. */
+export interface ProfileDetail {
+  platform: Platform;
+  username: string | null;
+  displayName: string | null;
+  biography: string | null;
+  website: string | null;
+  followers: number | null;
+  posts: number | null;
+  avatarUrl: string | null;
+  /** The first nine covers, which is what a stranger actually processes. */
+  recentThumbnails: string[];
+}
+
+/**
+ * Our own numbers, post by post.
+ *
+ * Insights are fetched per media rather than in one call because Instagram
+ * only serves them that way, and a metric a given media type does not have
+ * comes back as an error for that one field rather than a zero — so each is
+ * read defensively and a missing one is nought rather than a dead pass.
+ */
+async function instagramRecentPosts(
+  c: PlatformCredentials,
+  limit: number,
+): Promise<PostPerformance[]> {
+  const list = await call<{
+    data?: {
+      id: string;
+      caption?: string;
+      media_type?: string;
+      permalink?: string;
+      timestamp?: string;
+      like_count?: number;
+      comments_count?: number;
+    }[];
+  }>(
+    'instagram',
+    `${GRAPH}/${c.externalId}/media?fields=id,caption,media_type,permalink,timestamp,like_count,comments_count` +
+      `&limit=${Math.min(limit, 50)}&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+
+  const posts: PostPerformance[] = [];
+  for (const media of list.data ?? []) {
+    const metrics = media.media_type === 'VIDEO' ? 'reach,saved,shares,plays' : 'reach,saved,shares';
+    let values: Record<string, number> = {};
+    try {
+      const res = await call<{ data?: { name: string; values?: { value?: number }[] }[] }>(
+        'instagram',
+        `${GRAPH}/${media.id}/insights?metric=${metrics}&access_token=${encodeURIComponent(c.accessToken)}`,
+      );
+      values = Object.fromEntries(
+        (res.data ?? []).map((m) => [m.name, m.values?.[0]?.value ?? 0]),
+      );
+    } catch (e) {
+      // A post older than the insights window, or a type that does not carry
+      // one of these metrics, is not a reason to lose the other forty posts.
+      logger.warn('social: no insights for one media', { id: media.id, message: (e as Error).message });
+    }
+
+    posts.push({
+      platform: 'instagram',
+      mediaId: media.id,
+      permalink: media.permalink ?? null,
+      mediaType: media.media_type ?? 'UNKNOWN',
+      caption: media.caption ?? '',
+      postedAtMs: media.timestamp ? Date.parse(media.timestamp) : 0,
+      reach: values.reach ?? 0,
+      saves: values.saved ?? 0,
+      sends: values.shares ?? 0,
+      comments: media.comments_count ?? 0,
+      likes: media.like_count ?? 0,
+      plays: values.plays ?? 0,
+    });
+  }
+  return posts;
+}
+
+async function instagramProfileDetail(c: PlatformCredentials): Promise<ProfileDetail> {
+  const me = await call<{
+    id: string;
+    username?: string;
+    name?: string;
+    biography?: string;
+    website?: string;
+    followers_count?: number;
+    media_count?: number;
+    profile_picture_url?: string;
+  }>(
+    'instagram',
+    `${GRAPH}/${c.externalId}?fields=id,username,name,biography,website,followers_count,media_count,profile_picture_url` +
+      `&access_token=${encodeURIComponent(c.accessToken)}`,
+  );
+
+  // The first nine, because that grid is what somebody arriving from one reel
+  // decides on before they read a word of the bio.
+  let thumbs: string[] = [];
+  try {
+    const grid = await call<{ data?: { thumbnail_url?: string; media_url?: string }[] }>(
+      'instagram',
+      `${GRAPH}/${c.externalId}/media?fields=thumbnail_url,media_url&limit=9&access_token=${encodeURIComponent(c.accessToken)}`,
+    );
+    thumbs = (grid.data ?? [])
+      .map((m) => m.thumbnail_url ?? m.media_url)
+      .filter((u): u is string => Boolean(u));
+  } catch {
+    /* an empty grid is a finding in itself, not a failure */
+  }
+
+  return {
+    platform: 'instagram',
+    username: me.username ? `@${me.username}` : null,
+    displayName: me.name ?? null,
+    biography: me.biography ?? null,
+    website: me.website ?? null,
+    followers: me.followers_count ?? null,
+    posts: me.media_count ?? null,
+    avatarUrl: me.profile_picture_url ?? null,
+    recentThumbnails: thumbs,
+  };
+}
+
 async function instagramReply(c: PlatformCredentials, commentId: string, text: string): Promise<string> {
   const res = await call<{ id: string }>('instagram', `${GRAPH}/${commentId}/replies`, {
     form: { message: text, access_token: c.accessToken },
@@ -803,6 +949,10 @@ interface Adapter {
   listComments?: (c: PlatformCredentials, mediaId: string) => Promise<RawComment[]>;
   /** Answer one of them. */
   reply?: (c: PlatformCredentials, commentId: string, text: string) => Promise<string>;
+  /** How our own last few dozen posts actually did. */
+  recentPosts?: (c: PlatformCredentials, limit: number) => Promise<PostPerformance[]>;
+  /** The profile as a stranger arriving from one reel would see it. */
+  profileDetail?: (c: PlatformCredentials) => Promise<ProfileDetail>;
   /** What the console tells you to paste, in order. */
   fields: { key: keyof PlatformCredentials; label: string; hint: string; secret: boolean }[];
 }
@@ -830,6 +980,8 @@ export const ADAPTERS: Record<Platform, Adapter> = {
     publish: publishInstagram,
     listComments: instagramComments,
     reply: instagramReply,
+    recentPosts: instagramRecentPosts,
+    profileDetail: instagramProfileDetail,
     fields: [
       {
         key: 'accessToken',

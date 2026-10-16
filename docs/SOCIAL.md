@@ -91,10 +91,20 @@ so you can veto the idea rather than the execution.
                              reject / delete
 ```
 
-**Nothing publishes itself.** There is no auto-publish switch. Every run ends at
+**By default, nothing publishes itself.** Every run ends at
 `awaiting_approval`, because everything the team writes is a claim Velocity is
 making in public, and the cost of reading one piece a day is nothing next to the
 cost of the one that should not have gone out.
+
+There is now an `autoPublish` switch for an owner who has weighed that and
+decided otherwise. On, a finished piece goes straight to the connected networks
+with **no quality gate in front of it** — that is what it says and it is the
+whole point of it. What still holds is what lives in the writing rather than in
+a check: every number comes from the FACTS block, no competitor is ever named,
+and nothing promises an income. The piece is still scored and the scorecard is
+still stored, so one that went out weak is findable afterwards; it is simply not
+stopped. `approvedBy` is written as `auto`, because "who approved this" is a
+question somebody asks a year later and "nobody did" is the honest answer.
 
 Each stage writes its outcome to `socialPosts/{id}` before the next begins, so a
 failure halfway through leaves a piece you can open, read and retry — never a
@@ -246,6 +256,37 @@ typography carries it alone.
 `planReel` and `filterGraph` are pure functions, so the timings, the wrapping
 and the safe zone are tested in CI, which has no ffmpeg in it. Only the render
 itself spawns anything.
+
+---
+
+## 3b. Reading our own page
+
+Everything above decides what to make. [`insights.ts`](../backend/functions/src/social/insights.ts)
+decides what to make **next**, from what already happened.
+
+An hour before the team starts, it reads how our own posts actually did through
+the network's own insights — which cost nothing — and ranks them by the
+**multiple over this account's own median**. Raw reach is not evidence: 400,000
+views is a quiet Tuesday on one account and a discovery on another, and the only
+baseline that says anything about the *post* rather than the account is the
+account's own normal. Sends and saves are reported per thousand reached and are
+weighted ahead of likes, because that is the order the ranker itself uses.
+
+One model call turns that into a few sentences — what to do more of, what to
+stop — and the standup reads it **before** the market read, because what a
+stranger's account did is a hint and what ours did is evidence. The loop is the
+point: make, measure, feed it back. That is the difference between a team and a
+content generator.
+
+Once a week the same desk scores the profile out of 100 against the twelve-point
+rubric in the playbook — name field, bio, pinned three, highlights, the first
+nine covers, whether the account looks alive — worst item first, with the
+rewrites written out rather than described. It can read the text fields but not
+the pictures, and it says so rather than pretending.
+
+Both land in `socialInsights/{latest|profile}`, admin-read-only, and are shown
+on **What is working**. Zero posts yet means it says so instead of inventing a
+pattern from three data points.
 
 ---
 
@@ -455,6 +496,8 @@ this order:
 | `socialAccounts/{platform}/secret/credentials` | sealed token; **no client access** |
 | `socialPosts/{YYYY-MM-DD-format}` | the team snapshot, the work log, the plan, script, SEO, search and ads packs, media, captions, targets, results and feedback history |
 | `socialResearch/{YYYY-MM-DD}` | the day's market read and the pages it came from |
+| `socialInsights/latest` | how our own posts did, ranked against our own median |
+| `socialInsights/profile` | the profile, scored out of 100, with the rewrites |
 | `socialComments/{platform}_{commentId}` | one comment, its reading, and the reply |
 | `system/socialAutomation` | the settings the scheduler and everyone reads |
 
@@ -499,5 +542,9 @@ like a new one buys nothing.
 | `adminSyncSocialComments` | read the comments now, and draft replies |
 | `adminReplySocialComment` | send one reply |
 | `adminSetCommentStatus` | close a comment without answering it |
+| `adminReadOwnPage` | read our own numbers now and rank them |
+| `adminAuditProfile` | score the profile now |
 | `socialDailyContent` | the hourly scheduler tick (not callable) |
+| `socialPageRead` | the daily read of our own page, an hour before the team starts (not callable) |
+| `socialProfileAudit` | the weekly profile score (not callable) |
 | `socialEngagement` | the two-hourly comment pass (not callable) |

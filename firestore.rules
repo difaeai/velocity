@@ -517,6 +517,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- socialInsights/{latest|profile} ----------------------------------
+    // How our own posts actually did, ranked against this account's own median,
+    // and the twelve-point score of the profile they all land on. Read from the
+    // networks by the backend; the console only reads it back.
+    match /socialInsights/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- socialComments/{platform_commentId} ------------------------------
     // What people said under our own posts, and the reply the manager drafted.
     // Written only by the backend: a reply that leaves this collection is
