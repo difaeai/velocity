@@ -237,7 +237,14 @@ export const adminApi = {
         rejectOnDuplicateCnic: boolean;
         requireFaceScan: boolean;
       };
-      aiConfigured: boolean;
+      /**
+       * Whether the engine's own machinery came up — the face networks and the
+       * text reader, both local. Replaces `aiConfigured`, which only ever said
+       * whether a secret existed; an engine can be perfectly configured and
+       * still not be running, and that gap is what once sent every applicant
+       * to a human for weeks while looking careful.
+       */
+      engineReady: boolean;
     }
   >('adminVerificationSettings'),
   rejectDriver: callable<

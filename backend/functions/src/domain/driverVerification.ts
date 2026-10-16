@@ -1003,10 +1003,33 @@ export function decideDriverVerification(params: {
   const hasFatal = reasons.some((r) => r.severity === 'fatal');
   const hasMajor = reasons.some((r) => r.severity === 'major');
 
+  /**
+   * FACE_MISMATCH_IS_REVIEW_ONLY, enforced rather than merely intended.
+   *
+   * Weighting the mismatch at 45 was supposed to keep it under the reject line
+   * on its own, and it does — but only on its own. One soft photograph (18) and
+   * a hedged confidence (5) clear 60, and then an applicant is REFUSED for the
+   * single judgement the top of this file says must never refuse anybody. It is
+   * reachable in ordinary traffic: a ten-year-old laminated CNIC portrait is
+   * exactly the case that reads as a mismatch and comes with other small doubts
+   * attached.
+   *
+   * So the rule is now structural. When nothing serious is wrong except who the
+   * photographs look like, a person decides. A `fatal` finding — an expired
+   * licence, a duplicate CNIC, the wrong paper entirely — still rejects, face
+   * or no face.
+   */
+  const FACE_IDENTITY_CODES = ['face_mismatch', 'face_scan_not_document_holder'];
+  const onlyTheFaceIsSerious =
+    reasons.some((r) => FACE_IDENTITY_CODES.includes(r.code)) &&
+    reasons
+      .filter((r) => r.severity !== 'minor')
+      .every((r) => FACE_IDENTITY_CODES.includes(r.code));
+
   let status: DecisionStatus;
   if (config.mode !== 'full') {
     status = 'review';
-  } else if (hasFatal || riskScore >= config.autoRejectMinRisk) {
+  } else if (hasFatal || (riskScore >= config.autoRejectMinRisk && !onlyTheFaceIsSerious)) {
     status = 'rejected';
   } else if (
     !hasMajor &&

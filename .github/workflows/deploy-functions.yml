@@ -97,25 +97,31 @@ jobs:
           else
             echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
           fi
-          # The key every AI feature in the backend reads. There was no path for
-          # it here until 2026-10-16, which meant it had never reached
-          # production — and because each caller degrades politely rather than
-          # erroring, nothing ever said so:
+          # The key the REMAINING AI features read. There was no path for it here
+          # until 2026-10-16, which meant it had never reached production — and
+          # because each caller degrades politely rather than erroring, nothing
+          # ever said so. Hence a readiness line either way.
+          #
+          # Driver verification is NO LONGER one of those callers. It runs its
+          # own engine inside the function now — Tesseract for the text and a
+          # 128-dimension face descriptor for the photographs, both local,
+          # neither needing a key (backend/functions/src/lib/localVision.ts).
+          # So an absent key no longer silently sends every driver applicant to
+          # a human, which is the exact failure this line was written to expose.
+          # What is left depending on it:
           #   · the social desk refuses to generate (the one loud failure);
           #   · commission and cancellation-fee proofs skip verification and
           #     wait for an admin;
-          #   · support tickets all go to the human desk;
-          #   · driver verification sends every applicant to manual review.
-          # That last one looks exactly like the engine working carefully, which
-          # is why it has its own readiness line below rather than being left to
-          # be noticed. NOT the same key as ANTHROPIC_ADMIN_KEY in
-          # COST_SOURCES_ENV: that one only reads the org's cost report.
+          #   · support tickets all go to the human desk.
+          # NOT the same key as ANTHROPIC_ADMIN_KEY in COST_SOURCES_ENV: that
+          # one only reads the org's cost report.
           if [ -n "$ANTHROPIC_API_KEY" ]; then
             printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env.velocity-fe379
-            echo "· ai: driver verification, proof checks, support and social READY"
+            echo "· ai: proof checks, support and social READY"
           else
-            echo "· ai: no ANTHROPIC_API_KEY — driver applications, payment proofs and"
-            echo "      support tickets ALL fall back to humans, and the social desk cannot work"
+            echo "· ai: no ANTHROPIC_API_KEY — payment proofs and support tickets fall"
+            echo "      back to humans, and the social desk cannot work. Driver"
+            echo "      verification is unaffected: its engine is local and needs no key."
           fi
           # WhatsApp Cloud API — its own block (WHATSAPP_TOKEN, _PHONE_NUMBER_ID,
           # _TEMPLATE_NAME, _TEMPLATE_LANG, _VERIFY_TOKEN, _APP_SECRET), kept

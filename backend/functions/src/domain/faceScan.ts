@@ -28,7 +28,7 @@
  * human rather than an automatic ban — see driverVerification.ts.
  *
  * Pure functions only; the Firestore and Anthropic halves live in
- * drivers/faceScan.ts and lib/driverVerificationAI.ts.
+ * drivers/faceScan.ts and lib/driverVerificationLocal.ts.
  */
 
 /**
