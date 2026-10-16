@@ -1795,7 +1795,57 @@ queue, `applyCancellationFeeSettlement`) — and it clears only `amountDue`, so 
 fee charged *after* the transfer was sent survives rather than being silently
 forgiven.
 
-### 14.5 The platform's books
+### 14.5 Balance top-ups (bank transfer, verified by our own engine)
+
+The same transfer-and-screenshot idea as §14.4, but funding a **balance** rather
+than clearing one named debt — and with **no paid model** anywhere in it.
+
+`submitManualTopup` (`payments/manualTopup.ts`) pulls the receipt out of
+Storage, reads it with our own OCR (`lib/localVision.ts`, Tesseract on the
+function's own CPU, no API key, no per-screenshot cost) and hands the text to
+`domain/topupProof.ts`, which decides. Mobile entry points:
+`BankTransferTopUpSheet`, mounted from `TopUpSheet`, the **Commission** card on
+the driver Earnings tab, and `CommissionLock`.
+
+**Why it is harder than §14.4:** a settlement already knows the amount, so a
+forged number only buys the forger what they already owed. Here the screenshot
+*decides* the amount. Three of the four attacks that matter are therefore
+bookkeeping, not forgery detection:
+
+| Attack | What stops it |
+| --- | --- |
+| Same screenshot ten times | One image SHA-256 may be credited once, ever (`manualTopupProofs/{sha}`) |
+| Same payment, re-uploaded | One transaction reference may be credited once, ever (`manualTopupRefs/{refKey}`) |
+| OCR read `O` as `0` | `refKey()` folds the glyph pairs Tesseract confuses, so two honest reads of one receipt collide on purpose |
+| Pay 100, type 10,000 | The amount always comes from the receipt, never from what was typed (`AMOUNT_TOLERANCE` is **0**) |
+
+The claim and the credit are **one Firestore transaction** whose reads are the
+duplicate checks — five simultaneous uploads of one receipt credit exactly once.
+
+**Three verdicts, not two.** A receipt it cannot read confidently is neither
+credited nor rejected: it becomes a `manualTopups` doc with status
+`pending_review` for `adminReviewManualTopup` (admin page **Balance top-ups**,
+which also surfaces rows stuck in `verifying` — a function that died mid-check
+is nobody's fault but still somebody's money). Admin approval defaults to the
+amount the **engine read**, never the amount the driver typed.
+
+**Still ring-fenced.** Manual money increments `toppedUpTotal` exactly like a
+gateway top-up, so `domain/walletFunds.ts` keeps it spendable on Velocity's own
+charges and never withdrawable. Without that, this path would be the shortest
+route from a forged screenshot to cash in a stranger's Easypaisa. It is also
+why the path can exist before an EMI licence at all: a closed-loop prepayment
+for Velocity's own service is not e-money.
+
+**It clears a lock by itself.** A credited top-up calls
+`trySettleCommissionFromWallet` on the spot, so the driver uploads one
+screenshot and is driving again. Auto-settle is all-or-nothing, so a balance
+short of the full amount owed credits but does not unlock — which the sheet
+says out loud rather than leaving the driver wondering.
+
+Deliberately **not** behind `walletTopupEnabled`: that flag gates the gateway,
+and this is the path that works without one.
+
+### 14.6 The platform's books
 
 - `platformLedger/{id}` — append-only, one entry per realised revenue event
   (`ride_commission` wallet/cash, `cancellation_fee`,

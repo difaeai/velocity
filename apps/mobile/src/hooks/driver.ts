@@ -946,6 +946,44 @@ export function useLatestCommissionSettlement(uid?: string): CommissionSettlemen
   return row;
 }
 
+export interface ManualTopup {
+  id: string;
+  status: 'verifying' | 'approved' | 'rejected' | 'pending_review';
+  claimedAmount?: number;
+  creditedAmount?: number;
+  /** What our OCR read off the receipt — may differ from what was typed. */
+  detectedAmount?: number | null;
+  message?: string | null;
+  createdAt?: { seconds: number };
+}
+
+/**
+ * The driver's most recent bank-transfer top-up, for the status line under the
+ * upload button.
+ *
+ * Equality-only query, newest picked client-side — same reasoning as
+ * `useLatestCommissionSettlement`: it needs no composite index, and one
+ * driver's top-ups are a handful of documents.
+ */
+export function useLatestManualTopup(uid?: string): ManualTopup | null {
+  const [row, setRow] = useState<ManualTopup | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      query(collection(db, 'manualTopups'), where('uid', '==', uid)),
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ManualTopup);
+        docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+        setRow(docs[0] ?? null);
+      },
+      () => setRow(null),
+    );
+  }, [uid]);
+  // Signed out: report nothing by derivation rather than clearing state inside
+  // the effect, which cascades an extra render on every sign-out.
+  return uid ? row : null;
+}
+
 export interface SettlementAccounts {
   easypaisaNumber?: string;
   jazzcashNumber?: string;

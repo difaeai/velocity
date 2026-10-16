@@ -368,6 +368,16 @@ export const adminApi = {
     { ok: boolean; status: string }
   >('adminReviewCommissionSettlement'),
 
+  /**
+   * Decide a bank-transfer top-up our own OCR engine would not credit by
+   * itself. `amount` overrides what to credit; leaving it out credits the
+   * amount the engine read off the receipt, never the one the driver typed.
+   */
+  adminReviewManualTopup: callable<
+    { topupId: string; approve: boolean; amount?: number; note?: string },
+    { ok: boolean; status: 'approved' | 'rejected'; credited: number; commissionSettled?: number }
+  >('adminReviewManualTopup'),
+
   /** Passenger CNIC verification — the identity gate in front of couriers. */
   adminReviewCnicVerification: callable<
     { uid: string; approve: boolean; reason?: string },

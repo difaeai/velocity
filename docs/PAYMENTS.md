@@ -97,6 +97,31 @@ status `pending_review` for an admin to approve/reject
 (`adminReviewCommissionSettlement`, dashboard → Settlements). AI-approve and
 admin-approve share the same money transaction (`applyManualSettlement`).
 
+**Balance top-ups (bank transfer, our own engine — no paid model):** the same
+transfer-and-screenshot gesture, but funding a balance rather than clearing one
+named debt. `submitManualTopup` (`payments/manualTopup.ts`) reads the receipt
+with our own OCR (`lib/localVision.ts` — Tesseract on the function's CPU, no API
+key, no per-screenshot cost) and `domain/topupProof.ts` decides. The defence is
+**reuse bookkeeping, not forgery detection**: one image digest
+(`manualTopupProofs/{sha}`) and one transaction reference
+(`manualTopupRefs/{refKey}`) may each be credited exactly once, ever, and the
+claim and the credit happen in **one transaction** whose reads are those checks,
+so N simultaneous uploads of one receipt credit once. The amount always comes
+from the receipt, never from what the driver typed (`AMOUNT_TOLERANCE` is 0).
+Three verdicts: credited, rejected, or `pending_review` for
+`adminReviewManualTopup` (dashboard → Balance top-ups) — and admin approval
+defaults to the amount the engine read, not the claim.
+
+Manual money increments `toppedUpTotal` exactly like a gateway top-up, so the
+`walletFunds` ring-fence keeps it spendable on Velocity's charges and never
+withdrawable. That is what keeps this path a closed-loop prepayment rather than
+e-money, and it is why a forged screenshot cannot become cash. A credited
+top-up also calls `trySettleCommissionFromWallet`, so it clears a commission
+lock without a second tap; auto-settle is all-or-nothing, so a balance short of
+the full amount owed credits without unlocking. Deliberately **not** behind
+`walletTopupEnabled` — that flag gates the gateway, and this is the path that
+works without one.
+
 **Cancellation fees:** cancelling a trip nobody has taken yet (`requested`) is
 free — the passenger is only withdrawing an offer. Once a driver has accepted
 (`matched` / `arriving` / `arrived`), whoever walks away owes Velocity a share of

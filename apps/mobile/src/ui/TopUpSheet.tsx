@@ -19,6 +19,7 @@ import { api, type SavedMethodKind, type TopupProvider } from '../api/client';
 import { useCommissionSettings, useSavedPaymentMethods } from '../hooks/driver';
 import { colors } from '../config';
 import { themed } from '../theme';
+import { BankTransferTopUpSheet } from './BankTransferTopUp';
 import { PrimaryButton } from './components';
 
 /** Backend limits — keep in step with MIN_TOPUP/MAX_TOPUP in payments/index.ts. */
@@ -72,6 +73,7 @@ export function TopUpSheet({
   const [mockGateway, setMockGateway] = useState(false);
   const [chosen, setChosen] = useState<Selection | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [bankOpen, setBankOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const amountRef = useRef<TextInput>(null);
 
@@ -127,6 +129,7 @@ export function TopUpSheet({
   function close() {
     setAmount('');
     setPickerOpen(false);
+    setBankOpen(false);
     onClose();
   }
 
@@ -197,11 +200,31 @@ export function TopUpSheet({
               <View style={styles.comingSoonBanner}>
                 <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
                 <Text style={styles.comingSoonText}>
-                  Automatic wallet top-ups are almost here. Until then you can pay Velocity Rides directly
-                  from the accounts shown on your Wallet screen.
+                  One-tap top-ups from a card or connected account are almost here. In the meantime
+                  you can transfer the money to Velocity Rides from any banking app and upload the
+                  receipt — it&apos;s checked and credited straight away.
                 </Text>
               </View>
             ) : null}
+
+            {/* Bank transfer + screenshot.
+                Deliberately NOT disabled by `comingSoon`: that flag gates the
+                gateway, and this path is the one that works without one. While
+                it is false this row is the only thing in this sheet that does
+                anything, which is exactly why it sits above the amount rather
+                than inside the method picker the flag locks. */}
+            <Pressable onPress={() => setBankOpen(true)} style={styles.bankRow}>
+              <View style={[styles.methodBadge, { backgroundColor: `${colors.primary}22` }]}>
+                <Text style={styles.methodIcon}>🏦</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.methodLabel}>Transfer & upload receipt</Text>
+                <Text style={styles.methodSub}>
+                  Easypaisa, JazzCash or any bank — credited on the spot
+                </Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
 
             {/* Selected payment method — tap to change */}
             <Pressable
@@ -374,6 +397,14 @@ export function TopUpSheet({
           </View>
         </View>
       </Modal>
+
+      {/* ── Bank transfer + screenshot ──────────────────────────────────── */}
+      <BankTransferTopUpSheet
+        visible={bankOpen}
+        onClose={() => setBankOpen(false)}
+        uid={uid}
+        suggestedAmount={amountValid ? amountNum : undefined}
+      />
     </Modal>
   );
 }
@@ -415,6 +446,18 @@ const styles = themed(() => StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  // Lime-edged rather than plain glass like methodRow: while top-ups are
+  // "coming soon" this is the live path, and it has to read as the live one.
+  bankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: `${colors.primary}10`,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: `${colors.primary}45`,
   },
   methodBadge: {
     width: 42, height: 42, borderRadius: 21,
