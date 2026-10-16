@@ -13,14 +13,7 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { applyRole } from '../users';
-import {
-  closedCycle,
-  cycleCashFare,
-  getCommissionSettings,
-  openCycle,
-  readCycle,
-} from '../domain/commission';
-import { applyCommissionCredit } from './commissionCredit';
+import { settleCommissionFromWallet } from './autoSettle';
 import { todayKey } from './dailyTarget';
 import { PRIMARY_VEHICLE_ID } from '../domain/vehicleCheck';
 import { enqueueDriverVerification, getVerificationConfig } from './verification';
@@ -414,127 +407,29 @@ export const rejectDriver = onCall(async (req) => {
 export const payCommission = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
 
-  const driverRef = db.doc(`drivers/${ctx.uid}`);
-  const settings = await getCommissionSettings();
-  const { rate } = settings;
-  const today = todayKey();
+  // The money lives in drivers/autoSettle.ts, because the nightly day-close job
+  // and the top-up callback settle the very same way and there must not be two
+  // transactions that each believe they know how a cycle is cleared. All this
+  // callable adds is the driver standing in front of it: it turns the two
+  // outcomes that are not a settlement into errors they can read and act on.
+  const outcome = await settleCommissionFromWallet({ driverId: ctx.uid, today: todayKey() });
 
-  const amountPaid = await db.runTransaction(async (tx) => {
-    const walletRef = db.doc(`wallets/${ctx.uid}`);
-    const [snap, walletSnap] = await Promise.all([tx.get(driverRef), tx.get(walletRef)]);
-    if (!snap.exists) throw new HttpsError('not-found', 'Driver record not found.');
-    const cycleGrossFare: number = snap.get('cycleGrossFare') ?? 0;
-    const cycle = readCycle(snap);
-    const open = openCycle(cycle, today);
-    const closed = closedCycle(cycle, today);
-    // Nothing has closed yet, so nothing is payable. An all-online closed day
-    // IS allowed through: it owes nothing, and letting it settle for zero is
-    // how the driver's "fares this cycle" figure gets tidied up without
-    // waiting for their next ride to roll the day.
-    if (closed.gross <= 0 && closed.cash <= 0) {
-      throw new HttpsError('failed-precondition', 'No commission is due right now.');
-    }
-
-    const cashFare = cycleCashFare(snap);
-    // The driver's bonus pays first and is spent here; the wallet only has to
-    // cover what is left, which is often nothing.
-    const breakdown = applyCommissionCredit({
-      tx,
-      driverId: ctx.uid,
-      driverSnap: snap,
-      settings,
-      today,
-      source: 'wallet',
-    });
-    if (breakdown.creditApplied > 0) {
-      tx.set(db.collection('platformLedger').doc(), {
-        type: 'ride_commission',
-        source: 'daily_target_credit',
-        driverId: ctx.uid,
-        amount: breakdown.creditApplied,
-        paidFromCredit: breakdown.creditApplied,
-        cycleGrossFare,
-        cycleCashFare: cashFare,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-    const due = breakdown.due;
-    if (due > 0) {
-      const balance: number = walletSnap.get('balance') ?? 0;
-      if (balance < due) {
-        throw new HttpsError(
-          'failed-precondition',
-          `Commission due is ${due} PKR but your wallet has ${balance} PKR. Top up ${due - balance} PKR first.`,
-        );
-      }
-
-      // Debit the driver's wallet and ledger both sides of the movement.
-      tx.set(
-        walletRef,
-        { balance: FieldValue.increment(-due), updatedAt: FieldValue.serverTimestamp() },
-        { merge: true },
-      );
-      tx.set(walletRef.collection('transactions').doc(), {
-        type: 'commission_payment',
-        amount: -due,
-        cycleGrossFare,
-        cycleCashFare: cashFare,
-        settledCashFare: breakdown.settleableCash,
-        rate,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      tx.set(db.collection('platformLedger').doc(), {
-        type: 'ride_commission',
-        source: 'cash_cycle',
-        driverId: ctx.uid,
-        amount: due,
-        cycleGrossFare,
-        cycleCashFare: cashFare,
-        settledCashFare: breakdown.settleableCash,
-        rate,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      tx.set(
-        db.doc('system/counters'),
-        {
-          cashCommissionCollected: FieldValue.increment(due),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-    }
-
-    // The closed days are settled, so they come off the cycle. The day still
-    // running stays: it is not payable yet, and it may yet cost nothing.
-    tx.set(
-      driverRef,
-      {
-        cycleGrossFare: open.gross,
-        cycleCashFare: open.cash,
-        cycleDay: today,
-        cycleGrossToday: open.gross,
-        cycleCashToday: open.cash,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
+  if (outcome.status === 'no_driver') {
+    throw new HttpsError('not-found', 'Driver record not found.');
+  }
+  if (outcome.status === 'nothing_due') {
+    throw new HttpsError('failed-precondition', 'No commission is due right now.');
+  }
+  if (outcome.status === 'short') {
+    throw new HttpsError(
+      'failed-precondition',
+      `Commission due is ${outcome.due} PKR but your wallet has ${outcome.balance} PKR. ` +
+        `Top up ${outcome.shortfall} PKR first.`,
     );
-    // Log the payment in a sub-collection for audit.
-    tx.set(driverRef.collection('commissionPayments').doc(), {
-      amount: due,
-      paidFromCredit: breakdown.creditApplied,
-      grossDue: breakdown.grossDue,
-      cycleGrossFare,
-      cycleCashFare: cashFare,
-      settledCashFare: breakdown.settleableCash,
-      settledGrossFare: breakdown.settleableGross,
-      rate,
-      paidAt: FieldValue.serverTimestamp(),
-    });
-    return due;
-  });
+  }
 
-  logger.info('Commission paid', { driverId: ctx.uid, amountPaid });
-  return { ok: true, amountPaid };
+  logger.info('Commission paid', { driverId: ctx.uid, amountPaid: outcome.amountPaid });
+  return { ok: true, amountPaid: outcome.amountPaid };
 });
 
 // ── Admin CRUD for existing drivers ───────────────────────────────────────────

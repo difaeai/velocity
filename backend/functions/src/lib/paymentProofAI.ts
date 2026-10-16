@@ -48,8 +48,17 @@ export function proofAIConfigured(): boolean {
   return typeof key === 'string' && key.trim() !== '';
 }
 
-/** Download a Storage object as base64 + media type for the vision request. */
-async function loadImage(proofPath: string): Promise<{ base64: string; mediaType: string } | null> {
+/**
+ * Download a Storage object as base64 + media type for the vision request.
+ *
+ * `sha256` is the digest of the exact bytes. The settlement path ignores it;
+ * the top-up path uses it as the cheapest replay check there is — the same
+ * file uploaded twice is the same digest, whatever it is renamed to, and no
+ * model call is needed to catch it.
+ */
+async function loadImage(
+  proofPath: string,
+): Promise<{ base64: string; mediaType: string; sha256: string } | null> {
   try {
     const file = storage.bucket().file(proofPath);
     const [meta] = await file.getMetadata();
@@ -59,7 +68,11 @@ async function loadImage(proofPath: string): Promise<{ base64: string; mediaType
       return null;
     }
     const [buf] = await file.download();
-    return { base64: buf.toString('base64'), mediaType };
+    return {
+      base64: buf.toString('base64'),
+      mediaType,
+      sha256: createHash('sha256').update(buf).digest('hex'),
+    };
   } catch (e) {
     logger.error('Failed to load settlement proof from Storage', { proofPath, e });
     return null;

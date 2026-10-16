@@ -156,6 +156,13 @@ let backendReady: Promise<boolean> | null = null;
  * cold start, for a file already sitting in node_modules — the platform's fetch
  * is taught to answer local paths off the disk.
  */
+/** The binaries tfjs may ask for, any of which it picks by host capability. */
+const WASM_BINARIES = [
+  'tfjs-backend-wasm.wasm',
+  'tfjs-backend-wasm-simd.wasm',
+  'tfjs-backend-wasm-threaded-simd.wasm',
+];
+
 async function startBackend(): Promise<boolean> {
   const { tf, wasm } = load();
   const wasmDir = `${require.resolve('@tensorflow/tfjs-backend-wasm/package.json').replace(/package\.json$/, '')}dist/`;
@@ -164,16 +171,76 @@ async function startBackend(): Promise<boolean> {
   const upstream = platform.fetch.bind(platform);
   platform.fetch = async (path: string, init?: RequestInit): Promise<Response> => {
     if (/^https?:/i.test(path)) return upstream(path, init);
+    // A 404 rather than a throw. Emscripten calls this from inside its own
+    // callback and rethrows whatever comes out as an UNCAUGHT exception — see
+    // the pre-flight check below for what that costs — so this must not be the
+    // thing that raises.
+    if (!fs.existsSync(path)) {
+      logger.error('Local vision: a WASM binary is missing', { path });
+      return new Response(null, { status: 404 });
+    }
     return new Response(fs.readFileSync(path), {
       status: 200,
       headers: { 'content-type': 'application/wasm' },
     });
   };
 
-  wasm.setWasmPaths(wasmDir, true);
-  await tf.setBackend('wasm');
-  await tf.ready();
-  return tf.getBackend() === 'wasm';
+  /**
+   * Look before leaping, because this particular failure cannot be caught.
+   *
+   * `tf.setBackend('wasm')` does not reject when the binary will not load.
+   * Emscripten instantiates it inside a callback and rethrows the error as an
+   * uncaught exception, which kills the process — tested, by hiding the three
+   * `.wasm` files: the try/catch below never ran and node exited on ENOENT.
+   *
+   * In a deployed container that is not a degraded engine, it is a verification
+   * function that crashes on every invocation, and an applicant whose job sits
+   * in `running` forever. So the files are checked for first, and when they are
+   * not there the slower backend is chosen deliberately instead of discovered
+   * by crashing.
+   */
+  const binariesPresent = WASM_BINARIES.every((file) => fs.existsSync(`${wasmDir}${file}`));
+
+  try {
+    if (!binariesPresent) {
+      logger.error('Local vision: the WASM binaries are not installed', { wasmDir });
+    } else {
+      wasm.setWasmPaths(wasmDir, true);
+      await tf.setBackend('wasm');
+      await tf.ready();
+      if (tf.getBackend() === 'wasm') return true;
+    }
+  } catch (e) {
+    logger.error('Local vision: the WASM backend would not start', { e });
+  }
+
+  /**
+   * Fall back to the plain-JavaScript CPU backend rather than giving up.
+   *
+   * WASM is about fifteen times faster — 0.4 s a face against 7 s — but the two
+   * agree to four decimal places on the only output that decides anything: the
+   * same pair of faces measured 0.5116 on WASM and 0.5117 on CPU. So the slow
+   * path is the SAME answer, late, and six documents still finish inside the
+   * sweeper's timeout with room to spare.
+   *
+   * Worth the extra branch because the WASM backend is the one piece of this
+   * engine that depends on its environment: it loads a binary by asking the
+   * platform to fetch a local path, which Node will not do, so the fetch above
+   * is patched to read it off the disk. If that ever stops working in a
+   * deployed container, the choice is a slower engine or no engine — and no
+   * engine means every driver applicant in the country waits for a human.
+   */
+  try {
+    await tf.setBackend('cpu');
+    await tf.ready();
+    if (tf.getBackend() === 'cpu') {
+      logger.warn('Local vision: running on the CPU backend — same answers, roughly 15x slower');
+      return true;
+    }
+  } catch (e) {
+    logger.error('Local vision: no TensorFlow backend would start at all', { e });
+  }
+  return false;
 }
 
 let modelsReady: Promise<boolean> | null = null;
