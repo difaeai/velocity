@@ -46,6 +46,7 @@ import { loadFareConfigFor } from '../fare/cityConfig';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
+import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { assertOutstandingClear, getCancellationSettings } from '../domain/cancellation';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
 import { TripStatus } from '../domain/types';
@@ -615,6 +616,7 @@ export const setDriverRoute = onCall(async (req) => {
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
+  assertFaceCheckedIn(driverSnap);
 
   // The road, from Google, fetched here. This is the corridor the driver will be
   // matched on, so it is worth owning: we buy it once, now, and cache it on the
@@ -996,6 +998,7 @@ export const acceptEnRouteRider = onCall(async (req) => {
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
+  assertFaceCheckedIn(driverSnap);
 
   const carrierSnap = await activeCarrierTrip(ctx.uid);
   const resolved = await resolveCorridor(ctx.uid, polyline, carrierSnap);

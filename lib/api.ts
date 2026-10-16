@@ -224,6 +224,8 @@ export const adminApi = {
         requireHighConfidence?: boolean;
         rejectOnDuplicateCnic?: boolean;
         requireFaceScan?: boolean;
+        requireLicenceFaceMatch?: boolean;
+        dailyFaceCheckIn?: boolean;
       };
     },
     {
@@ -235,7 +237,11 @@ export const adminApi = {
         minDaysBeforeExpiry: number;
         requireHighConfidence: boolean;
         rejectOnDuplicateCnic: boolean;
+        /** Approval needs the face on the CNIC *and* on the licence. */
+        requireLicenceFaceMatch: boolean;
         requireFaceScan: boolean;
+        /** Approved drivers face-check once per Pakistan day before working. */
+        dailyFaceCheckIn: boolean;
       };
       /**
        * Whether the engine's own machinery came up — the face networks and the
@@ -367,6 +373,21 @@ export const adminApi = {
     { settlementId: string; approve: boolean; reason?: string },
     { ok: boolean; status: string }
   >('adminReviewCommissionSettlement'),
+
+  /**
+   * The accounts Velocity receives money into. Merge-writes, so a field left
+   * out is kept rather than cleared — pass an empty string to clear one.
+   */
+  adminSetSettlementAccounts: callable<
+    {
+      easypaisaNumber?: string;
+      jazzcashNumber?: string;
+      bankName?: string;
+      bankIban?: string;
+      accountTitle?: string;
+    },
+    { ok: boolean }
+  >('adminSetSettlementAccounts'),
 
   /**
    * Decide a bank-transfer top-up our own OCR engine would not credit by

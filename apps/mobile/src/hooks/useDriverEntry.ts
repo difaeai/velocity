@@ -29,11 +29,12 @@ const ACCOUNT_GATE: Href = '/passenger/become-driver/account';
  * Where a user tapping "Become a driver" should land, based on the driver
  * record attached to their account.
  *
- *   not signed in            → account gate (→ OTP login)
- *   no driver record         → registration checklist  (no re-login)
- *   rejected                 → registration checklist  (fix + resubmit)
- *   approved                 → driver home
- *   pending / anything else  → application status screen
+ *   not signed in              → account gate (→ OTP login)
+ *   no driver record           → registration checklist  (no re-login)
+ *   rejected                   → registration checklist  (fix + resubmit)
+ *   awaiting the face scan     → registration checklist  (one step left)
+ *   approved                   → driver home
+ *   pending / anything else    → application status screen
  */
 export async function resolveDriverEntry(uid?: string): Promise<Href> {
   if (!uid) return ACCOUNT_GATE;
@@ -43,6 +44,11 @@ export async function resolveDriverEntry(uid?: string): Promise<Href> {
     const status = (snap.get('verificationStatus') as string | undefined) ?? null;
     if (status === 'approved') return DRIVER_HOME;
     if (status === 'rejected') return CHECKLIST;
+    // Papers stored, face scan still owed — the application has NOT been
+    // decided and nothing is coming to decide it until they finish. Sending
+    // them to the status screen would show "under review" to somebody who
+    // still has a step to do, so they go where they can do it.
+    if (snap.get('verification.status') === 'awaiting_face_scan') return CHECKLIST;
     return SUBMITTED;
   } catch {
     // A failed lookup must not trap the user — start the registration.

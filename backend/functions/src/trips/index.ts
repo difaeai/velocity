@@ -39,6 +39,7 @@ import {
 } from '../drivers/dailyTarget';
 import { applyRideToCycle } from '../drivers/cycle';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
+import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import {
   assertOutstandingClear,
   cancellationFee,
@@ -490,6 +491,8 @@ export const placeBid = onCall(async (req) => {
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
+  // …and, once a day, that the person driving is the person on the licence.
+  assertFaceCheckedIn(driverSnap);
 
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');

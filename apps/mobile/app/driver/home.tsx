@@ -30,6 +30,7 @@ import { api, type ReportReason } from '../../src/api/client';
 import {
   useCancellationSettings,
   useCommissionStatus,
+  faceCheckInStatus,
   useDriverActiveTrip,
   useDriverPoolRides,
   useDriverProfile,
@@ -121,6 +122,10 @@ export default function DriverHome() {
   // rules refuse the `online` write without it, so the toggle has to know too —
   // otherwise the button would just fail with nothing on screen to explain it.
   const carCheck = vehicleCheckStatus(profile);
+  // …and is the person holding the phone the driver on the account? Asked once
+  // a day, enforced by the rules and the trip guards, so the toggle has to know
+  // about it for exactly the same reason as the car photo above.
+  const faceCheck = faceCheckInStatus(profile);
 
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -415,6 +420,12 @@ export default function DriverHome() {
       router.push('/driver/car-verification?intent=online');
       return;
     }
+    // Same courtesy for today's face check: the rules refuse the write without
+    // it, so send them to the camera rather than letting the toggle die quietly.
+    if (next && faceCheck.blocking) {
+      router.push('/driver/face-check-in');
+      return;
+    }
     // Sweep the radar on the way online — never on the way offline.
     if (next) setScanning(true);
     run(() => setDoc(doc(db, 'drivers', uid), { online: next, lastSeenAt: serverTimestamp() }, { merge: true }));
@@ -596,6 +607,28 @@ export default function DriverHome() {
             <Text style={styles.carBannerBody2}>
               Take a quick photo of {profile?.vehicleLabel ?? 'your car'}
               {profile?.plate ? ` (${profile.plate})` : ''} — it takes a few seconds.
+            </Text>
+          </View>
+          <Text style={styles.carBannerChevron}>›</Text>
+        </Pressable>
+      ) : null}
+
+      {/* ── Today's face check ── The driver layout already sends them to the
+          camera on the first open of the day; this is for the one who came back
+          out of it, or whose check did not pass. Hidden mid-trip for the same
+          reason as the car banner: they are plainly driving, and there is
+          nothing useful to do about it until they drop off. */}
+      {profile && faceCheck.blocking && !activeTrip ? (
+        <Pressable style={styles.carBanner} onPress={() => router.push('/driver/face-check-in')}>
+          <Text style={styles.carBannerIcon}>🙂</Text>
+          <View style={styles.carBannerBody}>
+            <Text style={styles.carBannerTitle}>
+              {faceCheck.reason === 'failed'
+                ? 'That face check did not go through'
+                : 'Quick face check to start today'}
+            </Text>
+            <Text style={styles.carBannerBody2}>
+              A few seconds on camera so we know it is you driving — then you can go online.
             </Text>
           </View>
           <Text style={styles.carBannerChevron}>›</Text>
@@ -790,11 +823,16 @@ export default function DriverHome() {
               </Pressable>
             )}
 
+            {/* Opens the Safety Centre's SOS sheet with this ride attached:
+                police 15, the driver's own WhatsApp to their emergency
+                contacts, and our desk alerted in the background. A driver
+                alone on an intercity road at 3am needs the first two far more
+                than they need us. */}
             <PrimaryButton
               variant="danger"
               label="🆘 SOS"
               disabled={busy}
-              onPress={() => run(() => api.raiseSafetyEvent({ tripId: activeTrip.id, kind: 'sos' }))}
+              onPress={() => router.push(`/safety?tripId=${activeTrip.id}&sos=1`)}
             />
 
             {/* Backing out of an accepted ride — costs a fee, so it sits below

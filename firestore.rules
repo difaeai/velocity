@@ -80,6 +80,25 @@ service cloud.firestore {
       match /dailyRoutes/{routeId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Safety settings. Today that is one document, `emergencyContacts`: the
+      // at-most-five people an SOS goes to (see apps/mobile/src/lib/sos.ts).
+      //
+      // Owner-only in BOTH directions, and that is the point — these are other
+      // people's phone numbers, given to us so the owner can reach them in an
+      // emergency and for nothing else. No driver, no rider and no query in
+      // the product has any business reading them.
+      //
+      // The cap is enforced here rather than only in the app, which is the
+      // reason the list is one document holding an array instead of a
+      // subcollection: a rule can count an array, and cannot count documents.
+      match /safety/{settingId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+                              && settingId == 'emergencyContacts'
+                              && request.resource.data.contacts is list
+                              && request.resource.data.contacts.size() <= 5;
+      }
     }
 
     // ----- cnicVerifications/{uid} -----------------------------------------
@@ -109,6 +128,22 @@ service cloud.firestore {
     match /driverFaceScans/{scanId} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // ----- driverFaceEnrolment/{uid} ---------------------------------------
+    // The 128 numbers a driver's face is, measured from the frame that was
+    // proven against their CNIC and their licence, and the reference every
+    // daily face check is compared with.
+    //
+    // NO CLIENT ACCESS AT ALL — not the owner, not an admin. It is biometric
+    // data that nobody has any use for on a handset or in a browser: a client
+    // that could read it could grind candidate faces against it offline until
+    // one fitted, which is precisely the substitution the daily check exists to
+    // catch. Written and read only by drivers/faceScan.ts through the Admin
+    // SDK. What a human needs to see — passed, undecided, not the driver — is
+    // on the driver document as `faceCheckIn`.
+    match /driverFaceEnrolment/{driverId} {
+      allow read, write: if false;
     }
 
     // ----- driverVerificationJobs/{jobId} -----------------------------------
@@ -170,6 +205,32 @@ service cloud.firestore {
                && resource.data.get('online', false) != true;
       }
 
+      // ── The daily face check ──────────────────────────────────────────────
+      // Papers prove who an account belongs to on the day it is approved. They
+      // prove nothing about who picks the phone up four months later, and an
+      // account quietly being driven by somebody else is exactly the fraud this
+      // catches: the first time a driver opens the app each day they look into
+      // the camera, and the frames are compared with the face enrolled when
+      // they were approved.
+      //
+      // `required` is stamped onto the driver document by the server — on
+      // approval, and nightly by the expiry sweep — from the admin switch.
+      // Absent means no, which is what an older app build must get: it has no
+      // camera screen to satisfy this with.
+      //
+      // DELIBERATELY LOOSER THAN THE SERVER. The real rule is a Pakistan-day
+      // comparison (backend/functions/src/domain/faceCheckIn.ts); rules cannot
+      // do calendar arithmetic, so this asks only that a check passed within
+      // the last 24 hours. The two can therefore disagree for a few hours after
+      // midnight — always in the direction of letting a driver go online whom
+      // the server will then refuse work, never the reverse. This rule can
+      // never lock a driver out while the server believes they are clear.
+      function faceCheckedRecently() {
+        return resource.data.get('faceCheckIn', {}).get('required', false) != true
+               || (resource.data.faceCheckIn.get('passedAt', null) != null
+                   && resource.data.faceCheckIn.passedAt > request.time - duration.value(24, 'h'));
+      }
+
       // `appActiveAt` is the driver app's foreground heartbeat, written every
       // couple of minutes while any driver screen is on screen. The backend
       // reads it to tell "offline" apart from "app closed" before spending a
@@ -195,7 +256,7 @@ service cloud.firestore {
                     && onlyChanges(['online', 'lastLocation', 'heading', 'lastSeenAt',
                                     'appActiveAt', 'rideMode',
                                     'poolPickupRadiusM', 'poolDropoffRadiusM'])
-                    && (!goingOnline() || carPhotoIsLive());
+                    && (!goingOnline() || (carPhotoIsLive() && faceCheckedRecently()));
       allow update: if isAdmin();
       allow delete: if false;
 

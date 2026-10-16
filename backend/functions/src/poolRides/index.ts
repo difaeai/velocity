@@ -16,6 +16,7 @@ import {
 } from '../drivers/dailyTarget';
 import { applyRideToCycle } from '../drivers/cycle';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
+import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { computeSettlement } from '../domain/fares';
 import { DEFAULT_FRANCHISE_RATE, franchiseCutFor, franchiseRateFor } from '../domain/franchise';
 import { applyPartnerCredit, preparePartnerCredit } from '../partners/commission';
@@ -772,6 +773,7 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
   const batchDriverSnap = await db.doc(`drivers/${ctx.uid}`).get();
   assertCommissionClear(batchDriverSnap, await getCommissionSettings(), todayKey());
   assertVehicleConfirmed(batchDriverSnap);
+  assertFaceCheckedIn(batchDriverSnap);
 
   const rideRef = db.doc(`poolRides/${rideId}`);
   const accepted: { uid: string }[] = [];

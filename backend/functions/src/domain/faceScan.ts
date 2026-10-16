@@ -27,9 +27,19 @@
  * second screen. That is a real limit and the reason a failed scan routes to a
  * human rather than an automatic ban — see driverVerification.ts.
  *
- * Pure functions only; the Firestore and Anthropic halves live in
+ * WHEN IT HAPPENS, and why that is the whole trick. The scan is the LAST step
+ * of an application, after every document has been uploaded and stored — never
+ * before. A scan taken first can only prove that somebody live was holding the
+ * phone; a scan taken last is compared, frame against card, with the CNIC and
+ * the licence that were just submitted, and answers the question that actually
+ * matters: are these papers this person's papers? The sequence is enforced in
+ * drivers/faceScan.ts (`startFaceScan` refuses an onboarding scan before the
+ * documents are there) and mirrored in the app's checklist.
+ *
+ * Pure functions only; the Firestore and vision halves live in
  * drivers/faceScan.ts and lib/driverVerificationLocal.ts.
  */
+import type { Agreement } from './driverVerification';
 
 /**
  * Poses that are unambiguous in a single still frame.
@@ -82,6 +92,101 @@ export const FACE_SCAN_VALID_DAYS = 180;
 export const FACE_SCAN_ATTEMPTS_PER_HOUR = 8;
 
 export type FaceScanStatus = 'pending' | 'passed' | 'failed' | 'review';
+
+/**
+ * What a scan is for. The two uses share the camera, the server-chosen poses
+ * and the scoring, and differ in what the face is compared against:
+ *
+ *   · `onboarding` — against the CNIC and the licence that were just uploaded.
+ *     Answers "are these papers yours?"
+ *   · `daily`      — against the face enrolled when the application was
+ *     approved. Answers "are you the driver whose account this is?" Asked once
+ *     per Pakistan day, the first time the app is opened. See ./faceCheckIn.ts.
+ */
+export type FaceScanPurpose = 'onboarding' | 'daily';
+
+/**
+ * Whether the live face is the face on each of the two identity documents.
+ *
+ * TWO documents, both of them, deliberately. Either card on its own can be
+ * borrowed: a licence is handed over at a checkpoint and photographed, a CNIC
+ * is left with a landlord. A person who is on BOTH the CNIC and the licence
+ * that were submitted together, in a scan taken seconds ago, is the person the
+ * application is for.
+ *
+ * The vehicle papers are NOT part of this. A registration book in a father's
+ * name, a car bought last week and not yet transferred, a brother's Alto driven
+ * with permission — those are ordinary life here and have nothing to do with
+ * who is driving. They are recorded, shown to an admin, and never allowed to
+ * decide an application on their own.
+ */
+export interface IdentityCheck {
+  /** Live face against the photograph on the CNIC front. */
+  cnic: Agreement;
+  /** Live face against the photograph on the driving licence. */
+  license: Agreement;
+  /** Live face against the face enrolled at approval. Daily checks only. */
+  reference?: Agreement;
+  /** Closest distance measured per document, for an admin reading the file. */
+  distances?: { cnic: number | null; license: number | null; reference?: number | null };
+}
+
+/**
+ * Both cards, or it is not settled.
+ *
+ * `mismatch` wins over everything: one card plainly belonging to somebody else
+ * is the finding, whatever the other card says. After that, both have to be a
+ * positive match for the identity to count as proven — an `unclear` licence
+ * photograph (and plenty of older licences have one that no engine can read)
+ * leaves the answer undecided, which means a human looks rather than an
+ * automatic approval going through on half the evidence.
+ *
+ * `requireLicense` is the one concession, admin-switchable: a fleet drowning in
+ * reviews caused by unreadable licence photographs can fall back to the CNIC
+ * alone. The CNIC match is never optional.
+ */
+export function combineIdentity(
+  identity: Pick<IdentityCheck, 'cnic' | 'license'>,
+  requireLicense = true,
+): Agreement {
+  if (identity.cnic === 'mismatch' || identity.license === 'mismatch') return 'mismatch';
+  if (identity.cnic !== 'match') return 'unclear';
+  if (requireLicense && identity.license !== 'match') return 'unclear';
+  return 'match';
+}
+
+/**
+ * What a scored scan says about whose face it was, on top of the liveness
+ * findings. Produced by lib/driverVerificationLocal.ts and written, minus the
+ * descriptor, onto the driver document.
+ */
+export interface FaceScanIdentity {
+  /** Both cards combined — what the admin badge and older records read. */
+  matchesIdPhoto: Agreement;
+  matchesCnic: Agreement;
+  matchesLicense: Agreement;
+  /** Against the face enrolled at approval. `unclear` when there is none. */
+  matchesReference: Agreement;
+  distances: { cnic: number | null; license: number | null; reference: number | null };
+  /**
+   * Frame 0's own 128 numbers, so a passing scan can become this driver's
+   * enrolled face. Null when no face was found in that frame. Biometric data:
+   * it is written only to the server-only enrolment document, never to the
+   * driver document and never returned to a handset.
+   */
+  descriptor: number[] | null;
+}
+
+/** What the driver is told about the identity half of their scan. */
+export function identityMessage(agreement: Agreement): string {
+  if (agreement === 'match') return 'Face scan complete — you match your documents.';
+  if (agreement === 'mismatch') {
+    // Never an accusation, and never a refusal on this screen: a card
+    // photograph from 2009 reads like this too. See FACE_MISMATCH_IS_REVIEW_ONLY.
+    return 'Your face and the photo on your documents did not look like a match. Our team will check this by hand.';
+  }
+  return 'Face scan complete. We could not compare it with your document photos, so our team will check.';
+}
 
 /** What the model reports about one frame of the scan. */
 export interface FaceFrameFinding {

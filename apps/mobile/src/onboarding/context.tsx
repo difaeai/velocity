@@ -12,6 +12,12 @@ import type { RideType } from '../domain/types';
  * that completes it is a `passed` verdict the backend wrote onto the driver
  * document. There is deliberately no local state for it — a flag the handset
  * could set would be a flag a patched handset could set.
+ *
+ * It is also the only section that cannot be done out of order. The scan is
+ * compared with the photographs on the CNIC and the licence, so those have to
+ * be uploaded before it is worth taking at all: `submit()` stores the papers
+ * and the scan comes straight after, as the step that actually sends the
+ * application off to be decided. The backend enforces the same order.
  */
 export type SectionKey = 'basic' | 'license' | 'cnic' | 'vehicle' | 'faceScan';
 
@@ -67,10 +73,20 @@ interface OnboardingState {
   data: OnboardingData;
   set: (patch: Partial<OnboardingData>) => void;
   complete: Record<SectionKey, boolean>;
+  /** The four paper sections. What `submit()` needs, and all it needs. */
+  documentsComplete: boolean;
+  /** The papers AND a passed face scan — a finished application. */
   allComplete: boolean;
   submitting: boolean;
   error: string | null;
-  submit: () => Promise<boolean>;
+  /**
+   * Upload the papers and store them.
+   *
+   * Returns `'face_scan'` when the backend has taken the documents and is
+   * waiting for the face scan (the normal path on this build), `'submitted'`
+   * when it went straight to the engine, and `null` when nothing was sent.
+   */
+  submit: () => Promise<'face_scan' | 'submitted' | null>;
 }
 
 const OnboardingContext = createContext<OnboardingState | undefined>(undefined);
@@ -133,10 +149,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     // rule that is enforced somewhere a patched build cannot reach.
     faceScan: profile?.faceScan?.status === 'passed',
   };
-  const allComplete = Object.values(complete).every(Boolean);
+  const documentsComplete = complete.basic && complete.license && complete.cnic && complete.vehicle;
+  const allComplete = documentsComplete && complete.faceScan;
 
-  async function submit(): Promise<boolean> {
-    if (!user || !allComplete) return false;
+  async function submit(): Promise<'face_scan' | 'submitted' | null> {
+    if (!user || !documentsComplete) return null;
     setSubmitting(true);
     setError(null);
     try {
@@ -168,7 +185,14 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         }),
       );
 
-      await api.submitDriverOnboarding({
+      const res = await api.submitDriverOnboarding({
+        /**
+         * This build has a face-scan screen and is about to open it. The
+         * backend stores the papers and holds the verdict for the scan, so the
+         * driver gets ONE decision taken on all the evidence rather than an
+         * approval that has to be taken back a minute later.
+         */
+        withFaceScan:       true,
         fullName:           `${data.firstName} ${data.lastName}`.trim(),
         cnic:               data.cnicNumber,
         vehicleType:        data.vehicleType!,
@@ -195,10 +219,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         vehicleDocExpiry:   data.vehicleDocExpiry || undefined,
       });
       await refreshRole();
-      return true;
+      return res?.needsFaceScan === false ? 'submitted' : 'face_scan';
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Submission failed.');
-      return false;
+      return null;
     } finally {
       setSubmitting(false);
     }
@@ -209,6 +233,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       data,
       set: (patch) => setData((d) => ({ ...d, ...patch })),
       complete,
+      documentsComplete,
       allComplete,
       submitting,
       error,
