@@ -12,14 +12,39 @@
  */
 import { db, FieldValue } from '../lib/firebase';
 import { walletFunds } from '../domain/walletFunds';
+import { trySettleCommissionFromWallet } from '../drivers/autoSettle';
 
 /** Idempotently credits a wallet from a paid intent. Returns false if unknown. */
 export async function creditFromIntent(intentId: string, providerTxnRef: string): Promise<boolean> {
+  const credited = await applyCredit(intentId, providerTxnRef);
+
+  // A driver who tops up is very often a driver who topped up BECAUSE a closed
+  // day locked them. Settling here means the money that just landed clears the
+  // lock by itself, rather than the driver having to find a second button
+  // after the gateway sends them back to the app.
+  //
+  // Deliberately after the credit transaction and deliberately unable to fail
+  // it: the money has reached the wallet either way, and a settlement that did
+  // not happen leaves the driver exactly where the manual path already puts
+  // them. It is a no-op for a passenger, who has no driver document.
+  if (credited.uid) {
+    await trySettleCommissionFromWallet({ driverId: credited.uid, trigger: 'topup' });
+  }
+  return credited.ok;
+}
+
+/** The credit itself. Returns the wallet it landed in, when one was credited. */
+async function applyCredit(
+  intentId: string,
+  providerTxnRef: string,
+): Promise<{ ok: boolean; uid: string | null }> {
   const intentRef = db.doc(`paymentIntents/${intentId}`);
-  return db.runTransaction(async (tx) => {
+  return db.runTransaction(async (tx): Promise<{ ok: boolean; uid: string | null }> => {
     const snap = await tx.get(intentRef);
-    if (!snap.exists) return false;
-    if (snap.get('status') === 'paid') return true; // already credited
+    if (!snap.exists) return { ok: false, uid: null };
+    // Already credited. No settle attempt either: a gateway retrying a
+    // callback must not re-run anything downstream of the money.
+    if (snap.get('status') === 'paid') return { ok: true, uid: null };
     const uid = snap.get('uid') as string;
     const amount = snap.get('amount') as number;
     const walletRef = db.doc(`wallets/${uid}`);
@@ -62,6 +87,6 @@ export async function creditFromIntent(intentId: string, providerTxnRef: string)
       provider: snap.get('provider') ?? null,
       createdAt: FieldValue.serverTimestamp(),
     });
-    return true;
+    return { ok: true, uid };
   });
 }
