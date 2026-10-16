@@ -672,6 +672,37 @@ export interface SocialComment {
 
 // ── settings ────────────────────────────────────────────────────────────────
 
+/**
+ * The long brief — everything the team is told, said once and kept.
+ *
+ * `crewInstructions` is a note box: a line or two, this month's promotion, a
+ * word you never want to see again. This is the other thing, the one a new
+ * hire would be given on their first day — who we are, what a good post looks
+ * like to *you*, what you mean by viral, how you want people answered, and the
+ * things that are never to happen. It is written once and read on every job
+ * forever, which is why the limits are generous: a paragraph that stops a bad
+ * post every day for a year is the cheapest thing on this desk.
+ *
+ * It is split into five rather than being one box, because the five go to
+ * different people. The inbox does not need to know what you think travels,
+ * and the designer does not need your rules for answering a complaint — and a
+ * block nobody in that seat will use is a block paid for on every call.
+ */
+export interface SocialBrief {
+  /** Who we are and what matters. Everyone reads this. */
+  about: string;
+  /** What a good post looks like to you. Standup, writer, designer, editor. */
+  posts: string;
+  /** What "worth sending to a friend" means here. Standup, writer, research. */
+  viral: string;
+  /** How people who reply are talked to. The social manager and the inbox. */
+  comments: string;
+  /** The things that must never happen. Everyone, as a rule not a preference. */
+  avoid: string;
+}
+
+export const EMPTY_BRIEF: SocialBrief = { about: '', posts: '', viral: '', comments: '', avoid: '' };
+
 export interface SocialSettings {
   /** Master switch. Off means the scheduler does nothing at all. */
   enabled: boolean;
@@ -703,6 +734,18 @@ export interface SocialSettings {
    * avoid, this month's promotion, words you never want to see again.
    */
   crewInstructions: string;
+  /** The long brief: everything you want them to know, in one place. */
+  brief: SocialBrief;
+
+  /**
+   * Render the reel ourselves rather than stopping at the brief.
+   *
+   * On, the desk produces a finished vertical video from the script — ffmpeg
+   * and two fonts, no key, no model, no per-video cost. Off, a video run ends
+   * at the cut brief the way it used to, for somebody to shoot. A file
+   * attached by hand always wins either way: the renderer never overwrites one.
+   */
+  autoRenderVideo: boolean;
 
   /** The researcher reads around these. */
   researchEnabled: boolean;
@@ -744,6 +787,8 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   lastFormatIndex: -1,
 
   crewInstructions: '',
+  brief: { ...EMPTY_BRIEF },
+  autoRenderVideo: true,
 
   researchEnabled: true,
   competitors: [...DEFAULT_COMPETITORS],

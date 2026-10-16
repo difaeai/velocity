@@ -27,6 +27,7 @@ import { colors } from '@/lib/config';
 import {
   SOCIAL_ROLES,
   socialApi,
+  type SocialBrief,
   type SocialCompetitor,
   type SocialEmployee,
   type SocialPostDoc,
@@ -94,6 +95,25 @@ export default function EmployeesPage() {
 
   const set = <K extends keyof SocialSettings>(key: K, v: SocialSettings[K]) =>
     setDraft((d) => ({ ...d, [key]: v }));
+
+  const brief = (key: keyof SocialBrief): string =>
+    (draft.brief?.[key] ?? settings?.brief?.[key] ?? '') as string;
+
+  /** The brief is one object, so a change to one box has to keep the other four. */
+  const setBrief = (key: keyof SocialBrief, v: string) =>
+    setDraft((d) => ({
+      ...d,
+      brief: {
+        about: '',
+        posts: '',
+        viral: '',
+        comments: '',
+        avoid: '',
+        ...(settings?.brief ?? {}),
+        ...(d.brief ?? {}),
+        [key]: v,
+      },
+    }));
 
   async function run(label: string, fn: () => Promise<string | null>) {
     setBusy(label);
@@ -207,13 +227,78 @@ export default function EmployeesPage() {
 
       <HireCard filled={filled} onDone={loadSettings} />
 
+      {/* the long brief — said once, read on every job */}
+      <Card>
+        <h2 style={{ ...h2, marginBottom: 4 }}>Brief the team</h2>
+        <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.5 }}>
+          What you would tell somebody on their first day, written once and read on <strong>every job,
+          forever</strong>. Say as much as you want — a paragraph here that stops one bad post a day is the
+          cheapest thing on this desk. Each box goes to the people it is for, so the inbox is not reading your
+          rules about reels and the designer is not reading your rules about complaints.
+        </p>
+
+        <div style={{ display: 'grid', gap: 16 }}>
+          <BriefBox
+            label="Who we are"
+            who="Everyone"
+            hint="The business, the people, the story, what you are actually trying to build. The context a new hire would be missing."
+            placeholder={
+              'e.g. We started Velocity because surge pricing made a Gulberg to Johar Town ride cost 900 rupees on a rainy evening. Our drivers are not gig workers to us; most of them we have met. We are small and we do not pretend otherwise...'
+            }
+            value={brief('about')}
+            onChange={(v) => setBrief('about', v)}
+          />
+          <BriefBox
+            label="What I want from a post"
+            who="Standup, writer, designer, video editor"
+            hint="What a good one looks like to you, and what a bad one looks like. Be specific — examples beat adjectives."
+            placeholder={
+              'e.g. I want real drivers with their names, not models. Show the cash in hand. Every post should answer one question a rider actually asks. Urdu in the voiceover, English on screen...'
+            }
+            value={brief('posts')}
+            onChange={(v) => setBrief('posts', v)}
+          />
+          <BriefBox
+            label="What viral means to me"
+            who="Standup, writer, research desk, SEO"
+            hint="Everyone says they want viral. Say what you mean: who sends it to whom, and why."
+            placeholder={
+              'e.g. A driver sends it to his WhatsApp group of other drivers. A woman sends it to her sister because of the female-driver option. If nobody would forward it, it is not the post I want...'
+            }
+            value={brief('viral')}
+            onChange={(v) => setBrief('viral', v)}
+          />
+          <BriefBox
+            label="How to answer people"
+            who="The social manager and the comment inbox"
+            hint="Tone, what to promise, what to escalate, what never to argue about."
+            placeholder={
+              'e.g. Reply in whatever language they wrote in. Never defend a fare. If somebody is angry, apologise once and give them support, do not explain the policy...'
+            }
+            value={brief('comments')}
+            onChange={(v) => setBrief('comments', v)}
+          />
+          <BriefBox
+            label="Never"
+            who="Everyone, as a rule"
+            hint="The things that must not happen, whatever else anyone is told. These outrank the rest of this page."
+            placeholder={
+              'e.g. Never show a driver without a seatbelt. Never promise an income. Never use a photo of a car we do not have. Never post about a competitor, even to disagree...'
+            }
+            value={brief('avoid')}
+            onChange={(v) => setBrief('avoid', v)}
+          />
+        </div>
+      </Card>
+
       {/* what everyone reads */}
       <Card>
         <h2 style={{ ...h2, marginBottom: 4 }}>Standing instructions</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
-          Read by <strong>everyone</strong>, on every job, before anything else. Tone, this month’s promotion, claims
-          to avoid, words you never want to see again. Direction for one person goes on their card; a note about one
-          piece goes in the approval queue.
+          The short note box, read by <strong>everyone</strong> on every job. This month’s promotion, a word you
+          never want to see again, the thing that changed this week. The brief above is who we are and stays put;
+          this is what is true right now. Direction for one person goes on their card; a note about one piece goes
+          in the approval queue.
         </p>
         <textarea
           value={(value('crewInstructions') as string) ?? ''}
@@ -577,6 +662,60 @@ const inputStyle: React.CSSProperties = {
   background: colors.surface,
   color: colors.text,
 };
+
+/**
+ * One box of the long brief.
+ *
+ * It names who reads it, because the commonest way a brief like this goes
+ * wrong is somebody writing their rules for answering complaints into the box
+ * the designer reads, and then wondering why nothing changed.
+ */
+function BriefBox({
+  label,
+  who,
+  hint,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  who: string;
+  hint: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13.5, fontWeight: 800 }}>{label}</span>
+        <span
+          style={{
+            fontSize: 10.5,
+            fontWeight: 800,
+            color: colors.muted,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 999,
+            padding: '2px 8px',
+          }}
+        >
+          {who}
+        </span>
+      </div>
+      <p style={{ fontSize: 12, color: colors.muted, margin: '3px 0 6px', lineHeight: 1.5 }}>{hint}</p>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={5}
+        placeholder={placeholder}
+        style={{ ...inputStyle, lineHeight: 1.55, resize: 'vertical' }}
+      />
+      <div style={{ fontSize: 11, color: colors.muted, marginTop: 3, textAlign: 'right' }}>
+        {value.length.toLocaleString()} / 6,000
+      </div>
+    </div>
+  );
+}
 
 function Field({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
   return (

@@ -19,6 +19,7 @@ import {
   type ContentPlan,
   type ContentResearch,
   type Employee,
+  type Role,
   type SocialSettings,
 } from './types';
 
@@ -54,6 +55,46 @@ export function standingInstructions(settings: SocialSettings): string {
 }
 
 /**
+ * The long brief, rendered for whoever is about to work.
+ *
+ * Five boxes written once in the console, each going to the people it is for:
+ * everyone is told who we are and what must never happen, the people shaping a
+ * piece are told what a good post looks like and what counts as worth sending,
+ * and only the person answering the inbox is told how to talk to people who
+ * reply. Splitting it is not tidiness — a block nobody in that seat will use is
+ * a block paid for on every call.
+ *
+ * `null` for the role means everything, which is what the standup needs.
+ */
+export function briefBlock(settings: SocialSettings, role: Role | null): string {
+  const { about, posts, viral, comments, avoid } = settings.brief;
+
+  const shapesThePiece: Role[] = ['content-writer', 'designer', 'video-editor', 'social-manager'];
+  const decidesWhatTravels: Role[] = ['content-writer', 'research-assistant', 'seo-expert'];
+  const wants = (who: Role[]) => role === null || who.includes(role);
+
+  const parts = [
+    about.trim() ? `WHO WE ARE, IN THE TEAM LEAD'S OWN WORDS:\n${about.trim()}` : '',
+    posts.trim() && wants(shapesThePiece)
+      ? `WHAT THE TEAM LEAD WANTS FROM A POST:\n${posts.trim()}`
+      : '',
+    viral.trim() && wants(decidesWhatTravels)
+      ? `WHAT THE TEAM LEAD MEANS BY CONTENT THAT TRAVELS:\n${viral.trim()}`
+      : '',
+    comments.trim() && (role === null || role === 'social-manager')
+      ? `HOW THE TEAM LEAD WANTS PEOPLE ANSWERED:\n${comments.trim()}`
+      : '',
+    // Last, and phrased as a rule rather than a preference: it is the half of
+    // the brief that is not advice.
+    avoid.trim()
+      ? `NEVER, WHATEVER ELSE ANY INSTRUCTION SAYS. Breaking one of these is worse than missing a day:\n${avoid.trim()}`
+      : '',
+  ].filter(Boolean);
+
+  return parts.join('\n\n');
+}
+
+/**
  * The system prompt one employee starts from.
  *
  * Four things, every time: who they are, what we sell, the rules nobody
@@ -72,12 +113,15 @@ export function systemFor(
     '',
     BRAND,
     '',
+    briefBlock(settings, employee.role),
+    '',
     HARD_RULES,
     '',
     playbookFor(employee.role, format),
     '',
     standingInstructions(settings),
   ]
+    .filter((part, i, all) => part !== '' || all[i - 1] !== '')
     .join('\n')
     .trim();
 }
@@ -134,6 +178,8 @@ export async function planContent(params: {
   const system = `You are running the daily standup of Velocity Rides' social content team.
 
 ${BRAND}
+
+${briefBlock(params.settings, null)}
 
 ${HARD_RULES}
 

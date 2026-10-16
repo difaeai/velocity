@@ -1211,6 +1211,26 @@ export interface SocialCompetitor {
   url: string;
 }
 
+/**
+ * The long brief — what the team is told once and reads forever.
+ *
+ * Five boxes rather than one, because the five go to different people: the
+ * inbox does not need to know what you think travels, and the designer does
+ * not need your rules for answering a complaint.
+ */
+export interface SocialBrief {
+  /** Who we are and what matters. Everyone reads this. */
+  about: string;
+  /** What a good post looks like to you. Standup, writer, designer, editor. */
+  posts: string;
+  /** What "worth sending to a friend" means here. Standup, writer, research. */
+  viral: string;
+  /** How people who reply are talked to. The social manager and the inbox. */
+  comments: string;
+  /** The things that must never happen. Everyone, as a rule. */
+  avoid: string;
+}
+
 export interface SocialSettings {
   enabled: boolean;
   runHour: number;
@@ -1226,6 +1246,10 @@ export interface SocialSettings {
 
   /** Read by every employee, on every job. */
   crewInstructions: string;
+  /** The long brief: said once, read on every job. See SocialBrief. */
+  brief: SocialBrief;
+  /** Render the reel here rather than stopping at the cut brief. */
+  autoRenderVideo: boolean;
 
   researchEnabled: boolean;
   competitors: SocialCompetitor[];
