@@ -24,7 +24,7 @@ import { z } from 'zod';
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { readFaceScan } from '../lib/driverVerificationAI';
+import { readFaceScan } from '../lib/driverVerificationLocal';
 import {
   CHALLENGE_PROMPT,
   FACE_SCAN_ATTEMPTS_PER_HOUR,
@@ -85,10 +85,14 @@ const submitSchema = z.object({
 /**
  * Finish a scan: hand in the frames and get a verdict.
  *
- * Runs the vision check inline. It takes a few seconds and the applicant is
- * sitting there looking at the camera screen waiting to be told whether it
- * worked — a background job would mean a spinner with nothing behind it.
+ * Scored inline, on this machine. Four images through three small networks is
+ * about two seconds, and the applicant is sitting there looking at the camera
+ * screen waiting to be told whether it worked — a background job would mean a
+ * spinner with nothing behind it.
  */
+// 1 GiB, measured: three frames and the card photograph peak at about 320 MB
+// and take under two seconds. The documents path needs far more; this one does
+// not read any text, so it never loads the language model.
 export const submitFaceScan = onCall({ timeoutSeconds: 120, memory: '1GiB' }, async (req) => {
   const { uid } = requireAuth(req);
   const parsed = submitSchema.safeParse(req.data);

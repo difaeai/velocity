@@ -12,18 +12,22 @@
  *      driver working on a relative's papers.
  *   2. The live face scan           — already scored when the applicant did it
  *      (drivers/faceScan.ts); read here as a fact about the application.
- *   3. The papers                   — one Claude vision call over every document
- *      at once, so they can be compared against each other.
+ *   3. The papers                   — read on this machine, all of them in one
+ *      pass, so they can be compared against each other. Tesseract for the
+ *      text, a face descriptor for the photographs; no API key, no third party,
+ *      and a driver's CNIC never leaves the function. See
+ *      lib/driverVerificationLocal.ts for what that engine can and cannot see.
  *   4. Judgement                    — domain/driverVerification.ts, pure and
  *      tested, turns all of the above into approve / reject / review.
  *
- * WHY A JOB DOCUMENT AND NOT AN INLINE CALL. The vision call takes ten to forty
- * seconds over six images. Holding a callable open for that means an applicant
- * on a weak signal watching a spinner that can time out and leave them unsure
- * whether they submitted at all. Instead `submitDriverOnboarding` writes a job
- * and returns immediately; this trigger does the work and writes the verdict
- * onto `drivers/{uid}`, which the app is already streaming — so the screen
- * changes under them when it is done, and a dropped connection costs nothing.
+ * WHY A JOB DOCUMENT AND NOT AN INLINE CALL. Reading six images takes about ten
+ * seconds of the function's own CPU. Holding a callable open for that means an
+ * applicant on a weak signal watching a spinner that can time out and leave
+ * them unsure whether they submitted at all. Instead `submitDriverOnboarding`
+ * writes a job and returns immediately; this trigger does the work and writes
+ * the verdict onto `drivers/{uid}`, which the app is already streaming — so the
+ * screen changes under them when it is done, and a dropped connection costs
+ * nothing.
  *
  * Jobs are append-only: one new document per submission, never updated in place
  * by the thing that reads them. That is what keeps the trigger from retriggering
@@ -38,7 +42,7 @@ import { auth, db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 import { applyRole } from '../users';
-import { readDriverDocuments, verificationAIConfigured } from '../lib/driverVerificationAI';
+import { readDriverDocuments, verificationEngineReady } from '../lib/driverVerificationLocal';
 import {
   DEFAULT_VERIFICATION_CONFIG,
   REQUIRED_DOCUMENTS,
@@ -244,9 +248,11 @@ export async function runDriverVerification(driverId: string): Promise<Verificat
       plate: submitted.plate,
       licenseNumber: (driver.licenseNumber as string | undefined) ?? null,
     }),
-    // `off` means no model at all — the deterministic checks still run and
-    // everything lands in the review queue.
-    config.mode === 'off' ? Promise.resolve(null) : readDriverDocuments(documents),
+    // `off` means the papers are not read at all — the deterministic checks
+    // still run and everything lands in the review queue.
+    config.mode === 'off'
+      ? Promise.resolve(null)
+      : readDriverDocuments(documents, { cnic: submitted.cnic }),
   ]);
 
   const decision = decideDriverVerification({
@@ -311,7 +317,12 @@ async function applyDecision(params: {
     expiries: decision.expiries,
     duplicates: params.duplicates,
     report: params.report ?? null,
-    aiChecked: verificationAIConfigured() && config.mode !== 'off',
+    // Whether the papers were actually READ, not whether a reader was
+    // configured. Those are different questions, and believing the second one
+    // answered the first is how this engine once sent every applicant to a
+    // human for weeks while looking like it was being careful.
+    aiChecked: params.report !== null,
+    engine: 'local',
     mode: config.mode,
     decidedAt: FieldValue.serverTimestamp(),
     decidedBy: by,
@@ -460,13 +471,19 @@ async function processVerificationJob(
  * few seconds, which is why the app says "Checking your documents…" from the
  * moment they submit instead of claiming to be done.
  *
- * Generous timeout and memory: six images, downloaded and base64'd, through a
- * vision model at high effort.
+ * MEMORY IS MEASURED, NOT GUESSED. One application — six images, each decoded,
+ * read for text and put through three networks — peaks at about 850 MB in this
+ * process (scripts/smoke-local-vision.cjs prints the figure). At 1 GiB that is
+ * close enough to the ceiling to matter, and running out is not a failure this
+ * file can catch: the instance is killed, `processVerificationJob` never reaches
+ * its error branch, and the job sits in `running` forever with an applicant
+ * watching a spinner. 2 GiB it is. Gen-2 allocates the same single CPU at both
+ * sizes, so the only cost is per GB-second on an application that takes ten.
  */
 const JOBS_PER_RUN = 5;
 
 export const sweepDriverVerificationJobs = onSchedule(
-  { schedule: '* * * * *', timeZone: 'Asia/Karachi', timeoutSeconds: 540, memory: '1GiB' },
+  { schedule: '* * * * *', timeZone: 'Asia/Karachi', timeoutSeconds: 540, memory: '2GiB' },
   async () => {
     const snap = await db
       .collection(VERIFICATION_JOBS)
@@ -483,9 +500,9 @@ export const sweepDriverVerificationJobs = onSchedule(
       return;
     }
 
-    // Sequentially, not in parallel: each job is six images through a vision
-    // model, and five of those at once in one instance is how a 1 GiB function
-    // runs out of memory and fails all five instead of finishing one.
+    // Sequentially, not in parallel: each job is six images through Tesseract
+    // and three networks, and five of those at once in one instance is how a
+    // function runs out of memory and fails all five instead of finishing one.
     for (const doc of snap.docs) {
       const driverId = doc.get('driverId') as string | undefined;
       if (!driverId) {
@@ -500,7 +517,8 @@ export const sweepDriverVerificationJobs = onSchedule(
 
 /** Admin-only: run the engine again on one driver, e.g. after a config change. */
 export const adminRerunDriverVerification = onCall(
-  { timeoutSeconds: 540, memory: '1GiB' },
+  // Same work as the sweeper, so the same memory. See the note above it.
+  { timeoutSeconds: 540, memory: '2GiB' },
   async (req) => {
     const admin = requireAdmin(req);
     const parsed = z.object({ driverId: docId }).safeParse(req.data);
@@ -569,6 +587,9 @@ export const adminVerificationSettings = onCall(async (req) => {
   return {
     ok: true,
     config: await getVerificationConfig(),
-    aiConfigured: verificationAIConfigured(),
+    // Loads the models and the OCR worker and reports whether they came up.
+    // There is no key to check any more, so readiness is the only thing worth
+    // asking — and asking it costs about a second on a cold instance.
+    engineReady: await verificationEngineReady(),
   };
 });

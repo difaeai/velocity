@@ -1270,7 +1270,7 @@ function EngineSettings() {
     minDaysBeforeExpiry: number;
     requireFaceScan: boolean;
   } | null>(null);
-  const [aiConfigured, setAiConfigured] = useState(true);
+  const [engineReady, setEngineReady] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -1278,7 +1278,7 @@ function EngineSettings() {
   useEffect(() => {
     adminApi
       .adminVerificationSettings({})
-      .then((r) => { setConfig(r.config); setAiConfigured(r.aiConfigured); })
+      .then((r) => { setConfig(r.config); setEngineReady(r.engineReady); })
       .catch(() => undefined);
   }, []);
 
@@ -1309,8 +1309,8 @@ function EngineSettings() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>Verification engine</div>
         <Badge label={modeLabel} color={modeColor} />
-        {!aiConfigured && (
-          <Badge label="No ANTHROPIC_API_KEY — everything goes to review" color={colors.danger} />
+        {!engineReady && (
+          <Badge label="Engine did not start — everything goes to review" color={colors.danger} />
         )}
         <button
           onClick={() => setOpen((o) => !o)}
@@ -1526,7 +1526,7 @@ function VerificationPanel({
             color={faceScan.matchesDocuments === 'mismatch' ? colors.danger : '#f59e0b'}
           />
         )}
-        {verification.aiChecked === false && <Badge label="No AI — deterministic checks only" color={colors.muted} />}
+        {verification.aiChecked === false && <Badge label="Papers not read — database checks only" color={colors.muted} />}
         {verification.mode && verification.mode !== 'full' && (
           <Badge label={`Mode: ${verification.mode}`} color="#6366f1" />
         )}
