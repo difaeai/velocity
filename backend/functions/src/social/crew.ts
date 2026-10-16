@@ -172,6 +172,12 @@ export async function planContent(params: {
   research: ContentResearch | null;
   recentConcepts: string[];
   feedback: string[];
+  /**
+   * What our own page did last week, already interpreted. Rendered into the
+   * prompt ahead of the market read, because what a stranger's account did is
+   * a hint and what ours did is evidence.
+   */
+  pageRead?: string;
 }): Promise<ContentPlan> {
   const spec = FORMAT_SPECS[params.format];
 

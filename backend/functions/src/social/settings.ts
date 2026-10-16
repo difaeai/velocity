@@ -73,6 +73,8 @@ const settingsSchema = z.object({
   postsPerDay: z.number().int().min(1).max(5).optional(),
   dailyStory: z.boolean().optional(),
   autoRenderVideo: z.boolean().optional(),
+  autoPublish: z.boolean().optional(),
+  learnFromOwnPage: z.boolean().optional(),
   platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional(),
 
   angles: z.array(z.string().min(2).max(60)).min(1).max(30).optional(),

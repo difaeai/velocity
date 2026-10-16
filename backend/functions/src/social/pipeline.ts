@@ -14,10 +14,13 @@
  *    who covers it. If nobody does, the stage is recorded as skipped with the
  *    reason — "no designer on the team" — rather than silently producing
  *    nothing. This is what makes hiring someone actually change the output.
- * 2. **Nothing publishes itself.** Every run ends at `awaiting_approval`.
+ * 2. **Every run ends at `awaiting_approval`, and by default it stops there.**
  *    Everything the team writes is a claim Velocity is making in public, and
  *    the cost of reading one piece a day is nothing next to the cost of the one
- *    that should not have gone out.
+ *    that should not have gone out. `autoPublish` exists for an owner who has
+ *    decided otherwise and sends it the moment the team is finished, with no
+ *    quality gate in front of it; the piece still passes through the same
+ *    state, is still scored, and is still readable afterwards.
  * 3. **Every stage writes before the next begins.** A failure halfway through
  *    leaves a piece you can open, read and retry, rather than a silent gap in
  *    the calendar. The work log on the post is what the console renders live,
@@ -49,6 +52,7 @@ import { activeTeam, assign, creditWork, teamRefs } from './employees';
 import { claudeReady } from './claude';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
+import { latestPageRead, pageReadBlock } from './insights';
 import { planReel, renderReel } from './reel';
 import { runResearch } from './research';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
@@ -275,6 +279,7 @@ async function runTeam(params: {
         research,
         recentConcepts: concepts,
         feedback,
+        pageRead: settings.learnFromOwnPage ? pageReadBlock(await latestPageRead()) : '',
       });
       await patch(params.id, { plan });
     } catch (e) {
@@ -526,8 +531,36 @@ async function runTeam(params: {
     }
   }
 
-  // The day always ends here. Approval is a human's job.
   await patch(params.id, { status: 'awaiting_approval' as PostStatus });
+
+  // ── and out, if that is how this desk is run ──────────────────────────────
+  //
+  // The default is still that a person reads it. Switched on, `autoPublish`
+  // sends it the moment the team is finished, with nothing in front of it —
+  // no score threshold, no hold-back. The guards that remain are the ones in
+  // the writing rather than in a gate: the FACTS rule, no competitor named, no
+  // promised income. The scorecard is still computed and still stored, so a
+  // weak piece that went out can be found afterwards; it is simply not stopped.
+  if (settings.autoPublish) {
+    const quality = ((await postRef(params.id).get()).data() as SocialPost | undefined)?.quality ?? null;
+    try {
+      const { published, failed: failures } = await publishPost(params.id);
+      // `auto` rather than a uid, because "who approved this" is a question
+      // somebody asks a year later and "nobody did" is the honest answer.
+      await patch(params.id, { approvedBy: 'auto' });
+      logger.info('social: published without approval', {
+        id: params.id,
+        published,
+        failed: failures,
+        score: quality ? Math.round(quality.score) : null,
+        verdict: quality?.verdict ?? null,
+      });
+    } catch (e) {
+      // A failed publish leaves the piece exactly where a normal run would:
+      // readable, in the queue, retryable by hand.
+      logger.error('social: auto-publish failed', { id: params.id, message: (e as Error).message });
+    }
+  }
 }
 
 /**

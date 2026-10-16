@@ -70,6 +70,8 @@ export default function AutomationPage() {
         postsPerDay: settings.postsPerDay,
         dailyStory: settings.dailyStory,
         autoRenderVideo: settings.autoRenderVideo,
+        autoPublish: settings.autoPublish,
+        learnFromOwnPage: settings.learnFromOwnPage,
         platforms: settings.platforms,
         formats: settings.formats,
         angles: settings.angles,
@@ -218,10 +220,68 @@ export default function AutomationPage() {
           </span>
         </label>
 
+        <label
+          style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 12, cursor: 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.learnFromOwnPage}
+            onChange={(e) => edit({ learnFromOwnPage: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13 }}>
+            Read our own page and learn from it
+            <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
+              An hour before the team starts, it reads how our own posts actually did — ranked by how far each
+              went past our own normal, not by raw views — and brings it to standup. Free to read; one model
+              call a day to make sense of it. See <strong>What is working</strong>.
+            </span>
+          </span>
+        </label>
+
         <p style={{ fontSize: 12.5, color: colors.muted, marginTop: 14, marginBottom: 0 }}>
-          Nothing publishes itself. Every piece stops in the approval queue for you to approve, send back, reject or
-          delete.
+          {settings.autoPublish
+            ? 'Auto-publish is on: finished pieces go straight out, with nothing in front of them.'
+            : 'Nothing publishes itself. Every piece stops in the approval queue for you to approve, send back, reject or delete.'}
         </p>
+      </Card>
+
+      <Card>
+        <h2 style={h2}>Publishing without you</h2>
+        <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+          Off, every piece waits in the queue for you. On, it goes out the moment the team finishes it — no
+          score threshold, no hold-back. What still holds either way lives in the writing rather than in a
+          check: every number must come from the live figures, no competitor is ever named, and nothing
+          promises an income. Each piece is still scored and still readable afterwards, so a weak one that went
+          out can be found. It just is not stopped.
+        </p>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            cursor: 'pointer',
+            padding: 12,
+            borderRadius: 10,
+            border: `1px solid ${settings.autoPublish ? '#ff8a3d66' : colors.border}`,
+            background: settings.autoPublish ? '#ff8a3d12' : 'transparent',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.autoPublish}
+            onChange={(e) => edit({ autoPublish: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13 }}>
+            <strong>Post everything automatically, without my approval</strong>
+            <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
+              Published under Velocity Rides&rsquo; own name to the connected networks. A post can be deleted
+              afterwards; a screenshot of it cannot. This switch is the only thing that stops it — turn it off
+              and the next run waits for you again.
+            </span>
+          </span>
+        </label>
       </Card>
 
       <Card>

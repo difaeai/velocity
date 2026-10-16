@@ -747,6 +747,33 @@ export interface SocialSettings {
    */
   autoRenderVideo: boolean;
 
+  /**
+   * Publish without waiting for anybody.
+   *
+   * The desk was built to stop at the queue, and that is still the default.
+   * Switched on, a finished piece goes straight to the connected networks the
+   * moment the team is done with it, with no quality gate in front of it —
+   * which is what it says and is the whole point of it. The guards that remain
+   * are the ones that live in the writing rather than in a check: every number
+   * must come from the FACTS block, no competitor is ever named, and nothing
+   * promises an income. The scorecard is still computed and still stored, so a
+   * piece that went out weak is findable afterwards; it just is not stopped.
+   *
+   * `approvedBy` is written as `auto` on anything published this way, because
+   * "who approved this" is a question that gets asked a year later.
+   */
+  autoPublish: boolean;
+
+  /**
+   * Read our own page and feed what it says back into the standup.
+   *
+   * Costs nothing to read — Instagram's insights are free — and one model call
+   * a day to interpret. Without it the team is writing in front of a market
+   * read and nothing else; with it, it is writing in front of what its own
+   * audience actually did.
+   */
+  learnFromOwnPage: boolean;
+
   /** The researcher reads around these. */
   researchEnabled: boolean;
   competitors: Competitor[];
@@ -789,6 +816,8 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   crewInstructions: '',
   brief: { ...EMPTY_BRIEF },
   autoRenderVideo: true,
+  autoPublish: false,
+  learnFromOwnPage: true,
 
   researchEnabled: true,
   competitors: [...DEFAULT_COMPETITORS],
