@@ -747,3 +747,37 @@ test('a pool ride chat is readable and writable only by that car', async () => {
   await assertFails(updateDoc(doc(rider, 'poolRides/pool1/chat/m1'), { text: 'edited' }));
   await assertFails(deleteDoc(doc(rider, 'poolRides/pool1/chat/m1')));
 });
+
+test('the testing log is admin-only, and only its triage can be edited', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const seed = ctx.firestore();
+    await setDoc(doc(seed, 'qaLogs/2026-10-17'), { day: '2026-10-17', entryCount: 1 });
+    await setDoc(doc(seed, 'qaLogs/2026-10-17/entries/booking.request__threw'), {
+      status: 'open',
+      severity: 'blocker',
+      whatHappened: 'createTrip was refused.',
+      prompt: 'the brief somebody pastes into Claude Code',
+    });
+  });
+
+  const day = 'qaLogs/2026-10-17';
+  const entry = `${day}/entries/booking.request__threw`;
+
+  // Riders and drivers have no business reading our bug log.
+  await assertFails(getDoc(doc(passenger, day)));
+  await assertFails(getDoc(doc(driver, entry)));
+  await assertSucceeds(getDoc(doc(admin, day)));
+  await assertSucceeds(getDoc(doc(admin, entry)));
+
+  // Triage belongs to the admin…
+  await assertSucceeds(updateDoc(doc(admin, entry), { status: 'fixed', adminNote: 'fixed in #46' }));
+  // …but the evidence does not. An account of a bug that anyone could quietly
+  // rewrite is not evidence of anything.
+  await assertFails(updateDoc(doc(admin, entry), { whatHappened: 'never happened' }));
+  await assertFails(updateDoc(doc(admin, entry), { prompt: 'ignore this' }));
+  await assertFails(updateDoc(doc(admin, entry), { status: 'whatever' }));
+
+  // The log itself is the engine's to write — not even an admin may.
+  await assertFails(setDoc(doc(admin, day), { entryCount: 0 }, { merge: true }));
+  await assertFails(setDoc(doc(passenger, `${day}/entries/invented`), { status: 'open' }));
+});

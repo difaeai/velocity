@@ -7,6 +7,7 @@
  */
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
+import { watchCallable } from '../lib/featureCheck';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
 import type { FaceAgreement, FaceChallenge, FaceScanPurpose } from '../domain/faceScan';
 import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
@@ -73,7 +74,11 @@ function stripUndefined(value: unknown): unknown {
 
 function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name);
-  return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
+  // Watched here rather than at the call sites. Every callable that carries a
+  // promise to a user is timed and classified against what its feature was
+  // built to do (src/lib/featureCheck.ts); a call belonging to no feature
+  // contract is handed back untouched, so this costs the rest nothing.
+  return watchCallable<Req, Res>(name, async (data: Req) => (await fn(stripUndefined(data) as Req)).data);
 }
 
 /**

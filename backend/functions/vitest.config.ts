@@ -38,6 +38,9 @@ export default defineConfig({
       'src/whatsapp/__tests__/**/*.test.ts',
       'src/specialRides/__tests__/**/*.test.ts',
       'src/traffic/__tests__/**/*.test.ts',
+      // The engine that watches every other feature. Easy one to forget, and
+      // a QA engine nobody tests is a QA engine nobody can trust.
+      'src/qa/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.

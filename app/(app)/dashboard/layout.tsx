@@ -88,6 +88,7 @@ const APP_NAV: NavGroup[] = [
     title: 'System',
     items: [
       { href: '/dashboard/features', label: '🚦 Feature flags' },
+      { href: '/dashboard/testing', label: '🧪 Testing' },
       { href: '/dashboard/app-version', label: '⬆️ App version' },
       { href: '/dashboard/costs', label: '💸 Cost of Velocity Rides' },
     ],
