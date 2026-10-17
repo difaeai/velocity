@@ -347,6 +347,12 @@ export const FEATURE_CONTRACTS: readonly FeatureContract[] = [
           'A client-side fare reached a shared booking. Shared fares are server-priced and createTrip ignores the client offer.',
         fix: 'Leave the fare out of the shared-ride call entirely. A shared ride is never negotiable.',
       },
+      {
+        signal: /empty/,
+        because:
+          'An empty shared-rides feed is ambiguous by construction: getSuggestedRides wraps each of its sources in its own try/catch and logs a warning, so a feed that found nothing and a feed whose every source failed look identical from the phone.',
+        fix: 'Do not read silence from this feature as health. Check the getSuggestedRides warnings in the function log for that minute before concluding there was simply nothing to show.',
+      },
     ],
   },
   {
