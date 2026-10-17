@@ -155,6 +155,11 @@ export {
   getPoolRiders,
 } from './trips/enRoute';
 
+// The same corridor search, told to the RIDER: who is standing on their road
+// and what their own fare drops to if the driver takes them. Riders waiting
+// alone in a shared ride could not see any of this before.
+export { getEnRouteSavings, askDriverEnRoutePickup } from './trips/enRouteRider';
+
 // Pool ride share links (invite codes, public/private visibility, joining)
 export {
   getPoolTripByCode,
@@ -558,3 +563,12 @@ export {
   adminRefreshTrafficAlerts,
   refreshTrafficAlerts,
 } from './traffic';
+
+// ── Testing agent ───────────────────────────────────────────────────────────
+// Velocity testing itself. `runQaAgent` wakes every 15 minutes and asks whether
+// the features are keeping the promises they were built to keep (src/qa/checks.ts);
+// `reportFeatureCheck` is how the app says a tap did not do its job. Both write
+// one date-wise, prompt-shaped log the admin Testing page reads. Nothing is
+// written when a feature is fine — see src/qa/log.ts for why.
+export { runQaAgent, qaRunChecksNow, sweepQaLogs } from './qa/agent';
+export { reportFeatureCheck } from './qa/report';

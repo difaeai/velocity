@@ -39,6 +39,7 @@ import { CoRiderRatingSheet, type CoRiderTarget } from '../../../src/ui/CoRiderR
 import { ChatModal } from '../../../src/ui/ChatModal';
 import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard';
 import { PoolJoinRequestsCard } from '../../../src/ui/PoolJoinRequestsCard';
+import { EnRouteSavingsCard } from '../../../src/ui/EnRouteSavingsCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
@@ -697,6 +698,17 @@ export default function TripScreen() {
                 </Text>
               </View>
             ) : null}
+
+            {/* Nobody has joined — but somebody may be standing on this very
+                road, wanting to get in and out somewhere along it. The search
+                that finds them has existed since en-route pickups shipped; it
+                was only ever shown to the driver. This is the rider's side of
+                it, and it renders nothing at all when the road is quiet. */}
+            <EnRouteSavingsCard
+              tripId={trip.id}
+              status={trip.status}
+              pool={trip.pool === true}
+            />
 
             {/* Cancel Request (host only — the backend rejects others).
                 Free at this stage: no driver has committed to the ride yet.

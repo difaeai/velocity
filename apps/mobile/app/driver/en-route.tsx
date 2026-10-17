@@ -377,6 +377,12 @@ function MatchCard({
             {match.passengerGender === 'female' ? ' ♀' : match.passengerGender === 'male' ? ' ♂' : ''}
           </Text>
           <Text style={styles.rating}>⭐ {match.passengerRating.toFixed(1)}</Text>
+          {/* A rider already in the car asked for this one by name — worth
+              saying, because it means a passenger is expecting it. It changes
+              nothing about the decision: the gates below are the same. */}
+          {match.askedByRider && (
+            <Text style={styles.askedByRider}>🙋 Your passenger asked for this pickup</Text>
+          )}
         </View>
         <View style={styles.earnPill}>
           <Text style={styles.earnPillText}>+PKR {match.earnExtra}</Text>
@@ -606,6 +612,7 @@ const styles = themed(() => StyleSheet.create({
   },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   name: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  askedByRider: { color: colors.primary, fontSize: 12, fontWeight: '700', marginTop: 3 },
   rating: { color: colors.muted, fontSize: 12, marginTop: 2 },
   earnPill: {
     backgroundColor: `${colors.primary}22`,

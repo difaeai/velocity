@@ -7,6 +7,7 @@
  */
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
+import { watchCallable } from '../lib/featureCheck';
 import type { Gender, GeoPoint, PaymentMethod, PoolVisibility, RideType, TripStatus } from '../domain/types';
 import type { FaceAgreement, FaceChallenge, FaceScanPurpose } from '../domain/faceScan';
 import type { CityFareConfig, VehicleCategory } from '../lib/fareEngine';
@@ -73,7 +74,11 @@ function stripUndefined(value: unknown): unknown {
 
 function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name);
-  return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
+  // Watched here rather than at the call sites. Every callable that carries a
+  // promise to a user is timed and classified against what its feature was
+  // built to do (src/lib/featureCheck.ts); a call belonging to no feature
+  // contract is handed back untouched, so this costs the rest nothing.
+  return watchCallable<Req, Res>(name, async (data: Req) => (await fn(stripUndefined(data) as Req)).data);
 }
 
 /**
@@ -474,11 +479,38 @@ export interface EnRouteMatch {
   earnExtra: number;
   /** Everyone already in the car — and what taking this rider does to their fare. */
   ridersAfter: { uid: string; name: string; fareNow: number; fareAfter: number }[];
+  /** A rider already in the car asked for this one by name. */
+  askedByRider?: boolean;
   /** Metres off the route, there and back, to collect and drop this one rider. */
   detourM: number;
   pickupOffsetM: number;
   dropToDestM: number;
   alongM: number;
+}
+
+/**
+ * Somebody standing on the rider's own road, and what taking them does to the
+ * rider's fare.
+ *
+ * Every one of these has already passed, server-side, every gate the DRIVER's
+ * feed applies — the corridor, the seats, the gender rules, the fare floor and
+ * "the driver must not end up worse off". So the saving shown is one a driver
+ * could really be offered, not an arithmetic possibility.
+ *
+ * Areas, never addresses: a waiting rider is told the car passes F-10 Markaz,
+ * never which gate somebody is standing at.
+ */
+export interface EnRouteCandidateView {
+  tripId: string;
+  firstName: string;
+  seats: number;
+  pickupArea: string | null;
+  dropoffArea: string | null;
+  alongM: number;
+  /** Your fare if the driver takes this one person. */
+  myFareIfTaken: number;
+  /** Theirs, so you can see the car is not subsidising anybody. */
+  theirFare: number;
 }
 
 /** A co-rider as the people in the car are allowed to see them. */
@@ -1031,6 +1063,34 @@ export const api = {
       earnExtra: number;
     }
   >('acceptEnRouteRider'),
+  /**
+   * The rider's side of the same corridor search: who is on your road, and what
+   * your fare becomes if the driver picks them up.
+   *
+   * Answers an empty list for every ordinary "nothing to show" case — a quiet
+   * road, a full car, the feature switched off — so the card simply does not
+   * appear rather than the screen showing an error about good news.
+   */
+  getEnRouteSavings: callable<
+    { tripId: string; polyline?: string },
+    {
+      candidates: EnRouteCandidateView[];
+      /** What you are paying now. Null on a trip we cannot price yet. */
+      myFareNow: number | null;
+      /** What it becomes if the driver takes as many as the car holds. */
+      myFareBest: number | null;
+      seatsLeft?: number;
+      /** False until a driver is on the trip — there is nobody to ask yet. */
+      canAsk: boolean;
+      ridersAboard?: number;
+      full?: boolean;
+    }
+  >('getEnRouteSavings'),
+  /** "Driver, please pick that one up." A nudge; the driver still decides. */
+  askDriverEnRoutePickup: callable<
+    { tripId: string; candidateTripId: string },
+    { ok: boolean; alreadyAsked: boolean }
+  >('askDriverEnRoutePickup'),
   getPoolRiders: callable<
     { tripId: string },
     { riders: PoolRiderView[]; yourFare: number | null; driverGross: number | null }

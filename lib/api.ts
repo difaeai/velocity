@@ -1710,3 +1710,25 @@ export const socialApi = {
     { ok: boolean }
   >('adminSetCommentStatus'),
 };
+
+/**
+ * The testing desk.
+ *
+ * Reading the log is a plain Firestore read (the rules let an admin read
+ * `qaLogs`, and the page subscribes so a failure appears as it is recorded), so
+ * the only thing that needs a callable is asking the agent to go and look now
+ * rather than at its next quarter-hour.
+ */
+export const qaApi = {
+  runChecksNow: callable<
+    Record<string, never>,
+    {
+      day: string;
+      ran: number;
+      passed: string[];
+      failed: string[];
+      skipped: string[];
+      durationMs: number;
+    }
+  >('qaRunChecksNow'),
+};
