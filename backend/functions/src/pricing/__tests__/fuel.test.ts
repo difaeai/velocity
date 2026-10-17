@@ -148,6 +148,62 @@ describe('reconcileFuelPrices', () => {
     expect(diesel.rejection).toBe('no_observations');
   });
 
+  /**
+   * The 2026-10-16 incident, as it actually happened in production.
+   *
+   * OGRA cut petrol 393.86 -> 390.23. oilprices.pk had the new number that
+   * morning; autoones.com was still serving the old one. 3.63 apart is inside
+   * the 1% tolerance, so the pair "agreed" and the engine stored the midpoint,
+   * 392.05 — a price no pump in the country was charging, shown to riders
+   * under a line telling them to check it against the forecourt board.
+   */
+  it('adopts the freshly notified price, not a blend with a lagging source', () => {
+    const result = reconcileFuelPrices(
+      [
+        obs({ sourceId: 'oilprices.pk', pricePkr: 390.23, effectiveDate: '2026-10-16' }),
+        obs({ sourceId: 'autoones.com', pricePkr: 393.86, effectiveDate: '2026-10-15' }),
+      ],
+      { petrol: confirmed({ pricePkr: 393.86, effectiveDate: '2026-10-15' }) },
+      settings,
+      NOW,
+    );
+    const petrol = petrolOf(result).confirmed!;
+    expect(petrol.pricePkr).toBe(390.23);
+    expect(petrol.pricePkr).not.toBe(392.05);
+    expect(petrol.effectiveDate).toBe('2026-10-16');
+    // Still two sources: the lagging one agreed the price was ~390, which is
+    // the whole job of a confirmation. It just does not get to set the number.
+    expect(petrol.confirmations).toBe(2);
+  });
+
+  it('still refuses when the sources are genuinely far apart', () => {
+    // 2026-10-17: autoones started reporting 386.30 against a true 390.23.
+    const result = reconcileFuelPrices(
+      [
+        obs({ sourceId: 'oilprices.pk', pricePkr: 390.23, effectiveDate: '2026-10-16' }),
+        obs({ sourceId: 'autoones.com', pricePkr: 386.3, effectiveDate: '2026-10-17' }),
+      ],
+      { petrol: confirmed({ pricePkr: 390.23, effectiveDate: '2026-10-16' }) },
+      settings,
+      NOW,
+    );
+    expect(petrolOf(result).confirmed).toBeNull();
+    expect(petrolOf(result).rejection).toBe('no_agreement');
+  });
+
+  it('medians same-dated readings that differ in the last paisa', () => {
+    const result = reconcileFuelPrices(
+      [
+        obs({ sourceId: 'a', pricePkr: 390.2, effectiveDate: '2026-10-16' }),
+        obs({ sourceId: 'b', pricePkr: 390.3, effectiveDate: '2026-10-16' }),
+      ],
+      {},
+      settings,
+      NOW,
+    );
+    expect(petrolOf(result).confirmed?.pricePkr).toBe(390.25);
+  });
+
   it('takes the later effective date when sources straddle a notification', () => {
     const result = reconcileFuelPrices(
       [

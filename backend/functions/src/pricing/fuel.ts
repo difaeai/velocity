@@ -18,6 +18,10 @@
  * So nothing here believes one source. A price becomes real when
  * `minConfirmations` independent feeds land within `agreementTolerance` of each
  * other; short of that the previous confirmed price stands and an admin is told.
+ * What is then ADOPTED is the newest-dated reading among those that agreed —
+ * never a blend across effective dates. Agreement decides whether to believe a
+ * price; it does not get to invent one. See `reconcileFuelPrices`, which has
+ * the 2026-10-16 incident that taught us the difference written out in full.
  * Verified while writing this: oilprices.pk and autoones.com independently gave
  * petrol 398.30 and diesel 396.24 for 2026-10-10/11, so two-source agreement is
  * reachable in practice and not a counsel of perfection.
@@ -189,7 +193,33 @@ export function reconcileFuelPrices(
       continue;
     }
 
-    const agreedPrice = median([...cluster.map((r) => r.pricePkr)].sort((a, b) => a - b));
+    // THE PRICE COMES FROM THE NEWEST READINGS IN THE CLUSTER, NOT FROM ALL OF
+    // THEM. This is not a refinement; it is the difference between a price
+    // somebody notified and a price nobody did.
+    //
+    // Sources move at different times on a notification morning. On 2026-10-16
+    // OGRA cut petrol from 393.86 to 390.23. oilprices.pk had the new number,
+    // autoones.com still had the old one, and 3.63 apart on a ~390 price is
+    // inside the 1% agreement tolerance — so they "agreed", and the median of
+    // a two-member cluster is its midpoint: 392.05. That is what this engine
+    // confirmed, wrote to fuelPrices/current, and showed riders on the booking
+    // screen under a line inviting them to check it against the pump. No
+    // forecourt in Pakistan was charging 392.05.
+    //
+    // Taking the newest-dated readings instead fixes it without weakening the
+    // vote: `cluster.length` still decides whether the price is believed, so it
+    // still takes two independent sources landing near each other to confirm
+    // anything. All that changes is WHICH of the agreeing numbers is adopted —
+    // the current one, rather than a blend of the current one and a stale one.
+    //
+    // The median survives for the case it was actually for: several sources
+    // carrying the SAME effective date and differing in the last paisa.
+    const newestDate = cluster
+      .map((r) => r.effectiveDate)
+      .sort()
+      .at(-1)!;
+    const freshest = cluster.filter((r) => r.effectiveDate === newestDate);
+    const agreedPrice = median([...freshest.map((r) => r.pricePkr)].sort((a, b) => a - b));
 
     // One step at a time. Measured against what was believed, so a feed that
     // breaks can walk the price at most `maxStepPct` a day — enough runs for a
@@ -209,18 +239,13 @@ export function reconcileFuelPrices(
     }
     price = Math.round(price * 100) / 100;
 
-    // The latest date any agreeing source gave it. Sources differ by a day
-    // around a notification — one stamps the day it was published, the next the
-    // day it takes effect — and the later of the two is the one in force.
-    const effectiveDate = cluster
-      .map((r) => r.effectiveDate)
-      .sort()
-      .at(-1)!;
-
     const confirmed: ConfirmedFuelPrice = {
       product,
       pricePkr: price,
-      effectiveDate,
+      // The same date the price was taken from, necessarily. Stamping the
+      // newest date onto a number blended from an older one is how the stored
+      // document came to claim 392.05 "effective 2026-10-16".
+      effectiveDate: newestDate,
       confirmations: cluster.length,
       sources: cluster.map((r) => r.sourceId).sort(),
       confirmedAt: now,
@@ -228,7 +253,7 @@ export function reconcileFuelPrices(
       previousPkr: prior?.pricePkr ?? null,
     };
 
-    if (!prior || prior.pricePkr !== price || prior.effectiveDate !== effectiveDate) {
+    if (!prior || prior.pricePkr !== price || prior.effectiveDate !== newestDate) {
       changed = true;
     }
 
