@@ -1531,6 +1531,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- trafficAlerts/{id} ----------------------------------------------
+    // Road alerts classified out of Pakistani news feeds. No client touches
+    // this collection directly: `getTrafficAlerts` serves it, because what a
+    // rider may see is a city filter and what a driver may see is a route
+    // filter, and neither is expressible as a security rule.
+    //
+    // Writes are the scheduled run only. A client that could write here could
+    // put "SHAHRAH-E-FAISAL CLOSED" on every booking screen in Karachi, which
+    // is a cheap way to move a city's demand somewhere a competitor wants it.
+    match /trafficAlerts/{alertId} {
+      allow read, write: if false;
+    }
+
     // ----- Catch-all DENY --------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

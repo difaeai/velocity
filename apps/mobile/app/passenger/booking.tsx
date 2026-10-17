@@ -83,9 +83,12 @@ import {
   DEFAULT_MARKET_SETTINGS, compareToMarket, describeMarketGap, restateAgainstOffer,
 } from '../../src/lib/marketRates';
 import { MarketCompare } from '../../src/ui/MarketCompare';
+import { useTrafficAlerts } from '../../src/hooks/trafficAlerts';
+import { useRouteInfo } from '../../src/hooks/directions';
 import { BookingForPicker } from '../../src/ui/BookingForPicker';
 import { ShareGenderSheet, useNeedsShareGender } from '../../src/ui/ShareGenderSelector';
 import { PriceNotice } from '../../src/ui/PriceNotice';
+import { TrafficStrip } from '../../src/ui/TrafficStrip';
 import { EdgeFade } from '../../src/ui/components';
 
 /** A booking dictated on the voice screen, ready to seed this screen's state. */
@@ -534,6 +537,18 @@ export default function Booking() {
   const [schedSaving, setSchedSaving] = useState(false);
 
   const bounds = fareBounds(rideType);
+
+  /**
+   * Road alerts for this trip.
+   *
+   * `useRouteInfo` is the SAME memoised route the map above is already drawing
+   * — the hook hands back a cached hit rather than buying a second Routes call
+   * for a road we have paid for once. Passing its encoded polyline is what
+   * turns "something is shut in this city" into "something is shut 4 km into
+   * your journey", which is the only version a driver or a rider can act on.
+   */
+  const bookingRoute = useRouteInfo(coords, dropoffCoords);
+  const traffic = useTrafficAlerts(coords, bookingRoute?.encoded);
 
   // Compute engine estimate whenever route + config are available
   const distKm = coords && dropoffCoords ? haversineKm(coords, dropoffCoords) : null;
@@ -1316,6 +1331,23 @@ export default function Booking() {
             // happen to this rider. The fuel line stays: that is a cost which
             // already moved, not a fare that still might.
             hidePeak={mode === 'pool'}
+          />
+          {/* ══ What is closed, blocked or crashed between here and there ══
+               Directly under the pump price, because the two answer the same
+               kind of question — what is true outside the car right now that
+               changes this trip — and because a rider reads this column once,
+               top to bottom, while they decide.
+
+               Route alerts win over city ones: once a destination is picked,
+               "something is shut in Karachi" is noise next to "something is
+               shut on YOUR road". Before that, the city list is the best
+               answer there is. The strip renders a quiet grey "no road alerts"
+               when there are none, deliberately — see TrafficStrip. */}
+          <TrafficStrip
+            alerts={traffic.route.length > 0 ? traffic.route : traffic.city}
+            loaded={traffic.loaded}
+            variant="map"
+            audience="rider"
           />
         </View>
       </SafeAreaView>

@@ -44,6 +44,8 @@ import { fetchRouteInfo } from '../../src/hooks/directions';
 import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 import { PrimaryButton } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
+import { TrafficStrip } from '../../src/ui/TrafficStrip';
+import { useTrafficAlerts } from '../../src/hooks/trafficAlerts';
 import type { GeoPoint } from '../../src/domain/types';
 
 /** Re-check the corridor this often — riders appear and are taken by others. */
@@ -110,6 +112,18 @@ export default function EnRoute() {
       .catch(() => {});
   }, []);
 
+
+  /**
+   * What is wrong on THIS road, right now.
+   *
+   * The same polyline the backend matches riders against is the one we ask the
+   * road-alert service about, so the answer is about this exact journey rather
+   * than about the city it happens to start in. A driver deciding whether to
+   * take a forty-minute run down the Islamabad Expressway is the person with
+   * most to lose from a closure nobody told them about, and the one best placed
+   * to do something about it while they still can.
+   */
+  const traffic = useTrafficAlerts(coords, polyline);
 
   const [walletTrip, setWalletTrip] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -262,6 +276,22 @@ export default function EnRoute() {
             );
           })}
         </View>
+      </View>
+
+      {/* Is this route clear? Answered in the same block as the route itself,
+          above the map and above the rider list, because it changes whether
+          the driver wants this route at all — and an alert found after they
+          have already accepted three pickups along it is worth much less.
+          Renders a quiet "Route clear" when there is nothing, on purpose: a
+          panel that only appears when something is wrong is a panel whose
+          silence a driver cannot read. See TrafficStrip. */}
+      <View style={styles.trafficSlot}>
+        <TrafficStrip
+          alerts={traffic.route.length > 0 ? traffic.route : traffic.city}
+          loaded={traffic.loaded}
+          variant="panel"
+          audience="driver"
+        />
       </View>
 
       {mapCoords && (
@@ -544,6 +574,7 @@ const styles = themed(() => StyleSheet.create({
 
   routeBar: { paddingHorizontal: 16, paddingBottom: 10 },
   routeLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  trafficSlot: { paddingHorizontal: 16, paddingBottom: 10 },
   routeHint: { color: colors.muted, fontSize: 12, marginTop: 2 },
   radiusRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   radiusChip: {
