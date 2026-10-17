@@ -24,6 +24,7 @@ import { planDistribution } from '../manager';
 import { runResearch } from '../research';
 import { adPass, searchPass, seoPass } from '../seo';
 import { draftPost, rewriteCaption } from '../script';
+import { shouldAutoPublish } from '../pipeline';
 import { planCut } from '../video';
 import {
   CAPTION_LIMITS,
@@ -242,6 +243,26 @@ describe('a full run with no key', () => {
       }
     });
   }
+
+  // The one code path that puts words in front of an audience with no human in
+  // the loop, so the rule gets its own test rather than living inside a
+  // 400-line run.
+  describe('auto-publish', () => {
+    it('never publishes a locally written piece, even when switched on', () => {
+      expect(shouldAutoPublish(true, false)).toBe(false);
+    });
+
+    it('still publishes without approval when the model wrote it', () => {
+      // The deliberate absence of a quality gate is not undone by this: with a
+      // key, auto-publish means exactly what it meant before.
+      expect(shouldAutoPublish(true, true)).toBe(true);
+    });
+
+    it('publishes nothing at all when it is off', () => {
+      expect(shouldAutoPublish(false, true)).toBe(false);
+      expect(shouldAutoPublish(false, false)).toBe(false);
+    });
+  });
 
   it('keeps the caption and only reorders it when asked to rewrite', async () => {
     const drafted = await draftPost({

@@ -1456,6 +1456,12 @@ export interface SocialPostDoc {
    * timings. Absent on anything written before the checks existed.
    */
   quality?: SocialQualityReport | null;
+  /**
+   * Which engine wrote this piece — `claude` for the model, `local` for the
+   * key-free engine that composes from the brand material. Absent on anything
+   * written before the second engine shipped.
+   */
+  engine?: 'claude' | 'local' | null;
   revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;

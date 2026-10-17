@@ -156,6 +156,33 @@ export function postIdFor(date: string, format: ContentFormat): string {
   return `${date}-${format}`;
 }
 
+/**
+ * Whether a finished piece may go out with nobody having read it.
+ *
+ * A one-line rule, pulled out as a function because of what it decides: this is
+ * the only code path that puts words in front of an audience under the brand's
+ * name with no human in the loop, and a rule like that should be readable and
+ * testable on its own rather than inlined in a 400-line run.
+ *
+ * `autoPublish` off means no, which is the default and the whole design.
+ *
+ * On, it means yes — with one exception: a piece the **local engine** wrote
+ * waits for a person. That is not the quality gate that was deliberately left
+ * out, and the argument against that gate still stands: the guards worth having
+ * live in the writing, and a score threshold mostly blocks pieces that were
+ * fine. This asks a different question, one with a definite answer — was this
+ * written by a model, or composed from templates? The second kind is reliable
+ * and plain, and plain copy going out unread is a different bargain from the
+ * one that was agreed to. Adding the key is also about thirty seconds of work,
+ * so the hold is usually a short one.
+ *
+ * Nothing is lost by waiting: the piece is finished, scored, stamped with its
+ * engine, and sitting in the queue with Approve enabled.
+ */
+export function shouldAutoPublish(autoPublish: boolean, modelReady: boolean): boolean {
+  return autoPublish && modelReady;
+}
+
 // ── the run ─────────────────────────────────────────────────────────────────
 
 const ALL_STAGES: Stage[] = ['research', 'seo', 'script', 'search', 'design', 'video', 'ads', 'distribute'];
@@ -343,6 +370,9 @@ async function runTeam(params: {
         script,
         caption: `${caption}\n\n${hashtags.map((h) => `#${h}`).join(' ')}`.trim(),
         hashtags,
+        // Stamped here rather than at the end of the run: this is the stage
+        // where the engine actually decided what the piece says.
+        engine: claudeReady() ? ('claude' as const) : ('local' as const),
         quality: drafted.quality,
       });
       // The scorecard goes in the work log too, so the console shows what the
@@ -539,6 +569,7 @@ async function runTeam(params: {
 
   await patch(params.id, { status: 'awaiting_approval' as PostStatus });
 
+
   // ── and out, if that is how this desk is run ──────────────────────────────
   //
   // The default is still that a person reads it. Switched on, `autoPublish`
@@ -547,7 +578,17 @@ async function runTeam(params: {
   // the writing rather than in a gate: the FACTS rule, no competitor named, no
   // promised income. The scorecard is still computed and still stored, so a
   // weak piece that went out can be found afterwards; it is simply not stopped.
-  if (settings.autoPublish) {
+  if (!shouldAutoPublish(settings.autoPublish, claudeReady())) {
+    // Deliberately not written to `error`: the queue renders that in red, and
+    // a finished piece waiting to be read is not a failure. The `engine` stamp
+    // is already on the document and the queue says what it means.
+    if (settings.autoPublish) {
+      logger.info('social: holding a locally written piece for approval', { id: params.id });
+    }
+    return;
+  }
+
+  {
     const quality = ((await postRef(params.id).get()).data() as SocialPost | undefined)?.quality ?? null;
     try {
       const { published, failed: failures } = await publishPost(params.id);

@@ -426,6 +426,19 @@ function PostCard({ post }: { post: SocialPostDoc }) {
         </div>
       </div>
 
+      {/*
+        Written without the model, so it is said plainly here rather than left
+        to be inferred from the voice. It is also why this piece is waiting even
+        with auto-publish on: the backend holds a locally written piece for a
+        person. Not an error, so not in red.
+      */}
+      {post.engine === 'local' ? (
+        <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
+          Written by the <strong>local engine</strong> — composed from the brand material and picked by score, with no
+          model involved. Auto-publish does not apply to these: read it before it goes out. Adding{' '}
+          <code>ANTHROPIC_API_KEY</code> puts the team back on Claude.
+        </p>
+      ) : null}
       {post.error ? (
         <p style={{ color: colors.danger, fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>{post.error}</p>
       ) : null}

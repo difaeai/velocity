@@ -601,6 +601,18 @@ export interface SocialPost {
    * waved through or sent back without reading it end to end first.
    */
   quality: QualityReport | null;
+  /**
+   * Which engine wrote this piece.
+   *
+   * `claude` is the model; `local` is the key-free engine in `social/local/`,
+   * which composes from the brand material and picks the best-scoring
+   * candidate. Stamped at the writing stage and kept, because the two read
+   * differently and "why does this one sound like a template" is a question
+   * somebody asks weeks later, by which time the key may well exist.
+   *
+   * Null on posts written before the second engine shipped (2026-10-17).
+   */
+  engine: 'claude' | 'local' | null;
   /** Every round of feedback this post has been through. */
   revisions: Revision[];
   error: string | null;
@@ -776,6 +788,11 @@ export interface SocialSettings {
    * must come from the FACTS block, no competitor is ever named, and nothing
    * promises an income. The scorecard is still computed and still stored, so a
    * piece that went out weak is findable afterwards; it just is not stopped.
+   *
+   * One exception: a piece written by the local engine — no
+   * `ANTHROPIC_API_KEY` — always waits for a person. See `shouldAutoPublish`
+   * in `pipeline.ts` for why that is not the quality gate this setting exists
+   * to refuse.
    *
    * `approvedBy` is written as `auto` on anything published this way, because
    * "who approved this" is a question that gets asked a year later.
