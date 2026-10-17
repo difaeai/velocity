@@ -1,100 +1,136 @@
-VELOCITY RIDES 1.18.0  ·  Android versionCode 43  ·  iOS build 16
+VELOCITY RIDES 1.18.0  ·  Android versionCode 44  ·  iOS build 17
 =================================================================
 
-ONE CHANGE, AND IT IS A LOOK: every icon in the rider's menu has been redrawn
-as a small colour illustration, and each one now animates itself into place as
-its row arrives. The menu was correct but unreadable — sixteen hairline marks
-in one grey, so you had to read the label of every row to find the one you
-wanted. Nothing else moved.
+This file was first written for vc43 / iOS build 16, when 1.18.0 was one
+change: the drawer icons. NEITHER OF THOSE ARTEFACTS WAS EVER PUBLISHED — the
+vc43 AAB never reached Play, and build 16 went to App Store Connect but was
+never attached to a version record. So 1.18.0 has not been spent on either
+store, and it now carries 27 commits instead of one. The version string is
+deliberately unchanged; only the build numbers moved.
 
-VERSION STATE — check the stores, not this file. Per the release log before
-this one, iOS build 15 (1.17.0) was staged in App Store Connect and the 1.17.0
-AAB (vc42) had not reached Play. If either is still true, this build
-supersedes it:
+VERSION STATE — check the stores, not this file. Play's state cannot be read
+from this machine (no Play API credentials) and App Store Connect needs the
+issuer id. Before rolling out, confirm in each console:
 
-  iOS      Highest build EAS has produced is now 16. If 1.17.0/build 15 was
-           never submitted, submit 1.18.0/build 16 instead and skip it.
-  Android  Play's state cannot be read from this machine (no Play API
-           credentials). If vc42 never went up, this build carries BOTH
-           releases' changes to Android for the first time — say so in the
-           Play notes if you roll it out that way.
+  Android  If vc42 (1.17.0) and vc43 never went up, this build carries THREE
+           releases' worth of change to Android for the first time. The Play
+           notes below are written on that assumption.
+  iOS      Highest build EAS has produced is now 17. If build 15 or 16 was
+           never submitted, submit 17 and skip them.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number, or
+the in-app update prompt tells nobody. `Constants.versionCode` is dead in
+expo-constants 56, so the build number has to be set by hand there.
 
 
 PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
 ---------------------------------------------------------------
-The menu is easier to read.
+Know what is on your road before you book.
 
-• Every item in the menu has a new colour icon, so you can find what you
-  want without reading every line
-• The icons come to life as the menu opens, and again when you tap one
-• City to City, Special Rides and sharing rides no longer look alike
-
-Same app, same prices — just a menu you can read at a glance.
+• Road alerts: closures, protests and accidents from Pakistani news, shown
+  only while the problem is actually on — with Islamabad and Rawalpindi
+  traffic police advisories included
+• The pump price behind your fare is now read from PSO every morning
+• Rate the people you share a ride with, and see your own ride record
+• Drivers: verify yourself in the app, and top up by bank transfer
+• A menu you can read at a glance
 
 
 APP STORE "WHAT'S NEW" (set on version 1.18.0 through the API)
 --------------------------------------------------------------
 NEW IN THIS VERSION
 
+KNOW WHAT IS ON YOUR ROAD BEFORE YOU BOOK
+
+Velocity now reads fourteen Pakistani news feeds and tells you what is closed,
+blocked or crashed between you and where you are going. For Islamabad and
+Rawalpindi that includes the traffic police's own diversion advisories, which
+arrive within the hour they are issued.
+
+It only speaks when it has something to say, and only while the problem is
+actually happening. A protest announced in the morning for two in the
+afternoon appears shortly before two and is gone by evening — not sitting on
+your screen all day over a road that is clear. When a newspaper gives the
+hours, you see them: "till 6pm". When there is nothing wrong, the strip says
+so quietly, so its silence means something.
+
+It names the newspaper and links the story every time. It never tells you how
+many minutes you will lose, because we read newspapers, not traffic sensors.
+
+THE PUMP PRICE BEHIND YOUR FARE
+
+The fuel price your fare is built on is now read every morning from PSO's own
+price page, alongside two independent sources. Nothing is believed until two
+of them agree, so a single site having a bad day cannot move what you pay.
+
+YOUR RIDES, AND THE PEOPLE IN THEM
+
+You can see your own ride record, and on a shared ride you can rate the people
+you travelled with — privately. Drivers get the same record for their own
+trips.
+
+FOR DRIVERS
+
+You can now verify yourself inside the app: upload your papers, then a live
+face scan. And you can top up by bank transfer, with the receipt read
+automatically.
+
 A MENU YOU CAN READ AT A GLANCE
 
-Every item in the Velocity menu has been redrawn. Instead of thin grey
-outlines that all looked alike, each one is now a small colour illustration of
-the thing it stands for — a parcel for Couriers, a folded map for your saved
-routes, a lifebuoy for help, a card coming out of a wallet.
-
-They also move. As the menu slides open, the wheels roll, the pin drops on the
-map, the letter comes out of the envelope and the settings cog turns itself
-into place. Press and hold any row and its icon answers you.
-
-Three products used to share one face. City rides, Special Rides and sharing
-rides are now unmistakably three different things, which matters most when you
-are opening the menu to find one of them in a hurry.
+Every item in the Velocity menu has been redrawn as a small colour
+illustration of the thing it stands for, and they animate into place as the
+menu opens. City rides, Special Rides and sharing rides no longer share one
+face.
 
 
 WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
 ----------------------------------------------------------------
-One branch off main, 13 Oct 2026.
+27 commits, 13–17 Oct 2026. Grouped by what a release manager needs to know.
 
-  - src/ui/DrawerIcons.tsx rewritten. 17 icons, drawn on a 48-unit grid (was
-    24) as shaded objects in real materials — kraft, gold, steel, paper,
-    glass — rather than 1.6px two-tone outlines. The brand lime is kept for
-    the single detail that names each feature (headlights, destination pin,
-    parcel tape, magnifier, tick), never the whole object.
+RIDER- AND DRIVER-VISIBLE
+  - Road alerts (`backend/functions/src/traffic/`, `src/ui/TrafficStrip.tsx`).
+    Fourteen news feeds, ~99% of items refused. Wired into the rider's booking
+    screen and both driver screens, reusing the memoised route so no extra
+    Routes call is bought.
+  - Road alerts are WINDOW-GATED (PR #44). `window.ts` reads the hours out of
+    the event sentence and the alert shows only inside them, with 90 minutes of
+    lead. Two new refusals: an event already over, and one more than a week
+    out. A story that states no hours behaves exactly as before.
+  - Islamabad/Rawalpindi got their own sources. APP (the state news agency)
+    carries ITP advisories verbatim; The Nation's Islamabad feed and Daily
+    Times join it. ChampAlertsOnTheGo — which is what was actually asked for —
+    publishes on X and Instagram only and has no readable site at all; the
+    probe is recorded in `sources.ts`.
+  - Fuel prices read from psopk.com as a third, first-party source, and the
+    daily job moved 06:15 → 06:00. PSO does NOT get a casting vote: on the day
+    it was added it was a full day behind OGRA (390.23 vs the mirrors' 386.30),
+    which is in a regression test now.
+  - Ride record + rider-to-rider ratings. Co-rider ratings are not users.rating
+    and are anonymous except to an admin.
+  - Driver verification engine with a live face scan — our own detection, no
+    API key, no third party. Papers first, then the face. The daily face check
+    ships OFF behind a flag.
+  - Bank-transfer top-ups, read by our own OCR engine. Entry is the Earnings
+    commission card, not the hidden wallet.
 
-  - The five marks the drawer used to borrow from ServiceIcons/RideIcons
-    (city car, city-to-city, parcel, shared ride, wallet) are now drawn in
-    DrawerIcons too, so the menu is one family. Home still uses the originals;
-    the shapes are the same objects, so nothing changes identity.
+BACKEND AND ADMIN ONLY — nothing in the store copy
+  - Social desk: a second engine that writes without a paid key, Instagram via
+    Facebook Login, self-learning from its own page, reels, briefs. Locally
+    written pieces never auto-publish.
+  - Admin page for the accounts drivers pay into.
+  - The marketing site ships its own fonts, so a build never waits on Google.
+  - Fixes worth remembering: `paymentProofAI` referenced `createHash` with no
+    import and broke main; a missing WASM binary now degrades instead of
+    crashing; driver verification runs on a schedule, not a Firestore trigger
+    (see the Eventarc IAM block); one renamed social metric was zeroing every
+    post's numbers.
 
-  - Special Rides is no longer a car. City rides is a car and sharing rides is
-    a car, and a third car with a badge on it recreates the exact problem the
-    emoji had. It is an award rosette now. (A chauffeur's cap was drawn first
-    and rendered as a flying saucer at 26px — a dome on a disc is a dome on a
-    disc.)
-
-  - Motion: each row passes its icon ONE value, Animated.add(the row's slice
-    of the existing entrance cascade, the row's press value) — 0 arriving, 1
-    at rest, 2 held. No new timers, no new Animated.Values, nothing loops. The
-    moving parts are native-driven View layers over the still art, because a
-    transform inside an <Svg> cannot run on the native driver and sixteen JS
-    animations would fight the scroll.
-
-  - The icon tile grew 38 → 42px and the art 21 → 26px. Shading needs pixels
-    to read as shading; that size increase is half of the legibility fix.
-
-  - PassengerDrawer's <Cascade> now takes a progress value instead of
-    (stagger, index); rowProgress() is the one place the slice is computed, so
-    the row and its icon cannot drift apart.
-
-  Not touched: the driver's menu still runs on emoji. Same argument applies to
-  it, but "rest is fine" was the instruction.
-
-  Verified by rasterising the real source out of DrawerIcons.tsx to a contact
-  sheet at drawer size (sharp), not by eye on the paths. Three icons failed
-  that check and were redrawn: the cap (saucer), the avatar stack (the
-  shoulder dome swallowed the head, so every face was a cloud) and sign-out (a
-  rounded slab reads as a phone, not a door).
-
-  tsc clean. Mobile lint reports only the pre-existing react-hooks/refs
-  pattern, all 23 in PassengerDrawer, none in the new file.
+VERIFICATION FOR THIS BUILD
+  - Backend: 1503 tests / 89 files pass, `tsc --noEmit` and `eslint src` clean.
+    Run against a detached worktree of the release commits alone, not the
+    working tree, because another session's in-progress work shares two files.
+  - Mobile: 209 tests / 16 files pass, `tsc --noEmit` clean.
+  - PSO parser verified against both the captured 290 KB page and a live fetch:
+    petrol 390.23, diesel 396.96, effective 2026-10-16.
+  - NOT verified on a device. The phone runs the Play build and a local APK
+    cannot install over it without an uninstall.
