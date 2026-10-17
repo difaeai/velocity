@@ -180,7 +180,7 @@ export default function EarnLanding() {
 
         <View style={s.stepsCard}>
           <Text style={s.ruleTitle}>How it works</Text>
-          <Step n={1} text="Apply on the Free or Pro tier with your CNIC or any identity document." />
+          <Step n={1} text="Choose Starter or Pro, pay for your plan, and apply with your CNIC or any identity document." />
           <Step n={2} text="Our team verifies you. Both your fleets are created automatically." />
           <Step n={3} text="Share your 5-digit code — drivers and passengers both use the same one." />
           <Step n={4} text="Earn on every genuine completed ride — and withdraw." />

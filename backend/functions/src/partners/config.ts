@@ -13,13 +13,23 @@
  * caller is the only one who can get that wrong, so trips/index.ts passes
  * `settlement.commission` and nothing else.
  *
- * TIERS
- * -----
- * Free partners earn 0.5% on both fleets. Pro partners buy a plan — a monthly
- * fee sold in 3, 6 or 12-month blocks — and earn 2% on their driver fleet and
- * 1.3% on their passenger fleet. The tier is stamped on the partner document at
- * approval and read at settlement, so upgrading a partner changes what their
- * NEXT ride pays and never retroactively re-prices rides already settled.
+ * TIERS — BOTH PAID, SINCE 2026-10-17
+ * -----------------------------------
+ * Starter partners (tier id `free`, see types.ts for why) earn 0.5% on both
+ * fleets and pay `starterMonthlyFee`. Pro partners earn 2% on their driver
+ * fleet and 1.3% on their passenger fleet and pay `proMonthlyFee`. Both plans
+ * are sold in 3, 6 or 12-month blocks and both now require a payment proof on
+ * the application.
+ *
+ * The tier is stamped on the partner document at approval and read at
+ * settlement, so upgrading a partner changes what their NEXT ride pays and
+ * never retroactively re-prices rides already settled.
+ *
+ * Partners approved BEFORE the Starter tier had a price keep earning at it.
+ * Their documents carry no `tierExpiresAt`, and `effectiveTier` treats a
+ * missing expiry as "does not expire" — so nobody who joined under the old
+ * terms is switched off by a deploy. Ending that is an admin stamping an
+ * expiry on those documents, which is a decision, not a side effect.
  *
  * Velocity's own net is what survives after the franchise cut and the partner
  * cuts, and it is never allowed to go negative: `applyPartnerCredit()` pays out
@@ -42,6 +52,8 @@ export interface PartnerSettings {
   /** Pro plan price PER MONTH, in `proFeeCurrency`. The bill is this times the
    * plan length the applicant picks (3, 6 or 12 months). */
   proMonthlyFee: number;
+  /** Starter plan price PER MONTH, same arithmetic. Zero means free again. */
+  starterMonthlyFee: number;
   proFeeCurrency: string;
   /** Where a Pro applicant sends the fee. Admin-set; shown on the apply screen.
    * Each account carries its holder's title too — the wallets are often
@@ -70,6 +82,7 @@ export const DEFAULT_PARTNER_SETTINGS: PartnerSettings = {
   free: { driverFleetRate: 0.005, passengerFleetRate: 0.005 },
   pro: { driverFleetRate: 0.02, passengerFleetRate: 0.013 },
   proMonthlyFee: 4500,
+  starterMonthlyFee: 3000,
   proFeeCurrency: 'PKR',
   payment: {
     bankName: null,
@@ -103,6 +116,7 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
   // Deliberately a NEW key: any legacy `proFee` in the doc was a one-off
   // amount, and reading it as a monthly price would multiply it by 12.
   const proMonthlyFee = snap.get('proMonthlyFee') as unknown;
+  const starterMonthlyFee = snap.get('starterMonthlyFee') as unknown;
   const payment = (snap.get('payment') as Record<string, unknown> | undefined) ?? {};
 
   return {
@@ -116,6 +130,10 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
     },
     proMonthlyFee:
       typeof proMonthlyFee === 'number' && proMonthlyFee >= 0 ? proMonthlyFee : d.proMonthlyFee,
+    starterMonthlyFee:
+      typeof starterMonthlyFee === 'number' && starterMonthlyFee >= 0
+        ? starterMonthlyFee
+        : d.starterMonthlyFee,
     proFeeCurrency: str(snap.get('proFeeCurrency')) ?? d.proFeeCurrency,
     payment: {
       bankName: str(payment.bankName),
@@ -131,6 +149,15 @@ export async function getPartnerSettings(): Promise<PartnerSettings> {
     holdHours:
       typeof holdHours === 'number' && holdHours >= 0 && holdHours <= 720 ? holdHours : d.holdHours,
   };
+}
+
+/**
+ * What a tier costs per month. One function, so the apply screen, the
+ * application validator and the admin desk cannot disagree about the price —
+ * which is the bug that `proFee` vs `proMonthlyFee` already caused once.
+ */
+export function monthlyFeeForTier(settings: PartnerSettings, tier: PartnerTier): number {
+  return tier === 'pro' ? settings.proMonthlyFee : settings.starterMonthlyFee;
 }
 
 /** The rates a given tier earns. */

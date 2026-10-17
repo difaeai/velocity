@@ -81,7 +81,7 @@ export default function PartnerDashboard() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Text style={s.hello}>
-              Earn with Velocity Rides · {partner.tier === 'pro' ? 'Pro Partner' : 'Free Partner'}
+              Earn with Velocity Rides · {partner.tier === 'pro' ? 'Pro Partner' : 'Starter Partner'}
             </Text>
             <Text style={s.name} numberOfLines={1}>{partner.fullName}</Text>
           </View>

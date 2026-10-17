@@ -2,14 +2,18 @@
  * Earn with Velocity — the partner application.
  *
  * Two steps, because the old single scroll buried the tier choice under the
- * form. Step 1 is only the choice: Free or Pro, with the rates side by side.
- * Step 2 is the details for whichever tier was picked — so a Free applicant
- * never scrolls past bank accounts that don't apply to them.
+ * form. Step 1 is only the choice: Starter or Pro, with the rates and the two
+ * prices side by side. Step 2 is the details for whichever plan was picked.
  *
- * Two tiers. Free asks for an identity document and a verified mobile, nothing
- * more. Pro asks for the same plus proof that the registration fee was paid,
- * because Pro earns roughly four times what free earns and the fee is the only
- * thing between "a partner" and "anyone who would like the higher rate".
+ * BOTH PLANS ARE PAID, SINCE 2026-10-17. Starter was free until then; it is now
+ * a plan of its own, bought by the month like Pro and differing only in price
+ * and in what it earns. So every applicant now picks a plan length, pays, and
+ * uploads a receipt — the payment block below is no longer behind `isPro`.
+ *
+ * The tier id in the data is still `free`, deliberately: it is stamped on every
+ * existing partner document and partner transaction, and renaming it would be a
+ * migration whose only product is a nicer word in the database. Starter is a
+ * label, and this file is one of the few places that label is written.
  *
  * The ID doesn't have to be a CNIC — a university card, driving licence or
  * passport also proves who someone is, and students are exactly the people the
@@ -51,7 +55,6 @@ import type {
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
-import { useInterstitial } from '../../../src/ads';
 import { fetchPartnerTiers, getCachedPartnerTiers } from '../../../src/lib/partnerTiers';
 import { uploadCnicDoc, uploadPartnerPaymentProof } from '../../../src/lib/uploadDoc';
 import { PrimaryButton } from '../../../src/ui/components';
@@ -77,7 +80,7 @@ function feeLabel(amount: number, currency: string): string {
   return currency === 'USD' ? `$${n}` : `${n} ${currency}`;
 }
 
-/** The Pro plan is sold by the month, in these blocks. */
+/** Both plans are sold by the month, in these blocks. */
 const PRO_PLANS: { months: ProPlanMonths; label: string }[] = [
   { months: 3, label: '3 months' },
   { months: 6, label: '6 months' },
@@ -111,9 +114,6 @@ const ID_TYPES: { key: IdDocType; label: string }[] = [
 export default function PartnerApply() {
   const router = useRouter();
   const { user } = useAuth();
-  // Preloaded while the applicant fills the form, so the post-submit handoff
-  // never stalls waiting on an ad fetch.
-  const showAd = useInterstitial('partner-apply-free');
 
   const [step, setStep] = useState<'tier' | 'details'>('tier');
   // Seeded from the prefetch cache, so the plan chooser paints on the first
@@ -164,6 +164,17 @@ export default function PartnerApply() {
   const isPro = tier === 'pro';
   const isCnic = idType === 'cnic';
 
+  /**
+   * What the selected plan costs per month.
+   *
+   * `starterMonthlyFee` is absent on a server older than this change. Reading a
+   * missing price as 0 would quietly show "Free" again and take an application
+   * the backend is now going to refuse, so an unknown price disables the
+   * chooser instead — see `priceKnown`.
+   */
+  const monthlyFee = isPro ? (tiers?.proMonthlyFee ?? 0) : (tiers?.starterMonthlyFee ?? 0);
+  const priceKnown = !!tiers && monthlyFee > 0;
+
   // Shared between the submit button and the blocker hints below it, so the
   // button can never enable while a blocker still shows (or vice versa).
   const idNumberOk = isCnic ? CNIC_RE.test(idNumber) : idNumber.trim().length >= 4;
@@ -179,9 +190,9 @@ export default function PartnerApply() {
       photosOk &&
       !!phone &&
       terms &&
-      // The one extra thing Pro asks for.
-      (!isPro || !!proof),
-    [tiers, fullName, city, idNumberOk, photosOk, phone, terms, isPro, proof],
+      // Both plans are paid, so a receipt is required of everyone.
+      !!proof,
+    [tiers, fullName, city, idNumberOk, photosOk, phone, terms, proof],
   );
 
   function pickIdType(next: IdDocType) {
@@ -201,7 +212,7 @@ export default function PartnerApply() {
       // killed the app on low-RAM handsets at exactly this moment.
       const frontUp = await uploadCnicDoc(user.uid, 'front', front!);
       const backUp = back ? await uploadCnicDoc(user.uid, 'back', back) : null;
-      const proofUp = isPro && proof ? await uploadPartnerPaymentProof(user.uid, proof) : null;
+      const proofUp = proof ? await uploadPartnerPaymentProof(user.uid, proof) : null;
 
       await api.submitPartnerApplication({
         tier,
@@ -212,7 +223,7 @@ export default function PartnerApply() {
         cnicFrontUrl: frontUp.url,
         ...(backUp ? { cnicBackUrl: backUp.url } : {}),
         city: city.trim(),
-        ...(isPro && proofUp
+        ...(proofUp
           ? {
               proMonths,
               paymentProofUrl: proofUp.url,
@@ -223,13 +234,12 @@ export default function PartnerApply() {
         acceptedTerms: true,
       });
 
-      // Free tier only: the application is IN, and the user is now waiting on a
-      // human rather than doing anything. That handoff is the one honest place
-      // for a full-screen ad in this flow — showing it before or during the
-      // submit would interrupt an unfinished task (an AdMob policy risk) and
-      // would put an ad between someone and signing up for our own program.
-      // Pro applicants paid a fee, so they never see it.
-      if (!isPro) await showAd();
+      // NO INTERSTITIAL HERE ANY MORE. It used to run on the free path, on the
+      // reasoning that a Pro applicant had paid a fee and should not see ads.
+      // Starter applicants now pay a fee too, so there is nobody left in this
+      // flow who has not just handed us money — and an ad shown to them a
+      // second later is the clearest possible way to make a paid product feel
+      // cheap. See the paid-users-are-ad-free rule in the ads integration.
 
       // Straight to the "Waiting for approval" screen — no dialog in between.
       // The landing's status listener needs a server round-trip to see the new
@@ -250,18 +260,22 @@ export default function PartnerApply() {
         <ScrollView contentContainerStyle={s.scroll}>
           <Text style={s.stepBadge}>Step 1 of 2</Text>
           <Text style={s.stepTitle}>Choose your plan</Text>
-          <Text style={s.stepSub}>You can start free and upgrade to Pro later.</Text>
+          <Text style={s.stepSub}>Both plans are paid. Pro earns about four times Starter.</Text>
 
           {tiers ? (
             <View style={{ gap: 10, marginTop: 14 }}>
               <TierCard
                 active={tier === 'free'}
                 onPress={() => setTier('free')}
-                name="Free Partner"
-                price="No fee"
+                name="Starter Partner"
+                price={
+                  tiers.starterMonthlyFee
+                    ? `${feeLabel(tiers.starterMonthlyFee, tiers.proFeeCurrency)} / month`
+                    : 'Price unavailable'
+                }
                 driver={pct(tiers.free.driverFleetRate)}
                 passenger={pct(tiers.free.passengerFleetRate)}
-                note="Just an identity document and your mobile number."
+                note="Buy 3 months, 6 months or a year. Pay the fee and upload the receipt."
               />
               <TierCard
                 active={tier === 'pro'}
@@ -293,9 +307,12 @@ export default function PartnerApply() {
 
           <View style={{ marginTop: 22 }}>
             <PrimaryButton
-              label={isPro ? 'Continue as Pro Partner' : 'Continue as Free Partner'}
+              label={isPro ? 'Continue as Pro Partner' : 'Continue as Starter Partner'}
               onPress={() => setStep('details')}
-              disabled={!tiers}
+              // An unknown price means an older server that still thinks the
+              // lower tier is free. Letting someone through would take them to
+              // a payment block with no amount on it and then a refusal.
+              disabled={!priceKnown}
             />
           </View>
         </ScrollView>
@@ -312,12 +329,12 @@ export default function PartnerApply() {
         <View style={s.selectedBanner}>
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={s.selectedBannerText}>
-              Applying as: <Text style={s.selectedBannerTier}>{isPro ? 'Pro Partner ⭐' : 'Free Partner'}</Text>
+              Applying as:{' '}
+              <Text style={s.selectedBannerTier}>{isPro ? 'Pro Partner ⭐' : 'Starter Partner'}</Text>
             </Text>
             <Text style={s.selectedBannerHint}>
-              {isPro
-                ? 'Requires an identity document, a verified mobile number, and the receipt for your plan payment below.'
-                : 'Requires only an identity document and a verified mobile number — no payment.'}
+              Requires an identity document, a verified mobile number, and the receipt for your
+              plan payment below.
             </Text>
           </View>
           <Pressable onPress={() => setStep('tier')} hitSlop={10}>
@@ -418,8 +435,8 @@ export default function PartnerApply() {
           />
         </View>
 
-        {/* ── Pro: pick a plan length, pay the bill, then prove it ── */}
-        {isPro && tiers ? (
+        {/* ── Both plans: pick a length, pay the bill, then prove it ── */}
+        {tiers ? (
           <>
             <Text style={s.label}>Choose your plan duration</Text>
             <View style={s.plans}>
@@ -433,7 +450,7 @@ export default function PartnerApply() {
                   >
                     <Text style={[s.planLabel, on && s.planLabelOn]}>{p.label}</Text>
                     <Text style={[s.planTotal, on && s.planTotalOn]}>
-                      {feeLabel(tiers.proMonthlyFee * p.months, tiers.proFeeCurrency)}
+                      {feeLabel(monthlyFee * p.months, tiers.proFeeCurrency)}
                     </Text>
                   </Pressable>
                 );
@@ -442,10 +459,10 @@ export default function PartnerApply() {
 
             <Text style={s.label}>Pay for your plan</Text>
             <View style={s.payCard}>
-              <Text style={s.payFee}>{feeLabel(tiers.proMonthlyFee * proMonths, tiers.proFeeCurrency)}</Text>
+              <Text style={s.payFee}>{feeLabel(monthlyFee * proMonths, tiers.proFeeCurrency)}</Text>
               <Text style={s.payBreakdown}>
                 {proMonths === 12 ? '1 year' : `${proMonths} months`} ×{' '}
-                {feeLabel(tiers.proMonthlyFee, tiers.proFeeCurrency)}/month
+                {feeLabel(monthlyFee, tiers.proFeeCurrency)}/month
               </Text>
               <Text style={s.payHint}>Send it to any one of these, then upload the screenshot.</Text>
 
@@ -507,12 +524,12 @@ export default function PartnerApply() {
           <Text style={s.termsText}>
             I accept the Partner Program terms. I understand I earn only from genuine completed
             rides, and that fake, cancelled or scam rides pay nothing.
-            {isPro ? ' I understand the plan fee is non-refundable once approved.' : ''}
+            {' '}I understand the plan fee is non-refundable once approved.
           </Text>
         </Pressable>
 
         <PrimaryButton
-          label={isPro ? 'Submit Pro application' : 'Submit application'}
+          label={isPro ? 'Submit Pro application' : 'Submit Starter application'}
           onPress={submit}
           loading={submitting}
           disabled={!valid}
@@ -521,7 +538,7 @@ export default function PartnerApply() {
         {!photosOk ? (
           <Text style={s.blocker}>Upload your ID {isCnic ? 'photos' : 'photo'} to submit.</Text>
         ) : null}
-        {isPro && !proof ? (
+        {!proof ? (
           <Text style={s.blocker}>Upload your payment screenshot to submit.</Text>
         ) : null}
       </ScrollView>
