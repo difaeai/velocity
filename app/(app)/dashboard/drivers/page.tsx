@@ -606,9 +606,17 @@ export default function DriversPage() {
                         <InfoCell label="Date of birth" value={d.dob} />
                         <InfoCell label="Franchise"    value={d.franchiseId} />
                       </InfoGrid>
+                      <OfficialChecks driver={d} />
                     </Section>
 
-                    {/* Vehicle info */}
+                    {/* Vehicle info.
+
+                        The pictures live HERE, not down in the pending-only
+                        documents grid where they used to. An admin deciding
+                        anything about a driver — a complaint, a suspension, a
+                        plate that does not look right — needs to see the car or
+                        the bike, and every driver on the system today is
+                        approved, so that grid never rendered for any of them. */}
                     <Section title="Vehicle information">
                       <InfoGrid>
                         <InfoCell label="Type"   value={d.vehicleType} />
@@ -616,6 +624,7 @@ export default function DriversPage() {
                         <InfoCell label="Colour" value={d.color} />
                         <InfoCell label="Plate"  value={d.plate} />
                       </InfoGrid>
+                      <VehicleImages driver={d} />
                     </Section>
 
                     {/* The car photo the driver took before their last shift.
@@ -664,15 +673,14 @@ export default function DriversPage() {
                     {tab === 'pending' && (
                       <Section title="Documents &amp; photos">
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                          {/* Identity only. The vehicle photographs and the
+                              registration moved up to Vehicle information, so
+                              they are visible on every tab instead of just
+                              this one. */}
                           <DocImage label="Profile photo"  url={d.photoDocUrl} />
                           <DocImage label="Driver licence" url={d.licenseDocUrl} expiry={d.licenseExpiry} />
                           <DocImage label="CNIC (front)"   url={d.cnicDocUrl}    expiry={d.cnicExpiry} />
                           <DocImage label="CNIC (back)"    url={d.cnicBackDocUrl} />
-                          <DocImage label="Vehicle reg."   url={d.vehicleDocUrl} expiry={d.vehicleDocExpiry} />
-                          {d.vehiclePhotoDocUrl && <DocImage label="Vehicle (front, plate)" url={d.vehiclePhotoDocUrl} />}
-                          {(d.extraVehiclePhotoDocUrls ?? []).map((url, i) => (
-                            <DocImage key={url} label={`Vehicle photo ${i + 2}`} url={url} />
-                          ))}
                         </div>
                       </Section>
                     )}
@@ -1242,6 +1250,171 @@ function DriverCars({ driverId, activeVehicleId }: { driverId: string; activeVeh
         })}
       </div>
     </Section>
+  );
+}
+
+/**
+ * Checking a driver against the registers that actually issued their papers.
+ * ----------------------------------------------------------------------------
+ * THERE IS NO API. THIS IS NOT AN OVERSIGHT, IT IS THE SITUATION.
+ * Probed 2026-10-17, all of it:
+ *
+ *   NADRA          No public CNIC verification service exists. The real product
+ *                  is Verisys, which is a paid B2B contract with NADRA and
+ *                  needs a registered business agreement — a commercial
+ *                  decision, not something that can be wired up from here.
+ *                  nadra.gov.pk itself 403s anything that is not a browser.
+ *   DLIMS Punjab   dlims.punjab.gov.pk/verify DOES verify a licence online, by
+ *                  CNIC and licence number — and the form carries a CAPTCHA.
+ *                  That CAPTCHA is the point: the service is built for a person,
+ *                  and automating around it would mean defeating a control on a
+ *                  government site. So we hand the person the link instead.
+ *                  Covers Punjab-issued licences, which includes Rawalpindi.
+ *   ITP            itp.gov.pk and islamabadtraffic.gov.pk have no DNS answer at
+ *                  all. Islamabad licences verify by SMS to 8521 — a phone,
+ *                  not an endpoint.
+ *   NHMP           nhmp.gov.pk resolves but publishes no verification service;
+ *                  the National Driving Permit is checked at a motorway desk.
+ *
+ * So the honest feature is not an integration, it is removing the retyping. An
+ * admin opening this has the CNIC and the licence number in front of them in
+ * our own database; this copies them and opens the official checker, so the
+ * check is one click plus a CAPTCHA instead of a hunt through two screens.
+ *
+ * It deliberately claims NOTHING about the result. Nothing is written back,
+ * nothing is marked verified, and no decision in `decideDriverVerification`
+ * knows this panel exists — because a link an admin may or may not have
+ * followed is not evidence, and recording it as if it were would be worse than
+ * not having it.
+ */
+function OfficialChecks({ driver }: { driver: DriverRow }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const cnicDigits = (driver.cnic ?? '').replace(/\D/g, '');
+
+  async function copy(what: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(what);
+      setTimeout(() => setCopied(null), 1600);
+    } catch {
+      // A browser that refuses the clipboard is not an error worth a dialog —
+      // the value is on screen and can be selected by hand.
+      setCopied(null);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 10,
+        padding: '12px 14px',
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+        Check against the official register
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {cnicDigits.length === 13 ? (
+          <Button onClick={() => void copy('cnic', cnicDigits)}>
+            {copied === 'cnic' ? '\u2713 Copied' : `Copy CNIC ${cnicDigits}`}
+          </Button>
+        ) : (
+          <span style={{ fontSize: 12, color: colors.muted }}>No 13-digit CNIC on file.</span>
+        )}
+
+        <a
+          href="https://dlims.punjab.gov.pk/verify"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 12, fontWeight: 700, color: colors.primary }}
+        >
+          DLIMS Punjab — verify licence \u2197
+        </a>
+      </div>
+
+      <div style={{ fontSize: 11, color: colors.muted, marginTop: 8, lineHeight: 1.5 }}>
+        DLIMS covers Punjab-issued licences, Rawalpindi included, and asks for a
+        CAPTCHA — it is a human check, and nothing here is recorded against the
+        driver either way. Islamabad (ITP) licences verify by SMS to <strong>8521</strong>.
+        NADRA has no public CNIC check; that would need a paid Verisys contract.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The car or the bike, as the driver photographed it.
+ * ----------------------------------------------------------------------------
+ * WHY THIS IS NOT INSIDE THE PENDING-ONLY DOCUMENTS GRID
+ * ------------------------------------------------------
+ * It was, and that made it invisible. The documents grid renders behind
+ * `tab === 'pending'`, and the drivers an admin actually opens are approved
+ * ones — a complaint about a vehicle, a plate that does not match, a
+ * suspension to weigh. Checked against production while moving this: of the
+ * drivers on the system, none were pending, so the vehicle photograph on every
+ * single account was unreachable from this page.
+ *
+ * IT ALWAYS RENDERS SOMETHING, INCLUDING "NOTHING ON FILE"
+ * --------------------------------------------------------
+ * Two of the accounts checked have no `vehiclePhotoDocUrl` at all — they
+ * predate the step, or were created by an admin rather than through onboarding.
+ * Drawing nothing for them would leave an admin unable to tell "this driver
+ * never sent a photograph" from "this panel is broken", which is the same
+ * argument the rider's road-alert strip makes for its quiet line. So the empty
+ * state is explicit, and it names which of the two it is.
+ *
+ * The icon follows the vehicle type, because half this fleet is motorcycles and
+ * a car glyph over a bike rider's empty slot reads as the wrong record.
+ */
+function VehicleImages({ driver }: { driver: DriverRow }) {
+  const isBike = (driver.vehicleType ?? '').toLowerCase() === 'bike';
+  const extras = driver.extraVehiclePhotoDocUrls ?? [];
+  const shots = [driver.vehiclePhotoDocUrl, ...extras].filter((u): u is string => Boolean(u));
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      {shots.length === 0 && !driver.vehicleDocUrl ? (
+        <div
+          style={{
+            background: colors.bg,
+            border: `1px dashed ${colors.border}`,
+            borderRadius: 10,
+            padding: '14px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 22 }}>{isBike ? '\u{1F3CD}\uFE0F' : '\u{1F697}'}</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: colors.text }}>
+              No {isBike ? 'bike' : 'car'} photo on file
+            </div>
+            <div style={{ fontSize: 12, color: colors.muted }}>
+              This account was created before the vehicle photo step, or through
+              admin create-driver. Ask the driver to add one from Your cars.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+          {shots.map((url, i) => (
+            <DocImage
+              key={url}
+              label={i === 0 ? `${isBike ? 'Bike' : 'Car'} (front, plate)` : `Photo ${i + 1}`}
+              url={url}
+            />
+          ))}
+          {driver.vehicleDocUrl && (
+            <DocImage label="Registration" url={driver.vehicleDocUrl} expiry={driver.vehicleDocExpiry} />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

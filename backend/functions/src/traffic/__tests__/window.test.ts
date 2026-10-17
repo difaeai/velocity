@@ -129,6 +129,24 @@ describe('readWindow', () => {
     expect(readWindow('shut on October 19', NOW)!.startsAt).toBe(at(6, 0, 19));
   });
 
+  /**
+   * A BARE MONTH AND YEAR IS NOT A DATE, and reading it as one hides live
+   * closures. Found by running the parser over 300 live headlines: "Canada
+   * Hockey team to tour Pakistan in February 2027" produced a window on 20
+   * February, because `february\s+(\d{1,2})` had taken the "20" out of "2027".
+   *
+   * The story that matters is the road one: "closed since March 2026" would
+   * have put the window months out and the alert would have been refused as
+   * `not_yet` — gone, with nothing in the logs to say a real closure had been
+   * dropped. Both assertions below are about that.
+   */
+  it('does not read the year as a day of the month', () => {
+    expect(readWindow('Canada Hockey team to tour Pakistan in February 2027', NOW)).toBeNull();
+    expect(readWindow('The underpass has been closed since March 2026', NOW)).toBeNull();
+    // A real date still reads, with or without the year attached.
+    expect(readWindow('closed on 19 October 2026', NOW)!.startsAt).toBe(at(6, 0, 19));
+  });
+
   /** "last Friday" and "on Friday" point in opposite directions. */
   it('sends "last Friday" backwards', () => {
     const w = readWindow('The accident last Friday blocked Murree Road', NOW);

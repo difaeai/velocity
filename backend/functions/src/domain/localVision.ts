@@ -87,6 +87,22 @@ const DOCUMENT_MARKERS: Record<'cnicFront' | 'cnicBack' | 'license' | 'vehicleRe
     'valid till',
     'traffic police',
     'category',
+    // The formats actually in circulation, added 2026-10-17 after reading real
+    // cards. The motorway police permit says "PERMIT" and never "licence"; the
+    // Islamabad card abbreviates to "DL No."; both name their issuing office.
+    'driving permit',
+    'motorway police',
+    'national highways',
+    'traffic division',
+    'dl no',
+    'licencing authority',
+    'licensing authority',
+    'authorized to drive',
+    'authorised to drive',
+    'vehicles authorized',
+    'vehicles authorised',
+    'renewal date',
+    'son/daughter',
   ],
   vehicleRegistration: [
     'registration',
@@ -102,6 +118,64 @@ const DOCUMENT_MARKERS: Record<'cnicFront' | 'cnicBack' | 'license' | 'vehicleRe
   ],
 };
 
+/**
+ * THE WORDS THAT BELONG TO EXACTLY ONE DOCUMENT, AND SETTLE IT ON THEIR OWN.
+ * ----------------------------------------------------------------------------
+ * Counting shared words was rejecting real drivers, and this is the fix.
+ *
+ * A National Driving Permit from the motorway police opens "ISLAMIC REPUBLIC OF
+ * PAKISTAN" and carries "Date of Birth" — two of the `cnicFront` markers, and
+ * nothing in `cnicFront` that a licence cannot also have. Measured against the
+ * real card: when the OCR missed "Valid Till", the licence scored 2 and the
+ * CNIC scored 2, the tie went to the CNIC, and a genuine permit in the licence
+ * slot became `document_wrong_type` — which is FATAL. A real driver with a real
+ * motorway-police permit was auto-rejected because his licence says "PERMIT"
+ * and begins the same way a CNIC does.
+ *
+ * So the lists above decide nothing on their own any more. A word that only one
+ * Pakistani document can carry outranks any number of words several of them
+ * share: "driving permit" or "motorway police" means licence whatever else is
+ * on the card, and "identity number" or "country of stay" means CNIC.
+ *
+ * WHAT IS DELIBERATELY NOT HERE: 'republic of pakistan' (on the CNIC, the
+ * permit and most official paper), 'date of birth' (on all three), 'signature'
+ * and 'name'. Those are exactly the words that caused the misread, and adding
+ * any of them here would bring it back.
+ */
+const DECISIVE_MARKERS: Record<'cnicFront' | 'cnicBack' | 'license' | 'vehicleRegistration', string[]> = {
+  cnicFront: ['identity card', 'identity number', 'national identity', 'country of stay'],
+  cnicBack: ['permanent address', 'temporary address', 'present address', 'registrar', 'nadra', 'national database'],
+  license: [
+    'driving licence',
+    'driving license',
+    'driving permit',
+    'motorway police',
+    'national highways',
+    'traffic police',
+    'traffic division',
+    'licence no',
+    'license no',
+    'dl no',
+    'licencing authority',
+    'licensing authority',
+    'blood group',
+    'authorized to drive',
+    'authorised to drive',
+    'vehicles authorized',
+    'vehicles authorised',
+  ],
+  vehicleRegistration: [
+    'engine no',
+    'chassis',
+    'chasis',
+    'token tax',
+    'horse power',
+    'seating capacity',
+    'excise',
+    'taxation',
+  ],
+};
+
 /** A specimen card says so on its face. Any of these and it is not a real card. */
 const SPECIMEN_MARKERS = ['specimen', 'sample only', 'not valid', 'void', 'dummy', 'template'];
 
@@ -110,9 +184,27 @@ function hits(text: string, markers: string[]): number {
   return markers.reduce((n, m) => (haystack.includes(m) ? n + 1 : n), 0);
 }
 
-/** Does the card admit, in print, to being a sample? */
+/**
+ * A card printed with zeros where its number should be is a blank.
+ *
+ * The specimen driving licence the Islamabad Traffic Police publish — the one
+ * with the stock photograph and "JOHN CITIZEN" on it — says none of the words
+ * above anywhere on its face. What it does carry is `00000-0000000-0` and
+ * `00-00-0000`, because it is a printing template, and that image is freely
+ * downloadable. No issued card in Pakistan has an all-zero identity number or
+ * an all-zero date, so this cannot cost a real driver anything.
+ *
+ * Matched on the SHAPE, not on a literal string, so the same template with the
+ * zeros spaced or hyphenated differently is still caught.
+ */
+function hasBlankedFields(text: string): boolean {
+  if (/\b0{5}\s*[-–—]?\s*0{7}\s*[-–—]?\s*0\b/.test(text)) return true;
+  return /\b0{1,2}\s*[./-]\s*0{1,2}\s*[./-]\s*0{2,4}\b/.test(text);
+}
+
+/** Does the card admit, in print or by its blanks, to being a sample? */
 export function looksLikeSpecimen(text: string): boolean {
-  return hits(text, SPECIMEN_MARKERS) > 0;
+  return hits(text, SPECIMEN_MARKERS) > 0 || hasBlankedFields(text);
 }
 
 /**
@@ -169,6 +261,28 @@ export function classifyDocument(params: {
   const words = textDensity(params.text);
 
   if (words < MIN_DOCUMENT_WORDS) {
+    // THE BACK OF A REAL CNIC IS ALMOST ENTIRELY URDU.
+    //
+    // Both addresses, both headings and the lost-card notice are Urdu script,
+    // and the OCR here runs English-only on purpose (see localVision.ts — the
+    // language data is bundled, and Urdu would double a Cloud Functions bundle
+    // to read an address nothing asks for). Measured on the real card: six
+    // English word-runs, well under the threshold, so every genuine CNIC back
+    // was coming out `unreadable` and every honest driver collected a
+    // `document_illegible` finding for photographing their card correctly.
+    //
+    // A NADRA number is structured enough to identify the card on its own —
+    // five digits, seven, one, in that order — and a photograph of a car or a
+    // wall does not contain one. The slot then only chooses WHICH SIDE, which
+    // is a far smaller claim than vouching for the document; and this can only
+    // ever fire for a slot that asked for a CNIC, so a badly-photographed
+    // licence cannot be swept into it.
+    if (
+      (params.expected === 'cnic_back' || params.expected === 'cnic_front') &&
+      readCnicNumber(params.text)
+    ) {
+      return params.expected;
+    }
     // Too little text to identify a paper. Decide on the face and the slot.
     if (params.hasFace && params.faceCoverage >= PORTRAIT_MIN_FACE_COVERAGE) return 'person_photo';
     if (params.blurred) return 'unreadable';
@@ -186,6 +300,33 @@ export function classifyDocument(params: {
     cnicBack: hits(params.text, DOCUMENT_MARKERS.cnicBack),
     vehicleRegistration: hits(params.text, DOCUMENT_MARKERS.vehicleRegistration),
   };
+
+  // A WORD ONLY ONE DOCUMENT CAN CARRY BEATS ANY NUMBER OF SHARED ONES.
+  //
+  // Checked before the counting below, because the counting is what rejected a
+  // genuine motorway-police permit: see DECISIVE_MARKERS for the measurement.
+  // When exactly one family has a word of its own in the text, that is the
+  // document, and no tally of "republic of pakistan" and "date of birth" can
+  // outvote it. When two families both do — which would mean a card carrying
+  // both "identity number" and "driving licence", so a montage or a misread —
+  // nothing is decisive and the ordinary scoring runs instead.
+  const decisive = (['license', 'cnicFront', 'cnicBack', 'vehicleRegistration'] as const).filter(
+    (k) => hits(params.text, DECISIVE_MARKERS[k]) > 0,
+  );
+  if (decisive.length === 1) {
+    switch (decisive[0]) {
+      case 'license':
+        return 'driving_license';
+      case 'cnicFront':
+        // The two sides of one card share their decisive words with nobody but
+        // each other, so this still has to be told apart the old way.
+        return params.hasFace || readCnicNumber(params.text) ? 'cnic_front' : 'cnic_back';
+      case 'cnicBack':
+        return 'cnic_back';
+      default:
+        return 'vehicle_registration';
+    }
+  }
 
   // A CNIC front carries a photograph and the identity number; the back carries
   // an address and no face. When both sides score, the face and the number
