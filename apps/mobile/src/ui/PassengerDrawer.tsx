@@ -290,7 +290,7 @@ export function PassengerDrawer({
         key: 'safety',
         Icon: ShieldIcon,
         label: 'Safety Centre',
-        blurb: 'Emergency numbers and sharing your live trip',
+        blurb: 'SOS, emergency numbers and your live trip',
         tint: 'rgba(239,68,68,0.16)',
         onPress: () => onNavigate('/safety'),
       },
