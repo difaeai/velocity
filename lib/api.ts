@@ -1553,8 +1553,64 @@ export interface SocialProfileAudit {
   error: string | null;
 }
 
+/**
+ * Where /connect/instagram leaves its result when it could not postMessage it.
+ * Both halves of the handshake read it from here so they cannot drift apart.
+ */
+export const META_HANDOFF_KEY = 'velocity.social.metaConnect';
+
+/** What the callback page hands back, by postMessage or by localStorage. */
+export interface MetaHandoff {
+  kind: 'velocity:meta-connect';
+  code: string | null;
+  state: string | null;
+  error: string | null;
+  atMs: number;
+}
+
+/** Whether the console can offer "Continue with Facebook" at all, and from where. */
+export interface MetaConnectState {
+  ready: boolean;
+  vaultReady: boolean;
+  appId: string | null;
+  /** 'whatsapp' means the Meta app already configured for WhatsApp is being reused. */
+  source: 'console' | 'env' | 'whatsapp' | null;
+  /** The exact string that has to be whitelisted in the Meta console. */
+  redirectUri: string;
+  scopes: string[];
+}
+
+/** One Facebook Page the signed-in admin administers, as the grant reported it. */
+export interface MetaPageChoice {
+  pageId: string;
+  pageName: string;
+  instagramId: string | null;
+  instagramHandle: string | null;
+  followers: number | null;
+  avatarUrl: string | null;
+}
+
 export const socialApi = {
   connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),
+
+  /** The one-click Instagram connect — see backend/functions/src/social/meta.ts. */
+  metaState: callable<Record<string, never>, MetaConnectState>('adminGetMetaConnectState'),
+  setMetaApp: callable<
+    { appId: string; appSecret: string },
+    { ok: boolean; appId: string; appName: string | null; redirectUri: string }
+  >('adminSetMetaApp'),
+  startMetaConnect: callable<
+    Record<string, never>,
+    { url: string; state: string; redirectUri: string }
+  >('adminStartMetaConnect'),
+  finishMetaConnect: callable<{ code: string; state: string }, { pages: MetaPageChoice[] }>(
+    'adminFinishMetaConnect',
+  ),
+  chooseMetaPage: callable<
+    { state: string; pageId: string },
+    { ok: boolean; connected: string[]; instagram: boolean; note: string | null }
+  >('adminChooseMetaPage'),
+
   connect: callable<
     {
       platform: SocialPlatform;

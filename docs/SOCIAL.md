@@ -356,22 +356,58 @@ own credential, its own approval step and its own budget ceiling.
 
 ## 7. Connecting an account
 
-Connecting is a **paste, not a redirect**. You give the desk a token; the backend
-immediately spends it on a read call against that network. If a profile comes
-back, the credential is real and is stored sealed. If it doesn't, nothing is
-written and you see the network's own error — `(#200) requires
-pages_manage_posts` tells you what to fix in a way "connection failed" never
-would.
+### Instagram and Facebook: one button
 
-OAuth buttons look nicer but need a reviewed app per network before they can
-request publishing scopes, and until that review lands they are buttons that do
-nothing. The stored shape is identical either way, so an OAuth flow can be added
-on top later without touching the data model.
+Instagram connects through **Facebook Login**, not a paste —
+`backend/functions/src/social/meta.ts` and `components/social/instagramConnect.tsx`.
+Press *Continue with Facebook*, sign in as whoever manages the Velocity Rides
+Page, tick the Page, done. The backend then does what the paste flow asked a
+human to do by hand:
+
+1. `adminStartMetaConnect` mints a one-time `state` and returns the dialog URL.
+2. Facebook redirects to `/connect/instagram` — a public page on our own domain
+   whose only job is to hand the authorization code back to the console window
+   and close. It is allowed to be public because a code cannot be spent without
+   the app secret, which never leaves Cloud Functions.
+3. `adminFinishMetaConnect` exchanges the code for a short-lived user token,
+   exchanges **that** for a long-lived one, and reads `/me/accounts`. The order
+   matters: Page tokens minted from a long-lived user token do not expire, and
+   doing it the other way round gives you a desk that silently stops publishing
+   about two months later.
+4. `adminChooseMetaPage` stores the Page the admin picked — both the Facebook
+   Page and the Instagram Business account attached to it, since they share one
+   Page token.
+
+Both end up in `connectVerifiedAccount`, the same function a pasted token goes
+through, so there is exactly one path that writes a credential.
+
+Setup is once, in the Meta console: add **Facebook Login** to the app that owns
+the Page, whitelist `https://velocityrides.app/connect/instagram` as a valid
+OAuth redirect URI, and paste the App ID and App Secret into the accounts page.
+The secret is proved with a client-credentials call before it is stored, sealed
+under `SOCIAL_TOKEN_KEY` at `system/socialMetaApp/secret/credentials`. If
+`META_APP_ID`/`META_APP_SECRET` are in the function environment they win; failing
+both, the `WHATSAPP_APP_ID`/`WHATSAPP_APP_SECRET` pair already deployed for the
+WhatsApp Cloud API is used, because it belongs to the same Meta app.
+
+### Everything else: a paste
+
+For the networks Meta does not own, connecting is a **paste, not a redirect**.
+You give the desk a token; the backend immediately spends it on a read call
+against that network. If a profile comes back, the credential is real and is
+stored sealed. If it doesn't, nothing is written and you see the network's own
+error — `(#200) requires pages_manage_posts` tells you what to fix in a way
+"connection failed" never would.
+
+An OAuth button per network needs a reviewed app per network before it can
+request publishing scopes, which is why only Meta's has been built. The stored
+shape is identical either way, so the rest can follow without touching the data
+model.
 
 | Network | Paste | Scopes worth double-checking |
 |---|---|---|
 | Facebook Page | long-lived Page token + Page ID | `pages_manage_posts`, `pages_read_engagement` |
-| Instagram | the same Page token + IG Business account ID | `instagram_content_publish`, `instagram_manage_comments` |
+| Instagram | *(use the button above)* — or the same Page token + IG Business account ID | `instagram_content_publish`, `instagram_manage_comments` |
 | YouTube | OAuth **refresh** token + client ID + secret | `youtube.upload`, `youtube.force-ssl` (for replies) |
 | TikTok | access token | `video.publish` |
 | Threads | Threads access token | `threads_content_publish`, `threads_manage_replies` |
@@ -394,6 +430,13 @@ AES-256-GCM under `SOCIAL_TOKEN_KEY`. **Every client read of that subcollection
 is denied, admins included** (see `firestore.rules`). A Facebook page token is a
 password that can post as Velocity to the whole audience; only Cloud Functions
 has any business holding one.
+
+`socialOAuthStates/{state}` holds the few minutes between *Connect* being
+pressed and a Page being chosen — including the Page tokens Facebook just
+returned, sealed with the same key. Unlike every other social record it is
+**closed to the console as well**, because nothing client-side ever needs it:
+the `state` string travels through the redirect, and the callables look the
+document up with the Admin SDK.
 
 This is the single backend secret that **fails closed**. With no
 `SOCIAL_TOKEN_KEY`, accounts simply cannot be connected, because the alternative
@@ -529,6 +572,11 @@ like a new one buys nothing.
 | `adminSeedSocialTeam` | hire one of each, for a first run |
 | `adminGetSocialConnectSchema` | what the connect form should ask for, per network |
 | `adminConnectSocialAccount` | verify a pasted credential, then seal and store it |
+| `adminGetMetaConnectState` | whether one-click Instagram is possible, and the redirect URI to whitelist |
+| `adminSetMetaApp` | prove a Meta App ID + Secret against Facebook, then seal the secret |
+| `adminStartMetaConnect` | mint the one-time `state` and the Facebook dialog URL |
+| `adminFinishMetaConnect` | spend the code, and report the Pages the grant reached |
+| `adminChooseMetaPage` | store the chosen Page and its Instagram Business account |
 | `adminVerifySocialAccount` | re-check a stored credential |
 | `adminDisconnectSocialAccount` | delete the credential; keep the profile row |
 | `adminGetSocialSettings` | settings, which keys are configured, and what the roster cannot do |

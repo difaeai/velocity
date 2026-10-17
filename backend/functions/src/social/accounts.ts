@@ -146,20 +146,51 @@ async function verifyAndStore(
   return publicRecord;
 }
 
+/**
+ * Prove a credential, seal it, write the audit line — the whole of "connect",
+ * minus the parsing.
+ *
+ * Pulled out of the callable below so the one-click Instagram flow in `meta.ts`
+ * lands in exactly the same place a pasted token does. A second storage path
+ * would be a second way to end up with a credential that was never verified.
+ */
+export async function connectVerifiedAccount(
+  platform: Platform,
+  credentials: PlatformCredentials,
+  uid: string,
+  expiresInDays?: number,
+): Promise<Record<string, unknown>> {
+  if (!tokenVaultReady()) {
+    throw new HttpsError(
+      'failed-precondition',
+      'The SOCIAL_TOKEN_KEY secret is not configured, so access tokens cannot be stored safely.',
+    );
+  }
+
+  try {
+    const record = await verifyAndStore(platform, credentials, { persist: true, uid, expiresInDays });
+    await db.collection('auditLogs').add({
+      type: 'social.connected',
+      actor: uid,
+      platform,
+      displayName: record.displayName,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return record;
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    const message = e instanceof PlatformError ? e.message : (e as Error).message;
+    logger.warn('social: connect rejected', { platform, message });
+    throw new HttpsError('failed-precondition', `${ADAPTERS[platform].label} rejected the credential: ${message}`);
+  }
+}
+
 /** Paste a credential, prove it, keep it. */
 export const adminConnectSocialAccount = onCall(async (req) => {
   const ctx = requireAdmin(req);
   const parsed = connectSchema.safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { platform, expiresInDays, ...rest } = parsed.data;
-
-  if (!tokenVaultReady()) {
-    throw new HttpsError(
-      'failed-precondition',
-      'The SOCIAL_TOKEN_KEY secret is not configured, so access tokens cannot be stored safely. ' +
-        'Generate one with `openssl rand -base64 32`, add it as a GitHub Actions secret, and redeploy.',
-    );
-  }
 
   const credentials: PlatformCredentials = {
     accessToken: rest.accessToken.trim(),
@@ -168,25 +199,8 @@ export const adminConnectSocialAccount = onCall(async (req) => {
     clientSecret: rest.clientSecret?.trim() || undefined,
   };
 
-  try {
-    const record = await verifyAndStore(platform, credentials, {
-      persist: true,
-      uid: ctx.uid,
-      expiresInDays,
-    });
-    await db.collection('auditLogs').add({
-      type: 'social.connected',
-      actor: ctx.uid,
-      platform,
-      displayName: record.displayName,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    return { ok: true, account: { ...record, lastVerifiedAt: Date.now(), updatedAt: Date.now() } };
-  } catch (e) {
-    const message = e instanceof PlatformError ? e.message : (e as Error).message;
-    logger.warn('social: connect rejected', { platform, message });
-    throw new HttpsError('failed-precondition', `${ADAPTERS[platform].label} rejected the credential: ${message}`);
-  }
+  const record = await connectVerifiedAccount(platform, credentials, ctx.uid, expiresInDays);
+  return { ok: true, account: { ...record, lastVerifiedAt: Date.now(), updatedAt: Date.now() } };
 });
 
 /** Re-check a stored credential — the console's "is this still good?" button. */

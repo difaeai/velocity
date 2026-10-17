@@ -15,6 +15,15 @@ export {
   adminGetSocialConnectSchema,
 } from './accounts';
 
+/** The one-click half of connecting: Facebook Login instead of a pasted token. */
+export {
+  adminGetMetaConnectState,
+  adminSetMetaApp,
+  adminStartMetaConnect,
+  adminFinishMetaConnect,
+  adminChooseMetaPage,
+} from './meta';
+
 export {
   adminGetSocialRoles,
   adminHireSocialEmployee,
