@@ -24,6 +24,20 @@
  * invented cause is worse than no cause at all: it sends the next person to the
  * wrong file and they come back trusting these logs less.
  *
+ * FEATURES THE PHONE CANNOT JUDGE
+ * Some calls are built never to fail: `getTrafficAlerts` returns an empty,
+ * successful answer when the alerts are unreadable, because a road alert is a
+ * courtesy on top of a booking screen and must never stop somebody booking a
+ * ride. That is the right behaviour and it makes the feature INVISIBLE to the
+ * app-side watcher — a fast, successful, empty call looks identical whether the
+ * feature is healthy or completely dead.
+ *
+ * So a feature with a degrade-to-empty contract is proved by an agent check
+ * against server state (see qa/checks.ts), never by the absence of reports from
+ * the app, and its id stays out of CALLABLE_FEATURE in the mobile watcher. The
+ * features that fail quietly are precisely the ones this engine exists for, so
+ * getting this one wrong would make it report green on something broken.
+ *
  * KEEPING IT HONEST OVER TIME
  * The test suite checks every `code` path still exists — a contract pointing at
  * a file somebody deleted fails CI rather than quietly misleading a reader. Add
@@ -634,6 +648,32 @@ export const FEATURE_CONTRACTS: readonly FeatureContract[] = [
         because:
           'A screen built on a bare StyleSheet.create keeps the colours it had at first render — the switch silently does nothing there.',
         fix: 'Wrap the styles in themed(() => StyleSheet.create({ … })). This one breaks quietly, so it is worth grepping for the bare form.',
+      },
+    ],
+  },
+  {
+    id: 'platform.traffic',
+    area: 'Platform',
+    title: 'Road alerts',
+    designedTo:
+      'Tell a rider or driver what is closed or blocked on the road they are about to take, and only while it is actually shut.',
+    criticality: 'normal',
+    budgetMs: 15_000,
+    code: [
+      'backend/functions/src/traffic/functions.ts',
+      'backend/functions/src/traffic/ingest.ts',
+    ],
+    knownCauses: [
+      {
+        signal: /window|showing|hours/,
+        because:
+          'The window gate is misreading the hours a story gave, so alerts are held but never shown. The symptom is live alerts climbing while the number a rider can actually see sits at zero.',
+        fix: 'Check windowOf/showingNow in traffic/functions.ts against the stories being parsed. Alerts with no stated hours fall back to their kind’s lifetime and should essentially always be showing.',
+      },
+      {
+        signal: /degraded|no feed|itemsread/,
+        because: 'Every one of the fourteen feeds failed, so the run read nothing at all.',
+        fix: 'Look at the per-source errors on adminConfig/trafficRun. One or two feeds failing is normal and is why there are fourteen; all of them failing is a network or parser-wide problem.',
       },
     ],
   },
