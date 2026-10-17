@@ -1,22 +1,23 @@
-VELOCITY RIDES 1.18.0  ·  Android versionCode 44  ·  iOS build 17
+VELOCITY RIDES 1.18.0  ·  Android versionCode 45  ·  iOS build 18
 =================================================================
 
-This file was first written for vc43 / iOS build 16, when 1.18.0 was one
-change: the drawer icons. NEITHER OF THOSE ARTEFACTS WAS EVER PUBLISHED — the
-vc43 AAB never reached Play, and build 16 went to App Store Connect but was
-never attached to a version record. So 1.18.0 has not been spent on either
-store, and it now carries 27 commits instead of one. The version string is
-deliberately unchanged; only the build numbers moved.
+This file has now been written three times for 1.18.0 — first for vc43 / iOS
+build 16, then vc44 / build 17, now vc45 / build 18. NONE OF THE EARLIER
+ARTEFACTS WAS EVER PUBLISHED: no AAB reached Play, and builds 16 and 17 reached
+App Store Connect but were never attached to a version record. So 1.18.0 has
+still not been spent on either store, and it now carries 37 commits. The
+version string is deliberately unchanged again; only the build numbers moved.
 
 VERSION STATE — check the stores, not this file. Play's state cannot be read
 from this machine (no Play API credentials) and App Store Connect needs the
 issuer id. Before rolling out, confirm in each console:
 
-  Android  If vc42 (1.17.0) and vc43 never went up, this build carries THREE
-           releases' worth of change to Android for the first time. The Play
-           notes below are written on that assumption.
-  iOS      Highest build EAS has produced is now 17. If build 15 or 16 was
-           never submitted, submit 17 and skip them.
+  Android  If vc42 (1.17.0), vc43 and vc44 never went up, this build carries
+           FOUR releases' worth of change to Android for the first time. The
+           Play notes below are written on that assumption.
+  iOS      Highest build EAS has produced is now 18, and 16, 17 and 18 have all
+           been uploaded to App Store Connect. Attach 18 to the 1.18.0 version
+           record and ignore the older two.
 
 AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number, or
 the in-app update prompt tells nobody. `Constants.versionCode` is dead in
@@ -25,24 +26,42 @@ expo-constants 56, so the build number has to be set by hand there.
 
 PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
 ---------------------------------------------------------------
-Know what is on your road before you book.
+Help that actually arrives.
 
-• Road alerts: closures, protests and accidents from Pakistani news, shown
-  only while the problem is actually on — with Islamabad and Rawalpindi
-  traffic police advisories included
-• The pump price behind your fare is now read from PSO every morning
-• Rate the people you share a ride with, and see your own ride record
-• Drivers: verify yourself in the app, and top up by bank transfer
-• A menu you can read at a glance
+• SOS now messages your own five emergency contacts from your own number, with
+  your location, the driver and the plate already written in — and dials police
+  15 in one tap
+• Shared rides: see who is waiting on the road you are about to drive down, and
+  what your fare becomes
+• Road alerts: closures and protests from Pakistani news, shown only while they
+  are actually on
+• Drivers: real licences and motorway permits are no longer refused
 
 
 APP STORE "WHAT'S NEW" (set on version 1.18.0 through the API)
 --------------------------------------------------------------
 NEW IN THIS VERSION
 
+SOS NOW REACHES THE PEOPLE WHO CAN ACTUALLY COME
+
+Pressing SOS used to tell Velocity and nobody else. It now opens one sheet that
+dials police 15, alerts our desk, and hands you a WhatsApp message to each of
+your own five emergency contacts with your location, your driver and the plate
+already written in. The messages go from YOUR number, not ours — an 11pm
+message from an unknown business number is the one people ignore. There is a
+one-tap SMS fallback that works with no internet.
+
+WHO IS WAITING ON YOUR ROAD
+
+Book a shared ride that nobody joins and the screen used to show you a
+countdown and a fare that was never going to move. It now shows the riders
+standing on the road you are about to drive down — the areas they get in and
+out, never doorsteps — and what your own fare becomes if the driver picks them
+up. It shows nothing at all when the road is quiet, which is most of the time.
+
 KNOW WHAT IS ON YOUR ROAD BEFORE YOU BOOK
 
-Velocity now reads fourteen Pakistani news feeds and tells you what is closed,
+Velocity reads fourteen Pakistani news feeds and tells you what is closed,
 blocked or crashed between you and where you are going. For Islamabad and
 Rawalpindi that includes the traffic police's own diversion advisories, which
 arrive within the hour they are issued.
@@ -71,8 +90,11 @@ trips.
 
 FOR DRIVERS
 
-You can now verify yourself inside the app: upload your papers, then a live
-face scan. And you can top up by bank transfer, with the receipt read
+You can verify yourself inside the app: upload your papers, then a live face
+scan. Real documents are no longer refused — a National Highways & Motorway
+Police permit and both Islamabad Traffic Police licence layouts used to be
+read as a CNIC and auto-rejected. Your car is shown back to you once it is
+approved. And you can top up by bank transfer, with the receipt read
 automatically.
 
 A MENU YOU CAN READ AT A GLANCE
@@ -83,54 +105,73 @@ menu opens. City rides, Special Rides and sharing rides no longer share one
 face.
 
 
-WHAT CHANGED SINCE THE LAST BUILD (for the team; not store copy)
-----------------------------------------------------------------
-27 commits, 13–17 Oct 2026. Grouped by what a release manager needs to know.
+WHAT CHANGED SINCE BUILD vc44 / iOS 17 (for the team; not store copy)
+---------------------------------------------------------------------
+10 commits, 17 Oct 2026 — PRs #46-#50, all merged to main, CI green on 86747a7.
 
 RIDER- AND DRIVER-VISIBLE
-  - Road alerts (`backend/functions/src/traffic/`, `src/ui/TrafficStrip.tsx`).
-    Fourteen news feeds, ~99% of items refused. Wired into the rider's booking
-    screen and both driver screens, reusing the memoised route so no extra
-    Routes call is bought.
-  - Road alerts are WINDOW-GATED (PR #44). `window.ts` reads the hours out of
-    the event sentence and the alert shows only inside them, with 90 minutes of
-    lead. Two new refusals: an event already over, and one more than a week
-    out. A story that states no hours behaves exactly as before.
-  - Islamabad/Rawalpindi got their own sources. APP (the state news agency)
-    carries ITP advisories verbatim; The Nation's Islamabad feed and Daily
-    Times join it. ChampAlertsOnTheGo — which is what was actually asked for —
-    publishes on X and Instagram only and has no readable site at all; the
-    probe is recorded in `sources.ts`.
-  - Fuel prices read from psopk.com as a third, first-party source, and the
-    daily job moved 06:15 → 06:00. PSO does NOT get a casting vote: on the day
-    it was added it was a full day behind OGRA (390.23 vs the mirrors' 386.30),
-    which is in a regression test now.
-  - Ride record + rider-to-rider ratings. Co-rider ratings are not users.rating
-    and are anonymous except to an admin.
-  - Driver verification engine with a live face scan — our own detection, no
-    API key, no third party. Papers first, then the face. The daily face check
-    ships OFF behind a flag.
-  - Bank-transfer top-ups, read by our own OCR engine. Entry is the Earnings
-    commission card, not the hidden wallet.
+  - SOS reaches the rider's own emergency contacts. Police 15, our desk, and
+    five WhatsApp deep links sent from the rider's OWN number, plus an SMS
+    fallback that needs no internet. WhatsApp cannot send on somebody's behalf,
+    so the cost is honest: five deep links, five presses. An unconfirmed
+    contact is still alerted — refusing to warn a family over a missing
+    checkbox would be absurd — but the screen keeps asking.
+  - Riders see who else is on their corridor, and what it does to their fare.
+    The same corridor search the driver's en-route feed uses, from the rider's
+    seat; every candidate has already passed all four corridor gates, seats and
+    the gender rules server-side. Note that an en-route pickup usually does NOT
+    cut the host's fare — the tier ceiling means the gain goes to the driver —
+    so the card only shows what the server actually computes.
+  - The driver document reader stopped rejecting real Pakistani papers. A NHMP
+    "NATIONAL DRIVING PERMIT" was scoring as a CNIC front (it opens "ISLAMIC
+    REPUBLIC OF PAKISTAN" and says "Date of Birth"), and on an ordinary phone
+    photo of a laminated card the tie went to CNIC — `document_wrong_type` is
+    FATAL in decideDriverVerification, so a real driver with real papers was
+    auto-rejected. Decisive markers settle it now, with the real card formats
+    in tests.
+
+PARTNER PROGRAM
+  - Both plans are paid: Starter Rs 3,000/month against Pro's Rs 4,500, sold in
+    the same 3, 6 and 12-month blocks, and every application now carries a plan
+    length and a payment screenshot. The tier id stays `free` on purpose — it is
+    stamped on every partner doc, settled partner transaction and fleet record,
+    and renaming it buys a nicer word in the database in exchange for a
+    migration. The UI says Starter, the data says `free`.
+  - A lapsed plan earns nothing (loadEdge drops the edge), but A MISSING EXPIRY
+    NEVER LAPSES: the partners who joined while the lower tier was genuinely
+    free carry no proExpiresAt and keep earning until an admin stamps one on
+    them. Switching off somebody's income as a side effect of a deploy is not a
+    thing to do silently.
+  - One monthlyFeeForTier() serves the apply screen, the validator and the admin
+    desk, so they cannot disagree about the price — which is the bug proFee vs
+    proMonthlyFee already caused once.
 
 BACKEND AND ADMIN ONLY — nothing in the store copy
-  - Social desk: a second engine that writes without a paid key, Instagram via
-    Facebook Login, self-learning from its own page, reels, briefs. Locally
-    written pieces never auto-publish.
-  - Admin page for the accounts drivers pay into.
-  - The marketing site ships its own fonts, so a build never waits on Google.
-  - Fixes worth remembering: `paymentProofAI` referenced `createHash` with no
-    import and broke main; a missing WASM binary now degrades instead of
-    crashing; driver verification runs on a schedule, not a Firestore trigger
-    (see the Eventarc IAM block); one renamed social metric was zeroing every
-    post's numbers.
+  - Velocity tests itself: a feature-contract registry (qa/features.ts), a
+    15-minute agent, a watcher in the api client, and an admin Testing page.
+    Passes write nothing; the logs are prompt-shaped.
+  - Road alerts are proved SERVER-SIDE, not by the app watcher, because
+    getTrafficAlerts answers {ok:true} with empty lists when it cannot read
+    anything at all — a fast, successful, empty call looks identical whether
+    the feature is healthy or completely dead. Two agent checks ask whether the
+    20-minute refresh is still running and whether the alerts being held reach
+    anybody. `platform.traffic` is deliberately NOT in CALLABLE_FEATURE and
+    three files now say why; getSuggestedRides carries the same warning for the
+    same reason.
+  - An admin page for the accounts money arrives in. adminSetSettlementAccounts
+    had been live for months with no caller anywhere, so config/settlementAccounts
+    sat empty in production — which silently broke three things at once: a
+    commission-locked driver was told the payment account is not set up and
+    could never clear the lock, the top-up sheet had no account to show, and
+    parseRecipientMatch had nothing to compare a receipt against, so every
+    receipt failed the recipient check. Saving goes through a confirm step,
+    because a typo here sends somebody's commission to a stranger's wallet.
+    PAYMENTS.md now warns that the document is load-bearing.
 
 VERIFICATION FOR THIS BUILD
-  - Backend: 1503 tests / 89 files pass, `tsc --noEmit` and `eslint src` clean.
-    Run against a detached worktree of the release commits alone, not the
-    working tree, because another session's in-progress work shares two files.
-  - Mobile: 209 tests / 16 files pass, `tsc --noEmit` clean.
-  - PSO parser verified against both the captured 290 KB page and a live fetch:
-    petrol 390.23, diesel 396.96, effective 2026-10-16.
+  - CI and Deploy Cloud Functions both green on 86747a7, the exact commit these
+    binaries were built from.
+  - Mobile: 209 tests / 16 files pass, `tsc --noEmit` clean, run on the release
+    commit.
   - NOT verified on a device. The phone runs the Play build and a local APK
     cannot install over it without an uninstall.
