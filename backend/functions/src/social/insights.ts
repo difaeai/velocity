@@ -35,6 +35,7 @@ import { requireAdmin } from '../lib/guards';
 import { dayKey } from '../analytics';
 import { connectedPlatforms, loadCredentials } from './accounts';
 import { claudeReady, generateJson } from './claude';
+import { localLessons } from './local';
 import { BRAND, HARD_RULES, briefBlock, standingInstructions } from './crew';
 import { activeTeam, assign } from './employees';
 import { scoreHook } from './lint';
@@ -210,7 +211,17 @@ export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
     worst,
   };
 
-  if (!claudeReady()) return read;
+  // No key: the lesson is computed instead of described. For this one question
+  // that is an upgrade — "which format travels" is a mean over a group, and
+  // "is the hook panel tracking reach" is two means compared, both of which
+  // arithmetic answers exactly and a model was being asked to eyeball.
+  if (!claudeReady()) {
+    const read_ = localLessons({ best, worst, medianReach, sampled: ranked.length });
+    read.lessons = read_.lessons;
+    read.useMore = read_.useMore;
+    read.useLess = read_.useLess;
+    return read;
+  }
 
   // Whoever reads the market also reads our own page: it is the same job, and
   // it keeps the lesson in one person's voice rather than a system's.
@@ -343,7 +354,10 @@ export async function auditProfile(settings: SocialSettings): Promise<ProfileAud
   const connected = await connectedPlatforms();
   const platform = connected.find((p) => ADAPTERS[p].profileDetail);
   if (!platform) return empty('No connected account can report its profile yet.');
-  if (!claudeReady()) return empty('ANTHROPIC_API_KEY is not configured, so nobody can score it.');
+  // The one stage with no local equivalent: a profile audit is a judgement
+  // about twelve things a page either does or does not do, and unlike the
+  // writing stages there is no candidate set to score. It waits for a key.
+  if (!claudeReady()) return empty('The profile audit needs a model, and no ANTHROPIC_API_KEY is configured.');
 
   let profile: ProfileDetail;
   try {

@@ -422,7 +422,7 @@ export function Readiness({
   connectedCount,
   staffed,
 }: {
-  readiness: { writer: boolean; tokenVault: boolean };
+  readiness: { writer: boolean; engine?: 'claude' | 'local'; tokenVault: boolean };
   connectedCount: number;
   staffed?: number;
 }) {
@@ -438,11 +438,16 @@ export function Readiness({
           : 'Nobody works here yet. Hire at least a content writer on the Employees page — an empty office makes nothing.',
     },
     {
-      state: readiness.writer ? 'ok' : 'warn',
-      label: 'The engine (Claude)',
-      note: readiness.writer
-        ? 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.'
-        : 'ANTHROPIC_API_KEY is missing. Add it to the backend secrets; nobody can plan, write, brief or reply without it.',
+      // Never a warning any more, because neither state is broken. With a key
+      // the desk thinks; without one it still writes, from its own material,
+      // scored by the same checks. The row's job is to say which, since the
+      // two read differently and the difference is otherwise invisible.
+      state: readiness.engine === 'local' ? 'off' : 'ok',
+      label: readiness.engine === 'local' ? 'The engine (local)' : 'The engine (Claude)',
+      note:
+        readiness.engine === 'local'
+          ? 'ANTHROPIC_API_KEY is not set, so the desk is writing locally: it composes from the brand material, scores every candidate against the same hook, caption and timing checks, and keeps the best. No key, no cost, no failed runs — plainer writing, and no live market read. Add the key to switch back.'
+          : 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.',
     },
     {
       state: readiness.tokenVault ? 'ok' : 'warn',

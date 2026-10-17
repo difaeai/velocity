@@ -23,7 +23,8 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localAdPlan, localSearchPack, localSeoPack } from './local';
 import {
   FORMAT_SPECS,
   type AdPlan,
@@ -58,9 +59,22 @@ export async function seoPass(params: {
   angle: string;
   plan: ContentPlan | null;
   research: ContentResearch | null;
+  /**
+   * The run's figures. Unused by the model prompt and needed by the local
+   * engine, which previews the draft it is about to brief so it never asks for
+   * a phrase the piece will not contain.
+   */
+  facts: Record<string, number | string>;
   feedback: string[];
 }): Promise<SeoPack | null> {
   const spec = FORMAT_SPECS[params.format];
+
+  // Locally this is cheap and, unusually, verifiable: the brief is filtered
+  // against the draft the writer is about to produce, so it never asks for a
+  // phrase the piece will not contain. See `localSeoPack`.
+  if (!claudeReady()) {
+    return localSeoPack({ angle: params.angle, format: params.format, facts: params.facts });
+  }
 
   try {
     const { data } = await generateJson<Record<string, unknown>>({
@@ -123,10 +137,24 @@ export async function searchPass(params: {
   caption: string;
   seo: SeoPack | null;
   plan: ContentPlan | null;
+  /** Both unused by the model prompt; both needed by the local engine. */
+  angle: string;
+  facts: Record<string, number | string>;
   feedback: string[];
 }): Promise<SearchPack | null> {
   const spec = FORMAT_SPECS[params.format];
   const forYouTube = spec.kind === 'video';
+
+  if (!claudeReady()) {
+    return localSearchPack({
+      angle: params.angle,
+      format: params.format,
+      script: params.script,
+      caption: params.caption,
+      seo: params.seo,
+      facts: params.facts,
+    });
+  }
 
   try {
     const { data } = await generateJson<{ youtube?: Record<string, unknown>; webAngle?: unknown; note?: unknown }>({
@@ -206,8 +234,14 @@ export async function adPass(params: {
   facts: Record<string, number | string>;
   plan: ContentPlan | null;
   search: SearchPack | null;
+  /** Unused by the model prompt; the local engine reads its material from it. */
+  angle: string;
   feedback: string[];
 }): Promise<AdPlan | null> {
+  if (!claudeReady()) {
+    return localAdPlan({ angle: params.angle, script: params.script, facts: params.facts });
+  }
+
   try {
     const { data } = await generateJson<Record<string, unknown>>({
       model: params.settings.textModel,

@@ -300,6 +300,7 @@ async function runTeam(params: {
         angle: params.angle,
         plan,
         research,
+        facts,
         feedback,
       });
       await patch(params.id, { seo });
@@ -349,7 +350,9 @@ async function runTeam(params: {
       await done(
         'script',
         writer,
-        `${script.viralHook || script.hook} — checks: ${Math.round(drafted.quality.score)}/100 ${drafted.quality.verdict}`,
+        `${script.viralHook || script.hook} — checks: ${Math.round(drafted.quality.score)}/100 ${drafted.quality.verdict}${
+          drafted.note ? ` · ${drafted.note}` : ''
+        }`,
       );
     } catch (e) {
       const message = (e as Error).message;
@@ -374,6 +377,8 @@ async function runTeam(params: {
         caption,
         seo,
         plan,
+        angle: params.angle,
+        facts,
         feedback,
       });
       await patch(params.id, { search });
@@ -487,6 +492,7 @@ async function runTeam(params: {
         facts,
         plan,
         search,
+        angle: params.angle,
         feedback,
       });
       await patch(params.id, { ads });
@@ -870,10 +876,6 @@ export const socialDailyContent = onSchedule(
     const nowPkt = new Date(Date.now() + 5 * 3600_000);
     if (nowPkt.getUTCHours() !== settings.runHour) return;
 
-    if (!claudeReady()) {
-      await recordRun('Skipped: ANTHROPIC_API_KEY is not configured.');
-      return;
-    }
     if (!(await activeTeam()).length) {
       await recordRun('Skipped: nobody is on the team. Hire someone on the Employees page.');
       return;
@@ -882,7 +884,10 @@ export const socialDailyContent = onSchedule(
     const date = dayKey(Date.now());
     try {
       const outcome = await runDaily(date);
-      await recordRun(outcome);
+      // Which engine ran is recorded with the outcome: the two produce
+      // visibly different work, and "why does today read like a template"
+      // should be answerable from the run log rather than guessed at.
+      await recordRun(claudeReady() ? outcome : `${outcome} (written locally, no model)`);
       logger.info('social: daily run finished', { date, outcome });
     } catch (e) {
       const message = (e as Error).message;
@@ -912,12 +917,6 @@ export const adminGenerateSocialPost = onCall(
       .safeParse(req.data ?? {});
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
 
-    if (!claudeReady()) {
-      throw new HttpsError(
-        'failed-precondition',
-        'ANTHROPIC_API_KEY is not configured, so nobody can work. Add it as a backend secret and redeploy.',
-      );
-    }
     const team = await activeTeam();
     if (!team.length) {
       throw new HttpsError(

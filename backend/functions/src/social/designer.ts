@@ -18,7 +18,8 @@
  * reading it is the renderer.
  */
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localFrames } from './local';
 import {
   FORMAT_SPECS,
   type ContentFormat,
@@ -48,8 +49,15 @@ interface DirectedFrame {
   alt: string;
 }
 
-/** Ask the designer for the art direction: one prompt per frame. */
-async function directFrames(params: {
+/**
+ * Ask the designer for the art direction: one prompt per frame.
+ *
+ * Exported for the tests rather than for callers — `design` below is the stage
+ * the pipeline runs. This half is the one that used to throw without a key, so
+ * it is worth being able to call on its own without reaching the image
+ * generator behind it.
+ */
+export async function directFrames(params: {
   employee: Employee;
   settings: SocialSettings;
   format: ContentFormat;
@@ -61,6 +69,13 @@ async function directFrames(params: {
   feedback: string[];
 }): Promise<DirectedFrame[]> {
   const spec = FORMAT_SPECS[params.format];
+
+  // The writer's scene lines were written as image prompts in the first place,
+  // so locally this stage adds the standing craft block and the alt text and
+  // stops. It does not paraphrase a brief that is already a brief.
+  if (!claudeReady()) {
+    return localFrames({ script: params.script, count: params.count, craft: HOUSE_STYLE, seo: params.seo });
+  }
 
   const { data } = await generateJson<{ frames?: unknown }>({
     model: params.settings.textModel,

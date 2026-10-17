@@ -377,8 +377,10 @@ export default function EmployeesPage() {
       <Card>
         <h2 style={{ ...h2, marginBottom: 4 }}>The tools</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
-          Everyone <strong>thinks and writes with Claude</strong>, on the <code>ANTHROPIC_API_KEY</code> this backend
-          already uses — and that is the only paid model on the desk. <strong>Nothing is rendered here.</strong> The
+          Everyone <strong>thinks and writes with Claude</strong> when an <code>ANTHROPIC_API_KEY</code> is set — the
+          only paid model on the desk. Without one they fall back to the <strong>local engine</strong>, which composes
+          from the brand material and scores every candidate against the same checks: no key, no cost, no failed runs,
+          and plainer writing. <strong>Nothing is rendered here.</strong> The
           designer writes a brief for every frame and the editor writes the cut; you make the pictures and the video
           however you like and attach them to the piece from the queue. The model id is editable because model names
           change; when one does, this is the fix, not a redeploy.

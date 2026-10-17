@@ -117,7 +117,16 @@ export const adminGetSocialSettings = onCall(async (req) => {
      * key was ever added.
      */
     readiness: {
-      writer: claudeReady(),
+      /**
+       * Whether anybody here can produce anything, which is now always yes:
+       * with no key the local engine writes instead of the model. It is kept
+       * as a field rather than deleted because `engine` below is the part
+       * worth reading, and a console that says "the team cannot think" when
+       * the team demonstrably just wrote something is worse than no checklist.
+       */
+      writer: true,
+      /** Which of the two engines a run would actually use today. */
+      engine: claudeReady() ? ('claude' as const) : ('local' as const),
       tokenVault: tokenVaultReady(),
     },
     /** What the current roster can and cannot do, in words. */
@@ -131,15 +140,11 @@ export const adminUpdateSocialSettings = onCall(async (req) => {
   const parsed = settingsSchema.safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid settings.');
 
-  // Turning automation on is the one change worth guarding: without a key the
-  // crew cannot produce anything, and a schedule that fails every morning is
-  // worse than one that was never switched on.
-  if (parsed.data.enabled === true && !claudeReady()) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Automation cannot be enabled: ANTHROPIC_API_KEY is not configured, so nobody can work.',
-    );
-  }
+  // The key used to be a precondition here, because without one the crew could
+  // not produce anything and a schedule that fails every morning is worse than
+  // one that was never switched on. The local engine removed that failure, so
+  // the guard went with it: a run with no key now writes a weaker piece rather
+  // than no piece. An empty desk is still a real stop, and is still checked.
 
   // A schedule with an empty office produces one failed run a day, forever.
   if (parsed.data.enabled === true && !(await activeTeam()).length) {

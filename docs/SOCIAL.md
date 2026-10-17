@@ -474,11 +474,59 @@ read back, so anything appended to it has to be retyped from memory.
 
 | Secret | Without it |
 |---|---|
-| `ANTHROPIC_API_KEY` | nobody can work — nothing is planned, written, briefed or replied to |
+| `ANTHROPIC_API_KEY` | the desk falls back to the local engine — see below. Plainer writing, and no market read |
 | `SOCIAL_TOKEN_KEY` (`openssl rand -base64 32`) | accounts cannot be connected; nothing publishes |
+
+Only one of these is a hard stop. `SOCIAL_TOKEN_KEY` is: a page token is a
+password and storing one in the clear is not an option, so with no vault there
+is nowhere to post. `ANTHROPIC_API_KEY` used to be, and is not any more.
 
 ⚠️ Rotating `SOCIAL_TOKEN_KEY` makes every stored token unreadable. Reconnect
 each account afterwards.
+
+### The second engine: writing with no key
+
+`src/social/local/` is a writer that needs no key, no network and no quota. It
+is reached by one check — `if (!claudeReady())` — at the top of every stage, so
+the pipeline, the console and the queue are unchanged and a key appearing later
+switches everything back with no migration.
+
+It works by inverting something the desk already owned. `lint.ts` is 900 lines
+of deterministic critic: it scores a hook on length, specificity, stakes,
+frontloading and whether the viewer is addressed; it lints a caption against the
+fold, the five-tag cap and the one-ask rule; it times a voiceover at 165 words a
+minute and faults a beat over four seconds. All of it was built to mark the
+model's homework. Pointed the other way it is a fitness function — so the local
+engine generates every piece its material allows, scores them all, and keeps the
+one the critic has nothing left to say about.
+
+| | `claude.ts` | `local/` |
+|---|---|---|
+| Hook, caption, script | written | composed from `material.ts`, then selected |
+| Numbers | instructed to use FACTS only | **cannot** name a figure whose fact is absent |
+| Market read | live web search | none — says so, never invents a trend |
+| Per-network captions | asked to respect limits | applies them exactly |
+| Page lessons | describes the numbers | computes them (better) |
+| Profile audit | yes | no local equivalent |
+| Change requests | read and applied | cannot be read; the caller says so |
+| Cost / failure modes | per call; refusals, quota, timeouts | none |
+
+The honest limit is that the ceiling is the material. It will never write a
+sentence nobody wrote down, never notice that today is different, and over a
+long run the feed reads as a family of shapes. Variety is rotation plus
+selection, which is not the same as having an idea — so `claudeReady()` still
+wins whenever a key exists, and the console says which engine ran.
+
+Two things to know before editing `material.ts`:
+
+- **Every line that names a figure declares the fact it needs.** A line whose
+  fact is zero or missing is dropped before scoring. That is HARD_RULES #1
+  enforced in code, and it matters more here than it did with a model, because
+  a template will happily print "Rs 0" where a model would have hesitated.
+- **The timer ignores a proper noun at the start of a sentence** (its regex is
+  `(?!^)`), so "Velocity Rides checks the papers" counts as having nothing
+  checkable in it and "The Velocity Rides check covers the papers" does not.
+  Spoken lines are written around that, and the tests enforce it.
 
 ### There is no image or video key
 
