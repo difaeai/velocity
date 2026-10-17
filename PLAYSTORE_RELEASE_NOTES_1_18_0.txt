@@ -1,3 +1,11 @@
+CORRECTION (2026-10-18): THIS TRAIN IS CLOSED. Everything below assumes 1.18.0
+was never spent on either store. That was wrong for iOS: build 16 was APPROVED
+on the App Store, so Apple refused builds 17 and 18 in processing with
+ITMS-90186 (train closed) and ITMS-90062 (version must be higher). Both are
+dead and cannot be revived under 1.18.0. The release moved to 1.19.0 — see
+PLAYSTORE_RELEASE_NOTES_1_19_0.txt. The store copy below was reused there; the
+build numbers below are historical only.
+
 VELOCITY RIDES 1.18.0  ·  Android versionCode 45  ·  iOS build 18
 =================================================================
 
