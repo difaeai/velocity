@@ -17,6 +17,16 @@
  *   an online driver with no cell    · working a shift while invisible
  *   a daily job that did not run     · a feature that died without an error
  *   a message nobody answered        · the one rule Rapid Response has
+ *   alerts held but shown to nobody  · a courtesy feature silently switched off
+ *
+ * THE CHECKS THAT MATTER MOST ARE THE ONES THE PHONE CANNOT MAKE
+ * A call built never to fail — `getTrafficAlerts` answers {ok:true} with empty
+ * lists when the alerts are unreadable, so a road alert can never stop somebody
+ * booking a ride — is invisible to the app-side watcher by construction. The
+ * app sees a fast, successful, empty response whether the feature is healthy or
+ * completely dead. Those features are proved HERE or not at all. When you add
+ * one, give it an agent check and keep its id out of CALLABLE_FEATURE in the
+ * mobile watcher, so nobody reads "no reports" as "no problem".
  *
  * RULES EVERY CHECK FOLLOWS
  *  1. BOUNDED. Every query has a limit. The agent runs forever; a check whose
@@ -37,6 +47,8 @@
  * exist in this state", it probably belongs in a unit test instead.
  */
 import { db } from '../lib/firebase';
+import { showingNow } from '../traffic/functions';
+import { TRAFFIC_COLLECTION, type TrafficAlert } from '../traffic/types';
 import type { QaFailureKind, QaSeverity } from './features';
 import type { QaEvidence } from './log';
 
@@ -356,6 +368,88 @@ export const QA_CHECKS: readonly QaCheck[] = [
         };
       }
       return null;
+    },
+  },
+
+  // ── A feature that is built never to fail ────────────────────────────────
+  // getTrafficAlerts answers {ok:true} with empty lists when the alerts cannot
+  // be read, on purpose: a road alert must never stop somebody booking a ride.
+  // That makes it invisible to the app-side watcher — a successful empty call
+  // looks the same whether the feature is healthy or dead — so the only honest
+  // signal is here, against the server's own state.
+  {
+    id: 'traffic.refresh.silent',
+    featureId: 'platform.traffic',
+    title: 'The road-alert refresh is still running',
+    everyMin: 180,
+    async run(now): Promise<QaCheckFinding | null> {
+      const snap = await db.doc('adminConfig/trafficRun').get();
+      const ranAt = snap.get('ranAt') as number | undefined;
+
+      if (!snap.exists || typeof ranAt !== 'number') {
+        return {
+          kind: 'no_effect',
+          whatHappened:
+            'There is no record of the road-alert refresh ever running, so whatever riders are being shown is whatever happened to be stored — with nothing saying when.',
+          evidence: { detail: { doc: 'adminConfig/trafficRun' } },
+        };
+      }
+
+      // It runs every 20 minutes. Two hours is six missed runs, not a blip.
+      const ageMin = Math.round((now.getTime() - ranAt) / MIN);
+      if (ageMin > 120) {
+        return {
+          kind: 'no_effect',
+          whatHappened: `The road-alert refresh last ran ${ageMin} minutes ago, so it has missed at least six runs. Alerts are ageing out and nothing is replacing them.`,
+          evidence: { detail: { lastRanMinutesAgo: String(ageMin) } },
+        };
+      }
+
+      if (snap.get('degraded') === true) {
+        const sources = (snap.get('sources') as { sourceId: string; items: number; error?: string }[] | undefined) ?? [];
+        return {
+          kind: 'empty',
+          whatHappened:
+            'The last road-alert run read nothing at all — every feed failed. One or two failing is ordinary and is why there are fourteen of them; all of them failing is not.',
+          evidence: {
+            detail: { lastRanMinutesAgo: String(ageMin) },
+            samples: sources
+              .filter((s) => s.error || s.items === 0)
+              .map((s) => `${s.sourceId}: ${s.error ?? 'nothing read'}`),
+          },
+        };
+      }
+      return null;
+    },
+  },
+  {
+    id: 'traffic.window.gate',
+    featureId: 'platform.traffic',
+    title: 'Road alerts we are holding are reaching somebody',
+    everyMin: 60,
+    async run(now) {
+      const ms = now.getTime();
+      const live = await db
+        .collection(TRAFFIC_COLLECTION)
+        .where('expiresAt', '>', ms)
+        .limit(500)
+        .get();
+      // Holding alerts for an event that has not started yet is the window
+      // feature working, so a handful showing nothing is normal and a quiet
+      // night would trip a tighter rule. Five unexpired alerts with not one of
+      // them visible is the shape of the gate misreading hours.
+      if (live.size < 5) return null;
+      const showing = live.docs.filter((d) => showingNow(d.data() as TrafficAlert, ms)).length;
+      if (showing > 0) return null;
+
+      return {
+        kind: 'no_effect',
+        whatHappened: `We are holding ${live.size} unexpired road alerts and not one of them is being shown to anybody. Either every single one is for a time that has not come yet, or the window gate is reading the hours wrongly and the whole feature is silently off.`,
+        evidence: {
+          detail: { liveAlerts: String(live.size), showingNow: '0' },
+          samples: live.docs.slice(0, 6).map((d) => `${TRAFFIC_COLLECTION}/${d.id}`),
+        },
+      };
     },
   },
 
