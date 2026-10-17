@@ -1,20 +1,27 @@
 import type { Metadata, Viewport } from 'next';
-import { JetBrains_Mono, Outfit, Work_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 
 import { SITE_URL as SITE } from '@/lib/site';
 
 import './globals.css';
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800', '900'],
+// The three faces are self-hosted (app/fonts) instead of pulled through
+// next/font/google. A build that downloads them from fonts.gstatic.com fails
+// whenever that fetch does — it took CI down on 2026-10-17 with a
+// module-not-found on the generated @font-face — and a font has no business in
+// the build's network path. These are the same latin variable cuts Google serves.
+const outfit = localFont({
+  src: './fonts/outfit-latin.woff2',
+  weight: '100 900',
+  style: 'normal',
   variable: '--font-display',
   display: 'swap',
 });
 
-const workSans = Work_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+const workSans = localFont({
+  src: './fonts/work-sans-latin.woff2',
+  weight: '100 900',
+  style: 'normal',
   variable: '--font-body',
   display: 'swap',
 });
@@ -23,11 +30,14 @@ const workSans = Work_Sans({
 // chapter numbers, the speed readout on the supercar stage — is set in this,
 // which is what gives the page its instrument-cluster character. Two weights
 // only: it is never used for running text.
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
+const jetBrainsMono = localFont({
+  src: './fonts/jetbrains-mono-latin.woff2',
+  weight: '100 800',
+  style: 'normal',
   variable: '--font-mono',
   display: 'swap',
+  adjustFontFallback: false,
+  fallback: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
 });
 
 export const metadata: Metadata = {
