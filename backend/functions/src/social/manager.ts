@@ -14,8 +14,10 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localDistribution } from './local';
 import {
+  CAPTION_LIMITS,
   FORMAT_SPECS,
   PLATFORMS,
   supports,
@@ -27,17 +29,6 @@ import {
   type SearchPack,
   type SocialSettings,
 } from './types';
-
-/** Where a caption stops being a caption on each network. */
-const CAPTION_LIMITS: Record<Platform, number> = {
-  facebook: 2000,
-  instagram: 2200,
-  youtube: 4000,
-  tiktok: 2200,
-  threads: 500,
-  x: 280,
-  linkedin: 3000,
-};
 
 export interface Distribution {
   /** Per-network caption. Anything missing falls back to the master caption. */
@@ -77,6 +68,19 @@ export async function planDistribution(params: {
     targets: candidates,
     note: 'Posting the same caption everywhere.',
   };
+
+  // This is the one stage the local engine does at least as well: the per-
+  // network rules are character limits and a layout, which `slice` applies
+  // exactly and a prompt only asks for.
+  if (!claudeReady()) {
+    return localDistribution({
+      caption: params.caption,
+      hashtags: params.hashtags,
+      script: params.script,
+      candidates,
+      search: params.search,
+    });
+  }
 
   try {
     const { data } = await generateJson<{ captions?: Record<string, unknown>; targets?: unknown; note?: unknown }>({

@@ -1313,7 +1313,18 @@ export interface SocialSettings {
 }
 
 export interface SocialReadiness {
+  /**
+   * Whether anybody on the desk can produce anything. Always true now: with no
+   * ANTHROPIC_API_KEY the backend writes with its local engine instead.
+   */
   writer: boolean;
+  /**
+   * Which engine a run would use today. `claude` is the model; `local` is the
+   * key-free engine that composes from the brand material and scores its own
+   * candidates. The second one is reliable and noticeably plainer, so the
+   * console says which is running rather than leaving it to be inferred.
+   */
+  engine: 'claude' | 'local';
   tokenVault: boolean;
 }
 

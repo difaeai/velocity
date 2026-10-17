@@ -25,6 +25,24 @@ export const PLATFORMS = [
 
 export type Platform = (typeof PLATFORMS)[number];
 
+/**
+ * Where a caption stops being a caption on each network.
+ *
+ * Here rather than in `manager.ts` because two writers need it now: the model
+ * is told these limits in a prompt and trusted to respect them, and the local
+ * engine applies them with `slice`. Platform data belongs beside the platform
+ * list either way.
+ */
+export const CAPTION_LIMITS: Record<Platform, number> = {
+  facebook: 2000,
+  instagram: 2200,
+  youtube: 4000,
+  tiktok: 2200,
+  threads: 500,
+  x: 280,
+  linkedin: 3000,
+};
+
 export interface PlatformProfile {
   /** How the network labels this page/channel/profile. */
   displayName: string;

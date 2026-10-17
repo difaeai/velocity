@@ -10,7 +10,8 @@
  * field rather than eight.
  */
 import { employeeIntro } from './employees';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localPlan } from './local';
 import { playbookFor, playbookForStandup } from './playbook';
 import {
   FORMAT_SPECS,
@@ -179,6 +180,20 @@ export async function planContent(params: {
    */
   pageRead?: string;
 }): Promise<ContentPlan> {
+  // No key, no argument: the local engine decides the concept from the brand
+  // material instead. It is a thinner standup — nobody debates anything — but
+  // it produces the one thing every stage downstream needs, which is a
+  // decision they can inherit rather than re-make.
+  if (!claudeReady()) {
+    return localPlan({
+      angle: params.angle,
+      format: params.format,
+      facts: params.facts,
+      team: params.team,
+      recentConcepts: params.recentConcepts,
+    });
+  }
+
   const spec = FORMAT_SPECS[params.format];
 
   const system = `You are running the daily standup of Velocity Rides' social content team.

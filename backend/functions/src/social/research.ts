@@ -24,7 +24,8 @@ import { logger } from 'firebase-functions';
 
 import { db } from '../lib/firebase';
 import { BRAND, systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localResearch } from './local';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings } from './types';
 
 /** Kept per day so a second run the same morning does not pay for it twice. */
@@ -78,6 +79,17 @@ export async function runResearch(params: {
   if (!params.employee) {
     return { ...empty, error: 'Nobody on the team covers research, so the market was not read.' };
   }
+
+  // The one stage with no local equivalent, and the one place that matters
+  // most: this read came from the model's own web search, and nothing here can
+  // search the web. So it says so, in the field the type already carries for
+  // it, rather than composing a plausible market read out of nothing. An
+  // invented trend is worse than an absent one, and every stage downstream
+  // already accepts a null read.
+  //
+  // Not cached either, for the same reason a failure is not: the day a key
+  // appears, the next run should do a real read rather than find this.
+  if (!claudeReady()) return localResearch();
 
   // One read a day. The market does not move fast enough to pay for a grounded
   // search per piece, and everything made that day should be working from the

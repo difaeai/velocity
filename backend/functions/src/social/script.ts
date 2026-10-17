@@ -20,7 +20,8 @@ import { logger } from 'firebase-functions';
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';
 import { feedbackBlock, planBlock, researchBlock, systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localDraft, localRewriteCaption } from './local';
 import { reviewDraft, type QualityReport } from './lint';
 import {
   FORMAT_SPECS,
@@ -126,6 +127,13 @@ export interface DraftedPost {
   hashtags: string[];
   /** What the deterministic checks made of it, after any rewrite. */
   quality: QualityReport;
+  /**
+   * How the piece was arrived at, when that is worth recording. The local
+   * engine fills it with which opening it chose and out of how many, because
+   * with no model in the loop that is the only trace of the decision. The
+   * model path leaves it unset: its reasoning is not ours to summarise.
+   */
+  note?: string;
 }
 
 /** Write the piece. Throws with the model's own error on failure. */
@@ -144,6 +152,20 @@ export async function draftPost(params: {
   /** Change requests from the admin, oldest first. */
   feedback: string[];
 }): Promise<DraftedPost> {
+  // The local engine writes from the brand material and the facts, scoring its
+  // own candidates against `lint.ts`. It cannot read `feedback` — a change
+  // request is prose, and prose is the one input it has no way to act on — so
+  // the caller says so rather than appearing to have applied it.
+  if (!claudeReady()) {
+    return localDraft({
+      angle: params.angle,
+      format: params.format,
+      facts: params.facts,
+      recentHooks: params.recentHooks,
+      seo: params.seo,
+    });
+  }
+
   const spec = FORMAT_SPECS[params.format];
   const brief = ANGLE_BRIEFS[params.angle] ?? params.angle;
   const system = `${systemFor(params.employee, params.settings, params.format)}\n\n${RESPONSE_SHAPE}`;
@@ -321,6 +343,17 @@ export async function rewriteCaption(params: {
   hashtags: string[];
   feedback: string[];
 }): Promise<{ caption: string; hashtags: string[]; quality: QualityReport }> {
+  // Without a model the request itself cannot be read, so nothing pretends to
+  // have read it: the existing sentences are kept, cleaned and reordered for
+  // the best score the critic will give them. See `localRewriteCaption`.
+  if (!claudeReady()) {
+    return localRewriteCaption({
+      script: params.script,
+      currentCaption: params.currentCaption,
+      hashtags: params.hashtags,
+    });
+  }
+
   const { data } = await generateJson<{ caption?: unknown; hashtags?: unknown }>({
     model: params.settings.textModel,
     system: `${systemFor(params.employee, params.settings)}\n\nReply with one JSON object and nothing else:\n{ "caption": "the rewritten caption, no hashtags. Line one carries the hook inside 125 characters", "hashtags": ["exactly 5 tags, no # prefix: 2 niche, 2 mid, 1 broad"] }`,

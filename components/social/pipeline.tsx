@@ -436,7 +436,7 @@ export interface Blocker {
  * none the strip is replaced by a single green line.
  */
 export function readBlockers(
-  readiness: { writer: boolean; tokenVault: boolean } | null,
+  readiness: { writer: boolean; engine?: 'claude' | 'local'; tokenVault: boolean } | null,
   staffed: number,
   connectedCount: number,
   brokenCount: number,
@@ -444,13 +444,20 @@ export function readBlockers(
   if (!readiness) return [];
   const out: Blocker[] = [];
 
-  if (!readiness.writer) {
+  // This used to be the hard stop: with no key, nobody could research, write,
+  // brief or reply, and a run died on the spot. The local engine ended that, so
+  // it is no longer a blocker — but it is not nothing either. The piece still
+  // gets written, scored and queued; it is composed from the brand material
+  // rather than thought up, and it reads that way. Worth saying once, in warn
+  // rather than danger, instead of letting somebody wonder why the voice
+  // changed.
+  if (readiness.engine === 'local') {
     out.push({
-      label: 'The team cannot think',
-      why: 'ANTHROPIC_API_KEY is not set on the backend, so nobody can research, write, brief or reply. Every other part of this page works; this is the one that stops a run dead.',
+      label: 'Writing without a model',
+      why: 'ANTHROPIC_API_KEY is not set, so the desk is using its local engine: it composes from the brand material, scores every candidate against the same checks and picks the best. Reliable and free, and plainer than the model. There is no live market read while it is on.',
       href: '/dashboard/social/automation',
-      cta: 'How to fix',
-      hard: true,
+      cta: 'What this changes',
+      hard: false,
     });
   }
   if (staffed === 0) {

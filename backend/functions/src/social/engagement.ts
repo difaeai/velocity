@@ -27,7 +27,8 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { loadCredentials, markAccountError } from './accounts';
 import { systemFor } from './crew';
-import { generateJson } from './claude';
+import { claudeReady, generateJson } from './claude';
+import { localReplies } from './local';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
 import { activeTeam, assign, creditWork } from './employees';
 import { getSocialSettings } from './settings';
@@ -177,20 +178,29 @@ export async function draftReplies(
     const batch = rows.slice(i, i + DRAFT_BATCH);
 
     let replies: { id?: unknown; intent?: unknown; reply?: unknown }[] = [];
-    try {
-      const { data } = await generateJson<{ replies?: unknown }>({
-        model: settings.textModel,
-        system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM}`,
-        what: 'The comment replies',
-        prompt: [
-          'COMMENTS:',
-          ...batch.map((c) => `- id: ${c.id}\n  network: ${c.platform}\n  from: ${c.authorName}\n  said: ${c.text}`),
-        ].join('\n'),
-      });
-      replies = Array.isArray(data.replies) ? (data.replies as typeof replies) : [];
-    } catch (e) {
-      logger.error('social: could not draft comment replies', { message: (e as Error).message });
-      continue;
+
+    // Locally this is rule-based classification with a templated answer, and
+    // it is deliberately narrow: a real question gets a reply that promises a
+    // person, because that is true, rather than one that sounds specific and
+    // is not. Safety escalates on the words alone; spam closes.
+    if (!claudeReady()) {
+      replies = localReplies(batch.map((c) => ({ id: c.id, text: c.text })));
+    } else {
+      try {
+        const { data } = await generateJson<{ replies?: unknown }>({
+          model: settings.textModel,
+          system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM}`,
+          what: 'The comment replies',
+          prompt: [
+            'COMMENTS:',
+            ...batch.map((c) => `- id: ${c.id}\n  network: ${c.platform}\n  from: ${c.authorName}\n  said: ${c.text}`),
+          ].join('\n'),
+        });
+        replies = Array.isArray(data.replies) ? (data.replies as typeof replies) : [];
+      } catch (e) {
+        logger.error('social: could not draft comment replies', { message: (e as Error).message });
+        continue;
+      }
     }
 
     for (const row of batch) {
