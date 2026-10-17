@@ -558,6 +558,41 @@ test('social access tokens are unreadable by everyone, admins included', async (
   await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
 });
 
+test('the Instagram one-click connect leaks neither the app secret nor a page token', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'system/socialMetaApp'), { appId: '123456789', appName: 'Velocity Rides' });
+    await setDoc(doc(db, 'system/socialMetaApp/secret/credentials'), {
+      appSecret: { c: 'sealed', iv: 'iv', t: 'tag' },
+    });
+    // The few minutes between pressing Connect and choosing a Page. This
+    // document holds the Page tokens Facebook just handed back.
+    await setDoc(doc(db, 'socialOAuthStates/state-abc'), {
+      uid: 'admin1',
+      stage: 'granted',
+      pages: [{ id: '1', name: 'Velocity Rides', token: { c: 'sealed', iv: 'iv', t: 'tag' } }],
+    });
+  });
+
+  // The App ID is public by design — it travels in the OAuth dialog URL — so
+  // the console may read it to tell the admin which app is wired up.
+  await assertSucceeds(getDoc(doc(admin, 'system/socialMetaApp')));
+  await assertFails(getDoc(doc(passenger, 'system/socialMetaApp')));
+
+  // The App Secret is not. Subcollections do not inherit the read above.
+  await assertFails(getDoc(doc(admin, 'system/socialMetaApp/secret/credentials')));
+  await assertFails(
+    setDoc(doc(admin, 'system/socialMetaApp/secret/credentials'), { appSecret: 'mine-now' }),
+  );
+
+  // Nor is the handshake. Unlike every other admin-readable social record, this
+  // one is shut to the console too: nothing client-side needs it, and what it
+  // carries for those few minutes is a token that can post to the whole page.
+  await assertFails(getDoc(doc(admin, 'socialOAuthStates/state-abc')));
+  await assertFails(getDoc(doc(passenger, 'socialOAuthStates/state-abc')));
+  await assertFails(setDoc(doc(admin, 'socialOAuthStates/forged'), { uid: 'admin1' }));
+});
+
 test('a seat request is visible to its rider, the driver and the car — nobody else', async () => {
   const asker = testEnv.authenticatedContext('asker1', { role: 'passenger' }).firestore();
   const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();

@@ -27,6 +27,7 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
+import { InstagramConnect } from '@/components/social/instagramConnect';
 
 export default function AccountsPage() {
   const [schema, setSchema] = useState<ConnectSchema | null>(null);
@@ -80,6 +81,11 @@ export default function AccountsPage() {
           </p>
         </Card>
       ) : null}
+
+      {/* The one connection that matters first, and the only one that does not
+          need a token pasted into it. Everything below is still the manual
+          route, which stays for the networks Meta does not own. */}
+      <InstagramConnect account={accounts.instagram} />
 
       <div style={{ display: 'grid', gap: 14 }}>
         {schema?.platforms.map((p) => (

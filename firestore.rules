@@ -510,6 +510,15 @@ service cloud.firestore {
     match /system/{docId} {
       allow read: if isAdmin();
       allow write: if false;
+
+      // One document under here carries a credential rather than a counter:
+      // system/socialMetaApp holds the Meta App ID (public, readable above)
+      // and this subcollection holds the App Secret, sealed. Subcollections do
+      // not inherit the read above, and this rule is what makes that explicit
+      // rather than accidental.
+      match /secret/{secretId} {
+        allow read, write: if false;
+      }
     }
 
     // ----- adminConfig/{doc} -----------------------------------------------
@@ -550,6 +559,17 @@ service cloud.firestore {
       match /secret/{docId} {
         allow read, write: if false;
       }
+    }
+
+    // ----- socialOAuthStates/{state} ---------------------------------------
+    // The few minutes between "Connect Instagram" being pressed and the Page
+    // being chosen. The document holds the Page access tokens Facebook just
+    // handed back, sealed — so unlike every other admin-readable record here,
+    // this one is shut to the console as well. Nothing client-side ever needs
+    // to read it: the state string travels through the OAuth redirect, and the
+    // callables look it up with the Admin SDK.
+    match /socialOAuthStates/{state} {
+      allow read, write: if false;
     }
 
     // ----- socialEmployees/{id} --------------------------------------------

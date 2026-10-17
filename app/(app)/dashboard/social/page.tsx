@@ -3,10 +3,24 @@
 /**
  * Manage social → Overview.
  *
- * The one screen that answers "is the marketing desk actually running?" — who
- * is on shift, what is wired up, which accounts are live, when the next piece
- * gets planned, and what is waiting for a decision. Everything else in this
- * section is a detail view of one of those.
+ * Rebuilt around one question: **how does a post get made here, and where is
+ * one right now?** The old page answered "what exists" — a roster, a settings
+ * block, two lists — and left the workflow to be inferred from the navigation.
+ *
+ * So the page is now, in order:
+ *
+ *  1. What is stopping it, if anything, with the fix one click away.
+ *  2. The line a piece travels: brief → made → approved by you → posted →
+ *     measured, with the live counts and, while something is genuinely in
+ *     production, the stage it is on and who has it.
+ *  3. The two controls that start work: brief the team, and the schedule.
+ *  4. The detail — where it posts, and what was made last.
+ *
+ * On motion: there is some, and all of it is load-bearing. A dot travels a step
+ * only while a document is in that state, a count breathes only while it is
+ * waiting on the person reading the page, and both stop the instant the desk is
+ * idle. Nothing on this page animates to look busy — see components/social/
+ * pipeline.tsx, where that rule is enforced.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -31,12 +45,11 @@ import {
   FormatChip,
   PlatformBadge,
   PLATFORM_META,
-  Readiness,
   StatusPill,
   longDate,
   postSummary,
 } from '@/components/social/shared';
-import { Office, officeLive } from '@/components/social/office';
+import { Blockers, Pipeline, readBlockers, readPipeline } from '@/components/social/pipeline';
 
 export default function SocialOverview() {
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
@@ -109,10 +122,17 @@ export default function SocialOverview() {
   }, []);
 
   const onShift = staff.filter((e) => e.status === 'active');
-  const { live, running } = officeLive(posts);
   const connected = accounts.filter((a) => a.status === 'connected');
   const broken = accounts.filter((a) => a.status === 'error');
-  const awaiting = posts.filter((p) => p.status === 'awaiting_approval' || p.status === 'changes_requested');
+
+  const pipeline = useMemo(
+    () => readPipeline(posts, accounts, settings, onShift.length),
+    [posts, accounts, settings, onShift.length],
+  );
+  const blockers = useMemo(
+    () => readBlockers(readiness, onShift.length, connected.length, broken.length),
+    [readiness, onShift.length, connected.length, broken.length],
+  );
 
   // The wall clock is an external system, so it is subscribed to rather than
   // read during render — and the "next run" line then advances on its own.
@@ -162,106 +182,46 @@ export default function SocialOverview() {
     <div>
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
-        <p style={{ color: colors.muted, margin: 0 }}>
-          The team you hired plans, writes, designs, cuts and posts Velocity Rides’ content — and stops at your approval,
-          every time.
+        <p style={{ color: colors.muted, margin: 0, maxWidth: 760 }}>
+          The team you hired plans, writes, designs, cuts and posts Velocity Rides’ content — and stops at your
+          approval, every time.
         </p>
       </header>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
 
-      {/* who is on shift */}
-      <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-          <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>On shift</h2>
-          <Link
-            href="/dashboard/social/employees"
-            style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-          >
-            {onShift.length ? 'Manage the team' : 'Hire someone'}
-          </Link>
+      {/* 1 — what is actually stopping it, if anything */}
+      {readiness ? <Blockers blockers={blockers} /> : null}
+
+      {/* 2 — the line a piece travels, lit by the documents themselves */}
+      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 16px 0' }}>
+          <h2 style={{ ...h2, marginBottom: 2 }}>How a post gets made</h2>
+          <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
+            Left to right, every time. A step lights up only while something is really in it.
+          </p>
         </div>
-
-        {/* The room, not a list: who is in today, who stepped away, and who is
-            mid-job right now — all of it visible without reading a word. */}
-        <Office staff={staff} live={live} running={running} />
-
-        {onShift.length === 0 ? (
-          <p style={{ fontSize: 13.5, color: colors.muted, margin: '12px 0 0', lineHeight: 1.55 }}>
-            Nobody works here yet, so nothing gets made.{' '}
-            <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
-              Hire your first employee
-            </Link>{' '}
-            — a content writer is enough to see a piece written end to end.
-          </p>
-        ) : coverage.length ? (
-          <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
-            {coverage[0]}
-          </p>
-        ) : null}
+        <div style={{ padding: '0 10px 14px' }}>
+          <Pipeline state={pipeline} />
+        </div>
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-        <Card>
-          <h2 style={h2}>Before it can run</h2>
-          {readiness ? (
-            <Readiness readiness={readiness} connectedCount={connected.length} staffed={onShift.length} />
-          ) : (
-            <p style={{ color: colors.muted, fontSize: 13 }}>Checking…</p>
-          )}
-        </Card>
-
+        {/* 3 — the two controls that start work */}
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>The daily run</h2>
+            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Start a piece</h2>
             <StatusPill status={settings?.enabled ? 'connected' : 'disconnected'} />
           </div>
-          {settings ? (
-            <div style={{ display: 'grid', gap: 8, fontSize: 13.5 }}>
-              <Row
-                label="Schedule"
-                value={
-                  settings.enabled
-                    ? `${settings.postsPerDay} piece${settings.postsPerDay === 1 ? '' : 's'} a day at ${String(
-                        settings.runHour,
-                      ).padStart(2, '0')}:00 PKT`
-                    : 'Paused — the team only works when you ask'
-                }
-              />
-              {nextRun ? (
-                <Row
-                  label="Next run"
-                  value={`${longDate(nextRun.toISOString().slice(0, 10))}, ${String(settings.runHour).padStart(2, '0')}:00`}
-                />
-              ) : null}
-              <Row label="Up next" value={upNext ? FORMAT_META[upNext].label : '—'} />
-              <Row label="Pictures and video" value="Briefed here, made by you" />
-              <Row label="Approval" value="Always — nothing posts itself" />
-              <Row
-                label="Comments"
-                value={
-                  settings.engagementEnabled
-                    ? settings.autoReply
-                      ? 'Read and replied to automatically'
-                      : 'Read; replies wait for you'
-                    : 'Not being read'
-                }
-              />
-              <Row
-                label="Last run"
-                value={
-                  settings.lastRunAtMs
-                    ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
-                    : 'Never'
-                }
-              />
-            </div>
-          ) : (
-            <p style={{ color: colors.muted, fontSize: 13 }}>Loading…</p>
-          )}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <p style={{ fontSize: 13, color: colors.muted, margin: '0 0 12px', lineHeight: 1.55 }}>
+            {settings?.enabled
+              ? `The desk briefs itself every day at ${String(settings.runHour).padStart(2, '0')}:00 PKT. You can also start one now.`
+              : 'The schedule is paused, so the desk only works when you press this.'}
+          </p>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as SocialFormat | '')}
@@ -286,14 +246,96 @@ export default function SocialOverview() {
               {busy ? 'The team is working…' : 'Brief the team now'}
             </Button>
             <Link href="/dashboard/social/automation">
-              <Button variant="ghost">Settings</Button>
+              <Button variant="ghost">Schedule</Button>
             </Link>
+          </div>
+
+          <div style={{ display: 'grid', gap: 8, fontSize: 13.5 }}>
+            {nextRun ? (
+              <Row
+                label="Next run"
+                value={`${longDate(nextRun.toISOString().slice(0, 10))}, ${String(settings?.runHour ?? 0).padStart(2, '0')}:00`}
+              />
+            ) : null}
+            <Row
+              label="Last run"
+              value={
+                settings?.lastRunAtMs
+                  ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
+                  : 'Never'
+              }
+            />
+            <Row
+              label="Comments"
+              value={
+                settings?.engagementEnabled
+                  ? settings.autoReply
+                    ? 'Read and replied to automatically'
+                    : 'Read; replies wait for you'
+                  : 'Not being read'
+              }
+            />
+            <Row label="Pictures and video" value="Briefed here, made by you" />
           </div>
         </Card>
 
+        {/* who is on the desk — the real roster, without the theatre */}
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Channels</h2>
+            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Who does it</h2>
+            <Link
+              href="/dashboard/social/employees"
+              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+            >
+              {onShift.length ? 'Manage the team' : 'Hire someone'}
+            </Link>
+          </div>
+
+          {onShift.length === 0 ? (
+            <p style={{ fontSize: 13.5, color: colors.muted, margin: 0, lineHeight: 1.55 }}>
+              Nobody works here yet, so nothing gets made.{' '}
+              <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
+                Hire your first employee
+              </Link>{' '}
+              — a content writer is enough to see a piece written end to end.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gap: 9 }}>
+                {onShift.map((e) => {
+                  const working = pipeline.live?.current?.employeeId === e.id;
+                  return (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          flex: 'none',
+                          background: working ? colors.primary : colors.border,
+                        }}
+                      />
+                      <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 0 }}>{e.name}</span>
+                      <span style={{ fontSize: 12.5, color: colors.muted, flex: 1, minWidth: 0 }}>
+                        {working ? (pipeline.live?.current?.note ?? 'working now') : e.title}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {coverage.length ? (
+                <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
+                  {coverage[0]}
+                </p>
+              ) : null}
+            </>
+          )}
+        </Card>
+
+        {/* 4 — the detail */}
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
             <Link
               href="/dashboard/social/accounts"
               style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
@@ -302,12 +344,12 @@ export default function SocialOverview() {
             </Link>
           </div>
           {accounts.length === 0 ? (
-            <p style={{ color: colors.muted, fontSize: 13 }}>
+            <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
               Nothing connected yet.{' '}
               <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 700 }}>
-                Connect your first account
-              </Link>
-              .
+                Connect Instagram
+              </Link>{' '}
+              — it is one sign-in now, with no token to paste.
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -336,12 +378,6 @@ export default function SocialOverview() {
               ))}
             </div>
           )}
-          {broken.length ? (
-            <p style={{ color: colors.warn, fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
-              {broken.length} account{broken.length === 1 ? '' : 's'} stopped working — most often an expired token.
-              Reconnect from the accounts page.
-            </p>
-          ) : null}
         </Card>
 
         <Card>
@@ -355,7 +391,7 @@ export default function SocialOverview() {
             </Link>
           </div>
           {posts.length === 0 ? (
-            <p style={{ color: colors.muted, fontSize: 13 }}>Nothing made yet.</p>
+            <p style={{ color: colors.muted, fontSize: 13, margin: 0 }}>Nothing made yet.</p>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>
               {posts.map((p) => (
@@ -374,13 +410,6 @@ export default function SocialOverview() {
               ))}
             </div>
           )}
-          {awaiting.length ? (
-            <p style={{ fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
-              <Link href="/dashboard/social/queue" style={{ color: colors.secondary, fontWeight: 700 }}>
-                {awaiting.length} piece{awaiting.length === 1 ? '' : 's'} waiting on you →
-              </Link>
-            </p>
-          ) : null}
         </Card>
       </div>
     </div>
@@ -390,7 +419,7 @@ export default function SocialOverview() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 10 }}>
-      <span style={{ color: colors.muted, minWidth: 82 }}>{label}</span>
+      <span style={{ color: colors.muted, minWidth: 88 }}>{label}</span>
       <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>
     </div>
   );
