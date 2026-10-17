@@ -302,8 +302,19 @@ export function dayAnchor(lower: string, publishedAt: number): DayAnchor {
   if (month >= 0) {
     const name = MONTHS[month]!;
     const short = name.slice(0, 3);
+    // THE DAY MUST NOT BE HALF OF A YEAR.
+    //
+    // Without the digit guards below, "in February 2027" matched
+    // `february\s+(\d{1,2})` and read the "20" out of "2027" as the 20th.
+    // Found by running this over 300 live headlines: "Canada Hockey team to
+    // tour Pakistan in February 2027" came back as a window on 20 February.
+    // Harmless on that story, which is not a road event — but the same misread
+    // on one phrased "closed since March 2026" puts the window months away and
+    // the alert is then refused as `not_yet`. A live closure silently dropped
+    // is the one failure direction that actually matters here.
     const m = new RegExp(
-      `(?:(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:${name}|${short}\\.?)|(?:${name}|${short}\\.?)\\s+(\\d{1,2})(?:st|nd|rd|th)?)`,
+      `(?:(?<!\\d)(\\d{1,2})(?!\\d)(?:st|nd|rd|th)?\\s+(?:${name}|${short}\\.?)` +
+        `|(?:${name}|${short}\\.?)\\s+(?<!\\d)(\\d{1,2})(?!\\d)(?:st|nd|rd|th)?)`,
     ).exec(lower);
     const day = Number(m?.[1] ?? m?.[2]);
     if (m && Number.isFinite(day) && day >= 1 && day <= 31) {
