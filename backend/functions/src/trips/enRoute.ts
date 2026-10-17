@@ -87,7 +87,7 @@ import {
 // ── Shared shapes ────────────────────────────────────────────────────────────
 
 /** RideType → fare-engine category. Mirrors RIDE_TO_ENGINE_CAT in trips/index. */
-const RIDE_TO_CAT: Record<string, VehicleCategory> = {
+export const RIDE_TO_CAT: Record<string, VehicleCategory> = {
   bike: 'moto',
   auto: 'rickshaw',
   mini: 'mini',
@@ -192,7 +192,7 @@ function soloFareFor(
 }
 
 /** Seats already spoken for. */
-const seatsUsed = (riders: PoolRider[]): number =>
+export const seatsUsed = (riders: PoolRider[]): number =>
   riders.reduce((n, r) => n + (r.seats || 1), 0);
 
 /**
@@ -212,7 +212,7 @@ function tierCapFor(rider: PoolRider, riders: PoolRider[], tierBaseFare: number)
 }
 
 /** The fare the host agreed with the driver — the base of every pool tier. */
-function agreedFareOf(trip: FirebaseFirestore.DocumentData, fallback: number): number {
+export function agreedFareOf(trip: FirebaseFirestore.DocumentData, fallback: number): number {
   const fare = (trip.fare as number | null | undefined) ?? (trip.offeredFare as number | undefined);
   return typeof fare === 'number' && fare > 0 ? fare : fallback;
 }
@@ -321,7 +321,7 @@ export function priceShareJoinerOnto(
 }
 
 /** Turn the stored riders into what the split needs, then price them. */
-function priceRiders(
+export function priceRiders(
   riders: PoolRider[],
   cfg: CityFareConfig,
   category: VehicleCategory,
@@ -350,7 +350,7 @@ function priceRiders(
  * which is exactly the assumption their flat-tier fare was already built on, so
  * nothing they were quoted moves.
  */
-function ridersOnTrip(
+export function ridersOnTrip(
   trip: FirebaseFirestore.DocumentData,
   corridor: Corridor,
   cfg: CityFareConfig,
@@ -439,7 +439,7 @@ async function activeCarrierTrip(
  *      so a doctored one cannot overcharge anyone. This is the fallback, not the
  *      plan, and it is also what keeps the feature alive through a Maps outage.
  */
-async function resolveCorridor(
+export async function resolveCorridor(
   driverId: string,
   clientPolyline: string | undefined,
   carrier: FirebaseFirestore.DocumentSnapshot | null,
@@ -757,6 +757,17 @@ export const getEnRouteMatches = onCall(async (req) => {
   const grossBefore = carrier ? agreedGrossOf(carrier.data()!) : 0;
   const seatsLeft = MAX_POOL_RIDERS - seatsUsed(existing);
 
+  // A rider already in the car can ASK for somebody standing on the road to be
+  // picked up, because every extra rider cuts their own fare (see
+  // trips/enRouteRider.ts). Those requests are flagged here so the driver can
+  // see whose idea it was. It changes nothing about who decides: the gates
+  // below are identical, and the driver can still say no.
+  const askedTripIds = new Set<string>(
+    ((carrier?.get('enRouteAsks') as { candidateTripId?: string }[] | undefined) ?? [])
+      .map((ask) => ask.candidateTripId)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+
   if (seatsLeft <= 0) return { matches: [], seatsLeft: 0, ...radius, destRadiusM: settings.destRadiusM };
 
   // Only pool requests, ever — see the file header.
@@ -836,6 +847,8 @@ export const getEnRouteMatches = onCall(async (req) => {
         fareNow: r.fare,
         fareAfter: priced.fares[r.uid]!,
       })),
+      /** A rider in the car asked for this one specifically. */
+      askedByRider: askedTripIds.has(doc.id),
       detourM: Math.round(fit.fit.detourM),
       pickupOffsetM: Math.round(fit.fit.pickupOffsetM),
       dropToDestM: Math.round(fit.fit.dropToDestM),
@@ -857,7 +870,7 @@ export const getEnRouteMatches = onCall(async (req) => {
 });
 
 /** Build the rider record for an open request that has passed the corridor gates. */
-async function buildCandidate(
+export async function buildCandidate(
   tripId: string,
   d: FirebaseFirestore.DocumentData,
   fit: CorridorFit,
@@ -901,7 +914,7 @@ async function buildCandidate(
  * mixed rides, and the compositions that make the back row uncomfortable are
  * closed outright. See lib/genderAccess.
  */
-function genderGate(
+export function genderGate(
   existing: PoolRider[],
   candidate: PoolRider & { mixedRideOk?: boolean },
 ): { allowed: true } | { allowed: false; reason: string } {

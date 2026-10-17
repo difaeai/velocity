@@ -155,6 +155,11 @@ export {
   getPoolRiders,
 } from './trips/enRoute';
 
+// The same corridor search, told to the RIDER: who is standing on their road
+// and what their own fare drops to if the driver takes them. Riders waiting
+// alone in a shared ride could not see any of this before.
+export { getEnRouteSavings, askDriverEnRoutePickup } from './trips/enRouteRider';
+
 // Pool ride share links (invite codes, public/private visibility, joining)
 export {
   getPoolTripByCode,
