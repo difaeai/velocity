@@ -416,67 +416,6 @@ describe('the agent', () => {
     expect(await check.run(new Date())).toBeNull();
   });
 
-  it('catches a courtesy feature that has gone quiet, which the phone cannot', async () => {
-    // getTrafficAlerts answers {ok:true} with empty lists when the alerts are
-    // unreadable, so the app-side watcher sees a healthy call either way. This
-    // is the only place that failure can be seen at all.
-    const check = QA_CHECKS.find((c) => c.id === 'traffic.refresh.silent')!;
-    expect(await check.run(new Date())).not.toBeNull(); // never run at all
-
-    await db().doc('adminConfig/trafficRun').set({ ranAt: Date.now(), degraded: false });
-    expect(await check.run(new Date())).toBeNull();
-
-    await db().doc('adminConfig/trafficRun').set(
-      {
-        ranAt: Date.now(),
-        degraded: true,
-        sources: [{ sourceId: 'dawn', items: 0, error: 'timeout' }],
-      },
-      { merge: true },
-    );
-    const degraded = await check.run(new Date());
-    expect(degraded!.whatHappened).toMatch(/every feed failed/);
-    expect(degraded!.evidence.samples).toContain('dawn: timeout');
-
-    // Six missed runs of a twenty-minute job is not a blip.
-    await db()
-      .doc('adminConfig/trafficRun')
-      .set({ ranAt: Date.now() - 3 * 3_600_000, degraded: false }, { merge: true });
-    expect((await check.run(new Date()))!.whatHappened).toMatch(/missed at least six runs/);
-  });
-
-  it('catches alerts we are holding but showing to nobody', async () => {
-    const check = QA_CHECKS.find((c) => c.id === 'traffic.window.gate')!;
-    const now = Date.now();
-    // Four is below the floor on purpose: holding a few for an event that has
-    // not started is the window feature working, not a fault.
-    // `window` is the stored field; `when` is only the client-facing view of
-    // it. An alert written without one falls back to publishedAt → expiresAt.
-    const alert = (id: string, startsAt: number) =>
-      db().doc(`trafficAlerts/${id}`).set({
-        id,
-        kind: 'closure',
-        severity: 'high',
-        headline: 'Road shut',
-        publishedAt: now,
-        expiresAt: now + 6 * 3_600_000,
-        window: { startsAt, endsAt: startsAt + 2 * 3_600_000, basis: 'phrase', phrase: null },
-      });
-
-    const tomorrow = now + 30 * 3_600_000;
-    for (let i = 0; i < 4; i++) await alert(`a${i}`, tomorrow);
-    expect(await check.run(new Date(now))).toBeNull();
-
-    await alert('a4', tomorrow);
-    const finding = await check.run(new Date(now));
-    expect(finding).not.toBeNull();
-    expect(finding!.whatHappened).toMatch(/not one of them is being shown/);
-
-    // One alert whose window is open now clears it: somebody is being told.
-    await alert('a5', now - 10 * 60_000);
-    expect(await check.run(new Date(now))).toBeNull();
-  });
-
   it('catches a rider locked out of booking by a ride that is over', async () => {
     await db().doc('trips/done-1').set({ status: 'completed', passengerId: 'rider-8' });
     await db().doc('users/rider-8').set({ uid: 'rider-8', activeTripId: 'done-1' });

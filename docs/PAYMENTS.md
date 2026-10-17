@@ -97,15 +97,6 @@ status `pending_review` for an admin to approve/reject
 (`adminReviewCommissionSettlement`, dashboard → Settlements). AI-approve and
 admin-approve share the same money transaction (`applyManualSettlement`).
 
-⚠️ **`config/settlementAccounts` is load-bearing for all of this.** It holds
-Velocity's own Easypaisa/JazzCash/IBAN and is maintained from dashboard →
-**Receiving accounts** (`adminSetSettlementAccounts`). An empty document breaks
-three things silently and at once: a commission-locked driver has no account to
-pay and cannot unlock, top-ups cannot be started, and `parseRecipientMatch` has
-nothing to match so **every** receipt fails the recipient check and queues for an
-admin. It was in fact empty in production until 2026-10-16, with no UI able to
-write it — check it before concluding the engine is broken.
-
 **Balance top-ups (bank transfer, our own engine — no paid model):** the same
 transfer-and-screenshot gesture, but funding a balance rather than clearing one
 named debt. `submitManualTopup` (`payments/manualTopup.ts`) reads the receipt
