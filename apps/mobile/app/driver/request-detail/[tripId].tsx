@@ -35,6 +35,9 @@ import { timeAgo } from '../../../src/lib/timeAgo';
 import { DraggableSheet } from '../../../src/ui/DraggableSheet';
 import { PAYMENT_METHOD_SHORT, RIDE_TYPE_LABELS, type PaymentMethod } from '../../../src/domain/types';
 import { RequestRouteMap } from '../../../src/ui/RequestRouteMap';
+import { TrafficStrip } from '../../../src/ui/TrafficStrip';
+import { useTrafficAlerts } from '../../../src/hooks/trafficAlerts';
+import { useRouteInfo } from '../../../src/hooks/directions';
 import { ReportRequestModal } from '../../../src/ui/ReportRequestModal';
 import { DriverDrawer } from '../../../src/ui/DriverDrawer';
 
@@ -116,6 +119,30 @@ export default function RequestDetailScreen() {
     setCustomOpen(false);
   }
 
+  /**
+   * Road alerts on the job being offered — not on the city, on THIS route.
+   *
+   * This is the screen where a driver decides whether a fare is worth taking,
+   * and a closure across the middle of it is exactly the thing that turns a
+   * good fare into an hour lost. `useRouteInfo` returns the same memoised road
+   * the map below is already drawing, so asking costs no extra Routes call.
+   *
+   * ABOVE the `if (!request)` return below, and it has to stay there: a hook
+   * after an early return runs on some renders and not others, which is a
+   * crash, not a style point. Both hooks take null happily, so the deleted-
+   * request render simply passes them nothing.
+   */
+  const jobPickup =
+    request?.pickup?.lat !== undefined && request?.pickup?.lng !== undefined
+      ? { lat: request.pickup.lat, lng: request.pickup.lng }
+      : null;
+  const jobDropoff =
+    request?.dropoff?.lat !== undefined && request?.dropoff?.lng !== undefined
+      ? { lat: request.dropoff.lat, lng: request.dropoff.lng }
+      : null;
+  const jobRoute = useRouteInfo(jobPickup, jobDropoff);
+  const traffic = useTrafficAlerts(jobPickup, jobRoute?.encoded);
+
   // The request is gone the moment another driver is picked, or the passenger
   // cancels — the feed doc is deleted, so say so instead of showing a husk.
   if (!request) {
@@ -133,9 +160,7 @@ export default function RequestDetailScreen() {
     );
   }
 
-  const hasRoute =
-    request.pickup?.lat !== undefined && request.pickup?.lng !== undefined &&
-    request.dropoff?.lat !== undefined && request.dropoff?.lng !== undefined;
+  const hasRoute = !!jobPickup && !!jobDropoff;
 
   const name = request.passengerName?.trim() || 'Passenger';
   const rating = request.passengerRating ?? 5;
@@ -262,6 +287,17 @@ export default function RequestDetailScreen() {
               <View style={styles.stopRow}>
                 <View style={styles.stopB}><Text style={styles.stopBTxt}>B</Text></View>
                 <Text style={styles.stopAddr} numberOfLines={2}>{request.dropoff?.address ?? 'Drop-off'}</Text>
+              </View>
+
+              {/* Anything wrong between A and B. Sits directly under the two
+                  stops, because it is a fact about the road between them. */}
+              <View style={styles.trafficSlot}>
+                <TrafficStrip
+                  alerts={traffic.route}
+                  loaded={traffic.loaded && hasRoute}
+                  variant="panel"
+                  audience="driver"
+                />
               </View>
 
               <View style={styles.chips}>
@@ -428,6 +464,7 @@ const styles = themed(() => StyleSheet.create({
 
   // ── Sheet ──
   /* Height is the driver's, via DraggableSheet — this only skins the surface. */
+  trafficSlot: { marginTop: 10 },
   sheet: {
     backgroundColor: '#1b1e1d',
     borderTopLeftRadius: 22,

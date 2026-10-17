@@ -76,6 +76,34 @@ function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
 }
 
+/**
+ * One road alert, as the server shapes it for a screen.
+ *
+ * `alongM`/`offsetM` are present only on route results: how far into the
+ * journey the alert sits, and how far off the road it is. Both are metres and
+ * both are coarse — see the gazetteer note in the backend. Nothing here ever
+ * carries a delay in minutes, because nothing measures one.
+ */
+export interface TrafficAlertView {
+  id: string;
+  kind: 'closure' | 'protest' | 'vip_movement' | 'accident' | 'weather' | 'construction' | 'congestion';
+  severity: 'high' | 'medium' | 'low';
+  headline: string;
+  detail: string | null;
+  roads: string[];
+  cityName: string | null;
+  source: { name: string; url: string };
+  publishedAt: number;
+  /**
+   * The hours the story itself gave — "from 2pm to 6pm", "on Sunday". Absent
+   * when it gave none, in which case the alert is shown for its kind's usual
+   * lifetime and there is no honest time to print.
+   */
+  when?: { startsAt: number; endsAt: number };
+  alongM?: number;
+  offsetM?: number;
+}
+
 export interface DriverOnboardingInput {
   fullName: string;
   cnic: string;
@@ -1525,6 +1553,24 @@ export const api = {
   // area's whole driver queue and a live reading of Velocity's supply. These
   // two callables are the shaped views of it: a rider gets a multiplier and a
   // label, a driver gets their own queue position and nobody else's.
+  // ── Road alerts ───────────────────────────────────────────────────────────
+  // What is closed, blocked or crashed, read off Pakistani news feeds and
+  // filtered hard on the server (backend/functions/src/traffic/classify.ts).
+  // `trafficAlerts/*` is closed to clients in firestore.rules because what a
+  // rider may see is a city filter and what a driver may see is a route
+  // filter, and neither is expressible as a security rule.
+  //
+  // Pass `polyline` to get `route` as well: the alerts that journey actually
+  // runs into, each with how far along it they sit, in driving order.
+  getTrafficAlerts: callable<
+    { lat: number; lng: number; polyline?: string },
+    {
+      cityName: string | null;
+      city: TrafficAlertView[];
+      route: TrafficAlertView[];
+    }
+  >('getTrafficAlerts'),
+
   getPricingSnapshot: callable<
     { pickup: { lat: number; lng: number }; category?: string; forDriver?: boolean },
     {

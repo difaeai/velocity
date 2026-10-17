@@ -3,19 +3,26 @@
  * ----------------------------------------------------------------------------
  * SCHEDULE
  * --------
- * 06:15 Asia/Karachi, daily.
+ * 06:00 Asia/Karachi, daily.
  *
  * Daily, even though Pakistan re-notifies prices roughly fortnightly, because
  * the schedule is not fixed: notifications land on the 15th and the last day of
  * a month, they are announced late in the evening, they are deferred, and they
- * have been issued off-cycle more than once. A daily check costs two HTTP
+ * have been issued off-cycle more than once. A daily check costs three HTTP
  * requests and finds every revision the morning it takes effect. A fortnightly
  * check would miss the off-cycle ones entirely.
  *
- * 06:15 rather than midnight because the mirrors need time to parse the
- * notification, and because the price taking effect at midnight is of no use to
- * anybody until the first rides of the morning. Pinned to Asia/Karachi —
- * `onSchedule` defaults to UTC, which would put this at 11:15 local.
+ * 06:00 because that is the hour before the first rides of the morning are
+ * priced, and because the price is already published by then: a notification
+ * takes effect at midnight and PSO's own page — read first, see
+ * `fuelSources.ts` — carries it from that moment. The job used to run at 06:15
+ * to give the third-party mirrors a quarter of an hour to catch up with the
+ * notification; with the first-party page in the list there is nothing left to
+ * wait for, and a run that finds only one source awake confirms nothing and
+ * simply holds yesterday's price until tomorrow.
+ *
+ * Pinned to Asia/Karachi — `onSchedule` defaults to UTC, which would put this
+ * at 11:00 local, long after the morning it was meant to serve.
  *
  * WHAT A RUN CAN DO
  * -----------------
@@ -153,7 +160,7 @@ export async function runFuelRefresh(now: number = Date.now()): Promise<FuelRunR
 }
 
 export const refreshFuelPrices = onSchedule(
-  { schedule: 'every day 06:15', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 120 },
+  { schedule: 'every day 06:00', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 120 },
   async () => {
     await runFuelRefresh();
   },

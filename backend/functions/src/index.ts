@@ -545,3 +545,16 @@ export {
   refreshFuelPrices,
   runPricingTick,
 } from './pricing';
+
+// ── Road alerts ─────────────────────────────────────────────────────────────
+// What is closed, blocked or crashed on the way, read off fourteen Pakistani
+// news feeds and refused aggressively — see src/traffic/classify.ts, where the
+// refusals are the actual feature. `refreshTrafficAlerts` runs every 20
+// minutes; `getTrafficAlerts` answers both "anything in my city?" (the rider's
+// booking screen) and "anything on my route?" (the driver's).
+export {
+  getTrafficAlerts,
+  adminGetTrafficRun,
+  adminRefreshTrafficAlerts,
+  refreshTrafficAlerts,
+} from './traffic';

@@ -37,6 +37,7 @@ export default defineConfig({
       'src/social/__tests__/**/*.test.ts',
       'src/whatsapp/__tests__/**/*.test.ts',
       'src/specialRides/__tests__/**/*.test.ts',
+      'src/traffic/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.
