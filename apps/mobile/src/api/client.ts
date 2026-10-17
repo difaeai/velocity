@@ -2131,6 +2131,14 @@ export interface PartnerTiers {
   pro: TierRates;
   /** Pro price per month; the bill is this × the plan length (3, 6 or 12). */
   proMonthlyFee: number;
+  /**
+   * Starter price per month, same arithmetic. The `free` tier id kept its name
+   * when it stopped being free (see the backend's partners/types.ts) — the UI
+   * calls it Starter, the data still says `free`, and nothing had to migrate.
+   * An older server that does not send this returns undefined, which the apply
+   * screen reads as "no price known" rather than as "free".
+   */
+  starterMonthlyFee?: number;
   proFeeCurrency: string;
   payment: {
     bankName: string | null;

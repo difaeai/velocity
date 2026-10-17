@@ -5,15 +5,26 @@
  * Everything a person in trouble might need is here, in the order they would
  * need it: the police first, then the things that help us help them.
  *
- * ── TWO RULES THAT ARE NOT NEGOTIABLE ───────────────────────────────────────
+ * ── THREE RULES THAT ARE NOT NEGOTIABLE ─────────────────────────────────────
  *
- * 1. **Nothing on this screen dials on its own.** Every emergency number is
- *    shown as text first and placed only from an explicit confirmation. A stray
- *    tap in a pocket must never put a call through to 15, because the cost of
- *    that is a wasted police response and, eventually, a country that ignores
- *    our calls.
+ * 1. **The two emergency lines dial on one press; nothing else does.** 15 and
+ *    1122 go straight to the dialer with no in-app question, because the only
+ *    thing a confirmation sheet adds in a real emergency is seconds. This
+ *    replaced an "Are you sure?" on every number, and the original worry behind
+ *    that dialog — a pocket tap wasting a police response — is covered without
+ *    it: neither Android nor iOS *places* a `tel:` call by itself, so the
+ *    phone's own dialer is already the last confirmation, and our Alert was a
+ *    second one stacked on top of it. NCCIA's 1799 is a cybercrime helpline
+ *    rather than an emergency line, so it keeps its confirmation.
  *
- * 2. **An online scam goes to two places.** Velocity can refund, ban and
+ * 2. **SOS is for the people who love you, not for us.** Pressing it opens the
+ *    rider's own WhatsApp with the location, the driver, the car and the plate
+ *    already written, addressed to the contacts they chose. It is not sent from
+ *    a Velocity number — see src/lib/sos.ts for why that matters more than the
+ *    taps it costs — and our safety desk is told in the background, which is
+ *    the right order of importance.
+ *
+ * 3. **An online scam goes to two places.** Velocity can refund, ban and
  *    investigate inside its own app — it cannot subpoena a bank or trace a SIM.
  *    Only Pakistan's cybercrime agency (NCCIA) can, so the screen tells people
  *    to report to both and makes the NCCIA route one tap, rather than burying
@@ -31,13 +42,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Text } from '../src/ui/Text';
+import { SosSheet } from '../src/ui/SosSheet';
 import { api } from '../src/api/client';
 import { colors } from '../src/config';
 import { themed } from '../src/theme';
 import { useAuth } from '../src/auth/AuthContext';
+import { useCurrentLocation } from '../src/hooks/location';
+import { useEmergencyContacts } from '../src/hooks/emergencyContacts';
+import { useTrip } from '../src/hooks/useTrip';
+import { MAX_EMERGENCY_CONTACTS, POLICE_HELPLINE } from '../src/lib/sos';
 
-/** Pakistan's emergency and cybercrime channels. See the file header. */
-const POLICE = '15';
+/**
+ * Pakistan's emergency and cybercrime channels. See the file header.
+ *
+ * 15 is imported rather than written again here: the SOS sheet dials it too,
+ * and an emergency number that exists twice in a codebase is an emergency
+ * number that can be changed in one place only.
+ */
+const POLICE = POLICE_HELPLINE;
 const RESCUE = '1122';
 const NCCIA_HELPLINE = '1799';
 const NCCIA_COMPLAINT_URL = 'https://complaint.nccia.gov.pk/';
@@ -47,27 +69,42 @@ export default function SafetyCentre() {
   const { user } = useAuth();
   // The trip screen passes the live ride, so "tell Velocity I called the
   // police" has something to attach the alert to.
-  const params = useLocalSearchParams<{ tripId?: string }>();
+  const params = useLocalSearchParams<{ tripId?: string; sos?: string }>();
   const tripId = typeof params.tripId === 'string' ? params.tripId : undefined;
   const [reporting, setReporting] = useState(false);
+  // The trip screen's SOS button routes here with ?sos=1 so that one button
+  // means one thing everywhere in the app. Read at mount rather than in an
+  // effect: the sheet must already be open on the first frame, not one render
+  // after it, and expo-router pushes a fresh screen for each navigation.
+  const [sosOpen, setSosOpen] = useState(params.sos === '1');
 
-  /** Place a call, but only from an explicit confirmation. Never automatic. */
-  function confirmCall(number: string, what: string, onPlaced?: () => void) {
+  // Both warmed the moment this screen opens, so SOS has them already.
+  //
+  // A GPS fix takes seconds the first time it is asked for, and those seconds
+  // would land squarely between the press and the message. Asking now — while
+  // the user is still reading the screen — means the location is usually
+  // already in hand by the time anything goes wrong. Same for the ride: the
+  // driver's name, car and plate are what the message is mostly made of.
+  const { coords, address } = useCurrentLocation();
+  const { trip } = useTrip(tripId);
+  const { contacts } = useEmergencyContacts(user?.uid);
+
+  /** Dial straight through. The phone's own dialer is the confirmation. */
+  function placeCall(number: string, onPlaced?: () => void) {
+    Linking.openURL(`tel:${number}`).catch(() =>
+      Alert.alert('Could not start the call', `Dial ${number} from your phone app.`),
+    );
+    onPlaced?.();
+  }
+
+  /** Ask first. Only for numbers that are not emergency lines — see rule 1. */
+  function confirmCall(number: string, what: string) {
     Alert.alert(
       `Call ${number}?`,
       `This dials ${what} directly from your phone.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Call ${number}`,
-          style: 'destructive',
-          onPress: () => {
-            Linking.openURL(`tel:${number}`).catch(() =>
-              Alert.alert('Could not start the call', `Dial ${number} from your phone app.`),
-            );
-            onPlaced?.();
-          },
-        },
+        { text: `Call ${number}`, style: 'destructive', onPress: () => placeCall(number) },
       ],
     );
   }
@@ -136,31 +173,57 @@ export default function SafetyCentre() {
         {/* ── Emergency ── First on the screen, always. ── */}
         <Text style={styles.sectionTitle}>In an emergency</Text>
 
-        <Pressable
-          style={[styles.bigBtn, styles.policeBtn]}
-          onPress={() =>
-            confirmCall(POLICE, 'the Pakistan police emergency helpline', reportPoliceCalled)
-          }
-        >
-          <Text style={styles.bigBtnIcon}>🚨</Text>
+        {/* ── SOS ── The one button that tells everybody at once. ── */}
+        <Pressable style={styles.sosBtn} onPress={() => setSosOpen(true)}>
+          <Text style={styles.sosIcon}>🆘</Text>
           <View style={styles.bigBtnBody}>
-            <Text style={styles.bigBtnTitle}>Call police — {POLICE}</Text>
-            <Text style={styles.bigBtnSub}>
-              A fight, a threat, an assault, or anything you are frightened of.
-              {tripId ? ' We are told at the same time.' : ''}
+            <Text style={styles.sosTitle}>SOS — alert my family</Text>
+            <Text style={styles.sosSub}>
+              {contacts.length > 0
+                ? `WhatsApp ${contacts.length} ${contacts.length === 1 ? 'contact' : 'contacts'} your location, your driver, the car and the plate — from your own number.`
+                : 'Add the people who should be told, then one press sends them everything.'}
             </Text>
           </View>
         </Pressable>
 
         <Pressable
-          style={[styles.bigBtn, styles.rescueBtn]}
-          onPress={() => confirmCall(RESCUE, 'Rescue 1122 — ambulance and road accidents')}
+          style={[styles.bigBtn, styles.policeBtn]}
+          onPress={() => placeCall(POLICE, reportPoliceCalled)}
         >
+          <Text style={styles.bigBtnIcon}>🚨</Text>
+          <View style={styles.bigBtnBody}>
+            <Text style={styles.bigBtnTitle}>Call police — {POLICE}</Text>
+            <Text style={styles.bigBtnSub}>
+              Dials straight away. A fight, a threat, an assault, or anything you are frightened
+              of.{tripId ? ' We are told at the same time.' : ''}
+            </Text>
+          </View>
+        </Pressable>
+
+        <Pressable style={[styles.bigBtn, styles.rescueBtn]} onPress={() => placeCall(RESCUE)}>
           <Text style={styles.bigBtnIcon}>🚑</Text>
           <View style={styles.bigBtnBody}>
             <Text style={styles.bigBtnTitle}>Call Rescue — {RESCUE}</Text>
             <Text style={styles.bigBtnSub}>An accident, an injury, or a medical emergency.</Text>
           </View>
+        </Pressable>
+
+        <Pressable style={styles.row} onPress={() => router.push('/safety-contacts')}>
+          <Text style={styles.rowIcon}>👥</Text>
+          <View style={styles.rowBody}>
+            <Text style={styles.rowTitle}>
+              Emergency contacts{' '}
+              <Text style={styles.contactCount}>
+                {contacts.length}/{MAX_EMERGENCY_CONTACTS}
+              </Text>
+            </Text>
+            <Text style={styles.rowSub}>
+              {contacts.length > 0
+                ? contacts.map((c) => c.name).join(', ')
+                : 'Nobody yet — an SOS has nobody to reach.'}
+            </Text>
+          </View>
+          <Text style={styles.chev}>›</Text>
         </Pressable>
 
         {/* ── On a live ride ── */}
@@ -262,6 +325,14 @@ export default function SafetyCentre() {
           Police {POLICE} · Rescue {RESCUE} · NCCIA cybercrime {NCCIA_HELPLINE}
         </Text>
       </ScrollView>
+
+      <SosSheet
+        visible={sosOpen}
+        onClose={() => setSosOpen(false)}
+        trip={trip}
+        coords={coords}
+        address={address}
+      />
     </SafeAreaView>
   );
 }
@@ -301,6 +372,22 @@ const styles = themed(() =>
       marginTop: 12,
       marginBottom: 2,
     },
+
+    // The SOS button is the only solid-red element on the screen. Everything
+    // else that can be pressed is an outline, so there is exactly one thing
+    // the eye lands on when the screen is opened in a hurry.
+    sosBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderRadius: 18,
+      padding: 17,
+      backgroundColor: colors.danger,
+    },
+    sosIcon: { fontSize: 32 },
+    sosTitle: { fontSize: 18, fontWeight: '900', color: '#ffffff' },
+    sosSub: { fontSize: 12, color: 'rgba(255,255,255,0.9)', lineHeight: 17, marginTop: 3 },
+    contactCount: { fontSize: 12, fontWeight: '900', color: colors.muted },
 
     bigBtn: {
       flexDirection: 'row',

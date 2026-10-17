@@ -88,6 +88,10 @@ async function loadEdge(path: string): Promise<ReferralEdge | null> {
   // rather than crediting into an account that is not allowed to be paid.
   const partner = await db.doc(`partners/${partnerId}`).get();
   if (!partner.exists || partner.get('status') !== 'active') return null;
+  // A lapsed plan earns nothing, by the same mechanism as a suspended account:
+  // the edge is dropped, so the commission simply stays with Velocity instead
+  // of being credited to somebody who is not currently paying for the program.
+  if (planLapsed(partner)) return null;
   return {
     uid: snap.get('uid') as string,
     partnerId,
@@ -97,10 +101,34 @@ async function loadEdge(path: string): Promise<ReferralEdge | null> {
 }
 
 /**
- * The tier a partner is paid at right now. A Pro plan is bought for a fixed
- * number of months and `proExpiresAt` is stamped at approval; once it passes,
- * rides pay Free rates until the plan is renewed. Only the fleet portal used
- * to look at the expiry, so an expired plan kept earning Pro rates forever.
+ * Has this partner's plan run out?
+ *
+ * BOTH TIERS ARE PAID SINCE 2026-10-17, so there is no longer a free rate to
+ * fall back to when a plan lapses — the answer to "what does an unpaid partner
+ * earn" is nothing, which is what dropping the edge in `loadEdge` does.
+ *
+ * A MISSING EXPIRY NEVER LAPSES. That is not laziness about null handling; it
+ * is the grandfather clause. The partners who joined while the lower tier was
+ * genuinely free carry no `proExpiresAt` at all, and they keep earning until an
+ * admin stamps one on them. Switching off somebody's income as a side effect of
+ * a deploy is not a thing to do, and certainly not a thing to do silently.
+ */
+export function planLapsed(
+  partner: FirebaseFirestore.DocumentSnapshot,
+  now: number = Date.now(),
+): boolean {
+  const expires = partner.get('proExpiresAt') as { toMillis?: () => number } | null | undefined;
+  const ms = typeof expires?.toMillis === 'function' ? expires.toMillis() : null;
+  return ms !== null && ms <= now;
+}
+
+/**
+ * The tier a partner is paid at right now.
+ *
+ * A plan is bought for a fixed number of months and `proExpiresAt` is stamped
+ * at approval. A lapsed Pro reads as the lower tier here — but `loadEdge` has
+ * already dropped the edge by then, so this is what the fleet portal and the
+ * admin desk show, not what anybody is paid.
  */
 export function effectiveTier(
   partner: FirebaseFirestore.DocumentSnapshot,

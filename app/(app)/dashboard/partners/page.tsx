@@ -205,7 +205,7 @@ export default function PartnersPage() {
         <p style={{ color: colors.muted, marginTop: 6, fontSize: 14 }}>
           Partners earn a share of Velocity Rides&apos; <strong>platform commission</strong> on genuine
           completed rides run by the drivers and passengers they recruited — never a share of the
-          fare. Free earns 0.5% on both fleets; Pro pays a one-off fee and earns 2% (driver) and
+          fare. Starter earns 0.5% on both fleets; Pro costs more and earns 2% (driver) and
           1.3% (passenger).
         </p>
       </div>
@@ -268,8 +268,9 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
     return <Card><p style={{ color: colors.muted, margin: 0 }}>No applications waiting. 🎉</p></Card>;
   }
 
-  // Pro and Free are different jobs — a Pro review is a payment check against a
-  // receipt, a Free review is only an identity check — so they queue separately.
+  // Both tiers are paid since 2026-10-17, so both reviews are now a payment
+  // check against a receipt plus an identity check. They still queue separately
+  // because the amounts differ and an approver works one price at a time.
   const pro = apps.filter((a) => a.tier === 'pro');
   const free = apps.filter((a) => a.tier !== 'pro');
 
@@ -284,10 +285,10 @@ function Applications({ apps, busy, run }: { apps: Application[]; busy: string |
         run={run}
       />
       <ApplicationSection
-        title={`Free applications (${free.length})`}
+        title={`Starter applications (${free.length})`}
         hint="No payment involved — just check the identity document."
         apps={free}
-        empty="No Free applications waiting."
+        empty="No Starter applications waiting."
         busy={busy}
         run={run}
       />
@@ -371,7 +372,7 @@ function ApplicationSection({
 
           {isPro ? (
             <p style={{ color: colors.warn, fontSize: 12, marginTop: 10, marginBottom: 0 }}>
-              ⚠️ Check the receipt against your account before approving as Pro. Approving as Free
+              ⚠️ Check the receipt against your account before approving as Pro. Approving as Starter
               instead lets them in at 0.5% without the fee.
             </p>
           ) : null}
@@ -389,7 +390,7 @@ function ApplicationSection({
                 )
               }
             >
-              Approve as {isPro ? 'Pro' : 'Free'}
+              Approve as {isPro ? 'Pro' : 'Starter'}
             </Button>
             {isPro ? (
               <Button
@@ -405,7 +406,7 @@ function ApplicationSection({
                   )
                 }
               >
-                Approve as Free (no fee received)
+                Approve as Starter (Pro fee not received)
               </Button>
             ) : null}
             <Button
@@ -515,7 +516,7 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
                 fontSize: 14,
               }}
             >
-              <option value="free">Free — 0.5% both fleets</option>
+              <option value="free">Starter — 0.5% both fleets</option>
               <option value="pro">Pro — 2% / 1.3%</option>
             </select>
           </label>
@@ -554,7 +555,7 @@ function Partners({ partners, busy, run }: { partners: Partner[]; busy: string |
                 </td>
                 <td style={td}>
                   <Badge
-                    label={p.tier === 'pro' ? 'PRO' : 'FREE'}
+                    label={p.tier === 'pro' ? 'PRO' : 'STARTER'}
                     color={p.tier === 'pro' ? colors.primary : colors.muted}
                   />
                 </td>
@@ -789,6 +790,7 @@ function Settings() {
   const [proDriver, setProDriver] = useState('2');
   const [proPassenger, setProPassenger] = useState('1.3');
   const [proMonthlyFee, setProMonthlyFee] = useState('4500');
+  const [starterMonthlyFee, setStarterMonthlyFee] = useState('3000');
   const [proFeeCurrency, setProFeeCurrency] = useState('PKR');
   const [bankName, setBankName] = useState('');
   const [bankAccountTitle, setBankAccountTitle] = useState('');
@@ -814,6 +816,7 @@ function Settings() {
       setProDriver(asPct(d.pro?.driverFleetRate, '2'));
       setProPassenger(asPct(d.pro?.passengerFleetRate, '1.3'));
       if (typeof d.proMonthlyFee === 'number') setProMonthlyFee(String(d.proMonthlyFee));
+      if (typeof d.starterMonthlyFee === 'number') setStarterMonthlyFee(String(d.starterMonthlyFee));
       if (typeof d.proFeeCurrency === 'string') setProFeeCurrency(d.proFeeCurrency);
       setBankName(d.payment?.bankName ?? '');
       setBankAccountTitle(d.payment?.bankAccountTitle ?? '');
@@ -844,6 +847,7 @@ function Settings() {
           free: { driverFleetRate: fd, passengerFleetRate: fp },
           pro: { driverFleetRate: pd, passengerFleetRate: pp },
           proMonthlyFee: Number(proMonthlyFee),
+          starterMonthlyFee: Number(starterMonthlyFee),
           proFeeCurrency: proFeeCurrency.trim().toUpperCase() || 'PKR',
           payment: {
             bankName: bankName.trim() || null,
@@ -883,9 +887,10 @@ function Settings() {
         </p>
 
         <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 16 }}>
-          <strong style={{ color: colors.text, fontSize: 13 }}>Free Partner</strong>
+          <strong style={{ color: colors.text, fontSize: 13 }}>Starter Partner</strong>
           <FieldRow label="Driver fleet" suffix="% of platform commission" value={freeDriver} onChange={setFreeDriver} />
           <FieldRow label="Passenger fleet" suffix="% of platform commission" value={freePassenger} onChange={setFreePassenger} />
+          <FieldRow label="Monthly fee" suffix={`${proFeeCurrency} / month — billed for 3, 6 or 12 months`} value={starterMonthlyFee} onChange={setStarterMonthlyFee} />
 
           <strong style={{ color: colors.text, fontSize: 13, marginTop: 10 }}>Pro Partner</strong>
           <FieldRow label="Driver fleet" suffix="% of platform commission" value={proDriver} onChange={setProDriver} />
@@ -896,14 +901,14 @@ function Settings() {
       </Card>
 
       <Card>
-        <h3 style={{ margin: '0 0 4px', color: colors.text }}>Where Pro applicants pay</h3>
+        <h3 style={{ margin: '0 0 4px', color: colors.text }}>Where applicants pay</h3>
         <p style={{ color: colors.muted, fontSize: 13, marginTop: 0 }}>
           Shown on the Pro application screen. Applicants copy one of these, pay, and upload a
           receipt for you to check.
         </p>
         {noAccounts ? (
           <p style={{ color: colors.warn, fontSize: 13, fontWeight: 700, margin: '8px 0 0' }}>
-            ⚠️ No accounts set — Pro applicants currently have nowhere to send the fee.
+            ⚠️ No accounts set — applicants currently have nowhere to send the fee, on either plan.
           </p>
         ) : null}
         <div style={{ display: 'grid', gap: 14, maxWidth: 520, marginTop: 14 }}>

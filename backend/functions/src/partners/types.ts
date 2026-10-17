@@ -9,10 +9,22 @@
 export type PartnerApplicationStatus = 'pending' | 'approved' | 'rejected' | 'resubmit';
 
 /**
- * `free` costs nothing and earns the base rate on both fleets. `pro` costs a
- * one-off registration fee and earns considerably more — so a Pro application
- * must carry proof that the fee was actually paid, and an admin eyeballs that
- * screenshot before approving. See partners/config.ts for the rates.
+ * The two plans. BOTH ARE PAID.
+ *
+ * `free` is the tier id, not the price. It was free until 2026-10-17, and is
+ * now the Starter plan at a monthly fee of its own; the identifier stays `free`
+ * because it is stamped on every existing partner document, every settled
+ * partner transaction and every fleet record, and renaming it would mean a
+ * migration whose only product is a nicer word in the database. The same
+ * decision as `travelMate*` keeping its name after the Travel Partner rebrand:
+ * the UI says "Starter", the data says `free`, and nothing in between has to
+ * move. Every user-visible string lives in the apply screen and the admin desk.
+ *
+ * Starter earns the base rate on both fleets; Pro costs more and earns roughly
+ * four times as much. Both now require proof that the fee was paid, and an
+ * admin eyeballs that screenshot before approving — the backend cannot tell a
+ * real receipt from a doctored one and pretending otherwise would be theatre.
+ * See partners/config.ts for the rates and the prices.
  */
 export type PartnerTier = 'free' | 'pro';
 

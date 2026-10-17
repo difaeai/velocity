@@ -957,15 +957,21 @@ export default function TripScreen() {
 
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && (
           <>
+            {/* One SOS, one meaning. This used to raise a safety event and
+                nothing else, which told Velocity and told nobody who could
+                actually come. It now opens the Safety Centre's SOS sheet with
+                this ride attached: the police line, the rider's own WhatsApp
+                to their emergency contacts, and our desk alerted in the
+                background — see app/safety.tsx. */}
             <PrimaryButton
               variant="danger"
               label="🆘 Emergency SOS"
               disabled={busy}
-              onPress={() => run(() => api.raiseSafetyEvent({ tripId: trip.id, kind: 'sos' }))}
+              onPress={() => router.push(`/safety?tripId=${trip.id}&sos=1`)}
             />
-            {/* SOS reaches us. The Safety Centre reaches the police, Rescue and
-                NCCIA — and we are not the right first call for a fight or an
-                accident, so the way to the ones that are is on this screen. */}
+            {/* The Safety Centre also reaches Rescue and NCCIA — and we are not
+                the right first call for a fight or an accident, so the way to
+                the ones that are is on this screen. */}
             <Pressable
               style={styles.safetyLink}
               onPress={() => router.push(`/safety?tripId=${trip.id}`)}

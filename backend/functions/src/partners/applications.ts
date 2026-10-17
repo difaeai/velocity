@@ -7,16 +7,21 @@
  * that the dashboard and every earning path key off. `requirePartner()` is the
  * single gate — if there is no approved partner doc, there is no program.
  *
- * TIERS
- * -----
- * A free application needs an identity document and a verified mobile, nothing
- * else. A Pro
- * application additionally needs proof that the registration fee was paid — a
- * screenshot of the transfer — because Pro earns roughly four times what free
- * earns and the fee is the only thing standing between "a partner" and "anyone
- * who wants the higher rate". The screenshot is checked by a human at approval:
- * the backend cannot tell a real receipt from a Photoshopped one, and pretending
- * otherwise would just be theatre.
+ * TIERS — BOTH PAID, SINCE 2026-10-17
+ * -----------------------------------
+ * Every application now needs an identity document, a verified mobile, a plan
+ * length (3, 6 or 12 months) and proof that the fee was paid. Starter and Pro
+ * differ only in the price and the rate they earn.
+ *
+ * It used to be that Starter (tier id `free`) cost nothing, and the fee was the
+ * only thing standing between "a Pro partner" and "anyone who wanted the higher
+ * rate". With a price on both, that gate is now in front of the whole program:
+ * a partner account is a thing somebody paid for, which is also what makes the
+ * fraud rules worth enforcing — there is now something to lose.
+ *
+ * The screenshot is checked by a human at approval. The backend cannot tell a
+ * real receipt from a Photoshopped one, and pretending otherwise would just be
+ * theatre.
  *
  * Phone verification, by contrast, IS enforced by the backend. The submitted
  * number must already be on the caller's Firebase Auth record, and a number only
@@ -31,7 +36,7 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
-import { getPartnerSettings } from './config';
+import { getPartnerSettings, monthlyFeeForTier } from './config';
 import { mintPortalId, portalUrl } from '../franchise/portal';
 import { createFleetsForPartner, mintPartnerCode } from './fleets';
 import type { PartnerApplicationStatus, PartnerTier } from './types';
@@ -60,26 +65,30 @@ const submitSchema = z
     /** The back side only exists to read on a CNIC; optional for other IDs. */
     cnicBackUrl: z.string().url().max(2048).optional(),
     city: z.string().trim().min(2).max(80),
-    /** Pro only: how many months of Pro they are buying. */
+    /** How many months of the plan they are buying. Both tiers. */
     proMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
-    /** Pro only: screenshot of the registration-fee transfer. */
+    /** Screenshot of the fee transfer. Both tiers. */
     paymentProofUrl: z.string().url().max(2048).optional(),
-    /** Pro only: which rail they paid on, so the admin knows where to look. */
+    /** Which rail they paid on, so the admin knows where to look. Both tiers. */
     paymentMethod: z.enum(['bank', 'easypaisa', 'jazzcash']).optional(),
     paymentReference: z.string().trim().max(120).optional(),
     acceptedTerms: z.literal(true, {
       errorMap: () => ({ message: 'You must accept the Partner Program terms.' }),
     }),
   })
-  .refine((d) => d.tier !== 'pro' || !!d.proMonths, {
-    message: 'Choose a Pro plan: 3 months, 6 months or 1 year.',
+  // Both tiers are paid, so all three are required of both. An older build of
+  // the app posts a Starter application with none of them; it is rejected with
+  // a message that names what is missing rather than a validation code, because
+  // the person reading it has an out-of-date app and no idea why.
+  .refine((d) => !!d.proMonths, {
+    message: 'Choose a plan length: 3 months, 6 months or 1 year.',
     path: ['proMonths'],
   })
-  .refine((d) => d.tier !== 'pro' || !!d.paymentProofUrl, {
-    message: 'Upload a screenshot of your Pro plan payment.',
+  .refine((d) => !!d.paymentProofUrl, {
+    message: 'Upload a screenshot of your plan payment.',
     path: ['paymentProofUrl'],
   })
-  .refine((d) => d.tier !== 'pro' || !!d.paymentMethod, {
+  .refine((d) => !!d.paymentMethod, {
     message: 'Tell us which account you paid into.',
     path: ['paymentMethod'],
   })
@@ -147,6 +156,7 @@ export const getPartnerTiers = onCall(async () => {
     free: s.free,
     pro: s.pro,
     proMonthlyFee: s.proMonthlyFee,
+    starterMonthlyFee: s.starterMonthlyFee,
     proFeeCurrency: s.proFeeCurrency,
     payment: s.payment,
   };
@@ -220,16 +230,16 @@ export const submitPartnerApplication = onCall(async (req) => {
     cnicBackUrl: data.cnicBackUrl ?? null,
     city: data.city,
     photoURL: userSnap.get('photoURL') ?? null,
-    // Pro only. The bill is snapshotted as it stood when they paid — months ×
-    // monthly fee — so an admin reviewing next week compares the screenshot
-    // against the price the applicant was actually shown, not against a rate
-    // that changed since.
+    // The bill is snapshotted as it stood when they paid — months × that
+    // tier's monthly fee — so an admin reviewing next week compares the
+    // screenshot against the price the applicant was actually shown, not
+    // against a rate that changed since.
     paymentProofUrl: data.paymentProofUrl ?? null,
     paymentMethod: data.paymentMethod ?? null,
     paymentReference: data.paymentReference ?? null,
-    proMonths: data.tier === 'pro' ? (data.proMonths ?? null) : null,
-    quotedMonthlyFee: data.tier === 'pro' ? settings.proMonthlyFee : 0,
-    quotedFee: data.tier === 'pro' ? settings.proMonthlyFee * (data.proMonths ?? 0) : 0,
+    proMonths: data.proMonths ?? null,
+    quotedMonthlyFee: monthlyFeeForTier(settings, data.tier),
+    quotedFee: monthlyFeeForTier(settings, data.tier) * (data.proMonths ?? 0),
     quotedFeeCurrency: settings.proFeeCurrency,
     acceptedTerms: true,
     status: 'pending' as PartnerApplicationStatus,
@@ -274,10 +284,13 @@ export const adminReviewPartnerApplication = onCall(async (req) => {
   // support for their link is a partner who never opens it.
   const portalId = decision === 'approve' && tier === 'pro' ? await mintPortalId() : null;
 
-  // Pro is bought by the month (3, 6 or 12). The clock starts at approval, not
-  // at payment — the applicant shouldn't lose days to the review queue.
+  // Both plans are bought by the month (3, 6 or 12). The clock starts at
+  // approval, not at payment — the applicant shouldn't lose days to the review
+  // queue. `proMonths`/`proExpiresAt` keep their names for the same reason the
+  // `free` tier id does: they are already on every partner document, and a
+  // rename buys nothing but a migration.
   const proMonths =
-    decision === 'approve' && tier === 'pro'
+    decision === 'approve'
       ? ((snap.get('proMonths') as number | undefined) ?? null)
       : null;
   let proExpiresAt: Date | null = null;

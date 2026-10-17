@@ -195,7 +195,7 @@ export default function ProfileScreen() {
               <Text style={styles.itemIcon}>🛡️</Text>
               <View>
                 <Text style={styles.itemTitle}>Safety Centre</Text>
-                <Text style={styles.itemSubtitle}>Police 15 · report a scam · share your ride</Text>
+                <Text style={styles.itemSubtitle}>SOS · police 15 · share your ride</Text>
               </View>
             </View>
             <Text style={styles.chevron}>➔</Text>
