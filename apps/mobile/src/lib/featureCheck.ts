@@ -28,6 +28,20 @@
  *     evidence about the app people are using, so dev builds log to the console
  *     instead of to the testing log.
  *
+ * WHAT THIS CANNOT SEE — read before adding to CALLABLE_FEATURE
+ * Some callables are built never to fail. `getTrafficAlerts` answers
+ * `{ ok: true, city: [], route: [] }` when the alerts cannot be read at all,
+ * because a road alert is a courtesy on top of a booking screen and must never
+ * stop somebody booking a ride. From here that is a fast, successful call —
+ * identical whether the feature is healthy or completely dead.
+ *
+ * So a feature with a degrade-to-empty contract must NOT be listed below. Silence
+ * from it would mean nothing, and reading "no reports" as "no problem" is exactly
+ * how a watcher ends up certifying a dead feature. Those are proved server-side
+ * instead, by an agent check against the data (backend/functions/src/qa/checks.ts).
+ * `getEnRouteSavings` degrades the same way on purpose and is watched here only
+ * for what it CAN tell us: throwing, and taking too long.
+ *
  * WHERE THE REPORTS GO
  * `reportFeatureCheck` (backend/functions/src/qa/report.ts) → one date-wise log
  * the admin Testing page reads, with each entry already written as the brief
