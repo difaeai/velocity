@@ -138,13 +138,41 @@ jobs:
           # whenever both are present. Payment-proof vision does NOT read this:
           # it is a vision call, and pointing it at a second vendor is a change
           # to how money is verified, not a key swap.
+          #
+          # Unlike the blocks above, this one is cleaned before it is written.
+          # Firebase's dotenv parser rejects the whole file over one bad line
+          # and reports it as `Invalid dotenv file, error on lines: ***` — the
+          # content masked, because it came out of a secret. That is an
+          # unreadable failure for the one block most likely to be pasted by
+          # hand from a chat window, carrying a CR, a blank line, a stray quote
+          # or a fence. So: strip CRs, drop everything that is not NAME=value,
+          # and print the names that survived. Names are not secrets; values
+          # are, and GitHub masks those anyway.
+          #
+          # The older blocks are deliberately left alone. They work, they are
+          # rarely retyped, and this is the deploy path — not the place to
+          # change three things that are not broken.
           if [ -n "$FREE_MODEL_ENV" ]; then
-            printf '%s\n' "$FREE_MODEL_ENV" >> .env.velocity-fe379
-            if [ -n "$ANTHROPIC_API_KEY" ]; then
-              echo "· ai: free model configured but idle — Anthropic takes precedence"
+            printf '%s\n' "$FREE_MODEL_ENV" \
+              | tr -d '\r' \
+              | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' > .free-model.env || true
+            if [ -s .free-model.env ]; then
+              cat .free-model.env >> .env.velocity-fe379
+              echo "· ai: free model block parsed — $(cut -d= -f1 .free-model.env | tr '\n' ' ')"
+              if ! cut -d= -f1 .free-model.env | grep -qx 'FREE_MODEL_KEY'; then
+                echo "· ai: WARNING — no FREE_MODEL_KEY line in that block, so the"
+                echo "      free engine stays OFF. Check the secret's first line."
+              elif [ -n "$ANTHROPIC_API_KEY" ]; then
+                echo "· ai: free model configured but idle — Anthropic takes precedence"
+              else
+                echo "· ai: social and support run on the FREE model (no market read)"
+              fi
             else
-              echo "· ai: social and support run on the FREE model (no market read)"
+              echo "· ai: FREE_MODEL_ENV is set but holds no NAME=value line, so"
+              echo "      nothing was written. Expected three lines like"
+              echo "      FREE_MODEL_KEY=... — no quotes, no code fence, no blank first line."
             fi
+            rm -f .free-model.env
           elif [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "· ai: no model key at all — the social desk writes locally and"
             echo "      support tickets all go to the human desk."
