@@ -12,7 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { extractJson, resolveModel } from '../claude';
+import { resolveModel } from '../claude';
+import { extractJson } from '../engine';
 import { captionFor } from '../manager';
 import {
   FORMAT_SPECS,

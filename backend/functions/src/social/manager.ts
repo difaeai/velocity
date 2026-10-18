@@ -14,7 +14,7 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localDistribution } from './local';
 import {
   CAPTION_LIMITS,
@@ -72,7 +72,7 @@ export async function planDistribution(params: {
   // This is the one stage the local engine does at least as well: the per-
   // network rules are character limits and a layout, which `slice` applies
   // exactly and a prompt only asks for.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localDistribution({
       caption: params.caption,
       hashtags: params.hashtags,

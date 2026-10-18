@@ -18,7 +18,7 @@
  * reading it is the renderer.
  */
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localFrames } from './local';
 import {
   FORMAT_SPECS,
@@ -73,7 +73,7 @@ export async function directFrames(params: {
   // The writer's scene lines were written as image prompts in the first place,
   // so locally this stage adds the standing craft block and the alt text and
   // stops. It does not paraphrase a brief that is already a brief.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localFrames({ script: params.script, count: params.count, craft: HOUSE_STYLE, seo: params.seo });
   }
 

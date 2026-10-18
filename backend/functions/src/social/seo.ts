@@ -23,7 +23,7 @@
 import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localAdPlan, localSearchPack, localSeoPack } from './local';
 import {
   FORMAT_SPECS,
@@ -72,7 +72,7 @@ export async function seoPass(params: {
   // Locally this is cheap and, unusually, verifiable: the brief is filtered
   // against the draft the writer is about to produce, so it never asks for a
   // phrase the piece will not contain. See `localSeoPack`.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localSeoPack({ angle: params.angle, format: params.format, facts: params.facts });
   }
 
@@ -145,7 +145,7 @@ export async function searchPass(params: {
   const spec = FORMAT_SPECS[params.format];
   const forYouTube = spec.kind === 'video';
 
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localSearchPack({
       angle: params.angle,
       format: params.format,
@@ -238,7 +238,7 @@ export async function adPass(params: {
   angle: string;
   feedback: string[];
 }): Promise<AdPlan | null> {
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localAdPlan({ angle: params.angle, script: params.script, facts: params.facts });
   }
 

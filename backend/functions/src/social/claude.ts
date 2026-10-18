@@ -1,8 +1,11 @@
 /**
- * The one door to Claude. Every agent on the desk thinks with this file — Hina
- * researches through it, Qalam writes with it, Talha and Zara plan search with
- * it, Rang writes art direction with it, Raftar writes the cut with it, Bilal
- * writes the campaign brief with it, and Awaaz drafts every reply with it.
+ * Claude: the best engine on the desk, and the only paid one.
+ *
+ * It is no longer the *only* engine — `engine.ts` is the door every stage
+ * knocks on, and it comes here first whenever `ANTHROPIC_API_KEY` exists,
+ * falling to Gemini's free tier and then to the local writer when it does not.
+ * This file only knows how to ask Anthropic a question. Nothing here should
+ * learn about the other two.
  *
  * Pictures and video do NOT come through here: Claude does not render images or
  * video, so `designer.ts` and `video.ts` still call Google for the frames and
@@ -30,6 +33,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { logger } from 'firebase-functions';
 
 import { DEFAULT_TEXT_MODEL } from './types';
+// Type-only, and that is deliberate: engine.ts imports this file at runtime,
+// so a value import back would be a cycle. Types are erased.
+import type { GroundedSource, TextRequest, TextResult } from './engine';
 
 /** Where a refusal lands rather than killing the run. */
 const FALLBACK_MODEL = 'claude-opus-4-8';
@@ -91,27 +97,7 @@ export function resolveModel(configured: string | undefined): string {
   return DEFAULT_TEXT_MODEL;
 }
 
-export interface GroundedSource {
-  title: string;
-  url: string;
-}
-
-export interface TextResult {
-  text: string;
-  /** Populated only on grounded calls — what the model actually read. */
-  sources: GroundedSource[];
-  searches: string[];
-}
-
-export interface TextRequest {
-  model: string;
-  system: string;
-  prompt: string;
-  /** Let the model search the web first. Costs calls; buys today's facts. */
-  grounded?: boolean;
-}
-
-export async function generateText(req: TextRequest): Promise<TextResult> {
+export async function claudeText(req: TextRequest): Promise<TextResult> {
   const model = resolveModel(req.model);
 
   let response;
@@ -190,40 +176,4 @@ export async function generateText(req: TextRequest): Promise<TextResult> {
   }
 
   return { text, sources, searches };
-}
-
-/**
- * Pull the first JSON object out of a reply. A model that has just been
- * searching the web tends to answer in prose with the object somewhere inside
- * it, and a fenced ```json block is the common shape, so both are handled
- * rather than insisted against.
- */
-export function extractJson<T>(text: string): T | null {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidates = [fenced?.[1], text].filter((s): s is string => typeof s === 'string');
-
-  for (const candidate of candidates) {
-    const start = candidate.indexOf('{');
-    const end = candidate.lastIndexOf('}');
-    if (start === -1 || end <= start) continue;
-    try {
-      return JSON.parse(candidate.slice(start, end + 1)) as T;
-    } catch {
-      /* try the next shape */
-    }
-  }
-  return null;
-}
-
-/** Ask for one JSON object and get it back, or fail with what came instead. */
-export async function generateJson<T>(
-  req: TextRequest & { what: string },
-): Promise<{ data: T; sources: GroundedSource[] }> {
-  const result = await generateText(req);
-  const data = extractJson<T>(result.text);
-  if (!data) {
-    logger.error('social: could not parse a reply', { what: req.what, text: result.text.slice(0, 600) });
-    throw new ClaudeError(`${req.what} came back in a shape that could not be read.`);
-  }
-  return { data, sources: result.sources };
 }

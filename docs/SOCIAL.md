@@ -467,15 +467,16 @@ Threads and YouTube; TikTok, X and LinkedIn are publish-only here.
 
 ## 9. Secrets
 
-Both are their own GitHub Actions secrets, assembled into the functions `.env`
-by `.github/workflows/deploy-functions.yml`. Neither goes in the
+Each is its own GitHub Actions secret, assembled into the functions `.env` by
+`.github/workflows/deploy-functions.yml`. None of them goes in the
 `PAYMENTS_GATEWAY_ENV` block — that block is overwritten wholesale and cannot be
 read back, so anything appended to it has to be retyped from memory.
 
 | Secret | Without it |
 |---|---|
-| `ANTHROPIC_API_KEY` | the desk falls back to the local engine — see below. Plainer writing, and no market read |
 | `SOCIAL_TOKEN_KEY` (`openssl rand -base64 32`) | accounts cannot be connected; nothing publishes |
+| `ANTHROPIC_API_KEY` | the desk drops to the next engine it has — free, then local |
+| `FREE_MODEL_ENV` | with no Anthropic key either, the desk writes locally: plainer, and no market read |
 
 Only one of these is a hard stop. `SOCIAL_TOKEN_KEY` is: a page token is a
 password and storing one in the clear is not an option, so with no vault there
@@ -484,12 +485,60 @@ is nowhere to post. `ANTHROPIC_API_KEY` used to be, and is not any more.
 ⚠️ Rotating `SOCIAL_TOKEN_KEY` makes every stored token unreadable. Reconnect
 each account afterwards.
 
+### Three engines, in order
+
+`engine.ts` is the one door every stage knocks on. It picks, in this order:
+
+| | Engine | Turned on by | What it cannot do |
+|---|---|---|---|
+| 1 | **Claude** | `ANTHROPIC_API_KEY` | — (the only paid one) |
+| 2 | **A free model** | `FREE_MODEL_KEY` | search the web, so no market read |
+| 3 | **Local** | nothing | search, read a change request, or audit the profile |
+
+Stages ask `modelReady()` and take their local branch when it is false. They do
+**not** ask which engine answered — a stage that behaves differently per vendor
+is a stage that will be wrong for the next one. The console says which is
+running; the post carries an `engine` stamp; `shouldAutoPublish` asks only
+whether something *thought* about the piece.
+
+### The free engine: any OpenAI-compatible endpoint
+
+`src/social/freeModel.ts` speaks the dialect nearly every provider speaks —
+`POST {base}/chat/completions` with `messages` — so the provider is three
+environment variables inside `FREE_MODEL_ENV` rather than a file:
+
+```
+FREE_MODEL_KEY=...                              turns the engine on
+FREE_MODEL_URL=https://api.groq.com/openai/v1   optional, this is the default
+FREE_MODEL_ID=llama-3.3-70b-versatile           optional, this is the default
+```
+
+Free tiers change their limits, their models and their terms, and the provider
+we are on today is not the one we will be on in a year. Changing it is a secret
+change, not a deploy. The default is Groq because of the limits — about 30
+calls a minute and 1,000 a day against a desk that needs fifteen — no card, and
+no training on what is sent.
+
+Three behaviours in that file are deliberate and must survive a rewrite:
+
+- **A grounded request is refused outright**, before any call is made. No free
+  endpoint can search, and the danger is not a failed market read — `research.ts`
+  has always handled that — it is a model answering the research prompt anyway,
+  from nothing, and a composed market read reaching the standup looking exactly
+  like a real one.
+- **JSON mode is asked for and dropped on the first 400 that mentions it**, for
+  the life of the instance. A smaller model is markedly steadier with it, and
+  `extractJson` was always the real net.
+- **Daily quota refusals are not retried.** Waiting fifty seconds to be refused
+  again burns the clock of a run that has one; a per-minute refusal is waited
+  out, a per-day one is reported.
+
 ### The second engine: writing with no key
 
 `src/social/local/` is a writer that needs no key, no network and no quota. It
-is reached by one check — `if (!claudeReady())` — at the top of every stage, so
-the pipeline, the console and the queue are unchanged and a key appearing later
-switches everything back with no migration.
+is reached by one check — `if (!modelReady())` — at the top of every stage, so
+the pipeline, the console and the queue are unchanged and either key appearing
+later switches everything back with no migration.
 
 It works by inverting something the desk already owned. `lint.ts` is 900 lines
 of deterministic critic: it scores a hook on length, specificity, stakes,
@@ -514,7 +563,7 @@ one the critic has nothing left to say about.
 The honest limit is that the ceiling is the material. It will never write a
 sentence nobody wrote down, never notice that today is different, and over a
 long run the feed reads as a family of shapes. Variety is rotation plus
-selection, which is not the same as having an idea — so `claudeReady()` still
+selection, which is not the same as having an idea — so a real model still
 wins whenever a key exists, and the console says which engine ran.
 
 Two things to know before editing `material.ts`:
@@ -544,9 +593,12 @@ out was never the point of the desk.
 ### The model id is a setting, not code
 
 `textModel` is editable on the Employees page, so a rename is a settings change
-and not a redeploy. It must be a Claude model — a Gemini id left in that field
-from before the desk moved is ignored rather than sent to fail, and the console
-says so under the field.
+and not a redeploy. It is **one box shared by both model engines**, and whichever
+one is running corrects a value belonging to the other rather than sending it to
+an API that will refuse it: Claude ignores anything that is not `claude-…`, and
+the free engine ignores anything that is. So a desk that changes engines keeps
+working with the old id still sitting in the field, which is the normal state
+rather than a mistake — the console says when it is doing that.
 
 | | Default | Used by |
 |---|---|---|

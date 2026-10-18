@@ -459,7 +459,7 @@ export interface Blocker {
  * none the strip is replaced by a single green line.
  */
 export function readBlockers(
-  readiness: { writer: boolean; engine?: 'claude' | 'local'; tokenVault: boolean } | null,
+  readiness: { writer: boolean; engine?: 'claude' | 'free' | 'local'; tokenVault: boolean } | null,
   staffed: number,
   connectedCount: number,
   brokenCount: number,
@@ -477,7 +477,19 @@ export function readBlockers(
   if (readiness.engine === 'local') {
     out.push({
       label: 'Writing without a model',
-      why: 'ANTHROPIC_API_KEY is not set, so the desk is using its local engine: it composes from the brand material, scores every candidate against the same checks and picks the best. Reliable and free, and plainer than the model. There is no live market read while it is on.',
+      why: 'No model key is set, so the desk is using its local engine: it composes from the brand material, scores every candidate against the same checks and picks the best. Reliable and free, and plainer than a model. There is no live market read while it is on, and nothing auto-publishes.',
+      href: '/dashboard/social/automation',
+      cta: 'What this changes',
+      hard: false,
+    });
+  }
+  // Not a problem — it is a real model and it is free — but two things about
+  // it are decisions rather than details, and neither is visible in the
+  // writing itself. Said once, in warn, where the rest of the state is said.
+  if (readiness.engine === 'free') {
+    out.push({
+      label: 'Writing with a free model',
+      why: 'A free model is doing the thinking — the standup, the writing, the SEO, the briefs, the replies, and change requests read properly again. The one thing it cannot do is search the web, so there is still no live market read: the desk says so rather than inventing one.',
       href: '/dashboard/social/automation',
       cta: 'What this changes',
       hard: false,

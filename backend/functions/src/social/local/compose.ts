@@ -31,7 +31,7 @@
  * write a sentence nobody wrote down, it will never notice that today is
  * different, and across a long enough run the feed will read as a family of
  * shapes. Variety here is rotation plus selection, which is not the same thing
- * as having an idea. `claudeReady()` still wins whenever a key exists.
+ * as having an idea. A real model still wins whenever one is configured.
  */
 import {
   beatSheet,

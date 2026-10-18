@@ -70,6 +70,7 @@ jobs:
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FREE_MODEL_ENV: ${{ secrets.FREE_MODEL_ENV }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
@@ -119,9 +120,34 @@ jobs:
             printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env.velocity-fe379
             echo "· ai: proof checks, support and social READY"
           else
-            echo "· ai: no ANTHROPIC_API_KEY — payment proofs and support tickets fall"
-            echo "      back to humans, and the social desk cannot work. Driver"
-            echo "      verification is unaffected: its engine is local and needs no key."
+            echo "· ai: no ANTHROPIC_API_KEY — payment proofs wait for an admin."
+            echo "      Driver verification is unaffected: its engine is local."
+          fi
+          # The free engine: any OpenAI-compatible endpoint, Groq by default.
+          # Its own block rather than three secrets, so the provider can be
+          # changed in one place without anyone reconstructing a set of values
+          # they cannot read back out of GitHub — the same reason the payments
+          # and WhatsApp blocks are shaped this way. Contents:
+          #
+          #   FREE_MODEL_KEY=...          the key; its presence turns this on
+          #   FREE_MODEL_URL=...          optional, default Groq's base URL
+          #   FREE_MODEL_ID=...           optional, default a production Llama
+          #
+          # It is the fallback for the two callers that can use either engine
+          # — the social desk and support replies — and ANTHROPIC_API_KEY wins
+          # whenever both are present. Payment-proof vision does NOT read this:
+          # it is a vision call, and pointing it at a second vendor is a change
+          # to how money is verified, not a key swap.
+          if [ -n "$FREE_MODEL_ENV" ]; then
+            printf '%s\n' "$FREE_MODEL_ENV" >> .env.velocity-fe379
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              echo "· ai: free model configured but idle — Anthropic takes precedence"
+            else
+              echo "· ai: social and support run on the FREE model (no market read)"
+            fi
+          elif [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "· ai: no model key at all — the social desk writes locally and"
+            echo "      support tickets all go to the human desk."
           fi
           # WhatsApp Cloud API — its own block (WHATSAPP_TOKEN, _PHONE_NUMBER_ID,
           # _TEMPLATE_NAME, _TEMPLATE_LANG, _VERIFY_TOKEN, _APP_SECRET), kept

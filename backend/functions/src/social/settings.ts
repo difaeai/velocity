@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { activeTeam, coverageGaps } from './employees';
-import { claudeReady } from './claude';
+import { activeEngine } from './engine';
 import { tokenVaultReady } from './secrets';
 import {
   DEFAULT_SETTINGS,
@@ -125,8 +125,8 @@ export const adminGetSocialSettings = onCall(async (req) => {
        * the team demonstrably just wrote something is worse than no checklist.
        */
       writer: true,
-      /** Which of the two engines a run would actually use today. */
-      engine: claudeReady() ? ('claude' as const) : ('local' as const),
+      /** Which of the three engines a run would actually use today. */
+      engine: activeEngine(),
       tokenVault: tokenVaultReady(),
     },
     /** What the current roster can and cannot do, in words. */

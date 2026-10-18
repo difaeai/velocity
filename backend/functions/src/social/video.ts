@@ -17,7 +17,7 @@ import { logger } from 'firebase-functions';
 
 import { feedbackBlock, planBlock, systemFor } from './crew';
 import { postFolder, storeFile } from './assets';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import {
   FORMAT_SPECS,
   type ContentFormat,
@@ -56,7 +56,7 @@ export async function planCut(params: {
   // `assembleCut` was already the model-free path, written as a fallback for a
   // failed call. With no key it is simply the path, and it is reached without
   // first attempting a call that cannot succeed.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return {
       prompt: assembleCut(params.script, spec.aspect),
       note: 'Cut assembled straight from the script by the local engine.',
