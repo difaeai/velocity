@@ -24,7 +24,7 @@ import { logger } from 'firebase-functions';
 
 import { db } from '../lib/firebase';
 import { BRAND, systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localResearch } from './local';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings } from './types';
 
@@ -89,7 +89,7 @@ export async function runResearch(params: {
   //
   // Not cached either, for the same reason a failure is not: the day a key
   // appears, the next run should do a real read rather than find this.
-  if (!claudeReady()) return localResearch();
+  if (!modelReady()) return localResearch();
 
   // One read a day. The market does not move fast enough to pay for a grounded
   // search per piece, and everything made that day should be working from the

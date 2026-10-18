@@ -422,7 +422,7 @@ export function Readiness({
   connectedCount,
   staffed,
 }: {
-  readiness: { writer: boolean; engine?: 'claude' | 'local'; tokenVault: boolean };
+  readiness: { writer: boolean; engine?: 'claude' | 'free' | 'local'; tokenVault: boolean };
   connectedCount: number;
   staffed?: number;
 }) {
@@ -443,11 +443,18 @@ export function Readiness({
       // scored by the same checks. The row's job is to say which, since the
       // two read differently and the difference is otherwise invisible.
       state: readiness.engine === 'local' ? 'off' : 'ok',
-      label: readiness.engine === 'local' ? 'The engine (local)' : 'The engine (Claude)',
+      label:
+        readiness.engine === 'local'
+          ? 'The engine (local)'
+          : readiness.engine === 'free'
+            ? 'The engine (free model)'
+            : 'The engine (Claude)',
       note:
         readiness.engine === 'local'
-          ? 'ANTHROPIC_API_KEY is not set, so the desk is writing locally: it composes from the brand material, scores every candidate against the same hook, caption and timing checks, and keeps the best. No key, no cost, no failed runs — plainer writing, and no live market read. Add the key to switch back.'
-          : 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.',
+          ? 'No model key is set, so the desk is writing locally: it composes from the brand material, scores every candidate against the same hook, caption and timing checks, and keeps the best. No key, no cost, no failed runs — plainer writing, and no live market read. Either key switches it back.'
+          : readiness.engine === 'free'
+            ? 'FREE_MODEL_KEY is set — everyone can write, plan and decide on a free model. It cannot search the web, so the market read still cannot run; everything else is a model again. ANTHROPIC_API_KEY takes precedence whenever both exist.'
+            : 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.',
     },
     {
       state: readiness.tokenVault ? 'ok' : 'warn',

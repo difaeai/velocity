@@ -27,7 +27,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { loadCredentials, markAccountError } from './accounts';
 import { systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localReplies } from './local';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
 import { activeTeam, assign, creditWork } from './employees';
@@ -183,7 +183,7 @@ export async function draftReplies(
     // it is deliberately narrow: a real question gets a reply that promises a
     // person, because that is true, rather than one that sounds specific and
     // is not. Safety escalates on the words alone; spam closes.
-    if (!claudeReady()) {
+    if (!modelReady()) {
       replies = localReplies(batch.map((c) => ({ id: c.id, text: c.text })));
     } else {
       try {

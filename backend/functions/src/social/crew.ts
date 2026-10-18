@@ -10,7 +10,7 @@
  * field rather than eight.
  */
 import { employeeIntro } from './employees';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localPlan } from './local';
 import { playbookFor, playbookForStandup } from './playbook';
 import {
@@ -184,7 +184,7 @@ export async function planContent(params: {
   // material instead. It is a thinner standup — nobody debates anything — but
   // it produces the one thing every stage downstream needs, which is a
   // decision they can inherit rather than re-make.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localPlan({
       angle: params.angle,
       format: params.format,

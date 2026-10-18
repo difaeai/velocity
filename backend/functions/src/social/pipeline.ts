@@ -49,7 +49,7 @@ import { postFolder, refreshAssetUrls, storeFile } from './assets';
 import { planContent } from './crew';
 import { design, DesignError } from './designer';
 import { activeTeam, assign, creditWork, teamRefs } from './employees';
-import { claudeReady } from './claude';
+import { activeEngine, modelReady } from './engine';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
@@ -173,8 +173,9 @@ export function postIdFor(date: string, format: ContentFormat): string {
  * fine. This asks a different question, one with a definite answer — was this
  * written by a model, or composed from templates? The second kind is reliable
  * and plain, and plain copy going out unread is a different bargain from the
- * one that was agreed to. Adding the key is also about thirty seconds of work,
- * so the hold is usually a short one.
+ * one that was agreed to. Either key lifts the hold — a free model counts,
+ * because the question is whether something *thought* about the piece, not who
+ * was paid for it.
  *
  * Nothing is lost by waiting: the piece is finished, scored, stamped with its
  * engine, and sitting in the queue with Approve enabled.
@@ -372,7 +373,7 @@ async function runTeam(params: {
         hashtags,
         // Stamped here rather than at the end of the run: this is the stage
         // where the engine actually decided what the piece says.
-        engine: claudeReady() ? ('claude' as const) : ('local' as const),
+        engine: activeEngine(),
         quality: drafted.quality,
       });
       // The scorecard goes in the work log too, so the console shows what the
@@ -578,7 +579,7 @@ async function runTeam(params: {
   // the writing rather than in a gate: the FACTS rule, no competitor named, no
   // promised income. The scorecard is still computed and still stored, so a
   // weak piece that went out can be found afterwards; it is simply not stopped.
-  if (!shouldAutoPublish(settings.autoPublish, claudeReady())) {
+  if (!shouldAutoPublish(settings.autoPublish, modelReady())) {
     // Deliberately not written to `error`: the queue renders that in red, and
     // a finished piece waiting to be read is not a failure. The `engine` stamp
     // is already on the document and the queue says what it means.
@@ -925,10 +926,17 @@ export const socialDailyContent = onSchedule(
     const date = dayKey(Date.now());
     try {
       const outcome = await runDaily(date);
-      // Which engine ran is recorded with the outcome: the two produce
+      // Which engine ran is recorded with the outcome: the three produce
       // visibly different work, and "why does today read like a template"
       // should be answerable from the run log rather than guessed at.
-      await recordRun(claudeReady() ? outcome : `${outcome} (written locally, no model)`);
+      const engine = activeEngine();
+      await recordRun(
+        engine === 'claude'
+          ? outcome
+          : engine === 'free'
+            ? `${outcome} (written by the free model)`
+            : `${outcome} (written locally, no model)`,
+      );
       logger.info('social: daily run finished', { date, outcome });
     } catch (e) {
       const message = (e as Error).message;

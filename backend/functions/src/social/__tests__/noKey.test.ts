@@ -1,5 +1,5 @@
 /**
- * The desk with no ANTHROPIC_API_KEY — the whole point of the local engine.
+ * The desk with no model key at all — the whole point of the local engine.
  *
  * Every other test in this folder checks a part. This one checks the claim:
  * that a run gets all the way through without a key, through the same public
@@ -12,13 +12,18 @@
  * local engine is good, but that nothing on this path is still fatal without a
  * key.
  *
+ * Both keys are cleared, not just Anthropic's: since the free engine shipped
+ * there are two ways to have a model, and a machine with FREE_MODEL_KEY in its
+ * environment would otherwise run this whole file against a real endpoint and
+ * fail for reasons that have nothing to do with the local writer.
+ *
  * No Firestore and no network: every function here is reached on its local
  * branch, which is itself part of what is being asserted.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { planContent } from '../crew';
-import { claudeReady } from '../claude';
+import { modelReady } from '../engine';
 import { directFrames } from '../designer';
 import { planDistribution } from '../manager';
 import { runResearch } from '../research';
@@ -74,21 +79,26 @@ const team: Employee[] = [
 
 const byRole = (role: Role): Employee => team.find((e) => e.role === role)!;
 
-let saved: string | undefined;
+const KEYS = ['ANTHROPIC_API_KEY', 'FREE_MODEL_KEY'] as const;
+const saved: Record<string, string | undefined> = {};
 
 beforeAll(() => {
-  saved = process.env.ANTHROPIC_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
+  for (const name of KEYS) {
+    saved[name] = process.env[name];
+    delete process.env[name];
+  }
 });
 
 afterAll(() => {
-  if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = saved;
+  for (const name of KEYS) {
+    if (saved[name] === undefined) delete process.env[name];
+    else process.env[name] = saved[name];
+  }
 });
 
 describe('a full run with no key', () => {
   it('has no key, so every stage below takes its local branch', () => {
-    expect(claudeReady()).toBe(false);
+    expect(modelReady()).toBe(false);
   });
 
   for (const format of ['reel', 'carousel', 'post'] as ContentFormat[]) {

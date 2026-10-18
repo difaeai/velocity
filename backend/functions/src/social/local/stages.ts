@@ -7,7 +7,7 @@
  * back. That is the one real advantage of writing locally: `generateJson`
  * exists because a model can only hand back text, and a function that is
  * already running inside the pipeline has no reason to pretend it is a model.
- * So the call sites read `if (!claudeReady()) return localX(params)` and the
+ * So the call sites read `if (!modelReady()) return localX(params)` and the
  * parsing, the field clamping and the shape-mismatch class of bug never
  * happen.
  *

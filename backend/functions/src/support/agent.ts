@@ -29,7 +29,7 @@
  */
 import { logger } from 'firebase-functions';
 
-import { claudeReady, extractJson, generateText } from '../social/claude';
+import { extractJson, generateText, modelReady } from '../social/engine';
 import { buildSupportContext, type SupportContext } from './context';
 import { EMERGENCY_CHANNELS, supportKnowledge } from './knowledge';
 import {
@@ -208,8 +208,12 @@ export async function runSupportAgent(
       },
     };
   }
-  if (!claudeReady()) {
-    logger.warn('support: ANTHROPIC_API_KEY missing — every ticket goes to the desk');
+  if (!modelReady()) {
+    // Either key will do — this answers real customers, so the question is
+    // whether anything can think about the ticket at all, not which vendor.
+    // The free engine answers these perfectly well: a support reply is a
+    // judgement about one account's own facts, not a piece of writing.
+    logger.warn('support: no model key — every ticket goes to the desk');
     return { context, reply: fallbackReply() };
   }
 

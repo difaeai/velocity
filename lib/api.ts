@@ -1319,12 +1319,13 @@ export interface SocialReadiness {
    */
   writer: boolean;
   /**
-   * Which engine a run would use today. `claude` is the model; `local` is the
-   * key-free engine that composes from the brand material and scores its own
-   * candidates. The second one is reliable and noticeably plainer, so the
-   * console says which is running rather than leaving it to be inferred.
+   * Which engine a run would use today. `claude` is the paid model, `free` is
+   * whichever free endpoint is configured, and `local` is the key-free engine
+   * that composes from the brand material and scores its own candidates. The
+   * third is reliable and noticeably plainer, so the console says which is
+   * running rather than leaving it to be inferred.
    */
-  engine: 'claude' | 'local';
+  engine: 'claude' | 'free' | 'local';
   tokenVault: boolean;
 }
 
@@ -1457,11 +1458,12 @@ export interface SocialPostDoc {
    */
   quality?: SocialQualityReport | null;
   /**
-   * Which engine wrote this piece — `claude` for the model, `local` for the
-   * key-free engine that composes from the brand material. Absent on anything
-   * written before the second engine shipped.
+   * Which engine wrote this piece — `claude` for the paid model, `free` for
+   * the configured free endpoint, `local` for the key-free engine that
+   * composes from the brand material. Absent on anything written before the
+   * second engine shipped.
    */
-  engine?: 'claude' | 'local' | null;
+  engine?: 'claude' | 'free' | 'local' | null;
   revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;

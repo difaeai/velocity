@@ -604,15 +604,17 @@ export interface SocialPost {
   /**
    * Which engine wrote this piece.
    *
-   * `claude` is the model; `local` is the key-free engine in `social/local/`,
-   * which composes from the brand material and picks the best-scoring
-   * candidate. Stamped at the writing stage and kept, because the two read
-   * differently and "why does this one sound like a template" is a question
-   * somebody asks weeks later, by which time the key may well exist.
+   * `claude` is the paid model, `free` is whichever OpenAI-compatible free
+   * endpoint is configured, and `local` is the key-free engine in
+   * `social/local/`, which composes from the brand material and picks the
+   * best-scoring candidate. Stamped at the writing stage and kept, because the
+   * three read differently and "why does this one sound like a template" is a
+   * question somebody asks weeks later, by which time the keys may well have
+   * changed.
    *
    * Null on posts written before the second engine shipped (2026-10-17).
    */
-  engine: 'claude' | 'local' | null;
+  engine: 'claude' | 'free' | 'local' | null;
   /** Every round of feedback this post has been through. */
   revisions: Revision[];
   error: string | null;
@@ -789,10 +791,10 @@ export interface SocialSettings {
    * promises an income. The scorecard is still computed and still stored, so a
    * piece that went out weak is findable afterwards; it just is not stopped.
    *
-   * One exception: a piece written by the local engine — no
-   * `ANTHROPIC_API_KEY` — always waits for a person. See `shouldAutoPublish`
-   * in `pipeline.ts` for why that is not the quality gate this setting exists
-   * to refuse.
+   * One exception: a piece written by the local engine — neither
+   * `ANTHROPIC_API_KEY` nor `FREE_MODEL_KEY` — always waits for a person. See
+   * `shouldAutoPublish` in `pipeline.ts` for why that is not the quality gate
+   * this setting exists to refuse.
    *
    * `approvedBy` is written as `auto` on anything published this way, because
    * "who approved this" is a question that gets asked a year later.
@@ -835,6 +837,23 @@ export interface SocialSettings {
 
 /** What the desk writes and decides with unless the console says otherwise. */
 export const DEFAULT_TEXT_MODEL = 'claude-opus-5';
+
+/**
+ * Where the free engine points when `FREE_MODEL_URL` says nothing: Groq's
+ * OpenAI-compatible endpoint. Chosen over the other free tiers for the limits
+ * — about 30 calls a minute and 1,000 a day, against a desk that needs
+ * fifteen — and because it does not train on what is sent to it. Any
+ * OpenAI-shaped provider works; see freeModel.ts.
+ */
+export const DEFAULT_FREE_MODEL_URL = 'https://api.groq.com/openai/v1';
+
+/**
+ * And which model there. A production id rather than a preview one, because
+ * this runs unattended at 10am: a preview model can be withdrawn between one
+ * morning and the next. `FREE_MODEL_ID` overrides it without a deploy, and the
+ * console's own model box overrides both.
+ */
+export const DEFAULT_FREE_MODEL = 'llama-3.3-70b-versatile';
 
 export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,

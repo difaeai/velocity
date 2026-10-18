@@ -34,7 +34,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { dayKey } from '../analytics';
 import { connectedPlatforms, loadCredentials } from './accounts';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localLessons } from './local';
 import { BRAND, HARD_RULES, briefBlock, standingInstructions } from './crew';
 import { activeTeam, assign } from './employees';
@@ -215,7 +215,7 @@ export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
   // that is an upgrade — "which format travels" is a mean over a group, and
   // "is the hook panel tracking reach" is two means compared, both of which
   // arithmetic answers exactly and a model was being asked to eyeball.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     const read_ = localLessons({ best, worst, medianReach, sampled: ranked.length });
     read.lessons = read_.lessons;
     read.useMore = read_.useMore;
@@ -357,7 +357,7 @@ export async function auditProfile(settings: SocialSettings): Promise<ProfileAud
   // The one stage with no local equivalent: a profile audit is a judgement
   // about twelve things a page either does or does not do, and unlike the
   // writing stages there is no candidate set to score. It waits for a key.
-  if (!claudeReady()) return empty('The profile audit needs a model, and no ANTHROPIC_API_KEY is configured.');
+  if (!modelReady()) return empty('The profile audit needs a model, and no ANTHROPIC_API_KEY is configured.');
 
   let profile: ProfileDetail;
   try {

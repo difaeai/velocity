@@ -20,7 +20,7 @@ import { logger } from 'firebase-functions';
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';
 import { feedbackBlock, planBlock, researchBlock, systemFor } from './crew';
-import { claudeReady, generateJson } from './claude';
+import { generateJson, modelReady } from './engine';
 import { localDraft, localRewriteCaption } from './local';
 import { reviewDraft, type QualityReport } from './lint';
 import {
@@ -156,7 +156,7 @@ export async function draftPost(params: {
   // own candidates against `lint.ts`. It cannot read `feedback` — a change
   // request is prose, and prose is the one input it has no way to act on — so
   // the caller says so rather than appearing to have applied it.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localDraft({
       angle: params.angle,
       format: params.format,
@@ -346,7 +346,7 @@ export async function rewriteCaption(params: {
   // Without a model the request itself cannot be read, so nothing pretends to
   // have read it: the existing sentences are kept, cleaned and reordered for
   // the best score the critic will give them. See `localRewriteCaption`.
-  if (!claudeReady()) {
+  if (!modelReady()) {
     return localRewriteCaption({
       script: params.script,
       currentCaption: params.currentCaption,
