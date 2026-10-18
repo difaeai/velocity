@@ -102,15 +102,11 @@ const SOCIAL_NAV: NavGroup[] = [
     title: '',
     items: [{ href: '/dashboard/social', label: '📡 Overview' }],
   },
+  // Two groups, not four: what you do every day, then the things you set up
+  // once and rarely open again. A sidebar heading per link is a filing system,
+  // not navigation.
   {
-    title: 'Channels',
-    items: [
-      { href: '/dashboard/social/accounts', label: '🔗 Connected accounts' },
-      { href: '/dashboard/social/employees', label: '👥 Employees' },
-    ],
-  },
-  {
-    title: 'Content',
+    title: 'Every day',
     items: [
       { href: '/dashboard/social/queue', label: '✅ Approval queue' },
       { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
@@ -119,8 +115,12 @@ const SOCIAL_NAV: NavGroup[] = [
     ],
   },
   {
-    title: 'Settings',
-    items: [{ href: '/dashboard/social/automation', label: '🤖 Automation' }],
+    title: 'Set up once',
+    items: [
+      { href: '/dashboard/social/accounts', label: '🔗 Connected accounts' },
+      { href: '/dashboard/social/employees', label: '👥 Employees' },
+      { href: '/dashboard/social/automation', label: '🤖 Automation' },
+    ],
   },
 ];
 

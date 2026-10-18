@@ -252,7 +252,7 @@ export default function CalendarPage() {
                       <FormatPicker value={format} onChange={setFormat} />
                       <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
                       <Button onClick={() => generate(selected)} disabled={busy}>
-                        {busy ? 'The team is working…' : 'Brief the team'}
+                        {busy ? 'The team is working…' : 'Make one'}
                       </Button>
                     </div>
                   </details>
@@ -260,12 +260,12 @@ export default function CalendarPage() {
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <p style={{ fontSize: 13.5, color: colors.muted, margin: 0 }}>
-                    Nothing here. Brief the team — pick a format and an angle, or leave both to the rotation.
+                    Nothing here. Make one — pick a format and an angle, or leave both to the rotation.
                   </p>
                   <FormatPicker value={format} onChange={setFormat} />
                   <AnglePicker value={angle} onChange={setAngle} angles={settings?.angles ?? []} />
                   <Button onClick={() => generate(selected)} disabled={busy}>
-                    {busy ? 'The team is working…' : 'Brief the team'}
+                    {busy ? 'The team is working…' : 'Make one'}
                   </Button>
                 </div>
               )}

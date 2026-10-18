@@ -3,24 +3,26 @@
 /**
  * Manage social → Overview.
  *
- * Rebuilt around one question: **how does a post get made here, and where is
- * one right now?** The old page answered "what exists" — a roster, a settings
- * block, two lists — and left the workflow to be inferred from the navigation.
+ * The page answers two questions and nothing else:
  *
- * So the page is now, in order:
+ *  1. **Is the desk running?** — and if it is not, one button starts it. That
+ *     button used to be five checkboxes and a Save on another screen, which is
+ *     why the desk sat paused for weeks with everything else in place.
+ *  2. **Where is a piece right now?** — the line a piece travels, lit from the
+ *     documents themselves.
  *
- *  1. What is stopping it, if anything, with the fix one click away.
- *  2. The line a piece travels: brief → made → approved by you → posted →
- *     measured, with the live counts and, while something is genuinely in
- *     production, the stage it is on and who has it.
- *  3. The two controls that start work: brief the team, and the schedule.
- *  4. The detail — where it posts, and what was made last.
+ * Everything else on this page is detail under those two, in one column of
+ * cards: who is on the desk, where it posts, what was made last.
  *
- * On motion: there is some, and all of it is load-bearing. A dot travels a step
- * only while a document is in that state, a count breathes only while it is
- * waiting on the person reading the page, and both stop the instant the desk is
- * idle. Nothing on this page animates to look busy — see components/social/
- * pipeline.tsx, where that rule is enforced.
+ * Two rules this file is built on, both of them load-bearing:
+ *
+ * - **The teaching text appears once.** The five-step strip explains itself in
+ *   full until the desk has had a run, and then drops to captions. A page that
+ *   explains itself forever is a page you stop reading.
+ * - **Motion means something.** A dot travels a step only while a document is
+ *   in that state, a count breathes only while it is waiting on the person
+ *   reading the page, and an idle desk is completely still — see
+ *   components/social/pipeline.tsx, where that is enforced.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -60,6 +62,7 @@ export default function SocialOverview() {
   const [coverage, setCoverage] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [format, setFormat] = useState<SocialFormat | ''>('');
 
@@ -154,8 +157,9 @@ export default function SocialOverview() {
     const at = new Date(nowPkt);
     at.setUTCMinutes(0, 0, 0);
     at.setUTCHours(settings.runHour);
-    if (at <= nowPkt) at.setUTCDate(at.getUTCDate() + 1);
-    return at;
+    const today = at > nowPkt;
+    if (!today) at.setUTCDate(at.getUTCDate() + 1);
+    return { at, today };
   }, [settings, nowMs]);
 
   /** What the rotation will make next, so the button is not a surprise. */
@@ -163,6 +167,9 @@ export default function SocialOverview() {
     if (!settings?.formats?.length) return null;
     return settings.formats[(settings.lastFormatIndex + 1) % settings.formats.length];
   }, [settings]);
+
+  /** The desk has been round the loop at least once: stop explaining it. */
+  const taught = Boolean(settings?.lastRunAtMs) || posts.length > 0;
 
   async function briefTeam() {
     setBusy(true);
@@ -177,6 +184,47 @@ export default function SocialOverview() {
       setBusy(false);
     }
   }
+
+  /**
+   * Start or pause the whole desk in one call.
+   *
+   * Starting writes every switch the daily run actually needs, because the
+   * alternative — find them on the Automation page, tick four of them, scroll
+   * to Save — is the reason this stayed off. Each field written is named in the
+   * card above the button, so nothing is switched on quietly. Pausing touches
+   * `enabled` and nothing else: it is a stop, not a reset, and the settings are
+   * there untouched when it starts again.
+   */
+  async function setRunning(on: boolean) {
+    setSwitching(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await socialApi.updateSettings(
+        on
+          ? {
+              enabled: true,
+              dailyStory: true,
+              autoRenderVideo: true,
+              learnFromOwnPage: true,
+              engagementEnabled: true,
+            }
+          : { enabled: false },
+      );
+      setSettings(res.settings);
+      setNotice(
+        on
+          ? `The desk is on. It works every day at ${hour(res.settings.runHour)} PKT, and everything it makes waits for you in the approval queue.`
+          : 'The desk is paused. Nothing will be made until you start it again, or brief the team by hand.',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change the schedule.');
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  const running = Boolean(settings?.enabled);
 
   return (
     <div>
@@ -194,34 +242,57 @@ export default function SocialOverview() {
       {/* 1 — what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
 
-      {/* 2 — the line a piece travels, lit by the documents themselves */}
-      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px 0' }}>
-          <h2 style={{ ...h2, marginBottom: 2 }}>How a post gets made</h2>
-          <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
-            Left to right, every time. A step lights up only while something is really in it.
-          </p>
-        </div>
-        <div style={{ padding: '0 10px 14px' }}>
-          <Pipeline state={pipeline} />
-        </div>
-      </Card>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-        {/* 3 — the two controls that start work */}
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Start a piece</h2>
-            <StatusPill status={settings?.enabled ? 'connected' : 'disconnected'} />
+      {/* 2 — the one control: is the desk on, and start a piece now */}
+      {settings ? (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+            <h2 style={{ ...h2, marginBottom: 0 }}>The desk</h2>
+            <span
+              style={{
+                fontSize: 11.5,
+                fontWeight: 900,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                padding: '3px 9px',
+                borderRadius: 999,
+                color: running ? colors.success : colors.muted,
+                background: running ? `${colors.success}14` : colors.border,
+              }}
+            >
+              {running ? 'Running' : 'Paused'}
+            </span>
+            <Link
+              href="/dashboard/social/automation"
+              style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+            >
+              Settings
+            </Link>
           </div>
 
-          <p style={{ fontSize: 13, color: colors.muted, margin: '0 0 12px', lineHeight: 1.55 }}>
-            {settings?.enabled
-              ? `The desk briefs itself every day at ${String(settings.runHour).padStart(2, '0')}:00 PKT. You can also start one now.`
-              : 'The schedule is paused, so the desk only works when you press this.'}
+          <p style={{ fontSize: 13.5, color: colors.text, margin: '0 0 4px', lineHeight: 1.6 }}>
+            {running
+              ? `Every day at ${hour(settings.runHour)} PKT it makes ${pieces(settings.postsPerDay)}${
+                  settings.dailyStory ? ' and a story' : ''
+                }, cuts its own reels, reads the comments every two hours, and measures its own page afterwards.`
+              : `Start it and from ${
+                  nextRunWhenStarted(settings.runHour, nowMs)
+                } it makes ${pieces(settings.postsPerDay)} and a story every day, cuts its own reels, reads the comments every two hours, and measures its own page afterwards.`}
+          </p>
+          <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
+            Nothing goes out on its own: every piece stops in the approval queue until you say yes.
           </p>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+            <Button
+              onClick={() => setRunning(!running)}
+              variant={running ? 'ghost' : 'primary'}
+              disabled={switching || onShift.length === 0}
+            >
+              {switching ? 'Saving…' : running ? 'Pause the desk' : 'Start the desk'}
+            </Button>
+
+            <span style={{ width: 1, height: 24, background: colors.border }} />
+
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as SocialFormat | '')}
@@ -242,97 +313,64 @@ export default function SocialOverview() {
                 </option>
               ))}
             </select>
-            <Button onClick={briefTeam} disabled={busy || onShift.length === 0}>
-              {busy ? 'The team is working…' : 'Brief the team now'}
+            <Button variant="secondary" onClick={briefTeam} disabled={busy || onShift.length === 0}>
+              {busy ? 'The team is working…' : 'Make one now'}
             </Button>
-            <Link href="/dashboard/social/automation">
-              <Button variant="ghost">Schedule</Button>
-            </Link>
           </div>
 
-          <div style={{ display: 'grid', gap: 8, fontSize: 13.5 }}>
+          <div style={{ display: 'grid', gap: 7, fontSize: 13 }}>
             {nextRun ? (
               <Row
                 label="Next run"
-                value={`${longDate(nextRun.toISOString().slice(0, 10))}, ${String(settings?.runHour ?? 0).padStart(2, '0')}:00`}
+                value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${hour(settings.runHour)}`}
               />
             ) : null}
             <Row
               label="Last run"
               value={
-                settings?.lastRunAtMs
+                settings.lastRunAtMs
                   ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
                   : 'Never'
               }
             />
             <Row
-              label="Comments"
+              label="On the desk"
               value={
-                settings?.engagementEnabled
-                  ? settings.autoReply
-                    ? 'Read and replied to automatically'
-                    : 'Read; replies wait for you'
-                  : 'Not being read'
+                onShift.length === 0
+                  ? 'Nobody — hire someone first'
+                  : pipeline.live?.current
+                    ? `${pipeline.live.current.name} is working — ${onShift.length} on the desk`
+                    : `${onShift.length} people — ${onShift
+                        .slice(0, 3)
+                        .map((e) => e.name)
+                        .join(', ')}${onShift.length > 3 ? ` and ${onShift.length - 3} more` : ''}`
               }
-            />
-            <Row label="Pictures and video" value="Briefed here, made by you" />
-          </div>
-        </Card>
-
-        {/* who is on the desk — the real roster, without the theatre */}
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Who does it</h2>
-            <Link
               href="/dashboard/social/employees"
-              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-            >
-              {onShift.length ? 'Manage the team' : 'Hire someone'}
-            </Link>
+            />
+            {coverage.length ? (
+              <p style={{ fontSize: 12.5, color: colors.warn, margin: '4px 0 0', lineHeight: 1.5 }}>{coverage[0]}</p>
+            ) : null}
           </div>
-
-          {onShift.length === 0 ? (
-            <p style={{ fontSize: 13.5, color: colors.muted, margin: 0, lineHeight: 1.55 }}>
-              Nobody works here yet, so nothing gets made.{' '}
-              <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
-                Hire your first employee
-              </Link>{' '}
-              — a content writer is enough to see a piece written end to end.
-            </p>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gap: 9 }}>
-                {onShift.map((e) => {
-                  const working = pipeline.live?.current?.employeeId === e.id;
-                  return (
-                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          flex: 'none',
-                          background: working ? colors.primary : colors.border,
-                        }}
-                      />
-                      <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 0 }}>{e.name}</span>
-                      <span style={{ fontSize: 12.5, color: colors.muted, flex: 1, minWidth: 0 }}>
-                        {working ? (pipeline.live?.current?.note ?? 'working now') : e.title}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {coverage.length ? (
-                <p style={{ fontSize: 12.5, color: colors.warn, margin: '12px 0 0', lineHeight: 1.5 }}>
-                  {coverage[0]}
-                </p>
-              ) : null}
-            </>
-          )}
         </Card>
+      ) : null}
 
-        {/* 4 — the detail */}
+      {/* 3 — the line a piece travels, lit by the documents themselves */}
+      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 16px 0' }}>
+          <h2 style={{ ...h2, marginBottom: taught ? 6 : 2 }}>How a post gets made</h2>
+          {taught ? null : (
+            <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
+              Left to right, every time. A step lights up only while something is really in it.
+            </p>
+          )}
+        </div>
+        <div style={{ padding: '0 10px 14px' }}>
+          <Pipeline state={pipeline} teach={!taught} />
+        </div>
+      </Card>
+
+      {/* 4 — the detail */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
@@ -416,13 +454,36 @@ export default function SocialOverview() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, href }: { label: string; value: string; href?: string }) {
+  const body = <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>;
   return (
     <div style={{ display: 'flex', gap: 10 }}>
       <span style={{ color: colors.muted, minWidth: 88 }}>{label}</span>
-      <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>
+      {href ? (
+        <Link href={href} style={{ flex: 1, color: 'inherit' }}>
+          {body}
+        </Link>
+      ) : (
+        body
+      )}
     </div>
   );
+}
+
+const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
+const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
+
+/**
+ * When the first run would land if it were started this second — "today" while
+ * the hour is still ahead, "tomorrow" once it has passed. Saying "every day"
+ * and leaving somebody to work out whether that means in an hour or in
+ * twenty-three is the sort of thing that gets a schedule switched off again.
+ */
+function nextRunWhenStarted(runHour: number, nowMs: number): string {
+  if (nowMs === 0) return `${hour(runHour)} PKT`;
+  const nowPkt = new Date(nowMs + 5 * 3600_000);
+  return `${nowPkt.getUTCHours() < runHour ? 'today' : 'tomorrow'} at ${hour(runHour)} PKT`;
 }
 
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };

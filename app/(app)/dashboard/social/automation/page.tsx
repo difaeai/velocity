@@ -151,7 +151,7 @@ export default function AutomationPage() {
           checked={settings.enabled}
           onChange={(v) => edit({ enabled: v })}
           label="Run every day"
-          hint="Off means the crew only works when you press “Brief the crew” on the overview."
+          hint="Off means the desk only works when you press “Make one now” on the overview."
         />
 
         <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginTop: 14 }}>
