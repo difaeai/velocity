@@ -156,6 +156,23 @@ jobs:
             printf '%s\n' "$FREE_MODEL_ENV" \
               | tr -d '\r' \
               | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' > .free-model.env || true
+            # A bare key with no NAME= in front of it is not a mistake worth a
+            # failed deploy and a second trip to the settings page: pasting the
+            # key is the obvious thing to do when the secret is called
+            # FREE_MODEL_ENV. One line, no '=', no spaces — that is a key, so
+            # name it and move on. The URL and model id keep their defaults.
+            if [ ! -s .free-model.env ]; then
+              bare=$(printf '%s' "$FREE_MODEL_ENV" | tr -d '\r\n')
+              case "$bare" in
+                *=*|*\ *|'') ;;
+                *)
+                  if [ ${#bare} -ge 8 ]; then
+                    printf 'FREE_MODEL_KEY=%s\n' "$bare" > .free-model.env
+                    echo "· ai: FREE_MODEL_ENV held a bare key — read as FREE_MODEL_KEY"
+                  fi
+                  ;;
+              esac
+            fi
             if [ -s .free-model.env ]; then
               cat .free-model.env >> .env.velocity-fe379
               echo "· ai: free model block parsed — $(cut -d= -f1 .free-model.env | tr '\n' ' ')"
