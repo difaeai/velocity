@@ -564,7 +564,7 @@ this order:
 
 1. Add `SOCIAL_TOKEN_KEY`, redeploy, and connect **one** account.
 2. Hire a team — one of each is fine to start; rename them to whatever you like.
-3. Leave automation off. Press **Brief the team now** on the overview and pick
+3. Leave automation off. Press **Make one now** on the overview and pick
    **Post** — the cheapest format: one frame to make.
 4. Read what comes back in the queue, including who did what. Try **ask for
    changes** on the caption once; that is the cheapest way to see the loop work
@@ -575,6 +575,21 @@ this order:
 7. Only then set a run hour and turn automation on.
 8. Turn the comment inbox on. Read a few dozen drafted replies before you even
    consider `autoReply`.
+
+### Steps 7 and 8 are one button
+
+**Start the desk** on the overview writes `enabled`, `dailyStory`,
+`autoRenderVideo`, `learnFromOwnPage` and `engagementEnabled` in a single
+`adminUpdateSocialSettings` call, and the card above it names all five in
+words first. They used to be four checkboxes across three cards on the
+Automation page behind a Save button, which is a fair part of why the desk sat
+paused with everything else in place for weeks.
+
+What it deliberately does **not** write is `autoPublish`. That one publishes
+under Velocity Rides' own name with nothing in front of it, it is the only
+switch on this desk that does, and it stays where it is — on the Automation
+page, in its own card, read before it is ticked. **Pause the desk** writes
+`enabled: false` and nothing else: a stop, not a reset.
 
 ---
 

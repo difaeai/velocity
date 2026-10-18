@@ -58,7 +58,11 @@ const STEP_OF: Record<SocialPostStatus, StepKey | null> = {
 export interface PipelineStep {
   key: StepKey;
   label: string;
-  /** One line explaining what this step is, for somebody who has never used it. */
+  /**
+   * One line explaining what this step is, for somebody who has never used it.
+   * Shown until the desk has been round the loop once, then dropped — see the
+   * `teach` prop. An explanation that never goes away stops being read.
+   */
   what: string;
   /** How many pieces are sitting in this step right now. */
   count: number;
@@ -199,19 +203,25 @@ const STATE_COLOUR: Record<PipelineStep['state'], string> = {
  * scrolling sideways — a workflow you have to drag to read is not a workflow
  * anybody reads.
  */
-export function Pipeline({ state }: { state: PipelineState }) {
+export function Pipeline({ state, teach = true }: { state: PipelineState; teach?: boolean }) {
   return (
     <div>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(auto-fit, minmax(170px, 1fr))`,
+          gridTemplateColumns: `repeat(auto-fit, minmax(${teach ? 170 : 140}px, 1fr))`,
           gap: 0,
           alignItems: 'stretch',
         }}
       >
         {state.steps.map((step, i) => (
-          <StepCell key={step.key} step={step} index={i} last={i === state.steps.length - 1} />
+          <StepCell
+            key={step.key}
+            step={step}
+            index={i}
+            last={i === state.steps.length - 1}
+            teach={teach}
+          />
         ))}
       </div>
 
@@ -230,7 +240,18 @@ export function Pipeline({ state }: { state: PipelineState }) {
   );
 }
 
-function StepCell({ step, index, last }: { step: PipelineStep; index: number; last: boolean }) {
+function StepCell({
+  step,
+  index,
+  last,
+  teach,
+}: {
+  step: PipelineStep;
+  index: number;
+  last: boolean;
+  /** Explain what the step *is*. Dropped once the desk has been round once. */
+  teach: boolean;
+}) {
   const colour = STATE_COLOUR[step.state];
   const lit = step.state !== 'idle';
 
@@ -239,7 +260,7 @@ function StepCell({ step, index, last }: { step: PipelineStep; index: number; la
       href={step.href}
       style={{
         display: 'block',
-        padding: '14px 14px 16px',
+        padding: teach ? '14px 14px 16px' : '12px 14px 13px',
         borderRight: last ? 'none' : `1px solid ${colors.border}`,
         color: 'inherit',
         minWidth: 0,
@@ -306,10 +327,12 @@ function StepCell({ step, index, last }: { step: PipelineStep; index: number; la
         ) : null}
       </div>
 
-      <p style={{ fontSize: 12.5, fontWeight: 700, color: lit ? colour : colors.text, margin: '0 0 4px' }}>
+      <p style={{ fontSize: 12.5, fontWeight: 700, color: lit ? colour : colors.text, margin: teach ? '0 0 4px' : 0 }}>
         {step.caption}
       </p>
-      <p style={{ fontSize: 11.5, color: colors.muted, margin: 0, lineHeight: 1.45 }}>{step.what}</p>
+      {teach ? (
+        <p style={{ fontSize: 11.5, color: colors.muted, margin: 0, lineHeight: 1.45 }}>{step.what}</p>
+      ) : null}
     </Link>
   );
 }
@@ -410,7 +433,7 @@ function IdleStrip({ steps }: { steps: PipelineStep[] }) {
           </Link>
         </>
       ) : (
-        <>Nothing is being made right now. Press “Brief the team” to start a piece.</>
+        <>Nothing is being made right now. Press “Make one now” to start a piece.</>
       )}
     </p>
   );
