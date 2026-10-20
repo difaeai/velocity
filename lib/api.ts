@@ -1315,17 +1315,19 @@ export interface SocialSettings {
 export interface SocialReadiness {
   /**
    * Whether anybody on the desk can produce anything. Always true now: with no
-   * ANTHROPIC_API_KEY the backend writes with its local engine instead.
+   * model key at all the backend writes with its local engine instead.
    */
   writer: boolean;
   /**
-   * Which engine a run would use today. `claude` is the paid model, `free` is
-   * whichever free endpoint is configured, and `local` is the key-free engine
-   * that composes from the brand material and scores its own candidates. The
-   * third is reliable and noticeably plainer, so the console says which is
-   * running rather than leaving it to be inferred.
+   * Which engine a run would use today. `claude` is the paid model, `gemini` is
+   * Google's free tier — the only free one that can also search, so the only
+   * free one with a live market read — `free` is whichever OpenAI-compatible
+   * endpoint is configured, and `local` is the key-free engine that composes
+   * from the brand material and scores its own candidates. The last is
+   * reliable and noticeably plainer, so the console says which is running
+   * rather than leaving it to be inferred.
    */
-  engine: 'claude' | 'free' | 'local';
+  engine: 'claude' | 'gemini' | 'free' | 'local';
   tokenVault: boolean;
 }
 
@@ -1458,12 +1460,12 @@ export interface SocialPostDoc {
    */
   quality?: SocialQualityReport | null;
   /**
-   * Which engine wrote this piece — `claude` for the paid model, `free` for
-   * the configured free endpoint, `local` for the key-free engine that
-   * composes from the brand material. Absent on anything written before the
-   * second engine shipped.
+   * Which engine wrote this piece — `claude` for the paid model, `gemini` for
+   * Google's free tier, `free` for the configured OpenAI-compatible endpoint,
+   * `local` for the key-free engine that composes from the brand material.
+   * Absent on anything written before the second engine shipped.
    */
-  engine?: 'claude' | 'free' | 'local' | null;
+  engine?: 'claude' | 'gemini' | 'free' | 'local' | null;
   revisions?: SocialRevision[];
   error: string | null;
   approvedBy: string | null;

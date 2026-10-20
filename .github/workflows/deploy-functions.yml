@@ -70,6 +70,7 @@ jobs:
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_KEY_RESEARCH: ${{ secrets.GEMINI_KEY_RESEARCH }}
           FREE_MODEL_ENV: ${{ secrets.FREE_MODEL_ENV }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
@@ -122,6 +123,36 @@ jobs:
           else
             echo "· ai: no ANTHROPIC_API_KEY — payment proofs wait for an admin."
             echo "      Driver verification is unaffected: its engine is local."
+          fi
+          # Gemini's free tier — one bare key, no block, because there is only
+          # ever one value: AI Studio gives you a key and that is the whole
+          # configuration. The model is chosen in code (and overridable from
+          # the console's model box), not here.
+          #
+          # This is the engine that put the morning market read back. Claude
+          # can search and is paid for; the OpenAI-compatible free model
+          # cannot search at all and says so. Google's free tier can, at no
+          # charge, up to 500 grounded reads a day against a desk that needs
+          # one — so with this key the standup is working in front of real
+          # pages again instead of an honest refusal.
+          #
+          # It is also a whole engine, not just research: when it is the one
+          # that answers it writes, plans, briefs and replies too. Order is
+          # ANTHROPIC_API_KEY → GEMINI_KEY_RESEARCH → FREE_MODEL_KEY → local.
+          #
+          # One thing to be plain about: on the FREE tier Google may use what
+          # is sent to improve their products. What is sent is brand material,
+          # a competitor list and public figures — no rider or driver data ever
+          # reaches this engine.
+          if [ -n "$GEMINI_KEY_RESEARCH" ]; then
+            printf 'GEMINI_KEY_RESEARCH=%s\n' "$GEMINI_KEY_RESEARCH" >> .env.velocity-fe379
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+              echo "· ai: Gemini configured but idle — Anthropic takes precedence"
+            else
+              echo "· ai: social and support run on GEMINI's free tier — market read WORKS"
+            fi
+          else
+            echo "· ai: no GEMINI_KEY_RESEARCH — no free market read"
           fi
           # The free engine: any OpenAI-compatible endpoint, Groq by default.
           # Its own block rather than three secrets, so the provider can be
@@ -179,8 +210,8 @@ jobs:
               if ! cut -d= -f1 .free-model.env | grep -qx 'FREE_MODEL_KEY'; then
                 echo "· ai: WARNING — no FREE_MODEL_KEY line in that block, so the"
                 echo "      free engine stays OFF. Check the secret's first line."
-              elif [ -n "$ANTHROPIC_API_KEY" ]; then
-                echo "· ai: free model configured but idle — Anthropic takes precedence"
+              elif [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$GEMINI_KEY_RESEARCH" ]; then
+                echo "· ai: free model configured but idle — a higher engine takes precedence"
               else
                 echo "· ai: social and support run on the FREE model (no market read)"
               fi
@@ -190,7 +221,7 @@ jobs:
               echo "      FREE_MODEL_KEY=... — no quotes, no code fence, no blank first line."
             fi
             rm -f .free-model.env
-          elif [ -z "$ANTHROPIC_API_KEY" ]; then
+          elif [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$GEMINI_KEY_RESEARCH" ]; then
             echo "· ai: no model key at all — the social desk writes locally and"
             echo "      support tickets all go to the human desk."
           fi

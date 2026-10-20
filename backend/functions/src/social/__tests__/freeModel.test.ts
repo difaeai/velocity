@@ -29,6 +29,7 @@ const saved = {
   url: process.env.FREE_MODEL_URL,
   id: process.env.FREE_MODEL_ID,
   anthropic: process.env.ANTHROPIC_API_KEY,
+  gemini: process.env.GEMINI_KEY_RESEARCH,
 };
 
 function reply(content: string, finish = 'stop') {
@@ -57,6 +58,7 @@ beforeEach(() => {
   delete process.env.FREE_MODEL_URL;
   delete process.env.FREE_MODEL_ID;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.GEMINI_KEY_RESEARCH;
 });
 
 afterEach(() => {
@@ -67,6 +69,7 @@ afterEach(() => {
     ['FREE_MODEL_URL', saved.url],
     ['FREE_MODEL_ID', saved.id],
     ['ANTHROPIC_API_KEY', saved.anthropic],
+    ['GEMINI_KEY_RESEARCH', saved.gemini],
   ] as const) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -74,9 +77,17 @@ afterEach(() => {
 });
 
 describe('which engine answers', () => {
-  it('prefers Claude when both keys exist — somebody is paying for it', () => {
+  it('prefers Claude when every key exists — somebody is paying for it', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test';
+    process.env.GEMINI_KEY_RESEARCH = 'gem-test';
     expect(activeEngine()).toBe('claude');
+  });
+
+  it('prefers Gemini over this one, because Gemini can search', () => {
+    // Both are free, so the tie-breaker is the market read: one of them can
+    // do it and the other has to refuse. See engine.ts for the order.
+    process.env.GEMINI_KEY_RESEARCH = 'gem-test';
+    expect(activeEngine()).toBe('gemini');
   });
 
   it('falls to the free model when only the free key exists', () => {
@@ -97,10 +108,13 @@ describe('which model, and where', () => {
     expect(resolveFreeModel('openai/gpt-oss-120b')).toBe('openai/gpt-oss-120b');
   });
 
-  it('ignores the other engine’s id rather than sending it to the provider', () => {
+  it('ignores another engine’s id rather than sending it to the provider', () => {
     // The normal state of a desk that changed engines: one model box, the
     // wrong vendor's value in it. A 404 from the provider is a worse answer.
+    // Both of the others count — a Gemini id in that box used to be forwarded
+    // to Groq, which was invisible until somebody actually typed one in.
     expect(resolveFreeModel('claude-opus-5')).toBe(DEFAULT_FREE_MODEL);
+    expect(resolveFreeModel('gemini-2.5-flash')).toBe(DEFAULT_FREE_MODEL);
     expect(resolveFreeModel('')).toBe(DEFAULT_FREE_MODEL);
   });
 

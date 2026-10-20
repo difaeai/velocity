@@ -125,7 +125,7 @@ export const adminGetSocialSettings = onCall(async (req) => {
        * the team demonstrably just wrote something is worse than no checklist.
        */
       writer: true,
-      /** Which of the three engines a run would actually use today. */
+      /** Which of the four engines a run would actually use today. */
       engine: activeEngine(),
       tokenVault: tokenVaultReady(),
     },

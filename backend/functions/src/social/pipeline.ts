@@ -49,7 +49,7 @@ import { postFolder, refreshAssetUrls, storeFile } from './assets';
 import { planContent } from './crew';
 import { design, DesignError } from './designer';
 import { activeTeam, assign, creditWork, teamRefs } from './employees';
-import { activeEngine, modelReady } from './engine';
+import { activeEngine, modelReady, type Engine } from './engine';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
@@ -926,17 +926,17 @@ export const socialDailyContent = onSchedule(
     const date = dayKey(Date.now());
     try {
       const outcome = await runDaily(date);
-      // Which engine ran is recorded with the outcome: the three produce
+      // Which engine ran is recorded with the outcome: the four produce
       // visibly different work, and "why does today read like a template"
-      // should be answerable from the run log rather than guessed at.
-      const engine = activeEngine();
-      await recordRun(
-        engine === 'claude'
-          ? outcome
-          : engine === 'free'
-            ? `${outcome} (written by the free model)`
-            : `${outcome} (written locally, no model)`,
-      );
+      // should be answerable from the run log rather than guessed at. Claude
+      // gets no suffix because it is the one everything else is compared to.
+      const RAN: Record<Engine, string> = {
+        claude: '',
+        gemini: ' (written by Gemini’s free tier)',
+        free: ' (written by the free model)',
+        local: ' (written locally, no model)',
+      };
+      await recordRun(`${outcome}${RAN[activeEngine()]}`);
       logger.info('social: daily run finished', { date, outcome });
     } catch (e) {
       const message = (e as Error).message;

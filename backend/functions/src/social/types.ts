@@ -604,17 +604,18 @@ export interface SocialPost {
   /**
    * Which engine wrote this piece.
    *
-   * `claude` is the paid model, `free` is whichever OpenAI-compatible free
+   * `claude` is the paid model, `gemini` is Google's free tier — the only free
+   * one that can also search — `free` is whichever OpenAI-compatible free
    * endpoint is configured, and `local` is the key-free engine in
    * `social/local/`, which composes from the brand material and picks the
    * best-scoring candidate. Stamped at the writing stage and kept, because the
-   * three read differently and "why does this one sound like a template" is a
+   * four read differently and "why does this one sound like a template" is a
    * question somebody asks weeks later, by which time the keys may well have
    * changed.
    *
    * Null on posts written before the second engine shipped (2026-10-17).
    */
-  engine: 'claude' | 'free' | 'local' | null;
+  engine: 'claude' | 'gemini' | 'free' | 'local' | null;
   /** Every round of feedback this post has been through. */
   revisions: Revision[];
   error: string | null;
@@ -791,8 +792,9 @@ export interface SocialSettings {
    * promises an income. The scorecard is still computed and still stored, so a
    * piece that went out weak is findable afterwards; it just is not stopped.
    *
-   * One exception: a piece written by the local engine — neither
-   * `ANTHROPIC_API_KEY` nor `FREE_MODEL_KEY` — always waits for a person. See
+   * One exception: a piece written by the local engine — no model key at all,
+   * neither `ANTHROPIC_API_KEY` nor `GEMINI_KEY_RESEARCH` nor
+   * `FREE_MODEL_KEY` — always waits for a person. See
    * `shouldAutoPublish` in `pipeline.ts` for why that is not the quality gate
    * this setting exists to refuse.
    *
@@ -837,6 +839,29 @@ export interface SocialSettings {
 
 /** What the desk writes and decides with unless the console says otherwise. */
 export const DEFAULT_TEXT_MODEL = 'claude-opus-5';
+
+/**
+ * What Gemini's free tier writes with when the console box holds another
+ * engine's id. A Flash model rather than a Pro one because the free tier is
+ * where this engine lives, and 2.5 Flash is the one model on it that is free
+ * for text *and* free to ground — which is the whole reason the engine was
+ * added. A newer Flash can be typed into the model box for better writing
+ * (they are free for text too); the market read stays on the one below.
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+
+/**
+ * And the model every *grounded* call is pinned to, whatever the console says.
+ *
+ * Two names for one value today, and they are not the same fact: the one above
+ * is a preference and this one is a constraint. Google's pricing page lists
+ * "Grounding with Google Search: free of charge, up to 500 RPD" against 2.5
+ * Flash and Flash-Lite alone, and "not available" on the free tier against
+ * every newer model. So the day somebody upgrades the writer, the morning read
+ * must not quietly follow it onto a paid — or refused — route. See point 3 in
+ * `gemini.ts`.
+ */
+export const GROUNDED_GEMINI_MODEL = 'gemini-2.5-flash';
 
 /**
  * Where the free engine points when `FREE_MODEL_URL` says nothing: Groq's
