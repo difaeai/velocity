@@ -76,6 +76,16 @@ test('special rides papers: never readable by another user', async () => {
   await assertFails(read(stranger, 'specialRides/user1/documents/insurance-1'));
 });
 
+// A post or a story publishes an image and nothing else, so refusing images
+// here left both formats with no way to be finished from the queue.
+test('social uploads: video and images from admins only', async () => {
+  await assertSucceeds(put(admin, 'socialUploads/p-1-cut.mp4', 'video/mp4'));
+  await assertSucceeds(put(admin, 'socialUploads/p-2-frame.jpg', 'image/jpeg'));
+  await assertSucceeds(put(admin, 'socialUploads/p-3-frame.png', 'image/png'));
+  await assertFails(put(admin, 'socialUploads/p-4-page.html', 'text/html'));
+  await assertFails(put(owner, 'socialUploads/p-5-frame.jpg', 'image/jpeg'));
+});
+
 test('unchanged paths keep working', async () => {
   await assertSucceeds(put(owner, 'cnic/user1/front-1', 'image/jpeg'));
   await assertFails(put(owner, 'cnic/user1/front-2', 'application/pdf'));

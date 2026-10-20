@@ -1158,6 +1158,27 @@ export const adminPublishSocialPost = onCall(
 );
 
 /**
+ * Instagram publishes JPEG and nothing else ("JPEG is the only image format
+ * supported"), so an attached PNG or WebP is converted here rather than refused
+ * there, after the approval. Phone photos are turned upright first, because the
+ * EXIF tag that says which way is up does not survive the re-encode; 1440 is
+ * Instagram's own maximum width and keeps the file under its 8 MB cap.
+ */
+async function asJpeg(bytes: Buffer): Promise<Buffer> {
+  const { default: sharp } = await import('sharp');
+  try {
+    return await sharp(bytes)
+      .rotate()
+      .resize({ width: 1440, withoutEnlargement: true })
+      .flatten()
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  } catch {
+    throw new HttpsError('invalid-argument', 'That image could not be read. Export it as a JPEG or PNG and attach it again.');
+  }
+}
+
+/**
  * Attach media made somewhere else — a phone, an editor, a designer. The file
  * is uploaded to Storage by the console and handed over as a path, so it goes
  * through exactly the same publish path as a rendered one.
@@ -1194,9 +1215,9 @@ export const adminAttachSocialMedia = onCall(async (req) => {
     kind === 'video'
       ? await storeVideo(postId, bytes)
       : await storeFile({
-          path: `${postFolder(postId)}/slide-${slide ?? 1}.png`,
-          bytes,
-          contentType: 'image/png',
+          path: `${postFolder(postId)}/slide-${slide ?? 1}.jpg`,
+          bytes: await asJpeg(bytes),
+          contentType: 'image/jpeg',
         });
 
   const asset: MediaAsset = {

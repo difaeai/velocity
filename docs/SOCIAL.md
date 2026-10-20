@@ -717,7 +717,9 @@ every signed-in user because fares and ride settings live there, and the
 marketing brief does not belong in the mobile app's cache.
 
 Media lands in Cloud Storage under `social/{postId}/` — `video.mp4`, `cover.png`,
-`slide-1.png`…. Instagram, Facebook, Threads and TikTok all *pull* files from a
+`slide-1.jpg`…. An attached image is re-encoded as JPEG whatever was uploaded,
+because that is the only image format Instagram publishes; posts before
+2026-10-20 still carry `slide-N.png`. Instagram, Facebook, Threads and TikTok all *pull* files from a
 URL rather than accepting an upload, so each is served over a time-limited signed
 URL — falling back to a public object if the bucket cannot sign, which is
 unremarkable for media that is about to be posted publicly anyway.

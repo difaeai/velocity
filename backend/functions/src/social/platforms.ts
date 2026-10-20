@@ -333,8 +333,13 @@ async function publishInstagram(
   const published = await call<{ id: string }>('instagram', `${GRAPH}/${c.externalId}/media_publish`, {
     form: { creation_id: containerId, access_token: c.accessToken },
   });
-  const path = p.format === 'reel' ? 'reel' : 'p';
-  return { id: published.id, url: `https://www.instagram.com/${path}/${published.id}` };
+  // A media id is not the code in a post's URL, so the link has to be asked for.
+  // The piece is already live: a failed lookup must not fail, and so re-post, it.
+  const media = await call<{ permalink?: string }>(
+    'instagram',
+    `${GRAPH}/${published.id}?fields=permalink&access_token=${encodeURIComponent(c.accessToken)}`,
+  ).catch(() => null);
+  return { id: published.id, url: media?.permalink ?? 'https://www.instagram.com/' };
 }
 
 async function instagramComments(c: PlatformCredentials, mediaId: string): Promise<RawComment[]> {
