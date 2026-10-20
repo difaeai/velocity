@@ -67,6 +67,13 @@ const SCOPES = [
   'business_management',
 ];
 
+/**
+ * What the ads desk adds, asked for only when the connect starts from the Ads
+ * page. Kept off the Instagram connect so that an app without the Marketing API
+ * can still connect a Page: an unknown scope fails the whole dialog.
+ */
+const ADS_SCOPES = ['ads_management', 'ads_read'];
+
 /** A started connection is finished in one sitting or not at all. */
 const STATE_TTL_MS = 15 * 60_000;
 
@@ -216,6 +223,7 @@ export const adminSetMetaApp = onCall(async (req) => {
 /** Step one: where to send the admin, and the one-time state that comes back. */
 export const adminStartMetaConnect = onCall(async (req) => {
   requireAdmin(req);
+  const ads = (req.data as { ads?: unknown } | undefined)?.ads === true;
   const app = await metaApp();
   if (!app) {
     throw new HttpsError(
@@ -230,6 +238,7 @@ export const adminStartMetaConnect = onCall(async (req) => {
     createdAt: FieldValue.serverTimestamp(),
     expiresAt: Timestamp.fromMillis(Date.now() + STATE_TTL_MS),
     stage: 'started',
+    ads,
   });
 
   const url =
@@ -237,10 +246,17 @@ export const adminStartMetaConnect = onCall(async (req) => {
     `&redirect_uri=${encodeURIComponent(redirectUri())}` +
     `&state=${encodeURIComponent(state)}` +
     `&response_type=code` +
-    `&scope=${encodeURIComponent(SCOPES.join(','))}`;
+    `&scope=${encodeURIComponent((ads ? [...SCOPES, ...ADS_SCOPES] : SCOPES).join(','))}`;
 
   return { url, state, redirectUri: redirectUri() };
 });
+
+interface AdAccountChoice {
+  id: string;
+  name: string;
+  currency: string;
+  active: boolean;
+}
 
 interface PageChoice {
   pageId: string;
@@ -289,7 +305,7 @@ export const adminFinishMetaConnect = onCall(async (req) => {
 
     // Long-lived user token — ~60 days. The Page tokens minted FROM it are the
     // ones that never expire, which is the only reason this step exists.
-    const long = await graph<{ access_token: string }>(
+    const long = await graph<{ access_token: string; expires_in?: number }>(
       `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token` +
         `&client_id=${encodeURIComponent(app.appId)}` +
         `&client_secret=${encodeURIComponent(app.appSecret)}` +
@@ -326,6 +342,21 @@ export const adminFinishMetaConnect = onCall(async (req) => {
       avatarUrl: p.instagram_business_account?.profile_picture_url ?? null,
     }));
 
+    // The ad accounts this person can run, when the connect came from the Ads
+    // page. The Marketing API takes the USER token, not a Page token, so that
+    // is kept too — sealed, and only for this purpose.
+    const adAccounts: AdAccountChoice[] = state.ads
+      ? (
+          (
+            await graph<{ data?: { id: string; name?: string; currency?: string; account_status?: number }[] }>(
+              `${GRAPH}/me/adaccounts?fields=id,name,currency,account_status&limit=50&access_token=${encodeURIComponent(
+                long.access_token,
+              )}`,
+            ).catch(() => ({ data: [] }))
+          ).data ?? []
+        ).map((a) => ({ id: a.id, name: a.name ?? a.id, currency: a.currency ?? '', active: a.account_status === 1 }))
+      : [];
+
     // Sealed against the state doc, not returned. One minute of life: the admin
     // is looking at the list right now or they are starting over.
     await stateRef(parsed.data.state).set(
@@ -333,11 +364,19 @@ export const adminFinishMetaConnect = onCall(async (req) => {
         stage: 'granted',
         expiresAt: Timestamp.fromMillis(Date.now() + STATE_TTL_MS),
         pages: found.map((p) => ({ id: p.id, name: p.name, token: seal(p.access_token) })),
+        ...(state.ads
+          ? {
+              userToken: seal(long.access_token),
+              // Long-lived user tokens last about sixty days, and Meta says how long.
+              userTokenExpiresAtMs: Date.now() + (long.expires_in ?? 60 * 86_400) * 1000,
+              adAccounts: adAccounts.map((a) => a.id),
+            }
+          : {}),
       },
       { merge: true },
     );
 
-    return { pages: choices };
+    return { pages: choices, adAccounts };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
     logger.warn('social: meta connect failed', { message: (e as Error).message });
@@ -356,7 +395,11 @@ export const adminFinishMetaConnect = onCall(async (req) => {
 export const adminChooseMetaPage = onCall(async (req) => {
   const ctx = requireAdmin(req);
   const parsed = z
-    .object({ state: z.string().min(10).max(200), pageId: z.string().min(1).max(100) })
+    .object({
+      state: z.string().min(10).max(200),
+      pageId: z.string().min(1).max(100),
+      adAccountId: z.string().regex(/^act_\d{3,30}$/).optional(),
+    })
     .safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
 
@@ -393,6 +436,51 @@ export const adminChooseMetaPage = onCall(async (req) => {
   if (igId) {
     await connectVerifiedAccount('instagram', { accessToken: pageToken, externalId: igId }, ctx.uid);
     connected.push('instagram');
+  }
+
+  // The ad account, for the Ads desk — only one this sign-in actually listed.
+  const adAccountId = parsed.data.adAccountId;
+  if (adAccountId) {
+    if (!(data.adAccounts as string[] | undefined)?.includes(adAccountId) || !data.userToken) {
+      throw new HttpsError('permission-denied', 'That ad account was not part of this sign-in.');
+    }
+    const userToken = open(data.userToken as SealedSecret);
+    const account = await graph<{
+      id: string;
+      name?: string;
+      currency?: string;
+      account_status?: number;
+      timezone_name?: string;
+    }>(
+      `${GRAPH}/${adAccountId}?fields=id,name,currency,account_status,timezone_name&access_token=${encodeURIComponent(
+        userToken,
+      )}`,
+    );
+    await db
+      .batch()
+      .set(
+        db.doc('system/socialAds'),
+        {
+          adAccountId: account.id,
+          accountName: account.name ?? account.id,
+          currency: account.currency ?? 'PKR',
+          timezone: account.timezone_name ?? null,
+          accountStatus: account.account_status ?? null,
+          pageId: page.id,
+          instagramId: igId,
+          tokenExpiresAtMs: (data.userTokenExpiresAtMs as number | undefined) ?? null,
+          connectedBy: ctx.uid,
+          connectedAtMs: Date.now(),
+          lastSyncStatus: null,
+        },
+        { merge: true },
+      )
+      .set(db.doc('system/socialAds/secret/credentials'), {
+        token: seal(userToken),
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+      .commit();
+    connected.push('ads');
   }
 
   await stateRef(parsed.data.state).delete().catch(() => undefined);

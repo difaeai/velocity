@@ -109,6 +109,7 @@ const SOCIAL_NAV: NavGroup[] = [
     title: 'Every day',
     items: [
       { href: '/dashboard/social/queue', label: '✅ Approval queue' },
+      { href: '/dashboard/social/ads', label: '💸 Ads' },
       { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
       { href: '/dashboard/social/inbox', label: '💬 Comments' },
       { href: '/dashboard/social/performance', label: '📈 What is working' },

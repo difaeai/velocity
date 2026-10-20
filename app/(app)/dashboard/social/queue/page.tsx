@@ -13,7 +13,9 @@
  * Four things you can do with a draft, and they are deliberately different
  * weights:
  *
- *   Approve         — it is right. Post it now, or mark it ready for later.
+ *   Approve & post  — it is right, so it goes out. There is no "approve and
+ *                     wait": approved pieces are posted by a five-minute sweep
+ *                     even if this tab is closed mid-post.
  *   Ask for changes — say what is wrong; only the stages you name re-run.
  *   Reject          — not this one. It stays readable, it just never goes out.
  *   Delete          — as if it never happened.
@@ -58,6 +60,7 @@ const OPEN_STATES = [
   'awaiting_approval',
   'changes_requested',
   'ready',
+  'publishing',
   'failed',
   'partial',
 ];
@@ -195,10 +198,9 @@ function PostCard({ post }: { post: SocialPostDoc }) {
 
   const assets = postAssets(post);
   /**
-   * Nothing is rendered by this backend, so every piece reaches the queue
-   * needing files. Say which ones out loud: a disabled Approve button is a
-   * symptom, not an instruction, and the brief that answers it is one click
-   * away under "Show the working".
+   * The desk draws its own pictures and cuts its own reels now, but a render
+   * can fail and older pieces predate it. Say what is missing out loud: a
+   * disabled Approve button is a symptom, not an instruction.
    */
   const briefCount = post.direction?.length ?? 0;
   const slidesAttached = assets.filter((a) => a.kind === 'image').length;
@@ -227,13 +229,23 @@ function PostCard({ post }: { post: SocialPostDoc }) {
     }
   }
 
-  const approve = (publishNow: boolean) =>
-    run(publishNow ? 'publish' : 'approve', async () => {
-      const res = await socialApi.review({ postId: post.id, approve: true, caption, targets, publishNow });
-      if (!publishNow) return 'Approved. It is ready whenever you want it out.';
+  /**
+   * Approve means post. A piece already approved, or one that partly failed,
+   * goes out again through the same call — and the backend skips every
+   * network that already has it, so this can never double-post.
+   */
+  const approve = () =>
+    run('publish', async () => {
+      const res = await socialApi.review({ postId: post.id, approve: true, caption, targets, publishNow: true });
       return `Posted to ${res.published ?? 0} network${res.published === 1 ? '' : 's'}${
         res.failed ? `, ${res.failed} failed — see below.` : '.'
       }`;
+    });
+
+  const render = () =>
+    run('render', async () => {
+      const res = await socialApi.render({ postId: post.id });
+      return res.made ? 'Made. Check it, then approve.' : 'Nothing was missing.';
     });
 
   const askForChanges = () =>
@@ -306,9 +318,20 @@ function PostCard({ post }: { post: SocialPostDoc }) {
             />
           </label>
           {missing ? (
-            <p style={{ margin: 0, fontSize: 11.5, color: colors.warn, lineHeight: 1.45 }}>
-              Still needs {missing}. The brief is under &ldquo;Show the working&rdquo;.
-            </p>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <p style={{ margin: 0, fontSize: 11.5, color: colors.warn, lineHeight: 1.45 }}>
+                Still needs {missing}. The desk can make it, or attach your own.
+              </p>
+              {post.script && !working ? (
+                <Button variant="secondary" onClick={render} disabled={!!busy}>
+                  {busy === 'render'
+                    ? 'Making it…'
+                    : format === 'reel' || format === 'video'
+                      ? 'Cut the reel'
+                      : 'Make the picture'}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
 
           <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
@@ -458,14 +481,30 @@ function PostCard({ post }: { post: SocialPostDoc }) {
       {error ? <p style={{ color: colors.danger, fontSize: 12.5, marginTop: 10, marginBottom: 0 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, fontSize: 12.5, marginTop: 10, marginBottom: 0 }}>{notice}</p> : null}
 
+      {/* live, while it goes out — Instagram takes a minute or two over a reel */}
+      {post.status === 'publishing' || busy === 'publish' ? (
+        <p style={{ color: colors.primary, fontSize: 12.5, marginTop: 12, marginBottom: 0, fontWeight: 700 }}>
+          {post.work?.distribute?.note ?? 'Posting…'}{' '}
+          <span style={{ color: colors.muted, fontWeight: 400 }}>You can leave this page — it carries on.</span>
+        </p>
+      ) : null}
+      {post.status === 'ready' && post.publishQueuedAtMs ? (
+        <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
+          Approved — it goes out within five minutes, or press Post now.
+        </p>
+      ) : null}
+
       {/* the four decisions */}
       <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 14, paddingTop: 14, display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Button onClick={() => approve(true)} disabled={working || !!busy || assets.length === 0}>
-            {busy === 'publish' ? 'Posting…' : 'Approve & post now'}
-          </Button>
-          <Button variant="secondary" onClick={() => approve(false)} disabled={working || !!busy}>
-            Approve only
+          <Button onClick={approve} disabled={working || !!busy || assets.length === 0}>
+            {busy === 'publish' || post.status === 'publishing'
+              ? 'Posting…'
+              : post.status === 'ready'
+                ? 'Post now'
+                : post.status === 'partial' || post.status === 'failed'
+                  ? 'Post again'
+                  : 'Approve & post'}
           </Button>
           <span style={{ flex: 1 }} />
           <Button variant="ghost" onClick={reject} disabled={working || !!busy}>
@@ -694,7 +733,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {post.ads ? (
-        <Section title="Campaign brief — nothing is booked or spent by this desk">
+        <Section title="YouTube campaign brief — for Google Ads, by hand. Meta ads run from the Ads page">
           <div style={{ fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 4 }}>
             <div>
               <strong>{post.ads.campaignType}</strong> — {post.ads.objective}
