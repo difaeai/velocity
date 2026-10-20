@@ -533,6 +533,7 @@ export default function PassengerHome() {
         onClose={closeDrawer}
         name={user?.displayName ?? user?.email ?? 'Your account'}
         email={user?.email ?? null}
+        photoURL={user?.photoURL ?? null}
         isDriver={role === 'driver'}
         walletHidden={walletHidden}
         walletLabel={walletLabel}

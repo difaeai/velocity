@@ -65,11 +65,16 @@ export default function ProfileScreen() {
             <Text style={styles.actionLabel}>Support</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem} onPress={() => comingSoon('Saved addresses')}>
+          {/* My routes came out of the drawer and landed here: your daily
+              runs and your saved addresses are two tabs of one screen, and
+              both are things you keep rather than things you book. The tile
+              this replaced was a "coming soon" alert over a screen that had
+              already shipped. */}
+          <Pressable style={styles.quickActionItem} onPress={() => router.push('/passenger/daily-routes')}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>📍</Text>
             </View>
-            <Text style={styles.actionLabel}>Addresses</Text>
+            <Text style={styles.actionLabel}>My routes</Text>
           </Pressable>
 
           <Pressable style={styles.quickActionItem} onPress={openSettings}>
@@ -123,6 +128,22 @@ export default function ProfileScreen() {
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
+          {/* Sits above the referral code because it is the one thing on this
+              screen that fills a car: a fleet is asked BEFORE a driver is,
+              so the ride that goes out is already full. */}
+          <Pressable style={styles.listItem} onPress={() => router.push('/passenger/fleet')}>
+            <View style={styles.itemLeftRow}>
+              <Text style={styles.itemIcon}>🚘</Text>
+              <View>
+                <Text style={styles.itemTitle}>My Fleet</Text>
+                <Text style={styles.itemSubtitle}>The people you share a car with</Text>
+              </View>
+            </View>
+            <Text style={styles.chevron}>➔</Text>
+          </Pressable>
+
+          <View style={styles.divider} />
+
           <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>

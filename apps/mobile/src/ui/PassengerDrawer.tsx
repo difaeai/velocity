@@ -48,6 +48,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -63,7 +64,6 @@ import { themed } from '../theme';
 import {
   CityCarIcon,
   CityToCityIcon,
-  EarnIcon,
   EnvelopeIcon,
   GearIcon,
   GroupIcon,
@@ -72,7 +72,6 @@ import {
   PartnerIcon,
   ProfileIcon,
   RapidHelpIcon,
-  RouteMapIcon,
   SharedRideIcon,
   ShieldIcon,
   SignOutIcon,
@@ -105,6 +104,18 @@ interface Row {
 interface Section {
   title: string;
   rows: Row[];
+  /**
+   * Draw this section's heading as the signed-in rider — avatar, name, email
+   * — instead of the grey all-caps word.
+   *
+   * There used to be a profile card pinned at the top of the drawer AND a
+   * "YOUR ACCOUNT" heading further down, which is the same thing said twice:
+   * the first is who you are, the second is the word for who you are. The
+   * card is now the heading, which puts your face directly above the rows
+   * that are about you and gives the rides and people sections the top of the
+   * drawer, where they are actually used.
+   */
+  profile?: boolean;
 }
 
 export interface PassengerDrawerProps {
@@ -112,6 +123,8 @@ export interface PassengerDrawerProps {
   onClose: () => void;
   name: string;
   email?: string | null;
+  /** The rider's own picture for the account heading; falls back to a mark. */
+  photoURL?: string | null;
   isDriver: boolean;
   walletHidden: boolean;
   walletLabel: string;
@@ -129,6 +142,7 @@ export function PassengerDrawer({
   onClose,
   name,
   email,
+  photoURL,
   isDriver,
   walletHidden,
   walletLabel,
@@ -185,8 +199,8 @@ export function PassengerDrawer({
       {
         key: 'special',
         Icon: SpecialRideIcon,
-        label: 'Special Rides',
-        blurb: 'Weddings, airport runs and hired-by-the-day cars',
+        label: 'Corporates & Students',
+        blurb: 'Contract cars for an office, a campus or a hostel run',
         tint: 'rgba(168,85,247,0.16)',
         onPress: () => onNavigate('/passenger/special-rides'),
       },
@@ -210,14 +224,9 @@ export function PassengerDrawer({
         tint: 'rgba(204,255,0,0.14)',
         onPress: () => onNavigate('/passenger/pool-request/nearby'),
       },
-      {
-        key: 'routes',
-        Icon: RouteMapIcon,
-        label: 'My routes',
-        blurb: 'The trips you take every day, saved',
-        tint: 'rgba(251,146,60,0.16)',
-        onPress: () => onNavigate('/passenger/daily-routes'),
-      },
+      /* My routes is NOT here any more. It is a thing you keep, not a thing
+         you book, so it lives in your account — on the profile screen, with
+         the saved places it shares a screen with. */
       {
         key: 'couriers',
         Icon: ParcelIcon,
@@ -228,7 +237,29 @@ export function PassengerDrawer({
       },
     ];
 
+    /* Ordered by how often a row is opened, not by how the features were
+       built: an unread message is the only thing here somebody is waiting on.
+       "Earn with Velocity Rides" is NOT in this list — it is a full card on
+       the home screen, and a drawer row for something already on the screen
+       behind the drawer is a second door to one room. */
     const community: Row[] = [
+      {
+        key: 'messages',
+        Icon: EnvelopeIcon,
+        label: 'Messages',
+        blurb: 'Partners, your driver and the brands you asked',
+        tint: 'rgba(56,189,248,0.16)',
+        badge: messagesUnread,
+        onPress: () => onNavigate('/passenger/messages'),
+      },
+      {
+        key: 'business-ads',
+        Icon: MegaphoneIcon,
+        label: 'Find my Customers',
+        blurb: 'Put your business in front of riders nearby',
+        tint: 'rgba(236,72,153,0.16)',
+        onPress: () => onNavigate('/passenger/business-ads'),
+      },
       {
         key: 'travel-mate',
         Icon: PartnerIcon,
@@ -244,31 +275,6 @@ export function PassengerDrawer({
         blurb: 'Your travel partners and their city groups',
         tint: 'rgba(56,189,248,0.16)',
         onPress: () => onNavigate('/passenger/travel-mate/matches'),
-      },
-      {
-        key: 'messages',
-        Icon: EnvelopeIcon,
-        label: 'Messages',
-        blurb: 'Partners, your driver and the brands you asked',
-        tint: 'rgba(56,189,248,0.16)',
-        badge: messagesUnread,
-        onPress: () => onNavigate('/passenger/messages'),
-      },
-      {
-        key: 'earn',
-        Icon: EarnIcon,
-        label: 'Earn with Velocity Rides',
-        blurb: 'Bring people on and earn from their rides',
-        tint: 'rgba(204,255,0,0.14)',
-        onPress: () => onNavigate('/passenger/earn'),
-      },
-      {
-        key: 'business-ads',
-        Icon: MegaphoneIcon,
-        label: 'Find my Customers',
-        blurb: 'Put your business in front of riders nearby',
-        tint: 'rgba(236,72,153,0.16)',
-        onPress: () => onNavigate('/passenger/business-ads'),
       },
     ];
 
@@ -325,7 +331,7 @@ export function PassengerDrawer({
     return [
       { title: 'Rides', rows: rides },
       { title: 'People & earning', rows: community },
-      { title: 'Your account', rows: account },
+      { title: 'Your account', rows: account, profile: true },
     ];
   }, [
     walletHidden, walletLabel, messagesUnread, supportUnread,
@@ -351,29 +357,32 @@ export function PassengerDrawer({
               contentContainerStyle={styles.scroll}
               showsVerticalScrollIndicator={false}
             >
-              {/* Profile header */}
-              <Cascade progress={rowProgress(stagger, order++)}>
-                <Pressable
-                  style={({ pressed }) => [styles.profileHeader, pressed && { opacity: 0.85 }]}
-                  onPress={onProfile}
-                >
-                  <View style={styles.avatarCircle}>
-                    <ProfileIcon size={26} color="#ffffff" accent={LIME} />
-                  </View>
-                  <View style={styles.profileInfo}>
-                    <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
-                    {email ? (
-                      <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
-                    ) : null}
-                    <Text style={styles.profileLink}>View and edit your profile →</Text>
-                  </View>
-                </Pressable>
-              </Cascade>
-
               {sections.map((section) => (
                 <View key={section.title}>
                   <Cascade progress={rowProgress(stagger, order++)}>
-                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    {section.profile ? (
+                      <Pressable
+                        style={({ pressed }) => [styles.profileHeader, pressed && { opacity: 0.85 }]}
+                        onPress={onProfile}
+                      >
+                        <View style={styles.avatarCircle}>
+                          {photoURL ? (
+                            <Image source={{ uri: photoURL }} style={styles.avatarPhoto} alt={name} />
+                          ) : (
+                            <ProfileIcon size={26} color="#ffffff" accent={LIME} />
+                          )}
+                        </View>
+                        <View style={styles.profileInfo}>
+                          <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
+                          {email ? (
+                            <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
+                          ) : null}
+                          <Text style={styles.profileLink}>View and edit your profile →</Text>
+                        </View>
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.sectionTitle}>{section.title}</Text>
+                    )}
                   </Cascade>
                   {section.rows.map((row) => {
                     // The row and its icon share one slice, so the icon's own
@@ -568,14 +577,19 @@ const styles = themed(() => StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingBottom: 16 },
 
+  /* The account section's heading. It used to sit at the top of the drawer
+     with a rule under it; as a heading it takes the rule ABOVE, so it reads
+     as the start of its section rather than the end of the one before. */
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 18,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 20,
+    paddingBottom: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
   avatarCircle: {
     width: 50,
@@ -586,7 +600,9 @@ const styles = themed(() => StyleSheet.create({
     borderColor: 'rgba(204,255,0,0.30)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  avatarPhoto: { width: '100%', height: '100%' },
   profileInfo: { flex: 1 },
   profileName: { fontSize: 16.5, fontWeight: '900', color: '#ffffff' },
   profileEmail: { fontSize: 11.5, color: '#8a918f', marginTop: 1 },

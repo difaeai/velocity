@@ -328,6 +328,23 @@ export default function TripScreen() {
     }
   }
 
+  /**
+   * Point this shared ride at the rider's fleet.
+   *
+   * Nobody is seated by this — every invitee still joins through the ordinary
+   * path — so it is a push, not a booking. An empty fleet comes back as a
+   * failed-precondition from the server, which is the useful message here.
+   */
+  async function askMyFleet() {
+    if (!trip) return;
+    try {
+      const res = await api.inviteFleetToRide({ tripId: trip.id });
+      Alert.alert('Fleet asked', `${res.invited} ${res.invited === 1 ? 'person' : 'people'} have been told there is a seat.`);
+    } catch (e) {
+      Alert.alert('Could not ask your fleet', e instanceof Error ? e.message : 'Please try again.');
+    }
+  }
+
   // Travel Partner ride link: only travel partners (matched mates / group members)
   // can book the same ride from this link — the backend enforces the gate.
   async function shareWithTravelMates() {
@@ -687,6 +704,19 @@ export default function TripScreen() {
                 >
                   <Text style={styles.poolShareBtnTxt}>📤 Share invite link</Text>
                 </Pressable>
+                {/* The people you already ride with, in one tap — no link to
+                    send and nobody to pick. They get a push straight to this
+                    ride; joining is the ordinary join, so nothing about who
+                    may take a seat is relaxed by coming in this way. */}
+                {isHost ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.poolFleetBtn, pressed && { opacity: 0.85 }]}
+                    onPress={askMyFleet}
+                    disabled={busy}
+                  >
+                    <Text style={styles.poolFleetBtnTxt}>🚘 Ask my fleet</Text>
+                  </Pressable>
+                ) : null}
                 {/* Sharing the link now is fine, but joining it is not yet, so
                     say so rather than letting the host wonder why nobody came.
                     Riders can only take a seat once a driver has agreed the
@@ -1586,6 +1616,18 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
   },
   poolShareBtnTxt: { color: '#000', fontSize: 14, fontWeight: '900' },
+  /* Outlined, not filled: sharing the link is the primary action here and two
+     solid lime buttons in a row would make neither of them one. */
+  poolFleetBtn: {
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  poolFleetBtnTxt: { color: colors.primary, fontSize: 14, fontWeight: '900' },
 
   joinerNote: {
     color: '#8a8c8c',
