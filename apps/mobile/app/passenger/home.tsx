@@ -417,7 +417,7 @@ export default function PassengerHome() {
 
              City to City used to hold the right-hand tile. It is a journey
              planned for another day, not one hailed off the map in front of
-             you, so it has moved to the drawer under Special Rides and this
+             you, so it has moved to the drawer under Corporate / Students and this
              row asks the one question home should be asking.
 
              Who you will share WITH is asked on the map now, not under these

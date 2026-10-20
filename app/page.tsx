@@ -186,9 +186,9 @@ const SERVICES = [
   },
   {
     icon: Car,
-    tag: 'By the day',
-    title: 'Special Rides',
-    body: 'Rent a car by the day, with or without a driver — or list your own vehicle and let it earn while you are not using it.',
+    tag: 'Office & campus',
+    title: 'Corporate / Students',
+    body: 'Your own fleet for the office or campus run: add colleagues or classmates by username, ask them all in one message, and the car leaves full. Need a whole car instead? Rent one by the day.',
   },
   {
     icon: Handshake,
@@ -265,7 +265,7 @@ const EARN = [
   {
     icon: Wallet,
     title: 'Rent out your car',
-    body: 'List a vehicle on Special Rides and let it earn by the day, with or without you driving it. You set the rate, the days and the rules.',
+    body: 'List a vehicle in the app and let it earn by the day, with or without you driving it. You set the rate, the days and the rules.',
     points: ['With or without a driver', 'You set the daily rate', 'Renters are CNIC-verified'],
   },
   {
@@ -1140,7 +1140,7 @@ export default function Home() {
               <a href="#pool">Pooled fares</a>
               <a href="#services">City to City</a>
               <a href="#services">Couriers</a>
-              <a href="#services">Special Rides</a>
+              <a href="#services">Corporate / Students</a>
             </div>
 
             <div className={styles.footerCol}>

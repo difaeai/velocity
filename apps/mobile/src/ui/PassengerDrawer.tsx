@@ -72,6 +72,7 @@ import {
   PartnerIcon,
   ProfileIcon,
   RapidHelpIcon,
+  RouteMapIcon,
   SharedRideIcon,
   ShieldIcon,
   SignOutIcon,
@@ -196,18 +197,21 @@ export function PassengerDrawer({
         active: true,
         onPress: onClose,
       },
+      /* The fleet: the colleagues or classmates you make the same run with,
+         asked all at once so the car leaves full. It took over the Special
+         Rides slot; renting a whole car is a link at the foot of that screen. */
       {
-        key: 'special',
+        key: 'fleet',
         Icon: SpecialRideIcon,
-        label: 'Corporates & Students',
-        blurb: 'Contract cars for an office, a campus or a hostel run',
+        label: 'Corporate / Students',
+        blurb: 'Your fleet for the office or campus run',
         tint: 'rgba(168,85,247,0.16)',
-        onPress: () => onNavigate('/passenger/special-rides'),
+        onPress: () => onNavigate('/passenger/fleet'),
       },
       /* Moved off the home sheet, and this is where it belongs: City to City
          is a journey you plan for another day, not one you book from the map
-         in front of you. Directly under Special Rides because they are the
-         same kind of thing — a ride arranged ahead rather than hailed. */
+         in front of you. Directly under Corporate / Students because they are
+         the same kind of thing — a ride arranged ahead rather than hailed. */
       {
         key: 'intercity',
         Icon: CityToCityIcon,
@@ -224,9 +228,6 @@ export function PassengerDrawer({
         tint: 'rgba(204,255,0,0.14)',
         onPress: () => onNavigate('/passenger/pool-request/nearby'),
       },
-      /* My routes is NOT here any more. It is a thing you keep, not a thing
-         you book, so it lives in your account — on the profile screen, with
-         the saved places it shares a screen with. */
       {
         key: 'couriers',
         Icon: ParcelIcon,
@@ -278,7 +279,18 @@ export function PassengerDrawer({
       },
     ];
 
-    const account: Row[] = [];
+    /* My routes sits under your name, not under Rides: it is a thing you keep,
+       not a thing you book. */
+    const account: Row[] = [
+      {
+        key: 'routes',
+        Icon: RouteMapIcon,
+        label: 'My routes',
+        blurb: 'The trips you take every day, saved',
+        tint: 'rgba(251,146,60,0.16)',
+        onPress: () => onNavigate('/passenger/daily-routes'),
+      },
+    ];
     // Hidden until the wallet economy officially launches — until then the app
     // presents itself as cash-only.
     if (!walletHidden) {

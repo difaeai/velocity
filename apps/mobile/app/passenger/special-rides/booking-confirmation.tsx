@@ -99,7 +99,7 @@ export default function BookingConfirmationScreen() {
           style={styles.continueButton}
           onPress={() => router.replace('/passenger/special-rides')}
         >
-          <Text style={styles.continueButtonText}>Back to Corporates &amp; Students</Text>
+          <Text style={styles.continueButtonText}>Back to rentals</Text>
         </Pressable>
       </View>
     </SafeAreaView>
