@@ -269,11 +269,16 @@ describe('the window gate', () => {
   });
 
   it('refuses an event too far ahead to be about today', () => {
+    // `now` is passed for the same reason it is in every other case here: the
+    // fixture's publishedAt is pinned to NOW, and left to the real clock this
+    // one started failing 48 hours after that date — on the age gate, two
+    // gates before the one it is about.
     const verdict = classify(
       item({
         title: 'Islamabad Expressway to be closed on 19 December',
         summary: 'The Islamabad Expressway will be closed on 19 December.',
       }),
+      NOW,
     );
     expect(verdict.kept).toBe(false);
     expect(verdict.reason).toBe('not_yet');
