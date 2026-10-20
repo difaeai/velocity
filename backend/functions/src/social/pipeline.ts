@@ -870,25 +870,45 @@ async function createPost(opts: {
 const STALE_PUBLISH_MS = (RUN_TIMEOUT_SECONDS + 60) * 1000;
 
 /**
- * Take the piece for publishing, or refuse because someone already has.
+ * Take the piece for publishing — and decide where it still has to go — or
+ * refuse.
  *
- * A transaction, because two publishers can reach the same piece at once — a
- * double-click, the approve call and the sweep — and on an account this size a
- * duplicate post is a public mistake, not a log line.
+ * All of it inside one transaction, on the document as it is at that instant.
+ * Two publishers can reach the same piece at once — a double-click, the
+ * approve call and the sweep — and one that read the piece a moment before the
+ * other finished would otherwise see no results and post it a second time. On
+ * an account this size a duplicate post is a public mistake, not a log line.
  */
-async function claimForPublish(id: string): Promise<void> {
-  await db.runTransaction(async (tx) => {
+export async function claimForPublish(id: string, only?: Platform[]): Promise<{ post: SocialPost; targets: Platform[] }> {
+  return db.runTransaction(async (tx) => {
     const snap = await tx.get(postRef(id));
     const post = snap.data() as (SocialPost & { publishingSinceMs?: number }) | undefined;
     if (!post) throw new HttpsError('not-found', 'No such post.');
     if (post.status === 'publishing' && Date.now() - (post.publishingSinceMs ?? 0) < STALE_PUBLISH_MS) {
       throw new HttpsError('already-exists', 'It is already going out — the queue shows each network as it lands.');
     }
+    if (!postMedia(post).length) {
+      throw new HttpsError('failed-precondition', 'That piece has nothing to publish yet. Press Render, or attach a file, first.');
+    }
+
+    const format = post.format ?? 'reel';
+    const live = (p: Platform) => post.results?.[p]?.ok === true;
+    const targets = (only ?? post.targets ?? []).filter((p) => supports(p, format) && !live(p));
+    if (!targets.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        (post.targets ?? []).some(live)
+          ? 'It is already live everywhere it was meant to go.'
+          : 'None of the selected networks can take this format.',
+      );
+    }
+
     tx.set(
       postRef(id),
       { status: 'publishing', publishingSinceMs: Date.now(), updatedAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
+    return { post, targets };
   });
 }
 
@@ -900,31 +920,10 @@ async function claimForPublish(id: string): Promise<void> {
  * the ones that worked.
  */
 async function publishPost(id: string, only?: Platform[]): Promise<{ published: number; failed: number }> {
-  const snap = await postRef(id).get();
-  if (!snap.exists) throw new HttpsError('not-found', 'No such post.');
-  const post = snap.data() as SocialPost;
+  const { post, targets } = await claimForPublish(id, only);
   const format = post.format ?? 'reel';
-
-  let media = postMedia(post);
-  if (!media.length) {
-    throw new HttpsError(
-      'failed-precondition',
-      'That piece has nothing to publish yet. Press Render, or attach a file, first.',
-    );
-  }
-
   const live = (p: Platform) => post.results?.[p]?.ok === true;
-  const targets = (only ?? post.targets ?? []).filter((p) => supports(p, format) && !live(p));
-  if (!targets.length) {
-    throw new HttpsError(
-      'failed-precondition',
-      (post.targets ?? []).some(live)
-        ? 'It is already live everywhere it was meant to go.'
-        : 'None of the selected networks can take this format.',
-    );
-  }
-
-  await claimForPublish(id);
+  let media = postMedia(post);
 
   // Signed URLs age out; a piece retried a week later needs fresh ones.
   const refreshed = await refreshAssetUrls(media);
