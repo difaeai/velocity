@@ -101,6 +101,47 @@ service cloud.firestore {
       }
     }
 
+    // ----- usernames/{slug} -------------------------------------------------
+    // The uniqueness registry: one document per lowercased username, holding
+    // the uid that claimed it. Written only by `claimUsername`, which takes it
+    // in a transaction — a client that could write here could steal a name out
+    // from under the person typing it.
+    //
+    // `get` is open to signed-in clients and `list` is not, on purpose. The
+    // app has to say "that one is taken" while you type, and a callable per
+    // keystroke is a cold start per keystroke; a single-document get answers
+    // it for one read. Refusing `list` is what keeps that from also being a
+    // way to download everybody's username.
+    match /usernames/{slug} {
+      allow get:   if isSignedIn();
+      allow list:  if false;
+      allow write: if false;
+    }
+
+    // ----- fleets/{uid} -----------------------------------------------------
+    // A rider's personal fleet: their saved route, who is in it, the requests
+    // waiting on them and the ride asks sent to them.
+    //
+    // Closed in BOTH directions, which is unusual here and deliberate. Reading
+    // a fleet means reading other people's names and photos out of
+    // `users/{uid}`, and those are owner-only two rules up — a client-readable
+    // fleet document would be a list of uids this rider could then do nothing
+    // with, and a client-WRITABLE one would let anyone add themselves to a
+    // stranger's circle and start pushing ride invitations at them.
+    // `getMyFleet` is the only way in; see backend/functions/src/fleet.
+    match /fleets/{userId}/{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----- fleetAsks/{askId} ------------------------------------------------
+    // "I'm going to Gulberg now — coming?", and who has said yes. Server-only
+    // for the same reason: the accepted list is what decides who gets seated
+    // on the car, so a client that could write to it could put itself in
+    // somebody else's booking.
+    match /fleetAsks/{askId} {
+      allow read, write: if false;
+    }
+
     // ----- cnicVerifications/{uid} -----------------------------------------
     // The admin review queue for passenger CNIC verification (the identity gate
     // in front of couriers). Written only by the submitCnicVerification /
