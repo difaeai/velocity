@@ -1171,17 +1171,18 @@ export const adminGenerateSocialPost = onCall(
         `${date} already has a ${format}. Open it, ask for changes, or pass replace.`,
       );
     }
-    // "Replace" may write over a draft, never over a piece that was approved
-    // or is live: that record holds the links and the numbers. A second piece
-    // the same day gets the next free id instead.
-    if (existing && ['ready', 'publishing', 'published', 'partial'].includes(existing.status)) {
-      for (let n = 2; ; n++) {
+    // "Replace" writes over a piece that failed or was turned down, and nothing
+    // else. A draft somebody asked for an hour ago, an approved piece or a live
+    // one (whose record holds the links and the numbers) all stay; a second
+    // piece the same day takes the next free id instead.
+    if (existing && !['failed', 'rejected'].includes(existing.status)) {
+      let free: string | null = null;
+      for (let n = 2; n < 100 && !free; n++) {
         const candidate = `${postIdFor(date, format)}-${n}`;
-        if (!(await postRef(candidate).get()).exists) {
-          id = candidate;
-          break;
-        }
+        if (!(await postRef(candidate).get()).exists) free = candidate;
       }
+      if (!free) throw new HttpsError('resource-exhausted', `${date} already has too many of those.`);
+      id = free;
     }
 
     try {

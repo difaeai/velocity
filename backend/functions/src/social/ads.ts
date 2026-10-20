@@ -611,7 +611,7 @@ async function syncAds(): Promise<string> {
   const act = cfg.adAccountId!;
 
   const insightFields = 'campaign_id,spend,impressions,reach,frequency,inline_link_clicks,actions,video_thruplay_watched_actions';
-  const [campaigns, lifetime, week, series, ads] = await Promise.all([
+  const [campaigns, lifetime, week, series, ads, accountWeek] = await Promise.all([
     graph<{ data: CampaignRow[] }>(
       token,
       `${act}/campaigns?fields=id,name,objective,status,effective_status,daily_budget,created_time,stop_time&limit=100`,
@@ -631,6 +631,13 @@ async function syncAds(): Promise<string> {
     graph<{ data: { campaign_id: string; effective_status: string; ad_review_feedback?: { global?: Record<string, string> } }[] }>(
       token,
       `${act}/ads?fields=campaign_id,effective_status,ad_review_feedback&limit=200`,
+    ),
+    // The week for the whole account, asked for at account level: people reached
+    // by two campaigns are one person, and summing campaign reach would count
+    // them twice and make "seen per person" look healthier than it is.
+    graph<{ data?: InsightRow[] }>(
+      token,
+      `${act}/insights?level=account&date_preset=last_7d&fields=spend,impressions,reach,inline_link_clicks`,
     ),
   ]);
 
@@ -736,18 +743,7 @@ async function syncAds(): Promise<string> {
     const m = metricsFrom(r, 'link_click');
     return { date: r.date_start, spend: m.spend, impressions: m.impressions, linkClicks: m.linkClicks };
   });
-  const totals = metricsFrom(
-    (week.data ?? []).reduce<InsightRow>(
-      (sum, r) => ({
-        spend: String(Number(sum.spend ?? 0) + Number(r.spend ?? 0)),
-        impressions: String(Number(sum.impressions ?? 0) + Number(r.impressions ?? 0)),
-        reach: String(Number(sum.reach ?? 0) + Number(r.reach ?? 0)),
-        inline_link_clicks: String(Number(sum.inline_link_clicks ?? 0) + Number(r.inline_link_clicks ?? 0)),
-      }),
-      {},
-    ),
-    'link_click',
-  );
+  const totals = metricsFrom(accountWeek.data?.[0] ?? {}, 'link_click');
 
   const status = `${judged.filter((j) => j.verdict.grade !== 'idle').length} running of ${judged.length}.${
     actions.length ? ` ${actions.join(' ')}` : ''
@@ -999,10 +995,25 @@ export const adminAdAction = onCall({ timeoutSeconds: 120 }, async (req) => {
   const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   let what = '';
 
-  const goLive = async () => {
-    await fitBudget(doc.dailyBudget ?? 0);
+  /**
+   * Switch it on — at a budget that fits. If the limit has less room than this
+   * campaign's budget, the budget is lowered at Meta FIRST; checking the room
+   * without changing the number would launch it past the limit.
+   */
+  const goLive = async (): Promise<string> => {
+    const current = doc.dailyBudget ?? 0;
+    let note = '';
+    if (current > 0) {
+      const fitted = await fitBudget(current);
+      if (fitted < current) {
+        await graph(token, campaignId, { form: { daily_budget: toMinor(fitted, cfg.currency) } });
+        update.dailyBudget = fitted;
+        note = ` Lowered to ${money(fitted, cfg.currency)} a day to stay inside your limit.`;
+      }
+    }
     await graph(token, campaignId, { form: { status: 'ACTIVE' } });
     Object.assign(update, { status: 'ACTIVE', effectiveStatus: 'ACTIVE', approval: 'approved' });
+    return note;
   };
   const setBudget = async (requested: number) => {
     const budget = await fitBudget(requested);
@@ -1014,10 +1025,11 @@ export const adminAdAction = onCall({ timeoutSeconds: 120 }, async (req) => {
   try {
     switch (action) {
       case 'launch':
-      case 'resume':
-        await goLive();
-        what = action === 'launch' ? 'Launched.' : 'Running again.';
+      case 'resume': {
+        const note = await goLive();
+        what = `${action === 'launch' ? 'Launched.' : 'Running again.'}${note}`;
         break;
+      }
       case 'pause':
         await graph(token, campaignId, { form: { status: 'PAUSED' } });
         Object.assign(update, { status: 'PAUSED', effectiveStatus: 'PAUSED' });
