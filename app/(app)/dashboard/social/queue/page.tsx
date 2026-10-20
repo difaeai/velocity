@@ -435,14 +435,21 @@ function PostCard({ post }: { post: SocialPostDoc }) {
       {post.engine === 'local' ? (
         <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
           Written by the <strong>local engine</strong> — composed from the brand material and picked by score, with
-          no model involved. Auto-publish does not apply to these: read it before it goes out. Either{' '}
-          <code>FREE_MODEL_KEY</code> or <code>ANTHROPIC_API_KEY</code> puts a model back on it.
+          no model involved. Auto-publish does not apply to these: read it before it goes out. Any of{' '}
+          <code>ANTHROPIC_API_KEY</code>, <code>GEMINI_KEY_RESEARCH</code> or <code>FREE_MODEL_KEY</code> puts a
+          model back on it.
         </p>
       ) : null}
       {post.engine === 'free' ? (
         <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
           Written by the <strong>free model</strong>. A model wrote this, so auto-publish applies to it and a change
           request is read properly — but it was not grounded in a live market read.
+        </p>
+      ) : null}
+      {post.engine === 'gemini' ? (
+        <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
+          Written on <strong>Gemini’s free tier</strong>. A model wrote this and it could search, so the market read
+          behind it is a real one — the sources are listed with the research on the piece.
         </p>
       ) : null}
       {post.error ? (

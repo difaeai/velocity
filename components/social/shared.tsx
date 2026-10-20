@@ -422,7 +422,7 @@ export function Readiness({
   connectedCount,
   staffed,
 }: {
-  readiness: { writer: boolean; engine?: 'claude' | 'free' | 'local'; tokenVault: boolean };
+  readiness: { writer: boolean; engine?: 'claude' | 'gemini' | 'free' | 'local'; tokenVault: boolean };
   connectedCount: number;
   staffed?: number;
 }) {
@@ -448,13 +448,17 @@ export function Readiness({
           ? 'The engine (local)'
           : readiness.engine === 'free'
             ? 'The engine (free model)'
-            : 'The engine (Claude)',
+            : readiness.engine === 'gemini'
+              ? 'The engine (Gemini, free tier)'
+              : 'The engine (Claude)',
       note:
         readiness.engine === 'local'
-          ? 'No model key is set, so the desk is writing locally: it composes from the brand material, scores every candidate against the same hook, caption and timing checks, and keeps the best. No key, no cost, no failed runs — plainer writing, and no live market read. Either key switches it back.'
+          ? 'No model key is set, so the desk is writing locally: it composes from the brand material, scores every candidate against the same hook, caption and timing checks, and keeps the best. No key, no cost, no failed runs — plainer writing, and no live market read. Any model key switches it back.'
           : readiness.engine === 'free'
-            ? 'FREE_MODEL_KEY is set — everyone can write, plan and decide on a free model. It cannot search the web, so the market read still cannot run; everything else is a model again. ANTHROPIC_API_KEY takes precedence whenever both exist.'
-            : 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.',
+            ? 'FREE_MODEL_KEY is set — everyone can write, plan and decide on a free model. It cannot search the web, so the market read still cannot run; everything else is a model again. ANTHROPIC_API_KEY and GEMINI_KEY_RESEARCH both take precedence over it.'
+            : readiness.engine === 'gemini'
+              ? 'GEMINI_KEY_RESEARCH is set — everyone can write, plan and decide, and this one can also search, so the morning market read is a real read again: 500 grounded reads a day at no charge against a desk that uses one. On Google’s free tier the prompts may be used to improve their products; what goes out is brand material and a competitor list, never rider or driver data. ANTHROPIC_API_KEY takes precedence whenever both exist.'
+              : 'ANTHROPIC_API_KEY is set — everyone can research, write and decide.',
     },
     {
       state: readiness.tokenVault ? 'ok' : 'warn',

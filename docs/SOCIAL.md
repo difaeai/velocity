@@ -475,8 +475,9 @@ read back, so anything appended to it has to be retyped from memory.
 | Secret | Without it |
 |---|---|
 | `SOCIAL_TOKEN_KEY` (`openssl rand -base64 32`) | accounts cannot be connected; nothing publishes |
-| `ANTHROPIC_API_KEY` | the desk drops to the next engine it has — free, then local |
-| `FREE_MODEL_ENV` | with no Anthropic key either, the desk writes locally: plainer, and no market read |
+| `ANTHROPIC_API_KEY` | the desk drops to the next engine it has — Gemini, free, then local |
+| `GEMINI_KEY_RESEARCH` | with no Anthropic key either, there is **no market read**: the two engines below cannot search |
+| `FREE_MODEL_ENV` | with neither key above, the desk writes locally: plainer, and no market read |
 
 Only one of these is a hard stop. `SOCIAL_TOKEN_KEY` is: a page token is a
 password and storing one in the clear is not an option, so with no vault there
@@ -485,15 +486,21 @@ is nowhere to post. `ANTHROPIC_API_KEY` used to be, and is not any more.
 ⚠️ Rotating `SOCIAL_TOKEN_KEY` makes every stored token unreadable. Reconnect
 each account afterwards.
 
-### Three engines, in order
+### Four engines, in order
 
 `engine.ts` is the one door every stage knocks on. It picks, in this order:
 
 | | Engine | Turned on by | What it cannot do |
 |---|---|---|---|
 | 1 | **Claude** | `ANTHROPIC_API_KEY` | — (the only paid one) |
-| 2 | **A free model** | `FREE_MODEL_KEY` | search the web, so no market read |
-| 3 | **Local** | nothing | search, read a change request, or audit the profile |
+| 2 | **Gemini, free tier** | `GEMINI_KEY_RESEARCH` | render a picture; be relied on for privacy (see below) |
+| 3 | **A free model** | `FREE_MODEL_KEY` | search the web, so no market read |
+| 4 | **Local** | nothing | search, read a change request, or audit the profile |
+
+Whichever comes first answers *everything* that day — the desk is deliberately
+not split by task. A deployment where Claude writes and Gemini searches would
+save a few cents a month and would cost the one property that file exists to
+keep: one engine, named in one place, answered every stage of a piece.
 
 Stages ask `modelReady()` and take their local branch when it is false. They do
 **not** ask which engine answered — a stage that behaves differently per vendor
@@ -501,7 +508,43 @@ is a stage that will be wrong for the next one. The console says which is
 running; the post carries an `engine` stamp; `shouldAutoPublish` asks only
 whether something *thought* about the piece.
 
-### The free engine: any OpenAI-compatible endpoint
+### Gemini's free tier: the one free engine that can search
+
+`src/social/gemini.ts`. It was added for one hole: with no paid key there was no
+market read at all, because neither of the engines below it can search and both
+say so rather than inventing one. Google's free tier can, and their pricing page
+is the whole business case — *grounding with Google Search: free of charge, up to
+500 RPD* on `gemini-2.5-flash`. The desk uses one read a morning.
+
+One bare key, not a block: AI Studio hands you a key and that is the entire
+configuration. Four things in that file are deliberate:
+
+- **It speaks the Interactions API**, not `generateContent`: one POST to
+  `/v1beta/interactions` with `model`, `system_instruction` and `input`, the key
+  in an `x-goog-api-key` header. The reply is a list of *steps* — the searches,
+  their results, then the answer — so it is walked, and **only** the
+  `model_output` step becomes the post. A walker that scooped up every step with
+  text in it would publish a thought summary.
+- **A grounded call is pinned to `GROUNDED_GEMINI_MODEL`.** Text is free on every
+  current Flash; free *grounding* is 2.5 Flash (and Flash-Lite) only — "not
+  available" on the free tier for everything newer. So a better writer can be
+  typed into the console's model box without the morning read quietly following
+  it onto a paid or refused route.
+- **JSON mode is asked for and dropped on the first refusal**, as in
+  `freeModel.ts`, and never asked for on a grounded call: structured output
+  alongside a built-in tool is a Gemini 3 preview feature and this is 2.5.
+- **`store: false` on every call**, so Google keeps no copy of the thread. Be
+  plain about the rest: on the **free** tier Google may use what is sent to
+  improve their products. What is sent is brand material, a competitor list and
+  public figures — no rider or driver data reaches this engine, and nothing in
+  it reads the database. That trade was made knowingly; `ANTHROPIC_API_KEY`
+  takes precedence the moment it exists.
+
+The sources stored next to the script are the model's own `url_citation`
+annotations — the pages it actually read. Nothing is scraped and nobody's app is
+read.
+
+### The third engine: any OpenAI-compatible endpoint
 
 `src/social/freeModel.ts` speaks the dialect nearly every provider speaks —
 `POST {base}/chat/completions` with `messages` — so the provider is three
@@ -533,12 +576,12 @@ Three behaviours in that file are deliberate and must survive a rewrite:
   again burns the clock of a run that has one; a per-minute refusal is waited
   out, a per-day one is reported.
 
-### The second engine: writing with no key
+### The last engine: writing with no key
 
 `src/social/local/` is a writer that needs no key, no network and no quota. It
 is reached by one check — `if (!modelReady())` — at the top of every stage, so
-the pipeline, the console and the queue are unchanged and either key appearing
-later switches everything back with no migration.
+the pipeline, the console and the queue are unchanged and any model key
+appearing later switches everything back with no migration.
 
 It works by inverting something the desk already owned. `lint.ts` is 900 lines
 of deterministic critic: it scores a hook on length, specificity, stakes,
@@ -579,9 +622,12 @@ Two things to know before editing `material.ts`:
 
 ### There is no image or video key
 
-There used to be. `GEMINI_API_KEY` was removed along with the renderer: this
-backend draws nothing and renders nothing, and Claude is the only model it pays
-for. The designer and the editor write briefs instead, the briefs are stored on
+There used to be, and `GEMINI_KEY_RESEARCH` is **not** it. The old
+`GEMINI_API_KEY` went with the renderer: this backend draws nothing and renders
+nothing. The new key is text and search only — it writes and it reads the
+market, and asking it for a picture is not wired to anything.
+
+The designer and the editor write briefs instead, the briefs are stored on
 the piece, and the console shows them with a copy button next to the upload
 control. You make the file however you like and attach it from the queue — it
 then publishes through exactly the same path a rendered one did.
@@ -593,16 +639,23 @@ out was never the point of the desk.
 ### The model id is a setting, not code
 
 `textModel` is editable on the Employees page, so a rename is a settings change
-and not a redeploy. It is **one box shared by both model engines**, and whichever
-one is running corrects a value belonging to the other rather than sending it to
-an API that will refuse it: Claude ignores anything that is not `claude-…`, and
-the free engine ignores anything that is. So a desk that changes engines keeps
-working with the old id still sitting in the field, which is the normal state
-rather than a mistake — the console says when it is doing that.
+and not a redeploy. It is **one box shared by all three model engines**, and
+whichever one is running corrects a value belonging to another rather than
+sending it to an API that will refuse it: Claude takes only `claude-…`, Gemini
+only `gemini-…`, and the free engine ignores both prefixes. So a desk that
+changes engines keeps working with the old id still sitting in the field, which
+is the normal state rather than a mistake — the console says when it is doing
+that.
+
+The one value in that box that is *overridden* rather than corrected is a Gemini
+id on a grounded call: the market read stays on the model whose grounding is
+free, whatever is typed. See the Gemini section above.
 
 | | Default | Used by |
 |---|---|---|
-| Text | `claude-opus-5` | standup, research, writing, SEO, search, ads, captions, briefs, replies |
+| Text (Claude) | `claude-opus-5` | standup, research, writing, SEO, search, ads, captions, briefs, replies |
+| Text (Gemini) | `gemini-2.5-flash` | the same, when Gemini is the engine |
+| Grounded (Gemini) | `gemini-2.5-flash` | the market read, pinned — free grounding exists nowhere else |
 
 ---
 

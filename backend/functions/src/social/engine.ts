@@ -10,15 +10,25 @@
  * 1. **Claude** (`ANTHROPIC_API_KEY`) — the best writing on the desk and the
  *    only one that is paid for. If it is configured, somebody chose to pay for
  *    it and it wins.
- * 2. **A free model** (`FREE_MODEL_KEY`) — any OpenAI-compatible endpoint,
+ * 2. **Gemini's free tier** (`GEMINI_KEY_RESEARCH`) — the only engine here
+ *    that is free *and* can search, which is why it goes above the next one:
+ *    with this key the morning market read is a real read again rather than an
+ *    honest refusal. See `gemini.ts`.
+ * 3. **A free model** (`FREE_MODEL_KEY`) — any OpenAI-compatible endpoint,
  *    Groq by default. A real model with real judgement, which is the whole
- *    difference from the third option. It has one cost that is not money and
+ *    difference from the fourth option. It has one cost that is not money and
  *    is stated plainly on the overview: it cannot search the web, so there is
  *    still no market read. See `freeModel.ts` for why the provider is three
  *    environment variables rather than a file.
- * 3. **Local** — no key at all. `local/` composes from the brand material and
+ * 4. **Local** — no key at all. `local/` composes from the brand material and
  *    scores every candidate with `lint.ts`. Reliable, free, and plainer; it
  *    cannot read a change request or have an idea nobody wrote down.
+ *
+ * Whichever one is first is the one that answers *everything* that day — the
+ * desk is deliberately not split by task. A deployment where Claude writes and
+ * Gemini searches would be cheaper by a few cents a month and would cost the
+ * one property this file exists to keep: that one engine, named in one place,
+ * answered every stage of a piece.
  *
  * Stages ask `modelReady()` and take their local branch when it is false. They
  * do **not** ask which engine answered: a stage that behaves differently for
@@ -32,9 +42,10 @@
 import { logger } from 'firebase-functions';
 
 import { claudeReady, claudeText } from './claude';
+import { geminiReady, geminiText } from './gemini';
 import { freeModelReady, freeModelText } from './freeModel';
 
-export type Engine = 'claude' | 'free' | 'local';
+export type Engine = 'claude' | 'gemini' | 'free' | 'local';
 
 export interface GroundedSource {
   title: string;
@@ -69,6 +80,7 @@ export class ModelError extends Error {
 /** Which engine a call made right now would go to. */
 export function activeEngine(): Engine {
   if (claudeReady()) return 'claude';
+  if (geminiReady()) return 'gemini';
   if (freeModelReady()) return 'free';
   return 'local';
 }
@@ -86,6 +98,8 @@ export async function generateText(req: TextRequest): Promise<TextResult> {
   switch (activeEngine()) {
     case 'claude':
       return claudeText(req);
+    case 'gemini':
+      return geminiText(req);
     case 'free':
       return freeModelText(req);
     default:

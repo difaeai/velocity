@@ -31,6 +31,7 @@ import {
   type SocialCompetitor,
   type SocialEmployee,
   type SocialPostDoc,
+  type SocialReadiness,
   type SocialRole,
   type SocialSettings,
 } from '@/lib/api';
@@ -42,6 +43,13 @@ export default function EmployeesPage() {
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [coverage, setCoverage] = useState<string[]>([]);
+  /**
+   * Which engine is actually running. This page holds the one model box, and
+   * the box is shared by every engine — so without this it cannot tell the
+   * difference between an id that is being used and one that is being ignored,
+   * and it used to assert the second about both.
+   */
+  const [engine, setEngine] = useState<SocialReadiness['engine'] | null>(null);
   const [draft, setDraft] = useState<Partial<SocialSettings>>({});
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -83,6 +91,7 @@ export default function EmployeesPage() {
       .then((r) => {
         setSettings(r.settings);
         setCoverage(r.coverage);
+        setEngine(r.readiness.engine);
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the settings.'));
 
@@ -377,10 +386,29 @@ export default function EmployeesPage() {
       <Card>
         <h2 style={{ ...h2, marginBottom: 4 }}>The tools</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
-          Everyone <strong>thinks and writes with Claude</strong> when an <code>ANTHROPIC_API_KEY</code> is set — the
-          only paid model on the desk. Without one they fall back to the <strong>local engine</strong>, which composes
-          from the brand material and scores every candidate against the same checks: no key, no cost, no failed runs,
-          and plainer writing. <strong>Nothing is rendered here.</strong> The
+          Everyone thinks and writes with whichever engine this deployment has, in one order:{' '}
+          <strong>Claude</strong> (<code>ANTHROPIC_API_KEY</code>, the only paid one), then{' '}
+          <strong>Gemini’s free tier</strong> (<code>GEMINI_KEY_RESEARCH</code> — the only free one that can also
+          search, so the only free one with a live market read), then any <strong>OpenAI-compatible free model</strong>{' '}
+          (<code>FREE_MODEL_KEY</code>), then the <strong>local engine</strong>, which needs no key at all and composes
+          from the brand material, scoring every candidate against the same checks: no cost, no failed runs, and
+          plainer writing.{' '}
+          {engine ? (
+            <>
+              Right now it is{' '}
+              <strong>
+                {engine === 'claude'
+                  ? 'Claude'
+                  : engine === 'gemini'
+                    ? 'Gemini’s free tier'
+                    : engine === 'free'
+                      ? 'the free model'
+                      : 'the local engine'}
+              </strong>
+              .{' '}
+            </>
+          ) : null}
+          <strong>Nothing is rendered here.</strong> The
           designer writes a brief for every frame and the editor writes the cut; you make the pictures and the video
           however you like and attach them to the piece from the queue. The model id is editable because model names
           change; when one does, this is the fix, not a redeploy.
@@ -388,21 +416,20 @@ export default function EmployeesPage() {
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <Field
-            label="Writing and thinking (Claude)"
-            hint="Standup, research, writing, SEO, ads, captions and replies. A Claude model id."
+            label="Writing and thinking"
+            hint="Standup, research, writing, SEO, ads, captions and replies. A model id belonging to the engine that is running."
           >
             <input
               value={(value('textModel') as string) ?? ''}
               onChange={(e) => set('textModel', e.target.value)}
               style={inputStyle}
             />
-            {/* A Gemini id left here from before the desk moved to Claude is
-                ignored by the backend rather than sent to fail — but a field
+            {/* An id belonging to another engine is corrected by the backend
+                rather than sent to an API that would refuse it — but a field
                 showing a value nobody is using is its own kind of lie. */}
-            {(value('textModel') as string) && !((value('textModel') as string) ?? '').startsWith('claude-') ? (
+            {modelNoteFor(engine, (value('textModel') as string) ?? '') ? (
               <p style={{ fontSize: 11.5, color: colors.warn, margin: '6px 0 0', lineHeight: 1.45 }}>
-                Not a Claude model — the team is writing with <code>claude-opus-5</code> instead. Put a Claude model id
-                here to change that.
+                {modelNoteFor(engine, (value('textModel') as string) ?? '')}
               </p>
             ) : null}
           </Field>
@@ -419,6 +446,43 @@ export default function EmployeesPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * What to say under the model box, if anything.
+ *
+ * One box, four engines. The backend corrects an id belonging to a different
+ * engine rather than forwarding it to an API that would refuse it, so nothing
+ * breaks — but then the field is showing a value nobody is using, and saying so
+ * is cheaper than letting somebody tune a model that is not running.
+ *
+ * Returns null when the id is the running engine's own and is being used as
+ * typed.
+ */
+function modelNoteFor(engine: SocialReadiness['engine'] | null, configured: string): string | null {
+  const model = configured.trim();
+  if (!engine || !model) return null;
+  const claude = model.startsWith('claude-');
+  const gemini = model.startsWith('gemini-');
+
+  if (engine === 'local') {
+    return 'No model key is set, so nothing reads this box — the local engine writes without one.';
+  }
+  if (engine === 'claude') {
+    return claude ? null : 'Not a Claude model, and Claude is what is running — the team is writing with claude-opus-5 instead.';
+  }
+  if (engine === 'gemini') {
+    if (!gemini) return 'Not a Gemini model, and Gemini is what is running — the team is writing with gemini-2.5-flash instead.';
+    // Free grounding exists on 2.5 Flash alone, so the morning market read is
+    // pinned there whatever is typed here. Worth one line: it is the one value
+    // in this box that is overridden rather than corrected.
+    return model === 'gemini-2.5-flash'
+      ? null
+      : 'The writing uses this model; the morning market read stays on gemini-2.5-flash, the only one whose Google Search grounding is free.';
+  }
+  return claude || gemini
+    ? 'Belongs to another engine — the free model is using its own default instead.'
+    : null;
 }
 
 /** One person: who they are, what they are for, and what they have done. */

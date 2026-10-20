@@ -459,7 +459,7 @@ export interface Blocker {
  * none the strip is replaced by a single green line.
  */
 export function readBlockers(
-  readiness: { writer: boolean; engine?: 'claude' | 'free' | 'local'; tokenVault: boolean } | null,
+  readiness: { writer: boolean; engine?: 'claude' | 'gemini' | 'free' | 'local'; tokenVault: boolean } | null,
   staffed: number,
   connectedCount: number,
   brokenCount: number,

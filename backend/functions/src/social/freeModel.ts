@@ -1,10 +1,15 @@
 /**
  * The free engine: any OpenAI-compatible endpoint, Groq by default.
  *
- * This is the second of the three ways the desk can think — Claude when a paid
- * key exists, a free model when one does, the local writer when neither does.
- * `engine.ts` picks; this file only knows how to ask an OpenAI-shaped API a
- * question.
+ * This is the third of the four ways the desk can think — Claude when a paid
+ * key exists, then Gemini's free tier, then this, then the local writer when
+ * there is no key at all. `engine.ts` picks; this file only knows how to ask
+ * an OpenAI-shaped API a question.
+ *
+ * It is below Gemini for one reason and it is in point 1: Gemini can search
+ * and this cannot, so a deployment with both keys should be getting a real
+ * market read. Everything else about it — the dialect, the quality, the
+ * limits — is a matter of taste between two free models.
  *
  * **Why it is not written against one vendor.** Free tiers move: they change
  * their limits, their models and their terms, and the one thing you can
@@ -21,7 +26,8 @@
  * Three things are worth knowing before changing anything:
  *
  * 1. **It cannot search the web, and it says so rather than guessing.** No
- *    free endpoint here has a server-side search tool. A grounded request is
+ *    OpenAI-compatible free endpoint has a server-side search tool — Gemini's
+ *    does, which is the whole reason it sits above this one. A grounded request is
  *    refused outright so that `research.ts` returns the "could not read" shape
  *    the type already carries. What must never happen is a market read
  *    composed without a search: an invented trend is worse than an absent one,
@@ -83,19 +89,21 @@ let saidSo = false;
  * The model id, in order: whatever the console box holds if it is not the
  * other engine's, then the deployment's own default, then ours.
  *
- * `textModel` is one console field shared with Claude, so the value sitting in
- * it is usually `claude-…`. That is not an error worth stopping for — this is
- * the normal state of a desk that changed engines.
+ * `textModel` is one console field shared with the other engines, so the value
+ * sitting in it is usually `claude-…` or `gemini-…`. That is not an error
+ * worth stopping for — it is the normal state of a desk that changed engines —
+ * but it must never be forwarded to this provider, which would answer 404 for
+ * a model that does exist somewhere else.
  */
 export function resolveFreeModel(configured: string | undefined): string {
   const model = (configured ?? '').trim();
-  if (model && !model.startsWith('claude-')) return model;
+  if (model && !model.startsWith('claude-') && !model.startsWith('gemini-')) return model;
   const fallback = (process.env.FREE_MODEL_ID ?? '').trim() || DEFAULT_FREE_MODEL;
   // Once per instance, not once per call: ten identical log lines in a run
   // teach everybody to ignore the eleventh.
   if (model && !saidSo) {
     saidSo = true;
-    logger.info('social: the configured text model belongs to the other engine, using the free default', {
+    logger.info('social: the configured text model belongs to another engine, using the free default', {
       configured: model,
       using: fallback,
     });

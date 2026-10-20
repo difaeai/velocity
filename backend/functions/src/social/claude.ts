@@ -3,9 +3,9 @@
  *
  * It is no longer the *only* engine — `engine.ts` is the door every stage
  * knocks on, and it comes here first whenever `ANTHROPIC_API_KEY` exists,
- * falling to Gemini's free tier and then to the local writer when it does not.
- * This file only knows how to ask Anthropic a question. Nothing here should
- * learn about the other two.
+ * falling to Gemini's free tier, then to an OpenAI-compatible free model, then
+ * to the local writer when it does not. This file only knows how to ask
+ * Anthropic a question. Nothing here should learn about the other three.
  *
  * Pictures and video do NOT come through here: Claude does not render images or
  * video, so `designer.ts` and `video.ts` still call Google for the frames and

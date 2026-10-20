@@ -12,10 +12,10 @@
  * local engine is good, but that nothing on this path is still fatal without a
  * key.
  *
- * Both keys are cleared, not just Anthropic's: since the free engine shipped
- * there are two ways to have a model, and a machine with FREE_MODEL_KEY in its
- * environment would otherwise run this whole file against a real endpoint and
- * fail for reasons that have nothing to do with the local writer.
+ * Every key is cleared, not just Anthropic's: there are three ways to have a
+ * model now, and a machine with any of them in its environment would otherwise
+ * run this whole file against a real endpoint and fail for reasons that have
+ * nothing to do with the local writer.
  *
  * No Firestore and no network: every function here is reached on its local
  * branch, which is itself part of what is being asserted.
@@ -79,7 +79,7 @@ const team: Employee[] = [
 
 const byRole = (role: Role): Employee => team.find((e) => e.role === role)!;
 
-const KEYS = ['ANTHROPIC_API_KEY', 'FREE_MODEL_KEY'] as const;
+const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_KEY_RESEARCH', 'FREE_MODEL_KEY'] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(() => {

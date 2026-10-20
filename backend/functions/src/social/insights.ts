@@ -357,7 +357,7 @@ export async function auditProfile(settings: SocialSettings): Promise<ProfileAud
   // The one stage with no local equivalent: a profile audit is a judgement
   // about twelve things a page either does or does not do, and unlike the
   // writing stages there is no candidate set to score. It waits for a key.
-  if (!modelReady()) return empty('The profile audit needs a model, and no ANTHROPIC_API_KEY is configured.');
+  if (!modelReady()) return empty('The profile audit needs a model, and no model key is configured.');
 
   let profile: ProfileDetail;
   try {

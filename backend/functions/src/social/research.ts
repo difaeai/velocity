@@ -3,10 +3,16 @@
  *
  * Before anything is written, the research assistant searches: what is
  * travelling on Pakistani feeds this week, what the other ride-hailing apps are
- * posting, and which hook shapes keep coming back. Claude's own server-side
- * search does the looking, which matters for two reasons — the model reports
- * the pages it actually read, and we are not scraping anyone's site or app to
- * get it.
+ * posting, and which hook shapes keep coming back. The engine's own
+ * server-side search does the looking — Claude's when it is paid for, Gemini's
+ * free tier otherwise — which matters for two reasons: the model reports the
+ * pages it actually read, and we are not scraping anyone's site or app to get
+ * it.
+ *
+ * Two of the four engines cannot search at all, and this is the one stage with
+ * no local equivalent, so it refuses rather than composing a market read out
+ * of nothing. An invented trend is worse than an absent one; see the comment
+ * at the `modelReady()` check below, which is older than any of the engines.
  *
  * With nobody hired into research, whoever covers for them does a thinner
  * version of the same job (see STAGE_COVER) — which is exactly what happens on
