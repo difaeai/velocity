@@ -20,8 +20,16 @@ service firebase.storage {
     function isAdmin() {
       return isSignedIn() && request.auth.token.role == 'admin';
     }
+    // Not SVG: it is an image that can carry script, and a download link to one
+    // on a Google domain is a free phishing page.
     function isImage() {
-      return request.resource.contentType.matches('image/.*');
+      return request.resource.contentType.matches('image/.*')
+             && !request.resource.contentType.matches('(?i)image/svg.*');
+    }
+    // What a browser would render as a page or run, rather than save as a file.
+    function isActiveContent() {
+      return request.resource.contentType.matches(
+        '(?i)(text/html|application/xhtml\\+xml|image/svg.*|text/xml|application/xml|text/javascript|application/javascript).*');
     }
     function underSize(maxMb) {
       return request.resource.size < maxMb * 1024 * 1024;
@@ -140,9 +148,11 @@ service firebase.storage {
     // sendTravelMateMessage Cloud Function then verifies the URL belongs to our
     // bucket before attaching it to a message. Readable by signed-in users so
     // the other party can open the attachment.
+    // Any document type may be shared — the picker allows anything — except one
+    // a browser would open as a web page.
     match /travelMateChat/{userId}/{fileName} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId) && underSize(25);
+      allow write: if isOwner(userId) && underSize(25) && !isActiveContent();
     }
 
     // Social desk — a video or an image made outside the pipeline (an editor, a

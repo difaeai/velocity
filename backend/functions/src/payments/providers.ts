@@ -414,15 +414,14 @@ class EasypaisaProvider implements PaymentProvider {
 // tokenised repeat charges — i.e. this gateway can support the saved-payment-
 // method flow in payments/paymentMethods.ts once that permission is granted.
 //
-// Deliberately NOT guessed: we never parse PayFast's response field names to
-// decide success. The outcome is carried on OUR OWN return URLs
-// (`?pfoutcome=success|failure`) alongside the per-intent secret, both of which
-// we set ourselves. That is forgery-resistant given the secret and it cannot
-// silently break if PayFast renames a response field.
+// The outcome is carried on OUR OWN return URLs (`?pfoutcome=success|failure`)
+// alongside the per-intent secret. That is NOT forgery-resistant: the return
+// URL sits in the checkout form the payer's browser loads, secret included.
 //
-// Still worth adding once you have the pack: a server-to-server transaction
-// inquiry before crediting, exactly as EasypaisaProvider.inquireTransaction
-// does. Until then a top-up rests on the per-intent secret alone.
+// So a PayFast success is reported `verified: false` and paymentWebhook refuses
+// to credit it. Before PayFast goes live it needs a server-to-server
+// transaction inquiry here, exactly as EasypaisaProvider.inquireTransaction
+// does, or a checked validation_hash.
 const PAYFAST_SANDBOX_URL = 'https://ipguat.apps.net.pk';
 const PAYFAST_TOKEN_PATH = '/Ecommerce/api/Transaction/GetAccessToken';
 const PAYFAST_TXN_PATH = '/Ecommerce/api/Transaction/PostTransaction';

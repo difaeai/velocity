@@ -48,6 +48,14 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
+    // Gender is answered once. Every shared-ride gender rule (women-only cars,
+    // who may join whom) reads it, so a profile that could change it at will
+    // would let anyone into a women-only car. Admins correct real mistakes.
+    function genderUnchangedOrFirstAnswer() {
+      return resource.data.get('gender', 'unspecified') == 'unspecified'
+             || request.resource.data.get('gender', 'unspecified') == resource.data.get('gender', 'unspecified');
+    }
+
     // ----- users/{uid} -----------------------------------------------------
     // Profile docs. Created by the onUserCreate backend trigger. The owner may
     // edit only safe profile fields; role / verification / wallet live elsewhere
@@ -66,7 +74,8 @@ service cloud.firestore {
       allow update: if isOwner(userId)
                     && onlyChanges(['displayName', 'name', 'gender', 'dob', 'age',
                                     'profileComplete', 'photoURL', 'lastActive', 'updatedAt',
-                                    'mixedRideOk', 'sharedRideGenderPref']);
+                                    'mixedRideOk', 'sharedRideGenderPref'])
+                    && genderUnchangedOrFirstAnswer();
       allow update, delete: if isAdmin();
 
       // Saved places (home / work / favourites) — owner-managed bookmarks.
@@ -453,23 +462,34 @@ service cloud.firestore {
     }
 
     // ----- poolRides/{rideId} ----------------------------------------------
-    // Seats / status / gender counters are mutated ONLY by the joinPoolRide /
-    // driverAcceptPoolBatch / startPoolBoarding CFs (Admin SDK). The owning
-    // driver may edit their own offer; nobody else writes.
+    // The driver posts the offer straight from the app; after that, seats,
+    // status, the gender tally and the fare riders were quoted change ONLY
+    // through the joinPoolRide / driverAcceptPoolBatch / startPoolBoarding /
+    // completePoolRide CFs (Admin SDK). The driver app never edits the doc.
+    // A driver who could would lower `perSeatFare` — or un-mark the riders —
+    // just before ending the ride, and owe no commission on cash already taken.
     match /poolRides/{rideId} {
       allow read: if isSignedIn();
-      allow create: if isDriver() && request.resource.data.driverId == uid();
-      allow update: if isDriver() && resource.data.driverId == uid();
-      allow delete: if false;
+      allow create: if isDriver() && request.resource.data.driverId == uid()
+                    && request.resource.data.status == 'open'
+                    && request.resource.data.takenSeats == 0
+                    && request.resource.data.maleSeats == 0
+                    && request.resource.data.femaleSeats == 0;
+      allow update, delete: if false;
 
       // Passenger seat docs are created exclusively by the joinPoolRide CF —
       // a direct client create would bypass seat limits and gender rules.
+      //
+      // Read by the rider themselves and by THIS ride's driver. Each seat
+      // carries the rider's phone and exact pickup point; `isDriver()` here
+      // used to hand every rider of every pool to every driver in the country.
       match /passengers/{passengerId} {
-        allow read: if isSignedIn() && (uid() == passengerId || isDriver() || isAdmin());
-        allow create: if false;
-        allow update: if (isDriver() && get(/databases/$(database)/documents/poolRides/$(rideId)).data.driverId == uid())
-                      || isAdmin();
-        allow delete: if false;
+        allow read: if isAdmin()
+                    || (isSignedIn()
+                        && (uid() == passengerId
+                            || get(/databases/$(database)/documents/poolRides/$(rideId)).data.driverId == uid()));
+        allow update: if isAdmin();
+        allow create, delete: if false;
       }
 
       // Queued join requests for mixed (1M+1F) pools. Written only by the
@@ -862,7 +882,8 @@ service cloud.firestore {
                                     'genderPref', 'bio',
                                     'interests', 'photoURL', 'active', 'lastActive', 'createdAt',
                                     'location', 'searchRadiusKm',
-                                    'travelPrefs', 'travelPrefsUpdatedAt']);
+                                    'travelPrefs', 'travelPrefsUpdatedAt'])
+                    && genderUnchangedOrFirstAnswer();
       allow delete: if false;
     }
 
@@ -1234,10 +1255,14 @@ service cloud.firestore {
 
     // ----- intercityChats/{tripId}/messages/{msgId} ----------------------------
     // Trip group chat. Writes go through sendIntercityMessage CF, which verifies
-    // a confirmed booking. Reads are signed-in only — bookings are keyed by
-    // bookingId, so there is no per-uid doc to gate reads against.
+    // a confirmed booking. Reads are for the people booked on that trip:
+    // createIntercityBooking adds the passenger to the trip's `memberUids`, and
+    // cancelling their last booking takes them off. People post phone numbers
+    // and pickup spots in here; `isSignedIn()` used to show them to everyone.
     match /intercityChats/{tripId}/messages/{msgId} {
-      allow read: if isSignedIn();
+      allow read: if isAdmin()
+                  || (isSignedIn()
+                      && uid() in get(/databases/$(database)/documents/intercityTrips/$(tripId)).data.get('memberUids', []));
       allow write: if false;
     }
 
@@ -1259,22 +1284,17 @@ service cloud.firestore {
 
     // ----- supportChats/{uid} ---------------------------------------------------
     // The ORIGINAL single-thread support chat, superseded by supportTickets
-    // below. Still readable so a conversation that was open when the Rapid
-    // Response system shipped is not simply lost, and still writable by its
-    // owner so a reply typed on an older build is not silently dropped. New
-    // builds open tickets instead; nothing here is referenced by the app.
+    // below. Readable so an old conversation is not lost; no longer writable,
+    // because nothing reads it any more — not the backend, not the console. A
+    // message an old build wrote here was silently never answered; refused, it
+    // shows that build an error and the person updates.
     match /supportChats/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create, update: if isOwner(userId) || isAdmin();
-      allow delete: if false;
+      allow write: if false;
 
       match /messages/{msgId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if (isOwner(userId) || isAdmin())
-                      && request.resource.data.text is string
-                      && request.resource.data.text.size() > 0
-                      && request.resource.data.text.size() <= 1000;
-        allow update, delete: if false;
+        allow write: if false;
       }
     }
 

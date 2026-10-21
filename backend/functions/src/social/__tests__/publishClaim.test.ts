@@ -9,9 +9,10 @@
  * lives in the transaction.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
+import * as admin from 'firebase-admin';
 
 import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
-import { claimForPublish } from '../pipeline';
+import { claimForPublish, socialPublishSweep } from '../pipeline';
 
 const ID = '2026-10-21-post';
 
@@ -76,5 +77,22 @@ describe('claimForPublish', () => {
     await seed({ media: [] });
     await expect(claimForPublish(ID)).rejects.toThrow(/nothing to publish/);
     expect(await status()).toBe('ready');
+  });
+});
+
+describe('socialPublishSweep — a piece the team never finished', () => {
+  beforeEach(clearFirestore);
+
+  it('frees a piece stuck "being made" after its run died, and leaves a live run alone', async () => {
+    const old = admin.firestore.Timestamp.fromMillis(Date.now() - 60 * 60_000);
+    await db().doc('socialPosts/stuck').set({ id: 'stuck', status: 'rendering', script: { hook: 'h' }, updatedAt: old });
+    await db().doc('socialPosts/fresh').set({ id: 'fresh', status: 'designing', updatedAt: admin.firestore.Timestamp.now() });
+
+    await socialPublishSweep.run({} as never);
+
+    const stuck = (await db().doc('socialPosts/stuck').get()).data()!;
+    expect(stuck.status).toBe('failed');
+    expect(stuck.error).toMatch(/ran out of time/);
+    expect((await db().doc('socialPosts/fresh').get()).get('status')).toBe('designing');
   });
 });

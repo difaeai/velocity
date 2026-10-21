@@ -22,7 +22,7 @@
  *   createTrip      — the client's `offeredFare` is ignored outright
  *   raiseTripFare   — refused on a pool
  *   placeBid        — a driver's bid is an acceptance, not a counter-offer
- *   promo codes     — refused, because they move that same number
+ *   promo codes     — gone; one sent by an old build cannot move it
  * ----------------------------------------------------------------------------
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -135,12 +135,10 @@ describe('createTrip prices a shared ride itself', () => {
     expect((await tripDoc(tripId)).offeredFare).toBe(650);
   });
 
-  it('refuses a promo code on a shared ride, out loud', async () => {
-    // A promo moves the one number every seat price is a fraction of, and could
-    // push the driver's offer under the floor the fixed fare exists to respect.
-    // Refused rather than silently dropped, so nobody thinks it applied.
-    await expect(makePool({ promoCode: 'WELCOME50' }))
-      .rejects.toThrow(/don’t apply to shared rides/);
+  it('ignores a promo code an old build still sends — it cannot move the fare', async () => {
+    const quoted = await sharedRideFare('mini', PICKUP, DROPOFF);
+    const { tripId } = await makePool({ promoCode: 'WELCOME50' });
+    expect((await tripDoc(tripId)).offeredFare).toBe(quoted.fare);
   });
 
   it('mirrors the server’s fare to the driver feed, not the client’s', async () => {

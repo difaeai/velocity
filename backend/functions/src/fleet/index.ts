@@ -42,6 +42,7 @@ import { geohashForLocation, geohashQueryBounds, distanceBetween } from 'geofire
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
+import { rateLimit } from '../lib/ratelimit';
 import { hasRealCoords } from '../lib/poolRadius';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
@@ -227,6 +228,9 @@ export const sendFleetRequest = onCall(async (req) => {
   }).safeParse(req.data);
   if (!parsed.success) invalid('Enter a username.');
 
+  // Every call pushes a notification to somebody else's phone.
+  await rateLimit(uid, 'sendFleetRequest', 10, 3600);
+
   const targetUid = await uidForUsername(parsed.data.username);
   if (!targetUid) throw new HttpsError('not-found', 'No rider has that username.');
   if (targetUid === uid) invalid('That is you.');
@@ -241,12 +245,16 @@ export const sendFleetRequest = onCall(async (req) => {
     throw new HttpsError('failed-precondition', `A fleet holds up to ${MAX_FLEET_MEMBERS} people.`);
   }
 
-  // Keyed by sender, so asking twice overwrites instead of stacking up.
-  await db.doc(`fleets/${targetUid}/requests/${uid}`).set({
+  // Keyed by sender, so asking twice overwrites instead of stacking up — and
+  // asking again while the first is still waiting does not ping them again.
+  const requestRef = db.doc(`fleets/${targetUid}/requests/${uid}`);
+  const alreadyWaiting = (await requestRef.get()).exists;
+  await requestRef.set({
     fromUid: uid,
     message: parsed.data.message ?? '',
     createdAt: FieldValue.serverTimestamp(),
   });
+  if (alreadyWaiting) return { ok: true };
 
   await notifyUser(
     targetUid,

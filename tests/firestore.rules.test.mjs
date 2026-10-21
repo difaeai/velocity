@@ -857,3 +857,89 @@ test('a fleet is server-only in both directions, even to its owner', async () =>
   await assertFails(getDoc(doc(passenger, 'fleetAsks/ask1')));
   await assertFails(updateDoc(doc(driver, 'fleetAsks/ask1'), { acceptedUids: ['driver1'] }));
 });
+
+// ============================================================================
+//  How real users break Velocity — the attacks only these rules can stop,
+//  because the attacker writes or reads Firestore straight from their own
+//  client. Numbered with backend/functions/src/__tests__/abuse.test.ts.
+// ============================================================================
+
+test('Attack 3: a driver cannot lower the fare or un-mark riders before ending a shared ride', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'poolRides/fare1'), {
+      driverId: 'driver1', status: 'in_progress', perSeatFare: 300, takenSeats: 3, maleSeats: 3, femaleSeats: 0,
+    });
+    await setDoc(doc(db, 'poolRides/fare1/passengers/rider1'), { userId: 'rider1', status: 'picked_up', fare: 300 });
+  });
+
+  // Three riders paid Rs 300 each in cash; commission is taken on perSeatFare
+  // × the riders marked picked up. Either write would make it almost nothing.
+  await assertFails(updateDoc(doc(driver, 'poolRides/fare1'), { perSeatFare: 1 }));
+  await assertFails(updateDoc(doc(driver, 'poolRides/fare1/passengers/rider1'), { status: 'no_show' }));
+  await assertFails(deleteDoc(doc(driver, 'poolRides/fare1')));
+
+  // Posting a ride is still the driver's own write — but only as an empty, open one.
+  const offer = { driverId: 'driver1', status: 'open', perSeatFare: 250, takenSeats: 0, maleSeats: 0, femaleSeats: 0 };
+  await assertSucceeds(setDoc(doc(driver, 'poolRides/new1'), offer));
+  await assertFails(setDoc(doc(driver, 'poolRides/new2'), { ...offer, femaleSeats: 3 }));
+  await assertFails(setDoc(doc(driver, 'poolRides/new3'), { ...offer, status: 'in_progress' }));
+});
+
+test('Attack 4: nobody can switch their gender to get into a women-only shared ride', async () => {
+  const man = testEnv.authenticatedContext('switcher', { role: 'passenger' }).firestore();
+  const newcomer = testEnv.authenticatedContext('newcomer', { role: 'passenger' }).firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'users/switcher'), { uid: 'switcher', gender: 'male', name: 'S' });
+    await setDoc(doc(db, 'users/newcomer'), { uid: 'newcomer', gender: 'unspecified', name: 'N' });
+    await setDoc(doc(db, 'travelMateProfiles/switcher'), { uid: 'switcher', gender: 'male', displayName: 'S' });
+  });
+
+  await assertFails(updateDoc(doc(man, 'users/switcher'), { gender: 'female' }));
+  await assertFails(updateDoc(doc(man, 'travelMateProfiles/switcher'), { gender: 'female' }));
+  // Saving the profile again with the same answer still works…
+  await assertSucceeds(updateDoc(doc(man, 'users/switcher'), { gender: 'male', name: 'Sam' }));
+  // …and the first answer is still the person's own to give.
+  await assertSucceeds(updateDoc(doc(newcomer, 'users/newcomer'), { gender: 'female' }));
+  // An admin can still correct a real mistake.
+  await assertSucceeds(updateDoc(doc(admin, 'users/switcher'), { gender: 'female' }));
+});
+
+test('Attack 7: a driver cannot collect the phone numbers of riders on other drivers’ rides', async () => {
+  const otherDriver = testEnv.authenticatedContext('driverX', { role: 'driver' }).firestore();
+  const rider = testEnv.authenticatedContext('riderP', { role: 'passenger' }).firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'poolRides/seat1'), { driverId: 'driver1', status: 'open' });
+    await setDoc(doc(db, 'poolRides/seat1/passengers/riderP'), {
+      userId: 'riderP', userPhone: '+923001234567', pickupLat: 31.52, pickupLng: 74.35,
+    });
+  });
+
+  await assertFails(getDoc(doc(otherDriver, 'poolRides/seat1/passengers/riderP')));
+  await assertFails(getDocs(collection(otherDriver, 'poolRides/seat1/passengers')));
+  await assertSucceeds(getDocs(collection(driver, 'poolRides/seat1/passengers')));
+  await assertSucceeds(getDoc(doc(rider, 'poolRides/seat1/passengers/riderP')));
+});
+
+test('Attack 8: a stranger cannot read an intercity trip’s group chat', async () => {
+  const booked = testEnv.authenticatedContext('bookedRider', { role: 'passenger' }).firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'intercityTrips/lhr-isb'), { status: 'scheduled', memberUids: ['bookedRider'] });
+    await setDoc(doc(db, 'intercityChats/lhr-isb/messages/m1'), {
+      senderId: 'bookedRider', text: 'I will be at Kalma Chowk at 6, my number is 0300 1234567',
+    });
+  });
+
+  await assertFails(getDoc(doc(passenger, 'intercityChats/lhr-isb/messages/m1')));
+  await assertFails(getDocs(collection(passenger, 'intercityChats/lhr-isb/messages')));
+  await assertSucceeds(getDocs(collection(booked, 'intercityChats/lhr-isb/messages')));
+  await assertSucceeds(getDoc(doc(admin, 'intercityChats/lhr-isb/messages/m1')));
+});
+
+test('an old build’s support message is refused rather than silently never answered', async () => {
+  await assertFails(setDoc(doc(passenger, 'supportChats/passenger1'), { open: true }));
+  await assertFails(setDoc(doc(passenger, 'supportChats/passenger1/messages/m1'), { text: 'I was charged twice' }));
+});

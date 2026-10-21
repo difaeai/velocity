@@ -232,6 +232,7 @@ export {
   mockConfirmTopup,
   requestPayout,
   markPayoutPaid,
+  adminRejectPayout,
   adminSetSettlementAccounts,
 } from './payments';
 
@@ -281,6 +282,7 @@ export { requestTravelMateSubscription } from './travelMate/requestSubscription'
 export { approveTravelMateSubscription, rejectTravelMateSubscription } from './travelMate/approveSubscription';
 export { adminCreateTravelMatePlan, adminUpdateTravelMatePlan, adminDeleteTravelMatePlan } from './travelMate/plans';
 export { expireTravelMateSubscriptions } from './travelMate/expireSubscriptions';
+export { coarsenTravelMateLocations } from './travelMate/coarseLocation';
 // Phase 3 — social (+ Instagram-style message requests)
 export {
   sendTravelMateMessage,

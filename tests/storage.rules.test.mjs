@@ -93,3 +93,20 @@ test('unchanged paths keep working', async () => {
   await assertSucceeds(put(owner, 'travelMateChat/user1/file.pdf', 'application/pdf'));
   await assertSucceeds(put(owner, 'travelMateChat/user1/car.jpg', 'image/jpeg'));
 });
+
+// Attack 10 (see backend/functions/src/__tests__/abuse.test.ts for the list):
+// host a phishing page on our bucket. A download link to an HTML or SVG file is
+// served from a Google domain and opens as a web page, so nothing a browser
+// would render as a page may be uploaded — chat files may be any other type.
+test('Attack 10: nobody can upload a web page or SVG to host phishing on our bucket', async () => {
+  await assertFails(put(owner, 'travelMateChat/user1/login.html', 'text/html'));
+  await assertFails(put(owner, 'travelMateChat/user1/x.svg', 'image/svg+xml'));
+  await assertFails(put(owner, 'travelMateChat/user1/x.xhtml', 'application/xhtml+xml'));
+  await assertFails(put(owner, 'users/user1/avatar/me.svg', 'image/svg+xml'));
+  await assertFails(put(owner, 'businessAdMedia/user1/offer.svg', 'image/svg+xml'));
+
+  await assertSucceeds(put(owner, 'travelMateChat/user1/ticket.pdf', 'application/pdf'));
+  await assertSucceeds(put(owner, 'travelMateChat/user1/sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
+  await assertSucceeds(put(owner, 'travelMateChat/user1/photo.jpg', 'image/jpeg'));
+  await assertSucceeds(put(owner, 'users/user1/avatar/me.png', 'image/png'));
+});

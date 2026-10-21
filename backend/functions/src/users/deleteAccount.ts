@@ -72,6 +72,13 @@ const OWNED_DOC_COLLECTIONS = [
   'partner_wallets',
   'businessAdvertisers',
   'businessAdApplications',
+  // A rental listing is readable by every user and bookable while it exists,
+  // and the face template is biometric data — neither may outlive the account.
+  'specialRidesListings',
+  'specialRidesApplications',
+  'partner_applications',
+  'driverFaceEnrolment',
+  'fleets',
 ] as const;
 
 /**
@@ -94,6 +101,7 @@ const OWNED_QUERIES: ReadonlyArray<{
   { collection: 'poolRides', field: 'driverId' },
   { collection: 'poolRideRequests', field: 'passengers', op: 'array-contains' },
   { collection: 'businessAds', field: 'ownerUid' },
+  { collection: 'driverFaceScans', field: 'uid' },
 ];
 
 /**
@@ -167,6 +175,9 @@ function ownedStoragePrefixes(uid: string): string[] {
     `businessAdPayments/${uid}/`,
     `partners/${uid}/`,
     `users/${uid}/`,
+    // Payment screenshots (bank details) and rental papers.
+    `settlements/${uid}/`,
+    `specialRides/${uid}/`,
   ];
 }
 

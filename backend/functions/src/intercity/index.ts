@@ -121,7 +121,11 @@ export const createIntercityBooking = onCall(async (req) => {
       createdAt:        Date.now(),
     });
 
-    txn.update(tripRef, { bookedSeats: FieldValue.increment(seatsBooked) });
+    // `memberUids` is what lets this passenger read the trip's group chat.
+    txn.update(tripRef, {
+      bookedSeats: FieldValue.increment(seatsBooked),
+      memberUids: FieldValue.arrayUnion(uid),
+    });
 
     return bookingRef.id;
   });
@@ -164,6 +168,18 @@ export const cancelIntercityBooking = onCall(async (req) => {
       txn.update(tripRef, { bookedSeats: FieldValue.increment(-(booking.seatsBooked as number)) });
     }
   });
+
+  // Off the chat with their last booking, not their first cancellation.
+  const stillBooked = await db
+    .collection('intercityBookings')
+    .where('tripId', '==', booking.tripId)
+    .where('passengerId', '==', uid)
+    .where('status', '==', 'confirmed')
+    .limit(1)
+    .get();
+  if (stillBooked.empty && tripDoc.exists) {
+    await tripRef.update({ memberUids: FieldValue.arrayRemove(uid) });
+  }
 
   await notifyUser(uid, 'Booking Cancelled', 'Your intercity booking has been cancelled.', 'ride', { bookingId }).catch(() => undefined);
 
