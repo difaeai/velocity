@@ -37,11 +37,12 @@
  * gives the same numbers this screen does.
  */
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Text } from '../src/ui/Text';
+import { DashCam } from '../src/ui/DashCam';
 import { SosSheet } from '../src/ui/SosSheet';
 import { api } from '../src/api/client';
 import { colors } from '../src/config';
@@ -324,6 +325,13 @@ export default function SafetyCentre() {
         <Text style={styles.footnote}>
           Police {POLICE} · Rescue {RESCUE} · NCCIA cybercrime {NCCIA_HELPLINE}
         </Text>
+
+        {/* A driver who opens this mid-ride has left the trip screen, and the
+            dash cam with it — at exactly the moment a recording matters most.
+            So it keeps recording here. Last on the screen: emergency first. */}
+        {trip?.status === 'in_progress' && user && trip.driverId === user.uid && Platform.OS !== 'web' ? (
+          <DashCam tripId={trip.id} uid={user.uid} />
+        ) : null}
       </ScrollView>
 
       <SosSheet

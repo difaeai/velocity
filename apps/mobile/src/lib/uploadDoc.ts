@@ -113,6 +113,29 @@ export async function uploadSpecialRidesDoc(
   return upload(path, uri, mime?.startsWith('image/') ? mime : 'image/jpeg');
 }
 
+/**
+ * One ride dash cam clip. Lives at `dashcam/{driverUid}/{tripId}/{startedAt}.mp4`:
+ * the name is the clip's start time, which is how the backend orders the clips
+ * and decides which ones each rider may watch. Nothing reads it back through the
+ * storage rules — getDashcamClips hands out the links — so unlike the uploads
+ * above there is no download URL to fetch.
+ *
+ * Always `video/mp4`, which is what the rule accepts. iOS records a QuickTime
+ * `.mov`, but it is the same H.264 in the same box format, and every player
+ * the clip will meet reads it as one.
+ */
+export async function uploadDashcamClip(
+  uid: string,
+  tripId: string,
+  startedAt: number,
+  uri: string,
+): Promise<void> {
+  const blob = await uriToBlob(uri);
+  await uploadBytes(ref(storage, `dashcam/${uid}/${tripId}/${startedAt}.mp4`), blob, {
+    contentType: 'video/mp4',
+  });
+}
+
 async function upload(path: string, uri: string, contentType?: string): Promise<UploadResult> {
   const storageRef = ref(storage, path);
   const blob = await uriToBlob(uri);

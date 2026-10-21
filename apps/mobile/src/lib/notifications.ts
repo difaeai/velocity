@@ -133,6 +133,40 @@ export function useNotificationPermission(): {
   return { permission, ready, ask, openSettings: openNotificationSettings, refresh };
 }
 
+/**
+ * A notice from the app itself, shown at once — no server, no push. Returns its
+ * id so the caller can take it down again, or null where nothing can be shown
+ * (Expo Go, a simulator, notifications refused).
+ *
+ * Sent on the `default` channel on Android, the one push uses, so it arrives
+ * as a heads-up over whatever app is in front rather than silently in the tray.
+ */
+export async function showLocalNotice(title: string, body: string): Promise<string | null> {
+  if (isExpoGo || !Device.isDevice) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Notifications = require('expo-notifications');
+    return await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: Platform.OS === 'android' ? { channelId: 'default' } : null,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Take down a notice showLocalNotice put up. Harmless if it is already gone. */
+export function dismissLocalNotice(id: string): void {
+  if (isExpoGo) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Notifications = require('expo-notifications');
+    Notifications.dismissNotificationAsync(id).catch(() => {});
+  } catch {
+    // Nothing to take down.
+  }
+}
+
 export async function registerForPushNotifications(): Promise<string | null> {
   // Skip entirely in Expo Go — no crash, no token.
   if (isExpoGo || !Device.isDevice) return null;

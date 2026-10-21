@@ -101,6 +101,22 @@ service firebase.storage {
       allow write: if isOwner(userId) && isImage() && underSize(15);
     }
 
+    // Ride dash cam clips. The driver's phone uploads each one as it finishes,
+    // named by the time it started. Nobody reads them through these rules, not
+    // even the driver: getDashcamClips decides who may watch which clip and
+    // hands out the links. Written once, so a clip can never be swapped for
+    // another after the fact — `resource == null` is what says so: an upload
+    // over an existing object is still a `create` here. sweepDashcamClips
+    // deletes them a day after the ride, through the Admin SDK.
+    match /dashcam/{driverId}/{tripId}/{fileName} {
+      allow read: if false;
+      allow create: if resource == null
+                    && isOwner(driverId)
+                    && fileName.matches('[0-9]{13}[.]mp4')
+                    && underSize(60)
+                    && request.resource.contentType == 'video/mp4';
+    }
+
     // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
     // Admin SDK bypasses rules so only a read rule is needed here.
     match /avatars/{fileName} {

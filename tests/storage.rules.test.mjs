@@ -60,6 +60,23 @@ test('driver documents: read back only by the owner and admins', async () => {
   await assertFails(read(stranger, 'drivers/user1/documents/licence-1'));
 });
 
+// The ride dash cam. Only the driver writes, each clip once, named by the time
+// it started; nobody reads back through the rules, because getDashcamClips is
+// what decides who may watch which clip.
+test('dash cam clips: the driver creates each clip once, nobody reads them back', async () => {
+  const clip = 'dashcam/user1/trip1/1760000000000.mp4';
+  await assertSucceeds(put(owner, clip, 'video/mp4'));
+  // Never replaced after the fact — the evidence stays what was recorded.
+  await assertFails(put(owner, clip, 'video/mp4'));
+  await assertFails(put(owner, 'dashcam/user1/trip1/1760000000001.mov', 'video/mp4'));
+  await assertFails(put(owner, 'dashcam/user1/trip1/clip.mp4', 'video/mp4'));
+  await assertFails(put(owner, 'dashcam/user1/trip1/1760000000002.mp4', 'text/html'));
+  await assertFails(put(stranger, 'dashcam/user1/trip1/1760000000003.mp4', 'video/mp4'));
+  await assertFails(read(owner, clip));
+  await assertFails(read(stranger, clip));
+  await assertFails(read(admin, clip));
+});
+
 test('special rides papers: images from the owner only', async () => {
   await assertSucceeds(put(owner, 'specialRides/user1/documents/insurance-2', 'image/jpeg'));
   await assertSucceeds(put(owner, 'specialRides/user1/documents/registration-2', 'image/png'));

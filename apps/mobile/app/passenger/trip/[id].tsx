@@ -41,6 +41,7 @@ import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard
 import { PoolJoinRequestsCard } from '../../../src/ui/PoolJoinRequestsCard';
 import { EnRouteSavingsCard } from '../../../src/ui/EnRouteSavingsCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
+import { dashcamWatchable } from '../../../src/domain/dashcam';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
 
@@ -987,6 +988,27 @@ export default function TripScreen() {
 
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status) && (
           <>
+            {/* Said before the rider gets in, not after: the car they are
+                about to sit in records the ride. The video is theirs to watch
+                for a day afterwards — their own time in the car — and is the
+                proof they have if anything goes wrong. */}
+            {(trip.status === 'arrived' || trip.status === 'in_progress') && (
+              <View style={styles.liveShareBox}>
+                <Text style={styles.liveShareTitle}>🎥 This ride is recorded</Text>
+                <Text style={styles.liveShareBody}>
+                  The driver&apos;s dash cam records the ride for everyone&apos;s safety. You can
+                  watch it for 24 hours after the ride ends.
+                </Text>
+                {trip.status === 'in_progress' ? (
+                  <Pressable
+                    style={[styles.contactBtn, styles.liveShareBtn]}
+                    onPress={() => router.push(`/dashcam/${trip.id}`)}
+                  >
+                    <Text style={styles.contactBtnText}>Watch the dash cam</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
             {/* One SOS, one meaning. This used to raise a safety event and
                 nothing else, which told Velocity and told nobody who could
                 actually come. It now opens the Safety Centre's SOS sheet with
@@ -1038,6 +1060,13 @@ export default function TripScreen() {
             <Row label="Your share" value={`${trip.settlement?.passengerShare ?? 0} PKR`} bold />
             <View style={{ height: 10 }} />
             <PrimaryButton label="Done" onPress={goHome} />
+            {dashcamWatchable(trip, nowMs) ? (
+              <Pressable style={styles.reportLink} onPress={() => router.push(`/dashcam/${trip.id}`)}>
+                <Text style={[styles.reportLinkTxt, { color: colors.primary }]}>
+                  🎥 Watch the dash cam video — kept for 24 hours
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable style={styles.reportLink} onPress={() => setReportOpen(true)}>
               <Text style={styles.reportLinkTxt}>⚠️  Report an issue with this trip</Text>
             </Pressable>
