@@ -72,6 +72,14 @@ function stripUndefined(value: unknown): unknown {
   return value;
 }
 
+/** One ride dash cam clip, as getDashcamClips hands it out. `url` plays it, and dies with it. */
+export interface DashcamClipView {
+  /** When the clip started, by the driver's phone clock (ms). */
+  startedAt: number;
+  url: string;
+  sizeBytes: number;
+}
+
 function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
   const fn = httpsCallable<Req, Res>(functions, name);
   // Watched here rather than at the call sites. Every callable that carries a
@@ -1162,6 +1170,26 @@ export const api = {
   >('createTripWatchLink'),
   /** Kill a link that went to the wrong chat. Other links keep working. */
   revokeTripWatchLink: callable<{ token: string }, { ok: boolean }>('revokeTripWatchLink'),
+
+  // ── Ride dash cam ────────────────────────────────────────────────────────
+  /**
+   * The clips of a ride this person may watch, oldest first. The driver sees
+   * the whole ride; a rider sees their own time in the car. Answers while the
+   * ride is running too, and with nothing (`expired`) once 24 hours have
+   * passed since it ended.
+   */
+  getDashcamClips: callable<
+    { tripId: string },
+    { ok: boolean; live: boolean; expired: boolean; expiresAt: number | null; clips: DashcamClipView[] }
+  >('getDashcamClips'),
+  /**
+   * Can the dash cam see anybody in the car? Asked about an uploaded clip.
+   * `faces` is null when the clip could not be read — which must never be
+   * treated as an empty car.
+   */
+  checkDashcamCabin: callable<{ tripId: string; clip: string }, { ok: boolean; faces: number | null }>(
+    'checkDashcamCabin',
+  ),
 
   // ── Velocity Rapid Response System ───────────────────────────────────────
   /**

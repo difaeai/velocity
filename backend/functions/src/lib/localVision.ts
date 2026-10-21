@@ -558,6 +558,52 @@ export async function readFace(input: Buffer): Promise<FaceRead | null> {
   }
 }
 
+/**
+ * How many faces are in a picture. The dash cam's question, not the face scan's.
+ *
+ * The scan wants one face, measured; the dash cam only wants to know whether
+ * its camera can see anybody in the car at all. So: detection alone, with no
+ * landmarks or descriptors, at a fraction of `readFace`'s cost. Two looks, as
+ * there, because a passenger on the back seat is a small face in a wide frame
+ * and it is the fine pass that finds them.
+ *
+ * Null when the engine is down or the picture cannot be read. Never a zero for
+ * that: a zero tells a driver nobody is in their car.
+ */
+export async function countFaces(input: Buffer): Promise<number | null> {
+  if (input.byteLength > MAX_IMAGE_BYTES) return null;
+  if (!(await loadModels())) return null;
+
+  const { sharp, tf, faceapi } = load();
+  try {
+    const { data, info } = await sharp(input)
+      .rotate()
+      .resize({ width: FACE_MAX_EDGE, height: FACE_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // A fresh tensor per look, for the reason given in readFace.
+    const look = async (inputSize: number) => {
+      const tensor: TF.Tensor3D = tf.tensor3d(new Uint8Array(data), [info.height, info.width, 3], 'int32');
+      try {
+        const found = await faceapi.detectAllFaces(
+          tensor,
+          new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: DETECTOR_SCORE }),
+        );
+        return found.length;
+      } finally {
+        tf.dispose(tensor);
+      }
+    };
+
+    return (await look(DETECTOR_INPUT)) || (await look(DETECTOR_INPUT_FINE));
+  } catch (e) {
+    logger.error('Local vision: could not count faces', { e });
+    return null;
+  }
+}
+
 /** How far apart two faces are. Lower is more alike; see FACE_SAME_PERSON_BELOW. */
 export function faceDistance(a: Float32Array | null, b: Float32Array | null): number | null {
   if (!a || !b || a.length !== b.length) return null;

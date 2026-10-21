@@ -260,6 +260,8 @@ export interface Trip {
   passengerRated?: boolean;
   driverRated?: boolean;
   arrivedAt?: { seconds: number; nanoseconds: number } | null;
+  /** Stamped by completeTrip. The dash cam video is kept for a day from this. */
+  completedAt?: { seconds: number } | null;
   /**
    * Summary of the in-ride chat, written by sendTripMessage alongside the
    * message itself.

@@ -86,7 +86,7 @@
     <p class="lede">This policy explains what information the Velocity Rides mobile app collects,
       why we collect it, and the choices you have over your data.</p>
     <div class="meta">
-      <span><b>Effective:</b> 29 September 2026</span>
+      <span><b>Effective:</b> 21 October 2026</span>
       <span><b>Applies to:</b> Velocity Rides for Android &amp; iOS</span>
       <span><b>Contact:</b> <a href="mailto:business@velocityrides.app">business@velocityrides.app</a></span>
     </div>
@@ -146,6 +146,9 @@
         technical data needed to deliver notifications and keep the app working reliably.</li>
       <li><strong>Trip activity</strong> — pickup and drop-off points, trip status, and fare
         estimates generated while you use the service.</li>
+      <li><strong>Ride dash cam video</strong> — while a ride is in progress, the driver's phone
+        records video and sound of the inside of the car with its front camera. Riders are told on
+        the trip screen before they get in. See section 8.</li>
       <li><strong>Voice input</strong> — if you use voice booking, audio is captured only while
         the microphone is running and is converted to text by your device's speech-recognition
         service. Velocity does not store the audio. See section 6.</li>
@@ -169,6 +172,7 @@
           <tr><td><b>Chat &amp; community content</b></td><td>Deliver your messages and posts to their recipients</td><td>With the people you send it to</td></tr>
           <tr><td><b>Push token / device</b></td><td>Trip &amp; account notifications</td><td>Service providers</td></tr>
           <tr><td><b>Trip activity</b></td><td>Operate and improve the service</td><td>No</td></tr>
+          <tr><td><b>Ride dash cam video &amp; sound</b></td><td>Evidence for riders and drivers if something goes wrong on a ride</td><td>With the people on that ride, for 24 hours</td></tr>
           <tr><td><b>Voice input</b></td><td>Turn a spoken booking into text (only while the mic is running)</td><td>Your device's speech recogniser</td></tr>
           <tr><td><b>Advertising ID</b></td><td>Serve &amp; measure ads for users without a paid plan</td><td>Google AdMob</td></tr>
         </tbody>
@@ -201,6 +205,9 @@
       <li><strong>Between riders and drivers</strong> — when a trip is arranged, we share only the
         limited details needed to complete it (such as first name, pickup area, and live location
         during the ride).</li>
+      <li><strong>Dash cam video</strong> — a ride's recording can be watched by its driver and by the
+        people who rode in the car, each for their own part of the ride, for 24 hours after it ends.
+        See section 8.</li>
       <li><strong>Service providers</strong> — we use trusted providers to run the app, including
         Google Firebase (notifications and app infrastructure), Google Maps (mapping and
         location), and Anthropic (automated payment-screenshot verification, section 5). They
@@ -282,14 +289,38 @@
   </section>
 
   <section>
-    <h2><span class="n">8</span> Data retention</h2>
+    <h2><span class="n">8</span> Ride dash cam</h2>
+    <p>Every ride is recorded by a dash cam running on the driver's phone, so that riders and
+      drivers both have proof if something goes wrong during the ride.</p>
+    <ul>
+      <li><strong>What is recorded.</strong> Video from the phone's front camera, which faces the
+        inside of the car, and sound if the driver has allowed the microphone. Recording runs only
+        while a ride is in progress and the Velocity Rides app is open on the driver's phone.</li>
+      <li><strong>Who can watch it.</strong> The driver, and the people who rode in the car. In a
+        shared ride each rider can watch only the part of the ride they were in the car for. Nobody
+        else can open it from the app.</li>
+      <li><strong>How long it is kept.</strong> 24 hours after the ride ends. The video is then
+        deleted automatically. Anyone entitled to watch it can save a copy of a clip to their own
+        phone during those 24 hours.</li>
+      <li><strong>The camera check.</strong> When a ride starts, a few frames of the recording are
+        checked by our own software, on our own servers, to count whether any face can be seen, so
+        the app can tell the driver when the phone is not placed where it can see the cabin. Only
+        the number of faces is used. Faces are not identified or matched to anyone, and nothing
+        from this check is kept.</li>
+      <li><strong>Turning it off.</strong> The dash cam is part of how rides work: a driver cannot
+        start a ride without allowing the camera. Sound is optional.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="n">9</span> Data retention</h2>
     <p>We keep your information for as long as your account is active and as needed to provide the
       service, resolve disputes, and meet legal obligations. When data is no longer needed, we
       delete or anonymise it.</p>
   </section>
 
   <section>
-    <h2><span class="n">9</span> Your rights &amp; account deletion</h2>
+    <h2><span class="n">10</span> Your rights &amp; account deletion</h2>
     <p>You can request access to, correction of, or deletion of your personal data at any time.</p>
     <div class="card">
       <p style="margin-top:0"><strong>To delete your account and associated data</strong>, email
@@ -301,21 +332,21 @@
   </section>
 
   <section>
-    <h2><span class="n">10</span> Security</h2>
+    <h2><span class="n">11</span> Security</h2>
     <p>We use reasonable technical and organisational measures to protect your information against
       unauthorised access, loss, or misuse. No method of transmission or storage is completely
       secure, but we work to safeguard your data.</p>
   </section>
 
   <section>
-    <h2><span class="n">11</span> Children</h2>
+    <h2><span class="n">12</span> Children</h2>
     <p>Velocity Rides is intended for users aged 18 and over. We do not knowingly collect personal
       information from children. If you believe a child has provided us data, contact us and we
       will remove it.</p>
   </section>
 
   <section>
-    <h2><span class="n">12</span> Third-party services</h2>
+    <h2><span class="n">13</span> Third-party services</h2>
     <p>Our app relies on third-party services that have their own privacy policies:</p>
     <ul>
       <li>Google Firebase — <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a></li>
@@ -326,14 +357,14 @@
   </section>
 
   <section>
-    <h2><span class="n">13</span> Changes to this policy</h2>
+    <h2><span class="n">14</span> Changes to this policy</h2>
     <p>We may update this Privacy Policy from time to time. When we do, we will revise the
       “Effective” date above and, where appropriate, notify you in the app. Continued use of the
       app after changes means you accept the updated policy.</p>
   </section>
 
   <section>
-    <h2><span class="n">14</span> Contact us</h2>
+    <h2><span class="n">15</span> Contact us</h2>
     <p>Questions about this policy or your data? Reach us at
       <a href="mailto:business@velocityrides.app">business@velocityrides.app</a>.</p>
   </section>

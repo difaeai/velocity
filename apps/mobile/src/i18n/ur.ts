@@ -1607,4 +1607,26 @@ export const UR: Record<string, string> = {
   "Leave this account on this phone": "اس فون سے یہ اکاؤنٹ چھوڑ دیں",
   "View and edit your profile →": "اپنی پروفائل دیکھیں اور تبدیل کریں →",
   "Drive your own car and earn on your own hours": "اپنی گاڑی چلائیں اور اپنے وقت پر کمائیں",
+
+  // ── Ride dash cam ──────────────────────────────────────────────────────────
+  // The first two are SPOKEN to the driver as well as shown (src/lib/dashcam.ts).
+  "Ride started. The dash cam is recording.": "سواری شروع ہو گئی ہے۔ ڈیش کیم ریکارڈ کر رہا ہے۔",
+  "I can't see any passenger. Please put your phone in a holder in the middle of the car, facing the seats.": "مجھے کوئی مسافر نظر نہیں آ رہا۔ براہِ کرم اپنا فون گاڑی کے درمیان ہولڈر میں رکھیں، سیٹوں کی طرف رخ کر کے۔",
+  "Dash cam paused": "ڈیش کیم رک گیا ہے",
+  "Come back to Velocity Rides to keep recording this ride. Google Maps keeps guiding you.": "سواری کی ریکارڈنگ جاری رکھنے کے لیے Velocity Rides پر واپس آئیں۔ گوگل میپس آپ کی رہنمائی کرتا رہے گا۔",
+  "Dash cam recording": "ڈیش کیم ریکارڈ کر رہا ہے",
+  "Dash cam starting…": "ڈیش کیم شروع ہو رہا ہے…",
+  "The dash cam needs the camera to record this ride.": "یہ سواری ریکارڈ کرنے کے لیے ڈیش کیم کو کیمرے کی ضرورت ہے۔",
+  "Allow the camera": "کیمرے کی اجازت دیں",
+  "Recorded for everyone's safety. You and your passengers can watch this ride for 24 hours after it ends. Keep Velocity Rides open — the dash cam pauses while another app is in front.": "سب کی حفاظت کے لیے ریکارڈ ہو رہا ہے۔ آپ اور آپ کے مسافر سواری ختم ہونے کے بعد 24 گھنٹے تک اسے دیکھ سکتے ہیں۔ Velocity Rides کھلی رکھیں — کوئی دوسری ایپ سامنے ہو تو ڈیش کیم رک جاتا ہے۔",
+  "🎥 This ride is recorded": "🎥 یہ سواری ریکارڈ ہو رہی ہے",
+  "The driver's dash cam records the ride for everyone's safety. You can watch it for 24 hours after the ride ends.": "ڈرائیور کا ڈیش کیم سب کی حفاظت کے لیے سواری ریکارڈ کرتا ہے۔ سواری ختم ہونے کے بعد آپ اسے 24 گھنٹے تک دیکھ سکتے ہیں۔",
+  "Watch the dash cam": "ڈیش کیم دیکھیں",
+  "🎥 Watch the dash cam video — kept for 24 hours": "🎥 ڈیش کیم ویڈیو دیکھیں — 24 گھنٹے تک محفوظ",
+  "Dash cam": "ڈیش کیم",
+  "● Recording now — new clips appear every few minutes.": "● ابھی ریکارڈنگ جاری ہے — ہر چند منٹ بعد نئے کلپ آتے ہیں۔",
+  "This ride's video was deleted 24 hours after the ride ended.": "اس سواری کی ویڈیو سواری ختم ہونے کے 24 گھنٹے بعد ڈیلیٹ کر دی گئی۔",
+  "The first clip will appear here in a couple of minutes.": "پہلا کلپ چند منٹ میں یہاں نظر آئے گا۔",
+  "No dash cam video was recorded on this ride.": "اس سواری پر کوئی ڈیش کیم ویڈیو ریکارڈ نہیں ہوئی۔",
+  "Only the driver and the people in this car can watch this, each their own part of the ride. It is deleted 24 hours after the ride ends — tap Save to keep a copy of a clip.": "یہ صرف ڈرائیور اور اس گاڑی کے مسافر دیکھ سکتے ہیں، ہر کوئی سواری کا اپنا حصہ۔ سواری ختم ہونے کے 24 گھنٹے بعد یہ ڈیلیٹ ہو جاتی ہے — کسی کلپ کی کاپی رکھنے کے لیے \"محفوظ کریں\" دبائیں۔",
 };

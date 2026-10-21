@@ -60,6 +60,8 @@ import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
 import { DropOffPanel } from '../../src/ui/DropOffPanel';
+import { DashCam } from '../../src/ui/DashCam';
+import { drainDashcamQueue, ensureDashcamPermission } from '../../src/lib/dashcam';
 import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
@@ -311,6 +313,33 @@ export default function DriverHome() {
   useEffect(() => {
     if (user) registerForPushNotifications().catch(() => {});
   }, [user?.uid]);
+
+  // Dash cam clips still waiting from a ride that ended in a dead zone, or that
+  // the app was closed during. The camera box drains them too, but it is only
+  // mounted mid-ride.
+  useEffect(() => {
+    void drainDashcamQueue();
+  }, []);
+
+  /**
+   * Every ride is recorded, so the camera is the one thing a ride cannot start
+   * without — asked for here, at the tap that needs it. Sound is asked for too
+   * but is not required.
+   */
+  async function startTrip(tripId: string) {
+    if (!(await ensureDashcamPermission())) {
+      Alert.alert(
+        'Allow the camera to start the ride',
+        'Every Velocity Rides ride is recorded by the dash cam, for your safety and your passengers’. Allow camera access, then tap Start trip again.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open settings', onPress: () => void Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    await api.updateTripStatus({ tripId, to: 'in_progress' });
+  }
 
   // Location powers the geohash proximity filter, the distance shown on each
   // request, and the passenger-facing live driver marker.
@@ -797,10 +826,23 @@ export default function DriverHome() {
                 <PrimaryButton
                   label={next.label}
                   disabled={busy}
-                  onPress={() => run(() => api.updateTripStatus({ tripId: activeTrip.id, to: next.to! }))}
+                  onPress={() =>
+                    run(() =>
+                      next.to === 'in_progress'
+                        ? startTrip(activeTrip.id)
+                        : api.updateTripStatus({ tripId: activeTrip.id, to: next.to! }),
+                    )
+                  }
                 />
               );
             })()}
+
+            {/* The dash cam, live — below the map and the drop-off list, so the
+                driver still sees where everybody is going and scrolls down to
+                see the camera. Mounted for the whole ride; see src/ui/DashCam. */}
+            {activeTrip.status === 'in_progress' && uid && Platform.OS !== 'web' ? (
+              <DashCam tripId={activeTrip.id} uid={uid} />
+            ) : null}
             {/* Riders on the way. Only on a cash pool with a seat still free —
                 a solo booker never shares their car, and a wallet trip holds only
                 the host's fare so there is no money to pay for an extra rider.

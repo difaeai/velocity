@@ -173,16 +173,18 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
     plugins: [
       ...(config.plugins ?? []),
       [
-        // The front camera, for the driver's live face scan (see
-        // app/passenger/become-driver/face-scan.tsx). Only the camera is
-        // declared: the scan captures stills, so asking for the microphone
-        // would be a permission prompt we never use, on a screen where a
-        // driver is already being asked to trust us with their face.
+        // The front camera: the driver's live face scan (see
+        // app/passenger/become-driver/face-scan.tsx) and the ride dash cam
+        // (src/ui/DashCam.tsx). The dash cam records sound with its video, so
+        // the microphone is declared here too. It is asked for when a driver
+        // starts a ride and never required — the face scan still never asks.
         'expo-camera',
         {
           cameraPermission:
-            'Velocity Rides uses the camera to scan your face and photograph your documents when you register as a driver.',
-          recordAudioAndroid: false,
+            'Velocity Rides uses the camera to scan your face and photograph your documents when you register as a driver, and to record your rides with the in-car dash cam.',
+          microphonePermission:
+            'Velocity Rides uses your microphone so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.',
+          recordAudioAndroid: true,
         },
       ],
       [

@@ -24,6 +24,7 @@ import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { useDriverTrips, useRideHistoryDays, type RideHistoryDay } from '../../src/hooks/driverHistory';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
+import { dashcamWatchable } from '../../src/domain/dashcam';
 
 type Period = 'today' | 'week' | 'month' | 'all';
 
@@ -211,6 +212,9 @@ function DaySection({
 }
 
 function RideRow({ trip, open, onToggle }: { trip: Trip; open: boolean; onToggle: () => void }) {
+  const router = useRouter();
+  // Read once: the clock is not something a render may call.
+  const [now] = useState(Date.now);
   const meta = STATUS_META[trip.status] ?? { label: trip.status, color: colors.muted };
   const roster = trip.poolRoster ?? [];
   const shared = trip.pool === true;
@@ -288,6 +292,12 @@ function RideRow({ trip, open, onToggle }: { trip: Trip; open: boolean; onToggle
               label="Cancelled by"
               value={trip.cancelledByRole === 'driver' ? 'You' : 'The passenger'}
             />
+          ) : null}
+          {/* The driver's proof of the ride, for the day it exists. */}
+          {dashcamWatchable(trip, now) ? (
+            <Pressable style={styles.dashcamBtn} onPress={() => router.push(`/dashcam/${trip.id}`)}>
+              <Text style={styles.dashcamBtnText}>🎥 Watch the dash cam video — kept for 24 hours</Text>
+            </Pressable>
           ) : null}
         </View>
       ) : null}
@@ -429,6 +439,16 @@ const styles = themed(() => StyleSheet.create({
   detailLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   detailLabel: { color: colors.muted, fontSize: 12 },
   detailValue: { color: colors.text, fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  dashcamBtn: {
+    marginTop: 4,
+    backgroundColor: `${colors.primary}18`,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  dashcamBtnText: { color: colors.primary, fontSize: 12.5, fontWeight: '800' },
 
   footNote: {
     color: colors.muted,
