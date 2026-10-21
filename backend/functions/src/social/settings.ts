@@ -74,6 +74,7 @@ const settingsSchema = z.object({
   dailyStory: z.boolean().optional(),
   autoRenderVideo: z.boolean().optional(),
   autoPublish: z.boolean().optional(),
+  publishModeChosen: z.boolean().optional(),
   learnFromOwnPage: z.boolean().optional(),
   platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional(),
 

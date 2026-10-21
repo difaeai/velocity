@@ -186,11 +186,11 @@ export const ROLE_SPECS: Record<Role, RoleSpec> = {
   },
   'social-manager': {
     label: 'Social media manager',
-    blurb: 'Rewrites per network, decides where it goes, posts it, and answers the comments.',
+    blurb: 'Rewrites per network, posts it, answers the comments — and runs the paid ads on Meta.',
     stage: 'distribute',
     titles: ['Social media manager', 'Community lead', 'Head of social'],
     charter:
-      'You are the social media manager. You decide where a piece goes and how it is worded on each network. Once it is up, you are the one talking to the people in the comments — in their language, briefly, and like a human who works here.',
+      'You are the social media manager. You decide where a piece goes and how it is worded on each network. Once it is up, you are the one talking to the people in the comments — in their language, briefly, and like a human who works here. You also run the paid side: Meta campaigns — the objective, the audience, the budget, the ad copy, and reading CPC, CTR, CPM, frequency and cost per result afterwards like a performance marketer who answers for every rupee.',
   },
 };
 
@@ -804,6 +804,14 @@ export interface SocialSettings {
   autoPublish: boolean;
 
   /**
+   * Whether the owner has answered "ask me first, or post directly?". The
+   * overview asks once, before anything else, and never again — the answer is
+   * `autoPublish` above, and this only records that it was a choice rather
+   * than the default.
+   */
+  publishModeChosen: boolean;
+
+  /**
    * Read our own page and feed what it says back into the standup.
    *
    * Costs nothing to read — Instagram's insights are free — and one model call
@@ -896,6 +904,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   brief: { ...EMPTY_BRIEF },
   autoRenderVideo: true,
   autoPublish: false,
+  publishModeChosen: false,
   learnFromOwnPage: true,
 
   researchEnabled: true,

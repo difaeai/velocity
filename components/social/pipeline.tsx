@@ -100,6 +100,10 @@ export function readPipeline(
   const making = by('make');
   const approving = by('approve');
   const publishing = by('publish');
+  // `ready` sits in this step too, but only one approved since the sweep
+  // existed is actually on its way; an older one waits for a person.
+  const sending = publishing.filter((p) => p.status === 'publishing' || p.publishQueuedAtMs);
+  const parked = publishing.length - sending.length;
   const published = by('learn');
   const connected = accounts.filter((a) => a.status === 'connected');
 
@@ -146,8 +150,10 @@ export function readPipeline(
     },
     {
       key: 'approve',
-      label: 'You approve it',
-      what: 'Nothing on this desk publishes itself. Every piece stops here until you say yes.',
+      label: settings?.autoPublish ? 'It checks itself' : 'You approve it',
+      what: settings?.autoPublish
+        ? 'Set to post directly: a finished piece goes straight out. Anything that could not, waits here for you.'
+        : 'Every piece stops here until you say yes — then it goes out on its own.',
       count: approving.length,
       state: approving.length ? 'waiting' : 'idle',
       caption: approving.length
@@ -158,16 +164,18 @@ export function readPipeline(
     {
       key: 'publish',
       label: 'It posts',
-      what: 'The approved piece goes out to every connected account that takes that format.',
+      what: 'Approved pieces go out within minutes to every connected account that takes that format.',
       count: publishing.length,
-      state: connected.length === 0 ? 'blocked' : publishing.length ? 'live' : 'idle',
+      state: connected.length === 0 ? 'blocked' : sending.length ? 'live' : parked ? 'waiting' : 'idle',
       caption:
         connected.length === 0
           ? 'No account connected — nowhere to post'
-          : publishing.length
-            ? `${publishing.length} going out`
-            : `${connected.length} account${connected.length === 1 ? '' : 's'} ready`,
-      href: '/dashboard/social/accounts',
+          : sending.length
+            ? `${sending.length} going out now`
+            : parked
+              ? `${parked} approved but not sent — open the queue`
+              : `${connected.length} account${connected.length === 1 ? '' : 's'} ready`,
+      href: parked && !sending.length ? '/dashboard/social/queue' : '/dashboard/social/accounts',
     },
     {
       key: 'learn',

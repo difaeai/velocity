@@ -46,9 +46,9 @@ import { FORMAT_SPECS, type ContentFormat, type PostScript } from './types';
 // ── the canvas ──────────────────────────────────────────────────────────────
 
 /** Near-black and lime, the same two colours as the app. */
-const INK = '0x1a1c1c';
-const LIME = '0xccff00';
-const PAPER = '0xf4f6f3';
+export const INK = '0x1a1c1c';
+export const LIME = '0xccff00';
+export const PAPER = '0xf4f6f3';
 
 const FPS = 30;
 
@@ -129,7 +129,7 @@ export function wrap(text: string, maxChars: number): string[] {
  * the band — big text is the entire point of the format, so this starts
  * generous and comes down rather than starting safe and going up.
  */
-function fit(text: string, opts: { start: number; min: number; width: number; maxLines: number }): {
+export function fit(text: string, opts: { start: number; min: number; width: number; maxLines: number }): {
   size: number;
   lines: string[];
 } {
@@ -382,7 +382,7 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
 // ── rendering ───────────────────────────────────────────────────────────────
 
 /** Where the two OFL fonts live, relative to the compiled output. */
-function fontDir(): string {
+export function fontDir(): string {
   // `lib/social/reel.js` at runtime, `src/social/reel.ts` in tests — the
   // assets sit beside both, two levels up.
   return path.resolve(__dirname, '..', '..', 'assets', 'fonts');
@@ -395,7 +395,7 @@ function fontDir(): string {
  * that needs it and eagerly importing an 80MB package into every cold start to
  * render one video a day is a bad trade.
  */
-function ffmpegPath(): string {
+export function ffmpegPath(): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const resolved = require('ffmpeg-static') as string | { default?: string } | null;
   const bin = typeof resolved === 'string' ? resolved : resolved?.default;
@@ -493,7 +493,7 @@ export async function renderReel(
       out,
     );
 
-    await run(opts.ffmpeg ?? ffmpegPath(), args);
+    await runFfmpeg(opts.ffmpeg ?? ffmpegPath(), args);
     return await readFile(out);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -501,7 +501,7 @@ export async function renderReel(
 }
 
 /** Spawn ffmpeg and fail with its own last words rather than an exit code. */
-function run(bin: string, args: string[]): Promise<void> {
+export function runFfmpeg(bin: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { windowsHide: true });
     let stderr = '';

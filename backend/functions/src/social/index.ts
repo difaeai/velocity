@@ -36,13 +36,18 @@ export { adminGetSocialSettings, adminUpdateSocialSettings } from './settings';
 
 export {
   socialDailyContent,
+  socialPublishSweep,
   adminGenerateSocialPost,
   adminRequestSocialChanges,
   adminReviewSocialPost,
   adminPublishSocialPost,
+  adminRenderSocialPost,
   adminAttachSocialMedia,
   adminDeleteSocialPost,
 } from './pipeline';
+
+/** The paid side: Meta campaigns planned, made, measured and steered here. */
+export { socialAdsSync, adminSyncAds, adminSetAdsSettings, adminCreateAd, adminAdAction } from './ads';
 
 export {
   socialPageRead,

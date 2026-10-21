@@ -676,6 +676,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- socialAds/{campaignId} ------------------------------------------
+    // Every Meta campaign in the connected ad account, as the ads desk last
+    // read and judged it. Written only by the backend: a campaign is money, and
+    // every change to one goes through a callable that holds it to the owner's
+    // daily limit. The ad token itself sits under system/socialAds/secret,
+    // which the system rule above already shuts to every client.
+    match /socialAds/{campaignId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // ----- socialComments/{platform_commentId} ------------------------------
     // What people said under our own posts, and the reply the manager drafted.
     // Written only by the backend: a reply that leaves this collection is

@@ -27,10 +27,18 @@ function stripUndefined(value: unknown): unknown {
   return value;
 }
 
-function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
-  const fn = httpsCallable<Req, Res>(functions, name);
+function callable<Req, Res>(name: string, timeout?: number): (data: Req) => Promise<Res> {
+  const fn = httpsCallable<Req, Res>(functions, name, timeout ? { timeout } : undefined);
   return async (data: Req) => (await fn(stripUndefined(data) as Req)).data;
 }
+
+/**
+ * For calls the backend allows fifteen minutes: a team run, a render, a post
+ * to Instagram that waits for the reel to process. The SDK gives up after 70
+ * seconds by default and reports "deadline-exceeded" while the function keeps
+ * working — which is how a post that went out looked like an error.
+ */
+const LONG_CALL_MS = 16 * 60_000;
 
 /** One row of Velocity's own map, as the Locations desk lists it. */
 export interface VelocityLocationRow {
@@ -1290,6 +1298,8 @@ export interface SocialSettings {
   autoRenderVideo: boolean;
   /** Publish the moment the team is finished, with no gate in front of it. */
   autoPublish: boolean;
+  /** The owner has answered "ask me first, or post directly?" once. */
+  publishModeChosen: boolean;
   /** Read our own numbers daily and feed them back into the standup. */
   learnFromOwnPage: boolean;
 
@@ -1420,6 +1430,11 @@ export interface SocialPostDoc {
   format?: SocialFormat;
   angle: string;
   status: SocialPostStatus;
+  /** "Make one now" chose to post it the moment it is finished. */
+  autoPublish?: boolean | null;
+  /** When it was approved to go out; the five-minute sweep posts it from here. */
+  publishQueuedAtMs?: number;
+  publishingSinceMs?: number;
   team?: SocialTeamMemberRef[];
   work?: Partial<Record<SocialStage, SocialWorkEntry>>;
   plan?: SocialPlan | null;
@@ -1601,6 +1616,14 @@ export interface MetaConnectState {
   scopes: string[];
 }
 
+/** One ad account the signed-in admin can run, as the grant reported it. */
+export interface MetaAdAccountChoice {
+  id: string;
+  name: string;
+  currency: string;
+  active: boolean;
+}
+
 /** One Facebook Page the signed-in admin administers, as the grant reported it. */
 export interface MetaPageChoice {
   pageId: string;
@@ -1620,15 +1643,16 @@ export const socialApi = {
     { appId: string; appSecret: string },
     { ok: boolean; appId: string; appName: string | null; redirectUri: string }
   >('adminSetMetaApp'),
-  startMetaConnect: callable<
-    Record<string, never>,
-    { url: string; state: string; redirectUri: string }
-  >('adminStartMetaConnect'),
-  finishMetaConnect: callable<{ code: string; state: string }, { pages: MetaPageChoice[] }>(
-    'adminFinishMetaConnect',
+  /** `ads` adds the Marketing API scopes — only the Ads page asks for them. */
+  startMetaConnect: callable<{ ads?: boolean }, { url: string; state: string; redirectUri: string }>(
+    'adminStartMetaConnect',
   ),
+  finishMetaConnect: callable<
+    { code: string; state: string },
+    { pages: MetaPageChoice[]; adAccounts?: MetaAdAccountChoice[] }
+  >('adminFinishMetaConnect'),
   chooseMetaPage: callable<
-    { state: string; pageId: string },
+    { state: string; pageId: string; adAccountId?: string },
     { ok: boolean; connected: string[]; instagram: boolean; note: string | null }
   >('adminChooseMetaPage'),
 
@@ -1676,15 +1700,27 @@ export const socialApi = {
     'adminUpdateSocialSettings',
   ),
 
-  /** Put the team on a piece. It always ends in the approval queue. */
+  /**
+   * Put the team on a piece. `brief` is what it should be about, in your own
+   * words; `publishWhenDone` posts it the moment it is finished instead of
+   * stopping in the queue.
+   */
   generate: callable<
-    { date?: string; format?: SocialFormat; angle?: string; targets?: SocialPlatform[]; replace?: boolean },
+    {
+      date?: string;
+      format?: SocialFormat;
+      angle?: string;
+      targets?: SocialPlatform[];
+      replace?: boolean;
+      brief?: string;
+      publishWhenDone?: boolean;
+    },
     { ok: boolean; id: string; format: SocialFormat }
-  >('adminGenerateSocialPost'),
+  >('adminGenerateSocialPost', LONG_CALL_MS),
   requestChanges: callable<
     { postId: string; feedback: string; scope: SocialRevisionScope[] },
     { ok: boolean; reran: string[] }
-  >('adminRequestSocialChanges'),
+  >('adminRequestSocialChanges', LONG_CALL_MS),
   review: callable<
     {
       postId: string;
@@ -1694,11 +1730,13 @@ export const socialApi = {
       publishNow?: boolean;
     },
     { ok: boolean; status?: string; published?: number; failed?: number }
-  >('adminReviewSocialPost'),
+  >('adminReviewSocialPost', LONG_CALL_MS),
   publish: callable<
     { postId: string; platforms?: SocialPlatform[] },
     { ok: boolean; published: number; failed: number }
-  >('adminPublishSocialPost'),
+  >('adminPublishSocialPost', LONG_CALL_MS),
+  /** Draw the pictures, or cut the reel, for a piece that has none. */
+  render: callable<{ postId: string }, { ok: boolean; made: number }>('adminRenderSocialPost', LONG_CALL_MS),
   attachMedia: callable<
     { postId: string; storagePath: string; kind?: 'video' | 'image'; slide?: number; alt?: string },
     { ok: boolean }
@@ -1713,6 +1751,150 @@ export const socialApi = {
     { platform: SocialPlatform; commentId: string; status: 'new' | 'drafted' | 'ignored' | 'escalated' },
     { ok: boolean }
   >('adminSetCommentStatus'),
+};
+
+// ── Ads desk ────────────────────────────────────────────────────────────────
+// Meta campaigns planned, made, launched and steered from Manage social → Ads.
+// Mirrors backend/functions/src/social/ads.ts and adsExpert.ts.
+
+export type AdObjectiveKind = 'traffic' | 'awareness' | 'engagement';
+
+export interface AdMetrics {
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  linkClicks: number;
+  /** Link CTR, percent. */
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  results: number;
+  costPerResult: number;
+}
+
+export interface AdBand {
+  low: number;
+  typical: number;
+  high: number;
+}
+
+export interface AdBenchmarks {
+  cpm: AdBand;
+  cpc: AdBand;
+  ctr: AdBand;
+  cpe: AdBand;
+  /** `own` once the account has a normal of its own. */
+  source: 'pakistan' | 'own';
+}
+
+export type AdAction =
+  | { kind: 'none' }
+  | { kind: 'pause'; why: string }
+  | { kind: 'scale'; to: number; why: string }
+  | { kind: 'refresh'; why: string };
+
+export interface AdVerdict {
+  grade: 'idle' | 'learning' | 'good' | 'ok' | 'bad';
+  headline: string;
+  reasons: string[];
+  action: AdAction;
+}
+
+export interface AdPlan {
+  name: string;
+  objective: AdObjectiveKind;
+  audience: { cities: string[]; ageMin: number; ageMax: number; genders: 'all' | 'men' | 'women'; interests: string[] };
+  dailyBudget: number;
+  days: number;
+  format: 'image' | 'video';
+  primaryText: string;
+  headline: string;
+  cta: string;
+  lines: string[];
+  why: string;
+}
+
+export interface AdForecast {
+  spend: number;
+  results: [number, number];
+  label: string;
+  costPerResult: AdBand;
+}
+
+/** system/socialAds — the connection, the owner's limits, and the account at a glance. */
+export interface AdsConfigDoc {
+  adAccountId: string | null;
+  accountName: string | null;
+  currency: string;
+  pageId: string | null;
+  instagramId: string | null;
+  tokenExpiresAtMs: number | null;
+  mode: 'ask' | 'direct' | null;
+  dailyCap: number;
+  maxDays: number;
+  link: string;
+  lastSyncAtMs: number | null;
+  lastSyncStatus: string | null;
+  review: { atMs: number; summary: string; moves: string[]; engine: string } | null;
+  account?: {
+    daily: { date: string; spend: number; impressions: number; linkClicks: number }[];
+    week: AdMetrics;
+    committed: number;
+    bench: AdBenchmarks | null;
+  };
+}
+
+/** socialAds/{campaignId} — one campaign, as the desk last read and judged it. */
+export interface AdCampaignDoc {
+  id: string;
+  name: string;
+  objective: string;
+  objectiveKind: AdObjectiveKind;
+  status: string;
+  effectiveStatus: string;
+  /** Made by the desk — the only kind it may steer on its own. */
+  managed: boolean;
+  approval?: 'pending' | 'approved';
+  dailyBudget: number | null;
+  endMs: number | null;
+  lifetime?: AdMetrics;
+  week?: AdMetrics;
+  verdict?: AdVerdict | null;
+  /** "In Meta review", or Meta's reason for rejecting it. */
+  review?: string | null;
+  previewUrl?: string | null;
+  brief?: string;
+  plan?: AdPlan;
+  forecast?: AdForecast | null;
+  targets?: { costPerResult: number; ctr: number; cpc: number; cpm: number } | null;
+  targeting?: { cities: string[]; interests: string[] };
+  budgetNote?: string | null;
+  engine?: string;
+  plannedBy?: string;
+  autoActions?: { atMs: number; kind: string; detail: string }[];
+  manualActions?: { atMs: number; by: string; action: string; detail: string }[];
+  createdAtMs?: number;
+  syncedAtMs?: number;
+}
+
+export type AdSource = { kind: 'make' } | { kind: 'post'; postId: string } | { kind: 'boost'; mediaId: string };
+
+export const adsApi = {
+  settings: callable<
+    { mode?: 'ask' | 'direct'; dailyCap?: number; maxDays?: number; link?: string },
+    { ok: boolean; config: AdsConfigDoc }
+  >('adminSetAdsSettings'),
+  /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. */
+  create: callable<
+    { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean },
+    { ok: boolean; campaignId: string; launched: boolean; budget: number; note: string | null; plan: AdPlan; forecast: AdForecast | null }
+  >('adminCreateAd', 10 * 60_000),
+  action: callable<
+    { campaignId: string; action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end'; dailyBudget?: number },
+    { ok: boolean; message: string }
+  >('adminAdAction'),
+  sync: callable<Record<string, never>, { ok: boolean; status: string }>('adminSyncAds', 6 * 60_000),
 };
 
 /**

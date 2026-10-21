@@ -558,6 +558,27 @@ test('social access tokens are unreadable by everyone, admins included', async (
   await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
 });
 
+test('the ads desk shows its campaigns to admins and its ad token to nobody', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'system/socialAds'), { adAccountId: 'act_123', dailyCap: 2000, mode: 'ask' });
+    await setDoc(doc(db, 'system/socialAds/secret/credentials'), { token: { c: 'sealed', iv: 'iv', t: 'tag' } });
+    await setDoc(doc(db, 'socialAds/120200000000001'), { name: 'Drivers — Lahore', status: 'PAUSED', managed: true });
+  });
+
+  await assertSucceeds(getDoc(doc(admin, 'system/socialAds')));
+  await assertSucceeds(getDoc(doc(admin, 'socialAds/120200000000001')));
+  await assertFails(getDoc(doc(passenger, 'socialAds/120200000000001')));
+  await assertFails(getDoc(doc(driver, 'system/socialAds')));
+
+  // The user token can spend the company's money. Not even an admin session
+  // reads it back, and nobody writes the limit or a campaign from a client —
+  // every change goes through a callable that checks the daily limit first.
+  await assertFails(getDoc(doc(admin, 'system/socialAds/secret/credentials')));
+  await assertFails(setDoc(doc(admin, 'system/socialAds'), { dailyCap: 9999999 }, { merge: true }));
+  await assertFails(updateDoc(doc(admin, 'socialAds/120200000000001'), { status: 'ACTIVE' }));
+});
+
 test('the Instagram one-click connect leaks neither the app secret nor a page token', async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();

@@ -55,6 +55,7 @@ import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
 import { planReel, renderReel } from './reel';
 import { runResearch } from './research';
+import { renderStill, stillCards } from './still';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
 import { adPass, searchPass, seoPass } from './seo';
 import { getSocialSettings, nextAngle, nextFormat, recordRun } from './settings';
@@ -435,19 +436,27 @@ async function runTeam(params: {
           feedback,
         });
         await patch(params.id, { direction: result.direction });
-        // 'briefed', not 'done': the brief is written and the pictures are not
-        // made yet, and a green tick on a stage nobody has finished is how a
-        // piece reaches the queue looking ready when it is waiting on you.
-        //
-        // Anything already attached by hand is deliberately left alone. A
-        // re-brief does not delete the slides you made against the last one —
-        // uploading a replacement does, slide by slide.
+        // A still format gets its pictures drawn here, from the words the brief
+        // chose, so a post or a story can go out with nobody making a file.
+        // Anything attached by hand is left alone — only empty slides, and our
+        // own earlier renders, are drawn.
+        const drawn =
+          settings.autoRenderVideo && spec.kind === 'image'
+            ? await renderStillsAndAttach({ id: params.id, format: params.format, script, direction: result.direction })
+            : null;
+        // 'briefed' when nothing was drawn: a green tick on a stage nobody has
+        // finished is how a piece reaches the queue looking ready when it is
+        // waiting on you.
         await setWork(params.id, 'design', {
-          state: 'briefed',
+          state: drawn?.made ? 'done' : 'briefed',
           employeeId: designer.id,
           name: designer.name,
           role: designer.role,
-          note: result.note,
+          note: drawn?.made
+            ? `${result.note} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'} — replace any from the queue.`
+            : drawn?.error
+              ? `${result.note} Could not draw the pictures here (${drawn.error}) — attach them from the queue.`
+              : result.note,
         });
         await creditWork(designer.id);
       } catch (e) {
@@ -491,13 +500,17 @@ async function runTeam(params: {
           : null;
 
         await setWork(params.id, 'video', {
-          state: rendered ? 'done' : 'briefed',
+          state: rendered?.line ? 'done' : 'briefed',
           employeeId: editor.id,
           name: editor.name,
           role: editor.role,
-          note: rendered
-            ? `${cut.note} Cut it — ${rendered}. Replace it from the queue if you shoot your own.`
-            : `${cut.note} Make the video and attach it from the queue.`,
+          // The render's own last words go in the log: "make the video" alone
+          // hides why the desk did not, and that is the question asked first.
+          note: rendered?.line
+            ? `${cut.note} Cut it — ${rendered.line}. Replace it from the queue if you shoot your own.`
+            : rendered?.error
+              ? `${cut.note} Could not cut it here (${rendered.error}) — press Render in the queue, or attach a video.`
+              : `${cut.note} Make the video and attach it from the queue.`,
         });
         await creditWork(editor.id);
       } catch (e) {
@@ -579,18 +592,23 @@ async function runTeam(params: {
   // the writing rather than in a gate: the FACTS rule, no competitor named, no
   // promised income. The scorecard is still computed and still stored, so a
   // weak piece that went out can be found afterwards; it is simply not stopped.
-  if (!shouldAutoPublish(settings.autoPublish, modelReady())) {
+  //
+  // A piece made with "Make one now" carries the choice made on that button,
+  // which beats the desk-wide setting for that one piece.
+  const finished = (await postRef(params.id).get()).data() as (SocialPost & { autoPublish?: boolean | null }) | undefined;
+  const publishWhenDone = finished?.autoPublish ?? settings.autoPublish;
+  if (!shouldAutoPublish(publishWhenDone, modelReady())) {
     // Deliberately not written to `error`: the queue renders that in red, and
     // a finished piece waiting to be read is not a failure. The `engine` stamp
     // is already on the document and the queue says what it means.
-    if (settings.autoPublish) {
+    if (publishWhenDone) {
       logger.info('social: holding a locally written piece for approval', { id: params.id });
     }
     return;
   }
 
   {
-    const quality = ((await postRef(params.id).get()).data() as SocialPost | undefined)?.quality ?? null;
+    const quality = finished?.quality ?? null;
     try {
       const { published, failed: failures } = await publishPost(params.id);
       // `auto` rather than a uid, because "who approved this" is a question
@@ -605,8 +623,11 @@ async function runTeam(params: {
       });
     } catch (e) {
       // A failed publish leaves the piece exactly where a normal run would:
-      // readable, in the queue, retryable by hand.
-      logger.error('social: auto-publish failed', { id: params.id, message: (e as Error).message });
+      // readable, in the queue, retryable by hand — and says why, because an
+      // auto-post that silently did not happen looks exactly like one that did.
+      const message = (e as Error).message;
+      logger.error('social: auto-publish failed', { id: params.id, message });
+      await patch(params.id, { error: `Could not post it on its own: ${message}` });
     }
   }
 }
@@ -627,7 +648,7 @@ async function renderAndAttach(params: {
   id: string;
   format: ContentFormat;
   script: PostScript;
-}): Promise<string | null> {
+}): Promise<{ line: string | null; error: string | null } | null> {
   const spec = FORMAT_SPECS[params.format];
   if (spec.kind !== 'video') return null;
 
@@ -663,17 +684,76 @@ async function renderAndAttach(params: {
       // Slides stay: a carousel's images and the reel made from them are both
       // the piece, and the publisher picks by format.
       await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset] });
-      return `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB`;
+      return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB`, error: null };
     } finally {
       await local.cleanup();
     }
   } catch (e) {
-    logger.error('social: could not render the reel', {
-      id: params.id,
-      message: (e as Error).message,
-    });
-    return null;
+    const message = (e as Error).message;
+    logger.error('social: could not render the reel', { id: params.id, message });
+    return { line: null, error: message.slice(0, 240) };
   }
+}
+
+/**
+ * Draw the pictures a still piece needs and hang them on it.
+ *
+ * Slides somebody attached by hand are never touched. Slides this desk drew
+ * before are drawn again, because the only way back here for a piece that
+ * already has them is a "redraw it" note, and that note is about the words.
+ * Never fatal: a failure returns its message for the work log.
+ */
+async function renderStillsAndAttach(params: {
+  id: string;
+  format: ContentFormat;
+  script: PostScript;
+  direction: { overlay: string; alt: string }[] | null;
+}): Promise<{ made: number; error: string | null }> {
+  const spec = FORMAT_SPECS[params.format];
+  if (spec.kind !== 'image') return { made: 0, error: null };
+
+  const existing = postMedia(((await postRef(params.id).get()).data() as SocialPost | undefined) ?? {});
+  const byHand = new Set(
+    existing.filter((m) => m.kind === 'image' && m.url && m.provider !== 'velocity-render').map((m) => m.slide),
+  );
+
+  const made: MediaAsset[] = [];
+  try {
+    const cards = stillCards({ format: params.format, script: params.script, direction: params.direction });
+    for (const [i, card] of cards.entries()) {
+      const slide = i + 1;
+      if (byHand.has(slide)) continue;
+      const stored = await storeFile({
+        path: `${postFolder(params.id)}/slide-${slide}.jpg`,
+        bytes: await renderStill(card),
+        contentType: 'image/jpeg',
+      });
+      made.push({
+        kind: 'image',
+        provider: 'velocity-render',
+        model: null,
+        jobId: null,
+        storagePath: stored.path,
+        url: stored.url,
+        urlExpiresAtMs: stored.expiresAtMs,
+        durationSec: null,
+        aspect: spec.aspect,
+        slide,
+        alt: params.direction?.[i]?.alt || params.script.hook,
+      });
+    }
+  } catch (e) {
+    const message = (e as Error).message;
+    logger.error('social: could not draw the pictures', { id: params.id, message });
+    if (!made.length) return { made: 0, error: message.slice(0, 240) };
+  }
+
+  if (made.length) {
+    const drawn = new Set(made.map((m) => m.slide));
+    const kept = existing.filter((m) => !(m.kind === 'image' && drawn.has(m.slide)));
+    await patch(params.id, { media: [...kept, ...made].sort((a, b) => a.slide - b.slide) });
+  }
+  return { made: made.length, error: null };
 }
 
 /** Pull attached slides onto local disk so ffmpeg can read them. */
@@ -707,14 +787,20 @@ async function downloadForRender(
 
 /** Create the document, then put the team on it. */
 async function createPost(opts: {
+  /** Defaults to the date-and-format id the scheduler relies on. */
+  id?: string;
   date: string;
   format: ContentFormat;
   angle?: string;
   targets?: Platform[];
+  /** What the person asked for in their own words. Read by everyone on it. */
+  brief?: { text: string; by: string };
+  /** Overrides the desk-wide `autoPublish` for this one piece. */
+  publishWhenDone?: boolean;
 }): Promise<string> {
   const settings = await getSocialSettings();
   const angle = opts.angle ?? (await nextAngle(settings));
-  const id = postIdFor(opts.date, opts.format);
+  const id = opts.id ?? postIdFor(opts.date, opts.format);
 
   const targets = (opts.targets ?? settings.platforms).filter(
     (p) => PLATFORMS.includes(p) && supports(p, opts.format),
@@ -744,7 +830,19 @@ async function createPost(opts: {
     targets,
     results: {},
     quality: null,
-    revisions: [],
+    // A brief rides the same rail as a change request: every stage is handed
+    // the revisions, and the prompts already treat them as orders.
+    revisions: opts.brief
+      ? [
+          {
+            atMs: Date.now(),
+            by: opts.brief.by,
+            feedback: `What this piece must be about: ${opts.brief.text}`,
+            scope: ['script'],
+          } satisfies Revision,
+        ]
+      : [],
+    autoPublish: opts.publishWhenDone ?? null,
     error: null,
     approvedBy: null,
     createdAt: FieldValue.serverTimestamp(),
@@ -765,20 +863,67 @@ async function createPost(opts: {
 
 // ── publishing ──────────────────────────────────────────────────────────────
 
-/** Post one approved piece everywhere it is meant to go. */
-async function publishPost(id: string, only?: Platform[]): Promise<{ published: number; failed: number }> {
-  const snap = await postRef(id).get();
-  if (!snap.exists) throw new HttpsError('not-found', 'No such post.');
-  const post = snap.data() as SocialPost;
-  const format = post.format ?? 'reel';
+/**
+ * A claim on a piece that is going out, older than this, belongs to a function
+ * that died: it is longer than the longest run is allowed to live.
+ */
+const STALE_PUBLISH_MS = (RUN_TIMEOUT_SECONDS + 60) * 1000;
 
-  let media = postMedia(post);
-  if (!media.length) {
-    throw new HttpsError(
-      'failed-precondition',
-      'That piece has nothing to publish yet. Render it, or attach a file, first.',
+/**
+ * Take the piece for publishing — and decide where it still has to go — or
+ * refuse.
+ *
+ * All of it inside one transaction, on the document as it is at that instant.
+ * Two publishers can reach the same piece at once — a double-click, the
+ * approve call and the sweep — and one that read the piece a moment before the
+ * other finished would otherwise see no results and post it a second time. On
+ * an account this size a duplicate post is a public mistake, not a log line.
+ */
+export async function claimForPublish(id: string, only?: Platform[]): Promise<{ post: SocialPost; targets: Platform[] }> {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(postRef(id));
+    const post = snap.data() as (SocialPost & { publishingSinceMs?: number }) | undefined;
+    if (!post) throw new HttpsError('not-found', 'No such post.');
+    if (post.status === 'publishing' && Date.now() - (post.publishingSinceMs ?? 0) < STALE_PUBLISH_MS) {
+      throw new HttpsError('already-exists', 'It is already going out — the queue shows each network as it lands.');
+    }
+    if (!postMedia(post).length) {
+      throw new HttpsError('failed-precondition', 'That piece has nothing to publish yet. Press Render, or attach a file, first.');
+    }
+
+    const format = post.format ?? 'reel';
+    const live = (p: Platform) => post.results?.[p]?.ok === true;
+    const targets = (only ?? post.targets ?? []).filter((p) => supports(p, format) && !live(p));
+    if (!targets.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        (post.targets ?? []).some(live)
+          ? 'It is already live everywhere it was meant to go.'
+          : 'None of the selected networks can take this format.',
+      );
+    }
+
+    tx.set(
+      postRef(id),
+      { status: 'publishing', publishingSinceMs: Date.now(), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
     );
-  }
+    return { post, targets };
+  });
+}
+
+/**
+ * Post one approved piece everywhere it is meant to go.
+ *
+ * A network that already took it is skipped, so pressing Post again after a
+ * partial failure retries only the ones that refused — never a second copy on
+ * the ones that worked.
+ */
+async function publishPost(id: string, only?: Platform[]): Promise<{ published: number; failed: number }> {
+  const { post, targets } = await claimForPublish(id, only);
+  const format = post.format ?? 'reel';
+  const live = (p: Platform) => post.results?.[p]?.ok === true;
+  let media = postMedia(post);
 
   // Signed URLs age out; a piece retried a week later needs fresh ones.
   const refreshed = await refreshAssetUrls(media);
@@ -787,23 +932,10 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
     await patch(id, { media });
   }
 
-  const targets = (only ?? post.targets ?? []).filter((p) => supports(p, format));
-  if (!targets.length) {
-    throw new HttpsError('failed-precondition', 'None of the selected networks can take this format.');
-  }
-
   // Whoever manages social signs the post — and it is their name in the log.
   const team = await activeTeam();
   const manager = assign(team, 'distribute')?.employee ?? null;
-
-  await patch(id, { status: 'publishing' as PostStatus });
-  await setWork(id, 'distribute', {
-    state: 'working',
-    employeeId: manager?.id ?? null,
-    name: manager?.name ?? 'The desk',
-    role: manager?.role ?? null,
-    note: `Posting to ${targets.join(', ')}.`,
-  });
+  const signed = { employeeId: manager?.id ?? null, name: manager?.name ?? 'The desk', role: manager?.role ?? null };
 
   const results: Record<string, unknown> = {};
   let published = 0;
@@ -811,7 +943,14 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
 
   // Sequential on purpose: five networks pulling the same file at once is how
   // you find out about rate limits, and one failure should not abort the rest.
-  for (const platform of targets) {
+  for (const [i, platform] of targets.entries()) {
+    // Said per network, because Instagram takes a minute or two over a reel and
+    // a log that reads "posting" for that long looks exactly like a hang.
+    await setWork(id, 'distribute', {
+      state: 'working',
+      ...signed,
+      note: `Posting to ${platform}${targets.length > 1 ? ` (${i + 1} of ${targets.length})` : ''}…`,
+    });
     const credentials = await loadCredentials(platform);
     if (!credentials) {
       results[platform] = { ok: false, id: null, url: null, error: 'Not connected.', atMs: Date.now() };
@@ -840,18 +979,21 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
     }
   }
 
-  const status: PostStatus = published === 0 ? 'failed' : failed > 0 ? 'partial' : 'published';
+  // Judged over every network the piece was meant for, counting the ones an
+  // earlier attempt already got it onto.
+  const merged = { ...post.results, ...results } as SocialPost['results'];
+  const meant = (post.targets ?? []).filter((p) => supports(p, format));
+  const liveNow = meant.filter((p) => merged[p]?.ok).length;
+  const status: PostStatus = liveNow === 0 ? 'failed' : liveNow < meant.length ? 'partial' : 'published';
   await patch(id, {
     status,
-    results: { ...post.results, ...results },
-    publishedAt: published > 0 ? FieldValue.serverTimestamp() : null,
-    error: published === 0 ? 'Every network rejected the post — see the per-network errors.' : null,
+    results: merged,
+    ...(published > 0 && !meant.some(live) ? { publishedAt: FieldValue.serverTimestamp() } : {}),
+    error: liveNow === 0 ? 'Every network rejected the post — see the per-network errors.' : null,
   });
   await setWork(id, 'distribute', {
     state: published > 0 ? 'done' : 'failed',
-    employeeId: manager?.id ?? null,
-    name: manager?.name ?? 'The desk',
-    role: manager?.role ?? null,
+    ...signed,
     note: `${published} posted, ${failed} failed.`,
     error: published === 0 ? 'No network accepted it.' : null,
   });
@@ -946,6 +1088,44 @@ export const socialDailyContent = onSchedule(
   },
 );
 
+/**
+ * Every five minutes: post what was approved, and free what got stuck.
+ *
+ * Approving used to post only while the browser tab waited for it, so a closed
+ * tab or a slow network left a piece in `ready` — "going out" on the overview —
+ * forever. Only pieces approved since this sweep existed carry
+ * `publishQueuedAtMs`; an older `ready` piece may already have been posted by
+ * hand, so it is left for a person rather than risked as a duplicate.
+ */
+export const socialPublishSweep = onSchedule(
+  { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
+  async () => {
+    const snap = await db.collection('socialPosts').where('status', 'in', ['ready', 'publishing']).limit(20).get();
+    for (const doc of snap.docs) {
+      const post = doc.data() as SocialPost & { publishingSinceMs?: number; publishQueuedAtMs?: number };
+
+      if (post.status === 'publishing') {
+        if (Date.now() - (post.publishingSinceMs ?? 0) < STALE_PUBLISH_MS) continue;
+        await patch(doc.id, {
+          status: 'failed' as PostStatus,
+          error: 'Posting stopped part-way. Press Post again — networks that already have it are skipped.',
+        });
+        continue;
+      }
+
+      if (!post.publishQueuedAtMs || Date.now() - post.publishQueuedAtMs > 24 * 3600_000) continue;
+      try {
+        await publishPost(doc.id);
+      } catch (e) {
+        if (e instanceof HttpsError && e.code === 'already-exists') continue;
+        // Back to the person, with the reason, rather than retried every five
+        // minutes for a piece that cannot go out as it stands.
+        await patch(doc.id, { status: 'awaiting_approval' as PostStatus, error: (e as Error).message });
+      }
+    }
+  },
+);
+
 // ── console actions ─────────────────────────────────────────────────────────
 
 const formatSchema = z.enum(FORMATS);
@@ -954,7 +1134,7 @@ const formatSchema = z.enum(FORMATS);
 export const adminGenerateSocialPost = onCall(
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
-    requireAdmin(req);
+    const ctx = requireAdmin(req);
     const parsed = z
       .object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -962,6 +1142,10 @@ export const adminGenerateSocialPost = onCall(
         angle: z.string().min(2).max(60).optional(),
         targets: z.array(z.enum(PLATFORMS)).optional(),
         replace: z.boolean().optional(),
+        /** "Make one about…", in the person's own words. */
+        brief: z.string().trim().min(3).max(1500).optional(),
+        /** Post it the moment it is finished, or wait in the queue. */
+        publishWhenDone: z.boolean().optional(),
       })
       .safeParse(req.data ?? {});
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
@@ -977,17 +1161,39 @@ export const adminGenerateSocialPost = onCall(
     const settings = await getSocialSettings();
     const date = parsed.data.date ?? dayKey(Date.now());
     const format = parsed.data.format ?? (await nextFormat(settings));
-    const id = postIdFor(date, format);
+    let id = postIdFor(date, format);
 
-    if (!parsed.data.replace && (await postRef(id).get()).exists) {
+    const existing = (await postRef(id).get()).data() as SocialPost | undefined;
+    if (existing && !parsed.data.replace) {
       throw new HttpsError(
         'already-exists',
         `${date} already has a ${format}. Open it, ask for changes, or pass replace.`,
       );
     }
+    // "Replace" writes over a piece that failed or was turned down, and nothing
+    // else. A draft somebody asked for an hour ago, an approved piece or a live
+    // one (whose record holds the links and the numbers) all stay; a second
+    // piece the same day takes the next free id instead.
+    if (existing && !['failed', 'rejected'].includes(existing.status)) {
+      let free: string | null = null;
+      for (let n = 2; n < 100 && !free; n++) {
+        const candidate = `${postIdFor(date, format)}-${n}`;
+        if (!(await postRef(candidate).get()).exists) free = candidate;
+      }
+      if (!free) throw new HttpsError('resource-exhausted', `${date} already has too many of those.`);
+      id = free;
+    }
 
     try {
-      await createPost({ date, format, angle: parsed.data.angle, targets: parsed.data.targets });
+      await createPost({
+        id,
+        date,
+        format,
+        angle: parsed.data.angle,
+        targets: parsed.data.targets,
+        brief: parsed.data.brief ? { text: parsed.data.brief, by: ctx.uid } : undefined,
+        publishWhenDone: parsed.data.publishWhenDone,
+      });
       return { ok: true, id, format };
     } catch (e) {
       throw new HttpsError('internal', (e as Error).message);
@@ -1128,9 +1334,14 @@ export const adminReviewSocialPost = onCall(
       return { ok: true, status: 'rejected' };
     }
 
+    // Approved means it goes out. `publishQueuedAtMs` is what the sweep below
+    // looks for, so a piece approved without "now" — or whose tab was closed
+    // mid-post — is still posted within minutes rather than sitting in `ready`.
     await patch(postId, {
       status: 'ready' as PostStatus,
       approvedBy: ctx.uid,
+      publishQueuedAtMs: Date.now(),
+      error: null,
       ...(caption !== undefined ? { caption } : {}),
       ...(targets ? { targets } : {}),
     });
@@ -1154,6 +1365,50 @@ export const adminPublishSocialPost = onCall(
 
     const { published, failed } = await publishPost(parsed.data.postId, parsed.data.platforms);
     return { ok: published > 0, published, failed };
+  },
+);
+
+/**
+ * "Render it" — make the pictures or the reel now, for a piece that has none.
+ *
+ * The same two renderers the run uses, on demand: a piece written before the
+ * desk drew its own stills, or one whose render failed, can be finished from
+ * the queue without re-running the team. A failure answers with the renderer's
+ * own last words rather than "something went wrong".
+ */
+export const adminRenderSocialPost = onCall(
+  { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
+  async (req) => {
+    requireAdmin(req);
+    const parsed = z.object({ postId: z.string().min(1).max(64) }).safeParse(req.data);
+    if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+    const { postId } = parsed.data;
+
+    const post = (await postRef(postId).get()).data() as SocialPost | undefined;
+    if (!post) throw new HttpsError('not-found', 'No such post.');
+    if (!post.script) throw new HttpsError('failed-precondition', 'Nothing is written yet, so there is nothing to draw.');
+    if (WORKING_STATUSES.includes(post.status)) {
+      throw new HttpsError('failed-precondition', 'The team is still working on that one.');
+    }
+    const format = post.format ?? 'reel';
+
+    if (FORMAT_SPECS[format].kind === 'video') {
+      const out = await renderAndAttach({ id: postId, format, script: post.script });
+      if (out?.error) throw new HttpsError('internal', `The reel could not be cut: ${out.error}`);
+      if (out?.line) await setWork(postId, 'video', { state: 'done', name: 'The desk', note: `Cut it — ${out.line}.` });
+      return { ok: true, made: out?.line ? 1 : 0 };
+    }
+
+    const out = await renderStillsAndAttach({ id: postId, format, script: post.script, direction: post.direction });
+    if (out.error) throw new HttpsError('internal', `The pictures could not be drawn: ${out.error}`);
+    if (out.made) {
+      await setWork(postId, 'design', {
+        state: 'done',
+        name: 'The desk',
+        note: `Drew ${out.made} picture${out.made === 1 ? '' : 's'}.`,
+      });
+    }
+    return { ok: true, made: out.made };
   },
 );
 

@@ -211,11 +211,11 @@ export default function AutomationPage() {
             style={{ marginTop: 3 }}
           />
           <span style={{ fontSize: 13 }}>
-            Cut the reel here, not just the brief
+            Make the pictures and cut the reels here, not just the briefs
             <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
-              A finished vertical video, made from the script on our own machines — no key, no model, nothing
-              per video. Slides you have attached become the backdrop; with none, the words carry it. A file you
-              attach yourself is never overwritten. Off, a video run stops at the cut brief for you to shoot.
+              Post, story and carousel pictures and finished vertical videos, made on our own machines — no key, no
+              model, nothing per piece. A file you attach yourself is never overwritten. Off, a run stops at the
+              briefs for you to make the files.
             </span>
           </span>
         </label>
