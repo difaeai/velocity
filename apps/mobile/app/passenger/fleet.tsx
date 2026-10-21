@@ -1,6 +1,9 @@
 /**
  * My Fleet — the people you actually share a car with.
  *
+ * It is the drawer's "Corporate / Students" screen: colleagues and classmates
+ * are the people who make the same run every day.
+ *
  * The screen is in the order the feature is used, which is also the order the
  * data becomes meaningful:
  *
@@ -192,9 +195,9 @@ export default function FleetScreen() {
           <Text style={styles.backTxt}>←</Text>
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>My Fleet</Text>
+          <Text style={styles.title}>Corporate / Students</Text>
           <Text style={styles.subtitle}>
-            {data?.username ? `@${data.username}` : 'The people you share a car with'}
+            {data?.username ? `Your fleet · @${data.username}` : 'Your fleet — the people you share a car with'}
           </Text>
         </View>
       </View>
@@ -442,6 +445,22 @@ export default function FleetScreen() {
           Bring your fleet on as your own referrals and you earn every time they ride.
         </Text>
         <EarnCard onPress={() => router.push('/passenger/earn')} />
+
+        {/* Renting a whole car was this drawer slot (Special Rides). It stays
+            reachable for anyone with a listing or a booking in it. */}
+        <Pressable
+          style={styles.card}
+          onPress={() => router.push('/passenger/special-rides')}
+          accessibilityRole="button"
+        >
+          <View style={styles.cardHeadRow}>
+            <Text style={styles.cardTitle}>Rent a whole car</Text>
+            <Text style={styles.link}>Open →</Text>
+          </View>
+          <Text style={styles.cardHint}>
+            By the day, with or without a driver — or list your own car.
+          </Text>
+        </Pressable>
 
         <View style={{ height: 24 }} />
       </ScrollView>

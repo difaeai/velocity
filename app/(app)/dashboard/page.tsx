@@ -105,7 +105,7 @@ export default function Overview() {
     { label: 'Intercity', value: series.reduce((n, d) => n + d.intercity, 0) },
     { label: 'Couriers', value: series.reduce((n, d) => n + d.couriers, 0) },
     { label: 'Freight', value: series.reduce((n, d) => n + d.freight, 0) },
-    { label: 'Special Rides', value: series.reduce((n, d) => n + d.specialRides, 0) },
+    { label: 'Rent a car', value: series.reduce((n, d) => n + d.specialRides, 0) },
     { label: 'Scheduled', value: series.reduce((n, d) => n + d.scheduled, 0) },
   ];
 

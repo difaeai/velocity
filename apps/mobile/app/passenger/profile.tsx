@@ -128,22 +128,8 @@ export default function ProfileScreen() {
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
-          {/* Sits above the referral code because it is the one thing on this
-              screen that fills a car: a fleet is asked BEFORE a driver is,
-              so the ride that goes out is already full. */}
-          <Pressable style={styles.listItem} onPress={() => router.push('/passenger/fleet')}>
-            <View style={styles.itemLeftRow}>
-              <Text style={styles.itemIcon}>🚘</Text>
-              <View>
-                <Text style={styles.itemTitle}>My Fleet</Text>
-                <Text style={styles.itemSubtitle}>The people you share a car with</Text>
-              </View>
-            </View>
-            <Text style={styles.chevron}>➔</Text>
-          </Pressable>
-
-          <View style={styles.divider} />
-
+          {/* My Fleet is not here: it is the drawer's Corporate / Students
+              screen, and one door to it is enough. */}
           <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>

@@ -24,6 +24,8 @@ export default function Index() {
   // applicant is sent to the submitted-status screen so they always land back
   // on it until an admin approves them.
   const [driverStatus, setDriverStatus] = useState<string | null>(null);
+  // drivers/{uid}.online — read from the same doc, so it costs nothing extra.
+  const [driverOnShift, setDriverOnShift] = useState(false);
   // Whether the signed-out welcome carousel has already been shown on this
   // device. false → show carousel; true → straight to sign-in.
   const [welcomeSeen, setWelcomeSeen] = useState(false);
@@ -33,6 +35,7 @@ export default function Index() {
       setProfileComplete(false);
       setHasUsername(false);
       setDriverStatus(null);
+      setDriverOnShift(false);
       // First launch → welcome carousel; afterwards straight to sign-in.
       // A read failure just re-shows the carousel (it has a Skip button).
       AsyncStorage.getItem(WELCOME_SEEN_KEY)
@@ -52,8 +55,10 @@ export default function Index() {
       try {
         const dsnap = await getDoc(doc(db, 'drivers', user!.uid));
         setDriverStatus(dsnap.exists() ? ((dsnap.get('verificationStatus') as string) ?? null) : null);
+        setDriverOnShift(dsnap.get('online') === true);
       } catch {
         setDriverStatus(null);
+        setDriverOnShift(false);
       }
 
       const key = `onboarding_done_${user!.uid}`;
@@ -119,7 +124,9 @@ export default function Index() {
   // because a driver rides as a passenger too and a fleet addresses people by
   // username. It is one screen, once, and it is ahead of the driver redirect
   // on purpose: an account without one cannot be added to anybody's fleet.
-  if (!hasUsername) return <Redirect href="/username" />;
+  // The one exception is a driver who is ON SHIFT: an app restart mid-trip
+  // must land on the trip, not on a form. They are asked next time, off shift.
+  if (!hasUsername && !(role === 'driver' && driverOnShift)) return <Redirect href="/username" />;
   // Approved drivers go straight to their dashboard — they never sign in again.
   if (role === 'driver') return <Redirect href="/driver/home" />;
   // A submitted (pending) driver applicant waits on the status screen.
