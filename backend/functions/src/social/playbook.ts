@@ -245,6 +245,17 @@ const ADS_CRAFT = `WHAT A CAMPAIGN BRIEF OWES WHOEVER SPENDS THE MONEY:
 - The one metric that decides whether it worked, named before it runs.
 - Organic reach and paid reach are not the same game: a piece that earns sends organically is not automatically the piece to put money behind, and the brief should say which it is.`;
 
+/** The ad numbers, for every seat that plans or reads paid campaigns (the Ads desk includes it too). */
+export const AD_NUMBERS = `THE AD NUMBERS — what each one is, how it is worked out, and what it tells you:
+- CPM (cost per mille) = spend ÷ impressions × 1,000. What 1,000 views cost: the price of attention in that auction. Audience, city and season move it; the creative barely does.
+- CTR (link click-through rate) = link clicks ÷ impressions × 100. The share of viewers who tapped. It scores the creative: a low CTR is the picture or the first line, not the budget.
+- CPC (cost per link click) = spend ÷ link clicks, which is also CPM ÷ (CTR × 10). A click gets cheaper two ways, a cheaper auction or a better ad — fix CTR first, it is the one you control.
+- Frequency = impressions ÷ reach. Above about 3.5 the same people stop noticing; change the creative before adding budget.
+- Cost per result = spend ÷ the objective's own result (link clicks, engagements, or people reached per 1,000).
+- Cost per order = spend ÷ orders. An order is a completed ride.
+- ROAS (return on ad spend) = revenue ÷ spend. Velocity's revenue is its commission, not the fare, so ROAS here is commission ÷ spend: 1.0 is break-even, under 1 the ads cost more than the rides earned. Guides quote ROAS on sales; on fares it looks many times bigger than what Velocity keeps, so never compare the two.
+- Meta cannot see a ride booked in the app, so cost per order and ROAS are BLENDED: every completed ride in the week against the whole week's ad bill. Riders who came on their own are in it too, so it flatters the ads. Read it as a trend over weeks; never credit or blame one campaign with it, and never claim a campaign brought orders.`;
+
 const SEARCH_CRAFT = `IN-PLATFORM SEARCH:
 People type questions into Instagram, TikTok and YouTube the way they type them into Google — "sasti ride Lahore", "Lahore to Islamabad kiraya". A question asked in the viewer's own words, left in the caption and said out loud in the first lines, is what search matches on weeks later.
 Keep the question in their words, typos and all. Tidying it up is what loses the match.`;
@@ -277,7 +288,7 @@ const BY_ROLE: Record<Role, string[]> = {
   'video-editor': [EDIT_CRAFT],
   'social-manager': [CAPTION_CRAFT, HASHTAG_CRAFT, HUMAN_VOICE, REPLY_CRAFT],
   'research-assistant': [RESEARCH_CRAFT],
-  'youtube-ads-expert': [ADS_CRAFT],
+  'youtube-ads-expert': [ADS_CRAFT, AD_NUMBERS],
 };
 
 /**

@@ -89,9 +89,9 @@ const PAKISTAN_PKR: Omit<Benchmarks, 'source'> = {
   cpe: { low: 0.5, typical: 1.2, high: 3 },
 };
 
-// shortcut: a fixed rate converts the rupee benchmarks for a dollar account. It
-// only moves the yardstick, never a budget; replace with a live rate if a
-// non-PKR account ever becomes the main one.
+// shortcut: a fixed rate converts the rupee benchmarks and commission for a
+// dollar account. It only moves the yardstick and ROAS, never a budget; replace
+// with a live rate if a non-PKR account ever becomes the main one.
 export const PKR_PER_USD = 280;
 
 const scale = (b: Band, f: number): Band => ({ low: b.low * f, typical: b.typical * f, high: b.high * f });
@@ -217,6 +217,33 @@ export function metricsFrom(row: InsightRow, resultAction: string): AdMetrics {
     results,
     // Reach is priced per thousand people, the way anyone reading it thinks of it.
     costPerResult: results > 0 ? (resultAction === 'reach' ? (spend / results) * 1000 : spend / results) : 0,
+  };
+}
+
+/**
+ * Cost per order and ROAS, blended: every ride completed in the week and the
+ * commission on it, against the week's whole ad bill. Meta cannot see a ride
+ * booked in the app, so no campaign can be credited with an order — this is a
+ * ceiling on what the ads did, never a measure of one campaign.
+ */
+export interface Blended {
+  /** Completed rides. */
+  orders: number;
+  /** Velocity's commission on them, in rupees. */
+  commission: number;
+  /** In the account's currency; 0 with no orders. */
+  costPerOrder: number;
+  /** Commission ÷ spend, 1 is break-even; null with no spend or no rupee rate. */
+  roas: number | null;
+}
+
+export function blended(p: { spend: number; currency: string; orders: number; commission: number }): Blended {
+  const perRupee = p.currency === 'PKR' ? 1 : p.currency === 'USD' ? 1 / PKR_PER_USD : null;
+  return {
+    orders: p.orders,
+    commission: p.commission,
+    costPerOrder: p.orders > 0 ? p.spend / p.orders : 0,
+    roas: perRupee !== null && p.spend > 0 ? (p.commission * perRupee) / p.spend : null,
   };
 }
 

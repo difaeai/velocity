@@ -100,7 +100,7 @@ function dayStartMs(date: string): number {
 }
 
 /** The last `days` Pakistan dates, oldest first, ending with today. */
-function dateRange(days: number, nowMs: number): string[] {
+export function dateRange(days: number, nowMs: number): string[] {
   // Step in UTC days from the *midday* of today's PKT date, so the arithmetic
   // can never land on a boundary and round the wrong way.
   const noon = dayStartMs(dayKey(nowMs)) + 12 * 3_600_000;
@@ -248,26 +248,16 @@ const requestSchema = z.object({
 });
 
 /**
- * The dashboard's single data call: a daily series plus a live snapshot.
- *
- * Finished days are served from — and, on first sight, written to — the
- * `analyticsDaily` cache. Today is always recomputed, so the numbers move as
- * the day does.
+ * The given Pakistan days, oldest first. Finished days are served from — and,
+ * on first sight, written to — the `analyticsDaily` cache. Today is always
+ * recomputed, so the numbers move as the day does.
  */
-export const adminGetAnalytics = onCall(async (req) => {
-  requireAdmin(req);
-  const parsed = requestSchema.safeParse(req.data ?? {});
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
-
-  const days = parsed.data.days ?? 30;
-  const nowMs = Date.now();
-  const dates = dateRange(days, nowMs);
-  const today = dates[dates.length - 1];
+export async function statsFor(dates: string[], nowMs: number): Promise<DailyStats[]> {
+  const today = dayKey(nowMs);
+  const finished = dates.filter((d) => d !== today);
 
   // What is already cached? Only completed days are ever cached.
-  const cachedSnaps = await db.getAll(
-    ...dates.filter((d) => d !== today).map((d) => db.doc(`analyticsDaily/${d}`)),
-  );
+  const cachedSnaps = finished.length ? await db.getAll(...finished.map((d) => db.doc(`analyticsDaily/${d}`))) : [];
   const cached = new Map<string, DailyStats>();
   for (const snap of cachedSnaps) {
     if (snap.exists) cached.set(snap.id, { ...emptyDay(snap.id), ...(snap.data() as DailyStats) });
@@ -289,7 +279,18 @@ export const adminGetAnalytics = onCall(async (req) => {
     for (const day of toCache) batch.set(db.doc(`analyticsDaily/${day.date}`), day);
     await batch.commit().catch((e) => logger.warn('analytics: cache write failed', { e }));
   }
+  return series;
+}
 
+/** The dashboard's single data call: a daily series plus a live snapshot. */
+export const adminGetAnalytics = onCall(async (req) => {
+  requireAdmin(req);
+  const parsed = requestSchema.safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+
+  const days = parsed.data.days ?? 30;
+  const nowMs = Date.now();
+  const series = await statsFor(dateRange(days, nowMs), nowMs);
   const snapshot = await liveSnapshot();
 
   const totals = series.reduce(

@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  blended,
   clampBudget,
   diagnose,
   forecast,
@@ -168,6 +169,24 @@ describe('metricsFrom', () => {
 
   it('is zero, not NaN, on an empty row', () => {
     expect(Object.values(metricsFrom({}, 'link_click')).every((v) => v === 0)).toBe(true);
+  });
+});
+
+describe('blended cost per order and ROAS', () => {
+  it('divides the week’s spend by its rides, and its commission by the spend', () => {
+    const b = blended({ spend: 7000, currency: 'PKR', orders: 350, commission: 14_000 });
+    expect(b.costPerOrder).toBe(20);
+    expect(b.roas).toBe(2);
+  });
+
+  it('turns rupee commission into dollars before comparing it with a dollar spend', () => {
+    // Rs 2,800 is $10 at the fixed rate, against $20 of ads: half of break-even.
+    expect(blended({ spend: 20, currency: 'USD', orders: 10, commission: 2800 }).roas).toBeCloseTo(0.5);
+  });
+
+  it('says nothing rather than divide by zero or guess a rate', () => {
+    expect(blended({ spend: 0, currency: 'PKR', orders: 0, commission: 500 })).toMatchObject({ costPerOrder: 0, roas: null });
+    expect(blended({ spend: 100, currency: 'EUR', orders: 5, commission: 500 }).roas).toBeNull();
   });
 });
 

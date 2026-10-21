@@ -453,6 +453,25 @@ the same renderers as the organic desk; or reuses a piece the desk already
 made; or **boosts a post already live on Instagram** — usually the cheapest
 result there is, because the organic numbers already proved it.
 
+### The numbers
+
+Each metric is defined twice: once for the model, in `AD_NUMBERS`
+([`playbook.ts`](../backend/functions/src/social/playbook.ts), carried by the Ads desk
+and the YouTube ads expert), and once for people, in the Ads page's "What CPM,
+CTR, CPC…" panel. Change one, change the other.
+
+- CPM, CTR, CPC, frequency and cost per result come from Meta, for the account
+  and for each campaign.
+- **Cost per order and ROAS are blended, and for the whole account only.** Meta
+  cannot see a ride booked in the app, so `blended()` sets the week's completed
+  rides and their commission (from the `analyticsDaily` cache, the same days the
+  dashboard shows) against Meta's `last_7d` spend. ROAS is commission ÷ spend,
+  because the commission is Velocity's revenue, not the fare: 1.0 is break-even.
+  Riders who came on their own are counted too, so it flatters the ads. No
+  campaign is credited with an order, and nothing steers money on it. Orders per
+  campaign need tracking in the app (Meta's SDK or the Play install referrer),
+  which means an app release.
+
 ### Before it can run (console, not code)
 
 1. The Meta app needs the **Marketing API** product added, and the person
