@@ -880,10 +880,31 @@ test('Attack 3: a driver cannot lower the fare or un-mark riders before ending a
   await assertFails(deleteDoc(doc(driver, 'poolRides/fare1')));
 
   // Posting a ride is still the driver's own write — but only as an empty, open one.
-  const offer = { driverId: 'driver1', status: 'open', perSeatFare: 250, takenSeats: 0, maleSeats: 0, femaleSeats: 0 };
+  // driver1's profile (seeded above) has rating 4.5 and no gender.
+  const offer = {
+    driverId: 'driver1', status: 'open', perSeatFare: 250, takenSeats: 0, maleSeats: 0, femaleSeats: 0,
+    driverGender: 'unspecified', driverRating: 4.5,
+  };
   await assertSucceeds(setDoc(doc(driver, 'poolRides/new1'), offer));
   await assertFails(setDoc(doc(driver, 'poolRides/new2'), { ...offer, femaleSeats: 3 }));
   await assertFails(setDoc(doc(driver, 'poolRides/new3'), { ...offer, status: 'in_progress' }));
+});
+
+test('Attack 11: a driver cannot post a shared ride as a woman, or with stars they do not have', async () => {
+  const offer = {
+    driverId: 'driver1', status: 'open', perSeatFare: 250, takenSeats: 0, maleSeats: 0, femaleSeats: 0,
+    driverGender: 'unspecified', driverRating: 4.5,
+  };
+  // Women-only riders are shown rides by driverGender; everyone sorts by the stars.
+  await assertFails(setDoc(doc(driver, 'poolRides/fake1'), { ...offer, driverGender: 'female' }));
+  await assertFails(setDoc(doc(driver, 'poolRides/fake2'), { ...offer, driverRating: 5 }));
+  const { driverGender, driverRating, ...bare } = offer;
+  await assertFails(setDoc(doc(driver, 'poolRides/fake3'), bare));
+
+  // No rating on the profile yet: the app writes 5.0, and so may the driver.
+  await testEnv.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'drivers/unrated1'), { driverId: 'unrated1' }));
+  const unrated = testEnv.authenticatedContext('unrated1', { role: 'driver' }).firestore();
+  await assertSucceeds(setDoc(doc(unrated, 'poolRides/fresh1'), { ...offer, driverId: 'unrated1', driverRating: 5.0 }));
 });
 
 test('Attack 4: nobody can switch their gender to get into a women-only shared ride', async () => {
