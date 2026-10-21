@@ -65,11 +65,16 @@ export default function ProfileScreen() {
             <Text style={styles.actionLabel}>Support</Text>
           </Pressable>
 
-          <Pressable style={styles.quickActionItem} onPress={() => comingSoon('Saved addresses')}>
+          {/* My routes came out of the drawer and landed here: your daily
+              runs and your saved addresses are two tabs of one screen, and
+              both are things you keep rather than things you book. The tile
+              this replaced was a "coming soon" alert over a screen that had
+              already shipped. */}
+          <Pressable style={styles.quickActionItem} onPress={() => router.push('/passenger/daily-routes')}>
             <View style={styles.circleIcon}>
               <Text style={styles.actionEmoji}>📍</Text>
             </View>
-            <Text style={styles.actionLabel}>Addresses</Text>
+            <Text style={styles.actionLabel}>My routes</Text>
           </Pressable>
 
           <Pressable style={styles.quickActionItem} onPress={openSettings}>
@@ -123,6 +128,8 @@ export default function ProfileScreen() {
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
+          {/* My Fleet is not here: it is the drawer's Corporate / Students
+              screen, and one door to it is enough. */}
           <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>

@@ -25,6 +25,7 @@ import { colors } from '@/lib/config';
 import {
   META_HANDOFF_KEY,
   socialApi,
+  type MetaAdAccountChoice,
   type MetaConnectState,
   type MetaHandoff,
   type MetaPageChoice,
@@ -35,10 +36,23 @@ import { PlatformBadge } from './shared';
 
 type Step = 'idle' | 'waiting' | 'exchanging' | 'choosing' | 'saving' | 'done';
 
-export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
+/**
+ * `ads` turns the same sign-in into the ad-account connect for the Ads page:
+ * the dialog also asks for the ads permissions, and the admin picks an ad
+ * account alongside the Page. The Instagram connect itself never asks for them.
+ */
+export function InstagramConnect({
+  account,
+  ads,
+}: {
+  account?: SocialAccountDoc;
+  ads?: { connectedName: string | null };
+}) {
   const [state, setState] = useState<MetaConnectState | null>(null);
   const [step, setStep] = useState<Step>('idle');
   const [pages, setPages] = useState<MetaPageChoice[]>([]);
+  const [adAccounts, setAdAccounts] = useState<MetaAdAccountChoice[]>([]);
+  const [adAccountId, setAdAccountId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
@@ -46,6 +60,8 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
   /** The `state` string of the handshake in flight, matched on the way back. */
   const pending = useRef<string | null>(null);
   const popup = useRef<Window | null>(null);
+  /** A primitive, so the exchange callback below keeps its identity across renders. */
+  const isAds = Boolean(ads);
 
   const refresh = useCallback(() => {
     socialApi
@@ -72,7 +88,17 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
       const res = await socialApi.finishMetaConnect({ code: handoff.code, state: handoff.state });
       pending.current = handoff.state;
       setPages(res.pages);
+      setAdAccounts(res.adAccounts ?? []);
+      setAdAccountId((res.adAccounts ?? []).find((a) => a.active)?.id ?? res.adAccounts?.[0]?.id ?? '');
       setStep('choosing');
+      if (isAds && !(res.adAccounts ?? []).length) {
+        setError(
+          'That sign-in reached no ad account. Check that this Facebook account is an admin of the ad account ' +
+            '(Business settings → Ad accounts) and that the ads permissions were allowed, then press Connect again.',
+        );
+        setStep('idle');
+        return;
+      }
       if (res.pages.length === 0) {
         setError(
           'That account does not administer any Facebook Page. Instagram can only be connected through ' +
@@ -84,7 +110,7 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
       setStep('idle');
       setError(e instanceof Error ? e.message : 'Facebook would not complete the connection.');
     }
-  }, []);
+  }, [isAds]);
 
   // The popup's way home.
   useEffect(() => {
@@ -130,7 +156,7 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
     setNote(null);
     setStep('waiting');
     try {
-      const { url, state: s } = await socialApi.startMetaConnect({});
+      const { url, state: s } = await socialApi.startMetaConnect(ads ? { ads: true } : {});
       pending.current = s;
       popup.current = window.open(url, 'velocity-meta-connect', 'width=600,height=760,menubar=no,toolbar=no');
       if (!popup.current) {
@@ -149,7 +175,11 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
     setStep('saving');
     setError(null);
     try {
-      const res = await socialApi.chooseMetaPage({ state: pending.current, pageId });
+      const res = await socialApi.chooseMetaPage({
+        state: pending.current,
+        pageId,
+        ...(ads && adAccountId ? { adAccountId } : {}),
+      });
       setStep('done');
       setNote(res.note);
       pending.current = null;
@@ -160,19 +190,31 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
     }
   }
 
-  const connected = account?.status === 'connected';
+  const connected = ads ? Boolean(ads.connectedName) : account?.status === 'connected';
   const busy = step === 'waiting' || step === 'exchanging' || step === 'saving';
 
   return (
     <Card style={{ marginBottom: 16, borderColor: connected ? colors.border : '#d946ef55' }}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <PlatformBadge platform="instagram" size={44} />
+        <PlatformBadge platform={ads ? 'facebook' : 'instagram'} size={44} />
         <div style={{ flex: 1, minWidth: 220 }}>
           <strong style={{ fontSize: 16 }}>
-            {connected ? 'Instagram is connected' : 'Connect Instagram in one step'}
+            {ads
+              ? connected
+                ? `Ad account connected — ${ads.connectedName}`
+                : 'Connect the Meta ad account'
+              : connected
+                ? 'Instagram is connected'
+                : 'Connect Instagram in one step'}
           </strong>
           <p style={{ fontSize: 13.5, color: colors.muted, margin: '5px 0 0', lineHeight: 1.55 }}>
-            {connected ? (
+            {ads ? (
+              <>
+                Sign in with the Facebook account that runs Velocity Rides&apos; ads, allow the ads permissions, then
+                pick the ad account and the Page. The sign-in lasts about sixty days; the page says when to press
+                Reconnect.
+              </>
+            ) : connected ? (
               <>
                 Posting as <strong style={{ color: colors.text }}>{account?.handle ?? account?.displayName}</strong>
                 {typeof account?.followers === 'number'
@@ -217,8 +259,37 @@ export function InstagramConnect({ account }: { account?: SocialAccountDoc }) {
 
       {step === 'done' ? (
         <p style={{ fontSize: 13.5, color: note ? colors.warn : colors.success, margin: '12px 0 0', lineHeight: 1.5 }}>
-          {note ?? 'Connected. The Facebook Page and its Instagram account are both live.'}
+          {note ??
+            (ads
+              ? 'Connected. The ad account, the Page and its Instagram account are all live.'
+              : 'Connected. The Facebook Page and its Instagram account are both live.')}
         </p>
+      ) : null}
+
+      {step === 'choosing' && ads && adAccounts.length ? (
+        <label style={{ display: 'grid', gap: 6, marginTop: 14, fontSize: 12.5, fontWeight: 800, color: colors.muted }}>
+          Which ad account pays for the ads?
+          <select
+            value={adAccountId}
+            onChange={(e) => setAdAccountId(e.target.value)}
+            style={{
+              padding: '9px 10px',
+              fontSize: 13.5,
+              fontFamily: 'inherit',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 10,
+              background: colors.surface,
+              color: colors.text,
+            }}
+          >
+            {adAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} · {a.currency}
+                {a.active ? '' : ' (not active)'}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
 
       {step === 'choosing' && pages.length ? (

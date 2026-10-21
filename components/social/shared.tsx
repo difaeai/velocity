@@ -116,7 +116,7 @@ export const ROLE_META: Record<
     short: 'Distribution',
     colour: '#ffd166',
     stage: 'distribute',
-    does: 'Rewrites the caption for each network, decides where the piece belongs, publishes once you approve, and drafts a reply to every comment that comes back.',
+    does: 'Rewrites the caption for each network, decides where the piece belongs, publishes it, drafts a reply to every comment — and runs the paid ads on Meta: budget, audience, the ad itself, and CPC, CTR and cost per result afterwards.',
   },
 };
 

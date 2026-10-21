@@ -558,6 +558,27 @@ test('social access tokens are unreadable by everyone, admins included', async (
   await assertFails(getDoc(doc(passenger, 'system/socialAutomation')));
 });
 
+test('the ads desk shows its campaigns to admins and its ad token to nobody', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'system/socialAds'), { adAccountId: 'act_123', dailyCap: 2000, mode: 'ask' });
+    await setDoc(doc(db, 'system/socialAds/secret/credentials'), { token: { c: 'sealed', iv: 'iv', t: 'tag' } });
+    await setDoc(doc(db, 'socialAds/120200000000001'), { name: 'Drivers — Lahore', status: 'PAUSED', managed: true });
+  });
+
+  await assertSucceeds(getDoc(doc(admin, 'system/socialAds')));
+  await assertSucceeds(getDoc(doc(admin, 'socialAds/120200000000001')));
+  await assertFails(getDoc(doc(passenger, 'socialAds/120200000000001')));
+  await assertFails(getDoc(doc(driver, 'system/socialAds')));
+
+  // The user token can spend the company's money. Not even an admin session
+  // reads it back, and nobody writes the limit or a campaign from a client —
+  // every change goes through a callable that checks the daily limit first.
+  await assertFails(getDoc(doc(admin, 'system/socialAds/secret/credentials')));
+  await assertFails(setDoc(doc(admin, 'system/socialAds'), { dailyCap: 9999999 }, { merge: true }));
+  await assertFails(updateDoc(doc(admin, 'socialAds/120200000000001'), { status: 'ACTIVE' }));
+});
+
 test('the Instagram one-click connect leaks neither the app secret nor a page token', async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
@@ -780,4 +801,59 @@ test('the testing log is admin-only, and only its triage can be edited', async (
   // The log itself is the engine's to write — not even an admin may.
   await assertFails(setDoc(doc(admin, day), { entryCount: 0 }, { merge: true }));
   await assertFails(setDoc(doc(passenger, `${day}/entries/invented`), { status: 'open' }));
+});
+
+test('a username can be looked up one at a time, and the list cannot be downloaded', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const seed = ctx.firestore();
+    await setDoc(doc(seed, 'usernames/ali'), { uid: 'passenger1', username: 'ali' });
+  });
+
+  // The app says "that one is taken" WHILE YOU TYPE, and it does that with a
+  // single-document get. That has to work for anyone signed in...
+  await assertSucceeds(getDoc(doc(passenger, 'usernames/ali')));
+  await assertSucceeds(getDoc(doc(driver, 'usernames/nobody')));
+  await assertFails(getDoc(doc(anon, 'usernames/ali')));
+
+  // ...without also being a way to pull down every username in the country.
+  await assertFails(getDocs(collection(passenger, 'usernames')));
+
+  // The registry is the uniqueness guarantee. A client that could write here
+  // could take a name out from under the person typing it, so the claim is a
+  // server transaction and nothing else.
+  await assertFails(setDoc(doc(passenger, 'usernames/mine'), { uid: 'passenger1' }));
+  await assertFails(setDoc(doc(passenger, 'usernames/ali'), { uid: 'passenger1' }));
+  await assertFails(setDoc(doc(admin, 'usernames/ali'), { uid: 'admin1' }));
+});
+
+test('a fleet is server-only in both directions, even to its owner', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const seed = ctx.firestore();
+    await setDoc(doc(seed, 'fleets/passenger1'), {
+      uid: 'passenger1', members: ['passenger2'],
+      pickup: { lat: 31.5, lng: 74.3, address: 'Johar Town' },
+    });
+    await setDoc(doc(seed, 'fleets/passenger1/requests/passenger3'), { fromUid: 'passenger3' });
+    await setDoc(doc(seed, 'fleetAsks/ask1'), {
+      hostUid: 'passenger1', memberUids: ['passenger2'], acceptedUids: [], status: 'open',
+    });
+  });
+
+  // Not even the owner reads their own fleet directly: drawing it means
+  // reading other people's profiles, which are owner-only, so getMyFleet is
+  // the only door. Nothing in the app expects this to succeed.
+  await assertFails(getDoc(doc(passenger, 'fleets/passenger1')));
+  await assertFails(getDoc(doc(passenger, 'fleets/passenger1/requests/passenger3')));
+  await assertFails(getDoc(doc(driver, 'fleets/passenger1')));
+
+  // Writable would be worse than readable: adding yourself to a stranger's
+  // fleet is a licence to push ride invitations at them.
+  await assertFails(setDoc(doc(driver, 'fleets/passenger1'), { members: ['driver1'] }, { merge: true }));
+  await assertFails(setDoc(doc(passenger, 'fleets/passenger1'), { members: ['driver1'] }, { merge: true }));
+  await assertFails(deleteDoc(doc(passenger, 'fleets/passenger1/requests/passenger3')));
+
+  // The accepted list decides who gets seated on the car, so it is not a
+  // thing a client may edit itself onto.
+  await assertFails(getDoc(doc(passenger, 'fleetAsks/ask1')));
+  await assertFails(updateDoc(doc(driver, 'fleetAsks/ask1'), { acceptedUids: ['driver1'] }));
 });

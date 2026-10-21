@@ -1544,6 +1544,42 @@ export const api = {
     { demand: CommuteDemandSlot[] }
   >('getCommuteDemand'),
 
+  // ── Usernames + the personal fleet ────────────────────────────────────────
+  // A fleet is the handful of people a rider shares a car with, added by
+  // username. All of it is server-side: `fleets/**` is closed in the rules
+  // because listing a fleet means reading other people's profiles. See
+  // backend/functions/src/fleet.
+  //
+  // The "is this username free" check while typing is NOT here — it is a
+  // direct `usernames/{slug}` get in app/username.tsx, because a callable per
+  // keystroke is a cold start per keystroke.
+  claimUsername: callable<{ username: string }, { ok: boolean; username: string }>('claimUsername'),
+  setFleetRoute: callable<{ pickup: FleetPoint; dropoff: FleetPoint }, { ok: boolean }>('setFleetRoute'),
+  sendFleetRequest: callable<{ username: string; message?: string }, { ok: boolean }>('sendFleetRequest'),
+  respondFleetRequest: callable<
+    { fromUid: string; accept: boolean },
+    { ok: boolean; accepted: boolean }
+  >('respondFleetRequest'),
+  removeFleetMember: callable<{ memberUid: string }, { ok: boolean }>('removeFleetMember'),
+  getMyFleet: callable<Record<string, never>, MyFleet>('getMyFleet'),
+  /** "I'm going to X now — coming?", to the whole fleet at once. */
+  askFleetForRide: callable<
+    { dropoff?: FleetPoint; note?: string },
+    { ok: boolean; askId: string; expiresAt: number }
+  >('askFleetForRide'),
+  respondFleetRideAsk: callable<
+    { askId: string; accept: boolean },
+    { ok: boolean; accepted: boolean }
+  >('respondFleetRideAsk'),
+  cancelFleetRideAsk: callable<{ askId: string }, { ok: boolean }>('cancelFleetRideAsk'),
+  /** Books one shared ride with everyone who said yes already seated on it. */
+  bookFleetRide: callable<
+    { askId: string; rideType?: RideType },
+    { ok: boolean; tripId: string; seated: number; skipped: number }
+  >('bookFleetRide'),
+  /** Point an already-booked shared ride at the fleet. Nobody is auto-seated. */
+  inviteFleetToRide: callable<{ tripId: string }, { ok: boolean; invited: number }>('inviteFleetToRide'),
+
   // ── Maps proxy ────────────────────────────────────────────────────────────
   // Places and directions run on the backend with GOOGLE_MAPS_SERVER_KEY. The
   // app deliberately holds no Google key that can spend money: an Android-
@@ -2393,6 +2429,49 @@ export interface CommuteDemandSlot {
   destinationAreaName: string;
   count: number;
   genderBreakdown: { male: number; female: number; any: number };
+}
+
+// ── Fleet types ──────────────────────────────────────────────────────────────
+
+/** A fleet route's end. `address` is required here — the server shows it. */
+export interface FleetPoint { lat: number; lng: number; address: string; }
+
+/** All the server will say about a fleet-mate: enough to recognise them. */
+export interface FleetPerson {
+  uid: string;
+  username: string | null;
+  name: string;
+  photoURL: string | null;
+}
+
+/** One "I'm going now — coming?" as it reaches a member of the fleet. */
+export interface FleetAskInbox {
+  askId: string;
+  hostUid: string;
+  hostName: string;
+  dropoffAddress: string;
+  note: string;
+  accepted: boolean;
+  /** Epoch ms. Past this the ask is gone and the screen stops offering it. */
+  expiresAt: number;
+}
+
+export interface MyFleet {
+  username: string | null;
+  route: { pickup: FleetPoint; dropoff: FleetPoint } | null;
+  members: FleetPerson[];
+  requests: { fromUid: string; message: string; person: FleetPerson | null }[];
+  /** Riders whose saved route is close enough to yours to share a car. */
+  suggestions: FleetPerson[];
+  inbox: FleetAskInbox[];
+  /** The ask this rider is hosting, if one is still open. */
+  hosted: {
+    askId: string;
+    dropoffAddress: string;
+    note: string;
+    expiresAt: number;
+    accepted: FleetPerson[];
+  } | null;
 }
 
 // ── Travel Partner types ─────────────────────────────────────────────────────────

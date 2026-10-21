@@ -21,7 +21,7 @@ their role covers — on every run, without being asked again.
 | **SEO expert** | search brief | Briefs the writer *before* they write: the query this piece should answer, phrases that belong in the copy, hashtags people actually search, real alt text. |
 | **Content writer** | the script | The hook, the shots or slides, the voiceover, the caption. Ruthless about the first three seconds. |
 | **Google SEO expert** | YouTube & Google | Writes the YouTube title, description and tags the video is posted with — used verbatim — and names the query velocityrides.app should try to own. |
-| **Designer** | the pictures | Art directs each frame and writes the brief it is made from: the carousel slides, the post image, the story frame, or the cover a video opens on. Nothing is rendered here — you make the file and attach it. |
+| **Designer** | the pictures | Art directs each frame and chooses the words on it: the carousel slides, the post image, the story frame, or the cover a video opens on. The desk then draws them itself (see §3a) — attach your own file from the queue to replace any. |
 | **Video editor** | the cut | The second-by-second edit — pacing, the pattern interrupt, the sound bed — written as a brief you shoot, edit or render from. |
 | **YouTube ads expert** | campaign brief | The brief a human takes into Google Ads: objective, five-second hooks to test, targeting, budget range, what success looks like. |
 | **Social media manager** | where it goes | Rewrites the caption per network, picks the targets, publishes once you approve, and drafts a reply to every comment. |
@@ -105,6 +105,14 @@ and nothing promises an income. The piece is still scored and the scorecard is
 still stored, so one that went out weak is findable afterwards; it is simply not
 stopped. `approvedBy` is written as `auto`, because "who approved this" is a
 question somebody asks a year later and "nobody did" is the honest answer.
+
+**The owner is asked once which it is.** Until `publishModeChosen` is set, the
+overview opens on one question — *ask me before posting, or post directly?* —
+and the answer is `autoPublish`. After that it is a button on the desk card,
+and **"What do you want?"** on the overview carries a per-piece override (a
+piece made there stores its own `autoPublish`, which beats the desk-wide one).
+The same box takes a brief in your own words; it rides the revisions rail, so
+every stage reads it the way it reads a change request.
 
 Each stage writes its outcome to `socialPosts/{id}` before the next begins, so a
 failure halfway through leaves a piece you can open, read and retry — never a
@@ -222,7 +230,19 @@ to YouTube. Still formats skip the editing and ads stages entirely.
 
 ---
 
-## 3a. The desk cuts its own reels
+## 3a. The desk draws its own pictures
+
+A post, a story and every carousel slide are drawn by
+[`still.ts`](../backend/functions/src/social/still.ts) right after the designer
+chooses the words — the same ffmpeg, fonts and near-black-and-lime as the reels,
+as a JPEG (the only format Instagram publishes). The designer's on-screen line
+wins, then the writer's frame text, then the hook; the call to action closes a
+post, a story and the last slide. A slide attached by hand is never redrawn;
+one the desk drew is redrawn on a "redraw it" note. Before this, every post and
+story waited for a person to make the picture, so neither could ever go out on
+its own.
+
+## 3b. The desk cuts its own reels
 
 A video run no longer stops at a brief. With *Cut the reel here* on (the
 default), [`reel.ts`](../backend/functions/src/social/reel.ts) renders a
@@ -259,7 +279,7 @@ itself spawns anything.
 
 ---
 
-## 3b. Reading our own page
+## 3c. Reading our own page
 
 Everything above decides what to make. [`insights.ts`](../backend/functions/src/social/insights.ts)
 decides what to make **next**, from what already happened.
@@ -294,11 +314,36 @@ pattern from three data points.
 
 | Action | What happens |
 |---|---|
-| **Approve & post now** | Publishes to the ticked networks, one at a time, with the per-network caption (and the YouTube title/description/tags verbatim). |
-| **Approve only** | Marks it ready. It goes out when you press publish. |
+| **Approve & post** | Publishes to the ticked networks, one at a time, with the per-network caption (and the YouTube title/description/tags verbatim). The queue shows each network as it goes. |
 | **Ask for changes** | Your note goes back to the team, and only the stages you tick re-run. |
 | **Reject** | It never goes out. It stays readable. |
 | **Delete** | Gone. |
+
+There is no "approve and wait" any more. **Approved means it goes out**: the
+approval stamps `publishQueuedAtMs`, and `socialPublishSweep` (every five
+minutes) posts anything approved that is not out yet — so a closed tab or a
+dropped connection mid-post no longer leaves a piece parked in `ready`, which
+the overview used to count as "going out" forever. A `ready` piece approved
+before the sweep existed carries no stamp and is deliberately left for a person:
+it may already have been posted by hand.
+
+Three things make posting safe to press twice:
+
+- **A claim.** `claimForPublish` takes the piece in a transaction; a second
+  publisher — a double-click, the sweep — is refused while the first is live.
+- **No second copy.** A network that already has the piece is skipped, so
+  **Post again** after a partial failure retries only the networks that refused.
+- **No hang.** A claim older than the run's own timeout belonged to a function
+  that died; the sweep marks the piece failed with "press Post again".
+
+The console's callables for team runs, renders and posts carry a 16-minute
+client timeout. The SDK's default is 70 seconds, and a reel that Instagram took
+two minutes to process used to come back as an error while it was actually
+going out.
+
+**Make the picture / Cut the reel** appears beside anything missing its media.
+It runs the same renderer the team run uses, and a failure says the renderer's
+own last words.
 
 The queue shows who did what, the standup concept, the hook (with the
 alternatives the writer offered), the slides or the video, the search brief, the
@@ -340,17 +385,69 @@ lives on the employee record rather than in settings, so it leaves when they do.
 
 ---
 
-## 6. What the ads expert does and does not do
+## 6. The ads desk — Meta ads, run by the social media manager
 
-It writes a brief. It does **not** spend money: this backend holds no Google Ads
-credential, books nothing and bids on nothing. A human takes the brief into Ads
-Manager.
+**Manage social → Ads.** You say what an ad should do ("get car owners in Lahore
+to sign up as drivers this week"); the desk picks the objective, the audience and
+the budget, makes the picture or the reel, creates the campaign at Meta, and
+every three hours reads how it is doing against what a click should cost in
+Pakistan. Code: [`ads.ts`](../backend/functions/src/social/ads.ts) (Meta, the
+callables, the schedule) and [`adsExpert.ts`](../backend/functions/src/social/adsExpert.ts)
+(the judgement, pure and tested).
 
-That is a deliberate line, not a missing feature. Connecting a spending account
-to an unattended language model is a decision about money with a different risk
-profile from a decision about a caption, and it is not one the content desk
-should make on somebody's behalf. If it is ever wired up, it belongs behind its
-own credential, its own approval step and its own budget ceiling.
+The YouTube ads expert's *brief* in the content pipeline is unchanged — that is
+still for Google Ads, by hand. The paid desk is Meta only.
+
+### It was built behind exactly the three things this section used to ask for
+
+| | |
+|---|---|
+| **Its own credential** | A Facebook **user** token with `ads_management` + `ads_read` — the Marketing API does not take a Page token. Captured by the same Facebook Login as Instagram, started from the Ads page, which is the only place the ads scopes are requested (an app without the Marketing API can still connect Instagram). Sealed at `system/socialAds/secret/credentials`. Lasts about sixty days; the page warns a week before and the sync says when it has expired. |
+| **Its own approval step** | `mode`, asked the first time the page opens. `ask`: a new campaign is created **paused** and waits for **Approve & launch**; a recommended pause or budget rise waits for **Apply**. `direct`: it launches at once and the desk applies its own pauses and raises. |
+| **Its own budget ceiling** | `dailyCap`, set by the owner before anything can be made: the most the desk's own campaigns may spend in a day **together**. Every campaign also ends after at most `maxDays`, so the worst case is the cap times the days. `clampBudget` holds every launch, resume and raise to what is left of the cap, and refuses rather than shrinking below Meta's minimum. |
+
+### Who decides what
+
+- **Numbers that spend money are code, never the model.** The model proposes a
+  plan (objective, cities, ages, copy, a budget); `normalisePlan` clamps every
+  field and `clampBudget` decides the budget against the cap.
+- **Benchmarks.** What a click, a thousand views and an engagement typically
+  cost on Meta in Pakistan (rupees; a dollar account divides by a fixed rate
+  that only moves the yardstick). Once the account has two campaigns with a
+  hundred link clicks each, **its own median replaces the market figure** — the
+  same rule as the organic desk: our history is evidence, a market average is a
+  hint.
+- **The budget it suggests** is what Meta's learning phase needs — about fifty
+  results in the first week — because a budget below that never leaves learning
+  and its numbers never settle.
+- **The verdict** (`diagnose`), in the order a media buyer reads a campaign:
+  not running → still learning (under 48 hours or 1,000 impressions: *leave it
+  alone*) → burning money (pause, only on strong evidence) → weak click-through,
+  over-priced results or a worn-out audience (make a fresh creative) → winning
+  (raise by 20%, at most every 72 hours — the step that does not reset learning).
+- **Campaigns made elsewhere** are read and judged, and every button works on
+  them, but the desk never steers them on its own. Only `managed` campaigns —
+  the ones it made — are paused or raised without a person.
+
+### The creative
+
+The desk draws a 4:5 typographic card, or cuts a 20-second kinetic reel, with
+the same renderers as the organic desk; or reuses a piece the desk already
+made; or **boosts a post already live on Instagram** — usually the cheapest
+result there is, because the organic numbers already proved it.
+
+### Before it can run (console, not code)
+
+1. The Meta app needs the **Marketing API** product added, and the person
+   connecting must be an admin of the ad account. App-role users get the ads
+   permissions without App Review.
+2. Ads → **Connect the Meta ad account** → allow the ads permissions → pick the
+   ad account and the Page.
+3. Answer the two questions: the daily limit, and ask-first or direct.
+
+Like every other adapter here, the Marketing API calls were written from
+Meta's documentation and have not yet run against the live account — the first
+campaign is the real test. Start it in `ask` mode with a small limit.
 
 ---
 
@@ -691,9 +788,8 @@ Automation page behind a Save button, which is a fair part of why the desk sat
 paused with everything else in place for weeks.
 
 What it deliberately does **not** write is `autoPublish`. That one publishes
-under Velocity Rides' own name with nothing in front of it, it is the only
-switch on this desk that does, and it stays where it is — on the Automation
-page, in its own card, read before it is ticked. **Pause the desk** writes
+under Velocity Rides' own name with nothing in front of it, so it is its own
+question — asked once on the overview, then a button on the desk card. **Pause the desk** writes
 `enabled: false` and nothing else: a stop, not a reset.
 
 ---
@@ -709,6 +805,9 @@ page, in its own card, read before it is ticked. **Pause the desk** writes
 | `socialResearch/{YYYY-MM-DD}` | the day's market read and the pages it came from |
 | `socialInsights/latest` | how our own posts did, ranked against our own median |
 | `socialInsights/profile` | the profile, scored out of 100, with the rewrites |
+| `socialAds/{campaignId}` | every Meta campaign in the ad account: status, budget, this week and lifetime numbers, the verdict, and — for the desk's own — the plan, the preview and every action taken |
+| `system/socialAds` | the ad account, the owner's limit and mode, the account's week and daily series, and the expert's note |
+| `system/socialAds/secret/credentials` | the sealed ads user token; **no client access** |
 | `socialComments/{platform}_{commentId}` | one comment, its reading, and the reply |
 | `system/socialAutomation` | the settings the scheduler and everyone reads |
 
@@ -717,7 +816,9 @@ every signed-in user because fares and ride settings live there, and the
 marketing brief does not belong in the mobile app's cache.
 
 Media lands in Cloud Storage under `social/{postId}/` — `video.mp4`, `cover.png`,
-`slide-1.png`…. Instagram, Facebook, Threads and TikTok all *pull* files from a
+`slide-1.jpg`…. An attached image is re-encoded as JPEG whatever was uploaded,
+because that is the only image format Instagram publishes; posts before
+2026-10-20 still carry `slide-N.png`. Instagram, Facebook, Threads and TikTok all *pull* files from a
 URL rather than accepting an upload, so each is served over a time-limited signed
 URL — falling back to a public object if the bucket cannot sign, which is
 unremarkable for media that is about to be posted publicly anyway.
@@ -755,6 +856,11 @@ like a new one buys nothing.
 | `adminPublishSocialPost` | publish, or retry the networks that failed |
 | `adminAttachSocialMedia` | attach a video or slide made outside the pipeline |
 | `adminDeleteSocialPost` | remove a piece |
+| `adminRenderSocialPost` | draw the pictures, or cut the reel, for a piece that has none |
+| `adminSetAdsSettings` | the daily limit, the longest campaign, the link, ask-first or direct |
+| `adminCreateAd` | a brief in, a campaign at Meta out — launched or waiting, held to the limit |
+| `adminAdAction` | launch, pause, resume, set budget, apply the recommendation, end |
+| `adminSyncAds` | read the ad account now and judge every campaign |
 | `adminSyncSocialComments` | read the comments now, and draft replies |
 | `adminReplySocialComment` | send one reply |
 | `adminSetCommentStatus` | close a comment without answering it |
@@ -764,3 +870,5 @@ like a new one buys nothing.
 | `socialPageRead` | the daily read of our own page, an hour before the team starts (not callable) |
 | `socialProfileAudit` | the weekly profile score (not callable) |
 | `socialEngagement` | the two-hourly comment pass (not callable) |
+| `socialPublishSweep` | every five minutes: post what was approved, free what got stuck (not callable) |
+| `socialAdsSync` | every three hours: read, judge and — in direct mode — steer the desk's own campaigns (not callable) |

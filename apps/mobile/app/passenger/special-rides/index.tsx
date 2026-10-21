@@ -63,7 +63,7 @@ export default function SpecialRidesScreen() {
           <Pressable onPress={() => router.back()}>
             <Text style={styles.backButton}>←</Text>
           </Pressable>
-          <Text style={styles.title}>Special Rides</Text>
+          <Text style={styles.title}>Rent a car</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -92,7 +92,7 @@ export default function SpecialRidesScreen() {
           <Pressable onPress={() => router.back()}>
             <Text style={styles.backButton}>←</Text>
           </Pressable>
-          <Text style={styles.title}>Special Rides</Text>
+          <Text style={styles.title}>Rent a car</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -127,7 +127,7 @@ export default function SpecialRidesScreen() {
           <Pressable onPress={() => router.back()}>
             <Text style={styles.backButton}>←</Text>
           </Pressable>
-          <Text style={styles.title}>Special Rides</Text>
+          <Text style={styles.title}>Rent a car</Text>
           <Pressable onPress={() => router.push('/passenger/special-rides/my-cars')}>
             <Text style={styles.headerIcon}>📋</Text>
           </Pressable>
@@ -199,7 +199,7 @@ export default function SpecialRidesScreen() {
         <Pressable onPress={() => router.back()}>
           <Text style={styles.backButton}>←</Text>
         </Pressable>
-        <Text style={styles.title}>Special Rides</Text>
+        <Text style={styles.title}>Rent a car</Text>
         <View style={{ width: 24 }} />
       </View>
 

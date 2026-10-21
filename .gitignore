@@ -83,3 +83,10 @@ brag-output/
 # Cloud API by hand (`curl -d @body.json`) and routinely carry a real phone
 # number or a live token, so they must never reach a commit.
 body*.json
+
+# Graphify's knowledge graph of this repo (graph.json, graph.html,
+# GRAPH_REPORT.md). It is a derived index built from the tracked source by
+# `graphify . --update`, so it is reproducible and must never be committed:
+# it is megabytes of generated JSON that conflicts on every parallel branch.
+# Rebuild it instead of pulling it.
+graphify-out/

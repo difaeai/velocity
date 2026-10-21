@@ -3,26 +3,22 @@
 /**
  * Manage social → Overview.
  *
- * The page answers two questions and nothing else:
+ * Built around one sentence: **say what you want, and the desk makes it.** The
+ * page answers, in order:
  *
- *  1. **Is the desk running?** — and if it is not, one button starts it. That
- *     button used to be five checkboxes and a Save on another screen, which is
- *     why the desk sat paused for weeks with everything else in place.
- *  2. **Where is a piece right now?** — the line a piece travels, lit from the
- *     documents themselves.
+ *  1. **Should it ask you before anything goes out?** Asked once, the first
+ *     time, and never again — the answer is the desk's `autoPublish`.
+ *  2. **What do you want?** One box for every kind of thing the desk makes: a
+ *     post, a reel, a story, a carousel — or a paid ad, which goes to the ads
+ *     desk with the same words.
+ *  3. **Is it running, and where is a piece right now?** The desk switch and
+ *     the line a piece travels, lit from the documents themselves.
+ *  4. **How are the ads doing?** This week's spend and what a click cost,
+ *     against what a click should cost here.
  *
- * Everything else on this page is detail under those two, in one column of
- * cards: who is on the desk, where it posts, what was made last.
- *
- * Two rules this file is built on, both of them load-bearing:
- *
- * - **The teaching text appears once.** The five-step strip explains itself in
- *   full until the desk has had a run, and then drops to captions. A page that
- *   explains itself forever is a page you stop reading.
- * - **Motion means something.** A dot travels a step only while a document is
- *   in that state, a count breathes only while it is waiting on the person
- *   reading the page, and an idle desk is completely still — see
- *   components/social/pipeline.tsx, where that is enforced.
+ * Two rules this file keeps, both load-bearing: the teaching text appears once
+ * (a page that explains itself forever is a page you stop reading), and motion
+ * means something — see components/social/pipeline.tsx, where that is enforced.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -32,8 +28,9 @@ import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/fir
 import { db } from '@/lib/firebase';
 import { colors } from '@/lib/config';
 import {
-  SOCIAL_FORMATS,
+  adsApi,
   socialApi,
+  type AdsConfigDoc,
   type SocialAccountDoc,
   type SocialEmployee,
   type SocialFormat,
@@ -52,6 +49,19 @@ import {
   postSummary,
 } from '@/components/social/shared';
 import { Blockers, Pipeline, readBlockers, readPipeline } from '@/components/social/pipeline';
+import { adMoney } from '@/components/social/ads';
+
+type Want = SocialFormat | 'ad';
+const WANTS: Want[] = ['reel', 'post', 'story', 'carousel', 'ad'];
+
+const PLACEHOLDER: Record<Want, string> = {
+  reel: 'e.g. a reel for riders in Lahore: you name your own fare, no surge at night',
+  post: 'e.g. a post about paying in cash — most of Pakistan still does',
+  story: 'e.g. a story telling drivers the weekend is the busiest time',
+  carousel: 'e.g. five slides: how a shared ride splits the fare per seat',
+  video: 'e.g. a 30-second explainer of how bidding works',
+  ad: 'e.g. get new drivers in Lahore and Karachi to download the app this week',
+};
 
 export default function SocialOverview() {
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
@@ -60,11 +70,10 @@ export default function SocialOverview() {
   const [readiness, setReadiness] = useState<SocialReadiness | null>(null);
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [coverage, setCoverage] = useState<string[]>([]);
+  const [ads, setAds] = useState<AdsConfigDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [format, setFormat] = useState<SocialFormat | ''>('');
+  const [switching, setSwitching] = useState(false);
 
   useEffect(
     () =>
@@ -100,9 +109,19 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(6)),
+        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(8)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(db, 'system', 'socialAds'),
+        (snap) => setAds(snap.exists() ? (snap.data() as AdsConfigDoc) : null),
+        () => setAds(null),
       ),
     [],
   );
@@ -162,67 +181,49 @@ export default function SocialOverview() {
     return { at, today };
   }, [settings, nowMs]);
 
-  /** What the rotation will make next, so the button is not a surprise. */
-  const upNext = useMemo(() => {
-    if (!settings?.formats?.length) return null;
-    return settings.formats[(settings.lastFormatIndex + 1) % settings.formats.length];
-  }, [settings]);
-
   /** The desk has been round the loop at least once: stop explaining it. */
   const taught = Boolean(settings?.lastRunAtMs) || posts.length > 0;
 
-  async function briefTeam() {
-    setBusy(true);
-    setNotice(null);
-    setError(null);
-    try {
-      const res = await socialApi.generate({ replace: true, ...(format ? { format } : {}) });
-      setNotice(`The team made a ${FORMAT_META[res.format].label.toLowerCase()}. It is in the approval queue.`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'The team could not produce anything.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /**
-   * Start or pause the whole desk in one call.
-   *
-   * Starting writes every switch the daily run actually needs, because the
-   * alternative — find them on the Automation page, tick four of them, scroll
-   * to Save — is the reason this stayed off. Each field written is named in the
-   * card above the button, so nothing is switched on quietly. Pausing touches
-   * `enabled` and nothing else: it is a stop, not a reset, and the settings are
-   * there untouched when it starts again.
-   */
-  async function setRunning(on: boolean) {
+  /** Save one or more settings, and say so. */
+  async function save(patch: Partial<SocialSettings>, said: (s: SocialSettings) => string) {
     setSwitching(true);
     setNotice(null);
     setError(null);
     try {
-      const res = await socialApi.updateSettings(
-        on
-          ? {
-              enabled: true,
-              dailyStory: true,
-              autoRenderVideo: true,
-              learnFromOwnPage: true,
-              engagementEnabled: true,
-            }
-          : { enabled: false },
-      );
+      const res = await socialApi.updateSettings(patch);
       setSettings(res.settings);
-      setNotice(
-        on
-          ? `The desk is on. It works every day at ${hour(res.settings.runHour)} PKT, and everything it makes waits for you in the approval queue.`
-          : 'The desk is paused. Nothing will be made until you start it again, or brief the team by hand.',
-      );
+      setNotice(said(res.settings));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not change the schedule.');
+      setError(e instanceof Error ? e.message : 'Could not save that.');
     } finally {
       setSwitching(false);
     }
   }
+
+  const chooseMode = (direct: boolean) =>
+    save({ autoPublish: direct, publishModeChosen: true }, () =>
+      direct
+        ? 'Done — finished pieces go straight out. Change it any time on this page.'
+        : 'Done — every piece waits for your Approve, and goes out the moment you press it.',
+    );
+
+  /**
+   * Start or pause the whole desk in one call. Starting writes every switch the
+   * daily run needs; pausing touches `enabled` and nothing else — a stop, not a
+   * reset.
+   */
+  const setRunning = (on: boolean) =>
+    save(
+      on
+        ? { enabled: true, dailyStory: true, autoRenderVideo: true, learnFromOwnPage: true, engagementEnabled: true }
+        : { enabled: false },
+      (s) =>
+        on
+          ? `The desk is on. It works every day at ${hour(s.runHour)} PKT${
+              s.autoPublish ? ' and posts what it makes directly.' : ', and everything it makes waits for your Approve.'
+            }`
+          : 'The desk is paused. Nothing will be made until you start it again, or ask for something above.',
+    );
 
   const running = Boolean(settings?.enabled);
 
@@ -231,8 +232,8 @@ export default function SocialOverview() {
       <header style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
         <p style={{ color: colors.muted, margin: 0, maxWidth: 760 }}>
-          The team you hired plans, writes, designs, cuts and posts Velocity Rides’ content — and stops at your
-          approval, every time.
+          Say what you want — a post, a reel, a story or an ad. The team makes it, posts it, runs the ads and tells
+          you what is working.
         </p>
       </header>
 
@@ -242,7 +243,48 @@ export default function SocialOverview() {
       {/* 1 — what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
 
-      {/* 2 — the one control: is the desk on, and start a piece now */}
+      {/* 2 — asked once: ask first, or post directly? */}
+      {settings && !settings.publishModeChosen ? (
+        <Card style={{ marginBottom: 16, borderColor: `${colors.primary}66` }}>
+          <h2 style={h2}>Before anything goes out: should the desk ask you first?</h2>
+          <p style={{ fontSize: 13.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
+            Asked once. Either way you can change it later from the desk card below.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+            <Choice
+              title="Ask me before posting"
+              detail="Everything waits in the queue. Press Approve & post and it goes out straight away."
+              onClick={() => chooseMode(false)}
+              disabled={switching}
+            />
+            <Choice
+              title="Post directly — don't ask me"
+              detail="A finished piece goes straight to Instagram and Facebook. You can still delete it afterwards."
+              onClick={() => chooseMode(true)}
+              disabled={switching}
+            />
+          </div>
+        </Card>
+      ) : null}
+
+      {/* 3 — the one box: what do you want? */}
+      {settings ? (
+        <Composer
+          settings={settings}
+          ads={ads}
+          disabled={onShift.length === 0}
+          onDone={(message) => {
+            setError(null);
+            setNotice(message);
+          }}
+          onError={(message) => {
+            setNotice(null);
+            setError(message);
+          }}
+        />
+      ) : null}
+
+      {/* 4 — the desk: on or off, and how it posts */}
       {settings ? (
         <Card style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -269,17 +311,14 @@ export default function SocialOverview() {
             </Link>
           </div>
 
-          <p style={{ fontSize: 13.5, color: colors.text, margin: '0 0 4px', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13.5, color: colors.text, margin: '0 0 12px', lineHeight: 1.6 }}>
             {running
               ? `Every day at ${hour(settings.runHour)} PKT it makes ${pieces(settings.postsPerDay)}${
                   settings.dailyStory ? ' and a story' : ''
-                }, cuts its own reels, reads the comments every two hours, and measures its own page afterwards.`
-              : `Start it and from ${
-                  nextRunWhenStarted(settings.runHour, nowMs)
-                } it makes ${pieces(settings.postsPerDay)} and a story every day, cuts its own reels, reads the comments every two hours, and measures its own page afterwards.`}
-          </p>
-          <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
-            Nothing goes out on its own: every piece stops in the approval queue until you say yes.
+                }, draws its own pictures and cuts its own reels, answers comments, and measures its own page.`
+              : `Start it and from ${nextRunWhenStarted(settings.runHour, nowMs)} it makes ${pieces(
+                  settings.postsPerDay,
+                )} and a story every day on its own — on top of anything you ask for above.`}
           </p>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
@@ -290,35 +329,24 @@ export default function SocialOverview() {
             >
               {switching ? 'Saving…' : running ? 'Pause the desk' : 'Start the desk'}
             </Button>
-
-            <span style={{ width: 1, height: 24, background: colors.border }} />
-
-            <select
-              value={format}
-              onChange={(e) => setFormat(e.target.value as SocialFormat | '')}
-              style={{
-                padding: '8px 10px',
-                fontSize: 13,
-                fontFamily: 'inherit',
-                border: `1px solid ${colors.border}`,
-                borderRadius: 9,
-                background: colors.surface,
-                color: colors.text,
-              }}
+            <Button
+              variant="secondary"
+              onClick={() => chooseMode(!settings.autoPublish)}
+              disabled={switching}
             >
-              <option value="">Next in the rotation{upNext ? ` (${FORMAT_META[upNext].label})` : ''}</option>
-              {SOCIAL_FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {FORMAT_META[f].label} — {FORMAT_META[f].note}
-                </option>
-              ))}
-            </select>
-            <Button variant="secondary" onClick={briefTeam} disabled={busy || onShift.length === 0}>
-              {busy ? 'The team is working…' : 'Make one now'}
+              {settings.autoPublish ? 'Ask me before posting instead' : 'Post directly instead'}
             </Button>
           </div>
 
           <div style={{ display: 'grid', gap: 7, fontSize: 13 }}>
+            <Row
+              label="Posting"
+              value={
+                settings.autoPublish
+                  ? 'Directly — finished pieces go straight out'
+                  : 'After your Approve — then straight away'
+              }
+            />
             {nextRun ? (
               <Row
                 label="Next run"
@@ -354,7 +382,7 @@ export default function SocialOverview() {
         </Card>
       ) : null}
 
-      {/* 3 — the line a piece travels, lit by the documents themselves */}
+      {/* 5 — the line a piece travels, lit by the documents themselves */}
       <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px 0' }}>
           <h2 style={{ ...h2, marginBottom: taught ? 6 : 2 }}>How a post gets made</h2>
@@ -369,8 +397,10 @@ export default function SocialOverview() {
         </div>
       </Card>
 
-      {/* 4 — the detail */}
+      {/* 6 — the detail */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <AdsSnapshot ads={ads} />
+
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
@@ -387,7 +417,7 @@ export default function SocialOverview() {
               <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 700 }}>
                 Connect Instagram
               </Link>{' '}
-              — it is one sign-in now, with no token to paste.
+              — it is one sign-in, with no token to paste.
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -432,7 +462,7 @@ export default function SocialOverview() {
             <p style={{ color: colors.muted, fontSize: 13, margin: 0 }}>Nothing made yet.</p>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>
-              {posts.map((p) => (
+              {posts.slice(0, 6).map((p) => (
                 <Link
                   key={p.id}
                   href="/dashboard/social/queue"
@@ -451,6 +481,267 @@ export default function SocialOverview() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * "What do you want?" — one box for everything the desk makes.
+ *
+ * A post, reel, story or carousel goes to the team with your words as the
+ * brief, and is posted or queued by the switch beside the button (which starts
+ * on whatever the desk is set to). An ad goes to the ads desk with the same
+ * words; the budget is held to the daily limit set on the Ads page.
+ */
+function Composer({
+  settings,
+  ads,
+  disabled,
+  onDone,
+  onError,
+}: {
+  settings: SocialSettings;
+  ads: AdsConfigDoc | null;
+  disabled: boolean;
+  onDone: (message: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [want, setWant] = useState<Want>('reel');
+  const [brief, setBrief] = useState('');
+  const [direct, setDirect] = useState<boolean | null>(null);
+  const [budget, setBudget] = useState('');
+  const [days, setDays] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const postDirect = direct ?? settings.autoPublish;
+  const adsReady = Boolean(ads?.adAccountId) && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
+
+  async function go() {
+    setBusy(true);
+    try {
+      if (want === 'ad') {
+        const res = await adsApi.create({
+          brief: brief.trim(),
+          dailyBudget: Number(budget) > 0 ? Number(budget) : undefined,
+          days: Number(days) > 0 ? Math.round(Number(days)) : undefined,
+        });
+        onDone(
+          `${res.launched ? 'Launched' : 'Made and waiting for your Approve on the Ads page'}: "${res.plan.name}", ` +
+            `${adMoney(res.budget, ads?.currency ?? 'PKR')} a day for ${res.plan.days} days.${res.note ? ` ${res.note}` : ''}`,
+        );
+      } else {
+        const res = await socialApi.generate({
+          replace: true,
+          format: want,
+          ...(brief.trim().length >= 3 ? { brief: brief.trim() } : {}),
+          publishWhenDone: postDirect,
+        });
+        onDone(
+          postDirect
+            ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — watch it in the queue.`
+            : `The team made the ${FORMAT_META[res.format].label.toLowerCase()}. It is in the queue for your Approve.`,
+        );
+      }
+      setBrief('');
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <h2 style={h2}>What do you want?</h2>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }} role="radiogroup" aria-label="What to make">
+        {WANTS.map((w) => {
+          const on = w === want;
+          return (
+            <button
+              key={w}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => setWant(w)}
+              style={{
+                border: `1px solid ${on ? colors.primary : colors.border}`,
+                background: on ? `${colors.primary}14` : colors.surface,
+                color: on ? colors.primary : colors.text,
+                fontWeight: 800,
+                fontSize: 13,
+                padding: '7px 14px',
+                borderRadius: 999,
+                cursor: 'pointer',
+              }}
+            >
+              {w === 'ad' ? 'Paid ad' : FORMAT_META[w].label}
+            </button>
+          );
+        })}
+      </div>
+
+      <textarea
+        value={brief}
+        onChange={(e) => setBrief(e.target.value)}
+        rows={3}
+        aria-label="What it should be about"
+        placeholder={PLACEHOLDER[want]}
+        style={{
+          width: '100%',
+          padding: 12,
+          fontSize: 14,
+          lineHeight: 1.5,
+          fontFamily: 'inherit',
+          border: `1px solid ${colors.border}`,
+          borderRadius: 10,
+          resize: 'vertical',
+          marginBottom: 10,
+        }}
+      />
+
+      {want === 'ad' ? (
+        adsReady ? (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+            <label style={smallLabel}>
+              Per day ({ads!.currency})
+              <input
+                inputMode="numeric"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="the expert decides"
+                style={smallInput}
+              />
+            </label>
+            <label style={smallLabel}>
+              Days
+              <input
+                inputMode="numeric"
+                value={days}
+                onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))}
+                placeholder={`up to ${ads!.maxDays}`}
+                style={smallInput}
+              />
+            </label>
+            <span style={{ fontSize: 12.5, color: colors.muted }}>
+              Limit {adMoney(ads!.dailyCap, ads!.currency)} a day ·{' '}
+              {ads!.mode === 'direct' ? 'launches straight away' : 'waits for your Approve'}
+            </span>
+          </div>
+        ) : (
+          <p style={{ fontSize: 13, color: colors.warn, margin: '0 0 10px' }}>
+            The ads desk needs the ad account connected and a daily limit first.{' '}
+            <Link href="/dashboard/social/ads" style={{ color: colors.secondary, fontWeight: 700 }}>
+              Set it up
+            </Link>
+          </p>
+        )
+      ) : (
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 10 }}>
+          <input type="checkbox" checked={postDirect} onChange={(e) => setDirect(e.target.checked)} />
+          Post it as soon as it is ready — don&apos;t wait for my Approve
+        </label>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button
+          onClick={go}
+          disabled={busy || disabled || (want === 'ad' && (!adsReady || brief.trim().length < 5))}
+        >
+          {busy ? (want === 'ad' ? 'The expert is building it…' : 'The team is working…') : want === 'ad' ? 'Plan and make the ad' : 'Make it'}
+        </Button>
+        {busy ? (
+          <span style={{ fontSize: 12.5, color: colors.muted }}>
+            Takes a few minutes. You can leave this page — it carries on.
+          </span>
+        ) : want !== 'ad' && !brief.trim() ? (
+          <span style={{ fontSize: 12.5, color: colors.muted }}>Leave it empty and the team picks the topic.</span>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+/** This week on the paid side, against what things should cost here. */
+function AdsSnapshot({ ads }: { ads: AdsConfigDoc | null }) {
+  const week = ads?.account?.week;
+  const bench = ads?.account?.bench;
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Ads this week</h2>
+        <Link href="/dashboard/social/ads" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
+          Open Ads
+        </Link>
+      </div>
+      {!ads?.adAccountId ? (
+        <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
+          Run Meta ads from here: say what the ad should do and the desk plans it, makes it, launches it and watches
+          what each click costs.{' '}
+          <Link href="/dashboard/social/ads" style={{ color: colors.secondary, fontWeight: 700 }}>
+            Connect the ad account
+          </Link>
+        </p>
+      ) : !week ? (
+        <p style={{ color: colors.muted, fontSize: 13, margin: 0 }}>No numbers read yet — open Ads and press Refresh.</p>
+      ) : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <Mini label="Spent" value={adMoney(week.spend, ads.currency)} />
+            <Mini label="Link clicks" value={week.linkClicks.toLocaleString('en-PK')} />
+            <Mini
+              label="Per click"
+              value={week.cpc ? adMoney(week.cpc, ads.currency) : '—'}
+              hint={bench ? `normal ${adMoney(bench.cpc.low, ads.currency)}–${adMoney(bench.cpc.high, ads.currency)}` : undefined}
+            />
+          </div>
+          {ads.review?.summary ? (
+            <p style={{ fontSize: 12.5, color: colors.muted, margin: 0, lineHeight: 1.55 }}>{ads.review.summary}</p>
+          ) : null}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Mini({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div style={{ background: colors.bg, borderRadius: 10, padding: '8px 10px' }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted }}>{label.toUpperCase()}</div>
+      <div style={{ fontSize: 16, fontWeight: 900 }}>{value}</div>
+      {hint ? <div style={{ fontSize: 11, color: colors.muted }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+function Choice({
+  title,
+  detail,
+  onClick,
+  disabled,
+}: {
+  title: string;
+  detail: string;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        textAlign: 'left',
+        padding: 14,
+        borderRadius: 12,
+        border: `1px solid ${colors.border}`,
+        background: colors.surface,
+        cursor: disabled ? 'wait' : 'pointer',
+        font: 'inherit',
+      }}
+    >
+      <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, marginBottom: 4 }}>{title}</span>
+      <span style={{ display: 'block', fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>{detail}</span>
+    </button>
   );
 }
 
@@ -476,9 +767,7 @@ const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
 
 /**
  * When the first run would land if it were started this second — "today" while
- * the hour is still ahead, "tomorrow" once it has passed. Saying "every day"
- * and leaving somebody to work out whether that means in an hour or in
- * twenty-three is the sort of thing that gets a schedule switched off again.
+ * the hour is still ahead, "tomorrow" once it has passed.
  */
 function nextRunWhenStarted(runHour: number, nowMs: number): string {
   if (nowMs === 0) return `${hour(runHour)} PKT`;
@@ -487,3 +776,18 @@ function nextRunWhenStarted(runHour: number, nowMs: number): string {
 }
 
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };
+const smallLabel: React.CSSProperties = {
+  display: 'grid',
+  gap: 4,
+  fontSize: 11.5,
+  fontWeight: 800,
+  color: colors.muted,
+};
+const smallInput: React.CSSProperties = {
+  width: 150,
+  padding: '7px 10px',
+  fontSize: 13,
+  fontFamily: 'inherit',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 9,
+};

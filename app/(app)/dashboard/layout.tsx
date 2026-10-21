@@ -62,7 +62,7 @@ const APP_NAV: NavGroup[] = [
       { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
       { href: '/dashboard/pricing', label: '🧮 Pricing engine' },
       { href: '/dashboard/market-rates', label: '📊 Market rates' },
-      { href: '/dashboard/special-rides', label: '🚙 Special Rides' },
+      { href: '/dashboard/special-rides', label: '🚙 Rent a car' },
       { href: '/dashboard/travel-mate', label: '🤝 Travel Partner' },
     ],
   },
@@ -109,6 +109,7 @@ const SOCIAL_NAV: NavGroup[] = [
     title: 'Every day',
     items: [
       { href: '/dashboard/social/queue', label: '✅ Approval queue' },
+      { href: '/dashboard/social/ads', label: '💸 Ads' },
       { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
       { href: '/dashboard/social/inbox', label: '💬 Comments' },
       { href: '/dashboard/social/performance', label: '📈 What is working' },

@@ -359,6 +359,23 @@ export {
 } from './commute';
 export { runCommuteRideFormation } from './commute/formRides';
 
+// Usernames, and the personal fleet they address. A fleet fills a shared car
+// BEFORE a driver is asked — see fleet/index.ts for why that ordering is the
+// whole feature.
+export {
+  claimUsername,
+  setFleetRoute,
+  sendFleetRequest,
+  respondFleetRequest,
+  removeFleetMember,
+  getMyFleet,
+  askFleetForRide,
+  respondFleetRideAsk,
+  cancelFleetRideAsk,
+  bookFleetRide,
+  inviteFleetToRide,
+} from './fleet';
+
 // Shared rides stop more than once. Dropping one rider is not ending the trip.
 export { dropOffRider } from './trips/dropOff';
 
@@ -511,12 +528,19 @@ export {
   adminGetSocialSettings,
   adminUpdateSocialSettings,
   socialDailyContent,
+  socialPublishSweep,
   adminGenerateSocialPost,
   adminRequestSocialChanges,
   adminReviewSocialPost,
   adminPublishSocialPost,
+  adminRenderSocialPost,
   adminAttachSocialMedia,
   adminDeleteSocialPost,
+  socialAdsSync,
+  adminSyncAds,
+  adminSetAdsSettings,
+  adminCreateAd,
+  adminAdAction,
   socialEngagement,
   adminSyncSocialComments,
   adminReplySocialComment,

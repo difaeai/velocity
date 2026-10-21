@@ -241,7 +241,7 @@ export default function SpecialRidesAdminPage() {
 
   return (
     <div>
-      <h1>Special Rides Management</h1>
+      <h1>Rent a car</h1>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: `1px solid ${colors.border}` }}>
