@@ -33,11 +33,13 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
+import { dateRange, statsFor } from '../analytics';
 import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import {
   AD_OBJECTIVES,
   META_OBJECTIVE,
+  blended,
   clampBudget,
   diagnose,
   forecast,
@@ -57,6 +59,7 @@ import {
   type AdObjective,
   type AdPlanSpec,
   type Benchmarks,
+  type Blended,
   type InsightRow,
   type Verdict,
 } from './adsExpert';
@@ -64,6 +67,7 @@ import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
 import { BRAND, HARD_RULES, briefBlock, standingInstructions } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
+import { AD_NUMBERS } from './playbook';
 import { planReel, renderReel } from './reel';
 import { getSocialSettings } from './settings';
 import { open, tokenVaultReady, type SealedSecret } from './secrets';
@@ -398,12 +402,13 @@ const ADS_CRAFT = `HOW PAID SOCIAL WORKS ON META IN 2026 — your craft:
 function adsSystem(person: Employee | null, settings: Awaited<ReturnType<typeof getSocialSettings>>): string {
   return [
     person
-      ? `${employeeIntro(person)}\n\nYou also run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPC, CTR, CPM, frequency, cost per result.`
-      : "You run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPC, CTR, CPM, frequency, cost per result.",
+      ? `${employeeIntro(person)}\n\nYou also run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPM, CTR, CPC, frequency, cost per result, cost per order and ROAS.`
+      : "You run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPM, CTR, CPC, frequency, cost per result, cost per order and ROAS.",
     BRAND,
     briefBlock(settings, 'social-manager'),
     HARD_RULES,
     ADS_CRAFT,
+    AD_NUMBERS,
     standingInstructions(settings),
   ]
     .filter(Boolean)
@@ -745,18 +750,32 @@ async function syncAds(): Promise<string> {
   });
   const totals = metricsFrom(accountWeek.data?.[0] ?? {}, 'link_click');
 
+  // Our own rides over the same week as Meta's last_7d: the seven days before today.
+  const rides = await statsFor(dateRange(8, now).slice(0, 7), now).catch((e) => {
+    logger.warn('ads: could not read our own rides for cost per order', { message: (e as Error).message });
+    return null;
+  });
+  const returns = rides
+    ? blended({
+        spend: totals.spend,
+        currency: cfg.currency,
+        orders: rides.reduce((n, d) => n + d.tripsCompleted, 0),
+        commission: rides.reduce((n, d) => n + d.commission, 0),
+      })
+    : null;
+
   const status = `${judged.filter((j) => j.verdict.grade !== 'idle').length} running of ${judged.length}.${
     actions.length ? ` ${actions.join(' ')}` : ''
   }`;
   const patch: Record<string, unknown> = {
-    account: { daily, week: totals, committed, bench },
+    account: { daily, week: totals, committed, bench, blended: returns },
     lastSyncAtMs: now,
     lastSyncStatus: status.slice(0, 600),
   };
 
   // The expert's read of the whole account, once a day.
   if (!cfg.review || now - cfg.review.atMs > 20 * 3600_000) {
-    patch.review = await reviewAccount(cfg, judged, totals);
+    patch.review = await reviewAccount(cfg, judged, totals, returns);
   }
   await db.doc(CONFIG_PATH).set(patch, { merge: true });
   return status;
@@ -767,14 +786,22 @@ async function reviewAccount(
   cfg: AdsConfig,
   judged: { name: string; objective: AdObjective; verdict: Verdict; week: AdMetrics; managed: boolean }[],
   totals: AdMetrics,
+  returns: Blended | null,
 ): Promise<AdsConfig['review']> {
   const live = judged.filter((j) => j.verdict.grade !== 'idle');
+  const business =
+    returns && totals.spend > 0
+      ? `Across the whole business that week (blended — every completed ride, not only ones the ads brought): ` +
+        `${returns.orders.toLocaleString('en-PK')} rides and ${money(returns.commission, 'PKR')} commission, so ` +
+        `${returns.orders ? money(returns.costPerOrder, cfg.currency) : 'no rides to count'} of ads per order and ` +
+        `ROAS ${returns.roas === null ? 'n/a' : returns.roas.toFixed(2)} (commission ÷ spend; 1.0 is break-even).`
+      : '';
   const local = (): AdsConfig['review'] => ({
     atMs: Date.now(),
     summary: live.length
       ? `${live.length} campaign${live.length === 1 ? '' : 's'} running: ${['good', 'ok', 'bad', 'learning']
           .map((g) => `${live.filter((j) => j.verdict.grade === g).length} ${g === 'good' ? 'winning' : g === 'bad' ? 'underperforming' : g}`)
-          .join(', ')}. ${money(totals.spend, cfg.currency)} spent this week.`
+          .join(', ')}. ${money(totals.spend, cfg.currency)} spent this week. ${business}`.trim()
       : 'Nothing is running. Tell the desk what you want an ad to do and it will plan one.',
     moves: live.filter((j) => j.verdict.action.kind !== 'none').map((j) => `${j.name}: ${(j.verdict.action as { why: string }).why}`),
     engine: 'local',
@@ -794,7 +821,7 @@ async function reviewAccount(
     const { data } = await generateJson<{ summary?: string; moves?: string[] }>({
       model: settings.textModel,
       system: adsSystem(await adsPerson(), settings),
-      prompt: `The paid account this week (${cfg.currency}; daily limit ${money(cfg.dailyCap, cfg.currency)}):\n${table}\n\nWrite the morning note to the owner. ONE JSON object: { "summary": "3–5 plain sentences: how it is going and where the next rupee should go", "moves": ["one concrete move", ...] (at most 4) }. Use only the numbers above.`,
+      prompt: `The paid account this week (${cfg.currency}; daily limit ${money(cfg.dailyCap, cfg.currency)}):\n${table}\n\n${business ? `${business}\n\n` : ''}Write the morning note to the owner. ONE JSON object: { "summary": "3–5 plain sentences: how it is going and where the next rupee should go", "moves": ["one concrete move", ...] (at most 4) }. Use only the numbers above.`,
       what: 'The ads review',
     });
     return {

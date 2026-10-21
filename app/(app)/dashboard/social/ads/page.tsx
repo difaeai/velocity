@@ -179,8 +179,9 @@ export default function AdsPage() {
         <Composer cfg={cfg!} posts={posts} onDone={setNotice} onError={setError} />
       ) : null}
 
-      {/* 4 — the account at a glance */}
+      {/* 4 — the account at a glance, and what each of its numbers means */}
       {connected && cfg?.account ? <Account cfg={cfg} /> : null}
+      <NumbersGuide />
 
       {/* 5 — campaigns */}
       {connected ? (
@@ -520,6 +521,7 @@ function Account({ cfg }: { cfg: AdsConfigDoc }) {
   const a = cfg.account!;
   const w = a.week;
   const b = a.bench ?? undefined;
+  const bl = a.blended;
   const cur = cfg.currency;
   const normal = (band?: { low: number; high: number }, pct = false) =>
     band ? `normal ${pct ? `${band.low}–${band.high}%` : `${adMoney(band.low, cur)}–${adMoney(band.high, cur)}`}` : undefined;
@@ -534,19 +536,31 @@ function Account({ cfg }: { cfg: AdsConfigDoc }) {
           trend={a.daily.map((d) => d.spend)}
         />
         <Stat label="Link clicks" value={w.linkClicks.toLocaleString('en-PK')} trend={a.daily.map((d) => d.linkClicks)} />
-        <Tile label="Cost per click" value={w.cpc ? adMoney(w.cpc, cur) : '—'} hint={normal(b?.cpc)} colour={tone(w.cpc, b?.cpc)} />
+        <Tile label="CPM · per 1,000 views" value={w.cpm ? adMoney(w.cpm, cur) : '—'} hint={normal(b?.cpm)} colour={tone(w.cpm, b?.cpm)} />
         <Tile
-          label="Click-through rate"
+          label="CTR · click-through rate"
           value={w.impressions ? `${w.ctr.toFixed(2)}%` : '—'}
           hint={normal(b?.ctr, true)}
           colour={tone(w.ctr, b?.ctr, true)}
         />
-        <Tile label="Per 1,000 views" value={w.cpm ? adMoney(w.cpm, cur) : '—'} hint={normal(b?.cpm)} colour={tone(w.cpm, b?.cpm)} />
+        <Tile label="CPC · cost per click" value={w.cpc ? adMoney(w.cpc, cur) : '—'} hint={normal(b?.cpc)} colour={tone(w.cpc, b?.cpc)} />
         <Tile
-          label="Seen per person"
+          label="Frequency · seen per person"
           value={w.reach ? w.frequency.toFixed(1) : '—'}
           hint="above 3.5 they stop noticing"
           colour={w.frequency > 3.5 ? colors.danger : colors.text}
+        />
+        <Tile
+          label="Cost per order"
+          value={bl?.orders && w.spend ? adMoney(bl.costPerOrder, cur) : '—'}
+          hint={bl ? `${bl.orders.toLocaleString('en-PK')} completed rides, all riders` : 'rides not read yet'}
+          colour={colors.text}
+        />
+        <Tile
+          label="ROAS · return on ad spend"
+          value={bl?.roas != null ? `${bl.roas.toFixed(2)}×` : '—'}
+          hint={bl ? `${adMoney(bl.commission, 'PKR')} commission ÷ spend · 1.0 = break-even` : 'rides not read yet'}
+          colour={bl?.roas == null ? colors.text : bl.roas >= 1 ? colors.success : colors.danger}
         />
       </div>
 
@@ -658,11 +672,16 @@ function CampaignRow({
         </div>
 
         {m && m.impressions ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '2px 14px', fontSize: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto)', gap: '2px 14px', fontSize: 12 }}>
             <Num label="Spent" value={adMoney(m.spend, cur)} />
             <Num label="Results" value={m.results.toLocaleString('en-PK')} />
+            <Num
+              label={c.objectiveKind === 'awareness' ? 'Per 1,000 reached' : 'Per result'}
+              value={m.costPerResult ? adMoney(m.costPerResult, cur) : '—'}
+            />
+            <Num label="CPM" value={m.cpm ? adMoney(m.cpm, cur) : '—'} />
             <Num label="CTR" value={`${m.ctr.toFixed(2)}%`} />
-            <Num label="Per click" value={m.cpc ? adMoney(m.cpc, cur) : '—'} />
+            <Num label="CPC" value={m.cpc ? adMoney(m.cpc, cur) : '—'} />
           </div>
         ) : null}
       </div>
@@ -735,6 +754,47 @@ function CampaignRow({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** Each number, how it is worked out, and what it says — the same definitions the expert gets (playbook.ts AD_NUMBERS). */
+const NUMBERS: [name: string, formula: string, meaning: string][] = [
+  ['CPM — cost per 1,000 views', 'spend ÷ impressions × 1,000', 'The price of attention. The audience, the city and the season set it more than the ad does.'],
+  ['CTR — click-through rate', 'link clicks ÷ impressions × 100', 'The ad’s own score: how many who saw it tapped. Low means change the picture or the first line.'],
+  ['CPC — cost per click', 'spend ÷ link clicks = CPM ÷ (CTR × 10)', 'What one visitor costs. It falls when the auction gets cheaper or the ad gets better.'],
+  ['Frequency — seen per person', 'impressions ÷ reach', 'Above about 3.5 the same people stop noticing — change the picture before adding money.'],
+  ['Cost per result', 'spend ÷ the campaign’s own result', 'Per click for traffic, per engagement for engagement, per 1,000 people reached for awareness.'],
+  ['Cost per order', 'spend ÷ completed rides', 'What the ads cost for each ride taken.'],
+  [
+    'ROAS — return on ad spend',
+    'commission ÷ spend',
+    'Velocity earns its commission, not the fare. 1.0 means the ads paid for themselves; under 1 they cost more than the rides earned.',
+  ],
+];
+
+function NumbersGuide() {
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <details>
+        <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: 15 }}>
+          What CPM, CTR, CPC, cost per order and ROAS mean — and how each is worked out
+        </summary>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, marginTop: 14 }}>
+          {NUMBERS.map(([name, formula, meaning]) => (
+            <div key={name} style={{ fontSize: 13, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 800 }}>{name}</div>
+              <code style={{ fontSize: 12.5 }}>{formula}</code>
+              <div style={{ color: colors.muted }}>{meaning}</div>
+            </div>
+          ))}
+        </div>
+        <p style={{ margin: '14px 0 0', fontSize: 12.5, color: colors.muted, lineHeight: 1.55 }}>
+          Cost per order and ROAS are <strong>blended</strong>: Meta can&apos;t see a ride booked in the app, so they set every
+          ride completed in the last 7 days, riders who came on their own included, against the same 7 days of ad spend.
+          Watch them for the trend over weeks. They can&apos;t tell you which campaign brought a ride.
+        </p>
+      </details>
+    </Card>
   );
 }
 

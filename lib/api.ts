@@ -1844,6 +1844,8 @@ export interface AdsConfigDoc {
     week: AdMetrics;
     committed: number;
     bench: AdBenchmarks | null;
+    /** The whole business over the same week (adsExpert.ts `blended`); null when our rides could not be read. */
+    blended?: { orders: number; commission: number; costPerOrder: number; roas: number | null } | null;
   };
 }
 
