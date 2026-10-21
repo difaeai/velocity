@@ -65,6 +65,8 @@ const OK = {
   ocrConfidence: 92,
   duplicate: false,
   imageReplay: false,
+  /** Enough owed that a clean receipt clears on its own; the cap has its own case. */
+  commissionDue: 5000,
 };
 
 describe('parseAmount', () => {
@@ -159,6 +161,17 @@ describe('decideTopupProof', () => {
   });
 
   // ── The four attacks the file exists for ──────────────────────────────────
+
+  it('a flawless receipt for more than is owed waits for a person — text cannot prove money arrived', () => {
+    // Attack: type up a perfect Easypaisa receipt in an image editor. Every
+    // check above passes; only the bank statement could say it is fake. So the
+    // engine clears what is owed and nothing beyond it.
+    const v = decide(BANK_IBFT, { claimed: 5000, commissionDue: 300 });
+    expect(v.status).toBe('pending_review');
+    expect(v.creditAmount).toBe(0);
+    expect(v.reasons).toContain('above_commission_due');
+    expect(decide(EASYPAISA, { commissionDue: 0 }).status).toBe('pending_review');
+  });
 
   it('pay 100, claim 10,000: never credits the claim, sends it to a human', () => {
     const v = decide(EASYPAISA, { claimed: 10000 });

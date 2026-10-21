@@ -141,7 +141,13 @@ validated without a full build, and the running site was to be left working.
 
 ## OPEN — Medium
 
-### 5. Any signed-in user can read any city-to-city trip chat
+### 5. Any signed-in user can read any city-to-city trip chat — FIXED 2026-10-21
+
+Reads now require the reader's uid in `intercityTrips/{tripId}.memberUids`,
+which `createIntercityBooking` adds to and cancelling the last booking removes
+from. Bookings made before the change need
+`node scripts/backfill-intercity-members.mjs` run once. Tested as Attack 8 in
+`tests/firestore.rules.test.mjs`. The original finding:
 
 `firestore.rules` — `intercityChats/{tripId}/messages/{msgId}`
 
@@ -391,10 +397,10 @@ so the list does not have to be re-derived.
 | 36 | Source maps | `productionBrowserSourceMaps` is not enabled, so Next does not ship them. |
 
 **Still open** — unchanged from above, each needs a console step or data
-migration rather than a code change: App Check (§3), `intercityChats` reads
-(§5, needs a member backfill), verified App Links (§10, needs the Play signing
-SHA-256), API key restriction (§11). Chat attachments
-(`travelMateChat/`) deliberately still accept any document type.
+migration rather than a code change: App Check (§3), verified App Links (§10,
+needs the Play signing SHA-256), API key restriction (§11). Chat attachments
+(`travelMateChat/`) accept any document type except what a browser would open
+as a page (HTML, SVG, XML, JavaScript) — 2026-10-21, Attack 10.
 
 **Special Rides papers (same day, follow-up).** Hosts could never submit: the
 app had no upload for the insurance and registration papers and sent both

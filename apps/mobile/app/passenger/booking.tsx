@@ -57,7 +57,6 @@ import {
   PoolIcon,
   PremiumIcon,
   SoloIcon,
-  TicketIcon,
   WalletIcon,
   type RideIconProps,
 } from '../../src/ui/RideIcons';
@@ -303,8 +302,8 @@ export default function Booking() {
   // used to be a screen of its own between them; it is a pair of cards on the
   // ride sheet now, because it was never a question worth a whole screen.
   const [stage, setStage] = useState<'route' | 'ride'>(voicePrefill ? 'ride' : 'route');
-  // Extras — payment, promo, pool visibility, scheduling — are folded away by
-  // default. Cash, a public pool and no promo cover almost every booking, so
+  // Extras — payment, pool visibility, scheduling — are folded away by
+  // default. Cash and a public pool cover almost every booking, so
   // the rider who wants none of it never has to look at any of it.
   const [moreOpen, setMoreOpen] = useState(false);
   // The pool search radius only unfolds when the rider asks for it.
@@ -524,8 +523,6 @@ export default function Booking() {
   // Wallet ride payments depend on wallet top-ups, which are "Coming Soon" for
   // launch — until then rides are cash-only.
   const { walletTopupEnabled } = useFeatureFlags();
-  const [promoCode, setPromoCode] = useState('');
-  const [showPromo, setShowPromo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -951,9 +948,6 @@ export default function Booking() {
         poolVisibility: isPool ? poolVisibility : undefined,
         paymentMethods,
         preferFemaleDriver: false,
-        // Promos apply to solo rides only — a discount would move the one
-        // number a shared ride's per-seat fares are all a fraction of.
-        promoCode: isPool ? undefined : (promoCode.trim() || undefined),
         pickup: { lat: coords.lat, lng: coords.lng, address: pickupAddress },
         dropoff: { lat: destCoords.lat, lng: destCoords.lng, address: dropoff.trim() },
       });
@@ -1787,11 +1781,11 @@ export default function Booking() {
           ) : null}
 
           {/* ── Everything else. A first-time rider can book without ever
-               opening this: a public pool and no promo are the defaults, and
+               opening this: a public pool is the default, and
                they are what almost every rider wants anyway. ── */}
           <Pressable style={styles.moreToggle} onPress={() => setMoreOpen((v) => !v)}>
             <Text style={styles.moreToggleText}>
-              {moreOpen ? 'Hide extra options' : 'Promo code, pool settings & more'}
+              {moreOpen ? 'Hide extra options' : 'Pool settings & more'}
             </Text>
             <Text style={styles.moreChevron}>{moreOpen ? '⌃' : '⌄'}</Text>
           </Pressable>
@@ -1810,35 +1804,7 @@ export default function Booking() {
                     </View>
                   </Pressable>
                 )}
-                <Pressable style={styles.optionToggle} onPress={() => setShowPromo(v => !v)}>
-                  <TicketIcon
-                    size={15}
-                    color={promoCode ? colors.primary : colors.muted}
-                    accent={promoCode ? colors.primary : colors.muted}
-                  />
-                  <Text style={[styles.optionToggleLabel, promoCode ? { color: colors.primary } : null]}>
-                    {promoCode || 'Promo code'}
-                  </Text>
-                </Pressable>
               </View>
-
-              {showPromo && (
-                <View style={styles.promoInputRow}>
-                  <TextInput
-                    value={promoCode}
-                    onChangeText={t => setPromoCode(t.toUpperCase())}
-                    placeholder="Enter promo code"
-                    placeholderTextColor={colors.muted}
-                    autoCapitalize="characters"
-                    style={styles.promoInput}
-                  />
-                  {promoCode ? (
-                    <Pressable onPress={() => setPromoCode('')} style={styles.promoClear}>
-                      <Text style={{ color: colors.muted }}>✕</Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              )}
 
               {mode === 'pool' && (
                 <>
@@ -3359,27 +3325,6 @@ const styles = themed(() => StyleSheet.create({
   toggleKnobOn: {
     alignSelf: 'flex-end',
     backgroundColor: '#0b0d0c',
-  },
-  promoInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingHorizontal: 12,
-  },
-  promoInput: {
-    flex: 1,
-    height: 42,
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1,
-    padding: 0,
-  },
-  promoClear: {
-    padding: 6,
   },
   locHint: {
     color: colors.primary,

@@ -420,9 +420,18 @@ async function runTeam(params: {
   }
 
   // ── design ────────────────────────────────────────────────────────────────
+  //
+  // Two jobs, kept apart on purpose: the designer's brief (a person, a model
+  // call) and the pictures themselves (ffmpeg and the script). The pictures
+  // used to happen only inside a successful brief, so a designer off shift or
+  // one refused model call meant a post with no image — "sometimes it just
+  // doesn't make one". Now the brief is the designer's and the drawing always
+  // happens.
   if (wanted.includes('design')) {
     await patch(params.id, { status: 'designing' as PostStatus });
     const designer = await who('design');
+    let direction = existing?.direction ?? null;
+    let briefNote = '';
     if (designer) {
       try {
         const result = await design({
@@ -435,48 +444,52 @@ async function runTeam(params: {
           seo,
           feedback,
         });
-        await patch(params.id, { direction: result.direction });
-        // A still format gets its pictures drawn here, from the words the brief
-        // chose, so a post or a story can go out with nobody making a file.
-        // Anything attached by hand is left alone — only empty slides, and our
-        // own earlier renders, are drawn.
-        const drawn =
-          settings.autoRenderVideo && spec.kind === 'image'
-            ? await renderStillsAndAttach({ id: params.id, format: params.format, script, direction: result.direction })
-            : null;
-        // 'briefed' when nothing was drawn: a green tick on a stage nobody has
-        // finished is how a piece reaches the queue looking ready when it is
-        // waiting on you.
+        direction = result.direction;
+        briefNote = result.note;
+        await patch(params.id, { direction });
+        // 'briefed' until the pictures exist: a green tick on a stage nobody has
+        // finished is how a piece reaches the queue looking ready when it is not.
         await setWork(params.id, 'design', {
-          state: drawn?.made ? 'done' : 'briefed',
+          state: 'briefed',
           employeeId: designer.id,
           name: designer.name,
           role: designer.role,
-          note: drawn?.made
-            ? `${result.note} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'} — replace any from the queue.`
-            : drawn?.error
-              ? `${result.note} Could not draw the pictures here (${drawn.error}) — attach them from the queue.`
-              : result.note,
+          note: briefNote,
         });
         await creditWork(designer.id);
       } catch (e) {
         const message = e instanceof DesignError ? e.message : (e as Error).message;
         await failed('design', designer, message);
-        // A missing brief is fatal for an image format — there is nothing for
-        // anyone to make — and survivable for a video one, where the cover
-        // frame is a nicety next to the cut.
-        if (spec.kind === 'image') {
-          await patch(params.id, { status: 'failed' as PostStatus, error: `Design: ${message}` });
-          throw e;
-        }
+      }
+    }
+
+    // Drawn from the brief's words when there is a brief, from the script's when
+    // there is not. Anything attached by hand is left alone.
+    if (settings.autoRenderVideo && spec.kind === 'image') {
+      const drawn = await renderStillsAndAttach({ id: params.id, format: params.format, script, direction });
+      if (drawn.made) {
+        await setWork(params.id, 'design', {
+          state: 'done',
+          employeeId: designer?.id ?? null,
+          name: designer?.name ?? 'The desk',
+          role: designer?.role ?? null,
+          note: `${briefNote} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'} — replace any from the queue.`.trim(),
+        });
+      } else if (drawn.error) {
+        await patch(params.id, { error: `Pictures: ${drawn.error} — press "Make the picture" to try again.` });
       }
     }
   }
 
   // ── the cut ─────────────────────────────────────────────────────────────
+  //
+  // Same split: the editor's cut brief is a model call that can fail; the reel
+  // needs only the script, so it is cut whether or not an editor is on shift
+  // and whether or not their brief came back.
   if (wanted.includes('video')) {
     await patch(params.id, { status: 'rendering' as PostStatus });
     const editor = await who('video');
+    let cutNote: string | null = null;
     if (editor) {
       try {
         const cut = await planCut({
@@ -489,37 +502,40 @@ async function runTeam(params: {
           feedback,
         });
         await patch(params.id, { cut });
-
-        // The brief is written; now actually make the thing. The renderer
-        // needs no key and no model — it is ffmpeg and the script — so the
-        // normal outcome of a video run is a video rather than a brief waiting
-        // for somebody with an afternoon. A file attached by hand still wins:
-        // `renderAndAttach` leaves an existing one alone.
-        const rendered = settings.autoRenderVideo
-          ? await renderAndAttach({ id: params.id, format: params.format, script })
-          : null;
-
-        await setWork(params.id, 'video', {
-          state: rendered?.line ? 'done' : 'briefed',
-          employeeId: editor.id,
-          name: editor.name,
-          role: editor.role,
-          // The render's own last words go in the log: "make the video" alone
-          // hides why the desk did not, and that is the question asked first.
-          note: rendered?.line
-            ? `${cut.note} Cut it — ${rendered.line}. Replace it from the queue if you shoot your own.`
-            : rendered?.error
-              ? `${cut.note} Could not cut it here (${rendered.error}) — press Render in the queue, or attach a video.`
-              : `${cut.note} Make the video and attach it from the queue.`,
-        });
+        cutNote = cut.note;
         await creditWork(editor.id);
       } catch (e) {
-        const message = (e as Error).message;
-        await failed('video', editor, message);
-        // Not fatal: the script and the frames survive, and a file can be
-        // attached by hand from the queue.
-        await patch(params.id, { error: `Editing: ${message}` });
+        await failed('video', editor, (e as Error).message);
       }
+    }
+
+    // A file attached by hand still wins: `renderAndAttach` leaves one alone.
+    const rendered = settings.autoRenderVideo
+      ? await renderAndAttach({ id: params.id, format: params.format, script })
+      : null;
+    if (rendered || cutNote !== null) {
+      await setWork(params.id, 'video', {
+        state: rendered?.line ? 'done' : rendered?.error ? 'failed' : 'briefed',
+        employeeId: editor?.id ?? null,
+        name: editor?.name ?? 'The desk',
+        role: editor?.role ?? null,
+        // The render's own last words: "make the video" alone hides why the
+        // desk did not, and that is the question asked first.
+        note: [
+          cutNote,
+          rendered?.line
+            ? `Cut it — ${rendered.line}. Replace it from the queue if you shoot your own.`
+            : rendered?.error
+              ? 'Could not cut it here — press "Cut the reel" in the queue, or attach a video.'
+              : 'Make the video and attach it from the queue.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        error: rendered?.error ?? null,
+      });
+    }
+    if (rendered?.error) {
+      await patch(params.id, { error: `Reel: ${rendered.error} — press "Cut the reel" to try again.` });
     }
   }
 
@@ -1100,9 +1116,33 @@ export const socialDailyContent = onSchedule(
 export const socialPublishSweep = onSchedule(
   { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
   async () => {
-    const snap = await db.collection('socialPosts').where('status', 'in', ['ready', 'publishing']).limit(20).get();
+    const MAKING: PostStatus[] = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'];
+    const snap = await db
+      .collection('socialPosts')
+      .where('status', 'in', ['ready', 'publishing', ...MAKING])
+      .limit(30)
+      .get();
     for (const doc of snap.docs) {
-      const post = doc.data() as SocialPost & { publishingSinceMs?: number; publishQueuedAtMs?: number };
+      const post = doc.data() as SocialPost & {
+        publishingSinceMs?: number;
+        publishQueuedAtMs?: number;
+        updatedAt?: { toMillis(): number };
+      };
+
+      // A run killed by its own timeout leaves the piece "being made" forever —
+      // the overview shows it in production and nobody can act on it. Every
+      // stage writes as it goes, so one untouched for longer than a run may
+      // live belongs to a function that is gone.
+      if (MAKING.includes(post.status)) {
+        if (Date.now() - (post.updatedAt?.toMillis() ?? 0) < STALE_PUBLISH_MS) continue;
+        await patch(doc.id, {
+          status: 'failed' as PostStatus,
+          error: post.script
+            ? 'The team ran out of time on this one. Press "Make the picture" / "Cut the reel" to finish it, or ask for changes.'
+            : 'The team ran out of time before anything was written. Make it again.',
+        });
+        continue;
+      }
 
       if (post.status === 'publishing') {
         if (Date.now() - (post.publishingSinceMs ?? 0) < STALE_PUBLISH_MS) continue;

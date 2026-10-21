@@ -249,7 +249,6 @@ export interface CreateTripInput {
   paymentMethods?: PaymentMethod[];
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
-  promoCode?: string;
   pickup: GeoPoint;
   dropoff: GeoPoint;
 }

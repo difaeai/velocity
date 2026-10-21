@@ -465,7 +465,7 @@ export default function SocialOverview() {
               {posts.slice(0, 6).map((p) => (
                 <Link
                   key={p.id}
-                  href="/dashboard/social/queue"
+                  href={`/dashboard/social/queue?open=${p.id}`}
                   style={{ display: 'grid', gap: 4, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}
                 >
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

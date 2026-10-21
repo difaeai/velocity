@@ -36,6 +36,7 @@ import {
   socialApi,
   type SocialPlatform,
   type SocialPostDoc,
+  type SocialPostStatus,
   type SocialRevision,
   type SocialRevisionScope,
 } from '@/lib/api';
@@ -50,20 +51,30 @@ import {
   longDate,
 } from '@/components/social/shared';
 
-const OPEN_STATES = [
-  'planning',
-  'researching',
-  'drafting',
-  'optimising',
-  'designing',
-  'rendering',
-  'awaiting_approval',
-  'changes_requested',
-  'ready',
-  'publishing',
-  'failed',
-  'partial',
+/**
+ * Where a piece is, as five shelves. One long column of full cards was the old
+ * page, and at a piece or two a day it became unreadable within a week.
+ */
+type Shelf = 'needs' | 'making' | 'going' | 'live' | 'all';
+const SHELVES: { key: Shelf; label: string; states: SocialPostStatus[] | null; empty: string }[] = [
+  {
+    key: 'needs',
+    label: 'Needs you',
+    states: ['awaiting_approval', 'changes_requested', 'failed', 'partial'],
+    empty: 'Nothing waiting on you.',
+  },
+  {
+    key: 'making',
+    label: 'Being made',
+    states: ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'],
+    empty: 'The team is not working on anything right now.',
+  },
+  { key: 'going', label: 'Going out', states: ['ready', 'publishing'], empty: 'Nothing is being posted right now.' },
+  { key: 'live', label: 'Live', states: ['published'], empty: 'Nothing has gone out yet.' },
+  { key: 'all', label: 'All', states: null, empty: 'The team has not made anything yet — ask for something on the overview.' },
 ];
+
+const PAGE = 30;
 
 const WORKING_STATES = [
   'planning',
@@ -88,82 +99,174 @@ const SCOPE_LABEL: Record<SocialRevisionScope, string> = {
 export default function QueuePage() {
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'open' | 'all'>('open');
+  const [shelf, setShelf] = useState<Shelf>('needs');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(PAGE);
 
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(60)),
+        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(pageSize)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
-    [],
+    [pageSize],
   );
 
+  // `?open=<id>` from the overview opens that piece on the shelf that shows it.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('open');
+    if (!id) return;
+    const t = setTimeout(() => {
+      setOpenId(id);
+      setShelf('all');
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        SHELVES.map((s) => [s.key, s.states ? posts.filter((p) => s.states!.includes(p.status)).length : posts.length]),
+      ) as Record<Shelf, number>,
+    [posts],
+  );
+  const current = SHELVES.find((s) => s.key === shelf)!;
   const shown = useMemo(
-    () => (tab === 'open' ? posts.filter((p) => OPEN_STATES.includes(p.status)) : posts),
-    [posts, tab],
+    () => (current.states ? posts.filter((p) => current.states!.includes(p.status)) : posts),
+    [posts, current],
   );
 
   return (
     <div>
-      <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
-          <p style={{ color: colors.muted, margin: 0 }}>
-            Everything the team has made. Read it, check the numbers, then approve it — or tell them what to fix.
-          </p>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 4,
-            background: colors.surface,
-            border: `1px solid ${colors.border}`,
-            borderRadius: 10,
-            padding: 3,
-          }}
-        >
-          {(['open', 'all'] as const).map((t) => (
+      <header style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
+        <p style={{ color: colors.muted, margin: 0 }}>
+          Everything the team has made, one line each. Open a piece to read it, approve it, or say what to fix.
+        </p>
+      </header>
+
+      <div role="tablist" aria-label="Pieces by where they are" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        {SHELVES.map((s) => {
+          const on = s.key === shelf;
+          return (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={s.key}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setShelf(s.key)}
               style={{
-                border: 'none',
-                background: t === tab ? `${colors.primary}14` : 'transparent',
-                color: t === tab ? colors.primary : colors.muted,
+                border: `1px solid ${on ? colors.primary : colors.border}`,
+                background: on ? `${colors.primary}14` : colors.surface,
+                color: on ? colors.primary : colors.text,
                 fontWeight: 800,
                 fontSize: 12.5,
-                padding: '6px 14px',
-                borderRadius: 8,
+                padding: '6px 12px',
+                borderRadius: 999,
                 cursor: 'pointer',
-                textTransform: 'capitalize',
               }}
             >
-              {t}
+              {s.label}
+              {counts[s.key] ? <span style={{ marginLeft: 6, color: colors.muted }}>{counts[s.key]}</span> : null}
             </button>
-          ))}
-        </div>
-      </header>
+          );
+        })}
+      </div>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
 
       {shown.length === 0 ? (
         <Card>
-          <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>
-            {tab === 'open'
-              ? 'Nothing waiting. The queue is clear.'
-              : 'The team has not made anything yet — brief them from the overview.'}
-          </p>
+          <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>{current.empty}</p>
         </Card>
       ) : (
-        <div style={{ display: 'grid', gap: 16 }}>
-          {shown.map((post) => (
-            <PostCard key={post.id} post={post} />
-          ))}
-        </div>
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          {shown.map((post, i) => {
+            const open = post.id === openId;
+            return (
+              <div key={post.id} style={{ borderTop: i ? `1px solid ${colors.border}` : 'none' }}>
+                <PostRow post={post} open={open} onToggle={() => setOpenId(open ? null : post.id)} />
+                {open ? (
+                  <div style={{ padding: '0 12px 12px' }}>
+                    <PostCard post={post} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </Card>
       )}
+
+      {posts.length === pageSize ? (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="ghost" onClick={() => setPageSize((n) => n + PAGE)}>
+            Load older pieces
+          </Button>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** One piece on one line: what it is, when, what it says, where it stands. */
+function PostRow({ post, open, onToggle }: { post: SocialPostDoc; open: boolean; onToggle: () => void }) {
+  const assets = postAssets(post);
+  const image = assets.find((a) => a.kind === 'image' && a.url);
+  const video = assets.find((a) => a.kind === 'video' && a.url);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        width: '100%',
+        padding: '10px 12px',
+        border: 'none',
+        background: open ? colors.bg : 'transparent',
+        cursor: 'pointer',
+        textAlign: 'left',
+        font: 'inherit',
+        color: colors.text,
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 50,
+          flex: 'none',
+          borderRadius: 6,
+          background: '#1a1c1c',
+          display: 'grid',
+          placeItems: 'center',
+          overflow: 'hidden',
+          color: '#ccff00',
+          fontSize: 14,
+        }}
+      >
+        {image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={image.url ?? ''} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : video ? (
+          '▶'
+        ) : (
+          '—'
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: colors.muted }}>{longDate(post.date)}</span>
+          <FormatChip format={post.format ?? 'reel'} />
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {post.script?.hook ?? post.angle}
+        </div>
+      </div>
+      <StatusPill status={post.status} />
+      <span aria-hidden style={{ color: colors.muted, fontWeight: 800 }}>{open ? '▴' : '▾'}</span>
+    </button>
   );
 }
 

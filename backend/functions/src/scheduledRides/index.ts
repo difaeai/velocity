@@ -288,8 +288,6 @@ async function bookScheduledTrip(scheduleId: string, s: FirebaseFirestore.Docume
       paymentMethod: s.paymentMethod ?? 'cash',
       paymentMethods: runMethods,
       preferFemaleDriver: false,
-      promoCode: null,
-      promoDiscount: 0,
       pickup,
       dropoff,
       scheduled: true,

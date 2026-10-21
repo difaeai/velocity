@@ -79,6 +79,7 @@ const REASON_LABEL: Record<string, string> = {
   recipient_unmatched: 'Could not confirm the money was sent to a Velocity account.',
   amount_mismatch: 'The typed amount and the receipt disagree.',
   above_single_cap: `Over the PKR ${MAX_SINGLE.toLocaleString()} instant-credit cap.`,
+  above_commission_due: 'More than the commission this driver owed — the engine only clears what is owed.',
   daily_auto_cap: 'Past this account’s daily instant-credit limit.',
   below_minimum: `Under the PKR ${MIN_SINGLE} minimum.`,
   image_replay: 'This exact image has been credited before.',
@@ -106,6 +107,8 @@ function ago(now: number, seconds?: number): string {
 
 export default function ManualTopupsPage() {
   const [rows, setRows] = useState<Topup[]>([]);
+  /** Credited by the engine, waiting for someone to match them to the statement. */
+  const [audits, setAudits] = useState<(Topup & { creditedAmount?: number })[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,16 +136,26 @@ export default function ManualTopupsPage() {
     );
   }, []);
 
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, 'manualTopups'), where('audit', '==', 'pending')),
+        (snap) => setAudits(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Topup & { creditedAmount?: number })),
+        (e) => setError(e.message),
+      ),
+    [],
+  );
+
   // Resolve screenshot download URLs (admin-readable per storage.rules).
   useEffect(() => {
-    rows.forEach((r) => {
+    [...rows, ...audits].forEach((r) => {
       if (r.proofPath && !urls[r.id]) {
         getDownloadURL(ref(storage, r.proofPath))
           .then((url) => setUrls((prev) => ({ ...prev, [r.id]: url })))
           .catch(() => undefined);
       }
     });
-  }, [rows, urls]);
+  }, [rows, audits, urls]);
 
   const waiting = useMemo(
     () => rows.filter((r) => r.status === 'pending_review').length,
@@ -155,7 +168,11 @@ export default function ManualTopupsPage() {
     try {
       let note: string | undefined;
       if (!approve) {
-        note = window.prompt('Why is this not being credited? (shown to the driver)') ?? undefined;
+        note = window.prompt(
+          r.status === 'approved'
+            ? 'This takes the money back and the driver owes it again. Why? (shown to the driver)'
+            : 'Why is this not being credited? (shown to the driver)',
+        ) ?? undefined;
         if (note === undefined) { setBusy(null); return; }
       }
       await adminApi.adminReviewManualTopup({
@@ -205,6 +222,43 @@ export default function ManualTopupsPage() {
       </p>
 
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
+
+      {/* The engine only ever credits commission that was owed, but it reads text and cannot see a
+          bank statement. Each one it credited waits here until someone matches it to the money. */}
+      {audits.length > 0 ? (
+        <Card style={{ marginBottom: 20, maxWidth: 760 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>Credited by the engine — check against the statement</div>
+          <div style={{ fontSize: 13, color: colors.muted, marginBottom: 12 }}>
+            Find each transaction ID in Velocity Rides&apos; account. If it is not there, take it back: the
+            driver owes it again and cannot take rides until it is paid.
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {audits.map((r) => (
+              <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
+                {urls[r.id] ? (
+                  <a href={urls[r.id]} target="_blank" rel="noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={urls[r.id]} alt="Payment screenshot" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 6 }} />
+                  </a>
+                ) : null}
+                <div style={{ flex: 1, minWidth: 200, fontSize: 13 }}>
+                  <strong>PKR {(r.creditedAmount ?? 0).toLocaleString()}</strong> · ID{' '}
+                  <strong>{r.transactionRef ?? '—'}</strong> · via {r.sourceApp ?? r.method ?? 'unknown'}
+                  <div style={{ color: colors.muted, fontSize: 12 }}>
+                    Driver {(r.uid ?? 'unknown').slice(0, 8)}… · {ago(now, r.createdAt?.seconds)}
+                  </div>
+                </div>
+                <Button variant="secondary" onClick={() => review(r, true)} disabled={busy === r.id}>
+                  Matches the statement
+                </Button>
+                <Button variant="danger" onClick={() => review(r, false)} disabled={busy === r.id}>
+                  Fake — take it back
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {rows.length === 0 ? (
         <Card><div style={{ color: colors.muted }}>No top-ups awaiting review. 🎉</div></Card>

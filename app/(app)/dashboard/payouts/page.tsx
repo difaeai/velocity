@@ -42,6 +42,20 @@ export default function Payouts() {
     }
   }
 
+  /** Can't be sent — wrong number, closed account. The money goes back to the driver's balance. */
+  async function reject(id: string) {
+    const reason = window.prompt('Why can it not be sent? (shown to the driver)');
+    if (reason === null) return;
+    setBusy(id);
+    try {
+      await adminApi.rejectPayout({ payoutId: id, reason: reason.trim() || undefined });
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Action failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div>
       <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Payouts</h1>
@@ -68,9 +82,14 @@ export default function Payouts() {
                     driver {p.driverId ?? '—'} · {p.account ?? 'no account on file'}
                   </div>
                 </div>
-                <Button disabled={busy === p.id} onClick={() => markPaid(p.id)}>
-                  {busy === p.id ? '…' : 'Mark paid'}
-                </Button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="ghost" disabled={busy === p.id} onClick={() => reject(p.id)}>
+                    Can&apos;t send — return it
+                  </Button>
+                  <Button disabled={busy === p.id} onClick={() => markPaid(p.id)}>
+                    {busy === p.id ? '…' : 'Mark paid'}
+                  </Button>
+                </div>
               </div>
             </Card>
           ))}

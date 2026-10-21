@@ -322,6 +322,8 @@ export const adminApi = {
     { ok: boolean }
   >('adminSetSupportTicketStatus'),
   markPayoutPaid: callable<{ payoutId: string }, { ok: boolean }>('markPayoutPaid'),
+  /** A payout that cannot be sent: turned down, and the money returned to the driver's balance. */
+  rejectPayout: callable<{ payoutId: string; reason?: string }, { ok: boolean }>('adminRejectPayout'),
   adminCreateDriver: callable<
     {
       fullName: string;
@@ -404,7 +406,7 @@ export const adminApi = {
    */
   adminReviewManualTopup: callable<
     { topupId: string; approve: boolean; amount?: number; note?: string },
-    { ok: boolean; status: 'approved' | 'rejected'; credited: number; commissionSettled?: number }
+    { ok: boolean; status: 'approved' | 'rejected' | 'reversed'; credited: number; commissionSettled?: number }
   >('adminReviewManualTopup'),
 
   /** Passenger CNIC verification — the identity gate in front of couriers. */

@@ -387,8 +387,10 @@ export function decideTopupProof(params: {
   duplicate: boolean;
   /** This exact image file has been uploaded before, by anyone. */
   imageReplay: boolean;
+  /** What the uploader owes in commission right now; 0 for anyone who is not a driver. */
+  commissionDue: number;
 }): TopupProofVerdict {
-  const { fields, claimed, ocrConfidence, duplicate, imageReplay } = params;
+  const { fields, claimed, ocrConfidence, duplicate, imageReplay, commissionDue } = params;
   const reasons: string[] = [];
 
   const reject = (reason: string, message: string): TopupProofVerdict => {
@@ -464,6 +466,14 @@ export function decideTopupProof(params: {
       'above_single_cap',
       `Top-ups over PKR ${MAX_SINGLE.toLocaleString()} are checked by our team before they are credited.`,
     );
+  }
+  // Everything above tells a receipt that looks wrong from one that looks right.
+  // None of it tells a real receipt from a good fake — only the bank statement
+  // can — so on its own the engine only clears commission owed right now. A
+  // fake then buys a few days' grace until the after-check reverses it, never
+  // money that can be spent elsewhere.
+  if (fields.amount > commissionDue) {
+    return review('above_commission_due', 'Our team will check this against our account and add it shortly.');
   }
 
   reasons.push('auto_approved');

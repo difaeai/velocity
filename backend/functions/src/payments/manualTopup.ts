@@ -60,6 +60,9 @@ import {
   type VelocityAccounts,
 } from '../domain/topupProof';
 import { trySettleCommissionFromWallet } from '../drivers/autoSettle';
+import { todayKey } from '../drivers/dailyTarget';
+import { commissionDue, getCommissionSettings } from '../domain/commission';
+import { splitFeeAgainstBalance } from '../domain/cancellation';
 
 /** Receipts bigger than this are not receipts. Matches the Storage rule. */
 const MAX_PROOF_BYTES = 15 * 1024 * 1024;
@@ -187,6 +190,9 @@ async function creditManualTopup(params: {
         status: 'approved',
         creditedAmount: amount,
         approvedBy,
+        // What the engine credits a person still checks against the statement
+        // afterwards; a top-up an admin approved was checked on the way in.
+        audit: approvedBy === 'engine' ? 'pending' : 'ok',
         approvedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -201,6 +207,57 @@ async function creditManualTopup(params: {
       { merge: true },
     );
     return true;
+  });
+}
+
+/**
+ * Take back a top-up the engine credited from a receipt that turned out fake.
+ *
+ * The money has usually already paid commission, so there is nothing left in
+ * the balance to take: whatever is not there becomes `outstanding`, the same
+ * debt a cancellation fee leaves, which stops a driver taking work at the limit.
+ * Exported for its test.
+ */
+export async function reverseManualTopup(
+  topupId: string,
+  by: string,
+  note: string | null,
+): Promise<{ takenFromBalance: number; owed: number }> {
+  const topupRef = db.doc(`manualTopups/${topupId}`);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(topupRef);
+    if (snap.get('status') !== 'approved' || snap.get('audit') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'Only an engine-credited top-up waiting for its check can be reversed.');
+    }
+    const amount = (snap.get('creditedAmount') as number | undefined) ?? 0;
+    const walletRef = db.doc(`wallets/${snap.get('uid') as string}`);
+    const walletSnap = await tx.get(walletRef);
+    const { paidFromWallet, addedToOutstanding } = splitFeeAgainstBalance(
+      amount,
+      (walletSnap.get('balance') as number | undefined) ?? 0,
+    );
+    tx.set(
+      walletRef,
+      {
+        ...(paidFromWallet > 0 ? { balance: FieldValue.increment(-paidFromWallet) } : {}),
+        ...(addedToOutstanding > 0 ? { outstanding: FieldValue.increment(addedToOutstanding) } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    tx.set(walletRef.collection('transactions').doc(), {
+      type: 'topup_reversed',
+      amount: -paidFromWallet,
+      outstanding: addedToOutstanding,
+      topupId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      topupRef,
+      { status: 'reversed', audit: 'fake', auditedBy: by, reviewNote: note, auditedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    return { takenFromBalance: paidFromWallet, owed: addedToOutstanding };
   });
 }
 
@@ -277,9 +334,11 @@ export const submitManualTopup = onCall({ timeoutSeconds: 120, memory: '1GiB' },
 
   // Pre-checks, for the message the user reads. The binding ones are the reads
   // inside creditManualTopup's transaction.
-  const [imageSeen, refSeen] = await Promise.all([
+  const [imageSeen, refSeen, driverSnap, commissionSettings] = await Promise.all([
     db.doc(`manualTopupProofs/${imageSha}`).get(),
     fields.refKey ? db.doc(`manualTopupRefs/${fields.refKey}`).get() : Promise.resolve(null),
+    db.doc(`drivers/${ctx.uid}`).get(),
+    getCommissionSettings(),
   ]);
 
   let verdict: TopupProofVerdict = decideTopupProof({
@@ -288,6 +347,7 @@ export const submitManualTopup = onCall({ timeoutSeconds: 120, memory: '1GiB' },
     ocrConfidence: read.ocrConfidence,
     duplicate: refSeen?.exists === true,
     imageReplay: imageSeen.exists,
+    commissionDue: driverSnap.exists ? commissionDue(driverSnap, commissionSettings, todayKey()) : 0,
   });
 
   // A day's worth of auto-credit is enough. Past it a human looks, however
@@ -377,7 +437,11 @@ const reviewSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
-/** Admin decides a top-up the engine would not credit on its own. */
+/**
+ * Admin decides a top-up the engine would not credit on its own — or checks one
+ * it did: `approve` confirms it against the statement, `approve: false` takes a
+ * fake one back.
+ */
 export const adminReviewManualTopup = onCall(async (req) => {
   const admin = requireAdmin(req);
   const parsed = reviewSchema.safeParse(req.data);
@@ -387,11 +451,25 @@ export const adminReviewManualTopup = onCall(async (req) => {
   const topupRef = db.doc(`manualTopups/${topupId}`);
   const snap = await topupRef.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Top-up not found.');
-  if (snap.get('status') === 'approved') {
-    throw new HttpsError('failed-precondition', 'That top-up has already been credited.');
-  }
-
   const uid = snap.get('uid') as string;
+
+  if (snap.get('status') === 'approved') {
+    if (snap.get('audit') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'That top-up has already been credited and checked.');
+    }
+    if (approve) {
+      await topupRef.set({ audit: 'ok', auditedBy: admin.uid, auditedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return { ok: true, status: 'approved' as const, credited: 0 };
+    }
+    const reversed = await reverseManualTopup(topupId, admin.uid, note ?? null);
+    await sendToUser(
+      uid,
+      'Top-up reversed',
+      note ?? 'The payment on that receipt never reached Velocity Rides, so it was taken back. It is now owed.',
+    ).catch(() => undefined);
+    logger.warn('Manual top-up reversed as fake', { topupId, uid, ...reversed, admin: admin.uid });
+    return { ok: true, status: 'reversed' as const, credited: 0, ...reversed };
+  }
 
   if (!approve) {
     await topupRef.set(

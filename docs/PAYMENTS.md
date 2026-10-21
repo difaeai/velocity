@@ -121,6 +121,19 @@ Three verdicts: credited, rejected, or `pending_review` for
 `adminReviewManualTopup` (dashboard → Balance top-ups) — and admin approval
 defaults to the amount the engine read, not the claim.
 
+**What the engine credits on its own is capped at the commission owed right
+now** (`commissionDue`; 0 for anyone who is not a driver). Every check above
+tells a receipt that looks wrong from one that looks right; none of them tells a
+real receipt from one typed up in an image editor — only the bank statement can.
+So the engine only ever clears a debt, never creates spendable money, and every
+top-up it credits is marked `audit: 'pending'` and listed at the top of Balance
+top-ups to be matched against the statement. **Fake — take it back**
+(`reverseManualTopup`) takes back what is still in the balance and turns the
+rest into `outstanding`, the same debt a cancellation fee leaves. A forger gains
+a few days' grace, not money. Wallet-paid rides are refused while
+`walletTopupEnabled` is off, so a balance cannot reach a driver's withdrawable
+earnings by that road either.
+
 Manual money increments `toppedUpTotal` exactly like a gateway top-up, so the
 `walletFunds` ring-fence keeps it spendable on Velocity's charges and never
 withdrawable. That is what keeps this path a closed-loop prepayment rather than

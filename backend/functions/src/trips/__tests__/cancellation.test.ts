@@ -162,6 +162,8 @@ describe('cancelTrip — after a driver accepts', () => {
 
   it("pays a cancelling passenger's fee out of the ride hold it just released", async () => {
     // Wallet ride: acceptBid holds the full fare, so the balance drops to 100.
+    // Wallet rides open with top-ups, so the flag has to be on for one to exist.
+    await db().doc('config/featureFlags').set({ walletTopupEnabled: true });
     await db().doc(`wallets/${PASSENGER}`).set({ balance: 500 });
     const tripId = await matchedTrip({ paymentMethod: 'wallet' });
     expect((await wallet(PASSENGER)).balance).toBe(100);

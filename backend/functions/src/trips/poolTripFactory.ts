@@ -82,8 +82,6 @@ export interface TripSeed {
   paymentMethod: 'cash' | 'wallet';
   paymentMethods: PaymentMethod[];
   preferFemaleDriver?: boolean;
-  promoCode?: string | null;
-  promoDiscount?: number;
 
   pickup: GeoPointish;
   dropoff: GeoPointish;
@@ -179,8 +177,6 @@ export function writeTripDocuments(
     paymentMethod: seed.paymentMethod,
     paymentMethods: seed.paymentMethods,
     preferFemaleDriver: seed.preferFemaleDriver ?? false,
-    promoCode: seed.promoCode ?? null,
-    promoDiscount: seed.promoDiscount ?? 0,
     pickup: seed.pickup,
     dropoff: seed.dropoff,
     ...(seed.provenance ?? {}),

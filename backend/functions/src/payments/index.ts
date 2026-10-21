@@ -22,6 +22,7 @@ import { randomBytes } from 'crypto';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, isDocId, requireAdmin, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
+import { sendToUser } from '../lib/fcm';
 import { getFeatureFlags } from '../domain/featureFlags';
 import { walletFunds } from '../domain/walletFunds';
 import { creditFromIntent } from './credit';
@@ -105,9 +106,10 @@ export const createTopupIntent = onCall(async (req) => {
 
   const intentRef = db.collection('paymentIntents').doc();
   const providerRef = makeProviderRef();
-  // Secret token embedded in the gateway callback URL. Stored where no client
-  // can read it (rules deny all access), so even the payer cannot forge a
-  // success callback.
+  // Secret token embedded in the gateway callback URL, stored where no client
+  // can read it. It stops a stranger forging a callback for this intent — NOT
+  // the payer, whose browser is handed the link; see the `verified` gate in
+  // paymentWebhook.
   const callbackToken = randomBytes(16).toString('hex');
 
   await intentRef.set({
@@ -268,10 +270,11 @@ function callbackParams(request: { query: unknown; body: unknown }): Record<stri
 }
 
 /**
- * Gateway callback (HTTP). JazzCash outcomes are verified by HMAC secure-hash;
- * Easypaisa outcomes by the per-intent secret token plus (when configured) a
- * server-to-server inquiry. Responds with a user-facing result page because
- * the gateways send the payer's browser here.
+ * Gateway callback (HTTP). JazzCash outcomes are verified by HMAC secure-hash,
+ * Easypaisa outcomes by a server-to-server inquiry. A success with neither —
+ * PayFast today, Easypaisa without inquiry credentials — is never credited.
+ * Responds with a user-facing result page because the gateways send the payer's
+ * browser here.
  */
 export const paymentWebhook = onRequest(async (request, response) => {
   const params = callbackParams(request);
@@ -329,6 +332,19 @@ export const paymentWebhook = onRequest(async (request, response) => {
   }
 
   if (outcome.success) {
+    // A browser return proves nothing on its own: the return link, `t` and all,
+    // is printed in the checkout page the payer's own browser loads, so the payer
+    // can replay it with `err_code=000` and never pay. Only a gateway signature or
+    // a server-to-server check (`verified`) may credit. PayFast has neither yet.
+    if (!outcome.verified) {
+      logger.error('Refused an unverified success callback', { intentId, provider: provider.name });
+      await db.doc(`paymentIntents/${intentId}`)
+        .set({ status: 'unverified', updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+        .catch(() => undefined);
+      response.status(403).send(resultPage(false,
+        'We could not confirm this payment with the gateway. If money left your account, contact support with your receipt.'));
+      return;
+    }
     // The credit always comes from the amount stored on our own intent, never
     // from the callback — so a forged amount cannot mint balance. This check is
     // therefore an alarm, not a gate: it is warned rather than rejected because
@@ -345,9 +361,6 @@ export const paymentWebhook = onRequest(async (request, response) => {
       await db.doc(`paymentIntents/${intentId}`)
         .set({ methodName: outcome.methodName }, { merge: true })
         .catch(() => undefined);
-    }
-    if (!outcome.verified) {
-      logger.warn('Credited top-up on token-only verification (configure Easypaisa inquiry for production)', { intentId });
     }
     response.status(ok ? 200 : 404).send(
       resultPage(ok, ok
@@ -486,6 +499,9 @@ export const markPayoutPaid = onCall(async (req) => {
   const snap = await ref.get();
   if (!snap.exists) invalid('Payout not found.');
   if (snap.get('status') === 'paid') return { ok: true };
+  if (snap.get('status') === 'rejected') {
+    throw new HttpsError('failed-precondition', 'That payout was turned down and its money returned.');
+  }
   await ref.set(
     {
       status: 'paid',
@@ -495,6 +511,66 @@ export const markPayoutPaid = onCall(async (req) => {
     },
     { merge: true },
   );
+  return { ok: true };
+});
+
+const rejectPayoutSchema = z.object({
+  payoutId: docId,
+  reason: z.string().trim().max(300).optional(),
+});
+
+/**
+ * Admin turns down a payout that cannot be sent — a mistyped number, a closed
+ * account — and gives the money back. `requestPayout` takes it out of the wallet
+ * the moment it is asked for, so before this "Mark paid" was the only way out
+ * and a typo cost the driver the money.
+ */
+export const adminRejectPayout = onCall(async (req) => {
+  const admin = requireAdmin(req);
+  const parsed = rejectPayoutSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid payoutId.');
+  const { payoutId, reason } = parsed.data;
+  const ref = db.doc(`payouts/${payoutId}`);
+
+  const driverId = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) invalid('Payout not found.');
+    if (snap.get('status') !== 'pending') {
+      throw new HttpsError('failed-precondition', 'Only a payout still waiting can be turned down.');
+    }
+    const uid = snap.get('driverId') as string;
+    const amount = snap.get('amount') as number;
+    const walletRef = db.doc(`wallets/${uid}`);
+    // Back to the balance AND to the earnings it was drawn on, so it can be
+    // withdrawn again to the right account.
+    tx.set(
+      walletRef,
+      {
+        balance: FieldValue.increment(amount),
+        earned: FieldValue.increment(amount),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    tx.set(walletRef.collection('transactions').doc(), {
+      type: 'payout_returned',
+      amount,
+      payoutId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      ref,
+      { status: 'rejected', rejectedBy: admin.uid, reason: reason ?? null, rejectedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    return uid;
+  });
+
+  await sendToUser(
+    driverId,
+    'Payout not sent',
+    `${reason ?? 'We could not send it to that account.'} The money is back in your balance — check the account and ask again.`,
+  ).catch(() => undefined);
   return { ok: true };
 });
 

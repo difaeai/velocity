@@ -55,6 +55,7 @@ import { generateShareCode, writeTripDocuments } from './poolTripFactory';
 import { claimGateFor, waitMessage } from '../pricing/claimGate';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
+import { getFeatureFlags } from '../domain/featureFlags';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -176,7 +177,6 @@ const createTripSchema = z.object({
    */
   paymentMethod: z.enum(['cash', 'wallet']).default('cash'),
   preferFemaleDriver: z.boolean().optional(),
-  promoCode: z.string().max(32).optional(),
   pickup: geoSchema,
   dropoff: geoSchema,
 });
@@ -239,30 +239,32 @@ export const createTrip = onCall(async (req) => {
    */
   const clientShowsFixedFare = data.sharedFareFixed === true;
   const quote = isPool ? await sharedRideFare(data.rideType, data.pickup, data.dropoff) : null;
-  const [{ min: fareMin, max: fareMax }, cancellationSettings] = await Promise.all([
+  const [{ min: fareMin, max: fareMax }, cancellationSettings, flags] = await Promise.all([
     offeredFareBounds(data.rideType, data.pickup, data.dropoff),
     getCancellationSettings(),
+    getFeatureFlags(),
   ]);
+  // A wallet ride turns a balance into a driver's withdrawable earnings, so it
+  // opens with top-ups and not before — the app hides the choice on the same flag.
+  if (paymentMethod === 'wallet' && !flags.walletTopupEnabled) {
+    invalid('Paying from your balance is not available yet. Choose cash or another method.');
+  }
   // Bounds still police every fare a client names: solo always, and a shared
   // ride from a build that is still naming one.
   if ((!isPool || !clientShowsFixedFare)
       && (data.offeredFare < fareMin || data.offeredFare > fareMax)) {
     invalid(`Offered fare for ${data.rideType} must be between ${fareMin} and ${fareMax} PKR.`);
   }
-  /** The fare before any promo. For a pool this is final and stays final. */
+  /** The fare. For a pool this is final and stays final. */
   const askedFare = !quote
     ? data.offeredFare
     : clientShowsFixedFare
       ? quote.fare
       : Math.min(quote.fare, data.offeredFare);
+  const finalFare = Math.max(50, askedFare);
 
   const poolVisibility = isPool ? (data.poolVisibility ?? 'public') : null;
   const shareCode = isPool ? generateShareCode() : null;
-  // The fare after any promo discount, lifted out of the transaction so the
-  // broadcast below can quote the number the driver will actually be offered.
-  // Assigned inside the transaction, which may retry — last write wins, and a
-  // retry recomputes it from the same inputs.
-  let broadcastFare = data.offeredFare;
 
   const tripRef = db.collection('trips').doc();
   const userRef = db.doc(`users/${ctx.uid}`);
@@ -305,33 +307,6 @@ export const createTrip = onCall(async (req) => {
     // passenger can already not afford so drivers don't bid on dead trips.
     const walletBalance = (walletSnap.get('balance') as number | undefined) ?? 0;
 
-    // Validate promo code if provided.
-    //
-    // Not on a shared ride. A promo moves the number the driver is offered, and
-    // on a pool that is the one number everybody's seat price is a fraction of —
-    // a discount would push the driver's offer under the floor the fixed fare
-    // was built to respect, which is how a pool loses its driver. Refused out
-    // loud rather than silently dropped, so nobody thinks a discount applied.
-    let promoDiscount = 0;
-    if (data.promoCode && isPool) {
-      invalid('Promo codes don’t apply to shared rides — that fare is already the lowest we offer.');
-    }
-    if (data.promoCode) {
-      const promoSnap = await tx.get(db.doc(`promoCodes/${data.promoCode.toUpperCase()}`));
-      if (promoSnap.exists && promoSnap.get('active') === true) {
-        const usageCount = (promoSnap.get('usageCount') as number) ?? 0;
-        const usageLimit = (promoSnap.get('usageLimit') as number) ?? Infinity;
-        if (usageCount < usageLimit) {
-          promoDiscount = (promoSnap.get('discountFlat') as number) ?? 0;
-          tx.set(db.doc(`promoCodes/${data.promoCode.toUpperCase()}`),
-            { usageCount: FieldValue.increment(1) }, { merge: true });
-        }
-      }
-    }
-
-    const finalFare = Math.max(50, askedFare - promoDiscount);
-    broadcastFare = finalFare;
-
     if (paymentMethod === 'wallet' && walletBalance < finalFare) {
       throw new HttpsError(
         'failed-precondition',
@@ -359,8 +334,6 @@ export const createTrip = onCall(async (req) => {
       paymentMethod,
       paymentMethods,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
-      promoCode: data.promoCode ?? null,
-      promoDiscount,
       pickup: data.pickup,
       dropoff: data.dropoff,
       passengerName: (userSnap.get('name') as string | undefined)
@@ -380,7 +353,7 @@ export const createTrip = onCall(async (req) => {
     data.pickup,
     data.pool ?? false,
     data.rideType,
-    { fare: broadcastFare },
+    { fare: finalFare },
   ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
 
   // Public pools go out to riders whose saved daily route matches this one on
@@ -720,6 +693,17 @@ export const acceptBid = onCall(async (req) => {
       tx.get(db.doc(`drivers/${driverInfo.driverId}`)),
     ]);
 
+    // A driver bids on many requests at once and every bid stays open, so two
+    // riders can accept the same driver. The second would wait for a car that
+    // is not coming — and pay the cancellation fee for giving up on it.
+    const busyOn = driverDocSnap.get('activeTripId') as string | null | undefined;
+    if (busyOn && busyOn !== tripId) {
+      const busySnap = await tx.get(db.doc(`trips/${busyOn}`));
+      if (busySnap.exists && ACTIVE_STATUSES.has(busySnap.get('status'))) {
+        throw new HttpsError('failed-precondition', 'That driver has just taken another ride. Choose another offer.');
+      }
+    }
+
     // Wallet trips: hold the full fare from the passenger's wallet now, so the
     // driver is guaranteed payment. Released back on cancel; settled to the
     // driver (minus commission) on completion.
@@ -776,6 +760,7 @@ export const acceptBid = onCall(async (req) => {
       { merge: true },
     );
     tx.set(bidRef, { status: 'accepted' }, { merge: true });
+    tx.set(db.doc(`drivers/${driverInfo.driverId}`), { activeTripId: tripId }, { merge: true });
     tx.delete(db.doc(`openRequests/${tripId}`)); // no longer open
     return { fare, driverId: driverInfo.driverId };
   });
@@ -956,6 +941,7 @@ export const cancelTrip = onCall(async (req) => {
     if (!snap.exists) invalid('Trip not found.');
     const passengerId = snap.get('passengerId') as string;
     const driverId = snap.get('driverId') as string | null;
+    const driverSnap = driverId ? await tx.get(db.doc(`drivers/${driverId}`)) : null;
     if (ctx.uid !== passengerId && ctx.uid !== driverId) {
       throw new HttpsError('permission-denied', 'Not your trip.');
     }
@@ -1069,6 +1055,10 @@ export const cancelTrip = onCall(async (req) => {
       { merge: true },
     );
     tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
+    // Free the driver for their next accept — only from THIS trip.
+    if (driverSnap?.get('activeTripId') === tripId) {
+      tx.set(driverSnap.ref, { activeTripId: null }, { merge: true });
+    }
     const coRiders = ((snap.get('poolMembers') as string[] | undefined) ?? [])
       .filter((member) => member !== passengerId);
     for (const member of coRiders) {
@@ -1424,6 +1414,7 @@ export const completeTrip = onCall(async (req) => {
       driverRef,
       {
         tripsCount: FieldValue.increment(1),
+        ...(driverSnap.get('activeTripId') === tripId ? { activeTripId: null } : {}),
         ...cycle.fields,
         // Credit earned by this ride. Spending it is `ledgerCreditSpend`'s own
         // write, so the two never race through the same field expression.

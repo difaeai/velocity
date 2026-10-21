@@ -242,6 +242,23 @@ one the desk drew is redrawn on a "redraw it" note. Before this, every post and
 story waited for a person to make the picture, so neither could ever go out on
 its own.
 
+**The drawing does not depend on a person or a model.** The designer's brief is
+a model call and can fail, and a designer can be off shift; the pictures need
+only the words. So they are drawn whatever happened to the brief — from the
+brief's lines when there is one, from the script's when there is not — and the
+same goes for the reel and the editor's cut brief. Both used to sit inside the
+brief's success path, which is why a run "sometimes" came back with no picture
+or no video: one refused Gemini call was enough. A render that fails says why on
+the piece, and the queue offers **Make the picture / Cut the reel**.
+
+A run killed by its own 15-minute timeout used to leave its piece "being made"
+forever. `socialPublishSweep` now marks any piece untouched for longer than a
+run may live as failed, with the reason, so it can be finished from the queue.
+
+The queue is five shelves — Needs you, Being made, Going out, Live, All — one
+line per piece, with the full card opening in place for the one you click and
+older pieces loading thirty at a time.
+
 ## 3b. The desk cuts its own reels
 
 A video run no longer stops at a brief. With *Cut the reel here* on (the

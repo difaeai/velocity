@@ -36,6 +36,10 @@ const RADIUS_OPTIONS: { km: number | null; label: string }[] = [
   { km: null, label: 'Anywhere' },
 ];
 
+/** Two decimal places, ~1 km — enough for the radius, never someone's door. */
+const coarse = (p: { lat: number; lng: number } | null) =>
+  p ? { lat: Math.round(p.lat * 100) / 100, lng: Math.round(p.lng * 100) / 100 } : null;
+
 export default function TravelMateSetup() {
   const { user } = useAuth();
   const router = useRouter();
@@ -166,8 +170,9 @@ export default function TravelMateSetup() {
         photoURL: finalPhotoURL ?? null,
         active,
         // Freshest GPS fix wins; otherwise keep whatever was saved before so a
-        // temporary permission denial doesn't wipe the radius feature.
-        location: coords ?? savedLocation ?? null,
+        // temporary permission denial doesn't wipe the radius feature. Every user
+        // can read this, so it is rounded to ~1 km — never the exact spot.
+        location: coarse(coords ?? savedLocation),
         searchRadiusKm,
         lastActive: serverTimestamp(),
         // "Joined" date shown on the community profile — set once.

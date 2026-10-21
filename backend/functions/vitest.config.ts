@@ -41,6 +41,10 @@ export default defineConfig({
       // The engine that watches every other feature. Easy one to forget, and
       // a QA engine nobody tests is a QA engine nobody can trust.
       'src/qa/__tests__/**/*.test.ts',
+      // Usernames and personal fleets — written with tests that were never run.
+      'src/fleet/__tests__/**/*.test.ts',
+      // How real users break the system, one attack per case.
+      'src/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.
