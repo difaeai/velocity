@@ -469,12 +469,22 @@ service cloud.firestore {
     // A driver who could would lower `perSeatFare` — or un-mark the riders —
     // just before ending the ride, and owe no commission on cash already taken.
     match /poolRides/{rideId} {
+      // Riders choose women-only rides and trust the stars by what this doc
+      // says, so both are the driver profile's (server-owned), copied the way
+      // driver/pool-ride-offer.tsx copies them — missing means 'unspecified' / 5.0.
+      function copiesDriverProfile(ride) {
+        let p = get(/databases/$(database)/documents/drivers/$(uid())).data;
+        return ride.driverGender == (p.get('gender', null) == null ? 'unspecified' : p.gender)
+               && ride.driverRating == (p.get('rating', null) == null ? 5.0 : p.rating);
+      }
+
       allow read: if isSignedIn();
       allow create: if isDriver() && request.resource.data.driverId == uid()
                     && request.resource.data.status == 'open'
                     && request.resource.data.takenSeats == 0
                     && request.resource.data.maleSeats == 0
-                    && request.resource.data.femaleSeats == 0;
+                    && request.resource.data.femaleSeats == 0
+                    && copiesDriverProfile(request.resource.data);
       allow update, delete: if false;
 
       // Passenger seat docs are created exclusively by the joinPoolRide CF —
