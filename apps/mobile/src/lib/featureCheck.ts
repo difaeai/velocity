@@ -57,6 +57,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../firebase';
 import { currentAppVersion, currentBuildNumber } from './appUpdate';
+import { chainCrashHandler, type GlobalHandler } from './crashHandler';
 
 /** The features this app reports on. Mirrors the backend registry. */
 export const FEATURE = {
@@ -395,8 +396,6 @@ export function reportCrash(error: unknown, where: 'render' | 'uncaught' | 'fata
   });
 }
 
-type GlobalHandler = (error: unknown, isFatal?: boolean) => void;
-
 /**
  * Report errors nothing caught. Installed once, from the root layout. A fatal
  * one is held for up to 1.5 s so the report is saved and sent before the
@@ -408,22 +407,11 @@ export function installCrashReporting(): void {
     ErrorUtils?: { getGlobalHandler(): GlobalHandler; setGlobalHandler(h: GlobalHandler): void };
   }).ErrorUtils;
   if (!eu) return;
-  const previous = eu.getGlobalHandler();
-  eu.setGlobalHandler((error, isFatal) => {
-    if (!isFatal) {
-      void reportCrash(error, 'uncaught');
-      previous(error, isFatal);
-      return;
-    }
-    let handedOver = false;
-    const handOver = () => {
-      if (handedOver) return;
-      handedOver = true;
-      previous(error, isFatal);
-    };
-    setTimeout(handOver, 1500);
-    reportCrash(error, 'fatal').then(flush).finally(handOver);
-  });
+  eu.setGlobalHandler(
+    chainCrashHandler(eu.getGlobalHandler(), (error, isFatal) =>
+      isFatal ? reportCrash(error, 'fatal').then(flush) : reportCrash(error, 'uncaught'),
+    ),
+  );
   void flush();
 }
 
