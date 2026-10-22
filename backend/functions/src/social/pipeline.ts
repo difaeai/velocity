@@ -53,6 +53,7 @@ import { activeEngine, modelReady, type Engine } from './engine';
 import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
+import { underlay } from './footage';
 import { planReel, renderReel } from './reel';
 import { referenceBrief, watchReference, youtubeLink } from './reference';
 import { runResearch } from './research';
@@ -687,13 +688,20 @@ async function renderAndAttach(params: {
 
   try {
     // Slides already attached to this piece become the backdrop. Almost always
-    // there are none, which is the case the typography is built for.
+    // there are none, and stock footage takes their place.
     const images = media.filter((m) => m.kind === 'image' && m.storagePath).slice(0, 6);
     const local = await downloadForRender(images);
 
+    const plan = planReel({ script: params.script, format: params.format });
+    const under = await underlay({
+      postId: params.id,
+      scenes: plan.beats.map((b) => b.scene),
+      orientation: params.format === 'video' ? 'landscape' : 'portrait',
+      footage: !local.paths.length,
+    });
+
     try {
-      const plan = planReel({ script: params.script, format: params.format });
-      const bytes = await renderReel(plan, { localImages: local.paths });
+      const bytes = await renderReel(plan, { localImages: local.paths, localClips: under.clips, music: under.music });
       const stored = await storeVideo(params.id, bytes);
 
       const asset: MediaAsset = {
@@ -714,8 +722,9 @@ async function renderAndAttach(params: {
       // the piece, and the publisher picks by format.
       // error: a failed render's message would otherwise sit under a finished reel.
       await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset], error: null });
-      return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB`, error: null };
+      return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB, ${under.note}`, error: null };
     } finally {
+      await under.cleanup();
       await local.cleanup();
     }
   } catch (e) {

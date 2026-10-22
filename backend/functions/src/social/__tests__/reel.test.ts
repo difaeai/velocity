@@ -111,6 +111,17 @@ describe('planReel', () => {
     expect(planReel({ script: script(), format: 'video' }).size).toEqual({ width: 1920, height: 1080 });
   });
 
+  it('gives every beat a scene to find footage for', () => {
+    const plan = planReel({ script: script(), format: 'reel' });
+    expect(plan.beats.map((b) => b.scene)).toEqual([
+      'a driver counting cash',
+      'a driver counting cash',
+      'three bids arriving',
+      'the ride starting',
+      'the ride starting',
+    ]);
+  });
+
   it('copes with a script that is only a hook', () => {
     const plan = planReel({
       script: script({ frames: [], cta: '' }),
@@ -188,6 +199,27 @@ describe('filterGraph', () => {
     expect(graph).toContain('zoompan');
     expect(graph).toContain('concat=n=2');
     expect(graph).toMatch(/drawbox=[^;]*color=0x1a1c1c@0\.52/);
+  });
+
+  it('cuts one clip per beat, each exactly as long as its line', () => {
+    const plan = planReel({ script: script(), format: 'reel' });
+    const graph = filterGraph(
+      { ...plan, clips: plan.beats.map((_, i) => `/clip-${i}.mp4`) },
+      { ...paths, textFiles: plan.beats.map((b) => b.lines.map((_, i) => `/tmp/${i}.txt`)) },
+    );
+    plan.beats.forEach((beat, i) => {
+      expect(graph).toContain(`[${i}:v]scale=1080:1920`);
+      expect(graph).toContain(`trim=duration=${Math.round((beat.end - beat.start) * 1000) / 1000},`);
+    });
+    expect(graph).toContain(`concat=n=${plan.beats.length}:v=1:a=0[slides]`);
+    expect(graph).not.toContain('zoompan');
+    // The sound is the input after the last clip.
+    expect(graph).toContain(`[${plan.beats.length}:a]afade=t=in`);
+  });
+
+  it('fades the sound in and out, from the first input when there is no backdrop', () => {
+    const graph = graphFor();
+    expect(graph).toMatch(/^\[0:a\]afade=t=in:st=0:d=0\.4,afade=t=out:st=18\.5:d=1\.5\[aout\]/);
   });
 });
 
