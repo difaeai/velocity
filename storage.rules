@@ -187,13 +187,20 @@ service firebase.storage {
                    && (request.resource.contentType.matches('video/.*') || isImage());
     }
 
-    // The reel music library, filled from Automation. The renderer lists the
-    // folder and lays one track under each reel; admins list it to manage it.
+    // The reel libraries, filled from Automation. The renderer lists each
+    // folder and lays a track and our own clips under each reel; admins list
+    // them to manage them.
     match /socialMusic/{fileName} {
       allow read, delete: if isAdmin();
       allow create, update: if isAdmin()
                             && underSize(30)
                             && request.resource.contentType.matches('audio/.*');
+    }
+    match /socialClips/{fileName} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin()
+                            && underSize(60)
+                            && request.resource.contentType.matches('video/.*');
     }
 
     // Rendered/attached post videos. Written only by Cloud Functions; the

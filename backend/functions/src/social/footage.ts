@@ -1,19 +1,22 @@
 /**
- * What goes under the words: stock footage and a music track.
+ * What goes under the words: footage and a music track.
  *
  * A reel that is only type on one colour reads as made by a machine. One clip
  * per beat, cut where the line changes, with a track under it, reads as made
  * by somebody who sat with an editor — which is the whole difference the
  * reels are judged on.
  *
- * - **Footage** is Pexels: free for commercial use, no attribution required,
- *   searched with the scene the writer already wrote for each frame. It needs
- *   `PEXELS_API_KEY` (free); without one the reel stays typography.
- * - **Music** is the library the admin fills from Automation, under
- *   `socialMusic/` in the bucket. Instagram's own trending sounds cannot be
- *   attached through any API, and a copyrighted song baked into the file gets
- *   the reel muted, so the library holds royalty-free tracks somebody chose.
- *   Empty library, silent reel.
+ * - **Footage** is our own clips first — the library the admin fills from
+ *   Automation, under `socialClips/` — then Pixabay stock for the beats left
+ *   over, searched with the scene the writer already wrote for each frame.
+ *   Pixabay needs `PIXABAY_API_KEY` (free). With neither, the reel stays
+ *   typography.
+ * - **Music** is the library under `socialMusic/`, filled from Automation with
+ *   tracks cleared for Instagram (Meta Sound Collection, Pixabay Music).
+ *   Instagram's own trending sounds cannot be attached through any API, and a
+ *   copyrighted song baked into the file gets the reel muted — so the research
+ *   desk lists this week's trending sounds in the queue instead, for whoever
+ *   posts by hand. Empty library, silent reel.
  *
  * Everything here fails soft: a missing clip or track is a plainer reel, never
  * a failed one.
@@ -26,33 +29,33 @@ import { logger } from 'firebase-functions';
 
 import { storage } from '../lib/firebase';
 
-/** Where the admin's music library lives in the bucket. */
+/** Where the admin's libraries live in the bucket. */
 export const MUSIC_FOLDER = 'socialMusic/';
+export const CLIPS_FOLDER = 'socialClips/';
 
-/** What to search when a scene finds nothing — on-brand, and Pexels has plenty of it. */
+/** What to search when a scene finds nothing — on-brand, and stock has plenty of it. */
 const FALLBACK_SCENE = 'city traffic night';
 
-export interface PexelsFile {
-  file_type: string;
+export interface StockFile {
+  url: string;
   width: number;
   height: number;
-  link: string;
 }
 
-interface PexelsVideo {
+interface PixabayHit {
   id: number;
-  video_files: PexelsFile[];
+  videos: Record<string, StockFile>;
 }
 
 /**
  * The smallest file that still fills a 720-wide frame. Instagram re-encodes
  * everything, so a 4K source is only a slower download.
  */
-export function pickFile(files: PexelsFile[]): PexelsFile | null {
-  const mp4 = files.filter((f) => f.file_type === 'video/mp4' && f.link);
-  const area = (f: PexelsFile) => f.width * f.height;
-  const sharp = mp4.filter((f) => Math.min(f.width, f.height) >= 720).sort((a, b) => area(a) - area(b));
-  return sharp[0] ?? mp4.sort((a, b) => area(b) - area(a))[0] ?? null;
+export function pickFile(files: StockFile[]): StockFile | null {
+  const usable = files.filter((f) => f.url);
+  const area = (f: StockFile) => f.width * f.height;
+  const sharp = usable.filter((f) => Math.min(f.width, f.height) >= 720).sort((a, b) => area(a) - area(b));
+  return sharp[0] ?? usable.sort((a, b) => area(b) - area(a))[0] ?? null;
 }
 
 /** A writer's scene ("a driver counting cash, close up") cut to what a stock search can match. */
@@ -65,52 +68,70 @@ export function searchTerms(scene: string, words = 6): string {
     .join(' ');
 }
 
-/** The same track for the same piece, so a re-cut after a change request keeps its sound. */
+/** A stable spread over a library, so each piece starts somewhere else and a re-cut keeps its picks. */
 export function trackIndex(postId: string, count: number): number {
   let h = 0;
   for (const c of postId) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % count;
 }
 
-async function search(key: string, query: string, orientation: 'portrait' | 'landscape'): Promise<PexelsVideo[]> {
+/** `count` items from a library, starting at this piece's place in it, no repeats. */
+export function rotate<T>(items: T[], postId: string, count: number): T[] {
+  if (!items.length) return [];
+  const start = trackIndex(postId, items.length);
+  return Array.from({ length: Math.min(count, items.length) }, (_, i) => items[(start + i) % items.length]);
+}
+
+/** Pixabay's videos come in every shape; a tall one crops into a reel without losing the subject. */
+export function fitsOrientation(hit: PixabayHit, orientation: 'portrait' | 'landscape'): boolean {
+  const file = pickFile(Object.values(hit.videos ?? {}));
+  if (!file) return false;
+  return orientation === 'portrait' ? file.height > file.width : file.width >= file.height;
+}
+
+// shortcut: no 24h response cache, which Pixabay's terms ask for; a few reels a day repeat few
+// searches — add one before this runs more than a handful of times a day.
+async function search(key: string, query: string): Promise<PixabayHit[]> {
   if (!query) return [];
-  const url = new URL('https://api.pexels.com/videos/search');
-  url.searchParams.set('query', query);
-  url.searchParams.set('orientation', orientation);
-  url.searchParams.set('per_page', '10');
-  const res = await fetch(url, { headers: { Authorization: key }, signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) throw new Error(`Pexels said ${res.status}`);
-  return ((await res.json()) as { videos?: PexelsVideo[] }).videos ?? [];
+  const url = new URL('https://pixabay.com/api/videos/');
+  url.searchParams.set('key', key);
+  url.searchParams.set('q', query.slice(0, 100));
+  url.searchParams.set('per_page', '20');
+  url.searchParams.set('safesearch', 'true');
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`Pixabay said ${res.status}`);
+  return ((await res.json()) as { hits?: PixabayHit[] }).hits ?? [];
 }
 
 /**
- * Download one clip per scene into `dir`, never the same video twice.
+ * Download one stock clip per scene into `dir`, never the same video twice.
  *
  * A scene that finds nothing is tried shorter, then as the fallback, so the
  * clips stay in step with the beats; one that still fails is skipped and the
  * renderer reuses another clip in its place.
  */
 async function stockClips(scenes: string[], orientation: 'portrait' | 'landscape', dir: string): Promise<string[]> {
-  const key = process.env.PEXELS_API_KEY?.trim();
-  if (!key) return [];
+  const key = process.env.PIXABAY_API_KEY?.trim();
+  if (!key || !scenes.length) return [];
 
   const used = new Set<number>();
   const paths: string[] = [];
   for (const [i, scene] of scenes.entries()) {
     try {
-      let video: PexelsVideo | undefined;
+      let hit: PixabayHit | undefined;
       for (const query of [searchTerms(scene), searchTerms(scene, 3), FALLBACK_SCENE]) {
-        video = (await search(key, query, orientation)).find((v) => !used.has(v.id) && pickFile(v.video_files));
-        if (video) break;
+        const fresh = (await search(key, query)).filter((h) => !used.has(h.id) && pickFile(Object.values(h.videos ?? {})));
+        hit = fresh.find((h) => fitsOrientation(h, orientation)) ?? fresh[0];
+        if (hit) break;
       }
-      const file = video && pickFile(video.video_files);
-      if (!video || !file) continue;
+      const file = hit && pickFile(Object.values(hit.videos));
+      if (!hit || !file) continue;
 
-      const res = await fetch(file.link, { signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(file.url, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) continue;
-      const out = path.join(dir, `clip-${i}.mp4`);
+      const out = path.join(dir, `stock-${i}.mp4`);
       await writeFile(out, Buffer.from(await res.arrayBuffer()));
-      used.add(video.id);
+      used.add(hit.id);
       paths.push(out);
     } catch (e) {
       logger.warn('social: a stock clip did not arrive', { scene, message: (e as Error).message });
@@ -119,12 +140,28 @@ async function stockClips(scenes: string[], orientation: 'portrait' | 'landscape
   return paths;
 }
 
+/** Everything in one library folder, in a stable order. */
+async function library(folder: string) {
+  const [files] = await storage.bucket().getFiles({ prefix: folder });
+  return files.filter((f) => !f.name.endsWith('/')).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Up to `count` of our own clips for this piece, downloaded into `dir`. */
+async function ownClips(postId: string, count: number, dir: string): Promise<string[]> {
+  const picked = rotate(await library(CLIPS_FOLDER), postId, count);
+  const paths: string[] = [];
+  for (const [i, clip] of picked.entries()) {
+    const out = path.join(dir, `own-${i}${path.extname(clip.name)}`);
+    await clip.download({ destination: out });
+    paths.push(out);
+  }
+  return paths;
+}
+
 /** The library track for this piece, downloaded into `dir`, or null when the library is empty. */
 async function libraryTrack(postId: string, dir: string): Promise<{ path: string; name: string } | null> {
-  const [files] = await storage.bucket().getFiles({ prefix: MUSIC_FOLDER });
-  const tracks = files.filter((f) => !f.name.endsWith('/')).sort((a, b) => a.name.localeCompare(b.name));
-  if (!tracks.length) return null;
-  const track = tracks[trackIndex(postId, tracks.length)];
+  const [track] = rotate(await library(MUSIC_FOLDER), postId, 1);
+  if (!track) return null;
   const out = path.join(dir, `music${path.extname(track.name)}`);
   await track.download({ destination: out });
   return { path: out, name: path.basename(track.name) };
@@ -145,20 +182,23 @@ export async function underlay(params: {
 }): Promise<{ clips: string[]; music: string | null; note: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-underlay-'));
   const cleanup = () => rm(dir, { recursive: true, force: true }).catch(() => {});
+  const soft = <T>(what: string, fallback: T) => (e: unknown) => {
+    logger.warn(`social: could not fetch ${what}`, { message: (e as Error).message });
+    return fallback;
+  };
 
-  const clips = params.footage ? await stockClips(params.scenes, params.orientation, dir) : [];
-  const track = await libraryTrack(params.postId, dir).catch((e) => {
-    logger.warn('social: could not fetch a music track', { message: (e as Error).message });
-    return null;
-  });
+  // Ours take the first beats — the hook most of all — and stock fills the rest.
+  const own = params.footage ? await ownClips(params.postId, params.scenes.length, dir).catch(soft('our clips', [])) : [];
+  const stock = params.footage ? await stockClips(params.scenes.slice(own.length), params.orientation, dir) : [];
+  const track = await libraryTrack(params.postId, dir).catch(soft('a music track', null));
 
   const notes = [
-    clips.length
-      ? `${clips.length} clip${clips.length === 1 ? '' : 's'} from Pexels`
-      : params.footage && !process.env.PEXELS_API_KEY?.trim()
-        ? 'no footage (no Pexels key)'
-        : null,
+    own.length ? `${own.length} of our clips` : null,
+    stock.length ? `${stock.length} from Pixabay` : null,
+    params.footage && !own.length && !stock.length
+      ? `no footage (${process.env.PIXABAY_API_KEY?.trim() ? 'none found' : 'no clips in the library, no Pixabay key'})`
+      : null,
     track ? `music: ${track.name}` : 'no music (the library on Automation is empty)',
   ];
-  return { clips, music: track?.path ?? null, note: notes.filter(Boolean).join(', '), cleanup };
+  return { clips: [...own, ...stock], music: track?.path ?? null, note: notes.filter(Boolean).join(', '), cleanup };
 }

@@ -1389,6 +1389,7 @@ export interface SocialResearch {
   opportunities: string[];
   hookPatterns: string[];
   avoid: string[];
+  sounds?: string[];
   sources: { title: string; url: string }[];
   error: string | null;
 }
