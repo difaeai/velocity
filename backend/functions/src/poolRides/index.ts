@@ -72,6 +72,13 @@ export const startPoolBoarding = onCall(async (req) => {
     throw new HttpsError('failed-precondition', `Cannot start boarding from status "${status}".`);
   }
 
+  // The same gates as every other way to take on riders. Pool rides are posted
+  // by the client, so this is the first point the server sees the driver work.
+  const driverSnap = await db.doc(`drivers/${ctx.uid}`).get();
+  assertCommissionClear(driverSnap, await getCommissionSettings(), todayKey());
+  assertVehicleConfirmed(driverSnap);
+  assertFaceCheckedIn(driverSnap);
+
   const passSnap = await db.collection(`poolRides/${rideId}/passengers`).get();
   if (passSnap.empty) invalid('No passengers have joined yet.');
 
@@ -124,10 +131,19 @@ export const poolArrivePassenger = onCall(async (req) => {
   if (rideSnap.get('driverId') !== ctx.uid) throw new HttpsError('permission-denied', 'Not your pool ride.');
   if (rideSnap.get('status') !== 'boarding') throw new HttpsError('failed-precondition', 'Ride is not in boarding state.');
 
-  await db.doc(`poolRides/${rideId}/passengers/${passengerId}`).set(
-    { status: 'driver_arrived', arrivedAt: FieldValue.serverTimestamp() },
-    { merge: true },
-  );
+  // Only a rider who joined and is still waiting. A seat created here for a
+  // made-up id would board, complete and count toward the daily target.
+  const passRef = db.doc(`poolRides/${rideId}/passengers/${passengerId}`);
+  const passSnap = await passRef.get();
+  const pickupOrder = (rideSnap.get('pickupOrder') as string[] | undefined) ?? [];
+  if (!passSnap.exists || !pickupOrder.includes(passengerId)) {
+    throw new HttpsError('not-found', 'That passenger is not on this ride.');
+  }
+  if (!['confirmed', 'driver_arrived'].includes(passSnap.get('status') as string)) {
+    throw new HttpsError('failed-precondition', 'That passenger has already boarded.');
+  }
+
+  await passRef.update({ status: 'driver_arrived', arrivedAt: FieldValue.serverTimestamp() });
 
   logger.info('Driver arrived at passenger stop', { rideId, passengerId, driver: ctx.uid });
   return { ok: true };
@@ -909,7 +925,21 @@ async function removePassengerFromRide(
     if (!rideSnap.exists) throw new HttpsError('not-found', 'Pool ride not found.');
     if (!passSnap.exists) return;
 
+    const userBlock = {
+      poolBookingBlocked: true,
+      poolBlockedReason:  blockedReason,
+      poolBlockedAt:      FieldValue.serverTimestamp(),
+      updatedAt:          FieldValue.serverTimestamp(),
+    };
     const ride = rideSnap.data()!;
+    // Once boarding has started the seat is part of the ride's record: the
+    // rider is still blocked from future pools, but the ride is not rewound.
+    // Rewinding a completed ride to 'collecting' let it be completed again.
+    if (!['open', 'collecting', 'full'].includes(ride.status as string)) {
+      tx.set(db.doc(`users/${passengerId}`), userBlock, { merge: true });
+      return;
+    }
+
     const passGender = (passSnap.get('userGender') as string) ?? 'unspecified';
     const maleSeats   = (ride.maleSeats   as number) ?? 0;
     const femaleSeats = (ride.femaleSeats as number) ?? 0;
@@ -939,16 +969,7 @@ async function removePassengerFromRide(
       updatedAt:         FieldValue.serverTimestamp(),
     });
 
-    tx.set(
-      db.doc(`users/${passengerId}`),
-      {
-        poolBookingBlocked: true,
-        poolBlockedReason:  blockedReason,
-        poolBlockedAt:      FieldValue.serverTimestamp(),
-        updatedAt:          FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    tx.set(db.doc(`users/${passengerId}`), userBlock, { merge: true });
   });
 }
 

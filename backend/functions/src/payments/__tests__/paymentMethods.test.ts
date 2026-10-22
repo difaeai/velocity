@@ -22,6 +22,7 @@ import {
   deletePaymentMethod,
   topupWithSavedMethod,
 } from '../paymentMethods';
+import { mockConfirmTopup } from '../index';
 
 const USER = 'user-methods';
 const OTHER = 'user-other';
@@ -307,6 +308,14 @@ describe('the mock gateway is emulator-only', () => {
       methodId: string;
     };
     expect(ok.methodId).toBeTruthy();
+  });
+
+  it('refuses to credit a mock top-up outside the emulator', async () => {
+    await asDeployed(async () => {
+      await expect(
+        mockConfirmTopup.run(req({ intentId: 'intent-1' }, USER)),
+      ).rejects.toMatchObject({ code: 'failed-precondition' });
+    });
   });
 
   it('declines a charge on an instrument that was saved earlier', async () => {

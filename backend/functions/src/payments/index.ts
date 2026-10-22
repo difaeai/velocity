@@ -382,7 +382,9 @@ const confirmSchema = z.object({ intentId: docId });
 /** Dev-only: simulate a successful gateway callback (mock provider only). */
 export const mockConfirmTopup = onCall(async (req) => {
   const ctx = requireAuth(req);
-  if (!isMockProvider()) {
+  // Emulator only: `isMockProvider()` alone is true on any deployment with no
+  // gateway credentials, and this callable credits a wallet out of nothing.
+  if (!mockGatewayAllowed() || !isMockProvider()) {
     throw new HttpsError('failed-precondition', 'Only available with the mock provider.');
   }
   const parsed = confirmSchema.safeParse(req.data);
