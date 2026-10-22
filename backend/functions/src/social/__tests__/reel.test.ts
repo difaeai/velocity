@@ -1,15 +1,18 @@
 /**
  * The planning half of the renderer, tested without ffmpeg anywhere near it.
  *
- * CI has no ffmpeg and should not need one: what can actually be wrong here is
- * the arithmetic — a hook that eats half the reel, a line that overflows the
- * frame, text drawn under Instagram's own interface, a last beat that ends
- * before the video does. All of that is a function of its arguments, so all of
- * it is checked here.
+ * What can actually be wrong in the planning is the arithmetic — a hook that
+ * eats half the reel, a line that overflows the frame, text drawn under
+ * Instagram's own interface, a last beat that ends before the video does. All
+ * of that is a function of its arguments, so all of it is checked here. The one
+ * ffmpeg check at the bottom asks only whether the bundled binary can draw text.
  */
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
-import { escapeArg, filterGraph, planReel, wrap } from '../reel';
+import { escapeArg, ffmpegPath, filterGraph, planReel, wrap } from '../reel';
 import type { PostScript } from '../types';
 
 const script = (over: Partial<PostScript> = {}): PostScript => ({
@@ -195,5 +198,15 @@ describe('escapeArg', () => {
 
   it('leaves a posix path alone apart from quoting', () => {
     expect(escapeArg('/srv/fonts/Outfit.ttf')).toBe('/srv/fonts/Outfit.ttf');
+  });
+});
+
+describe('the bundled ffmpeg', () => {
+  // ffmpeg 6.1 made drawtext need libharfbuzz, and ffmpeg-static 5.3.0's Linux
+  // build has none — every picture and reel failed in production while Windows
+  // rendered fine. `npm ci` on the Linux runner fetches the same binary.
+  const bin = ffmpegPath();
+  it.skipIf(!existsSync(bin))('can draw text', () => {
+    expect(execFileSync(bin, ['-hide_banner', '-filters']).toString()).toMatch(/\bdrawtext\b/);
   });
 });

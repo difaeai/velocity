@@ -699,7 +699,8 @@ async function renderAndAttach(params: {
 
       // Slides stay: a carousel's images and the reel made from them are both
       // the piece, and the publisher picks by format.
-      await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset] });
+      // error: a failed render's message would otherwise sit under a finished reel.
+      await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset], error: null });
       return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB`, error: null };
     } finally {
       await local.cleanup();
@@ -767,7 +768,7 @@ async function renderStillsAndAttach(params: {
   if (made.length) {
     const drawn = new Set(made.map((m) => m.slide));
     const kept = existing.filter((m) => !(m.kind === 'image' && drawn.has(m.slide)));
-    await patch(params.id, { media: [...kept, ...made].sort((a, b) => a.slide - b.slide) });
+    await patch(params.id, { media: [...kept, ...made].sort((a, b) => a.slide - b.slide), error: null });
   }
   return { made: made.length, error: null };
 }
