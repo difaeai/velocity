@@ -106,6 +106,9 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_KEY_RESEARCH: ${{ secrets.GEMINI_KEY_RESEARCH }}
+          GEMINI_LIVE_KEY: ${{ secrets.GEMINI_LIVE_KEY }}
+          CLOUDFLARE_TURN_KEY_ID: ${{ secrets.CLOUDFLARE_TURN_KEY_ID }}
+          CLOUDFLARE_TURN_API_TOKEN: ${{ secrets.CLOUDFLARE_TURN_API_TOKEN }}
           FREE_MODEL_ENV: ${{ secrets.FREE_MODEL_ENV }}
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
@@ -184,9 +187,10 @@ jobs:
           # ANTHROPIC_API_KEY → GEMINI_KEY_RESEARCH → FREE_MODEL_KEY → local.
           #
           # One thing to be plain about: on the FREE tier Google may use what
-          # is sent to improve their products. What is sent is brand material,
-          # a competitor list and public figures — no rider or driver data ever
-          # reaches this engine.
+          # is sent to improve their products. For the social desk that is brand
+          # material, a competitor list and public figures. Support replies, and
+          # the phone helpline below when it has no key of its own, DO send the
+          # caller's own account facts.
           if [ -n "$GEMINI_KEY_RESEARCH" ]; then
             printf 'GEMINI_KEY_RESEARCH=%s\n' "$GEMINI_KEY_RESEARCH" >> .env.velocity-fe379
             if [ -n "$ANTHROPIC_API_KEY" ]; then
@@ -196,6 +200,26 @@ jobs:
             fi
           else
             echo "· ai: no GEMINI_KEY_RESEARCH — no free market read"
+          fi
+          # The phone helpline's AI voice (support/helpline.ts). Its own key so
+          # call audio can run on a billed project, which Google does not train
+          # on and which takes more calls at once; without it, the free key.
+          if [ -n "$GEMINI_LIVE_KEY" ]; then
+            printf 'GEMINI_LIVE_KEY=%s\n' "$GEMINI_LIVE_KEY" >> .env.velocity-fe379
+            echo "· helpline: own Gemini key READY"
+          elif [ -n "$GEMINI_KEY_RESEARCH" ]; then
+            echo "· helpline: on the FREE Gemini tier — Google may use call audio, few calls at once"
+          else
+            echo "· helpline: no Gemini key — callers are sent to written support"
+          fi
+          # In-app rider↔driver calls relay through Cloudflare TURN when two
+          # phones cannot reach each other directly. Free to 1,000 GB a month.
+          if [ -n "$CLOUDFLARE_TURN_KEY_ID" ] && [ -n "$CLOUDFLARE_TURN_API_TOKEN" ]; then
+            printf 'CLOUDFLARE_TURN_KEY_ID=%s\n' "$CLOUDFLARE_TURN_KEY_ID" >> .env.velocity-fe379
+            printf 'CLOUDFLARE_TURN_API_TOKEN=%s\n' "$CLOUDFLARE_TURN_API_TOKEN" >> .env.velocity-fe379
+            echo "· calls: TURN relay READY"
+          else
+            echo "· calls: STUN only — some calls between two mobile networks will not connect"
           fi
           # The free engine: any OpenAI-compatible endpoint, Groq by default.
           # Its own block rather than three secrets, so the provider can be

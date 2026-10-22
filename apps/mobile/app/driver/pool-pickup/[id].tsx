@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import { Text } from '../../../src/ui/Text';
+import { callInApp } from '../../../src/lib/inAppCall';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
@@ -242,14 +242,20 @@ export default function PoolPickup() {
 
               {/* Contact */}
               <View style={styles.contactRow}>
-                {currentPass.userPhone ? (
-                  <Pressable
-                    style={styles.contactBtn}
-                    onPress={() => Linking.openURL(`tel:${currentPass.userPhone}`)}
-                  >
-                    <Text style={styles.contactBtnText}>📞 Call</Text>
-                  </Pressable>
-                ) : null}
+                <Pressable
+                  style={styles.contactBtn}
+                  onPress={() =>
+                    callInApp({
+                      rideKind: 'poolRide',
+                      rideId: rideId!,
+                      calleeId: currentPass.uid,
+                      name: currentPass.userName,
+                      phone: currentPass.userPhone,
+                    })
+                  }
+                >
+                  <Text style={styles.contactBtnText}>📞 Call</Text>
+                </Pressable>
                 <Pressable
                   style={[styles.contactBtn, { backgroundColor: colors.primary + '18' }]}
                   onPress={() => setChatOpen(true)}

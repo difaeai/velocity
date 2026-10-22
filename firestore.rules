@@ -1333,6 +1333,30 @@ service cloud.firestore {
       }
     }
 
+    // ----- calls/{callId} -------------------------------------------------------
+    // Free in-app voice calls between a rider and their driver (calls/index.ts).
+    //
+    // Only the startCall callable creates one, after checking both people are on
+    // the same live ride. From then on the two phones run the call themselves,
+    // and each writes only its own half: the caller its offer, the callee its
+    // answer, either one the hang-up. An ended call stays ended, so a stale
+    // screen cannot ring someone again by flipping a status back.
+    match /calls/{callId} {
+      allow read: if isSignedIn()
+                  && (resource.data.callerId == uid() || resource.data.calleeId == uid());
+      allow create, delete: if false;
+      allow update: if isSignedIn()
+                    && resource.data.status in ['ringing', 'active']
+                    && ((resource.data.callerId == uid()
+                         && onlyChanges(['offer', 'status', 'endedAt'])
+                         && (request.resource.data.status == resource.data.status
+                             || request.resource.data.status in ['cancelled', 'missed', 'ended']))
+                        || (resource.data.calleeId == uid()
+                         && onlyChanges(['answer', 'status', 'answeredAt', 'endedAt'])
+                         && (request.resource.data.status == resource.data.status
+                             || request.resource.data.status in ['active', 'declined', 'ended'])));
+    }
+
     // ----- tripWatchLinks/{token} ----------------------------------------------
     // The secret tokens behind "share my ride with my family".
     //

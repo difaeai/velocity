@@ -37,5 +37,8 @@ export function routeForNotification(data: Record<string, unknown> | null | unde
   if (screen === 'intercityTrip' && str('bookingId')) {
     return `/passenger/intercity-trip/${str('bookingId')}`;
   }
+  // "📞 Incoming call" from the driver or rider (backend: calls/index.ts). The
+  // call screen answers a ringing call and says "missed" for one that is over.
+  if (screen === 'call' && str('callId')) return `/call/${str('callId')}`;
   return null;
 }

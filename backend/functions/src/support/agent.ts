@@ -154,6 +154,23 @@ specific problem in their words, say a person is taking it, and give any
 emergency number that applies. Never say "I cannot help".
 `.trim();
 
+/** The support brief with today's live settings. Shared with the phone helpline so both quote the same deal. */
+export function knowledgeFor(context: SupportContext): string {
+  return supportKnowledge({
+    commissionRatePct: Math.round(context.commission.rate * 100),
+    dailyTargetEnabled: context.commission.dailyTargetEnabled,
+    dailyTargetRides: context.commission.dailyTargetRides,
+    dailyTargetBonus: context.commission.dailyTargetBonus,
+    dailyTargetWaives: context.commission.dailyTargetWaivesCommission,
+    dailyTargetPoolOnly: context.commission.dailyTargetPoolOnly,
+    cancellationPassengerPct: Math.round(context.cancellation.passengerFeeRate * 100),
+    cancellationDriverPct: Math.round(context.cancellation.driverFeeRate * 100),
+    outstandingLimit: context.cancellation.outstandingLimit,
+    // The launch posture: the wallet is hidden until top-ups officially open.
+    walletLive: false,
+  });
+}
+
 export interface RunAgentInput {
   uid: string;
   category: SupportCategory;
@@ -218,19 +235,7 @@ export async function runSupportAgent(
   }
 
   // ── Ask the model ─────────────────────────────────────────────────────────
-  const knowledge = supportKnowledge({
-    commissionRatePct: Math.round(context.commission.rate * 100),
-    dailyTargetEnabled: context.commission.dailyTargetEnabled,
-    dailyTargetRides: context.commission.dailyTargetRides,
-    dailyTargetBonus: context.commission.dailyTargetBonus,
-    dailyTargetWaives: context.commission.dailyTargetWaivesCommission,
-    dailyTargetPoolOnly: context.commission.dailyTargetPoolOnly,
-    cancellationPassengerPct: Math.round(context.cancellation.passengerFeeRate * 100),
-    cancellationDriverPct: Math.round(context.cancellation.driverFeeRate * 100),
-    outstandingLimit: context.cancellation.outstandingLimit,
-    // The launch posture: the wallet is hidden until top-ups officially open.
-    walletLive: false,
-  });
+  const knowledge = knowledgeFor(context);
 
   const transcript = turns
     .map((t) => {

@@ -18,7 +18,7 @@
         "NSCameraUsageDescription": "Velocity Rides uses the camera so you can share photos in chat and capture verification documents, and so drivers can record rides with the in-car dash cam.",
         "NSLocationWhenInUseUsageDescription": "Velocity Rides uses your location to match nearby rides, enable live trip tracking, and share your location in chat.",
         "NSContactsUsageDescription": "Velocity Rides lets you pick a contact to share their number in chat.",
-        "NSMicrophoneUsageDescription": "Velocity Rides uses your microphone so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.",
+        "NSMicrophoneUsageDescription": "Velocity Rides uses your microphone for free in-app calls with your driver, your passenger or our helpline, so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.",
         "NSSpeechRecognitionUsageDescription": "Velocity Rides turns your speech into a ride booking. Recognition happens on your device."
       }
     },
@@ -110,11 +110,17 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Velocity Rides uses your microphone so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.",
+          "microphonePermission": "Velocity Rides uses your microphone for free in-app calls with your driver, your passenger or our helpline, so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.",
           "speechRecognitionPermission": "Velocity Rides turns your speech into a ride booking. Recognition happens on your device.",
           "androidSpeechServicePackages": [
             "com.google.android.googlequicksearchbox"
           ]
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "microphonePermission": "Velocity Rides uses your microphone for free in-app calls with your driver, your passenger or our helpline, so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam."
         }
       ]
     ],
