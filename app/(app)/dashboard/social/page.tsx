@@ -3,16 +3,13 @@
 /**
  * Manage social → Dashboard.
  *
- * Laid out like the reference the user chose: the numbers across the top, the
- * team in a banner with quick actions, then — in the order a person needs
- * them — what to make, what is ready for you, who is doing what, the week, and
- * on the right what just happened and what worked.
+ * In the order a person uses it: say what to make, see what the team made (as
+ * boxes, approvable in place), then the numbers, the team, what is travelling
+ * this week and the desk's switches.
  *
  * Kept from the page before it, because each is load-bearing:
  *  - **asked once**: should the desk ask before posting? (`autoPublish`)
  *  - **one box** for everything the desk makes, posts and ads alike
- *  - the desk switch, and the line a piece travels (components/social/pipeline.tsx,
- *    where motion only means something real is moving)
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -33,35 +30,23 @@ import {
   type SocialPageRead,
   type SocialPostDoc,
   type SocialReadiness,
+  type SocialResearch,
   type SocialSettings,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
-import {
-  FORMAT_META,
-  PlatformBadge,
-  PLATFORM_META,
-  StatusPill,
-  longDate,
-} from '@/components/social/shared';
-import { Blockers, Pipeline, readBlockers, readPipeline } from '@/components/social/pipeline';
+import { FORMAT_META, PlatformBadge, PLATFORM_META, StatusPill, longDate } from '@/components/social/shared';
+import { Blockers, readBlockers } from '@/components/social/blockers';
 import { adMoney } from '@/components/social/ads';
 import {
   AgentGrid,
   DASH_CSS,
-  Hero,
   Kpi,
-  MadeChart,
-  ReadyForYou,
-  RecentActivity,
+  PostBoxes,
   TopContent,
-  WeekStrip,
+  ViralFinds,
   readDesk,
-  type QuickAction,
 } from '@/components/social/dashboard';
 import { compact } from '@/components/charts';
-
-// shortcut: one workspace until tenancy lands; read the name from the tenant doc then.
-const WORKSPACE = 'Velocity Rides';
 
 type Want = SocialFormat | 'ad';
 const WANTS: Want[] = ['reel', 'post', 'story', 'carousel', 'ad'];
@@ -83,11 +68,15 @@ export default function SocialOverview() {
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [coverage, setCoverage] = useState<string[]>([]);
   const [ads, setAds] = useState<AdsConfigDoc | null>(null);
+  const [research, setResearch] = useState<SocialResearch | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
   const [want, setWant] = useState<Want>('reel');
+  // Held here so "Make one like this" on a viral find can fill the box at the top.
+  const [brief, setBrief] = useState('');
+  const [refLink, setRefLink] = useState('');
   const { user } = useAuth();
 
   useEffect(
@@ -124,10 +113,20 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        // Two weeks at a few pieces a day: enough for the week strip and the chart.
+        // Two weeks at a few pieces a day: enough for the boxes and the weekly count.
         query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(40)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, 'socialResearch'), orderBy('date', 'desc'), limit(1)),
+        (snap) => setResearch(snap.empty ? null : (snap.docs[0].data() as SocialResearch)),
+        () => setResearch(null),
       ),
     [],
   );
@@ -173,10 +172,6 @@ export default function SocialOverview() {
   const connected = accounts.filter((a) => a.status === 'connected');
   const broken = accounts.filter((a) => a.status === 'error');
 
-  const pipeline = useMemo(
-    () => readPipeline(posts, accounts, settings, onShift.length),
-    [posts, accounts, settings, onShift.length],
-  );
   const blockers = useMemo(
     () => readBlockers(readiness, onShift.length, connected.length, broken.length),
     [readiness, onShift.length, connected.length, broken.length],
@@ -206,9 +201,6 @@ export default function SocialOverview() {
     if (!today) at.setUTCDate(at.getUTCDate() + 1);
     return { at, today };
   }, [settings, nowMs]);
-
-  /** The desk has been round the loop at least once: stop explaining it. */
-  const taught = Boolean(settings?.lastRunAtMs) || posts.length > 0;
 
   /** Save one or more settings, and say so. */
   async function save(patch: Partial<SocialSettings>, said: (s: SocialSettings) => string) {
@@ -251,6 +243,14 @@ export default function SocialOverview() {
           : 'The desk is paused. Nothing will be made until you start it again, or ask for something above.',
     );
 
+  /** "Make one like this" on a viral find: a reel, with that video as the reference. */
+  const makeLike = (url: string, title: string) => {
+    setWant('reel');
+    setRefLink(url);
+    setBrief((b) => b || `Our own version of: ${title}`);
+    document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const running = Boolean(settings?.enabled);
   const desk = useMemo(() => readDesk(posts, nowMs), [posts, nowMs]);
   const followers = connected.reduce((n, a) => n + (a.followers ?? 0), 0);
@@ -258,18 +258,6 @@ export default function SocialOverview() {
   const greeting =
     pktHour === null ? 'Welcome back' : pktHour < 12 ? 'Good morning' : pktHour < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = user?.displayName?.split(' ')[0];
-
-  /** A quick action picks the kind and puts the cursor where that kind starts. */
-  const make = (what: QuickAction) => {
-    setWant(what === 'like' ? 'reel' : what);
-    const target = what === 'like' ? 'make-reference' : 'make';
-    const field = what === 'like' ? 'make-reference-link' : 'make-brief';
-    // After the render: switching away from "Paid ad" is what draws the reference box.
-    setTimeout(() => {
-      document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setTimeout(() => document.getElementById(field)?.focus({ preventScroll: true }), 350);
-    }, 0);
-  };
 
   return (
     <div>
@@ -281,7 +269,7 @@ export default function SocialOverview() {
             {greeting}
             {firstName ? `, ${firstName}` : ''} 👋
           </h1>
-          <p style={{ color: colors.muted, margin: 0 }}>Here is what your social media team is doing today.</p>
+          <p style={{ color: colors.muted, margin: 0 }}>Tell the team what to make. Everything they made is right below.</p>
         </div>
         {desk.waiting.length ? (
           <Link
@@ -344,6 +332,34 @@ export default function SocialOverview() {
         </Card>
       ) : null}
 
+      <div className="sd-stack">
+        {settings ? (
+          <div id="make" style={{ scrollMarginTop: 16 }}>
+            <Composer
+              settings={settings}
+              ads={ads}
+              want={want}
+              onWant={setWant}
+              brief={brief}
+              onBrief={setBrief}
+              refLink={refLink}
+              onRefLink={setRefLink}
+              disabled={onShift.length === 0}
+              onDone={(message) => {
+                setError(null);
+                setNotice(message);
+              }}
+              onError={(message) => {
+                setNotice(null);
+                setError(message);
+              }}
+            />
+          </div>
+        ) : null}
+
+        <PostBoxes posts={desk.boxes} direct={Boolean(settings?.autoPublish)} />
+      </div>
+
       <div className="sd-kpis">
         <Kpi
           icon="📤"
@@ -382,57 +398,11 @@ export default function SocialOverview() {
 
       <div className="sd-grid">
         <div className="sd-col">
-          <Hero workspace={WORKSPACE} waiting={desk.waiting.length} onMake={make} />
-
-          {settings ? (
-            <div id="make">
-              <Composer
-                settings={settings}
-                ads={ads}
-                want={want}
-                onWant={setWant}
-                disabled={onShift.length === 0}
-                onDone={(message) => {
-                  setError(null);
-                  setNotice(message);
-                }}
-                onError={(message) => {
-                  setNotice(null);
-                  setError(message);
-                }}
-              />
-            </div>
-          ) : null}
-
-          <ReadyForYou waiting={desk.waiting} direct={Boolean(settings?.autoPublish)} />
-
           <AgentGrid staff={staff} desk={desk} nowMs={nowMs} />
-
-          <div className="sd-row2">
-            <WeekStrip posts={posts} desk={desk} />
-            <MadeChart desk={desk} />
-          </div>
-
-          {/* the line a piece travels, lit by the documents themselves */}
-          <div className="sd-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '16px 18px 0' }}>
-              <h2 style={{ ...h2, marginBottom: taught ? 6 : 2 }}>Where every piece is right now</h2>
-              {taught ? null : (
-                <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
-                  Left to right, every time. A step lights up only while something is really in it.
-                </p>
-              )}
-            </div>
-            <div style={{ padding: '0 10px 14px' }}>
-              <Pipeline state={pipeline} teach={!taught} />
-            </div>
-          </div>
+          <ViralFinds research={research} onLike={makeLike} />
         </div>
 
         <div className="sd-col">
-          <RecentActivity desk={desk} nowMs={nowMs} />
-          <TopContent read={pageRead} />
-
           {settings ? (
             <div className="sd-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -547,6 +517,7 @@ export default function SocialOverview() {
           </div>
 
           <AdsSnapshot ads={ads} />
+          <TopContent read={pageRead} />
         </div>
       </div>
     </div>
@@ -566,6 +537,10 @@ function Composer({
   ads,
   want,
   onWant,
+  brief,
+  onBrief,
+  refLink,
+  onRefLink,
   disabled,
   onDone,
   onError,
@@ -574,13 +549,16 @@ function Composer({
   ads: AdsConfigDoc | null;
   want: Want;
   onWant: (w: Want) => void;
+  brief: string;
+  onBrief: (b: string) => void;
+  refLink: string;
+  onRefLink: (l: string) => void;
   disabled: boolean;
   onDone: (message: string) => void;
   onError: (message: string) => void;
 }) {
-  const [brief, setBrief] = useState('');
   const [refFile, setRefFile] = useState<File | null>(null);
-  const [refLink, setRefLink] = useState('');
+  const [refAsked, setRefAsked] = useState(false);
   const [direct, setDirect] = useState<boolean | null>(null);
   const [budget, setBudget] = useState('');
   const [days, setDays] = useState('');
@@ -588,6 +566,8 @@ function Composer({
 
   const postDirect = direct ?? settings.autoPublish;
   const adsReady = Boolean(ads?.adAccountId) && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
+  // Folded away until wanted: most pieces need only the kind and a sentence.
+  const showRef = refAsked || Boolean(refLink.trim()) || Boolean(refFile);
 
   async function go() {
     setBusy(true);
@@ -623,14 +603,15 @@ function Composer({
           ...(reference ? { reference } : {}),
         });
         setRefFile(null);
-        setRefLink('');
+        onRefLink('');
+        setRefAsked(false);
         onDone(
           postDirect
-            ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — watch it in the queue.`
-            : `The team made the ${FORMAT_META[res.format].label.toLowerCase()}. It is in the queue for your Approve.`,
+            ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — it is in the boxes below.`
+            : `The team made the ${FORMAT_META[res.format].label.toLowerCase()}. Approve it in the boxes below.`,
         );
       }
-      setBrief('');
+      onBrief('');
     } catch (e) {
       onError(e instanceof Error ? e.message : 'That did not work.');
     } finally {
@@ -642,7 +623,7 @@ function Composer({
     <Card>
       <h2 style={{ ...h2, marginBottom: 4 }}>What should the team make?</h2>
       <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px' }}>
-        Pick a kind, say what it is about in your own words, press Make it. Leave it empty and the team picks the topic.
+        Pick a kind, say what it is about, press Make it. Leave it empty and the team picks the topic.
       </p>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }} role="radiogroup" aria-label="What to make">
@@ -674,7 +655,7 @@ function Composer({
 
       <textarea
         value={brief}
-        onChange={(e) => setBrief(e.target.value)}
+        onChange={(e) => onBrief(e.target.value)}
         id="make-brief"
         rows={3}
         aria-label="What it should be about"
@@ -692,13 +673,17 @@ function Composer({
         }}
       />
 
-      {want !== 'ad' ? (
-        <div id="make-reference" style={refBox}>
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2 }}>🎬 Make it like a video (optional)</div>
+      {want !== 'ad' && !showRef ? (
+        <button type="button" onClick={() => setRefAsked(true)} style={refToggle}>
+          🎬 + Make it like a video I like (optional)
+        </button>
+      ) : null}
+
+      {want !== 'ad' && showRef ? (
+        <div style={refBox}>
           <p style={{ fontSize: 12, color: colors.muted, margin: '0 0 8px', lineHeight: 1.5 }}>
-            Give the team a video you like. They watch it, check how that kind of video is doing in your market, and
-            make yours the same way — copying the hook, pacing and structure, never the footage, faces or words. From
-            Instagram or TikTok? Download the video and upload it.
+            The team watches it and copies the hook, pacing and structure — never the footage, faces or words. From
+            Instagram or TikTok? Download it and upload the file.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <label style={{ ...refPick, opacity: refLink.trim() ? 0.5 : 1 }}>
@@ -722,9 +707,8 @@ function Composer({
               <>
                 <span style={{ fontSize: 12, color: colors.muted }}>or</span>
                 <input
-                  id="make-reference-link"
                   value={refLink}
-                  onChange={(e) => setRefLink(e.target.value)}
+                  onChange={(e) => onRefLink(e.target.value)}
                   placeholder="paste a YouTube or Shorts link"
                   aria-label="YouTube link"
                   style={{ ...smallInput, flex: 1, minWidth: 200 }}
@@ -772,7 +756,7 @@ function Composer({
           </p>
         )
       ) : (
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 10 }}>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, margin: '10px 0' }}>
           <input type="checkbox" checked={postDirect} onChange={(e) => setDirect(e.target.checked)} />
           Post it as soon as it is ready — don&apos;t wait for my Approve
         </label>
@@ -887,18 +871,11 @@ function Choice({
   );
 }
 
-function Row({ label, value, href }: { label: string; value: string; href?: string }) {
-  const body = <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>;
+function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 10 }}>
       <span style={{ color: colors.muted, minWidth: 88 }}>{label}</span>
-      {href ? (
-        <Link href={href} style={{ flex: 1, color: 'inherit' }}>
-          {body}
-        </Link>
-      ) : (
-        body
-      )}
+      <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>
     </div>
   );
 }
@@ -925,11 +902,20 @@ const smallLabel: React.CSSProperties = {
   fontWeight: 800,
   color: colors.muted,
 };
+const refToggle: React.CSSProperties = {
+  border: 'none',
+  background: 'none',
+  padding: 0,
+  color: colors.secondary,
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: 'pointer',
+  font: 'inherit',
+};
 const refBox: React.CSSProperties = {
   border: `1px dashed ${colors.border}`,
   borderRadius: 12,
   padding: 12,
-  marginBottom: 10,
   background: colors.bg,
 };
 const refPick: React.CSSProperties = {

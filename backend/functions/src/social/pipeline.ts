@@ -698,10 +698,16 @@ async function renderAndAttach(params: {
       scenes: plan.beats.map((b) => b.scene),
       orientation: params.format === 'video' ? 'landscape' : 'portrait',
       footage: !local.paths.length,
+      voiceover: params.script.voiceover,
     });
 
     try {
-      const bytes = await renderReel(plan, { localImages: local.paths, localClips: under.clips, music: under.music });
+      const bytes = await renderReel(plan, {
+        localImages: local.paths,
+        localClips: under.clips,
+        music: under.music,
+        voice: under.voice,
+      });
       const stored = await storeVideo(params.id, bytes);
 
       const asset: MediaAsset = {

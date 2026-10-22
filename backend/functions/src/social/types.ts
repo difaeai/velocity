@@ -513,9 +513,18 @@ export interface ContentResearch {
    * Absent on reads made before 2026-10-22.
    */
   sounds?: string[];
+  /** Real posts travelling this week, found by the search. Absent before 2026-10-23. */
+  viral?: ViralFind[];
   sources: ResearchSource[];
   /** Set when research was asked for but could not run. */
   error: string | null;
+}
+
+export interface ViralFind {
+  title: string;
+  url: string;
+  /** The one thing that made it travel. */
+  why: string;
 }
 
 /**

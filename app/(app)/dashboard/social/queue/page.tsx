@@ -122,6 +122,7 @@ export default function QueuePage() {
       ) as Record<Shelf, number>,
     [posts],
   );
+  const opened = posts.find((p) => p.id === openId) ?? null;
   const current = SHELVES.find((s) => s.key === shelf)!;
   const shown = useMemo(
     () => (current.states ? posts.filter((p) => current.states!.includes(p.status)) : posts),
@@ -133,7 +134,7 @@ export default function QueuePage() {
       <header style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
         <p style={{ color: colors.muted, margin: 0 }}>
-          Everything the team has made, one line each. Open a piece to read it, approve it, or say what to fix.
+          Everything the team has made, one box each. Open a piece to read it, approve it, or say what to fix.
         </p>
       </header>
 
@@ -166,26 +167,36 @@ export default function QueuePage() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
 
+      {/* The open piece sits above the boxes, full width: a card is too much to read in a box. */}
+      {opened ? (
+        <div id="open-piece" style={{ marginBottom: 14, scrollMarginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+            <Button variant="ghost" onClick={() => setOpenId(null)}>
+              Close ✕
+            </Button>
+          </div>
+          <PostCard key={opened.id} post={opened} />
+        </div>
+      ) : null}
+
       {shown.length === 0 ? (
         <Card>
           <p style={{ margin: 0, color: colors.muted, fontSize: 14 }}>{current.empty}</p>
         </Card>
       ) : (
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          {shown.map((post, i) => {
-            const open = post.id === openId;
-            return (
-              <div key={post.id} style={{ borderTop: i ? `1px solid ${colors.border}` : 'none' }}>
-                <PostRow post={post} open={open} onToggle={() => setOpenId(open ? null : post.id)} />
-                {open ? (
-                  <div style={{ padding: '0 12px 12px' }}>
-                    <PostCard post={post} />
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </Card>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+          {shown.map((post) => (
+            <PostTile
+              key={post.id}
+              post={post}
+              open={post.id === openId}
+              onOpen={() => {
+                setOpenId(post.id);
+                setTimeout(() => document.getElementById('open-piece')?.scrollIntoView({ behavior: 'smooth' }), 0);
+              }}
+            />
+          ))}
+        </div>
       )}
 
       {posts.length === pageSize ? (
@@ -199,64 +210,78 @@ export default function QueuePage() {
   );
 }
 
-/** One piece on one line: what it is, when, what it says, where it stands. */
-function PostRow({ post, open, onToggle }: { post: SocialPostDoc; open: boolean; onToggle: () => void }) {
+/** One piece as a box: the picture or first frame, then what it is and where it stands. */
+function PostTile({ post, open, onOpen }: { post: SocialPostDoc; open: boolean; onOpen: () => void }) {
   const assets = postAssets(post);
   const image = assets.find((a) => a.kind === 'image' && a.url);
   const video = assets.find((a) => a.kind === 'video' && a.url);
   return (
     <button
       type="button"
-      onClick={onToggle}
-      aria-expanded={open}
+      onClick={onOpen}
+      aria-pressed={open}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        width: '100%',
-        padding: '10px 12px',
-        border: 'none',
-        background: open ? colors.bg : 'transparent',
+        display: 'grid',
+        gridTemplateRows: 'auto 1fr',
+        padding: 0,
+        border: `${open ? 2 : 1}px solid ${open ? colors.primary : colors.border}`,
+        borderRadius: 14,
+        overflow: 'hidden',
+        background: colors.surface,
         cursor: 'pointer',
         textAlign: 'left',
         font: 'inherit',
         color: colors.text,
+        minWidth: 0,
       }}
     >
       <div
         style={{
-          width: 40,
-          height: 50,
-          flex: 'none',
-          borderRadius: 6,
+          aspectRatio: '4 / 5',
           background: '#1a1c1c',
           display: 'grid',
           placeItems: 'center',
           overflow: 'hidden',
           color: '#ccff00',
-          fontSize: 14,
+          fontSize: 13,
+          fontWeight: 700,
         }}
       >
-        {image ? (
+        {video ? (
+          <video
+            src={video.url ?? undefined}
+            muted
+            playsInline
+            preload="metadata"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={image.url ?? ''} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : video ? (
-          '▶'
         ) : (
-          '—'
+          'No picture yet'
         )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: colors.muted }}>{longDate(post.date)}</span>
+      <div style={{ display: 'grid', gap: 6, padding: 10, alignContent: 'start' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <FormatChip format={post.format ?? 'reel'} />
+          <StatusPill status={post.status} />
         </div>
-        <div style={{ fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            lineHeight: 1.35,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}
+        >
           {post.script?.hook ?? post.angle}
         </div>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: colors.muted }}>{longDate(post.date)}</span>
       </div>
-      <StatusPill status={post.status} />
-      <span aria-hidden style={{ color: colors.muted, fontWeight: 800 }}>{open ? '▴' : '▾'}</span>
     </button>
   );
 }

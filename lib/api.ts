@@ -1390,6 +1390,8 @@ export interface SocialResearch {
   hookPatterns: string[];
   avoid: string[];
   sounds?: string[];
+  /** Real posts travelling this week, found by the morning search. */
+  viral?: { title: string; url: string; why: string }[];
   sources: { title: string; url: string }[];
   error: string | null;
 }

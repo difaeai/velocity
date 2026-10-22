@@ -20,8 +20,9 @@
  * With footage — our own clip library, then Pixabay stock — the backdrop is
  * real video instead: one clip per beat, cut on the beat, so the reel reads as
  * edited rather than generated. A track from the music library plays under it
- * all (`footage.ts` finds both). Neither is required — no clips is
- * typography, an empty library is silence.
+ * all, and the script's voice-over over that with the music ducked
+ * (`footage.ts` finds all three). None is required — no clips is typography,
+ * no track is silence, no speech key is no voice.
  *
  * Three things worth knowing before changing anything:
  *
@@ -99,6 +100,14 @@ export interface ReelPlan {
   images: string[];
   /** One clip per beat, in beat order. Wins over the images. May be empty. */
   clips: string[];
+  /** A voice-over input after the music, played at `tempo`; absent means music only. */
+  voice?: { tempo: number } | null;
+}
+
+/** The voice's playback speed: as recorded, unless it would run past the reel — then up to 1.35×. */
+export function voiceTempo(voiceSeconds: number, reelSeconds: number): number {
+  const room = Math.max(1, reelSeconds - 0.8);
+  return round(Math.min(1.35, Math.max(1, voiceSeconds / room)));
 }
 
 /**
@@ -286,9 +295,18 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
 
   // The sound, faded in and out so a track that loops or stops mid-bar never
   // shows where it was cut. Silence goes through the same fades harmlessly.
-  steps.push(
-    `[${backdrops}:a]afade=t=in:st=0:d=0.4,afade=t=out:st=${round(Math.max(0, plan.seconds - 1.5))}:d=1.5[aout]`,
-  );
+  const fades = `afade=t=in:st=0:d=0.4,afade=t=out:st=${round(Math.max(0, plan.seconds - 1.5))}:d=1.5`;
+  if (plan.voice) {
+    // The music drops under the voice; the voice starts a breath after the cut.
+    steps.push(`[${backdrops}:a]volume=0.22[bed]`);
+    steps.push(
+      `[${backdrops + 1}:a]aresample=44100,aformat=channel_layouts=stereo,` +
+        `atempo=${plan.voice.tempo},adelay=300:all=1[vo]`,
+    );
+    steps.push(`[bed][vo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,${fades}[aout]`);
+  } else {
+    steps.push(`[${backdrops}:a]${fades}[aout]`);
+  }
 
   // The backdrop. Footage cuts on every beat, attached slides push in slowly,
   // and either sits behind a scrim so the words stay readable; with neither,
@@ -453,7 +471,13 @@ export class RenderError extends Error {
  */
 export async function renderReel(
   plan: ReelPlan,
-  opts: { ffmpeg?: string; localImages?: string[]; localClips?: string[]; music?: string | null } = {},
+  opts: {
+    ffmpeg?: string;
+    localImages?: string[];
+    localClips?: string[];
+    music?: string | null;
+    voice?: { path: string; seconds: number } | null;
+  } = {},
 ): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-reel-'));
   try {
@@ -474,7 +498,8 @@ export async function renderReel(
     const found = opts.localClips ?? [];
     const clips = found.length ? plan.beats.map((_, i) => found[i % found.length]) : [];
     const images = clips.length ? [] : (opts.localImages ?? []);
-    const graph = filterGraph({ ...plan, images, clips }, {
+    const voice = opts.voice ? { tempo: voiceTempo(opts.voice.seconds, plan.seconds) } : null;
+    const graph = filterGraph({ ...plan, images, clips, voice }, {
       textFiles,
       displayFont: path.join(fontDir(), 'Outfit-Black.ttf'),
       bodyFont: path.join(fontDir(), 'WorkSans-SemiBold.ttf'),
@@ -499,6 +524,8 @@ export async function renderReel(
     // Without music, a silent track: several networks reject a video with no
     // audio stream at all.
     else args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+    // Not looped: the voice is said once, and the bed carries on under the rest.
+    if (opts.voice) args.push('-i', opts.voice.path);
 
     args.push(
       '-filter_complex_script',

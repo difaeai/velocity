@@ -32,7 +32,7 @@ import { db } from '../lib/firebase';
 import { BRAND, systemFor } from './crew';
 import { generateJson, modelReady } from './engine';
 import { localResearch } from './local';
-import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings } from './types';
+import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings, type ViralFind } from './types';
 
 /** Kept per day so a second run the same morning does not pay for it twice. */
 const researchRef = (date: string) => db.doc(`socialResearch/${date}`);
@@ -45,6 +45,8 @@ Never suggest copying a competitor's post. Patterns and gaps only.
 
 Also look up which sounds are trending on Instagram Reels right now: this week's or last week's published trending-audio roundups, Pakistani ones first if any exist. Only list a sound a source actually named.
 
+Also find the posts themselves: 3-6 short videos or posts in this market and niche that are travelling unusually well right now. Each must be one you found in search, with its real address — YouTube Shorts links first, because the team can watch those. Never guess an address; leave an item out instead.
+
 Reply with one JSON object and nothing else:
 {
   "trends": ["4-7 short observations about what is travelling right now, each with the specific thing that made it travel"],
@@ -52,8 +54,20 @@ Reply with one JSON object and nothing else:
   "opportunities": ["3-6 gaps Velocity Rides can take, each one specific enough to film"],
   "hookPatterns": ["3-6 hook shapes that are working, as patterns not copy"],
   "avoid": ["2-4 things that are done to death or that would land badly here"],
-  "sounds": ["3-6 sounds trending on Instagram Reels this week, each as 'Title — Artist: the kind of reel using it'"]
+  "sounds": ["3-6 sounds trending on Instagram Reels this week, each as 'Title — Artist: the kind of reel using it'"],
+  "viral": [{ "title": "what the post is", "url": "its real https address", "why": "the one thing that made it travel" }]
 }`;
+
+/** Only real web addresses survive, and only the fields the dashboard shows. */
+export function viralList(v: unknown): ViralFind[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
+    .map((x) => ({ title: String(x.title ?? '').trim(), url: String(x.url ?? '').trim(), why: String(x.why ?? '').trim() }))
+    .filter((x) => x.title && /^https:\/\/[^\s/]+\.[^\s/]+\/\S+$/.test(x.url))
+    .slice(0, 6)
+    .map((x) => ({ title: x.title.slice(0, 160), url: x.url.slice(0, 500), why: x.why.slice(0, 240) }));
+}
 
 const list = (v: unknown, max: number, len: number): string[] =>
   Array.isArray(v)
@@ -144,6 +158,7 @@ export async function runResearch(params: {
       hookPatterns: list(data.hookPatterns, 8, 200),
       avoid: list(data.avoid, 6, 200),
       sounds: list(data.sounds, 6, 160),
+      viral: viralList(data.viral),
       sources: sources.slice(0, 20).map((s) => ({ title: s.title.slice(0, 200), url: s.url.slice(0, 500) })),
       error: null,
     };
