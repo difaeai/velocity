@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, useSyncExternalStore } from 'react';
-import { LogBox, Platform } from 'react-native';
-import { Slot, useRouter } from 'expo-router';
+import { LogBox, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Slot, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,6 +9,8 @@ import Constants from 'expo-constants';
 import { AuthProvider } from '../src/auth/AuthContext';
 import { hydrateResourceCache } from '../src/lib/cachedResource';
 import { routeForNotification } from '../src/lib/notificationRoute';
+import { installCrashReporting, reportCrash } from '../src/lib/featureCheck';
+import { colors } from '../src/config';
 import {
   getLanguageVersion,
   loadLanguage,
@@ -20,10 +22,12 @@ import {
   getThemeVersion,
   loadTheme,
   subscribeTheme,
+  themed,
   type ThemeMode,
 } from '../src/theme';
 import { BrandSplash } from '../src/ui/BrandSplash';
 import { UpdateGate } from '../src/ui/UpdateGate';
+import { Text } from '../src/ui/Text';
 
 LogBox.ignoreLogs([
   'Could not reach Cloud Firestore backend',
@@ -31,6 +35,48 @@ LogBox.ignoreLogs([
 ]);
 
 const isExpoGo = Constants.appOwnership === 'expo';
+
+// Before anything renders, so an error nothing catches still reaches the
+// Testing log instead of closing the app in silence.
+installCrashReporting();
+
+/**
+ * A screen that throws while rendering lands here instead of taking the whole
+ * app down, and the error goes to the Testing log (see lib/featureCheck).
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    void reportCrash(error, 'render');
+  }, [error]);
+  return (
+    <View style={crashStyles.wrap}>
+      <Text style={crashStyles.title} accessibilityRole="header">
+        Something went wrong
+      </Text>
+      <Text style={crashStyles.body}>
+        We have been told about it. Try again, and if it keeps happening, close and reopen the app.
+      </Text>
+      <Pressable
+        onPress={() => void retry()}
+        style={crashStyles.button}
+        accessibilityRole="button"
+        accessibilityLabel="Try again"
+      >
+        <Text style={crashStyles.buttonText}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const crashStyles = themed(() =>
+  StyleSheet.create({
+    wrap: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: colors.background },
+    title: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 8 },
+    body: { fontSize: 14, color: colors.muted, marginBottom: 24 },
+    button: { backgroundColor: colors.btnBg, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+    buttonText: { color: colors.btnText, fontWeight: '800', fontSize: 15 },
+  }),
+);
 
 // The gate at the bottom of RootLayout renders `null` until the saved theme,
 // language and warm cache have loaded. Without this the native splash hides the

@@ -301,7 +301,12 @@ export function SosSheet({ visible, onClose, trip, coords, address }: SosSheetPr
 
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {/* ── 1. The police. First, always. ── */}
-            <Pressable style={styles.policeBtn} onPress={callPolice}>
+            <Pressable
+              style={styles.policeBtn}
+              onPress={callPolice}
+              accessibilityRole="button"
+              accessibilityLabel={`Call police, ${POLICE_HELPLINE}`}
+            >
               <Text style={styles.policeIcon}>🚨</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.policeTitle}>Call police {POLICE_HELPLINE}</Text>
@@ -322,6 +327,7 @@ export function SosSheet({ visible, onClose, trip, coords, address }: SosSheetPr
                 </Text>
                 <Pressable
                   style={styles.addBtn}
+                  accessibilityRole="button"
                   onPress={() => {
                     onClose();
                     router.push('/safety-contacts');
@@ -339,6 +345,8 @@ export function SosSheet({ visible, onClose, trip, coords, address }: SosSheetPr
                     style={[styles.contactRow, done && styles.contactRowDone]}
                     disabled={working}
                     onPress={() => message && void openChat(c, message)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`WhatsApp ${c.name} your location${done ? ', already opened' : ''}`}
                   >
                     <Text style={styles.contactIdx}>{i + 1}</Text>
                     <View style={{ flex: 1 }}>
@@ -355,12 +363,24 @@ export function SosSheet({ visible, onClose, trip, coords, address }: SosSheetPr
 
             {contacts.length > 0 ? (
               <>
-                <Pressable style={styles.secondaryBtn} disabled={working} onPress={smsEveryone}>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  disabled={working}
+                  onPress={smsEveryone}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send to everyone by SMS, works without internet"
+                >
                   <Text style={styles.secondaryTxt}>
                     ✉️ Send to everyone by SMS (works without internet)
                   </Text>
                 </Pressable>
-                <Pressable style={styles.secondaryBtn} disabled={working} onPress={() => void copyMessage()}>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  disabled={working}
+                  onPress={() => void copyMessage()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy the message"
+                >
                   <Text style={styles.secondaryTxt}>📋 Copy the message</Text>
                 </Pressable>
               </>
@@ -412,7 +432,7 @@ export function SosSheet({ visible, onClose, trip, coords, address }: SosSheetPr
             ) : null}
           </ScrollView>
 
-          <Pressable style={styles.closeBtn} onPress={onClose}>
+          <Pressable style={styles.closeBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
             <Text style={styles.closeTxt}>Close</Text>
           </Pressable>
         </View>
