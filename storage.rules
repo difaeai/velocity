@@ -6,6 +6,9 @@ rules_version = '2';
 //  Default DENY. Auth required everywhere. Driver verification documents (CNIC,
 //  licence, vehicle papers) are write-by-owner but READABLE ONLY by the backend
 //  / admins — never by other users. Image uploads are size- and type-capped.
+//  Shared paths grant `get`, never `read`: `read` includes `list`, which would
+//  let any signed-in user enumerate another user's folder (private chat
+//  attachments included). No client lists a folder.
 // ============================================================================
 
 service firebase.storage {
@@ -37,7 +40,7 @@ service firebase.storage {
 
     // Public-ish profile avatars: world-readable, owner-writable, capped at 5MB.
     match /users/{userId}/avatar/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isOwner(userId) && isImage() && underSize(5);
     }
 
@@ -97,7 +100,7 @@ service firebase.storage {
     // Readable by any signed-in user because the offer screen renders it for
     // whoever was notified; only the advertiser may upload one.
     match /businessAdMedia/{userId}/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isOwner(userId) && isImage() && underSize(10);
     }
 
@@ -128,7 +131,7 @@ service firebase.storage {
     // Avatars uploaded via Cloud Function (avatars/{uid}.jpg).
     // Admin SDK bypasses rules so only a read rule is needed here.
     match /avatars/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if false;
     }
 
@@ -136,7 +139,7 @@ service firebase.storage {
     // Storage Rules cannot mix a wildcard and a literal suffix in one segment,
     // so we match the whole directory. Writes go through the Admin SDK only.
     match /travelMatePhotos/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if false;
     }
 
@@ -144,7 +147,7 @@ service firebase.storage {
     // Cloud Function (Admin SDK bypasses rules); readable by signed-in users
     // so feed cards render.
     match /travelMateFeedMedia/{userId}/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if false;
     }
 
@@ -153,7 +156,7 @@ service firebase.storage {
     // video/* only). createTravelMatePost then verifies the path prefix
     // belongs to the caller before attaching it to a post.
     match /travelMateFeedVideos/{userId}/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isOwner(userId)
                    && underSize(50)
                    && request.resource.contentType.matches('video/.*');
@@ -162,12 +165,13 @@ service firebase.storage {
     // TravelMate chat attachments — photos and documents shared in 1:1 / group
     // chats. The owner uploads directly from the app (capped at 25 MB); the
     // sendTravelMateMessage Cloud Function then verifies the URL belongs to our
-    // bucket before attaching it to a message. Readable by signed-in users so
-    // the other party can open the attachment.
+    // bucket before attaching it to a message. Any signed-in user may open a
+    // file by its random name so the other party can see it, but nobody may
+    // list the folder.
     // Any document type may be shared — the picker allows anything — except one
     // a browser would open as a web page.
     match /travelMateChat/{userId}/{fileName} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isOwner(userId) && underSize(25) && !isActiveContent();
     }
 

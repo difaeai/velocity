@@ -14,7 +14,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { getMetadata, ref, uploadBytes } from 'firebase/storage';
+import { getMetadata, list, ref, uploadBytes } from 'firebase/storage';
 
 const [host, port] = (process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? '127.0.0.1:9199').split(':');
 
@@ -43,6 +43,17 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   const s = ctx.storage();
   await put(s, 'drivers/user1/documents/licence-1', 'image/jpeg');
   await put(s, 'specialRides/user1/documents/insurance-1', 'image/jpeg');
+  await put(s, 'travelMateChat/user1/a1b2c3.jpg', 'image/jpeg');
+});
+
+// A private chat photo opens by its random name, but listing someone's folder
+// would hand out every attachment they ever sent.
+test('chat attachments: open by name, never listed', async () => {
+  await assertSucceeds(read(stranger, 'travelMateChat/user1/a1b2c3.jpg'));
+  await assertFails(list(ref(stranger, 'travelMateChat/user1')));
+  await assertFails(list(ref(stranger, 'avatars')));
+  await assertFails(list(ref(stranger, 'travelMateFeedVideos/user1')));
+  await assertFails(list(ref(stranger, 'businessAdMedia/user1')));
 });
 
 test('driver documents: images and PDF from the owner, nothing active', async () => {

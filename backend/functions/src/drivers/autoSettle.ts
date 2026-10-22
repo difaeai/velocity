@@ -47,6 +47,7 @@ import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { db, FieldValue } from '../lib/firebase';
 import {
   closedCycle,
+  commissionBreakdown,
   cycleCashFare,
   getCommissionSettings,
   openCycle,
@@ -112,6 +113,15 @@ export async function settleCommissionFromWallet(params: {
 
     const cashFare = cycleCashFare(snap);
 
+    // Check the balance BEFORE the bonus is spent. A transaction callback that
+    // returns still commits every write it queued, so a shortfall found after
+    // applyCommissionCredit would spend the bonus and settle nothing.
+    const { due } = commissionBreakdown(snap, settings, today);
+    const balance: number = walletSnap.get('balance') ?? 0;
+    if (due > 0 && balance < due) {
+      return { status: 'short', due, balance, shortfall: due - balance };
+    }
+
     // The driver's bonus pays first and is spent here; the balance only has to
     // cover what is left, which is often nothing.
     const breakdown = applyCommissionCredit({
@@ -122,15 +132,6 @@ export async function settleCommissionFromWallet(params: {
       today,
       source: 'wallet',
     });
-    const due = breakdown.due;
-
-    // Read the balance before spending any of it. A shortfall abandons the
-    // whole transaction — including the credit spend above, which has not been
-    // committed — so a driver who is short keeps their bonus intact.
-    const balance: number = walletSnap.get('balance') ?? 0;
-    if (due > 0 && balance < due) {
-      return { status: 'short', due, balance, shortfall: due - balance };
-    }
 
     if (breakdown.creditApplied > 0) {
       tx.set(db.collection('platformLedger').doc(), {

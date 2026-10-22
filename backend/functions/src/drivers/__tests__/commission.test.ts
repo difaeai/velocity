@@ -206,6 +206,16 @@ describe('payCommission', () => {
     expect(driver.get('cycleGrossFare')).toBe(5000);
   });
 
+  it('a shortfall leaves the bonus unspent', async () => {
+    // 750 owed − 500 bonus = 250 due, and the wallet holds 100.
+    await seed({ cycleGrossFare: 5000, cycleCashFare: 5000, balance: 100, commissionCredit: 500 });
+    await expect(payCommission.run(driverReq({}))).rejects.toThrow(/Top up 150 PKR/);
+
+    const driver = await db().doc(`drivers/${DRIVER}`).get();
+    expect(driver.get('commissionCredit')).toBe(500);
+    expect(driver.get('cycleGrossFare')).toBe(5000);
+  });
+
   it('uses the admin-set rate from config', async () => {
     await seed({ cycleGrossFare: 3000, cycleCashFare: 3000, balance: 1000, rate: 0.2 });
 

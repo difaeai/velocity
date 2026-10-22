@@ -13,8 +13,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
-import { joinPoolRide, completePoolRide, startPoolBoarding, poolArrivePassenger, poolPassengerBoarded } from '../index';
+import { clearFirestore, confirmedCar, db } from '../../travelMate/__tests__/helpers';
+import {
+  joinPoolRide,
+  completePoolRide,
+  startPoolBoarding,
+  poolArrivePassenger,
+  poolPassengerBoarded,
+  driverBlockPoolPassenger,
+} from '../index';
+import { pktDayKey, pktPreviousDay } from '../../domain/dailyTarget';
 import { distanceM, effectiveDropRadiusM, withinRadiusM, hasRealCoords, DEFAULT_POOL_DROP_RADIUS_M } from '../../lib/poolRadius';
 
 function makeReq<T>(data: T, uid: string, role = 'passenger'): CallableRequest<T> {
@@ -179,7 +187,7 @@ describe('completePoolRide end-ride guard', () => {
     await clearFirestore();
     await seedUser(AHMED, 'male', 'Ahmed');
     await seedRide();
-    await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true });
+    await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true, ...confirmedCar() });
 
     // Seat + board Ahmed so the ride can reach in_progress.
     await joinPoolRide.run(
@@ -223,5 +231,73 @@ describe('completePoolRide end-ride guard', () => {
   it('completes without coords (legacy clients)', async () => {
     const res = (await completePoolRide.run(driverReq({ rideId: RIDE_ID }, DRIVER))) as { ok: boolean };
     expect(res.ok).toBe(true);
+  });
+});
+
+// A seat is worth a ride toward the daily target, and the target waives a whole
+// day's commission, so nothing in the lifecycle may conjure or re-count one.
+describe('pool lifecycle guards', () => {
+  const joinAhmed = () =>
+    joinPoolRide.run(
+      makeReq(
+        {
+          rideId: RIDE_ID,
+          pickupLat: F8_MARKAZ.lat, pickupLng: F8_MARKAZ.lng,
+          pickupAddress: 'F-8 Markaz', dropoffAddress: BLUE_AREA.address,
+        },
+        AHMED,
+      ),
+    );
+  const startBoarding = () =>
+    startPoolBoarding.run(driverReq({ rideId: RIDE_ID, driverLat: F8_MARKAZ.lat, driverLng: F8_MARKAZ.lng }, DRIVER));
+
+  beforeEach(async () => {
+    await clearFirestore();
+    await seedUser(AHMED, 'male', 'Ahmed');
+    await seedRide();
+    await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true, ...confirmedCar() });
+    await joinAhmed();
+  });
+
+  it('refuses to mark arrival for someone who never joined, and creates no seat', async () => {
+    await startBoarding();
+    await expect(
+      poolArrivePassenger.run(driverReq({ rideId: RIDE_ID, passengerId: 'ghost-rider' }, DRIVER)),
+    ).rejects.toThrow(/not on this ride/i);
+    const ghost = await db().doc(`poolRides/${RIDE_ID}/passengers/ghost-rider`).get();
+    expect(ghost.exists).toBe(false);
+  });
+
+  it('refuses to start boarding while commission is due', async () => {
+    await db().doc('config/commissionSettings').set({ rate: 0.15 });
+    await db().doc(`drivers/${DRIVER}`).set(
+      { cycleGrossFare: 5000, cycleCashFare: 5000, cycleDay: pktPreviousDay(pktDayKey()) },
+      { merge: true },
+    );
+    await expect(startBoarding()).rejects.toThrow(/Commission due/);
+    const ride = await db().doc(`poolRides/${RIDE_ID}`).get();
+    expect(ride.get('status')).toBe('collecting');
+  });
+
+  it('refuses to start boarding in a car nobody has photographed', async () => {
+    await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true });
+    await expect(startBoarding()).rejects.toThrow(/photo of the car/);
+  });
+
+  it('blocking a rider after the ride ends blocks them but never rewinds the ride', async () => {
+    await startBoarding();
+    await poolArrivePassenger.run(driverReq({ rideId: RIDE_ID, passengerId: AHMED }, DRIVER));
+    await poolPassengerBoarded.run(driverReq({ rideId: RIDE_ID, passengerId: AHMED }, DRIVER));
+    await completePoolRide.run(driverReq({ rideId: RIDE_ID }, DRIVER));
+
+    await driverBlockPoolPassenger.run(driverReq({ rideId: RIDE_ID, passengerId: AHMED }, DRIVER));
+
+    const ride = await db().doc(`poolRides/${RIDE_ID}`).get();
+    expect(ride.get('status')).toBe('completed');
+    expect(ride.get('takenSeats')).toBe(1);
+    const seat = await db().doc(`poolRides/${RIDE_ID}/passengers/${AHMED}`).get();
+    expect(seat.get('status')).toBe('dropped_off');
+    const user = await db().doc(`users/${AHMED}`).get();
+    expect(user.get('poolBookingBlocked')).toBe(true);
   });
 });

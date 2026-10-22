@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
-import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { clearFirestore, confirmedCar, db } from '../../travelMate/__tests__/helpers';
 import {
   joinPoolRide,
   startPoolBoarding,
@@ -102,7 +102,7 @@ beforeEach(async () => {
   await db().doc('config/commissionSettings').set({ rate: 0.10 });
   await db().doc(`users/${AHMED}`).set({ gender: 'male', displayName: 'Ahmed', mixedRideOk: false });
   await db().doc(`users/${BILAL}`).set({ gender: 'male', displayName: 'Bilal', mixedRideOk: false });
-  await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true });
+  await db().doc(`drivers/${DRIVER}`).set({ gender: 'male', fullName: 'Ali', online: true, ...confirmedCar() });
   await db().doc(`poolRides/${RIDE_ID}`).set({
     driverId: DRIVER,
     driverName: 'Ali',
