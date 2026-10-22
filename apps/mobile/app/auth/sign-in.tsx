@@ -459,6 +459,7 @@ export default function SignIn() {
             maxLength={11}
             returnKeyType="done"
             onSubmitEditing={() => sendOtp(false)}
+            accessibilityLabel="Mobile number, after plus 92"
           />
         </View>
 
@@ -473,6 +474,9 @@ export default function SignIn() {
           style={[styles.primaryBtn, styles.primaryGlow, sending && { opacity: 0.7 }]}
           onPress={() => sendOtp(false)}
           disabled={sending}
+          accessibilityRole="button"
+          accessibilityLabel="Continue"
+          accessibilityState={{ disabled: sending, busy: sending }}
         >
           {sending ? (
             <ActivityIndicator color="#000" />
@@ -488,6 +492,7 @@ export default function SignIn() {
         By continuing, you agree to Velocity Rides&apos;{' '}
         <Text
           style={styles.termsLink}
+          accessibilityRole="link"
           onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
         >
           Terms of Service
@@ -495,6 +500,7 @@ export default function SignIn() {
         and{' '}
         <Text
           style={styles.termsLink}
+          accessibilityRole="link"
           onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
         >
           Privacy Policy
@@ -516,7 +522,13 @@ export default function SignIn() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.otpHeader}>
-        <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
+        <Pressable
+          onPress={goBack}
+          hitSlop={12}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Change number"
+        >
           <Text style={styles.backArrow}>←</Text>
         </Pressable>
         <Text style={styles.otpBrand} numberOfLines={1} adjustsFontSizeToFit>
@@ -531,7 +543,12 @@ export default function SignIn() {
       <Text style={styles.otpPhone}>+92 {prettyPhone(phone)}</Text>
 
       {/* 6 code cells over an invisible input */}
-      <Pressable style={styles.cellsRow} onPress={() => otpRef.current?.focus()}>
+      <Pressable
+        style={styles.cellsRow}
+        onPress={() => otpRef.current?.focus()}
+        accessibilityRole="button"
+        accessibilityLabel={`Enter the ${OTP_LENGTH}-digit code, ${otp.length} entered`}
+      >
         {Array.from({ length: OTP_LENGTH }).map((_, i) => (
           <View key={i} style={[styles.cell, otp.length === i && styles.cellActive]}>
             <Text style={otp[i] ? styles.cellDigit : styles.cellDash}>{otp[i] ?? '–'}</Text>
@@ -559,7 +576,14 @@ export default function SignIn() {
         </View>
       ) : null}
 
-      <Pressable onPress={() => sendOtp(true)} disabled={resendCooldown > 0 || sending} hitSlop={8}>
+      <Pressable
+        onPress={() => sendOtp(true)}
+        disabled={resendCooldown > 0 || sending}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={sending ? 'Sending a new code' : 'Resend code'}
+        accessibilityState={{ disabled: resendCooldown > 0 || sending }}
+      >
         <Text style={[styles.resendLine, resendCooldown === 0 && !sending && styles.resendReady]}>
           Didn't receive code? <Text style={{ fontWeight: '800' }}>{sending ? 'Sending…' : 'Resend'}</Text>
         </Text>
@@ -584,6 +608,7 @@ export default function SignIn() {
         style={styles.autoReadCard}
         onPress={onWhatsApp ? openWhatsApp : undefined}
         disabled={!onWhatsApp}
+        accessibilityRole={onWhatsApp ? 'button' : 'text'}
       >
         {onWhatsApp ? <WhatsAppIcon /> : <SmsIcon />}
         <View style={styles.flex}>
@@ -612,13 +637,16 @@ export default function SignIn() {
         style={[styles.primaryBtn, verifying && { opacity: 0.7 }]}
         onPress={() => verifyOtp()}
         disabled={verifying}
+        accessibilityRole="button"
+        accessibilityLabel="Verify code"
+        accessibilityState={{ disabled: verifying, busy: verifying }}
       >
         {verifying ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Verify</Text>}
       </Pressable>
 
       <Text style={styles.supportLine}>
         Having trouble?{' '}
-        <Text style={styles.supportLink} onPress={contactSupport}>Contact Support</Text>
+        <Text style={styles.supportLink} onPress={contactSupport} accessibilityRole="link">Contact Support</Text>
       </Text>
     </ScrollView>
   );

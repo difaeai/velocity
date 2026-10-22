@@ -724,6 +724,18 @@ export const FEATURE_CONTRACTS: readonly FeatureContract[] = [
       },
     ],
   },
+  {
+    id: 'platform.crash',
+    area: 'Platform',
+    title: 'The app staying open',
+    designedTo:
+      'Never close in somebody’s hand: a JavaScript error is caught, reported here with its stack, and the screen offers a retry.',
+    criticality: 'core',
+    // Not timed — a crash has no duration. Present because every contract has one.
+    budgetMs: 15_000,
+    code: ['apps/mobile/app/_layout.tsx', 'apps/mobile/src/lib/featureCheck.ts'],
+    knownCauses: [],
+  },
 ];
 
 const BY_ID = new Map(FEATURE_CONTRACTS.map((f) => [f.id, f] as const));

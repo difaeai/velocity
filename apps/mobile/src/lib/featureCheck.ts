@@ -81,6 +81,7 @@ export const FEATURE = {
   support: 'safety.support',
   push: 'platform.push',
   maps: 'platform.maps',
+  crash: 'platform.crash',
 } as const;
 
 export type FeatureId = (typeof FEATURE)[keyof typeof FEATURE];
@@ -116,6 +117,7 @@ const BUDGET_MS: Record<FeatureId, number> = {
   'safety.support': 20_000,
   'platform.push': 15_000,
   'platform.maps': 15_000,
+  'platform.crash': 15_000,
 };
 
 /**
@@ -337,11 +339,11 @@ export function reportFeatureProblem(input: {
   errorCode?: string;
   errorMessage?: string;
   detail?: Record<string, string>;
-}): void {
+}): Promise<void> {
   try {
     if (isDev) {
       console.warn(`[qa] ${input.featureId} ${input.kind}: ${input.whatHappened}`);
-      return;
+      return Promise.resolve();
     }
     const report: QueuedReport = {
       featureId: input.featureId,
@@ -357,7 +359,8 @@ export function reportFeatureProblem(input: {
       ...(input.detail ? { detail: input.detail } : {}),
     };
 
-    void load().then(() => {
+    // Resolves once the report is saved, for a crash that must outlive the app.
+    return load().then(async () => {
       const existing = queue.find((q) => sameProblem(q, report));
       if (existing) {
         existing.occurrences = Math.min(500, existing.occurrences + 1);
@@ -366,12 +369,62 @@ export function reportFeatureProblem(input: {
         queue.push(report);
         if (queue.length > QUEUE_MAX) queue = queue.slice(-QUEUE_MAX);
       }
-      void persist();
+      await persist();
       scheduleFlush();
     });
   } catch {
     /* rule 2: the watcher never throws */
+    return Promise.resolve();
   }
+}
+
+/**
+ * A JavaScript crash, through the same log. The message is the error code, so
+ * two different crashes stay two rows instead of collapsing into one.
+ */
+export function reportCrash(error: unknown, where: 'render' | 'uncaught' | 'fatal'): Promise<void> {
+  const { message } = errorParts(error);
+  const stack = (error as { stack?: unknown } | null)?.stack;
+  return reportFeatureProblem({
+    featureId: FEATURE.crash,
+    kind: 'threw',
+    whatHappened: `The app hit an unhandled error (${where}).`,
+    errorCode: message.slice(0, 80),
+    errorMessage: message,
+    ...(typeof stack === 'string' ? { detail: { stack: stack.slice(0, 200) } } : {}),
+  });
+}
+
+type GlobalHandler = (error: unknown, isFatal?: boolean) => void;
+
+/**
+ * Report errors nothing caught. Installed once, from the root layout. A fatal
+ * one is held for up to 1.5 s so the report is saved and sent before the
+ * default handler takes the app down; one that does not leave in time is still
+ * saved and goes on the next launch, which is why this flushes on install.
+ */
+export function installCrashReporting(): void {
+  const eu = (globalThis as {
+    ErrorUtils?: { getGlobalHandler(): GlobalHandler; setGlobalHandler(h: GlobalHandler): void };
+  }).ErrorUtils;
+  if (!eu) return;
+  const previous = eu.getGlobalHandler();
+  eu.setGlobalHandler((error, isFatal) => {
+    if (!isFatal) {
+      void reportCrash(error, 'uncaught');
+      previous(error, isFatal);
+      return;
+    }
+    let handedOver = false;
+    const handOver = () => {
+      if (handedOver) return;
+      handedOver = true;
+      previous(error, isFatal);
+    };
+    setTimeout(handOver, 1500);
+    reportCrash(error, 'fatal').then(flush).finally(handOver);
+  });
+  void flush();
 }
 
 /**

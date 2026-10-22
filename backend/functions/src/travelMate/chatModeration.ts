@@ -34,6 +34,7 @@ import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 
 import { performTravelMateBlock } from './community';
+import { setAccountDisabled } from '../users';
 
 const REGION = 'asia-south1';
 
@@ -433,6 +434,7 @@ export const adminResolveTravelMateReport = onCall({ region: REGION }, async (re
       { banned: true, updatedAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
+    await setAccountDisabled(targetUid, true);
   }
 
   await reportRef.update({

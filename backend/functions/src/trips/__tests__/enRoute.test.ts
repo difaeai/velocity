@@ -255,3 +255,27 @@ describe('acceptEnRouteRider', () => {
     ).rejects.toThrow(/female passengers only/);
   });
 });
+
+// With no trip yet, the first rider picked up on a declared route becomes the
+// car's trip. It has to be claimed on the driver's activeTripId like acceptBid
+// does, or a solo bid could be accepted on top of it.
+describe('the first rider on a declared route', () => {
+  beforeEach(async () => {
+    await db().doc(`trips/${carrierId}`).set({ status: 'completed' }, { merge: true });
+    await db().doc(`driverRoutes/${DRIVER}`).set({
+      status: 'active',
+      origin: ORIGIN,
+      destination: DEST,
+      polyline: encodePolyline([ORIGIN, DEST]),
+      polylineSource: 'server',
+    });
+  });
+
+  it('becomes the driver\'s active trip', async () => {
+    const res = (await acceptEnRouteRider.run(
+      driverReq({ tripId: candidateId, driverLat: ORIGIN.lat, driverLng: ORIGIN.lng }),
+    )) as { carrierTripId: string };
+    expect(res.carrierTripId).toBe(candidateId);
+    expect((await db().doc(`drivers/${DRIVER}`).get()).get('activeTripId')).toBe(candidateId);
+  });
+});

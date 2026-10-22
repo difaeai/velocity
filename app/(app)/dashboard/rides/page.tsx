@@ -452,6 +452,19 @@ function RideFile({ tripId, onClose }: { tripId: string; onClose: () => void }) 
 
   const d = detail;
 
+  // A live ride its driver can no longer end (phone died) locks the rider out
+  // of booking. Ending it here frees them; no fee, no commission.
+  async function forceEnd() {
+    const reason = prompt('Why is this ride being ended? (shown in the audit log)');
+    if (!reason || reason.trim().length < 3) return;
+    try {
+      await adminApi.adminForceEndTrip({ tripId, reason: reason.trim() });
+      setDetail(await adminApi.adminGetRideDetail({ tripId }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not end that ride.');
+    }
+  }
+
   return (
     <div style={overlayStyle} onClick={onClose}>
       <Card style={{ maxWidth: 760, width: '94%', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -486,6 +499,13 @@ function RideFile({ tripId, onClose }: { tripId: string; onClose: () => void }) 
                   }`}
                 />
                 <Row label="State" value={(d.ride.status ?? '—').replace('_', ' ')} />
+                {['requested', 'matched', 'arriving', 'arrived', 'in_progress'].includes(
+                  d.ride.status ?? '',
+                ) ? (
+                  <Button variant="ghost" onClick={() => void forceEnd()}>
+                    Force-end this ride
+                  </Button>
+                ) : null}
                 <Row
                   label="Picked up at"
                   value={`${d.ride.pickup?.address ?? '—'}${

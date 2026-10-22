@@ -391,6 +391,9 @@ export { sendTripMessage } from './trips/chat';
 // Retire ride requests nobody is waiting on — clears the driver feed of
 // rides that were cancelled, taken, or simply abandoned mid-request.
 export { sweepStaleOpenRequests } from './trips/sweepStaleRequests';
+// A trip left in_progress (the driver's phone died) locks its rider out of
+// booking; the sweep closes it after a day, the desk can close it at once.
+export { sweepStuckTrips, adminForceEndTrip } from './trips/stuckTrips';
 
 // The same job for the two shared-ride offer collections: a driver's posted
 // ride whose departure time came and went without boarding, and a riders' pool

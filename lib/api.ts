@@ -630,6 +630,7 @@ export const adminApi = {
   // equality filter reaches Firestore and the rest are applied in memory.
   adminListRides: callable<RideHistoryFilters, RideHistoryPage>('adminListRides'),
   adminGetRideDetail: callable<{ tripId: string }, RideDetail>('adminGetRideDetail'),
+  adminForceEndTrip: callable<{ tripId: string; reason: string }, { ok: boolean }>('adminForceEndTrip'),
   adminSearchRideParties: callable<
     { term: string },
     { people: RideParty[] }

@@ -1098,6 +1098,21 @@ export const acceptEnRouteRider = onCall(async (req) => {
       );
     }
 
+    // The first rider becomes the driver's live trip, claimed on activeTripId
+    // like acceptBid does — without it the driver could take a solo bid on top.
+    if (isFirstRider) {
+      const busyOn = (await tx.get(db.doc(`drivers/${ctx.uid}`))).get('activeTripId') as
+        | string
+        | null
+        | undefined;
+      if (busyOn && busyOn !== tripId) {
+        const busySnap = await tx.get(db.doc(`trips/${busyOn}`));
+        if (busySnap.exists && CARRYING.has(busySnap.get('status'))) {
+          throw new HttpsError('failed-precondition', 'Finish your current ride before picking up another.');
+        }
+      }
+    }
+
     // ── Re-run every gate against what is true right now ──
     const existing: PoolRider[] = isFirstRider
       ? []
@@ -1236,7 +1251,8 @@ export const acceptEnRouteRider = onCall(async (req) => {
               fare: theirFare,
               matchedAt: FieldValue.serverTimestamp(),
             }
-          : {}),
+          : // A co-rider can read this doc; the driver has getPoolRiders.
+            { passengerPhone: FieldValue.delete() }),
         pool: true,
         poolRiders: sealed,
         poolMembers: members,
@@ -1289,6 +1305,9 @@ export const acceptEnRouteRider = onCall(async (req) => {
       );
     }
     tx.set(db.doc(`users/${candidate.uid}`), { activeTripId: carrierRef.id }, { merge: true });
+    if (isFirstRider) {
+      tx.set(db.doc(`drivers/${ctx.uid}`), { activeTripId: carrierRef.id }, { merge: true });
+    }
 
     // Off the open feed either way — it is taken.
     tx.delete(db.doc(`openRequests/${tripId}`));

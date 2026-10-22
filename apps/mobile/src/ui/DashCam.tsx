@@ -50,7 +50,9 @@ const REBUILD_AFTER_FAILURES = 3;
 
 export function DashCam({ tripId, uid }: { tripId: string; uid: string }) {
   // A screen that locks sends the app to the background, and the camera with it.
-  useKeepAwake('dashcam');
+  // No fixed tag: each mount gets its own, so closing the Safety Centre's copy
+  // cannot release the lock the driver screen's copy still needs.
+  useKeepAwake();
   // Re-render when a clip is queued or uploaded, or the cabin check answers.
   useSyncExternalStore(subscribeDashcam, getDashcamVersion, getDashcamVersion);
 

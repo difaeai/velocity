@@ -27,10 +27,44 @@ on:
 permissions:
   contents: read
   id-token: write
+  actions: read
 
 jobs:
+  # This workflow and CI both start on the same push, so without this a red CI
+  # still shipped. Wait for CI's run on this exact commit and stop unless it
+  # passed. A manual dispatch skips the wait: it exists for commits CI never ran
+  # on (Actions was down), and a person chose to run it.
+  wait-for-ci:
+    name: Wait for CI on this commit
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Wait for the CI run to finish green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 120); do
+            run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+              --event push --json status,conclusion,url --jq '.[0] // empty')
+            status=$(echo "$run" | jq -r '.status // "missing"')
+            conclusion=$(echo "$run" | jq -r '.conclusion // ""')
+            echo "CI: $status $conclusion"
+            if [ "$status" = "completed" ]; then
+              [ "$conclusion" = "success" ] && exit 0
+              echo "::error::CI did not pass on $GITHUB_SHA ($(echo "$run" | jq -r .url)); not deploying."
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::CI did not finish within 40 minutes; not deploying."
+          exit 1
+
   deploy:
     name: Deploy to Firebase (asia-south1)
+    needs: wait-for-ci
+    # `always()` so a skipped wait (manual dispatch) still deploys; a failed one never does.
+    if: always() && (needs.wait-for-ci.result == 'success' || needs.wait-for-ci.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

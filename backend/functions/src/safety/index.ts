@@ -85,7 +85,11 @@ export const raiseSafetyEvent = onCall(async (req) => {
     // numbers in the first second, not after three more document reads.
     driverInfo: (tripSnap.get('driverInfo') as Record<string, unknown> | undefined) ?? null,
     driverPhone: (tripSnap.get('driverPhone') as string | null | undefined) ?? null,
-    passengerPhone: (tripSnap.get('passengerPhone') as string | null | undefined) ?? null,
+    // A shared trip doc drops the host's number once a co-rider is aboard.
+    passengerPhone:
+      (tripSnap.get('passengerPhone') as string | null | undefined) ??
+      ((await db.doc(`users/${passengerId}`).get()).get('phoneNumber') as string | undefined) ??
+      null,
     pickup: (tripSnap.get('pickup') as Record<string, unknown> | undefined) ?? null,
     dropoff: (tripSnap.get('dropoff') as Record<string, unknown> | undefined) ?? null,
     tripStatus: (tripSnap.get('status') as string | undefined) ?? null,

@@ -375,6 +375,9 @@ async function seatRiderOnPool(
     {
       poolMembers: newMembers,
       poolRoster: newRoster,
+      // Every member can read the trip doc, so the host's number leaves it the
+      // moment somebody else is aboard; the driver gets it from getPoolRiders.
+      passengerPhone: FieldValue.delete(),
       seats: newMembers.length,
       poolPerSeatFare: tierFare,
       ...(genderBump ? { poolGenders: genderBump } : {}),

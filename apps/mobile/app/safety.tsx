@@ -153,10 +153,10 @@ export default function SafetyCentre() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
           <Text style={styles.back}>‹</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Safety Centre</Text>
+        <Text style={styles.headerTitle} accessibilityRole="header">Safety Centre</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -175,7 +175,13 @@ export default function SafetyCentre() {
         <Text style={styles.sectionTitle}>In an emergency</Text>
 
         {/* ── SOS ── The one button that tells everybody at once. ── */}
-        <Pressable style={styles.sosBtn} onPress={() => setSosOpen(true)}>
+        <Pressable
+          style={styles.sosBtn}
+          onPress={() => setSosOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="SOS, alert my family"
+          accessibilityHint="Opens the emergency sheet to message your contacts and call the police"
+        >
           <Text style={styles.sosIcon}>🆘</Text>
           <View style={styles.bigBtnBody}>
             <Text style={styles.sosTitle}>SOS — alert my family</Text>
@@ -190,6 +196,8 @@ export default function SafetyCentre() {
         <Pressable
           style={[styles.bigBtn, styles.policeBtn]}
           onPress={() => placeCall(POLICE, reportPoliceCalled)}
+          accessibilityRole="button"
+          accessibilityLabel={`Call police, ${POLICE}`}
         >
           <Text style={styles.bigBtnIcon}>🚨</Text>
           <View style={styles.bigBtnBody}>
@@ -201,7 +209,12 @@ export default function SafetyCentre() {
           </View>
         </Pressable>
 
-        <Pressable style={[styles.bigBtn, styles.rescueBtn]} onPress={() => placeCall(RESCUE)}>
+        <Pressable
+          style={[styles.bigBtn, styles.rescueBtn]}
+          onPress={() => placeCall(RESCUE)}
+          accessibilityRole="button"
+          accessibilityLabel={`Call Rescue, ${RESCUE}`}
+        >
           <Text style={styles.bigBtnIcon}>🚑</Text>
           <View style={styles.bigBtnBody}>
             <Text style={styles.bigBtnTitle}>Call Rescue — {RESCUE}</Text>
@@ -209,7 +222,12 @@ export default function SafetyCentre() {
           </View>
         </Pressable>
 
-        <Pressable style={styles.row} onPress={() => router.push('/safety-contacts')}>
+        <Pressable
+          style={styles.row}
+          onPress={() => router.push('/safety-contacts')}
+          accessibilityRole="button"
+          accessibilityLabel={`Emergency contacts, ${contacts.length} of ${MAX_EMERGENCY_CONTACTS}`}
+        >
           <Text style={styles.rowIcon}>👥</Text>
           <View style={styles.rowBody}>
             <Text style={styles.rowTitle}>
@@ -231,7 +249,12 @@ export default function SafetyCentre() {
         {tripId ? (
           <>
             <Text style={styles.sectionTitle}>On this ride</Text>
-            <Pressable style={styles.row} onPress={() => router.push(`/passenger/trip/${tripId}`)}>
+            <Pressable
+              style={styles.row}
+              onPress={() => router.push(`/passenger/trip/${tripId}`)}
+              accessibilityRole="button"
+              accessibilityLabel="Share my live trip"
+            >
               <Text style={styles.rowIcon}>📍</Text>
               <View style={styles.rowBody}>
                 <Text style={styles.rowTitle}>Share my live trip</Text>
@@ -241,7 +264,12 @@ export default function SafetyCentre() {
               </View>
               <Text style={styles.chev}>›</Text>
             </Pressable>
-            <Pressable style={styles.row} onPress={() => reportIncident('harassment')}>
+            <Pressable
+              style={styles.row}
+              onPress={() => reportIncident('harassment')}
+              accessibilityRole="button"
+              accessibilityLabel="Report harassment"
+            >
               <Text style={styles.rowIcon}>🚫</Text>
               <View style={styles.rowBody}>
                 <Text style={styles.rowTitle}>Report harassment</Text>
@@ -249,7 +277,12 @@ export default function SafetyCentre() {
               </View>
               <Text style={styles.chev}>›</Text>
             </Pressable>
-            <Pressable style={styles.row} onPress={() => reportIncident('unsafe_driving')}>
+            <Pressable
+              style={styles.row}
+              onPress={() => reportIncident('unsafe_driving')}
+              accessibilityRole="button"
+              accessibilityLabel="Report unsafe driving"
+            >
               <Text style={styles.rowIcon}>⚠️</Text>
               <View style={styles.rowBody}>
                 <Text style={styles.rowTitle}>Report unsafe driving</Text>
@@ -257,7 +290,12 @@ export default function SafetyCentre() {
               </View>
               <Text style={styles.chev}>›</Text>
             </Pressable>
-            <Pressable style={styles.row} onPress={() => reportIncident('accident')}>
+            <Pressable
+              style={styles.row}
+              onPress={() => reportIncident('accident')}
+              accessibilityRole="button"
+              accessibilityLabel="Report an accident"
+            >
               <Text style={styles.rowIcon}>💥</Text>
               <View style={styles.rowBody}>
                 <Text style={styles.rowTitle}>Report an accident</Text>
@@ -285,6 +323,8 @@ export default function SafetyCentre() {
           <Pressable
             style={styles.scamPrimary}
             onPress={() => router.push('/support/new?category=online_scam')}
+            accessibilityRole="button"
+            accessibilityLabel="Report a scam to Velocity Rides"
           >
             <Text style={styles.scamPrimaryTxt}>1 · Report to Velocity Rides</Text>
           </Pressable>
@@ -293,6 +333,8 @@ export default function SafetyCentre() {
             <Pressable
               style={styles.scamSecondary}
               onPress={() => confirmCall(NCCIA_HELPLINE, "NCCIA's cybercrime helpline")}
+              accessibilityRole="button"
+              accessibilityLabel={`Call NCCIA cybercrime helpline, ${NCCIA_HELPLINE}`}
             >
               <Text style={styles.scamSecondaryTxt}>2 · Call NCCIA {NCCIA_HELPLINE}</Text>
             </Pressable>
@@ -303,6 +345,8 @@ export default function SafetyCentre() {
                   Alert.alert('Could not open', `Visit ${NCCIA_COMPLAINT_URL} in your browser.`),
                 )
               }
+              accessibilityRole="link"
+              accessibilityLabel="File a complaint online with NCCIA"
             >
               <Text style={styles.scamSecondaryTxt}>File online</Text>
             </Pressable>
@@ -311,7 +355,12 @@ export default function SafetyCentre() {
 
         {/* ── Everything else ── */}
         <Text style={styles.sectionTitle}>Any other problem</Text>
-        <Pressable style={styles.row} onPress={() => router.push('/support')}>
+        <Pressable
+          style={styles.row}
+          onPress={() => router.push('/support')}
+          accessibilityRole="button"
+          accessibilityLabel="Velocity Rapid Response support"
+        >
           <Text style={styles.rowIcon}>⚡</Text>
           <View style={styles.rowBody}>
             <Text style={styles.rowTitle}>Velocity Rapid Response</Text>

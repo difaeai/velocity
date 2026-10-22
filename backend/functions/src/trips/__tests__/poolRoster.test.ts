@@ -220,3 +220,19 @@ describe('dropOffRider on a destination pool', () => {
       .rejects.toThrow(/not on this ride/);
   });
 });
+
+// Every member can read the trip doc, so it must stop carrying the host's
+// number once somebody else is aboard. The driver rings them via getPoolRiders.
+describe('the host phone on a shared trip', () => {
+  it('leaves the trip doc when a co-rider joins', async () => {
+    const res = await createTrip.run(makeReq(BASE_TRIP, HOST));
+    const { tripId, shareCode } = res as { tripId: string; shareCode: string };
+    await db().doc(`trips/${tripId}`).set({ passengerPhone: '+923001111111' }, { merge: true });
+
+    await joinPoolTrip.run(makeReq({ code: shareCode }, RIDER));
+
+    const trip = await db().doc(`trips/${tripId}`).get();
+    expect(trip.get('poolMembers')).toContain(RIDER);
+    expect(trip.get('passengerPhone')).toBeUndefined();
+  });
+});
