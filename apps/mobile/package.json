@@ -32,6 +32,7 @@
     "expo-speech-recognition": "^56.0.1",
     "expo-splash-screen": "~56.0.14",
     "expo-status-bar": "~56.0.4",
+    "expo-task-manager": "~56.0.27",
     "expo-updates": "~56.0.21",
     "firebase": "^12.15.0",
     "react": "19.2.3",

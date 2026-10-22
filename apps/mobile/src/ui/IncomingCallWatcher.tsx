@@ -6,6 +6,7 @@
  * nothing almost all of the time.
  */
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
@@ -39,6 +40,10 @@ export function IncomingCallWatcher() {
           // Busy on another call: let this one ring out to "No answer"; its
           // notification still sits in the tray as a missed call.
           if (openCalls.size > 0) continue;
+          // In the background the full-screen notification rings instead
+          // (src/lib/incomingCallTask.ts); a screen pushed behind it would
+          // ring a second time underneath.
+          if (AppState.currentState !== 'active') continue;
           rung.add(d.id);
           router.push(`/call/${d.id}`);
         }

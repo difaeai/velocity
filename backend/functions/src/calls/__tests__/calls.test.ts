@@ -114,6 +114,28 @@ describe('startCall', () => {
     expect(call.iceServers.length).toBeGreaterThan(0);
   });
 
+  it('rings Android with a silent data push the app turns into a ringer, and iPhones with a notification', async () => {
+    await seedTrip('t9', { status: 'arrived' });
+    await db().doc('users/call-rider').set({ displayName: 'Sara' });
+    await db().doc('users/call-driver/fcmTokens/a').set({ token: 'ExponentPushToken[android]', platform: 'android' });
+    await db().doc('users/call-driver/fcmTokens/i').set({ token: 'ExponentPushToken[iphone]', platform: 'ios' });
+    const sent: { to: string; title?: string; data: Record<string, string> }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      sent.push(...JSON.parse(String(init.body)));
+      return { ok: true, status: 200, json: async () => ({ data: [] }) };
+    }));
+
+    const { callId } = await startCall.run(makeReq({ rideKind: 'trip', rideId: 't9' }, 'call-rider'));
+    vi.unstubAllGlobals();
+
+    const android = sent.find((m) => m.to === 'ExponentPushToken[android]')!;
+    const iphone = sent.find((m) => m.to === 'ExponentPushToken[iphone]')!;
+    expect(android.title).toBeUndefined();
+    expect(android.data).toMatchObject({ screen: 'call', callId, callTitle: '📞 Sara is calling' });
+    expect(iphone.title).toBe('📞 Sara is calling');
+    expect(iphone.data).toMatchObject({ screen: 'call', callId });
+  });
+
   it('refuses a stranger and a finished ride', async () => {
     await seedTrip('t2', { status: 'in_progress' });
     await seedTrip('t3', { status: 'completed' });

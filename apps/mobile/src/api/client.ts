@@ -1610,7 +1610,7 @@ export const api = {
   // backend/functions/src/fleet.
   //
   // The "is this username free" check while typing is NOT here — it is a
-  // direct `usernames/{slug}` get in app/username.tsx, because a callable per
+  // direct `usernames/{slug}` get in app/onboarding.tsx, because a callable per
   // keystroke is a cold start per keystroke.
   claimUsername: callable<{ username: string }, { ok: boolean; username: string }>('claimUsername'),
   setFleetRoute: callable<{ pickup: FleetPoint; dropoff: FleetPoint }, { ok: boolean }>('setFleetRoute'),
