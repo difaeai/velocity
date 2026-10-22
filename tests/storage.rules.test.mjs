@@ -114,6 +114,14 @@ test('social uploads: video and images from admins only', async () => {
   await assertFails(put(owner, 'socialUploads/p-5-frame.jpg', 'image/jpeg'));
 });
 
+test('reel music: audio from admins only, listable by admins only', async () => {
+  await assertSucceeds(put(admin, 'socialMusic/upbeat.mp3', 'audio/mpeg'));
+  await assertSucceeds(list(ref(admin, 'socialMusic')));
+  await assertFails(put(admin, 'socialMusic/page.html', 'text/html'));
+  await assertFails(put(owner, 'socialMusic/upbeat.mp3', 'audio/mpeg'));
+  await assertFails(list(ref(owner, 'socialMusic')));
+});
+
 test('unchanged paths keep working', async () => {
   await assertSucceeds(put(owner, 'cnic/user1/front-1', 'image/jpeg'));
   await assertFails(put(owner, 'cnic/user1/front-2', 'application/pdf'));

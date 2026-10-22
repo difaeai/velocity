@@ -103,6 +103,7 @@ jobs:
           PAYMENTS_GATEWAY_ENV: ${{ secrets.PAYMENTS_GATEWAY_ENV }}
           GOOGLE_MAPS_SERVER_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_KEY }}
           SOCIAL_TOKEN_KEY: ${{ secrets.SOCIAL_TOKEN_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_KEY_RESEARCH: ${{ secrets.GEMINI_KEY_RESEARCH }}
           FREE_MODEL_ENV: ${{ secrets.FREE_MODEL_ENV }}
@@ -132,6 +133,13 @@ jobs:
             echo "· social: token vault READY"
           else
             echo "· social: no SOCIAL_TOKEN_KEY — accounts cannot be connected"
+          fi
+          # Stock footage under the reels (free key). Without it they are type only.
+          if [ -n "$PEXELS_API_KEY" ]; then
+            printf 'PEXELS_API_KEY=%s\n' "$PEXELS_API_KEY" >> .env.velocity-fe379
+            echo "· social: reels cut Pexels footage"
+          else
+            echo "· social: no PEXELS_API_KEY — reels are typography only"
           fi
           # The key the REMAINING AI features read. There was no path for it here
           # until 2026-10-16, which meant it had never reached production — and

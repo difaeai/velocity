@@ -281,6 +281,18 @@ watched muted, and words are what survive that. When slides have been attached
 they become the backdrop with a slow push-in behind a scrim; with none, the
 typography carries it alone.
 
+**Footage and music** ([`footage.ts`](../backend/functions/src/social/footage.ts)).
+With `PEXELS_API_KEY` (free) the backdrop is real footage: one stock clip per
+beat, searched with the scene the writer wrote for that frame, cut where the
+line changes, never the same clip twice. Under it plays a track from the music
+library on **Automation → Reel music** (`socialMusic/` in the bucket), the same
+track for the same piece so a re-cut keeps its sound. Instagram's trending
+sounds cannot be attached through any API, and a copyrighted song baked into
+the file gets the reel muted — so the library holds royalty-free tracks
+(Pixabay Music, YouTube Audio Library). If you post by hand you can still add a
+trending sound in the Instagram app. No key is typography, an empty library is
+silence; neither ever fails the render. The work log says which it got.
+
 | Decision | Why |
 |---|---|
 | The hook is capped at 2.5–4s | Sharing the clock by line length gives the longest line the most time, and the longest line is the hook. Seven seconds of opening would contradict the one rule the playbook is built on. |

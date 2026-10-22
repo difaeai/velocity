@@ -15,8 +15,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { deleteObject, listAll, ref, uploadBytes } from 'firebase/storage';
 
 import { colors } from '@/lib/config';
+import { storage } from '@/lib/firebase';
 import {
   SOCIAL_FORMATS,
   SOCIAL_PLATFORMS,
@@ -246,6 +248,8 @@ export default function AutomationPage() {
         </p>
       </Card>
 
+      <MusicLibrary />
+
       <Card>
         <h2 style={h2}>Publishing without you</h2>
         <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
@@ -396,6 +400,92 @@ export default function AutomationPage() {
         {dirty ? <span style={{ fontSize: 12.5, color: colors.warn }}>Unsaved changes.</span> : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The tracks the renderer lays under every reel (backend `footage.ts`).
+ * Stored straight in the bucket: the folder listing is the library.
+ */
+function MusicLibrary() {
+  const [tracks, setTracks] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () =>
+    listAll(ref(storage, 'socialMusic'))
+      .then((r) => setTracks(r.items.map((i) => i.name).sort()))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the library.'));
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function run(work: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const add = (files: File[]) =>
+    run(async () => {
+      for (const file of files) {
+        // storage.rules refuses anything bigger, with an error nobody could read.
+        if (file.size > 30 * 1024 * 1024) throw new Error(`${file.name} is over 30 MB.`);
+        const name = file.name.replace(/[^\w.-]/g, '') || `track-${Date.now()}.mp3`;
+        await uploadBytes(ref(storage, `socialMusic/${name}`), file, { contentType: file.type || 'audio/mpeg' });
+      }
+    });
+
+  return (
+    <Card>
+      <h2 style={h2}>Reel music</h2>
+      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+        Every reel the desk cuts gets one of these tracks under it, faded in and out. Instagram&apos;s trending sounds
+        cannot be added automatically — no API allows it, and a copyrighted song inside the file gets the reel
+        muted — so upload royalty-free tracks from Pixabay Music or the YouTube Audio Library. Pick ones that start
+        strong: a reel is about 20 seconds and plays from the track&apos;s first second. Empty, reels are silent.
+      </p>
+      {tracks?.length ? (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'grid', gap: 6 }}>
+          {tracks.map((name) => (
+            <li key={name} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>♪ {name}</span>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => run(() => deleteObject(ref(storage, `socialMusic/${name}`)))}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p style={{ fontSize: 13, margin: '0 0 12px' }}>{tracks ? 'No tracks yet.' : 'Loading…'}</p>
+      )}
+      <input
+        type="file"
+        accept="audio/*"
+        multiple
+        disabled={busy}
+        aria-label="Upload music tracks"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length) void add(files);
+        }}
+      />
+      {busy && <span style={{ fontSize: 12.5, color: colors.muted, marginLeft: 8 }}>Working…</span>}
+      {error && <p style={{ fontSize: 12.5, color: colors.danger, margin: '8px 0 0' }}>{error}</p>}
+    </Card>
   );
 }
 

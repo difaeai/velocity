@@ -17,6 +17,12 @@
  * it alone. Either way a video exists at the end of the run rather than a brief
  * somebody has to find time for.
  *
+ * With a Pexels key the backdrop is real footage instead: one stock clip per
+ * beat, matched to the frame's scene and cut on the beat, so the reel reads as
+ * edited rather than generated. A track from the music library plays under it
+ * all (`footage.ts` finds both). Neither is required — no key is typography,
+ * an empty library is silence.
+ *
  * Three things worth knowing before changing anything:
  *
  * 1. **The planning is pure, the rendering is not.** `planReel` and
@@ -80,6 +86,8 @@ export interface PlannedBeat {
   start: number;
   end: number;
   size: number;
+  /** What the footage behind this line should show — a stock search. */
+  scene: string;
 }
 
 export interface ReelPlan {
@@ -89,6 +97,8 @@ export interface ReelPlan {
   beats: PlannedBeat[];
   /** The slide images to sit behind the words, in order. May be empty. */
   images: string[];
+  /** One clip per beat, in beat order. Wins over the images. May be empty. */
+  clips: string[];
 }
 
 /**
@@ -164,15 +174,15 @@ export function planReel(params: {
 
   const textWidth = size.width - SAFE.side * 2 - (size.width === 1080 ? SAFE.rightColumn : 0);
 
-  /** The lines the video actually shows, in order. */
-  const sources: { kind: BeatKind; text: string }[] = [
-    { kind: 'hook', text: params.script.hook },
-    ...params.script.frames
-      .map((f) => f.overlay || f.scene)
-      .filter(Boolean)
-      .map((text) => ({ kind: 'body' as const, text })),
+  /** The lines the video actually shows, in order, and what is behind each. */
+  const frames = params.script.frames.filter((f) => f.overlay || f.scene);
+  const sources: { kind: BeatKind; text: string; scene: string }[] = [
+    { kind: 'hook', text: params.script.hook, scene: frames[0]?.scene || params.script.hook },
+    ...frames.map((f) => ({ kind: 'body' as const, text: f.overlay || f.scene, scene: f.scene || f.overlay })),
   ];
-  if (params.script.cta) sources.push({ kind: 'cta', text: params.script.cta });
+  if (params.script.cta) {
+    sources.push({ kind: 'cta', text: params.script.cta, scene: frames[frames.length - 1]?.scene || params.script.cta });
+  }
 
   // How long each line takes to *say* is the honest measure of how long it
   // needs to be on screen, and the beat sheet already knows how to compute it.
@@ -205,6 +215,7 @@ export function planReel(params: {
       start: round(at),
       end: round(at + span),
       size: fontSize,
+      scene: source.scene,
     };
     at += span;
     return beat;
@@ -214,7 +225,7 @@ export function planReel(params: {
   // 19.999, which drops a frame of the closing line.
   if (beats.length) beats[beats.length - 1].end = seconds;
 
-  return { size, fps: FPS, seconds, beats, images: params.images ?? [] };
+  return { size, fps: FPS, seconds, beats, images: params.images ?? [], clips: [] };
 }
 
 const round = (n: number): number => Math.round(n * 1000) / 1000;
@@ -270,23 +281,46 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
   const { width, height } = plan.size;
   const steps: string[] = [];
 
-  // The backdrop. Attached slides push in slowly behind a scrim so the words
-  // stay readable; with none, the brand's near-black carries it.
-  if (plan.images.length) {
-    const per = plan.seconds / plan.images.length;
-    plan.images.forEach((_, i) => {
-      // zoompan counts in frames, and a slow push is the difference between a
-      // still with words on it and a video.
-      const frames = Math.max(1, Math.round(per * plan.fps));
-      steps.push(
-        `[${i}:v]scale=${width * 1.2}:${height * 1.2}:force_original_aspect_ratio=increase,` +
-          `crop=${width * 1.2}:${height * 1.2},` +
-          `zoompan=z='min(1.0+0.0012*on,1.14)':d=${frames}:s=${width}x${height}:fps=${plan.fps},` +
-          `setsar=1[img${i}]`,
-      );
-    });
-    const chain = plan.images.map((_, i) => `[img${i}]`).join('');
-    steps.push(`${chain}concat=n=${plan.images.length}:v=1:a=0[slides]`);
+  // The inputs are the clips (one per beat) or the slides, then the sound.
+  const backdrops = plan.clips.length ? plan.beats.length : plan.images.length;
+
+  // The sound, faded in and out so a track that loops or stops mid-bar never
+  // shows where it was cut. Silence goes through the same fades harmlessly.
+  steps.push(
+    `[${backdrops}:a]afade=t=in:st=0:d=0.4,afade=t=out:st=${round(Math.max(0, plan.seconds - 1.5))}:d=1.5[aout]`,
+  );
+
+  // The backdrop. Footage cuts on every beat, attached slides push in slowly,
+  // and either sits behind a scrim so the words stay readable; with neither,
+  // the brand's near-black carries it.
+  if (backdrops) {
+    if (plan.clips.length) {
+      plan.beats.forEach((beat, i) => {
+        // A cut on every line is what makes it read as edited by somebody.
+        // format= because stock arrives in whatever pixel format it was shot
+        // in, and concat refuses to join two that differ.
+        steps.push(
+          `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},` +
+            `setsar=1,fps=${plan.fps},format=yuv420p,` +
+            `trim=duration=${round(beat.end - beat.start)},setpts=PTS-STARTPTS[img${i}]`,
+        );
+      });
+    } else {
+      const per = plan.seconds / plan.images.length;
+      plan.images.forEach((_, i) => {
+        // zoompan counts in frames, and a slow push is the difference between a
+        // still with words on it and a video.
+        const frames = Math.max(1, Math.round(per * plan.fps));
+        steps.push(
+          `[${i}:v]scale=${width * 1.2}:${height * 1.2}:force_original_aspect_ratio=increase,` +
+            `crop=${width * 1.2}:${height * 1.2},` +
+            `zoompan=z='min(1.0+0.0012*on,1.14)':d=${frames}:s=${width}x${height}:fps=${plan.fps},` +
+            `setsar=1[img${i}]`,
+        );
+      });
+    }
+    const chain = Array.from({ length: backdrops }, (_, i) => `[img${i}]`).join('');
+    steps.push(`${chain}concat=n=${backdrops}:v=1:a=0[slides]`);
     // The scrim is what makes white text on a daylight photograph legible. It
     // is heavier at the bottom, where the caption row already darkens things.
     steps.push(
@@ -419,7 +453,7 @@ export class RenderError extends Error {
  */
 export async function renderReel(
   plan: ReelPlan,
-  opts: { ffmpeg?: string; localImages?: string[] } = {},
+  opts: { ffmpeg?: string; localImages?: string[]; localClips?: string[]; music?: string | null } = {},
 ): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-reel-'));
   try {
@@ -436,8 +470,11 @@ export async function renderReel(
       textFiles.push(files);
     }
 
-    const images = opts.localImages ?? [];
-    const graph = filterGraph({ ...plan, images }, {
+    // One clip per beat, reusing clips when fewer were found than there are beats.
+    const found = opts.localClips ?? [];
+    const clips = found.length ? plan.beats.map((_, i) => found[i % found.length]) : [];
+    const images = clips.length ? [] : (opts.localImages ?? []);
+    const graph = filterGraph({ ...plan, images, clips }, {
       textFiles,
       displayFont: path.join(fontDir(), 'Outfit-Black.ttf'),
       bodyFont: path.join(fontDir(), 'WorkSans-SemiBold.ttf'),
@@ -454,11 +491,14 @@ export async function renderReel(
     // whichever file follows it, so a -map before the last -i is read as an
     // input option and the run dies on an argument it half understood.
     const args: string[] = [];
+    // Looped, so a clip shorter than its beat or a track shorter than the reel
+    // never runs out; `-t` below is what ends it.
+    for (const clip of clips) args.push('-stream_loop', '-1', '-i', clip);
     for (const image of images) args.push('-loop', '1', '-i', image);
-    // A silent track: several networks reject a video with no audio stream at
-    // all, and a reel is watched muted anyway.
-    args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
-    const silenceIndex = images.length;
+    if (opts.music) args.push('-stream_loop', '-1', '-i', opts.music);
+    // Without music, a silent track: several networks reject a video with no
+    // audio stream at all.
+    else args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
 
     args.push(
       '-filter_complex_script',
@@ -466,7 +506,7 @@ export async function renderReel(
       '-map',
       '[out]',
       '-map',
-      `${silenceIndex}:a`,
+      '[aout]',
       '-shortest',
       '-t',
       String(plan.seconds),
@@ -488,7 +528,7 @@ export async function renderReel(
       '-c:a',
       'aac',
       '-b:a',
-      '96k',
+      '128k',
       '-y',
       out,
     );
