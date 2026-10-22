@@ -18,8 +18,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
+import { ref, uploadBytes } from 'firebase/storage';
 
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import {
@@ -258,11 +259,16 @@ export default function SocialOverview() {
     pktHour === null ? 'Welcome back' : pktHour < 12 ? 'Good morning' : pktHour < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = user?.displayName?.split(' ')[0];
 
-  /** A quick action picks the kind and puts the cursor in the box. */
+  /** A quick action picks the kind and puts the cursor where that kind starts. */
   const make = (what: QuickAction) => {
-    setWant(what);
-    document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => document.getElementById('make-brief')?.focus({ preventScroll: true }), 350);
+    setWant(what === 'like' ? 'reel' : what);
+    const target = what === 'like' ? 'make-reference' : 'make';
+    const field = what === 'like' ? 'make-reference-link' : 'make-brief';
+    // After the render: switching away from "Paid ad" is what draws the reference box.
+    setTimeout(() => {
+      document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => document.getElementById(field)?.focus({ preventScroll: true }), 350);
+    }, 0);
   };
 
   return (
@@ -573,6 +579,8 @@ function Composer({
   onError: (message: string) => void;
 }) {
   const [brief, setBrief] = useState('');
+  const [refFile, setRefFile] = useState<File | null>(null);
+  const [refLink, setRefLink] = useState('');
   const [direct, setDirect] = useState<boolean | null>(null);
   const [budget, setBudget] = useState('');
   const [days, setDays] = useState('');
@@ -584,6 +592,18 @@ function Composer({
   async function go() {
     setBusy(true);
     try {
+      // "Make it like this": the file goes to Storage first and the backend reads it from there.
+      let reference: { youtube: string } | { storagePath: string } | undefined;
+      if (want !== 'ad' && refFile) {
+        // storage.rules refuses anything bigger, with an error nobody could read.
+        if (refFile.size > 200 * 1024 * 1024) throw new Error('That video is over 200 MB. Trim it to the part that matters.');
+        const path = `socialUploads/ref-${Date.now()}-${refFile.name.replace(/[^\w.-]/g, '')}`;
+        await uploadBytes(ref(storage, path), refFile, { contentType: refFile.type || 'video/mp4' });
+        reference = { storagePath: path };
+      } else if (want !== 'ad' && refLink.trim()) {
+        reference = { youtube: refLink.trim() };
+      }
+
       if (want === 'ad') {
         const res = await adsApi.create({
           brief: brief.trim(),
@@ -600,7 +620,10 @@ function Composer({
           format: want,
           ...(brief.trim().length >= 3 ? { brief: brief.trim() } : {}),
           publishWhenDone: postDirect,
+          ...(reference ? { reference } : {}),
         });
+        setRefFile(null);
+        setRefLink('');
         onDone(
           postDirect
             ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — watch it in the queue.`
@@ -669,6 +692,49 @@ function Composer({
         }}
       />
 
+      {want !== 'ad' ? (
+        <div id="make-reference" style={refBox}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2 }}>🎬 Make it like a video (optional)</div>
+          <p style={{ fontSize: 12, color: colors.muted, margin: '0 0 8px', lineHeight: 1.5 }}>
+            Give the team a video you like. They watch it, check how that kind of video is doing in your market, and
+            make yours the same way — copying the hook, pacing and structure, never the footage, faces or words. From
+            Instagram or TikTok? Download the video and upload it.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <label style={{ ...refPick, opacity: refLink.trim() ? 0.5 : 1 }}>
+              {refFile ? `📎 ${refFile.name}` : 'Upload a video'}
+              <input
+                type="file"
+                accept="video/*"
+                disabled={Boolean(refLink.trim())}
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  setRefFile(e.target.files?.[0] ?? null);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {refFile ? (
+              <button type="button" onClick={() => setRefFile(null)} style={refClear} aria-label="Remove the video">
+                ✕
+              </button>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, color: colors.muted }}>or</span>
+                <input
+                  id="make-reference-link"
+                  value={refLink}
+                  onChange={(e) => setRefLink(e.target.value)}
+                  placeholder="paste a YouTube or Shorts link"
+                  aria-label="YouTube link"
+                  style={{ ...smallInput, flex: 1, minWidth: 200 }}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {want === 'ad' ? (
         adsReady ? (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
@@ -717,7 +783,15 @@ function Composer({
           onClick={go}
           disabled={busy || disabled || (want === 'ad' && (!adsReady || brief.trim().length < 5))}
         >
-          {busy ? (want === 'ad' ? 'The expert is building it…' : 'The team is working…') : want === 'ad' ? 'Plan and make the ad' : 'Make it'}
+          {busy
+            ? want === 'ad'
+              ? 'The expert is building it…'
+              : refFile || refLink.trim()
+                ? 'The team is watching the video…'
+                : 'The team is working…'
+            : want === 'ad'
+              ? 'Plan and make the ad'
+              : 'Make it'}
         </Button>
         {busy ? (
           <span style={{ fontSize: 12.5, color: colors.muted }}>
@@ -850,6 +924,35 @@ const smallLabel: React.CSSProperties = {
   fontSize: 11.5,
   fontWeight: 800,
   color: colors.muted,
+};
+const refBox: React.CSSProperties = {
+  border: `1px dashed ${colors.border}`,
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 10,
+  background: colors.bg,
+};
+const refPick: React.CSSProperties = {
+  border: `1px solid ${colors.primary}`,
+  color: colors.primary,
+  background: colors.surface,
+  borderRadius: 9,
+  padding: '7px 12px',
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: 'pointer',
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+const refClear: React.CSSProperties = {
+  border: `1px solid ${colors.border}`,
+  background: colors.surface,
+  borderRadius: 8,
+  padding: '5px 9px',
+  cursor: 'pointer',
+  fontSize: 12,
 };
 const smallInput: React.CSSProperties = {
   width: 150,

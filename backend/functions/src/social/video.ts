@@ -59,7 +59,7 @@ export async function planCut(params: {
   if (!modelReady()) {
     return {
       prompt: assembleCut(params.script, spec.aspect),
-      note: 'Video plan written from the script.',
+      note: 'Video plan written from the script by the local engine.',
     };
   }
 

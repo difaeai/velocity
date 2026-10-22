@@ -450,6 +450,23 @@ function PostCard({ post }: { post: SocialPostDoc }) {
             </div>
           ) : null}
 
+          {post.reference ? (
+            <div style={{ background: '#ccff0024', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: colors.primary, marginBottom: 3 }}>
+                🎬 MADE LIKE YOUR VIDEO
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{post.reference.ourVersion || post.reference.summary}</div>
+              {post.reference.whyItWorks.length ? (
+                <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
+                  Why the original works: {post.reference.whyItWorks.join(' · ')}
+                </div>
+              ) : null}
+              {post.reference.market ? (
+                <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>In your market: {post.reference.market}</div>
+              ) : null}
+            </div>
+          ) : null}
+
           {post.script ? (
             <div>
               <div style={{ fontSize: 17, fontWeight: 900, lineHeight: 1.3 }}>{post.script.hook}</div>
@@ -856,6 +873,63 @@ function Working({ post }: { post: SocialPostDoc }) {
                 <span style={{ color: colors.muted }}>{ROLE_META[member.role]?.short ?? member.role}</span>
               </span>
             ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {post.reference ? (
+        <Section title="Your reference video, taken apart">
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 4 }}>
+            <div>
+              <span style={{ color: colors.muted }}>Video:</span>{' '}
+              {/^https?:/.test(post.reference.source) ? (
+                <a href={post.reference.source} target="_blank" rel="noreferrer" style={{ color: colors.secondary }}>
+                  {post.reference.source}
+                </a>
+              ) : (
+                post.reference.source
+              )}
+              {post.reference.seconds ? ` · ${post.reference.seconds}s` : ''}
+            </div>
+            <div>
+              <span style={{ color: colors.muted }}>Its hook:</span> {post.reference.hook}
+            </div>
+            {post.reference.beats.length ? (
+              <ol style={{ margin: 0, paddingLeft: 18 }}>
+                {post.reference.beats.map((b, i) => (
+                  <li key={i}>
+                    <strong>{b.at}</strong> {b.what}
+                    {b.onScreen ? <span style={{ color: colors.muted }}> — “{b.onScreen}”</span> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {[
+              ['Pacing', post.reference.pacing],
+              ['Look', post.reference.look],
+              ['Sound', post.reference.sound],
+            ]
+              .filter(([, v]) => v)
+              .map(([k, v]) => (
+                <div key={k}>
+                  <span style={{ color: colors.muted }}>{k}:</span> {v}
+                </div>
+              ))}
+            {post.reference.dontCopy.length ? (
+              <div>
+                <span style={{ color: colors.muted }}>Not reused, because it is theirs:</span>{' '}
+                {post.reference.dontCopy.join(' · ')}
+              </div>
+            ) : null}
+            {post.reference.sources.length ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {post.reference.sources.slice(0, 6).map((src) => (
+                  <a key={src.url} href={src.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: colors.secondary }}>
+                    {src.title.slice(0, 40)}
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
         </Section>
       ) : null}

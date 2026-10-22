@@ -54,6 +54,7 @@ import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
 import { planReel, renderReel } from './reel';
+import { referenceBrief, watchReference, youtubeLink } from './reference';
 import { runResearch } from './research';
 import { renderStill, stillCards } from './still';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
@@ -76,9 +77,11 @@ import {
   type PostScript,
   type Platform,
   type PostStatus,
+  type ReferenceRead,
   type Revision,
   type RevisionScope,
   type SocialPost,
+  type SocialSettings,
   type Stage,
   type WorkEntry,
   type WorkState,
@@ -832,6 +835,8 @@ async function createPost(opts: {
   brief?: { text: string; by: string };
   /** Overrides the desk-wide `autoPublish` for this one piece. */
   publishWhenDone?: boolean;
+  /** A video the person wants this made like, already watched. */
+  reference?: { read: ReferenceRead; by: string };
 }): Promise<string> {
   const settings = await getSocialSettings();
   const angle = opts.angle ?? (await nextAngle(settings));
@@ -867,16 +872,29 @@ async function createPost(opts: {
     quality: null,
     // A brief rides the same rail as a change request: every stage is handed
     // the revisions, and the prompts already treat them as orders.
-    revisions: opts.brief
-      ? [
-          {
-            atMs: Date.now(),
-            by: opts.brief.by,
-            feedback: `What this piece must be about: ${opts.brief.text}`,
-            scope: ['script'],
-          } satisfies Revision,
-        ]
-      : [],
+    revisions: [
+      ...(opts.brief
+        ? [
+            {
+              atMs: Date.now(),
+              by: opts.brief.by,
+              feedback: `What this piece must be about: ${opts.brief.text}`,
+              scope: ['script'],
+            } satisfies Revision,
+          ]
+        : []),
+      ...(opts.reference
+        ? [
+            {
+              atMs: Date.now(),
+              by: opts.reference.by,
+              feedback: referenceBrief(opts.reference.read),
+              scope: ['script'],
+            } satisfies Revision,
+          ]
+        : []),
+    ],
+    reference: opts.reference?.read ?? null,
     autoPublish: opts.publishWhenDone ?? null,
     error: null,
     approvedBy: null,
@@ -1237,6 +1255,47 @@ export const socialPublishSweep = onSchedule(
 
 const formatSchema = z.enum(FORMATS);
 
+/** storage.rules lets the console upload 200 MB to socialUploads/; a reel is a few MB. */
+const MAX_REFERENCE_BYTES = 200 * 1024 * 1024;
+
+/** Watch the video a piece is to be made like, answering in words the console can show. */
+async function readReference(
+  ref: { youtube?: string; storagePath?: string },
+  settings: SocialSettings,
+  date: string,
+): Promise<ReferenceRead> {
+  let youtube: string | undefined;
+  let file: { bytes: Buffer; name: string } | undefined;
+  if (ref.youtube) {
+    youtube = youtubeLink(ref.youtube) ?? undefined;
+    if (!youtube) {
+      throw new HttpsError(
+        'invalid-argument',
+        'That is not a YouTube video link. For Instagram or TikTok, download the video and upload the file.',
+      );
+    }
+  } else {
+    const source = storage.bucket().file(ref.storagePath as string);
+    const [meta] = await source.getMetadata().catch(() => [null]);
+    if (!meta) throw new HttpsError('not-found', 'The uploaded video was not found. Upload it again.');
+    if (!String(meta.contentType ?? '').startsWith('video/')) {
+      throw new HttpsError('invalid-argument', 'That file is not a video.');
+    }
+    if (Number(meta.size ?? 0) > MAX_REFERENCE_BYTES) {
+      throw new HttpsError('invalid-argument', 'That video is over 200 MB. Trim it to the part that matters.');
+    }
+    const [bytes] = await source.download();
+    file = { bytes, name: path.basename(ref.storagePath as string) };
+  }
+
+  try {
+    return await watchReference({ settings, date, youtube, file });
+  } catch (e) {
+    logger.error('social: could not watch the reference', { message: (e as Error).message });
+    throw new HttpsError('failed-precondition', `The team could not watch that video: ${(e as Error).message}`);
+  }
+}
+
 /** "Put the team on it" — the same run the scheduler does, on demand. */
 export const adminGenerateSocialPost = onCall(
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
@@ -1253,6 +1312,18 @@ export const adminGenerateSocialPost = onCall(
         brief: z.string().trim().min(3).max(1500).optional(),
         /** Post it the moment it is finished, or wait in the queue. */
         publishWhenDone: z.boolean().optional(),
+        /** "Make it like this": a public YouTube link, or a video uploaded by the console. */
+        reference: z
+          .object({
+            youtube: z.string().trim().max(300).optional(),
+            storagePath: z
+              .string()
+              .regex(/^socialUploads\/[\w.-]+$/)
+              .max(300)
+              .optional(),
+          })
+          .refine((r) => Boolean(r.youtube) !== Boolean(r.storagePath))
+          .optional(),
       })
       .safeParse(req.data ?? {});
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
@@ -1291,6 +1362,12 @@ export const adminGenerateSocialPost = onCall(
       id = free;
     }
 
+    // Watched before the piece exists: asked to make it like a video, making it
+    // without having seen the video would quietly ignore the request.
+    const reference = parsed.data.reference
+      ? { read: await readReference(parsed.data.reference, settings, date), by: ctx.uid }
+      : undefined;
+
     try {
       await createPost({
         id,
@@ -1300,6 +1377,7 @@ export const adminGenerateSocialPost = onCall(
         targets: parsed.data.targets,
         brief: parsed.data.brief ? { text: parsed.data.brief, by: ctx.uid } : undefined,
         publishWhenDone: parsed.data.publishWhenDone,
+        reference,
       });
       return { ok: true, id, format };
     } catch (e) {

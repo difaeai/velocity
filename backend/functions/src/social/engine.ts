@@ -68,6 +68,11 @@ export interface TextRequest {
   grounded?: boolean;
   /** The reply must be one JSON object. Set by `generateJson`, never by hand. */
   json?: boolean;
+  /**
+   * A video to watch with the prompt. Only Gemini can, so a caller that sets
+   * this calls `geminiText` directly rather than going through the router.
+   */
+  video?: { data: string; mimeType: string } | { uri: string };
 }
 
 export class ModelError extends Error {

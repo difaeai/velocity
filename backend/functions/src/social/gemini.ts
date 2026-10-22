@@ -278,7 +278,16 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
   const data = await post({
     model: resolveGeminiModel(req.model, req.grounded),
     system_instruction: req.system,
-    input: req.prompt,
+    // A video goes first and the words after it, which is the order Google's
+    // own examples use for one video and a question about it.
+    input: req.video
+      ? [
+          'uri' in req.video
+            ? { type: 'video', uri: req.video.uri }
+            : { type: 'video', data: req.video.data, mime_type: req.video.mimeType },
+          { type: 'text', text: req.prompt },
+        ]
+      : req.prompt,
     // See point 2: nothing is kept on Google's side for anyone to read back.
     store: false,
     generation_config: { max_output_tokens: MAX_TOKENS },

@@ -174,7 +174,7 @@ export function Kpi({
 
 // ── the banner ──────────────────────────────────────────────────────────────
 
-export type QuickAction = 'reel' | 'post' | 'ad';
+export type QuickAction = 'reel' | 'post' | 'ad' | 'like';
 
 export function Hero({
   workspace,
@@ -230,6 +230,9 @@ export function Hero({
         <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', marginBottom: 10 }}>Quick actions</div>
         <button type="button" className="sd-qa" onClick={() => onMake('reel')}>
           <span>📱 Make a reel</span>→
+        </button>
+        <button type="button" className="sd-qa" onClick={() => onMake('like')}>
+          <span>🎬 Make one like a video</span>→
         </button>
         <button type="button" className="sd-qa" onClick={() => onMake('post')}>
           <span>🖼️ Make a post</span>→

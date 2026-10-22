@@ -296,6 +296,36 @@ itself spawns anything.
 
 ---
 
+## 3b-2. "Make one like this video"
+
+On the overview, under *What should the team make?*, a person can hand the team
+a reference video: upload a file, or paste a public YouTube / Shorts link.
+Instagram and TikTok links cannot be read directly — download the video and
+upload it.
+
+`social/reference.ts` watches it **before the piece exists** (made without
+having seen the video, the request would be silently ignored):
+
+- **Gemini only.** No other engine can watch video, so it calls `geminiText`
+  directly with the video and refuses plainly without `GEMINI_KEY_RESEARCH`.
+- **One grounded call** takes the video apart (hook, beats, pacing, look,
+  sound, why it works) *and* searches how that kind of video is doing in our
+  market. If Google refuses video + search together (a 400), it reads the video
+  once more without the search and says the market was not searched.
+- **Uploads are shrunk first** with the same ffmpeg the reels use (640px,
+  15 fps, three minutes max, sound kept) so they go inline — no Files API, no
+  copy left on Google's side. Free tier: Google may use what is sent; a
+  reference is public video or our own footage, never rider or driver data.
+- The read is stored on the post as `reference` and handed to the team as a
+  **revision** — the same rail as the person's brief — so the writer, designer
+  and editor all follow it, and keep following it on every later version.
+- **Structure is copied, never content.** The prompt forbids the original's
+  footage, faces, logo, music and words; `dontCopy` is shown in the queue.
+
+The reel itself is still drawn by `reel.ts`: animated text in our look, built
+on the reference's hook and beats. Filmed or AI-generated footage is not part
+of this — that is the own-video upload and Higgsfield work still to come.
+
 ## 3c. Reading our own page
 
 Everything above decides what to make. [`insights.ts`](../backend/functions/src/social/insights.ts)
