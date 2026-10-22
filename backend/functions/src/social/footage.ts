@@ -21,13 +21,14 @@
  * Everything here fails soft: a missing clip or track is a plainer reel, never
  * a failed one.
  */
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { logger } from 'firebase-functions';
 
-import { storage } from '../lib/firebase';
+import { db, storage } from '../lib/firebase';
 
 /** Where the admin's libraries live in the bucket. */
 export const MUSIC_FOLDER = 'socialMusic/';
@@ -44,6 +45,7 @@ export interface StockFile {
 
 interface PixabayHit {
   id: number;
+  user_id: number;
   videos: Record<string, StockFile>;
 }
 
@@ -89,18 +91,34 @@ export function fitsOrientation(hit: PixabayHit, orientation: 'portrait' | 'land
   return orientation === 'portrait' ? file.height > file.width : file.width >= file.height;
 }
 
-// shortcut: no 24h response cache, which Pixabay's terms ask for; a few reels a day repeat few
-// searches — add one before this runs more than a handful of times a day.
-async function search(key: string, query: string): Promise<PixabayHit[]> {
+/** Pixabay's terms: the same search must be answered from our own copy for 24 hours. */
+const SEARCH_CACHE_MS = 24 * 60 * 60 * 1000;
+
+// shortcut: expired cache docs are never deleted — a few small ones a day; sweep them if that grows.
+export async function searchPixabay(key: string, query: string): Promise<PixabayHit[]> {
   if (!query) return [];
+  const doc = db.doc(`socialStockSearches/${createHash('sha1').update(query.toLowerCase()).digest('hex')}`);
+  // A cache that cannot be read is a search, never a failure.
+  const cached = (await doc.get().catch(() => null))?.data() as { atMs: number; hits: PixabayHit[] } | undefined;
+  if (cached && Date.now() - cached.atMs < SEARCH_CACHE_MS) return cached.hits;
+
   const url = new URL('https://pixabay.com/api/videos/');
   url.searchParams.set('key', key);
   url.searchParams.set('q', query.slice(0, 100));
   url.searchParams.set('per_page', '20');
   url.searchParams.set('safesearch', 'true');
+  // Real footage only: "animation" is mostly green-screen buttons and motion graphics.
+  url.searchParams.set('video_type', 'film');
   const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`Pixabay said ${res.status}`);
-  return ((await res.json()) as { hits?: PixabayHit[] }).hits ?? [];
+  // Only what the render reads, so twenty hits stay a small document.
+  const hits = (((await res.json()) as { hits?: PixabayHit[] }).hits ?? []).map((h) => ({
+    id: h.id,
+    user_id: h.user_id,
+    videos: h.videos,
+  }));
+  await doc.set({ query, atMs: Date.now(), hits }).catch(() => {});
+  return hits;
 }
 
 /**
@@ -115,13 +133,17 @@ async function stockClips(scenes: string[], orientation: 'portrait' | 'landscape
   if (!key || !scenes.length) return [];
 
   const used = new Set<number>();
+  const usedBy = new Set<number>();
+  // Two clips from one contributor are usually one shoot, which reads as a repeat;
+  // then a clip the wrong shape for the frame. Stable, so Pixabay's order breaks ties.
+  const rank = (h: PixabayHit) => (usedBy.has(h.user_id) ? 2 : 0) + (fitsOrientation(h, orientation) ? 0 : 1);
   const paths: string[] = [];
   for (const [i, scene] of scenes.entries()) {
     try {
       let hit: PixabayHit | undefined;
       for (const query of [searchTerms(scene), searchTerms(scene, 3), FALLBACK_SCENE]) {
-        const fresh = (await search(key, query)).filter((h) => !used.has(h.id) && pickFile(Object.values(h.videos ?? {})));
-        hit = fresh.find((h) => fitsOrientation(h, orientation)) ?? fresh[0];
+        const fresh = (await searchPixabay(key, query)).filter((h) => !used.has(h.id) && pickFile(Object.values(h.videos ?? {})));
+        hit = fresh.sort((a, b) => rank(a) - rank(b))[0];
         if (hit) break;
       }
       const file = hit && pickFile(Object.values(hit.videos));
@@ -132,6 +154,7 @@ async function stockClips(scenes: string[], orientation: 'portrait' | 'landscape
       const out = path.join(dir, `stock-${i}.mp4`);
       await writeFile(out, Buffer.from(await res.arrayBuffer()));
       used.add(hit.id);
+      usedBy.add(hit.user_id);
       paths.push(out);
     } catch (e) {
       logger.warn('social: a stock clip did not arrive', { scene, message: (e as Error).message });

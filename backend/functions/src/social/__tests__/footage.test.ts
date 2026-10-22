@@ -1,10 +1,13 @@
 /**
- * The pure parts of picking footage and music. The network and the bucket are
- * not here: a failure there only makes the reel plainer, never fails it.
+ * Picking footage and music. The network and the bucket are stubbed or absent:
+ * a failure there only makes the reel plainer, never fails it. The search
+ * cache runs against the emulator, because Pixabay's terms are about what
+ * actually reaches them.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fitsOrientation, pickFile, rotate, searchTerms, trackIndex, type StockFile } from '../footage';
+import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { fitsOrientation, pickFile, rotate, searchPixabay, searchTerms, trackIndex, type StockFile } from '../footage';
 
 const file = (width: number, height: number, url = `https://cdn.pixabay.com/${width}x${height}.mp4`): StockFile => ({
   url,
@@ -30,7 +33,7 @@ describe('pickFile', () => {
 });
 
 describe('fitsOrientation', () => {
-  const hit = (w: number, h: number) => ({ id: 1, videos: { medium: file(w, h), tiny: file(w / 4, h / 4) } });
+  const hit = (w: number, h: number) => ({ id: 1, user_id: 1, videos: { medium: file(w, h), tiny: file(w / 4, h / 4) } });
 
   it('prefers tall clips for a reel and wide ones for a video', () => {
     expect(fitsOrientation(hit(720, 1280), 'portrait')).toBe(true);
@@ -56,6 +59,35 @@ describe('trackIndex', () => {
       expect(i).toBeGreaterThanOrEqual(0);
       expect(i).toBeLessThan(3);
     }
+  });
+});
+
+describe('searchPixabay', () => {
+  const answer = { hits: [{ id: 7, user_id: 3, videos: { small: { url: 'https://cdn.pixabay.com/7.mp4', width: 720, height: 1280 } }, views: 9 }] };
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(answer), { status: 200 }));
+
+  beforeEach(async () => {
+    await clearFirestore();
+    fetchMock.mockClear();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('asks Pixabay once a day for the same search, as its terms require', async () => {
+    const first = await searchPixabay('k', 'City traffic night');
+    const again = await searchPixabay('k', 'city traffic night');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Only what the render reads is kept.
+    expect(first).toEqual([{ id: 7, user_id: 3, videos: answer.hits[0].videos }]);
+    expect(again).toEqual(first);
+  });
+
+  it('asks again once the copy is a day old', async () => {
+    await searchPixabay('k', 'rain');
+    const [cached] = (await db().collection('socialStockSearches').get()).docs;
+    await cached.ref.update({ atMs: Date.now() - 25 * 60 * 60 * 1000 });
+    await searchPixabay('k', 'rain');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
