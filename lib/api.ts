@@ -1468,7 +1468,7 @@ export interface SocialPostDoc {
   video?: { url: string | null; provider: string; aspect: string } | null;
   targets: SocialPlatform[];
   results: Partial<
-    Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>
+    Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null; atMs?: number }>
   >;
   /**
    * What the backend's own checks made of the writing, scored in code rather

@@ -71,7 +71,8 @@ const fmt = (n: number) => n.toLocaleString('en-PK');
 export function compact(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return String(Math.round(n));
+  // One decimal below 1,000: rounding to whole numbers printed ticks 0.5 and 1.5 as "1" and "2".
+  return String(Math.round(n * 10) / 10);
 }
 
 /** `2026-08-24` → `24 Aug`. */

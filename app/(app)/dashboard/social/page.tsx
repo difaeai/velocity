@@ -1,24 +1,18 @@
 'use client';
 
 /**
- * Manage social → Overview.
+ * Manage social → Dashboard.
  *
- * Built around one sentence: **say what you want, and the desk makes it.** The
- * page answers, in order:
+ * Laid out like the reference the user chose: the numbers across the top, the
+ * team in a banner with quick actions, then — in the order a person needs
+ * them — what to make, what is ready for you, who is doing what, the week, and
+ * on the right what just happened and what worked.
  *
- *  1. **Should it ask you before anything goes out?** Asked once, the first
- *     time, and never again — the answer is the desk's `autoPublish`.
- *  2. **What do you want?** One box for every kind of thing the desk makes: a
- *     post, a reel, a story, a carousel — or a paid ad, which goes to the ads
- *     desk with the same words.
- *  3. **Is it running, and where is a piece right now?** The desk switch and
- *     the line a piece travels, lit from the documents themselves.
- *  4. **How are the ads doing?** This week's spend and what a click cost,
- *     against what a click should cost here.
- *
- * Two rules this file keeps, both load-bearing: the teaching text appears once
- * (a page that explains itself forever is a page you stop reading), and motion
- * means something — see components/social/pipeline.tsx, where that is enforced.
+ * Kept from the page before it, because each is load-bearing:
+ *  - **asked once**: should the desk ask before posting? (`autoPublish`)
+ *  - **one box** for everything the desk makes, posts and ads alike
+ *  - the desk switch, and the line a piece travels (components/social/pipeline.tsx,
+ *    where motion only means something real is moving)
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -26,6 +20,7 @@ import Link from 'next/link';
 import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import {
   adsApi,
@@ -34,6 +29,7 @@ import {
   type SocialAccountDoc,
   type SocialEmployee,
   type SocialFormat,
+  type SocialPageRead,
   type SocialPostDoc,
   type SocialReadiness,
   type SocialSettings,
@@ -41,15 +37,30 @@ import {
 import { Button, Card } from '@/components/ui';
 import {
   FORMAT_META,
-  FormatChip,
   PlatformBadge,
   PLATFORM_META,
   StatusPill,
   longDate,
-  postSummary,
 } from '@/components/social/shared';
 import { Blockers, Pipeline, readBlockers, readPipeline } from '@/components/social/pipeline';
 import { adMoney } from '@/components/social/ads';
+import {
+  AgentGrid,
+  DASH_CSS,
+  Hero,
+  Kpi,
+  MadeChart,
+  ReadyForYou,
+  RecentActivity,
+  TopContent,
+  WeekStrip,
+  readDesk,
+  type QuickAction,
+} from '@/components/social/dashboard';
+import { compact } from '@/components/charts';
+
+// shortcut: one workspace until tenancy lands; read the name from the tenant doc then.
+const WORKSPACE = 'Velocity Rides';
 
 type Want = SocialFormat | 'ad';
 const WANTS: Want[] = ['reel', 'post', 'story', 'carousel', 'ad'];
@@ -74,6 +85,9 @@ export default function SocialOverview() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
+  const [want, setWant] = useState<Want>('reel');
+  const { user } = useAuth();
 
   useEffect(
     () =>
@@ -109,9 +123,20 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(8)),
+        // Two weeks at a few pieces a day: enough for the week strip and the chart.
+        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(40)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(db, 'socialInsights/latest'),
+        (snap) => setPageRead(snap.exists() ? (snap.data() as SocialPageRead) : null),
+        () => setPageRead(null),
       ),
     [],
   );
@@ -226,29 +251,75 @@ export default function SocialOverview() {
     );
 
   const running = Boolean(settings?.enabled);
+  const desk = useMemo(() => readDesk(posts, nowMs), [posts, nowMs]);
+  const followers = connected.reduce((n, a) => n + (a.followers ?? 0), 0);
+  const pktHour = nowMs ? new Date(nowMs + 5 * 3600_000).getUTCHours() : null;
+  const greeting =
+    pktHour === null ? 'Welcome back' : pktHour < 12 ? 'Good morning' : pktHour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = user?.displayName?.split(' ')[0];
+
+  /** A quick action picks the kind and puts the cursor in the box. */
+  const make = (what: QuickAction) => {
+    setWant(what);
+    document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('make-brief')?.focus({ preventScroll: true }), 350);
+  };
 
   return (
     <div>
-      <header style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Social</h1>
-        <p style={{ color: colors.muted, margin: 0, maxWidth: 760 }}>
-          Say what you want — a post, a reel, a story or an ad. The team makes it, posts it, runs the ads and tells
-          you what is working.
-        </p>
+      <style>{DASH_CSS}</style>
+
+      <header style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 900, margin: '0 0 4px' }}>
+            {greeting}
+            {firstName ? `, ${firstName}` : ''} 👋
+          </h1>
+          <p style={{ color: colors.muted, margin: 0 }}>Here is what your social media team is doing today.</p>
+        </div>
+        {desk.waiting.length ? (
+          <Link
+            href="/dashboard/social/queue"
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: '#8a6100',
+              background: '#fab2192e',
+              borderRadius: 999,
+              padding: '7px 13px',
+            }}
+          >
+            🔔 {desk.waiting.length} waiting for you
+          </Link>
+        ) : null}
+        {nowMs ? (
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              border: `1px solid ${colors.border}`,
+              background: colors.surface,
+              borderRadius: 10,
+              padding: '7px 12px',
+            }}
+          >
+            📅 {longDate(desk.today)}
+          </span>
+        ) : null}
       </header>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
 
-      {/* 1 — what is actually stopping it, if anything */}
+      {/* what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
 
-      {/* 2 — asked once: ask first, or post directly? */}
+      {/* asked once: ask first, or post directly? */}
       {settings && !settings.publishModeChosen ? (
         <Card style={{ marginBottom: 16, borderColor: `${colors.primary}66` }}>
           <h2 style={h2}>Before anything goes out: should the desk ask you first?</h2>
           <p style={{ fontSize: 13.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
-            Asked once. Either way you can change it later from the desk card below.
+            Asked once. Either way you can change it later from the desk card.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
             <Choice
@@ -267,218 +338,210 @@ export default function SocialOverview() {
         </Card>
       ) : null}
 
-      {/* 3 — the one box: what do you want? */}
-      {settings ? (
-        <Composer
-          settings={settings}
-          ads={ads}
-          disabled={onShift.length === 0}
-          onDone={(message) => {
-            setError(null);
-            setNotice(message);
-          }}
-          onError={(message) => {
-            setNotice(null);
-            setError(message);
-          }}
+      <div className="sd-kpis">
+        <Kpi
+          icon="📤"
+          tint="#e3f4ea"
+          label="Posted this week"
+          value={String(desk.postedThisWeek)}
+          delta={desk.postedThisWeek - desk.postedLastWeek}
+          hint="vs last week"
         />
-      ) : null}
+        <Kpi
+          icon="👥"
+          tint="#e6eefc"
+          label="Followers"
+          value={followers ? compact(followers) : '—'}
+          hint={
+            connected.length
+              ? connected.map((a) => PLATFORM_META[a.platform].label.split(' ')[0]).join(' + ')
+              : 'No account connected'
+          }
+        />
+        <Kpi
+          icon="👁"
+          tint="#fde8ea"
+          label="Usual reach per post"
+          value={pageRead?.medianReach ? compact(pageRead.medianReach) : '—'}
+          hint={pageRead?.medianReach ? 'From your own page' : 'Shows after the first posts'}
+        />
+        <Kpi
+          icon="🤖"
+          tint="#eafbd0"
+          label="AI agents on duty"
+          value={`${onShift.length} / ${staff.length}`}
+          hint={running ? 'Working every day' : 'Paused'}
+        />
+      </div>
 
-      {/* 4 — the desk: on or off, and how it posts */}
-      {settings ? (
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-            <h2 style={{ ...h2, marginBottom: 0 }}>The desk</h2>
-            <span
-              style={{
-                fontSize: 11.5,
-                fontWeight: 900,
-                letterSpacing: 0.4,
-                textTransform: 'uppercase',
-                padding: '3px 9px',
-                borderRadius: 999,
-                color: running ? colors.success : colors.muted,
-                background: running ? `${colors.success}14` : colors.border,
-              }}
-            >
-              {running ? 'Running' : 'Paused'}
-            </span>
-            <Link
-              href="/dashboard/social/automation"
-              style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-            >
-              Settings
-            </Link>
-          </div>
+      <div className="sd-grid">
+        <div className="sd-col">
+          <Hero workspace={WORKSPACE} waiting={desk.waiting.length} onMake={make} />
 
-          <p style={{ fontSize: 13.5, color: colors.text, margin: '0 0 12px', lineHeight: 1.6 }}>
-            {running
-              ? `Every day at ${hour(settings.runHour)} PKT it makes ${pieces(settings.postsPerDay)}${
-                  settings.dailyStory ? ' and a story' : ''
-                }, draws its own pictures and cuts its own reels, answers comments, and measures its own page.`
-              : `Start it and from ${nextRunWhenStarted(settings.runHour, nowMs)} it makes ${pieces(
-                  settings.postsPerDay,
-                )} and a story every day on its own — on top of anything you ask for above.`}
-          </p>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-            <Button
-              onClick={() => setRunning(!running)}
-              variant={running ? 'ghost' : 'primary'}
-              disabled={switching || onShift.length === 0}
-            >
-              {switching ? 'Saving…' : running ? 'Pause the desk' : 'Start the desk'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => chooseMode(!settings.autoPublish)}
-              disabled={switching}
-            >
-              {settings.autoPublish ? 'Ask me before posting instead' : 'Post directly instead'}
-            </Button>
-          </div>
-
-          <div style={{ display: 'grid', gap: 7, fontSize: 13 }}>
-            <Row
-              label="Posting"
-              value={
-                settings.autoPublish
-                  ? 'Directly — finished pieces go straight out'
-                  : 'After your Approve — then straight away'
-              }
-            />
-            {nextRun ? (
-              <Row
-                label="Next run"
-                value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${hour(settings.runHour)}`}
+          {settings ? (
+            <div id="make">
+              <Composer
+                settings={settings}
+                ads={ads}
+                want={want}
+                onWant={setWant}
+                disabled={onShift.length === 0}
+                onDone={(message) => {
+                  setError(null);
+                  setNotice(message);
+                }}
+                onError={(message) => {
+                  setNotice(null);
+                  setError(message);
+                }}
               />
-            ) : null}
-            <Row
-              label="Last run"
-              value={
-                settings.lastRunAtMs
-                  ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
-                  : 'Never'
-              }
-            />
-            <Row
-              label="On the desk"
-              value={
-                onShift.length === 0
-                  ? 'Nobody — hire someone first'
-                  : pipeline.live?.current
-                    ? `${pipeline.live.current.name} is working — ${onShift.length} on the desk`
-                    : `${onShift.length} people — ${onShift
-                        .slice(0, 3)
-                        .map((e) => e.name)
-                        .join(', ')}${onShift.length > 3 ? ` and ${onShift.length - 3} more` : ''}`
-              }
-              href="/dashboard/social/employees"
-            />
-            {coverage.length ? (
-              <p style={{ fontSize: 12.5, color: colors.warn, margin: '4px 0 0', lineHeight: 1.5 }}>{coverage[0]}</p>
-            ) : null}
-          </div>
-        </Card>
-      ) : null}
-
-      {/* 5 — the line a piece travels, lit by the documents themselves */}
-      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px 0' }}>
-          <h2 style={{ ...h2, marginBottom: taught ? 6 : 2 }}>How a post gets made</h2>
-          {taught ? null : (
-            <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
-              Left to right, every time. A step lights up only while something is really in it.
-            </p>
-          )}
-        </div>
-        <div style={{ padding: '0 10px 14px' }}>
-          <Pipeline state={pipeline} teach={!taught} />
-        </div>
-      </Card>
-
-      {/* 6 — the detail */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-        <AdsSnapshot ads={ads} />
-
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
-            <Link
-              href="/dashboard/social/accounts"
-              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-            >
-              Manage
-            </Link>
-          </div>
-          {accounts.length === 0 ? (
-            <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
-              Nothing connected yet.{' '}
-              <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 700 }}>
-                Connect Instagram
-              </Link>{' '}
-              — it is one sign-in, with no token to paste.
-            </p>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {accounts.map((a) => (
-                <div key={a.platform} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <PlatformBadge platform={a.platform} size={30} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {a.displayName ?? PLATFORM_META[a.platform].label}
-                    </div>
-                    <div style={{ fontSize: 12, color: colors.muted }}>
-                      {a.handle ?? PLATFORM_META[a.platform].label}
-                      {typeof a.followers === 'number' ? ` · ${a.followers.toLocaleString('en-PK')} followers` : ''}
-                    </div>
-                  </div>
-                  <StatusPill status={a.status} />
-                </div>
-              ))}
             </div>
-          )}
-        </Card>
+          ) : null}
 
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Latest work</h2>
-            <Link
-              href="/dashboard/social/calendar"
-              style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-            >
-              Calendar
-            </Link>
+          <ReadyForYou waiting={desk.waiting} direct={Boolean(settings?.autoPublish)} />
+
+          <AgentGrid staff={staff} desk={desk} nowMs={nowMs} />
+
+          <div className="sd-row2">
+            <WeekStrip posts={posts} desk={desk} />
+            <MadeChart desk={desk} />
           </div>
-          {posts.length === 0 ? (
-            <p style={{ color: colors.muted, fontSize: 13, margin: 0 }}>Nothing made yet.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
-              {posts.slice(0, 6).map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/dashboard/social/queue?open=${p.id}`}
-                  style={{ display: 'grid', gap: 4, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}
+
+          {/* the line a piece travels, lit by the documents themselves */}
+          <div className="sd-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '16px 18px 0' }}>
+              <h2 style={{ ...h2, marginBottom: taught ? 6 : 2 }}>Where every piece is right now</h2>
+              {taught ? null : (
+                <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 6px' }}>
+                  Left to right, every time. A step lights up only while something is really in it.
+                </p>
+              )}
+            </div>
+            <div style={{ padding: '0 10px 14px' }}>
+              <Pipeline state={pipeline} teach={!taught} />
+            </div>
+          </div>
+        </div>
+
+        <div className="sd-col">
+          <RecentActivity desk={desk} nowMs={nowMs} />
+          <TopContent read={pageRead} />
+
+          {settings ? (
+            <div className="sd-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                <h2 style={{ ...h2, marginBottom: 0 }}>The desk</h2>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 900,
+                    letterSpacing: 0.4,
+                    textTransform: 'uppercase',
+                    padding: '3px 9px',
+                    borderRadius: 999,
+                    color: running ? colors.success : colors.muted,
+                    background: running ? `${colors.success}14` : colors.border,
+                  }}
                 >
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12, color: colors.muted, fontWeight: 700 }}>{longDate(p.date)}</span>
-                    <FormatChip format={p.format} />
-                    <StatusPill status={p.status} />
-                  </div>
-                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{postSummary(p)}</div>
+                  {running ? 'Running' : 'Paused'}
+                </span>
+                <Link
+                  href="/dashboard/social/automation"
+                  style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+                >
+                  Settings →
                 </Link>
-              ))}
+              </div>
+
+              <p style={{ fontSize: 13, color: colors.text, margin: '0 0 12px', lineHeight: 1.55 }}>
+                {running
+                  ? `Every day at ${hour(settings.runHour)} PKT it makes ${pieces(settings.postsPerDay)}${
+                      settings.dailyStory ? ' and a story' : ''
+                    }, makes the pictures and videos, answers comments and measures the page.`
+                  : `Start it and from ${nextRunWhenStarted(settings.runHour, nowMs)} it makes ${pieces(
+                      settings.postsPerDay,
+                    )} and a story every day on its own — on top of anything you ask for.`}
+              </p>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <Button
+                  onClick={() => setRunning(!running)}
+                  variant={running ? 'ghost' : 'primary'}
+                  disabled={switching || onShift.length === 0}
+                >
+                  {switching ? 'Saving…' : running ? 'Pause the desk' : 'Start the desk'}
+                </Button>
+                <Button variant="ghost" onClick={() => chooseMode(!settings.autoPublish)} disabled={switching}>
+                  {settings.autoPublish ? 'Ask me before posting' : 'Post directly'}
+                </Button>
+              </div>
+
+              <div style={{ display: 'grid', gap: 7, fontSize: 12.5 }}>
+                <Row
+                  label="Posting"
+                  value={settings.autoPublish ? 'Directly, as soon as it is made' : 'After your Approve'}
+                />
+                {nextRun ? (
+                  <Row
+                    label="Next run"
+                    value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${hour(settings.runHour)}`}
+                  />
+                ) : null}
+                <Row
+                  label="Last run"
+                  value={
+                    settings.lastRunAtMs
+                      ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
+                      : 'Never'
+                  }
+                />
+                {coverage.length ? (
+                  <p style={{ fontSize: 12, color: colors.warn, margin: '4px 0 0', lineHeight: 1.5 }}>{coverage[0]}</p>
+                ) : null}
+              </div>
             </div>
-          )}
-        </Card>
+          ) : null}
+
+          <div className="sd-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
+              <Link
+                href="/dashboard/social/accounts"
+                style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
+              >
+                Manage →
+              </Link>
+            </div>
+            {accounts.length === 0 ? (
+              <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
+                Nothing connected yet.{' '}
+                <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 700 }}>
+                  Connect Instagram
+                </Link>{' '}
+                — it is one sign-in, with no token to paste.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {accounts.map((a) => (
+                  <div key={a.platform} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <PlatformBadge platform={a.platform} size={30} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="sd-clip" style={{ fontSize: 13, fontWeight: 700 }}>
+                        {a.displayName ?? PLATFORM_META[a.platform].label}
+                      </div>
+                      <div style={{ fontSize: 12, color: colors.muted }}>
+                        {typeof a.followers === 'number' ? `${compact(a.followers)} followers` : (a.handle ?? '')}
+                      </div>
+                    </div>
+                    <StatusPill status={a.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <AdsSnapshot ads={ads} />
+        </div>
       </div>
     </div>
   );
@@ -495,17 +558,20 @@ export default function SocialOverview() {
 function Composer({
   settings,
   ads,
+  want,
+  onWant,
   disabled,
   onDone,
   onError,
 }: {
   settings: SocialSettings;
   ads: AdsConfigDoc | null;
+  want: Want;
+  onWant: (w: Want) => void;
   disabled: boolean;
   onDone: (message: string) => void;
   onError: (message: string) => void;
 }) {
-  const [want, setWant] = useState<Want>('reel');
   const [brief, setBrief] = useState('');
   const [direct, setDirect] = useState<boolean | null>(null);
   const [budget, setBudget] = useState('');
@@ -550,8 +616,11 @@ function Composer({
   }
 
   return (
-    <Card style={{ marginBottom: 16 }}>
-      <h2 style={h2}>What do you want?</h2>
+    <Card>
+      <h2 style={{ ...h2, marginBottom: 4 }}>What should the team make?</h2>
+      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px' }}>
+        Pick a kind, say what it is about in your own words, press Make it. Leave it empty and the team picks the topic.
+      </p>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }} role="radiogroup" aria-label="What to make">
         {WANTS.map((w) => {
@@ -562,7 +631,7 @@ function Composer({
               type="button"
               role="radio"
               aria-checked={on}
-              onClick={() => setWant(w)}
+              onClick={() => onWant(w)}
               style={{
                 border: `1px solid ${on ? colors.primary : colors.border}`,
                 background: on ? `${colors.primary}14` : colors.surface,
@@ -583,6 +652,7 @@ function Composer({
       <textarea
         value={brief}
         onChange={(e) => setBrief(e.target.value)}
+        id="make-brief"
         rows={3}
         aria-label="What it should be about"
         placeholder={PLACEHOLDER[want]}
@@ -653,8 +723,6 @@ function Composer({
           <span style={{ fontSize: 12.5, color: colors.muted }}>
             Takes a few minutes. You can leave this page — it carries on.
           </span>
-        ) : want !== 'ad' && !brief.trim() ? (
-          <span style={{ fontSize: 12.5, color: colors.muted }}>Leave it empty and the team picks the topic.</span>
         ) : null}
       </div>
     </Card>
@@ -666,11 +734,11 @@ function AdsSnapshot({ ads }: { ads: AdsConfigDoc | null }) {
   const week = ads?.account?.week;
   const bench = ads?.account?.bench;
   return (
-    <Card>
+    <div className="sd-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Ads this week</h2>
         <Link href="/dashboard/social/ads" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
-          Open Ads
+          Open Ads →
         </Link>
       </div>
       {!ads?.adAccountId ? (
@@ -699,7 +767,7 @@ function AdsSnapshot({ ads }: { ads: AdsConfigDoc | null }) {
           ) : null}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
