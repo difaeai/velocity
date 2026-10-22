@@ -26,6 +26,7 @@ import {
   type ThemeMode,
 } from '../src/theme';
 import { BrandSplash } from '../src/ui/BrandSplash';
+import { IncomingCallWatcher } from '../src/ui/IncomingCallWatcher';
 import { UpdateGate } from '../src/ui/UpdateGate';
 import { Text } from '../src/ui/Text';
 
@@ -180,6 +181,7 @@ export default function RootLayout() {
             on a theme or language switch, and the update prompt must not
             reappear because somebody tapped the moon icon. */}
         <UpdateGate />
+        <IncomingCallWatcher />
         <Fragment key={`${themeVersion}:${languageVersion}`}>
           <Slot />
         </Fragment>

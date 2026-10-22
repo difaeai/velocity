@@ -35,6 +35,12 @@ describe('routeForNotification', () => {
     );
   });
 
+  it('opens the call screen for an incoming in-app call', () => {
+    // backend/functions/src/calls/index.ts → { screen: 'call', callId }
+    expect(routeForNotification({ screen: 'call', callId: 'c9' })).toBe('/call/c9');
+    expect(routeForNotification({ screen: 'call' })).toBeNull();
+  });
+
   it('goes nowhere when the id it needs is missing', () => {
     expect(routeForNotification({ screen: 'business-query' })).toBeNull();
     expect(routeForNotification({ screen: 'trip' })).toBeNull();

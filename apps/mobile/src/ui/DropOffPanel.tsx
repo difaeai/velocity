@@ -17,8 +17,9 @@
  * and reading a list while pulling over is not.
  */
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
+import { callInApp } from '../lib/inAppCall';
 
 import { api, type PoolRiderView } from '../api/client';
 import { colors } from '../config';
@@ -231,14 +232,15 @@ export function DropOffPanel({
               {/* The passenger who is not at the kerb when you get there. Their
                   number is on the driver's copy of the manifest for exactly
                   this moment. */}
-              {r.phone ? (
-                <Pressable
-                  style={styles.riderNavBtn}
-                  onPress={() => Linking.openURL(`tel:${r.phone}`)}
-                >
-                  <Text style={styles.riderNavText}>📞</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                style={styles.riderNavBtn}
+                onPress={() =>
+                  callInApp({ rideKind: 'trip', rideId: tripId, calleeId: r.uid, name: r.name, phone: r.phone })
+                }
+                accessibilityLabel={`Call ${r.name}`}
+              >
+                <Text style={styles.riderNavText}>📞</Text>
+              </Pressable>
               {r.dropoffLat != null && r.dropoffLng != null ? (
                 <Pressable
                   style={styles.riderNavBtn}

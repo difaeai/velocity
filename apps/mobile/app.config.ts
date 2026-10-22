@@ -183,7 +183,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
           cameraPermission:
             'Velocity Rides uses the camera to scan your face and photograph your documents when you register as a driver, and to record your rides with the in-car dash cam.',
           microphonePermission:
-            'Velocity Rides uses your microphone so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.',
+            'Velocity Rides uses your microphone for free in-app calls with your driver, your passenger or our helpline, so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.',
           recordAudioAndroid: true,
         },
       ],

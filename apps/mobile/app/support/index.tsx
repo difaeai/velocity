@@ -71,6 +71,11 @@ export default function SupportTicketsScreen() {
             <Pressable style={styles.heroBtn} onPress={openNew}>
               <Text style={styles.heroBtnTxt}>Report a problem</Text>
             </Pressable>
+            {/* The same desk by voice, in Urdu or English. Drivers and riders
+                both land here; the server tells the agent which one is calling. */}
+            <Pressable style={styles.callBtn} onPress={() => router.push('/support/call')}>
+              <Text style={styles.callBtnTxt}>📞 Call the helpline</Text>
+            </Pressable>
           </View>
         }
         ListEmptyComponent={
@@ -170,6 +175,15 @@ const styles = themed(() =>
       marginTop: 12,
     },
     heroBtnTxt: { fontSize: 14.5, fontWeight: '900', color: colors.btnText },
+    callBtn: {
+      borderWidth: 1,
+      borderColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    callBtnTxt: { fontSize: 14.5, fontWeight: '900', color: colors.text },
 
     empty: { fontSize: 13, color: colors.muted, textAlign: 'center', marginTop: 20, lineHeight: 20 },
 

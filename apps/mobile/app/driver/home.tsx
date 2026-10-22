@@ -59,6 +59,7 @@ import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
+import { callInApp } from '../../src/lib/inAppCall';
 import { DropOffPanel } from '../../src/ui/DropOffPanel';
 import { DashCam } from '../../src/ui/DashCam';
 import { drainDashcamQueue, ensureDashcamPermission } from '../../src/lib/dashcam';
@@ -756,14 +757,20 @@ export default function DriverHome() {
             ) : null}
 
             <View style={styles.contactRow}>
-              {activeTrip.passengerPhone ? (
-                <Pressable
-                  style={styles.contactBtn}
-                  onPress={() => Linking.openURL(`tel:${activeTrip.passengerPhone}`)}
-                >
-                  <Text style={styles.contactBtnText}>📞 Call passenger</Text>
-                </Pressable>
-              ) : null}
+              {/* A free in-app call; the number is only the fallback if it cannot connect. */}
+              <Pressable
+                style={styles.contactBtn}
+                onPress={() =>
+                  callInApp({
+                    rideKind: 'trip',
+                    rideId: activeTrip.id,
+                    calleeId: activeTrip.passengerId,
+                    phone: activeTrip.passengerPhone,
+                  })
+                }
+              >
+                <Text style={styles.contactBtnText}>📞 Call passenger</Text>
+              </Pressable>
               <Pressable
                 style={[
                   styles.contactBtn,

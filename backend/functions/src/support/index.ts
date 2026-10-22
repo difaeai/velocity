@@ -60,7 +60,7 @@ function ticketRef(id: string) {
 }
 
 /** Append a message and roll the ticket's denormalised "last message" fields. */
-function appendMessage(params: {
+export function appendMessage(params: {
   ticketId: string;
   sender: 'user' | 'ai' | 'agent' | 'system';
   senderName: string;
@@ -150,7 +150,7 @@ async function replyAndRoute(params: {
 }
 
 /** Tell every admin a ticket is waiting. Never throws. */
-async function notifyDesk(ticketId: string, priority: SupportPriority, subject: string): Promise<void> {
+export async function notifyDesk(ticketId: string, priority: SupportPriority, subject: string): Promise<void> {
   try {
     const admins = await db.collection('users').where('role', '==', 'admin').limit(25).get();
     const title = priority === 'urgent' ? '🚨 Urgent support ticket' : '📨 Support ticket waiting';

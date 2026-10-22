@@ -25,8 +25,9 @@
  * Fares are shown for you and nobody else — what somebody else paid is theirs.
  * ---------------------------------------------------------------------------
  */
-import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
+import { callInApp } from '../lib/inAppCall';
 
 import { colors } from '../config';
 import { themed } from '../theme';
@@ -144,11 +145,13 @@ export function sharedRidersFrom(
 }
 
 export function PoolRidersCard({
+  tripId,
   riders,
   youUid,
   driverPhone,
   seatsLeft,
 }: {
+  tripId: string;
   riders: SharedRider[];
   youUid?: string;
   driverPhone?: string | null;
@@ -210,14 +213,12 @@ export function PoolRidersCard({
         </View>
       )}
 
-      {driverPhone ? (
-        <Pressable
-          style={styles.callBtn}
-          onPress={() => Linking.openURL(`tel:${driverPhone}`)}
-        >
-          <Text style={styles.callBtnText}>📞 Something not right? Call the driver</Text>
-        </Pressable>
-      ) : null}
+      <Pressable
+        style={styles.callBtn}
+        onPress={() => callInApp({ rideKind: 'trip', rideId: tripId, phone: driverPhone })}
+      >
+        <Text style={styles.callBtnText}>📞 Something not right? Call the driver</Text>
+      </Pressable>
     </View>
   );
 }

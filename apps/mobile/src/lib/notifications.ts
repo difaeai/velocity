@@ -20,13 +20,18 @@ if (!isExpoGo) {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Notifications = require('expo-notifications');
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
+    // An incoming call with the app open already rings full-screen (see
+    // IncomingCallWatcher); a banner and a second sound on top is just noise.
+    handleNotification: async (n: { request: { content: { data?: Record<string, unknown> } } }) => {
+      const show = n.request.content.data?.screen !== 'call';
+      return {
+        shouldShowAlert: show,
+        shouldPlaySound: show,
+        shouldSetBadge: false,
+        shouldShowBanner: show,
+        shouldShowList: true,
+      };
+    },
   });
 }
 

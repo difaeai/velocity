@@ -30,8 +30,9 @@
  * ---------------------------------------------------------------------------
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
+import { callInApp } from '../lib/inAppCall';
 
 import { api, type PoolJoinRequest, type PoolRiderView } from '../api/client';
 import { colors } from '../config';
@@ -204,15 +205,16 @@ export function DriverPoolManifest({
                 : `PKR ${r.fare ?? 0} from wallet`}
             </Text>
           </View>
-          {r.phone ? (
-            <Pressable
-              style={styles.callBtn}
-              onPress={() => Linking.openURL(`tel:${r.phone}`)}
-              hitSlop={8}
-            >
-              <Text style={styles.callBtnText}>📞</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            style={styles.callBtn}
+            onPress={() =>
+              callInApp({ rideKind: 'trip', rideId: tripId, calleeId: r.uid, name: r.name, phone: r.phone })
+            }
+            hitSlop={8}
+            accessibilityLabel={`Call ${r.name}`}
+          >
+            <Text style={styles.callBtnText}>📞</Text>
+          </Pressable>
         </View>
       ))}
 

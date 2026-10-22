@@ -43,6 +43,7 @@ import { EnRouteSavingsCard } from '../../../src/ui/EnRouteSavingsCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { dashcamWatchable } from '../../../src/domain/dashcam';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
+import { callInApp } from '../../../src/lib/inAppCall';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
 
 /**
@@ -869,14 +870,20 @@ export default function TripScreen() {
 
             {/* Contact + share buttons */}
             <View style={styles.contactRow}>
-              {trip.driverPhone ? (
-                <Pressable
-                  style={styles.contactBtn}
-                  onPress={() => Linking.openURL(`tel:${trip.driverPhone}`)}
-                >
-                  <Text style={styles.contactBtnText}>📞 Call driver</Text>
-                </Pressable>
-              ) : null}
+              {/* A free in-app call; the number is only the fallback if it cannot connect. */}
+              <Pressable
+                style={styles.contactBtn}
+                onPress={() =>
+                  callInApp({
+                    rideKind: 'trip',
+                    rideId: tripId,
+                    name: trip.driverInfo?.displayName,
+                    phone: trip.driverPhone,
+                  })
+                }
+              >
+                <Text style={styles.contactBtnText}>📞 Call driver</Text>
+              </Pressable>
               <Pressable
                 style={[
                   styles.contactBtn,
@@ -976,6 +983,7 @@ export default function TripScreen() {
         {['matched', 'arriving', 'arrived', 'in_progress'].includes(trip.status)
           && trip.pool && (
           <PoolRidersCard
+            tripId={tripId}
             riders={sharedRidersFrom(trip, user?.uid)}
             youUid={user?.uid}
             driverPhone={trip.driverPhone}

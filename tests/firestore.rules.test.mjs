@@ -964,3 +964,47 @@ test('an old build’s support message is refused rather than silently never ans
   await assertFails(setDoc(doc(passenger, 'supportChats/passenger1'), { open: true }));
   await assertFails(setDoc(doc(passenger, 'supportChats/passenger1/messages/m1'), { text: 'I was charged twice' }));
 });
+
+test('an in-app call is readable by its two people only, and each writes only its own half', async () => {
+  const stranger = testEnv.authenticatedContext('stranger1', { role: 'passenger' }).firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'calls/call1'), {
+      callerId: 'passenger1', calleeId: 'driver1', status: 'ringing', offer: null, answer: null,
+    });
+    await setDoc(doc(db, 'calls/call2'), {
+      callerId: 'passenger1', calleeId: 'driver1', status: 'ended', offer: null, answer: null,
+    });
+  });
+
+  await assertSucceeds(getDoc(doc(passenger, 'calls/call1')));
+  await assertSucceeds(getDoc(doc(driver, 'calls/call1')));
+  await assertFails(getDoc(doc(stranger, 'calls/call1')));
+  // The incoming-call listener's own query, and a fishing one.
+  await assertSucceeds(getDocs(query(
+    collection(driver, 'calls'), where('calleeId', '==', 'driver1'), where('status', '==', 'ringing'),
+  )));
+  await assertFails(getDocs(query(collection(stranger, 'calls'), where('status', '==', 'ringing'))));
+
+  // Only startCall creates a call, after checking the ride.
+  await assertFails(setDoc(doc(stranger, 'calls/forged'), {
+    callerId: 'stranger1', calleeId: 'driver1', status: 'ringing',
+  }));
+  await assertFails(deleteDoc(doc(passenger, 'calls/call1')));
+
+  // The caller writes the offer, the callee the answer — never the other way round.
+  await assertSucceeds(updateDoc(doc(passenger, 'calls/call1'), { offer: { type: 'offer', sdp: 'o' } }));
+  await assertFails(updateDoc(doc(driver, 'calls/call1'), { offer: { type: 'offer', sdp: 'x' } }));
+  await assertFails(updateDoc(doc(passenger, 'calls/call1'), { answer: { type: 'answer', sdp: 'x' } }));
+  await assertFails(updateDoc(doc(passenger, 'calls/call1'), { status: 'active' }));
+  await assertFails(updateDoc(doc(passenger, 'calls/call1'), { calleeId: 'stranger1' }));
+  await assertFails(updateDoc(doc(stranger, 'calls/call1'), { status: 'ended' }));
+  await assertSucceeds(updateDoc(doc(driver, 'calls/call1'), {
+    answer: { type: 'answer', sdp: 'a' }, status: 'active',
+  }));
+  await assertSucceeds(updateDoc(doc(passenger, 'calls/call1'), { status: 'ended' }));
+
+  // An ended call stays ended.
+  await assertFails(updateDoc(doc(driver, 'calls/call2'), { status: 'active' }));
+  await assertFails(updateDoc(doc(passenger, 'calls/call2'), { status: 'ringing' }));
+});

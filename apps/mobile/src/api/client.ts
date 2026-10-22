@@ -1215,6 +1215,38 @@ export const api = {
     { ok: boolean; status: SupportStatus }
   >('requestHumanAgent'),
   markSupportTicketRead: callable<{ ticketId: string }, { ok: boolean }>('markSupportTicketRead'),
+  /**
+   * The phone helpline: a one-use token for a Gemini Live session the server
+   * has already briefed (driver or passenger, their own account facts). The
+   * Gemini key never reaches the app. `available: false` → write to us instead.
+   */
+  startHelplineCall: callable<
+    Record<string, never>,
+    | { available: false }
+    | {
+        available: true;
+        callId: string;
+        token: string;
+        model: string;
+        maxSeconds: number;
+        role: 'driver' | 'passenger';
+      }
+  >('startHelplineCall'),
+  /** Reported when the AI hands over (opens a desk ticket) and when the call ends. */
+  logHelplineCall: callable<
+    {
+      callId: string;
+      transcript: { who: 'caller' | 'agent'; text: string }[];
+      handover?: { category: string; summary: string };
+      ended: boolean;
+    },
+    { ok: boolean; ticketId: string | null; message: string }
+  >('logHelplineCall'),
+  /** Ring the other side of a live ride over the internet — free, no airtime. */
+  startCall: callable<
+    { rideKind: 'trip' | 'poolRide'; rideId: string; calleeId?: string },
+    { callId: string }
+  >('startCall'),
   /** "Did that help?" — a no re-opens the ticket for a person. */
   rateSupportResolution: callable<
     { ticketId: string; helpful: boolean },
