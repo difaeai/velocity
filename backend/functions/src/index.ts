@@ -111,6 +111,9 @@ export { notifyClosedCommissionDays } from './drivers/closeDay';
 // `drivers/{uid}/dailyTargets/{day}` — no callable on the hot path.
 export { adminAdjustCommissionCredit, adminGetDriverCommission } from './drivers/commissionCredit';
 
+// Hourly: PKR 2,000 of bonus for a mobile holder, once for every approved driver.
+export { grantMobileHolderBonuses } from './drivers/mobileHolderBonus';
+
 // Cancellation-fee settlement — same proof flow, open to passengers and drivers
 export { submitCancellationFeeSettlement } from './payments/cancellationFees';
 
