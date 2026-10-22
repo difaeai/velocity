@@ -1635,7 +1635,12 @@ function NumberKnob({
   label, value, disabled, onCommit,
 }: { label: string; value: number; disabled?: boolean; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  // Re-synced during render, not in an effect, when the saved value changes.
+  const [syncedTo, setSyncedTo] = useState(value);
+  if (syncedTo !== value) {
+    setSyncedTo(value);
+    setDraft(String(value));
+  }
   return (
     <div>
       <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: colors.muted, marginBottom: 4 }}>

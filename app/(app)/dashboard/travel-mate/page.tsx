@@ -311,7 +311,7 @@ function CommunityTab({
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [communities, setCommunities] = useState<FeedCommunity[]>([]);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
-  const [comments, setComments] = useState<FeedComment[]>([]);
+  const [loadedComments, setLoadedComments] = useState<{ postId: string; rows: FeedComment[] } | null>(null);
   const [editPost, setEditPost] = useState<FeedPost | null>(null);
   const [communityModal, setCommunityModal] = useState<{ community: FeedCommunity | null } | null>(null);
 
@@ -333,12 +333,17 @@ function CommunityTab({
 
   // Comments of the expanded post (live)
   useEffect(() => {
-    if (!expandedPost) { setComments([]); return; }
+    if (!expandedPost) return;
     return onSnapshot(
       query(collection(db, 'travelMatePosts', expandedPost, 'comments'), orderBy('createdAt', 'asc')),
-      snap => setComments(snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedComment)),
+      snap => setLoadedComments({
+        postId: expandedPost,
+        rows: snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedComment),
+      }),
     );
   }, [expandedPost]);
+  // Keyed by post, so expanding another post never shows the last one's comments.
+  const comments = loadedComments?.postId === expandedPost ? loadedComments.rows : [];
 
   async function deletePost(p: FeedPost) {
     if (!confirm(`Delete this post by ${p.authorName}? This removes it (and its likes/comments) for everyone.`)) return;
@@ -904,7 +909,12 @@ function SettingsTab({ settings }: { settings: TmSettings }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setForm(settings); }, [settings]);
+  // Re-synced during render, not in an effect, when the saved settings change.
+  const [syncedTo, setSyncedTo] = useState(settings);
+  if (syncedTo !== settings) {
+    setSyncedTo(settings);
+    setForm(settings);
+  }
 
   async function save() {
     setSaving(true);
@@ -943,7 +953,7 @@ function SettingsTab({ settings }: { settings: TmSettings }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: colors.text }}>Enforce mutual gender preference</div>
-            <div style={{ fontSize: 11, color: colors.muted }}>Both users must accept each other's gender to appear in each other's feed</div>
+            <div style={{ fontSize: 11, color: colors.muted }}>Both users must accept each other&apos;s gender to appear in each other&apos;s feed</div>
           </div>
           <input
             type="checkbox"
