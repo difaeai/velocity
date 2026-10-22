@@ -13,7 +13,7 @@
  * issues.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { deleteObject, listAll, ref, uploadBytes } from 'firebase/storage';
 
@@ -248,7 +248,38 @@ export default function AutomationPage() {
         </p>
       </Card>
 
-      <MusicLibrary />
+      <Library
+        folder="socialMusic"
+        title="Reel music"
+        accept="audio/*"
+        maxMb={30}
+        icon="♪"
+        blurb={
+          <>
+            Every reel the desk cuts gets one of these tracks under it, faded in and out. Instagram&apos;s trending
+            sounds cannot be added automatically — no app is allowed to, and a copyrighted song inside the file gets
+            the reel muted. So upload tracks cleared for Instagram: the Meta Sound Collection (Meta Business Suite →
+            Sound collection) or Pixabay Music. Pick ones that start strong — a reel plays from the track&apos;s first
+            second. This week&apos;s trending sounds are listed on each reel in the queue, for when you post one by
+            hand. Empty, reels are silent.
+          </>
+        }
+      />
+
+      <Library
+        folder="socialClips"
+        title="Our clips"
+        accept="video/*"
+        maxMb={60}
+        icon="▶"
+        blurb={
+          <>
+            Your own footage — drivers, cars, roads, the city. Each reel cuts to one clip per line, taking ours first
+            and filling the rest with Pixabay stock. Short clips of 5–15 seconds work best; the reel uses each
+            clip&apos;s opening seconds.
+          </>
+        }
+      />
 
       <Card>
         <h2 style={h2}>Publishing without you</h2>
@@ -404,22 +435,40 @@ export default function AutomationPage() {
 }
 
 /**
- * The tracks the renderer lays under every reel (backend `footage.ts`).
- * Stored straight in the bucket: the folder listing is the library.
+ * A folder the renderer reads under every reel (backend `footage.ts`): the
+ * music and our own clips. Stored straight in the bucket: the folder listing
+ * is the library.
  */
-function MusicLibrary() {
-  const [tracks, setTracks] = useState<string[] | null>(null);
+function Library({
+  folder,
+  title,
+  accept,
+  maxMb,
+  icon,
+  blurb,
+}: {
+  folder: string;
+  title: string;
+  accept: string;
+  maxMb: number;
+  icon: string;
+  blurb: React.ReactNode;
+}) {
+  const [items, setItems] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () =>
-    listAll(ref(storage, 'socialMusic'))
-      .then((r) => setTracks(r.items.map((i) => i.name).sort()))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the library.'));
+  const load = useCallback(
+    () =>
+      listAll(ref(storage, folder))
+        .then((r) => setItems(r.items.map((i) => i.name).sort()))
+        .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the library.')),
+    [folder],
+  );
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true);
@@ -438,30 +487,29 @@ function MusicLibrary() {
     run(async () => {
       for (const file of files) {
         // storage.rules refuses anything bigger, with an error nobody could read.
-        if (file.size > 30 * 1024 * 1024) throw new Error(`${file.name} is over 30 MB.`);
-        const name = file.name.replace(/[^\w.-]/g, '') || `track-${Date.now()}.mp3`;
-        await uploadBytes(ref(storage, `socialMusic/${name}`), file, { contentType: file.type || 'audio/mpeg' });
+        if (file.size > maxMb * 1024 * 1024) throw new Error(`${file.name} is over ${maxMb} MB.`);
+        const name = file.name.replace(/[^\w.-]/g, '') || `${folder}-${Date.now()}`;
+        await uploadBytes(ref(storage, `${folder}/${name}`), file, {
+          contentType: file.type || (accept.startsWith('audio') ? 'audio/mpeg' : 'video/mp4'),
+        });
       }
     });
 
   return (
     <Card>
-      <h2 style={h2}>Reel music</h2>
-      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
-        Every reel the desk cuts gets one of these tracks under it, faded in and out. Instagram&apos;s trending sounds
-        cannot be added automatically — no API allows it, and a copyrighted song inside the file gets the reel
-        muted — so upload royalty-free tracks from Pixabay Music or the YouTube Audio Library. Pick ones that start
-        strong: a reel is about 20 seconds and plays from the track&apos;s first second. Empty, reels are silent.
-      </p>
-      {tracks?.length ? (
+      <h2 style={h2}>{title}</h2>
+      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px', lineHeight: 1.5 }}>{blurb}</p>
+      {items?.length ? (
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'grid', gap: 6 }}>
-          {tracks.map((name) => (
+          {items.map((name) => (
             <li key={name} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>♪ {name}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {icon} {name}
+              </span>
               <Button
                 variant="ghost"
                 disabled={busy}
-                onClick={() => run(() => deleteObject(ref(storage, `socialMusic/${name}`)))}
+                onClick={() => run(() => deleteObject(ref(storage, `${folder}/${name}`)))}
               >
                 Remove
               </Button>
@@ -469,14 +517,14 @@ function MusicLibrary() {
           ))}
         </ul>
       ) : (
-        <p style={{ fontSize: 13, margin: '0 0 12px' }}>{tracks ? 'No tracks yet.' : 'Loading…'}</p>
+        <p style={{ fontSize: 13, margin: '0 0 12px' }}>{items ? 'Nothing here yet.' : 'Loading…'}</p>
       )}
       <input
         type="file"
-        accept="audio/*"
+        accept={accept}
         multiple
         disabled={busy}
-        aria-label="Upload music tracks"
+        aria-label={`Upload to ${title}`}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           e.target.value = '';

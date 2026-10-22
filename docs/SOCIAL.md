@@ -282,16 +282,20 @@ they become the backdrop with a slow push-in behind a scrim; with none, the
 typography carries it alone.
 
 **Footage and music** ([`footage.ts`](../backend/functions/src/social/footage.ts)).
-With `PEXELS_API_KEY` (free) the backdrop is real footage: one stock clip per
-beat, searched with the scene the writer wrote for that frame, cut where the
-line changes, never the same clip twice. Under it plays a track from the music
-library on **Automation → Reel music** (`socialMusic/` in the bucket), the same
-track for the same piece so a re-cut keeps its sound. Instagram's trending
-sounds cannot be attached through any API, and a copyrighted song baked into
-the file gets the reel muted — so the library holds royalty-free tracks
-(Pixabay Music, YouTube Audio Library). If you post by hand you can still add a
-trending sound in the Instagram app. No key is typography, an empty library is
-silence; neither ever fails the render. The work log says which it got.
+The backdrop is real footage, one clip per beat, cut where the line changes:
+our own clips from **Automation → Our clips** (`socialClips/`) take the first
+beats, and Pixabay stock (`PIXABAY_API_KEY`, free) fills the rest, searched
+with the scene the writer wrote for that frame, never the same clip twice.
+Under it plays a track from **Automation → Reel music** (`socialMusic/`). Each
+piece starts at its own place in both libraries, so a re-cut keeps its picks.
+
+Instagram's trending sounds cannot be attached through any API, and a
+copyrighted song baked into the file gets the reel muted — so the music library
+holds tracks cleared for Instagram (Meta Sound Collection, Pixabay Music), and
+the morning research lists this week's trending sounds (`research.sounds`),
+shown on each reel in the queue for whoever posts it by hand from the Instagram
+app. No clips is typography, an empty library is silence; neither ever fails the
+render. The work log says which it got.
 
 | Decision | Why |
 |---|---|

@@ -43,13 +43,16 @@ Report what you found, not what you assume. If the search returns little on a po
 
 Never suggest copying a competitor's post. Patterns and gaps only.
 
+Also look up which sounds are trending on Instagram Reels right now: this week's or last week's published trending-audio roundups, Pakistani ones first if any exist. Only list a sound a source actually named.
+
 Reply with one JSON object and nothing else:
 {
   "trends": ["4-7 short observations about what is travelling right now, each with the specific thing that made it travel"],
   "competitorMoves": ["3-6 things the other apps are actually doing this month"],
   "opportunities": ["3-6 gaps Velocity Rides can take, each one specific enough to film"],
   "hookPatterns": ["3-6 hook shapes that are working, as patterns not copy"],
-  "avoid": ["2-4 things that are done to death or that would land badly here"]
+  "avoid": ["2-4 things that are done to death or that would land badly here"],
+  "sounds": ["3-6 sounds trending on Instagram Reels this week, each as 'Title — Artist: the kind of reel using it'"]
 }`;
 
 const list = (v: unknown, max: number, len: number): string[] =>
@@ -140,6 +143,7 @@ export async function runResearch(params: {
       opportunities: list(data.opportunities, 8, 300),
       hookPatterns: list(data.hookPatterns, 8, 200),
       avoid: list(data.avoid, 6, 200),
+      sounds: list(data.sounds, 6, 160),
       sources: sources.slice(0, 20).map((s) => ({ title: s.title.slice(0, 200), url: s.url.slice(0, 500) })),
       error: null,
     };

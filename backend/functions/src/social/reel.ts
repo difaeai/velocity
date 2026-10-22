@@ -17,11 +17,11 @@
  * it alone. Either way a video exists at the end of the run rather than a brief
  * somebody has to find time for.
  *
- * With a Pexels key the backdrop is real footage instead: one stock clip per
- * beat, matched to the frame's scene and cut on the beat, so the reel reads as
+ * With footage — our own clip library, then Pixabay stock — the backdrop is
+ * real video instead: one clip per beat, cut on the beat, so the reel reads as
  * edited rather than generated. A track from the music library plays under it
- * all (`footage.ts` finds both). Neither is required — no key is typography,
- * an empty library is silence.
+ * all (`footage.ts` finds both). Neither is required — no clips is
+ * typography, an empty library is silence.
  *
  * Three things worth knowing before changing anything:
  *

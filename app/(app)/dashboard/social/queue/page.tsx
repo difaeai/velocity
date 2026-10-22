@@ -1001,6 +1001,20 @@ function Working({ post }: { post: SocialPostDoc }) {
         </Section>
       ) : null}
 
+      {post.research?.sounds?.length && ((post.format ?? 'reel') === 'reel' || post.format === 'video') ? (
+        <Section title="Trending sounds this week">
+          <p style={{ margin: '0 0 6px', fontSize: 12, color: colors.muted }}>
+            No app can add Instagram&apos;s own sounds to a reel. If you post this one by hand, add one of these in
+            the Instagram app and turn the reel&apos;s own audio down.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
+            {post.research.sounds.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
       {post.revisions?.length ? (
         <Section title="Changes you asked for">
           <div style={{ display: 'grid', gap: 6 }}>

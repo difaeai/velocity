@@ -507,6 +507,12 @@ export interface ContentResearch {
   /** Hook shapes seen travelling, as patterns rather than copy. */
   hookPatterns: string[];
   avoid: string[];
+  /**
+   * Trending Instagram sounds, "Title — Artist: use". Shown in the queue for a
+   * person posting by hand: no API can attach Instagram's own audio to a reel.
+   * Absent on reads made before 2026-10-22.
+   */
+  sounds?: string[];
   sources: ResearchSource[];
   /** Set when research was asked for but could not run. */
   error: string | null;

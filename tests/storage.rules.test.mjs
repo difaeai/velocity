@@ -122,6 +122,14 @@ test('reel music: audio from admins only, listable by admins only', async () => 
   await assertFails(list(ref(owner, 'socialMusic')));
 });
 
+test('reel clips: video from admins only, listable by admins only', async () => {
+  await assertSucceeds(put(admin, 'socialClips/driver-cash.mp4', 'video/mp4'));
+  await assertSucceeds(list(ref(admin, 'socialClips')));
+  await assertFails(put(admin, 'socialClips/track.mp3', 'audio/mpeg'));
+  await assertFails(put(owner, 'socialClips/driver-cash.mp4', 'video/mp4'));
+  await assertFails(list(ref(owner, 'socialClips')));
+});
+
 test('unchanged paths keep working', async () => {
   await assertSucceeds(put(owner, 'cnic/user1/front-1', 'image/jpeg'));
   await assertFails(put(owner, 'cnic/user1/front-2', 'application/pdf'));

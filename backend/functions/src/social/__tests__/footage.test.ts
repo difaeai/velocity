@@ -4,13 +4,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { pickFile, searchTerms, trackIndex, type PexelsFile } from '../footage';
+import { fitsOrientation, pickFile, rotate, searchTerms, trackIndex, type StockFile } from '../footage';
 
-const file = (width: number, height: number, file_type = 'video/mp4'): PexelsFile => ({
-  file_type,
+const file = (width: number, height: number, url = `https://cdn.pixabay.com/${width}x${height}.mp4`): StockFile => ({
+  url,
   width,
   height,
-  link: `https://videos.pexels.com/${width}x${height}.mp4`,
 });
 
 describe('pickFile', () => {
@@ -22,9 +21,21 @@ describe('pickFile', () => {
     expect(pickFile([file(360, 640), file(540, 960)])).toEqual(file(540, 960));
   });
 
-  it('never takes a format ffmpeg was not promised', () => {
-    expect(pickFile([file(720, 1280, 'video/webm')])).toBeNull();
+  it('skips a size Pixabay has no file for', () => {
+    // Pixabay sends every size key, with an empty url where it has none.
+    expect(pickFile([file(3840, 2160, ''), file(1280, 720)])).toEqual(file(1280, 720));
+    expect(pickFile([file(720, 1280, '')])).toBeNull();
     expect(pickFile([])).toBeNull();
+  });
+});
+
+describe('fitsOrientation', () => {
+  const hit = (w: number, h: number) => ({ id: 1, videos: { medium: file(w, h), tiny: file(w / 4, h / 4) } });
+
+  it('prefers tall clips for a reel and wide ones for a video', () => {
+    expect(fitsOrientation(hit(720, 1280), 'portrait')).toBe(true);
+    expect(fitsOrientation(hit(1280, 720), 'portrait')).toBe(false);
+    expect(fitsOrientation(hit(1280, 720), 'landscape')).toBe(true);
   });
 });
 
@@ -38,12 +49,28 @@ describe('searchTerms', () => {
 });
 
 describe('trackIndex', () => {
-  it('gives the same piece the same track, and stays in range', () => {
+  it('gives the same piece the same place, and stays in range', () => {
     expect(trackIndex('2026-10-22-reel', 5)).toBe(trackIndex('2026-10-22-reel', 5));
     for (const id of ['2026-10-22-reel', '2026-10-23-reel', '2026-10-24-video-2']) {
       const i = trackIndex(id, 3);
       expect(i).toBeGreaterThanOrEqual(0);
       expect(i).toBeLessThan(3);
     }
+  });
+});
+
+describe('rotate', () => {
+  it('takes consecutive items from the piece’s place, wrapping, never repeating', () => {
+    const items = ['a', 'b', 'c', 'd'];
+    const picked = rotate(items, '2026-10-22-reel', 3);
+    expect(picked).toHaveLength(3);
+    expect(new Set(picked).size).toBe(3);
+    const start = trackIndex('2026-10-22-reel', 4);
+    expect(picked[0]).toBe(items[start]);
+  });
+
+  it('never takes more than the library holds', () => {
+    expect(rotate(['a', 'b'], 'x', 5)).toHaveLength(2);
+    expect(rotate([], 'x', 5)).toEqual([]);
   });
 });
