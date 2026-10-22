@@ -199,7 +199,7 @@ export async function design(params: {
   return {
     direction,
     note: isVideo
-      ? 'Cover frame briefed — make it and attach it from the queue.'
-      : `${count} frame${count === 1 ? '' : 's'} briefed — make them and attach them from the queue.`,
+      ? 'Cover idea written.'
+      : `${count} picture idea${count === 1 ? '' : 's'} written.`,
   };
 }

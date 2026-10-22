@@ -449,8 +449,9 @@ async function runTeam(params: {
         await patch(params.id, { direction });
         // 'briefed' until the pictures exist: a green tick on a stage nobody has
         // finished is how a piece reaches the queue looking ready when it is not.
+        // A reel's cover idea is the whole job — the video is the editor's.
         await setWork(params.id, 'design', {
-          state: 'briefed',
+          state: spec.kind === 'image' ? 'briefed' : 'done',
           employeeId: designer.id,
           name: designer.name,
           role: designer.role,
@@ -473,10 +474,12 @@ async function runTeam(params: {
           employeeId: designer?.id ?? null,
           name: designer?.name ?? 'The desk',
           role: designer?.role ?? null,
-          note: `${briefNote} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'} — replace any from the queue.`.trim(),
+          note: `${briefNote} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'}.`.trim(),
         });
       } else if (drawn.error) {
-        await patch(params.id, { error: `Pictures: ${drawn.error} — press "Make the picture" to try again.` });
+        await patch(params.id, {
+          error: `Pictures: ${drawn.error} — the desk tries again in a few minutes, or press "Make the picture".`,
+        });
       }
     }
   }
@@ -515,7 +518,8 @@ async function runTeam(params: {
       : null;
     if (rendered || cutNote !== null) {
       await setWork(params.id, 'video', {
-        state: rendered?.line ? 'done' : rendered?.error ? 'failed' : 'briefed',
+        // No render and no error with rendering on means a video uploaded by hand was kept.
+        state: rendered?.error ? 'failed' : rendered?.line || settings.autoRenderVideo ? 'done' : 'briefed',
         employeeId: editor?.id ?? null,
         name: editor?.name ?? 'The desk',
         role: editor?.role ?? null,
@@ -524,10 +528,12 @@ async function runTeam(params: {
         note: [
           cutNote,
           rendered?.line
-            ? `Cut it — ${rendered.line}. Replace it from the queue if you shoot your own.`
+            ? `Video made — ${rendered.line}.`
             : rendered?.error
-              ? 'Could not cut it here — press "Cut the reel" in the queue, or attach a video.'
-              : 'Make the video and attach it from the queue.',
+              ? 'Could not make the video. The desk tries again in a few minutes, or upload your own.'
+              : settings.autoRenderVideo
+                ? 'Kept the video you uploaded.'
+                : 'Upload the video from the queue.',
         ]
           .filter(Boolean)
           .join(' '),
@@ -535,7 +541,9 @@ async function runTeam(params: {
       });
     }
     if (rendered?.error) {
-      await patch(params.id, { error: `Reel: ${rendered.error} — press "Cut the reel" to try again.` });
+      await patch(params.id, {
+        error: `Video: ${rendered.error} — the desk tries again in a few minutes, or press "Make the video".`,
+      });
     }
   }
 
@@ -656,9 +664,11 @@ async function runTeam(params: {
  * queue still offers the upload control it always did, and the next morning's
  * run is unaffected. A missing video is a worse post; a failed run is no post.
  *
- * An existing video is never overwritten. If somebody shot the real thing and
- * attached it, that is the piece, and a generated one replacing it overnight
- * would be the single most annoying thing this desk could do.
+ * A video somebody attached by hand is never overwritten. If somebody shot the
+ * real thing, that is the piece, and a generated one replacing it overnight
+ * would be the single most annoying thing this desk could do. A reel this desk
+ * cut is cut again: the only way back here with one is a change request, and
+ * keeping it posted the old words under the new caption.
  */
 async function renderAndAttach(params: {
   id: string;
@@ -670,7 +680,7 @@ async function renderAndAttach(params: {
 
   const existing = (await postRef(params.id).get()).data() as SocialPost | undefined;
   const media = postMedia(existing ?? {});
-  if (media.some((m) => m.kind === 'video' && m.url)) return null;
+  if (media.some((m) => m.kind === 'video' && m.url && m.provider !== 'velocity-render')) return null;
 
   try {
     // Slides already attached to this piece become the backdrop. Almost always
@@ -708,6 +718,8 @@ async function renderAndAttach(params: {
   } catch (e) {
     const message = (e as Error).message;
     logger.error('social: could not render the reel', { id: params.id, message });
+    // The old reel says the old words: better nothing to post than that.
+    await patch(params.id, { media: media.filter((m) => m.kind !== 'video') });
     return { line: null, error: message.slice(0, 240) };
   }
 }
@@ -762,7 +774,13 @@ async function renderStillsAndAttach(params: {
   } catch (e) {
     const message = (e as Error).message;
     logger.error('social: could not draw the pictures', { id: params.id, message });
-    if (!made.length) return { made: 0, error: message.slice(0, 240) };
+    if (!made.length) {
+      // Pictures drawn for an earlier version show its words, so they go too.
+      await patch(params.id, {
+        media: existing.filter((m) => !(m.kind === 'image' && m.provider === 'velocity-render')),
+      });
+      return { made: 0, error: message.slice(0, 240) };
+    }
   }
 
   if (made.length) {
@@ -905,7 +923,7 @@ export async function claimForPublish(id: string, only?: Platform[]): Promise<{ 
       throw new HttpsError('already-exists', 'It is already going out — the queue shows each network as it lands.');
     }
     if (!postMedia(post).length) {
-      throw new HttpsError('failed-precondition', 'That piece has nothing to publish yet. Press Render, or attach a file, first.');
+      throw new HttpsError('failed-precondition', 'That piece has nothing to publish yet. Make the picture or video, or upload your own, first.');
     }
 
     const format = post.format ?? 'reel';
@@ -1105,6 +1123,33 @@ export const socialDailyContent = onSchedule(
   },
 );
 
+/** A written piece still missing its picture or video, with automatic tries left. */
+export function needsMedia(post: Partial<SocialPost> & { renderTries?: number }): boolean {
+  if (!post.script || (post.renderTries ?? 0) >= 3) return false;
+  const kind = FORMAT_SPECS[post.format ?? 'reel'].kind;
+  return !postMedia(post).some((m) => m.kind === kind && m.url);
+}
+
+/** Make a piece's pictures or video from its script. The queue's button and the sweep share it. */
+async function makeMedia(postId: string, post: SocialPost): Promise<{ made: number; error: string | null }> {
+  const format = post.format ?? 'reel';
+  const script = post.script as PostScript;
+  if (FORMAT_SPECS[format].kind === 'video') {
+    const out = await renderAndAttach({ id: postId, format, script });
+    if (out?.line) await setWork(postId, 'video', { state: 'done', name: 'The desk', note: `Video made — ${out.line}.` });
+    return { made: out?.line ? 1 : 0, error: out?.error ?? null };
+  }
+  const out = await renderStillsAndAttach({ id: postId, format, script, direction: post.direction });
+  if (out.made) {
+    await setWork(postId, 'design', {
+      state: 'done',
+      name: 'The desk',
+      note: `Drew ${out.made} picture${out.made === 1 ? '' : 's'}.`,
+    });
+  }
+  return out;
+}
+
 /**
  * Every five minutes: post what was approved, and free what got stuck.
  *
@@ -1115,8 +1160,29 @@ export const socialDailyContent = onSchedule(
  * hand, so it is left for a person rather than risked as a duplicate.
  */
 export const socialPublishSweep = onSchedule(
-  { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '1GiB' },
+  // 2GiB because it may cut a reel, and on Cloud Functions the memory tier buys the CPU.
+  { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async () => {
+    // A picture or video the run could not make is made here, so nobody has to
+    // press for it. Recent pieces only, two a pass (a reel takes a minute), and
+    // `needsMedia` stops after three tries. Before the posting below, so an
+    // approved piece that was missing its file goes out in the same pass.
+    if ((await getSocialSettings()).autoRenderVideo) {
+      const recent = await db
+        .collection('socialPosts')
+        .where('date', '>=', dayKey(Date.now() - 3 * 86_400_000))
+        .get();
+      const due = recent.docs
+        .filter((d) => ['awaiting_approval', 'ready', 'failed'].includes(d.get('status')) && needsMedia(d.data()))
+        .slice(0, 2);
+      for (const doc of due) {
+        await patch(doc.id, { renderTries: FieldValue.increment(1) });
+        const out = await makeMedia(doc.id, doc.data() as SocialPost);
+        if (out.made && doc.get('status') === 'failed') await patch(doc.id, { status: 'awaiting_approval' as PostStatus });
+        if (out.error) await patch(doc.id, { error: `Could not make the picture or video: ${out.error}` });
+      }
+    }
+
     const MAKING: PostStatus[] = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'];
     const snap = await db
       .collection('socialPosts')
@@ -1139,7 +1205,7 @@ export const socialPublishSweep = onSchedule(
         await patch(doc.id, {
           status: 'failed' as PostStatus,
           error: post.script
-            ? 'The team ran out of time on this one. Press "Make the picture" / "Cut the reel" to finish it, or ask for changes.'
+            ? 'The team ran out of time on this one. The desk finishes the picture or video on its own, or ask for changes.'
             : 'The team ran out of time before anything was written. Make it again.',
         });
         continue;
@@ -1287,6 +1353,8 @@ export const adminRequestSocialChanges = onCall(
       revisions: FieldValue.arrayUnion(revision),
       status: 'changes_requested' as PostStatus,
       error: null,
+      // A new version earns the sweep's three tries at its picture or video again.
+      renderTries: 0,
     });
 
     // A caption-only note never touches the media, and never re-briefs a stage.
@@ -1431,24 +1499,9 @@ export const adminRenderSocialPost = onCall(
     if (WORKING_STATUSES.includes(post.status)) {
       throw new HttpsError('failed-precondition', 'The team is still working on that one.');
     }
-    const format = post.format ?? 'reel';
 
-    if (FORMAT_SPECS[format].kind === 'video') {
-      const out = await renderAndAttach({ id: postId, format, script: post.script });
-      if (out?.error) throw new HttpsError('internal', `The reel could not be cut: ${out.error}`);
-      if (out?.line) await setWork(postId, 'video', { state: 'done', name: 'The desk', note: `Cut it — ${out.line}.` });
-      return { ok: true, made: out?.line ? 1 : 0 };
-    }
-
-    const out = await renderStillsAndAttach({ id: postId, format, script: post.script, direction: post.direction });
-    if (out.error) throw new HttpsError('internal', `The pictures could not be drawn: ${out.error}`);
-    if (out.made) {
-      await setWork(postId, 'design', {
-        state: 'done',
-        name: 'The desk',
-        note: `Drew ${out.made} picture${out.made === 1 ? '' : 's'}.`,
-      });
-    }
+    const out = await makeMedia(postId, post);
+    if (out.error) throw new HttpsError('internal', `Could not make it: ${out.error}`);
     return { ok: true, made: out.made };
   },
 );

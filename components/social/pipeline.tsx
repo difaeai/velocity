@@ -123,13 +123,13 @@ export function readPipeline(
   const steps: PipelineStep[] = [
     {
       key: 'brief',
-      label: 'The brief',
+      label: 'What to make',
       what: 'What to make, and when. Either the daily run picks it, or you press the button.',
       count: 0,
       state: staffed === 0 ? 'blocked' : 'idle',
       caption:
         staffed === 0
-          ? 'Nobody is hired yet, so there is nobody to brief.'
+          ? 'Nobody is hired yet, so there is nobody to ask.'
           : settings?.enabled
             ? `Automatic, ${String(settings.runHour).padStart(2, '0')}:00 PKT daily`
             : 'Manual — only when you ask',
@@ -138,7 +138,7 @@ export function readPipeline(
     {
       key: 'make',
       label: 'The team makes it',
-      what: 'Research, search brief, script, pictures, cut — each one a named person on the desk.',
+      what: 'Research, keywords, writing, pictures, video — each one a named person on the desk.',
       count: making.length,
       state: making.length ? 'live' : 'idle',
       caption: making.length
@@ -497,7 +497,7 @@ export function readBlockers(
   if (readiness.engine === 'free') {
     out.push({
       label: 'Writing with a free model',
-      why: 'A free model is doing the thinking — the standup, the writing, the SEO, the briefs, the replies, and change requests read properly again. The one thing it cannot do is search the web, so there is still no live market read: the desk says so rather than inventing one.',
+      why: 'A free model is doing the thinking — the planning, the writing, the SEO, the picture and video plans, the replies, and change requests read properly again. The one thing it cannot do is search the web, so there is still no live market read: the desk says so rather than inventing one.',
       href: '/dashboard/social/automation',
       cta: 'What this changes',
       hard: false,

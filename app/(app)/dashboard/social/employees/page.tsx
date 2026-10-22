@@ -259,7 +259,7 @@ export default function EmployeesPage() {
           />
           <BriefBox
             label="What I want from a post"
-            who="Standup, writer, designer, video editor"
+            who="Planning, writer, designer, video editor"
             hint="What a good one looks like to you, and what a bad one looks like. Be specific — examples beat adjectives."
             placeholder={
               'e.g. I want real drivers with their names, not models. Show the cash in hand. Every post should answer one question a rider actually asks. Urdu in the voiceover, English on screen...'
@@ -269,7 +269,7 @@ export default function EmployeesPage() {
           />
           <BriefBox
             label="What viral means to me"
-            who="Standup, writer, research desk, SEO"
+            who="Planning, writer, research desk, SEO"
             hint="Everyone says they want viral. Say what you mean: who sends it to whom, and why."
             placeholder={
               'e.g. A driver sends it to his WhatsApp group of other drivers. A woman sends it to her sister because of the female-driver option. If nobody would forward it, it is not the post I want...'
@@ -408,16 +408,14 @@ export default function EmployeesPage() {
               .{' '}
             </>
           ) : null}
-          <strong>Nothing is rendered here.</strong> The
-          designer writes a brief for every frame and the editor writes the cut; you make the pictures and the video
-          however you like and attach them to the piece from the queue. The model id is editable because model names
-          change; when one does, this is the fix, not a redeploy.
+          The desk makes the pictures and the reels itself from the script; upload your own in the queue whenever you
+          prefer. The model id is editable because model names change; when one does, this is the fix, not a redeploy.
         </p>
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <Field
             label="Writing and thinking"
-            hint="Standup, research, writing, SEO, ads, captions and replies. A model id belonging to the engine that is running."
+            hint="Planning, research, writing, SEO, ads, captions and replies. A model id belonging to the engine that is running."
           >
             <input
               value={(value('textModel') as string) ?? ''}

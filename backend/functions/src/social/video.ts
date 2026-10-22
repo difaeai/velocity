@@ -59,7 +59,7 @@ export async function planCut(params: {
   if (!modelReady()) {
     return {
       prompt: assembleCut(params.script, spec.aspect),
-      note: 'Cut assembled straight from the script by the local engine.',
+      note: 'Video plan written from the script.',
     };
   }
 
@@ -100,7 +100,7 @@ Reply with one JSON object and nothing else:
     if (prompt) {
       return {
         prompt,
-        note: (typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '') || 'Cut written.',
+        note: (typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '') || 'Video plan written.',
       };
     }
   } catch (e) {
@@ -109,7 +109,7 @@ Reply with one JSON object and nothing else:
     });
   }
 
-  return { prompt: assembleCut(params.script, spec.aspect), note: 'Cut assembled straight from the script.' };
+  return { prompt: assembleCut(params.script, spec.aspect), note: 'Video plan written from the script.' };
 }
 
 /**

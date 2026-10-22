@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as admin from 'firebase-admin';
 
 import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
-import { claimForPublish, socialPublishSweep } from '../pipeline';
+import { claimForPublish, needsMedia, socialPublishSweep } from '../pipeline';
 
 const ID = '2026-10-21-post';
 
@@ -94,5 +94,23 @@ describe('socialPublishSweep — a piece the team never finished', () => {
     expect(stuck.status).toBe('failed');
     expect(stuck.error).toMatch(/ran out of time/);
     expect((await db().doc('socialPosts/fresh').get()).get('status')).toBe('designing');
+  });
+});
+
+describe('needsMedia — what the sweep makes without anyone pressing a button', () => {
+  const script = { hook: 'h' };
+
+  it('wants the file a written piece is missing, and nothing for an unwritten one', () => {
+    expect(needsMedia({ format: 'reel', script } as never)).toBe(true);
+    expect(needsMedia({ format: 'reel' } as never)).toBe(false);
+  });
+
+  it('is satisfied only by the kind of file the format posts', () => {
+    expect(needsMedia({ format: 'reel', script, media: [image] } as never)).toBe(true);
+    expect(needsMedia({ format: 'post', script, media: [image] } as never)).toBe(false);
+  });
+
+  it('stops after three tries, so a render that keeps failing is not retried forever', () => {
+    expect(needsMedia({ format: 'post', script, renderTries: 3 } as never)).toBe(false);
   });
 });
