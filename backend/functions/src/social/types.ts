@@ -512,6 +512,32 @@ export interface ContentResearch {
   error: string | null;
 }
 
+/**
+ * A video the person handed the team to model a piece on: what it does, why it
+ * works, how that lands in our market, and our version of it. The structure is
+ * copied; the footage, faces and words never are.
+ */
+export interface ReferenceRead {
+  atMs: number;
+  /** A public YouTube link, or the name of the file that was uploaded. */
+  source: string;
+  summary: string;
+  /** The first three seconds, and why they stop the scroll. */
+  hook: string;
+  beats: { at: string; what: string; onScreen: string }[];
+  seconds: number | null;
+  pacing: string;
+  look: string;
+  sound: string;
+  whyItWorks: string[];
+  /** What a search found about this kind of video in our market right now. */
+  market: string;
+  /** How we should do it for our audience. */
+  ourVersion: string;
+  dontCopy: string[];
+  sources: ResearchSource[];
+}
+
 /** The SEO expert's work: the words that make this findable later. */
 export interface SeoPack {
   /** The query this piece should answer. */
@@ -583,6 +609,8 @@ export interface SocialPost {
   /** The live platform numbers the script was written from, for the audit trail. */
   facts: Record<string, number | string>;
   research: ContentResearch | null;
+  /** The video this piece was modelled on, when the person gave one. */
+  reference?: ReferenceRead | null;
   seo: SeoPack | null;
   search: SearchPack | null;
   ads: AdPlan | null;

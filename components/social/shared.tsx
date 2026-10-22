@@ -67,7 +67,7 @@ export const ROLE_META: Record<
     short: 'Research',
     colour: '#28c76f',
     stage: 'research',
-    does: 'Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Brings it to standup with the pages it came from.',
+    does: 'Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Brings it to the planning meeting with the pages it came from.',
   },
   'content-writer': {
     label: 'Content writer',
@@ -95,14 +95,14 @@ export const ROLE_META: Record<
     short: 'Design',
     colour: '#ff8a3d',
     stage: 'design',
-    does: 'Art directs every frame — subject, light, lens, type, where the lime sits — and writes the brief each one is made from. Nothing is rendered here; you make the file and attach it.',
+    does: 'Decides how every picture looks — subject, light, text, where the lime sits — and the desk draws it from that. Upload your own picture in the queue to replace one.',
   },
   'video-editor': {
     label: 'Video editor',
     short: 'Editing',
     colour: '#b07dff',
     stage: 'video',
-    does: 'Writes the second-by-second cut — pacing, the pattern interrupt, the sound bed — for you to shoot or render from. The reason someone is still watching at second seven.',
+    does: 'Plans the video second by second — pacing, the surprise that keeps people watching, the sound — and the desk makes the reel. Upload your own video in the queue to replace it.',
   },
   'youtube-ads-expert': {
     label: 'YouTube ads expert',
@@ -121,14 +121,14 @@ export const ROLE_META: Record<
 };
 
 export const STAGE_META: Record<SocialStage, { label: string; role: SocialRole }> = {
-  research: { label: 'Market read', role: 'research-assistant' },
-  seo: { label: 'Search brief', role: 'seo-expert' },
-  script: { label: 'The script', role: 'content-writer' },
+  research: { label: 'Research', role: 'research-assistant' },
+  seo: { label: 'Keywords', role: 'seo-expert' },
+  script: { label: 'Writing', role: 'content-writer' },
   search: { label: 'YouTube & Google', role: 'google-seo-expert' },
-  design: { label: 'The pictures', role: 'designer' },
-  video: { label: 'The cut', role: 'video-editor' },
-  ads: { label: 'Campaign brief', role: 'youtube-ads-expert' },
-  distribute: { label: 'Where it goes', role: 'social-manager' },
+  design: { label: 'Pictures', role: 'designer' },
+  video: { label: 'Video', role: 'video-editor' },
+  ads: { label: 'Ad idea', role: 'youtube-ads-expert' },
+  distribute: { label: 'Posting', role: 'social-manager' },
 };
 
 /** The mascots. One 64×64 viewBox per role, drawn to read at any size. */
@@ -255,7 +255,7 @@ const WORK_STATE_STYLE: Record<SocialWorkEntry['state'] | 'idle', { dot: string;
   idle: { dot: '#c8d0cb', label: 'Not started' },
   working: { dot: '#2a78d6', label: 'Working' },
   done: { dot: '#0ca30c', label: 'Done' },
-  briefed: { dot: '#fab219', label: 'Briefed — needs a file' },
+  briefed: { dot: '#fab219', label: 'Waiting for a picture or video' },
   skipped: { dot: '#9aa5a0', label: 'Skipped' },
   failed: { dot: '#d03b3b', label: 'Failed' },
 };
@@ -362,19 +362,18 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   active: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'On the team' },
   off_duty: { bg: '#6f7a721a', fg: '#5c665f', label: 'Off duty' },
 
-  planning: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'At standup' },
+  planning: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Planning' },
   researching: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Researching' },
   drafting: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Writing' },
-  optimising: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Optimising' },
+  optimising: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Finishing' },
   designing: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Designing' },
-  // The stored status is still `rendering`; what happens in it is the cut.
-  rendering: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Cutting' },
+  rendering: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Making video' },
   awaiting_approval: { bg: '#fab2192e', fg: '#8a6100', label: 'Needs approval' },
-  changes_requested: { bg: '#eb68341f', fg: '#a8461f', label: 'Changes asked for' },
+  changes_requested: { bg: '#eb68341f', fg: '#a8461f', label: 'Being fixed' },
   ready: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'Approved' },
-  publishing: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Publishing' },
-  published: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'Published' },
-  partial: { bg: '#eb68341f', fg: '#a8461f', label: 'Partly published' },
+  publishing: { bg: '#2a78d61a', fg: '#1f5ba3', label: 'Posting' },
+  published: { bg: '#0ca30c1a', fg: '#0a7a0a', label: 'Posted' },
+  partial: { bg: '#eb68341f', fg: '#a8461f', label: 'Partly posted' },
   failed: { bg: '#d03b3b1a', fg: '#a52c2c', label: 'Failed' },
   rejected: { bg: '#6f7a721a', fg: '#5c665f', label: 'Rejected' },
 
@@ -468,13 +467,9 @@ export function Readiness({
         : 'SOCIAL_TOKEN_KEY is missing. Generate one with `openssl rand -base64 32`, add it as a GitHub Actions secret and redeploy. Accounts cannot be connected until then.',
     },
     {
-      // Not a warning: nothing is broken and nothing is missing. This backend
-      // renders no pictures and no video by design — the desk writes the brief
-      // and a person makes the file. The row stays on the checklist so that is
-      // read as a decision rather than discovered at 10am as a blank post.
-      state: 'off',
+      state: 'ok',
       label: 'Pictures and video',
-      note: 'Made by hand. The designer writes the brief for every frame and the editor writes the cut — open a piece in the queue, read what it needs, and attach the files there.',
+      note: 'Made here from the script — every picture and every reel, no key needed. If one fails, the desk tries again within minutes. Upload your own in the queue whenever you prefer; it is never overwritten.',
     },
     {
       state: connectedCount > 0 ? 'ok' : 'warn',

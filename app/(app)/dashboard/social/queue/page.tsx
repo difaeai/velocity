@@ -16,7 +16,9 @@
  *   Approve & post  — it is right, so it goes out. There is no "approve and
  *                     wait": approved pieces are posted by a five-minute sweep
  *                     even if this tab is closed mid-post.
- *   Ask for changes — say what is wrong; only the stages you name re-run.
+ *   Ask for changes — say what is wrong; the team rewrites it and makes the
+ *                     picture or video again. "Only the caption" is the quick
+ *                     path that touches nothing else.
  *   Reject          — not this one. It stays readable, it just never goes out.
  *   Delete          — as if it never happened.
  *
@@ -38,7 +40,6 @@ import {
   type SocialPostDoc,
   type SocialPostStatus,
   type SocialRevision,
-  type SocialRevisionScope,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import {
@@ -85,16 +86,6 @@ const WORKING_STATES = [
   'rendering',
   'publishing',
 ];
-
-/** What each note costs, in who it calls back in. */
-const SCOPE_LABEL: Record<SocialRevisionScope, string> = {
-  script: 'Rewrite it',
-  design: 'Redraw it',
-  video: 'Recut it',
-  caption: 'Just the caption',
-  seo: 'Redo the search work',
-  ads: 'Redo the ad brief',
-};
 
 export default function QueuePage() {
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
@@ -274,7 +265,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   const [caption, setCaption] = useState(post.caption);
   const [targets, setTargets] = useState<SocialPlatform[]>(post.targets ?? []);
   const [feedback, setFeedback] = useState('');
-  const [scope, setScope] = useState<SocialRevisionScope[]>(['script']);
+  const [captionOnly, setCaptionOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -318,7 +309,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   })();
   const working = WORKING_STATES.includes(post.status);
   const format = post.format ?? 'reel';
-  const renderLabel = format === 'reel' || format === 'video' ? 'Cut the reel' : 'Make the picture';
+  const renderLabel = format === 'reel' || format === 'video' ? 'Make the video' : 'Make the picture';
 
   async function run(label: string, fn: () => Promise<string | null>) {
     setBusy(label);
@@ -355,10 +346,16 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   const askForChanges = () =>
     run('changes', async () => {
       if (feedback.trim().length < 3) throw new Error('Say what you want changed.');
-      if (!scope.length) throw new Error('Pick what should be redone.');
-      const res = await socialApi.requestChanges({ postId: post.id, feedback: feedback.trim(), scope });
+      // A script note re-runs everything after the writing too — pictures, video,
+      // captions — so whatever the note is about, the new version carries it.
+      await socialApi.requestChanges({
+        postId: post.id,
+        feedback: feedback.trim(),
+        scope: [captionOnly ? 'caption' : 'script'],
+      });
       setFeedback('');
-      return `Sent back to the team. Re-running: ${res.reran.join(', ')}.`;
+      // The call returns when the team is finished, so this is after the fact.
+      return captionOnly ? 'Caption rewritten.' : 'Fixed — the new version is above.';
     });
 
   const reject = () => run('reject', async () => {
@@ -409,7 +406,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               textAlign: 'center',
             }}
           >
-            {busy === 'attach' ? 'Uploading…' : 'Attach a file made elsewhere'}
+            {busy === 'attach' ? 'Uploading…' : 'Upload your own picture or video'}
             <input
               type="file"
               accept="video/*,image/*"
@@ -424,7 +421,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
           {missing ? (
             <div style={{ display: 'grid', gap: 6 }}>
               <p style={{ margin: 0, fontSize: 11.5, color: colors.warn, lineHeight: 1.45 }}>
-                Still needs {missing}. The desk can make it, or attach your own.
+                No {missing} yet. The desk makes it within a few minutes — or press the button, or upload your own.
               </p>
               {post.script && !working ? (
                 <Button variant="secondary" onClick={render} disabled={!!busy}>
@@ -444,11 +441,28 @@ function PostCard({ post }: { post: SocialPostDoc }) {
           {post.plan?.concept ? (
             <div style={{ background: `${colors.primary}0a`, borderRadius: 10, padding: '10px 12px' }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: colors.primary, marginBottom: 3 }}>
-                AGREED AT STANDUP
+                THE IDEA
               </div>
               <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{post.plan.concept}</div>
               {post.plan.why ? (
                 <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>{post.plan.why}</div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {post.reference ? (
+            <div style={{ background: '#ccff0024', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: colors.primary, marginBottom: 3 }}>
+                🎬 MADE LIKE YOUR VIDEO
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{post.reference.ourVersion || post.reference.summary}</div>
+              {post.reference.whyItWorks.length ? (
+                <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>
+                  Why the original works: {post.reference.whyItWorks.join(' · ')}
+                </div>
+              ) : null}
+              {post.reference.market ? (
+                <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>In your market: {post.reference.market}</div>
               ) : null}
             </div>
           ) : null}
@@ -458,7 +472,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               <div style={{ fontSize: 17, fontWeight: 900, lineHeight: 1.3 }}>{post.script.hook}</div>
               {post.script.viralHook ? (
                 <div style={{ fontSize: 12.5, color: colors.muted, marginTop: 3 }}>
-                  Why it should travel: {post.script.viralHook}
+                  Why people will share it: {post.script.viralHook}
                 </div>
               ) : null}
               <Scorecard quality={post.quality} />
@@ -542,7 +556,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               cursor: 'pointer',
             }}
           >
-            {showDetail ? 'Hide the working' : 'Show the working — script, numbers, sources, history'}
+            {showDetail ? 'Hide details' : 'Show details — scenes, keywords, numbers, history'}
           </button>
 
           {showDetail ? <Working post={post} /> : null}
@@ -550,29 +564,14 @@ function PostCard({ post }: { post: SocialPostDoc }) {
       </div>
 
       {/*
-        Written without the model, so it is said plainly here rather than left
-        to be inferred from the voice. It is also why this piece is waiting even
-        with auto-publish on: the backend holds a locally written piece for a
-        person. Not an error, so not in red.
+        Said plainly because it is why this piece waits even when the desk posts
+        on its own: the backend holds a template-written piece for a person, and
+        it cannot follow a change request. Not an error, so not in red.
       */}
       {post.engine === 'local' ? (
         <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
-          Written by the <strong>local engine</strong> — composed from the brand material and picked by score, with
-          no model involved. Auto-publish does not apply to these: read it before it goes out. Any of{' '}
-          <code>ANTHROPIC_API_KEY</code>, <code>GEMINI_KEY_RESEARCH</code> or <code>FREE_MODEL_KEY</code> puts a
-          model back on it.
-        </p>
-      ) : null}
-      {post.engine === 'free' ? (
-        <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
-          Written by the <strong>free model</strong>. A model wrote this, so auto-publish applies to it and a change
-          request is read properly — but it was not grounded in a live market read.
-        </p>
-      ) : null}
-      {post.engine === 'gemini' ? (
-        <p style={{ color: colors.muted, fontSize: 12.5, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
-          Written on <strong>Gemini’s free tier</strong>. A model wrote this and it could search, so the market read
-          behind it is a real one — the sources are listed with the research on the piece.
+          Written from templates because no AI was available, so it waits for you to read it and it cannot follow
+          change requests.
         </p>
       ) : null}
       {post.error ? (
@@ -608,7 +607,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
           </Button>
           {assets.length === 0 && !working ? (
             <span style={{ fontSize: 12, color: colors.muted }}>
-              Nothing to post yet — press “{renderLabel}” under the preview, or attach your own.
+              Nothing to post yet — the desk is still making it. Press “{renderLabel}”, or upload your own.
             </span>
           ) : null}
           <span style={{ flex: 1 }} />
@@ -622,13 +621,14 @@ function PostCard({ post }: { post: SocialPostDoc }) {
 
         <div style={{ background: colors.bg, borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 6 }}>
-            ASK FOR CHANGES — the team reads this, and keeps reading it on every later version
+            WHAT SHOULD CHANGE? — the team rewrites it and makes the {format === 'reel' || format === 'video' ? 'video' : 'picture'}{' '}
+            again
           </div>
           <textarea
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             rows={2}
-            placeholder="e.g. the hook is generic, open on the driver's hands instead — and stop using the word seamless"
+            placeholder="e.g. focus on city-to-city travel, and make the first line shorter"
             style={{
               width: '100%',
               padding: 10,
@@ -640,36 +640,13 @@ function PostCard({ post }: { post: SocialPostDoc }) {
             }}
           />
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-            {(['script', 'design', 'video', 'seo', 'ads', 'caption'] as SocialRevisionScope[]).map((s) => {
-              const on = scope.includes(s);
-              const stillFormat = format !== 'reel' && format !== 'video';
-              const disabled = (s === 'video' || s === 'ads') && stillFormat;
-              return (
-                <label
-                  key={s}
-                  style={{
-                    display: 'flex',
-                    gap: 5,
-                    alignItems: 'center',
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    color: disabled ? colors.border : on ? colors.text : colors.muted,
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on && !disabled}
-                    disabled={disabled}
-                    onChange={() => setScope(on ? scope.filter((x) => x !== s) : [...scope, s])}
-                  />
-                  {SCOPE_LABEL[s]}
-                </label>
-              );
-            })}
+            <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              <input type="checkbox" checked={captionOnly} onChange={(e) => setCaptionOnly(e.target.checked)} />
+              Only change the caption (quick — the picture or video stays)
+            </label>
             <span style={{ flex: 1 }} />
             <Button variant="secondary" onClick={askForChanges} disabled={working || !!busy}>
-              {busy === 'changes' ? 'Sending back…' : 'Send back to the crew'}
+              {busy === 'changes' ? 'The team is fixing it…' : 'Fix it'}
             </Button>
           </div>
         </div>
@@ -699,7 +676,7 @@ function MediaPreview({
   if (!assets.length) {
     return (
       <div style={{ ...frame, display: 'grid', placeItems: 'center', color: '#8a938e', fontSize: 12.5 }}>
-        Nothing rendered yet
+        No picture or video yet
       </div>
     );
   }
@@ -748,7 +725,7 @@ function Working({ post }: { post: SocialPostDoc }) {
   return (
     <div style={{ display: 'grid', gap: 12, background: colors.bg, borderRadius: 10, padding: 12 }}>
       {post.script?.hookVariants?.length ? (
-        <Section title="Other hooks the writer offered">
+        <Section title="Other first lines the writer offered">
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
             {post.script.hookVariants.map((h) => (
               <li key={h}>{h}</li>
@@ -758,7 +735,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {frames.length || legacyBeats.length ? (
-        <Section title={post.format === 'carousel' ? 'The slides' : 'The shots'}>
+        <Section title={post.format === 'carousel' ? 'The slides' : 'The scenes'}>
           <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
             {frames.map((f, i) => (
               <li key={i}>
@@ -793,7 +770,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {post.seo ? (
-        <Section title="Search brief, written before the copy">
+        <Section title="Search keywords">
           <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
             {post.seo.searchIntent ? (
               <div>
@@ -838,7 +815,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {post.ads ? (
-        <Section title="YouTube campaign brief — for Google Ads, by hand. Meta ads run from the Ads page">
+        <Section title="YouTube ad idea (Facebook and Instagram ads are on the Ads page)">
           <div style={{ fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 4 }}>
             <div>
               <strong>{post.ads.campaignType}</strong> — {post.ads.objective}
@@ -900,6 +877,63 @@ function Working({ post }: { post: SocialPostDoc }) {
         </Section>
       ) : null}
 
+      {post.reference ? (
+        <Section title="Your reference video, taken apart">
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 4 }}>
+            <div>
+              <span style={{ color: colors.muted }}>Video:</span>{' '}
+              {/^https?:/.test(post.reference.source) ? (
+                <a href={post.reference.source} target="_blank" rel="noreferrer" style={{ color: colors.secondary }}>
+                  {post.reference.source}
+                </a>
+              ) : (
+                post.reference.source
+              )}
+              {post.reference.seconds ? ` · ${post.reference.seconds}s` : ''}
+            </div>
+            <div>
+              <span style={{ color: colors.muted }}>Its hook:</span> {post.reference.hook}
+            </div>
+            {post.reference.beats.length ? (
+              <ol style={{ margin: 0, paddingLeft: 18 }}>
+                {post.reference.beats.map((b, i) => (
+                  <li key={i}>
+                    <strong>{b.at}</strong> {b.what}
+                    {b.onScreen ? <span style={{ color: colors.muted }}> — “{b.onScreen}”</span> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {[
+              ['Pacing', post.reference.pacing],
+              ['Look', post.reference.look],
+              ['Sound', post.reference.sound],
+            ]
+              .filter(([, v]) => v)
+              .map(([k, v]) => (
+                <div key={k}>
+                  <span style={{ color: colors.muted }}>{k}:</span> {v}
+                </div>
+              ))}
+            {post.reference.dontCopy.length ? (
+              <div>
+                <span style={{ color: colors.muted }}>Not reused, because it is theirs:</span>{' '}
+                {post.reference.dontCopy.join(' · ')}
+              </div>
+            ) : null}
+            {post.reference.sources.length ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {post.reference.sources.slice(0, 6).map((src) => (
+                  <a key={src.url} href={src.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: colors.secondary }}>
+                    {src.title.slice(0, 40)}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
+
       {post.direction?.length ? (
         <Section title={post.direction.length === 1 ? 'The picture to make' : 'The pictures to make'}>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -916,14 +950,14 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {post.cut?.prompt ? (
-        <Section title="The cut">
+        <Section title="Video plan">
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: colors.muted, whiteSpace: 'pre-wrap' }}>
             {post.cut.prompt}
           </p>
         </Section>
       ) : null}
 
-      <Section title="The numbers this was written from">
+      <Section title="Numbers it used">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {Object.entries(post.facts ?? {}).map(([key, value]) => (
             <span
@@ -943,7 +977,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       </Section>
 
       {post.research && !post.research.error ? (
-        <Section title="What the market read found">
+        <Section title="What is trending">
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
             {post.research.trends.slice(0, 4).map((t) => (
               <li key={t}>{t}</li>
@@ -968,11 +1002,11 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {post.revisions?.length ? (
-        <Section title="What you have already asked for">
+        <Section title="Changes you asked for">
           <div style={{ display: 'grid', gap: 6 }}>
             {post.revisions.map((r: SocialRevision, i) => (
               <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                <span style={{ color: colors.muted }}>{r.scope.join(' + ')}:</span> {r.feedback}
+                {r.feedback}
               </div>
             ))}
           </div>
@@ -980,7 +1014,7 @@ function Working({ post }: { post: SocialPostDoc }) {
       ) : null}
 
       {Object.entries(post.results ?? {}).some(([, r]) => r && !r.ok) ? (
-        <Section title="Networks that refused it">
+        <Section title="Where posting failed">
           <div style={{ display: 'grid', gap: 4 }}>
             {Object.entries(post.results ?? {})
               .filter(([, r]) => r && !r.ok)
@@ -1061,13 +1095,7 @@ function Scorecard({ quality }: { quality: SocialPostDoc['quality'] }) {
   const tone =
     quality.verdict === 'FIX' ? '#ff6b6b' : quality.verdict === 'REVIEW' ? '#ffd166' : '#28c76f';
 
-  const parts = [
-    `hook ${Math.round(quality.hook.score)} ${quality.hook.verdict.toLowerCase()}`,
-    `caption ${quality.caption.verdict.toLowerCase()}`,
-    `${quality.caption.hashtags} tag${quality.caption.hashtags === 1 ? '' : 's'}`,
-    quality.human.verdict === 'PASS' ? 'reads human' : `voice ${quality.human.verdict.toLowerCase()}`,
-    quality.timing ? `${quality.timing.seconds.toFixed(0)}s of script` : '',
-  ].filter(Boolean);
+  const word = quality.verdict === 'FIX' ? 'needs work' : quality.verdict === 'REVIEW' ? 'okay' : 'good';
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -1088,8 +1116,11 @@ function Scorecard({ quality }: { quality: SocialPostDoc['quality'] }) {
           cursor: quality.notes.length ? 'pointer' : 'default',
         }}
       >
-        <span style={{ fontWeight: 900, color: tone }}>{Math.round(quality.score)}/100</span>
-        <span style={{ color: colors.muted }}>{parts.join(' · ')}</span>
+        <span style={{ fontWeight: 900, color: tone }}>Quality {Math.round(quality.score)}/100</span>
+        <span style={{ color: colors.muted }}>
+          {word}
+          {quality.notes.length ? ` — ${quality.notes.length} tip${quality.notes.length === 1 ? '' : 's'}` : ''}
+        </span>
         {quality.notes.length ? (
           <span style={{ color: colors.muted, fontWeight: 800 }}>{open ? '▴' : '▾'}</span>
         ) : null}

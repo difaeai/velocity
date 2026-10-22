@@ -155,7 +155,7 @@ export default function AutomationPage() {
         />
 
         <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginTop: 14 }}>
-          <Field label="Hour of the day (PKT)" hint="When the crew starts. Everything lands in the queue.">
+          <Field label="Hour of the day (PKT)" hint="When the team starts. Everything lands in the queue.">
             <select
               value={settings.runHour}
               onChange={(e) => edit({ runHour: Number(e.target.value) })}
@@ -211,11 +211,11 @@ export default function AutomationPage() {
             style={{ marginTop: 3 }}
           />
           <span style={{ fontSize: 13 }}>
-            Make the pictures and cut the reels here, not just the briefs
+            Make the pictures and videos automatically
             <span style={{ display: 'block', fontSize: 12, color: colors.muted, marginTop: 2 }}>
-              Post, story and carousel pictures and finished vertical videos, made on our own machines — no key, no
-              model, nothing per piece. A file you attach yourself is never overwritten. Off, a run stops at the
-              briefs for you to make the files.
+              Every picture and reel is made on our own machines — no key, nothing per piece — and one that fails is
+              tried again within minutes. A file you upload yourself is never overwritten. Off, you upload every
+              picture and video yourself.
             </span>
           </span>
         </label>

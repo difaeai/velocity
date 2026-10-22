@@ -1393,6 +1393,24 @@ export interface SocialResearch {
   error: string | null;
 }
 
+/** What the team saw in a video it was asked to make something like. Mirrors `ReferenceRead`. */
+export interface SocialReferenceRead {
+  atMs: number;
+  source: string;
+  summary: string;
+  hook: string;
+  beats: { at: string; what: string; onScreen: string }[];
+  seconds: number | null;
+  pacing: string;
+  look: string;
+  sound: string;
+  whyItWorks: string[];
+  market: string;
+  ourVersion: string;
+  dontCopy: string[];
+  sources: { title: string; url: string }[];
+}
+
 export interface SocialSeoPack {
   searchIntent: string;
   keywords: string[];
@@ -1458,6 +1476,7 @@ export interface SocialPostDoc {
   hashtags: string[];
   facts: Record<string, number | string>;
   research?: SocialResearch | null;
+  reference?: SocialReferenceRead | null;
   seo?: SocialSeoPack | null;
   search?: SocialSearchPack | null;
   ads?: SocialAdPlan | null;
@@ -1468,7 +1487,7 @@ export interface SocialPostDoc {
   video?: { url: string | null; provider: string; aspect: string } | null;
   targets: SocialPlatform[];
   results: Partial<
-    Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null }>
+    Record<SocialPlatform, { ok: boolean; id: string | null; url: string | null; error: string | null; atMs?: number }>
   >;
   /**
    * What the backend's own checks made of the writing, scored in code rather
@@ -1717,6 +1736,8 @@ export const socialApi = {
       replace?: boolean;
       brief?: string;
       publishWhenDone?: boolean;
+      /** "Make it like this video": one of the two. */
+      reference?: { youtube: string } | { storagePath: string };
     },
     { ok: boolean; id: string; format: SocialFormat }
   >('adminGenerateSocialPost', LONG_CALL_MS),
