@@ -498,21 +498,26 @@ export const markPayoutPaid = onCall(async (req) => {
   const parsed = markPaidSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid payoutId.');
   const ref = db.doc(`payouts/${parsed.data.payoutId}`);
-  const snap = await ref.get();
-  if (!snap.exists) invalid('Payout not found.');
-  if (snap.get('status') === 'paid') return { ok: true };
-  if (snap.get('status') === 'rejected') {
-    throw new HttpsError('failed-precondition', 'That payout was turned down and its money returned.');
-  }
-  await ref.set(
-    {
-      status: 'paid',
-      paidBy: admin.uid,
-      txnRef: parsed.data.txnRef ?? null,
-      paidAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  // In a transaction with adminRejectPayout's, so two admins clicking "Mark
+  // paid" and "Turn down" at once cannot both win — paid AND refunded.
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) invalid('Payout not found.');
+    if (snap.get('status') === 'paid') return;
+    if (snap.get('status') === 'rejected') {
+      throw new HttpsError('failed-precondition', 'That payout was turned down and its money returned.');
+    }
+    tx.set(
+      ref,
+      {
+        status: 'paid',
+        paidBy: admin.uid,
+        txnRef: parsed.data.txnRef ?? null,
+        paidAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
   return { ok: true };
 });
 

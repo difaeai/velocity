@@ -111,6 +111,21 @@ const banPassengerSchema = z.object({
   banned: z.boolean(),
 });
 
+/**
+ * The flag alone enforced nothing. A disabled Auth account cannot sign in or
+ * refresh its token, which stops it everywhere at once; revoking ends the
+ * session within the hour its current token has left.
+ */
+export async function setAccountDisabled(uid: string, disabled: boolean): Promise<void> {
+  try {
+    await auth.updateUser(uid, { disabled });
+    if (disabled) await auth.revokeRefreshTokens(uid);
+  } catch (e) {
+    // An account deleted since has nothing left to disable.
+    if ((e as { code?: string }).code !== 'auth/user-not-found') throw e;
+  }
+}
+
 /** Admin-only: ban or unban a passenger. */
 export const banPassenger = onCall(async (req) => {
   const admin = requireAdmin(req);
@@ -122,6 +137,7 @@ export const banPassenger = onCall(async (req) => {
     { banned, updatedAt: FieldValue.serverTimestamp() },
     { merge: true },
   );
+  await setAccountDisabled(passengerId, banned);
   await db.collection('auditLogs').add({
     type: banned ? 'passenger.banned' : 'passenger.unbanned',
     actor: admin.uid,

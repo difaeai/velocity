@@ -48,7 +48,8 @@ import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { writeTripDocuments, generateShareCode } from '../trips/poolTripFactory';
 import { joinPoolTripAsRider } from '../trips/poolShare';
-import { broadcastTripToNearbyDrivers } from '../trips';
+import { assertRiderCanBook, broadcastTripToNearbyDrivers } from '../trips';
+import { getCancellationSettings } from '../domain/cancellation';
 
 /** Nobody holds more than this many people in one fleet. */
 const MAX_FLEET_MEMBERS = 24;
@@ -645,12 +646,19 @@ export const bookFleetRide = onCall(async (req) => {
   const dropoff = ask.dropoff as Point;
   const crew = ((ask.acceptedUids as string[] | undefined) ?? []).filter((u) => u !== uid);
 
-  const quote = await sharedRideFare(rideType, pickup, dropoff);
+  const [quote, cancellationSettings] = await Promise.all([
+    sharedRideFare(rideType, pickup, dropoff),
+    getCancellationSettings(),
+  ]);
   const shareCode = generateShareCode();
   const tripRef = db.collection('trips').doc();
 
   await db.runTransaction(async (tx) => {
-    const userSnap = await tx.get(db.doc(`users/${uid}`));
+    const [userSnap, walletSnap] = await Promise.all([
+      tx.get(db.doc(`users/${uid}`)),
+      tx.get(db.doc(`wallets/${uid}`)),
+    ]);
+    await assertRiderCanBook(tx, userSnap, walletSnap, cancellationSettings);
     const seat = resolveSeatOccupant(userSnap.get('gender'), null);
     writeTripDocuments(tx, tripRef, {
       uid,

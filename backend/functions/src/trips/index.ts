@@ -45,6 +45,7 @@ import {
   cancellationFee,
   getCancellationSettings,
   splitFeeAgainstBalance,
+  type CancellationSettings,
 } from '../domain/cancellation';
 import { calculateFare, CityFareConfig, VehicleCategory } from '../fare/fareEngine';
 import { loadFareConfigFor } from '../fare/cityConfig';
@@ -181,6 +182,30 @@ const createTripSchema = z.object({
   dropoff: geoSchema,
 });
 
+/**
+ * What every way of booking a ride checks before it writes one: the account is
+ * not banned, holds no other live trip, and owes no blocking cancellation fees.
+ */
+export async function assertRiderCanBook(
+  tx: FirebaseFirestore.Transaction,
+  userSnap: FirebaseFirestore.DocumentSnapshot,
+  walletSnap: FirebaseFirestore.DocumentSnapshot,
+  cancellationSettings: CancellationSettings,
+): Promise<void> {
+  if (userSnap.get('banned') === true) {
+    throw new HttpsError('permission-denied', 'This account cannot book rides. Contact support.');
+  }
+  const activeTripId = userSnap.get('activeTripId') as string | undefined;
+  if (activeTripId) {
+    const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
+    if (activeSnap.exists && ACTIVE_STATUSES.has(activeSnap.get('status'))) {
+      throw new HttpsError('failed-precondition', 'You already have an active trip.');
+    }
+  }
+  // Unpaid cancellation fees past the limit block new bookings until settled.
+  assertOutstandingClear(walletSnap, cancellationSettings, 'passenger');
+}
+
 /** Passenger creates a ride request. Rejects a second concurrent active trip. */
 export const createTrip = onCall(async (req) => {
   const ctx = requireAuth(req);
@@ -292,16 +317,7 @@ export const createTrip = onCall(async (req) => {
     const passengerGender = seat.seatGender;
     const bookedForOther = seat.bookedForOther;
 
-    const activeTripId = userSnap.get('activeTripId') as string | undefined;
-    if (activeTripId) {
-      const activeSnap = await tx.get(db.doc(`trips/${activeTripId}`));
-      if (activeSnap.exists && ACTIVE_STATUSES.has(activeSnap.get('status'))) {
-        throw new HttpsError('failed-precondition', 'You already have an active trip.');
-      }
-    }
-
-    // Unpaid cancellation fees past the limit block new bookings until settled.
-    assertOutstandingClear(walletSnap, cancellationSettings, 'passenger');
+    await assertRiderCanBook(tx, userSnap, walletSnap, cancellationSettings);
 
     // Wallet trips: the fare is held at bid-acceptance, but reject requests the
     // passenger can already not afford so drivers don't bid on dead trips.
@@ -752,7 +768,9 @@ export const acceptBid = onCall(async (req) => {
         fare,
         ...(poolPerSeat !== null ? { poolPerSeatFare: poolPerSeat } : {}),
         walletHold,
-        passengerPhone,
+        // Co-riders can read the trip doc; with more than one aboard the
+        // driver gets each number from getPoolRiders instead.
+        passengerPhone: poolMembers.length > 1 ? FieldValue.delete() : passengerPhone,
         driverPhone,
         matchedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
