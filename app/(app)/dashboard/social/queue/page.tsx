@@ -318,6 +318,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   })();
   const working = WORKING_STATES.includes(post.status);
   const format = post.format ?? 'reel';
+  const renderLabel = format === 'reel' || format === 'video' ? 'Cut the reel' : 'Make the picture';
 
   async function run(label: string, fn: () => Promise<string | null>) {
     setBusy(label);
@@ -427,11 +428,7 @@ function PostCard({ post }: { post: SocialPostDoc }) {
               </p>
               {post.script && !working ? (
                 <Button variant="secondary" onClick={render} disabled={!!busy}>
-                  {busy === 'render'
-                    ? 'Making it…'
-                    : format === 'reel' || format === 'video'
-                      ? 'Cut the reel'
-                      : 'Make the picture'}
+                  {busy === 'render' ? 'Making it…' : renderLabel}
                 </Button>
               ) : null}
             </div>
@@ -609,6 +606,11 @@ function PostCard({ post }: { post: SocialPostDoc }) {
                   ? 'Post again'
                   : 'Approve & post'}
           </Button>
+          {assets.length === 0 && !working ? (
+            <span style={{ fontSize: 12, color: colors.muted }}>
+              Nothing to post yet — press “{renderLabel}” under the preview, or attach your own.
+            </span>
+          ) : null}
           <span style={{ flex: 1 }} />
           <Button variant="ghost" onClick={reject} disabled={working || !!busy}>
             Reject
