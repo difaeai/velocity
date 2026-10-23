@@ -546,6 +546,9 @@ export {
   adminGetSocialSettings,
   adminUpdateSocialSettings,
   adminPlanSocialMonth,
+  adminEditPlanSlot,
+  adminLaunchMarket,
+  socialLaunchSweep,
   socialDailyContent,
   socialPublishSweep,
   adminGenerateSocialPost,
@@ -573,7 +576,7 @@ export {
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals
 export { studioCreateWorkspace, studioSubmitPayment, adminDecideStudioPayment } from './studio';
 
-// The sales agent — find businesses, write one short email each, send from the customer's own mailbox
+// The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply
 export {
   salesGetSettings,
   salesSaveSettings,

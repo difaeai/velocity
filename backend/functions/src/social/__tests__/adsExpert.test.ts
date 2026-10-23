@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   blended,
   clampBudget,
+  conversionsFrom,
   diagnose,
   forecast,
   fromMinor,
@@ -167,8 +168,72 @@ describe('metricsFrom', () => {
     expect(m.costPerResult).toBe(2);
   });
 
-  it('is zero, not NaN, on an empty row', () => {
-    expect(Object.values(metricsFrom({}, 'link_click')).every((v) => v === 0)).toBe(true);
+  it('is zero, not NaN, on an empty row — and says nothing about worth it cannot know', () => {
+    const m = metricsFrom({}, 'link_click');
+    expect(Object.values(m).every((v) => v === 0 || v === null)).toBe(true);
+    expect(m.roas).toBeNull();
+  });
+});
+
+describe('conversions and ROAS', () => {
+  it('counts one kind of conversion, best first, by the first name Meta reports it under', () => {
+    const row = {
+      actions: [
+        { action_type: 'lead', value: '9' },
+        { action_type: 'omni_purchase', value: '4' },
+        { action_type: 'purchase', value: '4' },
+        { action_type: 'offsite_conversion.fb_pixel_purchase', value: '4' },
+      ],
+      action_values: [{ action_type: 'omni_purchase', value: '20000' }],
+    };
+    // The same four sales under three names are four sales, not twelve — and sales beat leads.
+    expect(conversionsFrom(row)).toEqual({ kind: 'purchase', count: 4, value: 20000 });
+    expect(conversionsFrom({ actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '12' }] }).kind).toBe(
+      'message',
+    );
+  });
+
+  it('takes the worth from the pixel, or from what the owner said one is worth', () => {
+    const pixel = metricsFrom(
+      { spend: '5000', actions: [{ action_type: 'purchase', value: '4' }], action_values: [{ action_type: 'purchase', value: '20000' }] },
+      'link_click',
+      9999,
+    );
+    expect(pixel).toMatchObject({ conversions: 4, conversionValue: 20000, costPerConversion: 1250, roas: 4 });
+
+    const said = metricsFrom({ spend: '3000', actions: [{ action_type: 'lead', value: '6' }] }, 'link_click', 1000);
+    expect(said).toMatchObject({ conversions: 6, conversionValue: 6000, roas: 2 });
+
+    expect(metricsFrom({ spend: '3000', actions: [{ action_type: 'lead', value: '6' }] }, 'link_click').roas).toBeNull();
+  });
+});
+
+describe('diagnose, when the account can see what the money bought', () => {
+  const sold = (roas: number, conversions = 10, frequency = 2) =>
+    metrics({ conversions, conversionKind: 'purchase', roas, conversionValue: 5000 * roas, costPerConversion: 500, frequency });
+
+  it('scales a campaign that pays back twice its cost, whatever a click costs', () => {
+    const v = judge({ ...sold(3), costPerResult: 40, cpc: 40, results: 60 });
+    expect(v.grade).toBe('good');
+    expect(v.action).toMatchObject({ kind: 'scale', to: 1200 });
+  });
+
+  it('pauses one that pays back less than it costs, with enough sales to be sure', () => {
+    expect(judge(sold(0.4)).action.kind).toBe('pause');
+  });
+
+  it('pauses one that spent five sales’ worth and sold nothing', () => {
+    const v = judge(metrics({ conversions: 0, roas: 0, spend: 5000 }), { valuePerConversion: 1000 });
+    expect(v.action.kind).toBe('pause');
+  });
+
+  it('leaves a profitable one running, and only refreshes a worn-out creative', () => {
+    expect(judge(sold(1.4)).action.kind).toBe('none');
+    expect(judge(sold(1.4, 10, 4.5)).action.kind).toBe('refresh');
+  });
+
+  it('falls back to the click numbers with too few sales to judge on', () => {
+    expect(judge(sold(5, 2)).headline).not.toMatch(/ROAS/);
   });
 });
 

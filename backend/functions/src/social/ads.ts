@@ -36,7 +36,7 @@ import { z } from 'zod';
 import { dateRange, statsFor } from '../analytics';
 import { FieldValue } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
-import { deskCall, forEachWorkspace, isHouse, sdb, wsPath } from './workspace';
+import { deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, wsPath } from './workspace';
 import {
   AD_OBJECTIVES,
   META_OBJECTIVE,
@@ -48,11 +48,13 @@ import {
   learningBudget,
   localPlan,
   marketBenchmarks,
+  MAX_REFRESHES,
   metricsFrom,
   minDailyFor,
   money,
   normalisePlan,
   ownBenchmarks,
+  REFRESH_EVERY_MS,
   resultActionFor,
   resultBand,
   toMinor,
@@ -65,9 +67,10 @@ import {
   type Verdict,
 } from './adsExpert';
 import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
-import { brandBlock, brandName, briefBlock, hardRules, marketName, standingInstructions, wordmark } from './crew';
+import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
+import { planningResearch } from './market';
 import { AD_NUMBERS } from './playbook';
 import { planReel, renderReel } from './reel';
 import { getSocialSettings } from './settings';
@@ -98,6 +101,12 @@ export interface AdsConfig {
   maxDays: number;
   /** Where the ads send people. */
   link: string;
+  /**
+   * What one sale or lead is worth to the owner, in the account's currency.
+   * Prices the conversions Meta counts but cannot value (a lead form, a WhatsApp
+   * chat), which is what makes ROAS possible without a pixel. 0 = not said.
+   */
+  valuePerConversion: number;
   lastSyncAtMs: number | null;
   lastSyncStatus: string | null;
   review: { atMs: number; summary: string; moves: string[]; engine: string } | null;
@@ -114,6 +123,7 @@ const DEFAULTS: AdsConfig = {
   dailyCap: 0,
   maxDays: 14,
   link: PLAY_URL,
+  valuePerConversion: 0,
   lastSyncAtMs: null,
   lastSyncStatus: null,
   review: null,
@@ -121,7 +131,10 @@ const DEFAULTS: AdsConfig = {
 
 async function adsConfig(): Promise<AdsConfig> {
   const snap = await sdb.doc(CONFIG_PATH).get();
-  return { ...DEFAULTS, ...((snap.data() as Partial<AdsConfig> | undefined) ?? {}) };
+  // A customer's ads go to their own site, never to Velocity's app listing.
+  const site = workspaceBrand()?.website.trim() ?? '';
+  const link = isHouse() ? PLAY_URL : site ? (/^https?:\/\//i.test(site) ? site : `https://${site}`) : '';
+  return { ...DEFAULTS, link, ...((snap.data() as Partial<AdsConfig> | undefined) ?? {}) };
 }
 
 async function adsToken(): Promise<string> {
@@ -445,7 +458,10 @@ async function planAd(params: {
     .map(
       (c) =>
         `- ${c.name} (${c.objectiveKind}): spent ${money(c.lifetime!.spend, cfg.currency)}, ${c.lifetime!.results} results, ` +
-        `CTR ${c.lifetime!.ctr.toFixed(2)}%, CPC ${money(c.lifetime!.cpc, cfg.currency)} — ${c.verdict?.headline ?? ''}`,
+        `CTR ${c.lifetime!.ctr.toFixed(2)}%, CPC ${money(c.lifetime!.cpc, cfg.currency)}` +
+        (c.lifetime!.conversions ? `, ${c.lifetime!.conversions} conversions` : '') +
+        (c.lifetime!.roas != null ? `, ROAS ${c.lifetime!.roas.toFixed(2)}` : '') +
+        ` — ${c.verdict?.headline ?? ''}`,
     );
 
   const committed = await committedDaily();
@@ -471,6 +487,8 @@ async function planAd(params: {
       `At most ${cfg.maxDays} days. Ads send people to ${cfg.link}.`,
     yard,
     past.length ? `HOW OUR OWN CAMPAIGNS DID — evidence, weigh it above the yardstick:\n${past.join('\n')}` : '',
+    // The market and the competition, so the angle is one nobody else is already running.
+    researchBlock(await planningResearch()),
     `Decide the campaign and answer with ONE JSON object:
 {
   "name": "short campaign name",
@@ -587,6 +605,100 @@ async function createAtMeta(params: {
   }
 }
 
+// ── a fresh creative for a tired campaign ───────────────────────────────────
+
+/** What the desk keeps on a campaign it made, beyond what Meta reports. */
+interface CampaignDoc {
+  managed?: boolean;
+  name?: string;
+  objectiveKind?: AdObjective;
+  video?: boolean;
+  dailyBudget?: number | null;
+  lastScaledMs?: number | null;
+  endMs?: number | null;
+  verdict?: Verdict | null;
+  adsetId?: string;
+  adId?: string;
+  /** The ad a fresh creative replaces, paused once the new one is approved. */
+  retireAdId?: string | null;
+  plan?: AdPlanSpec;
+  previewUrl?: string | null;
+  refreshes?: number;
+  lastRefreshMs?: number | null;
+}
+
+/**
+ * The expert's rewrite of a worn-out creative: a different hook, opening line
+ * and picture for the same offer and the same people — the targeting and the
+ * money are not what wore out, so they are held to the old plan. Null without a
+ * model, or when it only says the same thing again: re-rendering the same words
+ * changes nothing.
+ */
+async function rewriteCreative(plan: AdPlanSpec, verdict: Verdict, cfg: AdsConfig): Promise<AdPlanSpec | null> {
+  if (!modelReady()) return null;
+  const settings = await getSocialSettings();
+  try {
+    const { data } = await generateJson<Record<string, unknown>>({
+      model: settings.textModel,
+      system: adsSystem(await adsPerson(), settings),
+      what: 'The fresh creative',
+      prompt: [
+        `This campaign's creative has worn out: ${verdict.headline} ${verdict.reasons.join(' ')}`,
+        `What it says now — hook on the picture: "${plan.lines[0] ?? ''}"; ad text: "${plan.primaryText.slice(0, 300)}"; headline: "${plan.headline}".`,
+        researchBlock(await planningResearch()),
+        'Write a new version for the same offer and the same people: a different hook, a different first line, a different picture idea. Answer with ONE JSON object: { "primaryText": "the ad text, the first line carries it", "headline": "40 characters or fewer", "lines": ["hook", "line", "line"], "why": "one or two sentences: what changed and why it should stop thumbs again" }',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    });
+    const next = normalisePlan(
+      { ...data, name: plan.name, objective: plan.objective, audience: plan.audience, dailyBudget: plan.dailyBudget, days: plan.days, format: plan.format, cta: plan.cta },
+      plan,
+      cfg.maxDays,
+    );
+    return next.lines[0] && next.lines[0] !== plan.lines[0] ? next : null;
+  } catch (e) {
+    logger.warn('ads: the creative rewrite failed', { message: (e as Error).message });
+    return null;
+  }
+}
+
+/**
+ * Put a fresh creative into a campaign: a new ad in the same ad set, beside
+ * the old one. The old ad is paused by the next reading once Meta has approved
+ * the new one, so the campaign never sits dark through a review. Returns the
+ * line for the log, or null when there was nothing better to say.
+ */
+async function refreshCreative(
+  token: string,
+  cfg: AdsConfig,
+  campaignId: string,
+  doc: CampaignDoc,
+  verdict: Verdict,
+): Promise<string | null> {
+  if (!doc.adsetId || !doc.plan) return null;
+  const plan = await rewriteCreative(doc.plan, verdict, cfg);
+  if (!plan) return null;
+  const version = (doc.refreshes ?? 0) + 2;
+  const creative = await buildCreative(token, cfg, plan, { kind: 'make' }, `${Date.now()}`);
+  const ad = await graph<{ id: string }>(token, `${cfg.adAccountId}/ads`, {
+    form: { name: `${plan.name} — v${version}`, adset_id: doc.adsetId, creative: JSON.stringify(creative.spec), status: 'ACTIVE' },
+  });
+  await campaignRef(campaignId).set(
+    {
+      plan,
+      adId: ad.id,
+      retireAdId: doc.adId ?? null,
+      previewUrl: creative.previewUrl ?? doc.previewUrl ?? null,
+      refreshes: version - 1,
+      lastRefreshMs: Date.now(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return `new creative v${version}: "${plan.lines[0]}"`;
+}
+
 // ── reading and steering ────────────────────────────────────────────────────
 
 const OBJECTIVE_KIND: Record<string, AdObjective> = {
@@ -618,7 +730,8 @@ async function syncAds(): Promise<string> {
   const now = Date.now();
   const act = cfg.adAccountId!;
 
-  const insightFields = 'campaign_id,spend,impressions,reach,frequency,inline_link_clicks,actions,video_thruplay_watched_actions';
+  const insightFields =
+    'campaign_id,spend,impressions,reach,frequency,inline_link_clicks,actions,action_values,video_thruplay_watched_actions';
   const [campaigns, lifetime, week, series, ads, accountWeek] = await Promise.all([
     graph<{ data: CampaignRow[] }>(
       token,
@@ -636,16 +749,15 @@ async function syncAds(): Promise<string> {
       token,
       `${act}/insights?level=account&date_preset=last_14d&time_increment=1&fields=spend,impressions,reach,inline_link_clicks`,
     ),
-    graph<{ data: { campaign_id: string; effective_status: string; ad_review_feedback?: { global?: Record<string, string> } }[] }>(
-      token,
-      `${act}/ads?fields=campaign_id,effective_status,ad_review_feedback&limit=200`,
-    ),
+    graph<{
+      data: { id: string; campaign_id: string; effective_status: string; ad_review_feedback?: { global?: Record<string, string> } }[];
+    }>(token, `${act}/ads?fields=id,campaign_id,effective_status,ad_review_feedback&limit=200`),
     // The week for the whole account, asked for at account level: people reached
     // by two campaigns are one person, and summing campaign reach would count
     // them twice and make "seen per person" look healthier than it is.
     graph<{ data?: InsightRow[] }>(
       token,
-      `${act}/insights?level=account&date_preset=last_7d&fields=spend,impressions,reach,inline_link_clicks`,
+      `${act}/insights?level=account&date_preset=last_7d&fields=spend,impressions,reach,inline_link_clicks,actions,action_values`,
     ),
   ]);
 
@@ -659,14 +771,12 @@ async function syncAds(): Promise<string> {
 
   for (const c of campaigns.data ?? []) {
     const ref = campaignRef(c.id);
-    const mine = (await ref.get()).data() as
-      | { managed?: boolean; objectiveKind?: AdObjective; video?: boolean; lastScaledMs?: number | null; endMs?: number | null }
-      | undefined;
+    const mine = (await ref.get()).data() as CampaignDoc | undefined;
     const managed = mine?.managed === true;
     const objective = mine?.objectiveKind ?? OBJECTIVE_KIND[c.objective] ?? 'traffic';
     const resultAction = resultActionFor(c.objective, mine?.video);
-    const lifetimeM = metricsFrom(life.get(c.id) ?? {}, resultAction);
-    const weekM = metricsFrom(recent.get(c.id) ?? {}, resultAction);
+    const lifetimeM = metricsFrom(life.get(c.id) ?? {}, resultAction, cfg.valuePerConversion);
+    const weekM = metricsFrom(recent.get(c.id) ?? {}, resultAction, cfg.valuePerConversion);
     const dailyBudget = c.daily_budget ? fromMinor(Number(c.daily_budget), cfg.currency) : null;
     const endMs = c.stop_time ? Date.parse(c.stop_time) : (mine?.endMs ?? null);
     const active = c.effective_status === 'ACTIVE' && !(endMs && endMs < now);
@@ -682,6 +792,7 @@ async function syncAds(): Promise<string> {
       ageHours: c.created_time ? (now - Date.parse(c.created_time)) / 3600_000 : 999,
       lastScaledMs: mine?.lastScaledMs ?? null,
       nowMs: now,
+      valuePerConversion: cfg.valuePerConversion,
     });
 
     const rejected = (ads.data ?? []).filter((a) => a.campaign_id === c.id && a.effective_status === 'DISAPPROVED');
@@ -711,6 +822,18 @@ async function syncAds(): Promise<string> {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
+    // A refreshed campaign's old creative steps aside once Meta has approved the
+    // new one — finishing a change already made, so it does not wait on the mode.
+    if (mine?.retireAdId) {
+      const takenOver = (ads.data ?? []).some(
+        (a) => a.campaign_id === c.id && a.id !== mine.retireAdId && a.effective_status === 'ACTIVE',
+      );
+      if (takenOver) {
+        await graph(token, mine.retireAdId, { form: { status: 'PAUSED' } }).catch(() => undefined);
+        update.retireAdId = null;
+      }
+    }
+
     // The desk steers only what it made, and only when the owner said it may.
     if (managed && cfg.mode === 'direct' && active) {
       if (verdict.action.kind === 'pause') {
@@ -739,6 +862,21 @@ async function syncAds(): Promise<string> {
             detail: `${money(dailyBudget, cfg.currency)} → ${money(budget, cfg.currency)} a day`,
           });
         }
+      } else if (
+        verdict.action.kind === 'refresh' &&
+        !mine?.retireAdId &&
+        (mine?.refreshes ?? 0) < MAX_REFRESHES &&
+        now - (mine?.lastRefreshMs ?? 0) >= REFRESH_EVERY_MS
+      ) {
+        // Improving it, not just judging it: a worn-out creative gets a new one.
+        const did = await refreshCreative(token, cfg, c.id, mine ?? {}, verdict).catch((e) => {
+          logger.warn('ads: could not refresh a creative', { campaign: c.id, message: (e as Error).message });
+          return null;
+        });
+        if (did) {
+          actions.push(`Refreshed "${c.name}" — ${did}.`);
+          update.autoActions = FieldValue.arrayUnion({ atMs: now, kind: 'refresh', detail: did });
+        }
       }
     }
 
@@ -751,7 +889,7 @@ async function syncAds(): Promise<string> {
     const m = metricsFrom(r, 'link_click');
     return { date: r.date_start, spend: m.spend, impressions: m.impressions, linkClicks: m.linkClicks };
   });
-  const totals = metricsFrom(accountWeek.data?.[0] ?? {}, 'link_click');
+  const totals = metricsFrom(accountWeek.data?.[0] ?? {}, 'link_click', cfg.valuePerConversion);
 
   // Our own rides over the same week as Meta's last_7d: the seven days before today.
   // Only Velocity's desk has rides to count; a customer's orders are not ours to see.
@@ -801,7 +939,11 @@ async function reviewAccount(
         `${returns.orders.toLocaleString('en-PK')} rides and ${money(returns.commission, 'PKR')} commission, so ` +
         `${returns.orders ? money(returns.costPerOrder, cfg.currency) : 'no rides to count'} of ads per order and ` +
         `ROAS ${returns.roas === null ? 'n/a' : returns.roas.toFixed(2)} (commission ÷ spend; 1.0 is break-even).`
-      : '';
+      : totals.conversions
+        ? `What the ads bought that week, as Meta saw it: ${totals.conversions.toLocaleString('en-PK')} conversions at ` +
+          `${money(totals.costPerConversion ?? 0, cfg.currency)} each` +
+          (totals.roas != null ? `, ROAS ${totals.roas.toFixed(2)} (worth ÷ spend; 1.0 is break-even).` : '.')
+        : '';
   const local = (): AdsConfig['review'] => ({
     atMs: Date.now(),
     summary: live.length
@@ -820,14 +962,25 @@ async function reviewAccount(
       (j) =>
         `- ${j.name} (${j.objective}${j.managed ? ', made by the desk' : ''}): ${money(j.week.spend, cfg.currency)} this week, ` +
         `${j.week.results} results, CTR ${j.week.ctr.toFixed(2)}%, CPC ${money(j.week.cpc, cfg.currency)}, CPM ${money(j.week.cpm, cfg.currency)}, ` +
-        `frequency ${j.week.frequency.toFixed(1)} — verdict: ${j.verdict.headline}`,
+        `frequency ${j.week.frequency.toFixed(1)}` +
+        (j.week.conversions ? `, ${j.week.conversions} conversions at ${money(j.week.costPerConversion ?? 0, cfg.currency)}` : '') +
+        (j.week.roas != null ? `, ROAS ${j.week.roas.toFixed(2)}` : '') +
+        ` — verdict: ${j.verdict.headline}`,
     )
     .join('\n');
   try {
+    const market = researchBlock(await planningResearch());
     const { data } = await generateJson<{ summary?: string; moves?: string[] }>({
       model: settings.textModel,
       system: adsSystem(await adsPerson(), settings),
-      prompt: `The paid account this week (${cfg.currency}; daily limit ${money(cfg.dailyCap, cfg.currency)}):\n${table}\n\n${business ? `${business}\n\n` : ''}Write the morning note to the owner. ONE JSON object: { "summary": "3–5 plain sentences: how it is going and where the next rupee should go", "moves": ["one concrete move", ...] (at most 4) }. Use only the numbers above.`,
+      prompt: [
+        `The paid account this week (${cfg.currency}; daily limit ${money(cfg.dailyCap, cfg.currency)}):\n${table}`,
+        business,
+        market ? `${market}\n\nRead the market and the competition before you suggest a move — an angle everyone else is already running is not one.` : '',
+        `Write the morning note to the owner. Say which campaign is doing best and that it keeps running untouched. ONE JSON object: { "summary": "3–5 plain sentences: how it is going and where the next rupee should go", "moves": ["one concrete move", ...] (at most 4) }. Use only the numbers above.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       what: 'The ads review',
     });
     return {
@@ -858,9 +1011,13 @@ async function syncAndRecord(): Promise<string> {
 
 // ── the schedule and the console ────────────────────────────────────────────
 
-/** Every three hours: read the numbers, judge them, steer what the desk may. */
+/**
+ * Every three hours: read the numbers, judge them, steer what the desk may.
+ * 2GiB and nine minutes because steering now includes drawing a fresh
+ * creative — a picture, or a reel cut with ffmpeg — for a worn-out campaign.
+ */
 export const socialAdsSync = onSchedule(
-  { schedule: 'every 3 hours', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 300, memory: '512MiB' },
+  { schedule: 'every 3 hours', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 540, memory: '2GiB' },
   () =>
     forEachWorkspace('ads', async () => {
       const cfg = await adsConfig();
@@ -869,7 +1026,7 @@ export const socialAdsSync = onSchedule(
     }),
 );
 
-export const adminSyncAds = deskCall('ads', { timeoutSeconds: 300, memory: '512MiB' }, async () => {
+export const adminSyncAds = deskCall('ads', { timeoutSeconds: 540, memory: '2GiB' }, async () => {
   try {
     return { ok: true, status: await syncAndRecord() };
   } catch (e) {
@@ -886,6 +1043,7 @@ export const adminSetAdsSettings = deskCall('ads', async (req) => {
       dailyCap: z.number().min(0).max(10_000_000).optional(),
       maxDays: z.number().int().min(1).max(30).optional(),
       link: z.string().url().startsWith('https://').max(500).optional(),
+      valuePerConversion: z.number().min(0).max(100_000_000).optional(),
     })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid ads settings.');
@@ -912,23 +1070,48 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
     })
     .safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what the ad should do.');
+  return { ok: true, ...(await launchCampaign({ ...parsed.data, by: ctx.uid })) };
+});
 
+/** Whether the ads desk may make a campaign right now: an account, a page, a limit and an answer to "ask or launch". */
+export async function adsReady(): Promise<boolean> {
+  const cfg = await adsConfig();
+  return Boolean(cfg.adAccountId && cfg.pageId && cfg.dailyCap > 0 && cfg.mode && cfg.link);
+}
+
+/**
+ * Plan, make and create one campaign: "Make an ad" on the console, and the
+ * launch sequence's first campaign. Launched straight away when the owner
+ * chose `direct` (or asked for it on this one), otherwise created paused and
+ * waiting for Approve. Either way the budget has already been held to the daily
+ * limit by the time Meta hears of it.
+ */
+export async function launchCampaign(params: {
+  brief: string;
+  /** Who asked: a uid, or the launch sequence. */
+  by: string;
+  dailyBudget?: number;
+  days?: number;
+  source?: CreativeSource;
+  launch?: boolean;
+}) {
   const { cfg, token } = await ready();
   if (!cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Reconnect on the Ads page.');
-  const source: CreativeSource = parsed.data.source ?? { kind: 'make' };
+  if (!cfg.link) throw new HttpsError('failed-precondition', 'Say where the ads should send people — your website or WhatsApp link — on the Ads page.');
+  const source: CreativeSource = params.source ?? { kind: 'make' };
   const bench = await benchmarksNow(cfg);
 
   const { plan, engine } = await planAd({
-    brief: parsed.data.brief,
+    brief: params.brief,
     cfg,
     bench,
-    requestedBudget: parsed.data.dailyBudget,
-    requestedDays: parsed.data.days,
+    requestedBudget: params.dailyBudget,
+    requestedDays: params.days,
     source,
   });
 
   // The person's own number wins over the model's, and the limit wins over both.
-  const requested = parsed.data.dailyBudget ?? plan.dailyBudget;
+  const requested = params.dailyBudget ?? plan.dailyBudget;
   const { budget, note } = clampBudget({
     requested,
     cap: cfg.dailyCap,
@@ -938,9 +1121,9 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
   });
   if (!budget) throw new HttpsError('failed-precondition', note ?? 'There is no room in the daily limit.');
   plan.dailyBudget = budget;
-  if (parsed.data.days) plan.days = Math.min(parsed.data.days, cfg.maxDays);
+  if (params.days) plan.days = Math.min(params.days, cfg.maxDays);
 
-  const launch = parsed.data.launch ?? cfg.mode === 'direct';
+  const launch = params.launch ?? cfg.mode === 'direct';
   const stamp = `${Date.now()}`;
   let made: Awaited<ReturnType<typeof createAtMeta>>;
   try {
@@ -968,7 +1151,7 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
     video: made.video,
     previewUrl: made.previewUrl,
     source,
-    brief: parsed.data.brief,
+    brief: params.brief,
     plan,
     targeting: { cities: made.cities, interests: made.interests },
     forecast: expected,
@@ -978,21 +1161,22 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
     budgetNote: note,
     engine,
     plannedBy: person?.name ?? 'The desk',
-    createdBy: ctx.uid,
+    createdBy: params.by,
     createdAtMs: Date.now(),
     lastScaledMs: null,
     verdict: null,
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  return { ok: true, campaignId: made.campaignId, launched: launch, budget, note, plan, forecast: expected };
-});
+  return { campaignId: made.campaignId, launched: launch, budget, note, plan, forecast: expected };
+}
 
 /**
  * One button on a campaign row. Pause and end are always allowed; anything
  * that raises what the desk spends is held to the daily limit first.
  */
-export const adminAdAction = deskCall('ads', { timeoutSeconds: 120 }, async (req) => {
+// Nine minutes and 2GiB because "apply" on a worn-out campaign draws its new creative.
+export const adminAdAction = deskCall('ads', { timeoutSeconds: 540, memory: '2GiB' }, async (req) => {
   const ctx = requireAuth(req);
   const parsed = z
     .object({
@@ -1006,9 +1190,7 @@ export const adminAdAction = deskCall('ads', { timeoutSeconds: 120 }, async (req
 
   const { cfg, token } = await ready();
   const ref = campaignRef(campaignId);
-  const doc = (await ref.get()).data() as
-    | { managed?: boolean; dailyBudget?: number | null; verdict?: Verdict | null; name?: string }
-    | undefined;
+  const doc = (await ref.get()).data() as CampaignDoc | undefined;
   if (!doc) throw new HttpsError('not-found', 'That campaign has not been read yet. Press Refresh.');
 
   /** Fit a daily budget for this campaign inside the limit, or refuse. */
@@ -1080,10 +1262,15 @@ export const adminAdAction = deskCall('ads', { timeoutSeconds: 120 }, async (req
       }
       case 'apply': {
         const next = doc.verdict?.action;
-        if (!next || next.kind === 'none' || next.kind === 'refresh') {
-          throw new HttpsError('failed-precondition', 'There is nothing to apply — make a new creative for it instead.');
-        }
-        if (next.kind === 'pause') {
+        if (!next || next.kind === 'none') throw new HttpsError('failed-precondition', 'There is nothing to apply.');
+        if (next.kind === 'refresh') {
+          if (!doc.managed) {
+            throw new HttpsError('failed-precondition', 'Only a campaign the desk made can have its creative changed from here.');
+          }
+          const did = await refreshCreative(token, cfg, campaignId, doc, doc.verdict!);
+          if (!did) throw new HttpsError('failed-precondition', 'The expert could not write a better version right now. Try again later.');
+          what = `Made a ${did}. The old one steps aside once Meta approves it.`;
+        } else if (next.kind === 'pause') {
           await graph(token, campaignId, { form: { status: 'PAUSED' } });
           Object.assign(update, { status: 'PAUSED', effectiveStatus: 'PAUSED' });
           what = 'Paused, as recommended.';

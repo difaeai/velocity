@@ -360,6 +360,10 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   const approve = () =>
     run('publish', async () => {
       const res = await socialApi.review({ postId: post.id, approve: true, caption, targets, publishNow: true });
+      // A piece made ahead is approved now and goes out on its own day.
+      if (res.status === 'scheduled' && res.dueAtMs) {
+        return `Approved. It goes out ${new Date(res.dueAtMs).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.`;
+      }
       return `Posted to ${res.published ?? 0} network${res.published === 1 ? '' : 's'}${
         res.failed ? `, ${res.failed} failed — see below.` : '.'
       }`;

@@ -111,7 +111,7 @@ const SOCIAL_NAV: NavGroup[] = [
     title: 'Every day',
     items: [
       { href: '/dashboard/social/queue', label: '✅ Posts & approval' },
-      { href: '/dashboard/social/ads', label: '💸 Ads manager' },
+      { href: '/dashboard/social/ads', label: '💸 Meta Ad Expert' },
       { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
       { href: '/dashboard/social/inbox', label: '💬 Comments' },
       { href: '/dashboard/social/performance', label: '📈 Analytics' },
@@ -325,7 +325,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   const hoursLeft = Math.max(1, Math.ceil((ws.trialEndsAtMs - nowMs) / 3600_000));
   const trial = nowMs > 0 && ws.paidUntilMs <= nowMs && ws.trialEndsAtMs > nowMs;
   const over = nowMs > 0 && Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs;
-  const what = need === 'ads' ? 'The ads expert' : need === 'sales' ? 'The sales agent' : 'The content team';
+  const what = need === 'ads' ? 'The Meta Ad Expert' : need === 'sales' ? 'The sales agent' : 'The content team';
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -388,7 +388,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
           <div style={{ maxWidth: 520, margin: '60px auto', textAlign: 'center', display: 'grid', gap: 12 }}>
             <strong style={{ fontSize: 18 }}>Not in your {STUDIO_PLANS[ws.plan].name} plan</strong>
             <span style={{ color: colors.muted, fontSize: 14, lineHeight: 1.6 }}>
-              {what} comes with {need === 'ads' ? 'the Ads expert and Everything plans' : 'the Everything plan'}.
+              {what} comes with {need === 'ads' ? 'the Meta Ad Expert and Everything plans' : 'the Everything plan'}.
             </span>
             <Link href="/dashboard/social/billing" style={{ color: colors.secondary, fontWeight: 800 }}>
               Upgrade on Plan &amp; billing →

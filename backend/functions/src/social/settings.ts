@@ -45,6 +45,11 @@ export async function getSocialSettings(): Promise<SocialSettings> {
   };
 }
 
+/** Write settings from the backend itself — the launch sequence, never a person (that is the callable below). */
+export async function patchSettings(fields: Partial<SocialSettings>): Promise<void> {
+  await sdb.doc(SETTINGS_PATH).set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
 export async function recordRun(status: string): Promise<void> {
   await sdb.doc(SETTINGS_PATH).set(
     { lastRunAtMs: Date.now(), lastRunStatus: status.slice(0, 300) },
@@ -72,6 +77,7 @@ const settingsSchema = z.object({
   enabled: z.boolean().optional(),
   runHour: z.number().int().min(0).max(23).optional(),
   postsPerDay: z.number().int().min(1).max(5).optional(),
+  makeAheadDays: z.number().int().min(0).max(31).optional(),
   dailyStory: z.boolean().optional(),
   autoRenderVideo: z.boolean().optional(),
   autoPublish: z.boolean().optional(),

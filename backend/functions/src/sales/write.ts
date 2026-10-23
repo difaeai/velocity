@@ -40,6 +40,8 @@ export const BANNED = [
   'circling back',
   'touch base',
   'just following up',
+  'just checking in',
+  'bumping this',
   'synergy',
   'game-changer',
   'game changer',
@@ -56,14 +58,17 @@ export const BANNED = [
 ];
 
 /** What is wrong with a draft, in words. Empty means send-ready. Pure. */
-export function emailProblems(d: Draft): string[] {
+export function emailProblems(
+  d: Draft,
+  words: { min: number; max: number; target: number } = { min: 20, max: 90, target: 75 },
+): string[] {
   const out: string[] = [];
   const body = d.body.toLowerCase();
-  const words = d.body.trim().split(/\s+/).filter(Boolean).length;
+  const count = d.body.trim().split(/\s+/).filter(Boolean).length;
   if (!d.subject.trim()) out.push('no subject');
   if (d.subject.length > 60) out.push('subject over 60 characters');
-  if (words > 90) out.push(`${words} words — keep it under 75`);
-  if (words < 20) out.push('too short to say anything');
+  if (count > words.max) out.push(`${count} words — keep it under ${words.target}`);
+  if (count < words.min) out.push('too short to say anything');
   if (/https?:\/\/|www\./i.test(d.body)) out.push('a link in a first email');
   if (/\{\{|\}\}|\[name\]|\[company\]/i.test(`${d.subject} ${d.body}`)) out.push('an unfilled placeholder');
   for (const phrase of BANNED) if (body.includes(phrase) || d.subject.toLowerCase().includes(phrase)) out.push(`"${phrase}"`);
@@ -130,4 +135,88 @@ export async function draftEmail(params: { model: string; seller: Seller; lead: 
     if (again.length < problems.length) [draft, problems] = [second, again];
   }
   return { ...draft, problems };
+}
+
+const FOLLOW_RULES = (n: 1 | 2) => `HOW TO WRITE IT — every rule matters:
+- ${n === 1 ? '25 to 50 words' : '15 to 35 words, and say plainly that this is the last email'}. Plain text, like a person.
+- Do not repeat the first email. Give one new, specific reason to answer: a detail about them, or a small easy next step.
+- End with one question they can answer in a line.
+- No links, no pressure, no guilt. Never use: ${BANNED.map((b) => `"${b}"`).join(', ')}.
+- Do NOT add a signature, address or unsubscribe line — that is added for you.`;
+
+/**
+ * A follow-up to someone who has not answered, in the same thread: shorter than
+ * the first email, one new reason to reply, and the second one says it is the
+ * last. Checked like the first email, against shorter limits.
+ */
+export async function draftFollowUp(params: {
+  model: string;
+  seller: Seller;
+  lead: LeadFacts;
+  first: Draft;
+  n: 1 | 2;
+}): Promise<Draft & { problems: string[] }> {
+  const { seller, lead, first, n } = params;
+  const { data } = await generateJson<{ body?: string }>({
+    model: params.model,
+    what: 'The follow-up',
+    system: [
+      `You write follow-up emails for ${seller.senderName} at ${seller.senderCompany}. They wrote once and have heard nothing back.`,
+      `What ${seller.senderCompany} sells: ${seller.product}`,
+      seller.offer ? `What we can offer someone like this: ${seller.offer}` : '',
+      `Write in ${seller.language || 'English'}.`,
+      FOLLOW_RULES(n),
+      'Reply with one JSON object and nothing else: {"body": "..."}',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    prompt: `THE FIRST EMAIL:\nSubject: ${first.subject}\n${first.body}\n\nThe business: ${lead.name}${
+      lead.description ? ` — ${lead.description}` : ''
+    }.\n\nWrite follow-up number ${n}.`,
+  });
+  const draft = { subject: /^re:/i.test(first.subject) ? first.subject : `Re: ${first.subject}`, body: String(data.body ?? '').trim().slice(0, 1200) };
+  return { ...draft, problems: emailProblems(draft, { min: 10, max: 60, target: 50 }) };
+}
+
+export type ReplyIntent = 'interested' | 'question' | 'not_now' | 'not_interested' | 'unsubscribe' | 'other';
+const INTENTS: ReplyIntent[] = ['interested', 'question', 'not_now', 'not_interested', 'unsubscribe', 'other'];
+
+const REPLY_RULES = `HOW TO ANSWER:
+- First decide what they meant: interested, asking a question, "not now", not interested, or asking not to be written to again.
+- Not interested, or asking not to be written to: no answer at all — the body is empty. Nobody argues with a no.
+- Otherwise answer exactly what they asked, in 30 to 90 words, then propose ONE concrete next step: a short call at a time they choose, a sample, a visit, or a price for their case.
+- Never invent a price, a date, a discount, a client or any fact you were not given — say you will confirm it instead.
+- Plain text, warm and direct, no pressure. Do NOT add a signature or address — that is added for you.`;
+
+/**
+ * Read a reply and draft the answer that moves it one honest step towards a
+ * sale. The answer always waits for the owner: it speaks to a real person about
+ * a real deal, often about prices nobody told the model.
+ */
+export async function answerReply(params: {
+  model: string;
+  seller: Seller;
+  lead: LeadFacts;
+  ours: Draft;
+  theirs: string;
+}): Promise<{ intent: ReplyIntent; body: string }> {
+  const { seller, lead } = params;
+  const { data } = await generateJson<{ intent?: string; body?: string }>({
+    model: params.model,
+    what: 'The answer to a reply',
+    system: [
+      `You answer replies to cold emails for ${seller.senderName} at ${seller.senderCompany}. A prospect wrote back.`,
+      `What ${seller.senderCompany} sells: ${seller.product}`,
+      seller.offer ? `What we can offer: ${seller.offer}` : '',
+      `Write in ${seller.language || 'English'}.`,
+      REPLY_RULES,
+      `Reply with one JSON object and nothing else: {"intent": ${INTENTS.map((i) => `"${i}"`).join(' | ')}, "body": "the answer, or empty"}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    prompt: `OUR EMAIL:\nSubject: ${params.ours.subject}\n${params.ours.body}\n\nTHEIR REPLY (from ${lead.name}):\n${params.theirs.slice(0, 3000)}`,
+  });
+  const intent = INTENTS.includes(data.intent as ReplyIntent) ? (data.intent as ReplyIntent) : 'other';
+  const closed = intent === 'not_interested' || intent === 'unsubscribe';
+  return { intent, body: closed ? '' : String(data.body ?? '').trim().slice(0, 2000) };
 }

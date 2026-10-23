@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { auth, db, FieldValue } from '../lib/firebase';
 import { requireAdmin, requireAuth } from '../lib/guards';
 import { seedTeam } from '../social/employees';
+import { freshLaunch, stateRef } from '../social/launch';
 import { EMPTY_BRIEF } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
 import { PLAN_IDS, PLANS, TRIAL_MS, extendPaid, type PlanId, type Workspace } from './plans';
@@ -109,6 +110,9 @@ export const studioCreateWorkspace = onCall(async (req) => {
       updatedBy: ctx.uid,
     });
     await seedTeam(ctx.uid);
+    // The launch sequence is queued from the first minute: the console starts
+    // the market read the moment the owner lands, and the sweep if they do not.
+    await stateRef().set(freshLaunch(now));
   });
 
   // Merged, never replaced: a person may also hold a role claim from the ride app.

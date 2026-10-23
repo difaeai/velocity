@@ -19,11 +19,13 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
+import { db } from '../lib/firebase';
 import { deskCall, sdb } from './workspace';
 
 import { brandBlock, researchBlock, systemFor } from './crew';
 import { activeTeam, assign } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
+import { planningResearch } from './market';
 import { getSocialSettings } from './settings';
 import { DEFAULT_SETTINGS, FORMATS, type ContentFormat, type ContentResearch, type SocialSettings } from './types';
 
@@ -202,19 +204,47 @@ export async function plannedSlots(date: string): Promise<PlannedSlot[]> {
 export async function ensureMonthPlan(month: string): Promise<void> {
   if ((await planRef(month).get()).exists) return;
   try {
-    const latest = await sdb.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
-    await planMonth(month, latest.empty ? null : (latest.docs[0].data() as ContentResearch));
+    await planMonth(month, await planningResearch());
   } catch (e) {
     logger.warn('social: could not plan the month; the rotation carries on', { month, message: (e as Error).message });
   }
 }
 
+/**
+ * Change one planned day from the calendar — the topic and the opening line —
+ * before the team makes it. A piece already made is changed the other way, with
+ * a change request on the piece itself.
+ */
+export const adminEditPlanSlot = deskCall('content', async (req) => {
+  const parsed = z
+    .object({
+      date: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/),
+      format: z.enum(FORMATS),
+      topic: z.string().trim().min(3).max(240),
+      hook: z.string().trim().max(160).optional(),
+    })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what the day should be about.');
+  const { date, format, topic, hook } = parsed.data;
+
+  const ref = planRef(date.slice(0, 7));
+  await db.runTransaction(async (tx) => {
+    const plan = (await tx.get(ref)).data() as MonthPlan | undefined;
+    const slots = plan?.days?.[date] ?? [];
+    const i = slots.findIndex((s) => s.format === format);
+    if (i < 0) throw new HttpsError('not-found', 'That day has no such piece planned. Plan the month first.');
+    slots[i] = { ...slots[i], topic, hook: hook ?? slots[i].hook };
+    // A merge replaces only this day's list; every other day stays as it was.
+    tx.set(ref, { days: { [date]: slots } }, { merge: true });
+  });
+  return { ok: true };
+});
+
 export const adminPlanSocialMonth = deskCall('content', { timeoutSeconds: 300, memory: '1GiB' }, async (req) => {
   const parsed = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Pass the month as YYYY-MM.');
-  const latest = await sdb.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
   try {
-    const plan = await planMonth(parsed.data.month, latest.empty ? null : (latest.docs[0].data() as ContentResearch));
+    const plan = await planMonth(parsed.data.month, await planningResearch());
     return { ok: true, days: Object.keys(plan.days).length };
   } catch (e) {
     throw new HttpsError('internal', (e as Error).message);

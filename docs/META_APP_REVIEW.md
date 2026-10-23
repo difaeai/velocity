@@ -55,7 +55,7 @@ nothing more, or review is refused for "unused permissions".
 | `instagram_manage_comments` | We read comments on the business's own Instagram posts and publish the replies they approved. |
 | `instagram_manage_insights` | We read reach, saves, shares and comments per post so the business sees what works and the planner learns from it. |
 | `business_management` | Needed to read the Pages and Instagram accounts owned through the business's Meta Business account. |
-| `ads_management` | Only when the business connects the Ads expert: we create, pause and adjust the campaigns they approved, never above the daily limit they set. |
+| `ads_management` | Only when the business connects the Meta Ad Expert: we create, pause and adjust the campaigns they approved, never above the daily limit they set. |
 | `ads_read` | We read campaign spend, reach, clicks, CTR, CPC and CPM to report them in the dashboard. |
 
 `ads_management` / `ads_read` also need the **Marketing API** product added to the

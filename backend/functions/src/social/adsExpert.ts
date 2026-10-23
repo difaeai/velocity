@@ -148,6 +148,19 @@ export interface AdMetrics {
   /** The objective's own result: link clicks, people reached, engagements. */
   results: number;
   costPerResult: number;
+  /**
+   * What the money was actually for — sales, leads, WhatsApp chats, sign-ups or
+   * installs — when Meta can see them (a pixel on the site, a lead form, a
+   * click-to-chat ad). Zero when it cannot. Absent on campaigns read before
+   * 2026-10-23.
+   */
+  conversions?: number;
+  conversionKind?: ConversionKind | null;
+  /** What those conversions were worth, when Meta knows (purchase value). */
+  conversionValue?: number;
+  costPerConversion?: number;
+  /** Return on ad spend: worth ÷ spend. Null when nothing says what a conversion is worth. */
+  roas?: number | null;
 }
 
 /** One row of the Insights API, as it arrives (numbers as strings). */
@@ -158,7 +171,36 @@ export interface InsightRow {
   frequency?: string;
   inline_link_clicks?: string;
   actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
   video_thruplay_watched_actions?: { action_type: string; value: string }[];
+}
+
+export type ConversionKind = 'purchase' | 'lead' | 'message' | 'signup' | 'install';
+
+/**
+ * What counts as a conversion, best first. Meta reports one purchase under
+ * several names at once (`omni_purchase`, `purchase`, the pixel's own), so
+ * adding them up counts every sale two or three times: the first family with
+ * anything in it is the one counted, by the first name it is reported under.
+ */
+const CONVERSIONS: { kind: ConversionKind; types: string[] }[] = [
+  { kind: 'purchase', types: ['omni_purchase', 'purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_web_purchase'] },
+  { kind: 'lead', types: ['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead'] },
+  { kind: 'message', types: ['onsite_conversion.messaging_conversation_started_7d'] },
+  { kind: 'signup', types: ['complete_registration', 'offsite_conversion.fb_pixel_complete_registration'] },
+  { kind: 'install', types: ['mobile_app_install', 'app_install'] },
+];
+
+export function conversionsFrom(row: InsightRow): { kind: ConversionKind | null; count: number; value: number } {
+  for (const family of CONVERSIONS) {
+    for (const type of family.types) {
+      const count = num(row.actions?.find((a) => a.action_type === type)?.value);
+      if (count > 0) {
+        return { kind: family.kind, count, value: num(row.action_values?.find((a) => a.action_type === type)?.value) };
+      }
+    }
+  }
+  return { kind: null, count: 0, value: 0 };
 }
 
 const num = (v: string | number | undefined): number => {
@@ -188,8 +230,14 @@ export function resultActionFor(metaObjective: string, video = false): string {
   }
 }
 
-/** Turn one Insights row into the numbers the expert reasons with. */
-export function metricsFrom(row: InsightRow, resultAction: string): AdMetrics {
+/**
+ * Turn one Insights row into the numbers the expert reasons with.
+ *
+ * `valuePerConversion` is what the owner said one sale or lead is worth to
+ * them. It prices conversions Meta counts but cannot value (a lead form, a
+ * WhatsApp chat); a real purchase value from the pixel always wins over it.
+ */
+export function metricsFrom(row: InsightRow, resultAction: string, valuePerConversion = 0): AdMetrics {
   const spend = num(row.spend);
   const impressions = num(row.impressions);
   const reach = num(row.reach);
@@ -205,6 +253,9 @@ export function metricsFrom(row: InsightRow, resultAction: string): AdMetrics {
           ? num(row.video_thruplay_watched_actions?.[0]?.value)
           : action(resultAction);
 
+  const conv = conversionsFrom(row);
+  const worth = conv.value > 0 ? conv.value : conv.count * valuePerConversion;
+
   return {
     spend,
     impressions,
@@ -217,6 +268,12 @@ export function metricsFrom(row: InsightRow, resultAction: string): AdMetrics {
     results,
     // Reach is priced per thousand people, the way anyone reading it thinks of it.
     costPerResult: results > 0 ? (resultAction === 'reach' ? (spend / results) * 1000 : spend / results) : 0,
+    conversions: conv.count,
+    conversionKind: conv.kind,
+    conversionValue: worth,
+    costPerConversion: conv.count > 0 ? spend / conv.count : 0,
+    // Nothing worth anything yet is a ROAS of 0 only once something says what a conversion is worth.
+    roas: spend > 0 && (conv.value > 0 || valuePerConversion > 0) ? worth / spend : null,
   };
 }
 
@@ -349,6 +406,22 @@ export const SCALE_EVERY_MS = 72 * 3600_000;
 /** And by this much — the step that does not reset learning. */
 export const SCALE_STEP = 1.2;
 
+/** Paying back this many times what it costs, with enough sales to trust it, is a winner. */
+export const ROAS_WIN = 2;
+/** Below this, with enough data, it loses money. */
+export const ROAS_LOSE = 0.7;
+/** A tired campaign gets a fresh creative at most this often, and at most this many times. */
+export const REFRESH_EVERY_MS = 4 * 86_400_000;
+export const MAX_REFRESHES = 3;
+
+const CONVERSION_LABEL: Record<ConversionKind, string> = {
+  purchase: 'sales',
+  lead: 'leads',
+  message: 'chats',
+  signup: 'sign-ups',
+  install: 'installs',
+};
+
 /**
  * Read a campaign the way a media buyer would, in order: is it running, is it
  * still learning, is it wasting money, is it worn out, is it a winner.
@@ -363,10 +436,14 @@ export function diagnose(input: {
   ageHours: number;
   lastScaledMs: number | null;
   nowMs: number;
+  /** What the owner said one conversion is worth; 0 when they have not. */
+  valuePerConversion?: number;
 }): Verdict {
   const { objective, m, bench, currency } = input;
   const $ = (n: number) => money(n, currency);
   const label = META_OBJECTIVE[objective].resultLabel;
+  const canScale = () =>
+    input.dailyBudget !== null && (input.lastScaledMs === null || input.nowMs - input.lastScaledMs >= SCALE_EVERY_MS);
 
   if (!input.active) {
     return {
@@ -386,6 +463,51 @@ export function diagnose(input: {
       ],
       action: { kind: 'none' },
     };
+  }
+
+  // When the account can see what the money bought — sales, leads, chats with
+  // a worth on them — that decides, ahead of what a click costs: a dear click
+  // that sells beats a cheap one that does not. Too few to trust, and the
+  // click numbers below decide instead.
+  if (m.roas != null) {
+    const conv = m.conversions ?? 0;
+    const what = m.conversionKind ? CONVERSION_LABEL[m.conversionKind] : 'conversions';
+    const per = input.valuePerConversion ?? 0;
+    if (m.roas < ROAS_LOSE && (conv >= 5 || (per > 0 && m.spend >= per * 5))) {
+      return {
+        grade: 'bad',
+        headline: `Losing money — ${$(m.spend)} spent, ${$(m.conversionValue ?? 0)} back (ROAS ${m.roas.toFixed(2)}).`,
+        reasons: [`It returns ${m.roas.toFixed(2)} for every 1 it costs; under ${ROAS_LOSE} with this much data is not bad luck.`],
+        action: { kind: 'pause', why: 'It pays back less than it costs, with enough data to be sure. Pause it and try a new creative or offer.' },
+      };
+    }
+    if (m.roas >= ROAS_WIN && conv >= 5) {
+      return {
+        grade: 'good',
+        headline: `Winning — ROAS ${m.roas.toFixed(2)}: ${conv.toLocaleString()} ${what} for ${$(m.spend)}.`,
+        reasons: [`${$(m.costPerConversion ?? 0)} per ${what.replace(/s$/, '')}, paying back ${m.roas.toFixed(1)} times its cost.`],
+        action: canScale()
+          ? {
+              kind: 'scale',
+              to: Math.round(input.dailyBudget! * SCALE_STEP),
+              why: 'It pays back well over its cost with enough sales to trust it. Twenty percent more a day keeps it out of re-learning.',
+            }
+          : { kind: 'none' },
+      };
+    }
+    if (conv >= 5) {
+      // Paying its way or close to it: it keeps running. Only a worn-out
+      // creative is worth touching — the audience has stopped seeing it.
+      const tired = m.frequency > 3.5;
+      return {
+        grade: m.roas >= 1 ? 'ok' : 'bad',
+        headline: `Paying back ${m.roas.toFixed(2)}× — ${conv.toLocaleString()} ${what} at ${$(m.costPerConversion ?? 0)} each.`,
+        reasons: tired ? [`The same people have seen it ${m.frequency.toFixed(1)} times on average — they have stopped noticing it.`] : [],
+        action: tired
+          ? { kind: 'refresh', why: 'Make a fresh creative for it — new picture, new first line — and keep the targeting.' }
+          : { kind: 'none' },
+      };
+    }
   }
 
   if (!bench) {
@@ -442,13 +564,11 @@ export function diagnose(input: {
   const winning = m.results >= 30 && cpr > 0 && cpr <= target * 0.8;
   if (winning) {
     reasons.push(`${$(cpr)} per result against a normal of ${$(target)}.`);
-    const canScale =
-      input.dailyBudget !== null && (input.lastScaledMs === null || input.nowMs - input.lastScaledMs >= SCALE_EVERY_MS);
     return {
       grade: 'good',
       headline: `Winning — ${m.results.toLocaleString()} ${label} at ${$(cpr)} each.`,
       reasons,
-      action: canScale
+      action: canScale()
         ? {
             kind: 'scale',
             to: Math.round(input.dailyBudget! * SCALE_STEP),

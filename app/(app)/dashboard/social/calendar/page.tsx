@@ -11,6 +11,11 @@
  * A day can hold several pieces (a reel and a carousel are different posts on
  * the same date), so a square carries one dot per made piece and one line per
  * planned one. Any day can be made on demand — from its plan, or by hand.
+ *
+ * With the calendar kept made ahead (a Studio workspace's 30 days), this is
+ * also where the owner reads the month before it goes out: any made piece can
+ * be approved or sent back with changes right here, any planned one rewritten
+ * before it is made, and the posting time is set in the owner's own clock.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -22,6 +27,7 @@ import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   SOCIAL_FORMATS,
+  postAssets,
   socialApi,
   type SocialFormat,
   type SocialMonthPlan,
@@ -30,6 +36,7 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { FORMAT_META, FormatChip, StatusPill, longDate, postSummary } from '@/components/social/shared';
+import { PostingTime, localHourLabel } from '@/components/social/launch';
 
 /** Pakistan's today, as `YYYY-MM-DD`. PKT is UTC+5, no daylight saving. */
 function todayPkt(): string {
@@ -152,9 +159,21 @@ export default function CalendarPage() {
       return `Made the ${FORMAT_META[res.format].label.toLowerCase()} for ${longDate(date)}. It is in the queue.`;
     });
 
+  const setHour = (runHour: number) =>
+    run('hour', async () => {
+      const res = await socialApi.updateSettings({ runHour });
+      setSettings(res.settings);
+      return `Posts now go out at ${localHourLabel(runHour)} your time — the whole month moves with it.`;
+    });
+
   const selectedPosts = (selected ? posts[selected] : undefined) ?? [];
-  const selectedPlan = (selected ? plan?.days[selected] : undefined) ?? [];
+  // A planned piece that has been made shows once, as the made piece.
+  const selectedPlan = ((selected ? plan?.days[selected] : undefined) ?? []).filter(
+    (s) => !selectedPosts.some((p) => (p.format ?? 'reel') === s.format),
+  );
   const weekOf = (date: string) => Math.min(Math.floor((Number(date.slice(8)) - 1) / 7), (plan?.weeks.length ?? 1) - 1);
+  const ahead = settings?.makeAheadDays ?? 0;
+  const madeAhead = Object.entries(posts).filter(([date]) => date > today).reduce((n, [, list]) => n + list.length, 0);
 
   return (
     <div>
@@ -178,6 +197,21 @@ export default function CalendarPage() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+
+      {settings ? (
+        <Card style={{ marginBottom: 16, padding: 14 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <PostingTime settings={settings} disabled={busy !== null} onPick={setHour} />
+            <span style={{ fontSize: 12.5, color: colors.muted, flex: 1, minWidth: 220 }}>
+              {ahead
+                ? `The team keeps the next ${ahead} days made ahead, one piece an hour — ${madeAhead} made so far. ${
+                    settings.autoPublish ? 'Each goes out on its day by itself.' : 'Approve any day below and it goes out on its day.'
+                  }`
+                : 'Each day is made on its day, at this time.'}
+            </span>
+          </div>
+        </Card>
+      ) : null}
 
       <Strategy plan={plan} month={monthLabel} busy={busy === 'plan'} onPlan={planIt} />
 
@@ -278,21 +312,19 @@ export default function CalendarPage() {
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={sectionLabel}>Planned</div>
                   {selectedPlan.map((s) => (
-                    <div key={s.format} style={{ display: 'grid', gap: 5, padding: 10, borderRadius: 10, background: colors.bg }}>
-                      <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <FormatChip format={s.format} />
-                        {s.pillar ? <span style={{ fontSize: 11.5, color: colors.muted }}>{s.pillar}</span> : null}
-                      </span>
-                      <span style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{s.topic}</span>
-                      {s.hook ? <span style={{ fontSize: 12.5, color: colors.muted }}>Hook: “{s.hook}”</span> : null}
-                      <Button
-                        variant="secondary"
-                        onClick={() => make(selected, s)}
-                        disabled={busy !== null}
-                      >
-                        {busy === `${selected}-${s.format}` ? 'The team is working…' : 'Make this now'}
-                      </Button>
-                    </div>
+                    <PlannedSlot
+                      key={s.format}
+                      date={selected}
+                      slot={s}
+                      busy={busy}
+                      onMake={() => make(selected, s)}
+                      onEdit={(topic, hook) =>
+                        run(`edit-${s.format}`, async () => {
+                          await socialApi.editPlanSlot({ date: selected, format: s.format, topic, hook });
+                          return `Changed what ${longDate(selected)} is about. The team makes it from your words.`;
+                        })
+                      }
+                    />
                   ))}
                 </div>
               ) : null}
@@ -301,17 +333,7 @@ export default function CalendarPage() {
                 <div style={{ display: 'grid', gap: 12 }}>
                   <div style={sectionLabel}>Made</div>
                   {selectedPosts.map((post) => (
-                    <Link
-                      key={post.id}
-                      href={`/dashboard/social/queue?open=${post.id}`}
-                      style={{ display: 'grid', gap: 6, color: 'inherit' }}
-                    >
-                      <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <FormatChip format={post.format} />
-                        <StatusPill status={post.status} />
-                      </span>
-                      <span style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{postSummary(post)}</span>
-                    </Link>
+                    <MadePiece key={post.id} post={post} runHour={settings?.runHour ?? 10} busy={busy} run={run} />
                   ))}
                 </div>
               ) : null}
@@ -467,6 +489,213 @@ function AnglePicker({
     </select>
   );
 }
+
+/** When a piece for `date` goes out: that Pakistan day at the desk hour. Mirrors `dueAtMs` in pipeline.ts. */
+const dueAt = (date: string, runHour: number) => Date.parse(`${date}T00:00:00Z`) - 5 * 3600_000 + runHour * 3600_000;
+
+const when = (ms: number) =>
+  new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/** One planned piece not made yet: make it now, or change what the day is about before the team makes it. */
+function PlannedSlot({
+  date,
+  slot,
+  busy,
+  onMake,
+  onEdit,
+}: {
+  date: string;
+  slot: Slot;
+  busy: string | null;
+  onMake: () => void;
+  onEdit: (topic: string, hook: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [topic, setTopic] = useState(slot.topic);
+  const [hook, setHook] = useState(slot.hook);
+  return (
+    <div style={{ display: 'grid', gap: 5, padding: 10, borderRadius: 10, background: colors.bg }}>
+      <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <FormatChip format={slot.format} />
+        {slot.pillar ? <span style={{ fontSize: 11.5, color: colors.muted }}>{slot.pillar}</span> : null}
+      </span>
+      {editing ? (
+        <>
+          <textarea
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            rows={3}
+            maxLength={240}
+            aria-label="What this day is about"
+            style={{ ...fieldStyle, resize: 'vertical' }}
+          />
+          <input
+            value={hook}
+            onChange={(e) => setHook(e.target.value)}
+            maxLength={160}
+            placeholder="The opening line (optional)"
+            aria-label="The opening line"
+            style={fieldStyle}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button
+              onClick={() => {
+                onEdit(topic.trim(), hook.trim());
+                setEditing(false);
+              }}
+              disabled={busy !== null || topic.trim().length < 3}
+            >
+              Save
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <span style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{slot.topic}</span>
+          {slot.hook ? <span style={{ fontSize: 12.5, color: colors.muted }}>Hook: “{slot.hook}”</span> : null}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button variant="secondary" onClick={onMake} disabled={busy !== null}>
+              {busy === `${date}-${slot.format}` ? 'The team is working…' : 'Make this now'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setTopic(slot.topic);
+                setHook(slot.hook);
+                setEditing(true);
+              }}
+              disabled={busy !== null}
+            >
+              Change this day
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const WORKING = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering', 'publishing'];
+
+/**
+ * A finished piece in the day panel: look at it, approve it for its day, or
+ * send it back with what to change — the words only, or the whole piece.
+ */
+function MadePiece({
+  post,
+  runHour,
+  busy,
+  run,
+}: {
+  post: SocialPostDoc;
+  runHour: number;
+  busy: string | null;
+  run: (label: string, fn: () => Promise<string>) => Promise<void>;
+}) {
+  const [feedback, setFeedback] = useState('');
+  const [wordsOnly, setWordsOnly] = useState(false);
+  const assets = postAssets(post);
+  const image = assets.find((a) => a.kind === 'image' && a.url);
+  const video = assets.find((a) => a.kind === 'video' && a.url);
+  const ahead = post.date > todayPkt();
+  const canApprove = post.status === 'awaiting_approval' && assets.length > 0;
+  // A live piece is not reworked here: a new version could not replace what is already posted.
+  const canChange = !WORKING.includes(post.status) && post.status !== 'published' && post.status !== 'partial';
+
+  const approve = () =>
+    run(`approve-${post.id}`, async () => {
+      const res = await socialApi.review({ postId: post.id, approve: true, caption: post.caption, targets: post.targets, publishNow: true });
+      return res.status === 'scheduled' && res.dueAtMs
+        ? `Approved — it goes out ${when(res.dueAtMs)}.`
+        : `Posted to ${res.published ?? 0} network${res.published === 1 ? '' : 's'}.`;
+    });
+
+  const change = () =>
+    run(`change-${post.id}`, async () => {
+      if (feedback.trim().length < 3) throw new Error('Say what you want changed.');
+      await socialApi.requestChanges({ postId: post.id, feedback: feedback.trim(), scope: [wordsOnly ? 'caption' : 'script'] });
+      setFeedback('');
+      return wordsOnly ? 'The words are rewritten — check them above.' : 'The team remade it with your changes — check it above.';
+    });
+
+  return (
+    <div style={{ display: 'grid', gap: 8, padding: 10, borderRadius: 10, border: `1px solid ${colors.border}` }}>
+      <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <FormatChip format={post.format} />
+        <StatusPill status={post.status} />
+        {post.status === 'ready' && post.scheduled ? (
+          <span style={{ fontSize: 11.5, color: colors.success, fontWeight: 800 }}>Goes out {when(dueAt(post.date, runHour))}</span>
+        ) : null}
+      </span>
+      {video ? (
+        <video
+          src={video.url ?? undefined}
+          muted
+          playsInline
+          controls
+          preload="metadata"
+          style={{ width: '100%', maxHeight: 280, borderRadius: 8, background: '#000' }}
+        />
+      ) : image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={image.url ?? ''} alt={image.alt ?? ''} style={{ width: '100%', maxHeight: 280, objectFit: 'cover', borderRadius: 8 }} />
+      ) : null}
+      <span style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.4 }}>{postSummary(post)}</span>
+      {post.caption ? (
+        <span style={{ fontSize: 12.5, color: colors.muted, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: 110, overflow: 'auto' }}>
+          {post.caption}
+        </span>
+      ) : null}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {canApprove ? (
+          <Button onClick={approve} disabled={busy !== null}>
+            {busy === `approve-${post.id}` ? 'Approving…' : ahead ? 'Approve for its day' : 'Approve & post'}
+          </Button>
+        ) : null}
+        <Link href={`/dashboard/social/queue?open=${post.id}`} style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
+          Open in the queue →
+        </Link>
+      </div>
+      {canChange ? (
+        <details>
+          <summary style={{ fontSize: 12.5, color: colors.secondary, cursor: 'pointer', fontWeight: 800 }}>Ask for changes</summary>
+          <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="e.g. Talk about the breakfast box, not the cakes. Make the first line a question."
+              aria-label="What to change"
+              style={{ ...fieldStyle, resize: 'vertical' }}
+            />
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
+              <input type="checkbox" checked={wordsOnly} onChange={(e) => setWordsOnly(e.target.checked)} />
+              Only the words — keep the picture or video
+            </label>
+            <Button variant="secondary" onClick={change} disabled={busy !== null || feedback.trim().length < 3}>
+              {busy === `change-${post.id}` ? 'The team is on it…' : 'Send it back'}
+            </Button>
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+const fieldStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  fontSize: 13.5,
+  fontFamily: 'inherit',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 10,
+  background: colors.surface,
+};
 
 /** The month laid out Monday-first, padded to whole weeks. */
 function buildMonth(yyyymm: string): (string | null)[] {

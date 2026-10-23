@@ -782,10 +782,20 @@ export const EMPTY_BRIEF: SocialBrief = { about: '', posts: '', viral: '', comme
 export interface SocialSettings {
   /** Master switch. Off means the scheduler does nothing at all. */
   enabled: boolean;
-  /** Hour of the Pakistan day the team starts (0–23). */
+  /**
+   * Hour of the Pakistan day the team starts (0–23) — and the hour a piece made
+   * ahead for a later day goes out on that day.
+   */
   runHour: number;
   /** How many pieces a day, each the next format up. */
   postsPerDay: number;
+  /**
+   * How many days ahead the calendar is kept made: the month plan's pieces for
+   * the next N days are written and drawn in advance, one an hour, so the owner
+   * can read (and change) the month before it goes out. 0 makes each day on the
+   * day, which is how the house desk has always run.
+   */
+  makeAheadDays: number;
   /**
    * A story every day, on top of the rotation.
    *
@@ -935,6 +945,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
   runHour: 10,
   postsPerDay: 1,
+  makeAheadDays: 0,
   dailyStory: true,
   platforms: ['facebook', 'instagram'],
 

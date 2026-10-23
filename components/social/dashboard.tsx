@@ -188,7 +188,13 @@ function PostBox({ post }: { post: SocialPostDoc }) {
         targets: post.targets,
         publishNow: true,
       });
-      setSaid(res.failed ? `${res.failed} network(s) failed — open it` : 'Posted');
+      setSaid(
+        res.status === 'scheduled' && res.dueAtMs
+          ? `Goes out ${new Date(res.dueAtMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
+          : res.failed
+            ? `${res.failed} network(s) failed — open it`
+            : 'Posted',
+      );
     } catch (e) {
       setSaid(e instanceof Error ? e.message : 'That did not work.');
     } finally {
