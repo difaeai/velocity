@@ -162,7 +162,9 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
             onClick={() => setPaused((p) => !p)}
             aria-label={paused ? 'Play the films' : 'Pause the films'}
           >
-            {paused ? '▶' : '❚❚'}
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              {paused ? <path d="M8 5v14l11-7z" /> : <path d="M7 5h4v14H7zM13 5h4v14h-4z" />}
+            </svg>
           </button>
         )}
       </div>

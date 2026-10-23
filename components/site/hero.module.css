@@ -78,7 +78,7 @@
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   align-items: end;
   gap: 40px;
-  padding-block: clamp(70px, 9vw, 120px) 150px;
+  padding-block: clamp(36px, 5vw, 76px) 130px;
 }
 
 .copy {
@@ -229,8 +229,7 @@
   border-radius: 14px;
   display: grid;
   place-items: center;
-  font-size: 13px;
-  letter-spacing: -2px;
+  color: var(--text);
   background: rgba(4, 18, 12, 0.6);
   border: 1px solid var(--line);
 }
@@ -259,10 +258,13 @@
     background: linear-gradient(0deg, var(--void) 0%, transparent 42%);
   }
 
+  /* Above the film it overlaps: a positioned film would otherwise paint over the copy. */
   .content {
+    position: relative;
+    z-index: 1;
     grid-template-columns: 1fr;
     gap: 18px;
-    padding-block: 0 128px;
+    padding-block: 0 148px;
     margin-top: -36px;
     width: calc(100% - 32px);
   }
