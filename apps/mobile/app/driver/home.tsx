@@ -43,6 +43,7 @@ import {
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
 import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
+import { WalletCard } from '../../src/ui/WalletCard';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
 import { offlineWarning, queueBanner } from '../../src/lib/driverQueue';
@@ -579,6 +580,17 @@ export default function DriverHome() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      {/* ── Wallet ── The very first thing, above Offline/Online: the credits
+          given for a mobile holder, and what they do. Hidden mid-trip, like the
+          banners below — the trip owns the screen until drop-off. */}
+      {!activeTrip && (commission.bonus > 0 || (profile?.commissionCreditEarned ?? 0) > 0) ? (
+        <WalletCard
+          credits={commission.bonus}
+          used={Math.max(0, Math.round(profile?.commissionCreditUsed ?? 0))}
+          onPress={() => router.push('/driver/earnings')}
+        />
+      ) : null}
+
       {/* ── Header: menu · online toggle · settings & language ── */}
       <View style={styles.header}>
         <Pressable onPress={() => setDrawerOpen(true)} hitSlop={12} style={styles.headerBtn}>
