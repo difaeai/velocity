@@ -19,11 +19,12 @@
  *    every piece they worked on keeps their name in `team` and `work`, because
  *    "who wrote this claim" is a question you may need answered next year.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { FieldValue } from '../lib/firebase';
+import { requireAuth } from '../lib/guards';
+import { deskCall, sdb } from './workspace';
 import {
   ROLES,
   ROLE_SPECS,
@@ -35,14 +36,14 @@ import {
 } from './types';
 
 const COLLECTION = 'socialEmployees';
-const employeeRef = (id: string) => db.doc(`${COLLECTION}/${id}`);
+const employeeRef = (id: string) => sdb.doc(`${COLLECTION}/${id}`);
 
 /** Distinct enough to tell four people apart in a work log at a glance. */
 const COLOURS = ['#ccff00', '#ff8a3d', '#4db8ff', '#b07dff', '#28c76f', '#ff5c8a', '#ffd166', '#00cfc1'];
 
 /** Everyone on the books, in hiring order. */
 export async function listEmployees(): Promise<Employee[]> {
-  const snap = await db.collection(COLLECTION).get();
+  const snap = await sdb.collection(COLLECTION).get();
   return snap.docs
     .map((d) => ({ ...(d.data() as Employee), id: d.id }))
     .sort((a, b) => a.hiredAtMs - b.hiredAtMs);
@@ -164,8 +165,7 @@ export function employeeIntro(employee: Employee): string {
 const nameSchema = z.string().trim().min(1).max(60);
 
 /** The roles you can hire for, and what each one would do. For the hire form. */
-export const adminGetSocialRoles = onCall(async (req) => {
-  requireAdmin(req);
+export const adminGetSocialRoles = deskCall('any', async () => {
   return {
     roles: ROLES.map((role) => ({
       role,
@@ -177,8 +177,8 @@ export const adminGetSocialRoles = onCall(async (req) => {
   };
 });
 
-export const adminHireSocialEmployee = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminHireSocialEmployee = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({
       name: nameSchema,
@@ -199,7 +199,7 @@ export const adminHireSocialEmployee = onCall(async (req) => {
     throw new HttpsError('already-exists', `Somebody on the team is already called ${parsed.data.name}.`);
   }
 
-  const ref = db.collection(COLLECTION).doc();
+  const ref = sdb.collection(COLLECTION).doc();
   const employee: Employee = {
     id: ref.id,
     name: parsed.data.name,
@@ -217,8 +217,7 @@ export const adminHireSocialEmployee = onCall(async (req) => {
   return { ok: true, employee };
 });
 
-export const adminUpdateSocialEmployee = onCall(async (req) => {
-  requireAdmin(req);
+export const adminUpdateSocialEmployee = deskCall('any', async (req) => {
   const parsed = z
     .object({
       id: z.string().min(1).max(64),
@@ -250,8 +249,7 @@ export const adminUpdateSocialEmployee = onCall(async (req) => {
  * Let someone go. Their name stays on everything they made — the roster is who
  * works here now, not who ever did.
  */
-export const adminFireSocialEmployee = onCall(async (req) => {
-  requireAdmin(req);
+export const adminFireSocialEmployee = deskCall('any', async (req) => {
   const parsed = z.object({ id: z.string().min(1).max(64) }).safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   await employeeRef(parsed.data.id).delete();
@@ -265,8 +263,13 @@ export const adminFireSocialEmployee = onCall(async (req) => {
  * this. It exists because typing eight names before you can see the thing work
  * is a bad first five minutes.
  */
-export const adminSeedSocialTeam = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminSeedSocialTeam = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
+  return { ok: true, hired: await seedTeam(ctx.uid) };
+});
+
+/** One of each role not yet held, in the current workspace. Returns how many were hired. */
+export async function seedTeam(by: string): Promise<number> {
   const existing = await listEmployees();
   const held = new Set(existing.map((e) => e.role));
 
@@ -291,7 +294,7 @@ export const adminSeedSocialTeam = onCall(async (req) => {
     while (taken.has(name.toLowerCase())) name = `${STARTERS[role]} ${n++}`;
     taken.add(name.toLowerCase());
 
-    const ref = db.collection(COLLECTION).doc();
+    const ref = sdb.collection(COLLECTION).doc();
     const employee: Employee = {
       id: ref.id,
       name,
@@ -301,7 +304,7 @@ export const adminSeedSocialTeam = onCall(async (req) => {
       instructions: '',
       colour: COLOURS[(existing.length + hired.length) % COLOURS.length],
       hiredAtMs: Date.now() + hired.length, // keeps hiring order stable
-      hiredBy: ctx.uid,
+      hiredBy: by,
       lastWorkedAtMs: null,
       piecesWorked: 0,
     };
@@ -309,5 +312,5 @@ export const adminSeedSocialTeam = onCall(async (req) => {
     hired.push(employee);
   }
 
-  return { ok: true, hired: hired.length };
-});
+  return hired.length;
+}

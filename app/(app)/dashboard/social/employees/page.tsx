@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   SOCIAL_ROLES,
@@ -40,6 +41,7 @@ import { Mascot, ROLE_META, StatusPill } from '@/components/social/shared';
 import { Office, officeLive } from '@/components/social/office';
 
 export default function EmployeesPage() {
+  const { path } = useWorkspace();
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [coverage, setCoverage] = useState<string[]>([]);
@@ -59,7 +61,7 @@ export default function EmployeesPage() {
   useEffect(
     () =>
       onSnapshot(
-        collection(db, 'socialEmployees'),
+        collection(db, path('socialEmployees')),
         (snap) =>
           setStaff(
             snap.docs
@@ -68,7 +70,7 @@ export default function EmployeesPage() {
           ),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   // The office reads the same work log the queue draws: whoever holds a stage
@@ -76,11 +78,11 @@ export default function EmployeesPage() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(6)),
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(6)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         () => setPosts([]),
       ),
-    [],
+    [path],
   );
 
   const { live, running } = useMemo(() => officeLive(posts), [posts]);

@@ -25,11 +25,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { socialApi, type SocialPageRead, type SocialProfileAudit, type SocialRankedPost } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 
 export default function PerformancePage() {
+  const { path } = useWorkspace();
   const [read, setRead] = useState<SocialPageRead | null>(null);
   const [audit, setAudit] = useState<SocialProfileAudit | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,17 +41,17 @@ export default function PerformancePage() {
   // here, so they are watched rather than fetched — press "read it now" and the
   // page fills in when the job finishes, without anybody reloading.
   useEffect(() => {
-    const a = onSnapshot(doc(db, 'socialInsights/latest'), (snap) => {
+    const a = onSnapshot(doc(db, path('socialInsights/latest')), (snap) => {
       setRead(snap.exists() ? (snap.data() as SocialPageRead) : null);
     });
-    const b = onSnapshot(doc(db, 'socialInsights/profile'), (snap) => {
+    const b = onSnapshot(doc(db, path('socialInsights/profile')), (snap) => {
       setAudit(snap.exists() ? (snap.data() as SocialProfileAudit) : null);
     });
     return () => {
       a();
       b();
     };
-  }, []);
+  }, [path]);
 
   const run = useCallback(async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);

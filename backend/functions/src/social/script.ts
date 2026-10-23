@@ -20,6 +20,7 @@ import { logger } from 'firebase-functions';
 import { db } from '../lib/firebase';
 import { dayKey } from '../analytics';
 import { feedbackBlock, planBlock, researchBlock, systemFor } from './crew';
+import { isHouse } from './workspace';
 import { generateJson, modelReady } from './engine';
 import { localDraft, localRewriteCaption } from './local';
 import { reviewDraft, type QualityReport } from './lint';
@@ -60,6 +61,8 @@ const ANGLE_BRIEFS: Record<string, string> = {
  * this week rather than about launch day.
  */
 export async function gatherFacts(): Promise<Record<string, number | string>> {
+  // Velocity's own numbers; a customer's desk has none of ours, and none of theirs yet.
+  if (!isHouse()) return {};
   const [counters, commission, driversApproved, tripsLast7] = await Promise.all([
     db.doc('system/counters').get(),
     db.doc('config/commissionSettings').get(),

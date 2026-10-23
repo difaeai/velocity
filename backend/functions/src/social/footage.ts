@@ -33,6 +33,7 @@ import { logger } from 'firebase-functions';
 
 import { db, storage } from '../lib/firebase';
 import { geminiReady, geminiSpeech } from './gemini';
+import { wsPath } from './workspace';
 
 /** Where the admin's libraries live in the bucket. */
 export const MUSIC_FOLDER = 'socialMusic/';
@@ -177,7 +178,7 @@ async function library(folder: string) {
 
 /** Up to `count` of our own clips for this piece, downloaded into `dir`. */
 async function ownClips(postId: string, count: number, dir: string): Promise<string[]> {
-  const picked = rotate(await library(CLIPS_FOLDER), postId, count);
+  const picked = rotate(await library(wsPath(CLIPS_FOLDER)), postId, count);
   const paths: string[] = [];
   for (const [i, clip] of picked.entries()) {
     const out = path.join(dir, `own-${i}${path.extname(clip.name)}`);
@@ -189,7 +190,7 @@ async function ownClips(postId: string, count: number, dir: string): Promise<str
 
 /** The library track for this piece, downloaded into `dir`; the shared starter tracks when ours is empty. */
 async function libraryTrack(postId: string, dir: string): Promise<{ path: string; name: string } | null> {
-  const own = await library(MUSIC_FOLDER);
+  const own = await library(wsPath(MUSIC_FOLDER));
   const [track] = rotate(own.length ? own : await library(SHARED_MUSIC_FOLDER), postId, 1);
   if (!track) return null;
   const out = path.join(dir, `music${path.extname(track.name)}`);

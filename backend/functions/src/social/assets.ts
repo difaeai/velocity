@@ -17,6 +17,7 @@ import { logger } from 'firebase-functions';
 
 import { storage } from '../lib/firebase';
 import type { MediaAsset } from './types';
+import { wsPath } from './workspace';
 
 /** Long enough that a post retried days later still has a working link. */
 export const URL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -30,7 +31,7 @@ export interface StoredFile {
 
 /** One folder per post keeps a five-slide carousel from littering the bucket. */
 export function postFolder(postId: string): string {
-  return `social/${postId}`;
+  return wsPath(`social/${postId}`);
 }
 
 export async function storeFile(params: {

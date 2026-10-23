@@ -15,13 +15,13 @@
  * Without a model there is no strategy to think up, so the local version is the
  * rotation laid out over the month — honest about being a rotation.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
-import { BRAND, researchBlock, systemFor } from './crew';
+import { deskCall, sdb } from './workspace';
+
+import { brandBlock, researchBlock, systemFor } from './crew';
 import { activeTeam, assign } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { getSocialSettings } from './settings';
@@ -52,7 +52,7 @@ export interface MonthPlan {
   sales: string[];
 }
 
-export const planRef = (month: string) => db.doc(`socialPlans/${month}`);
+export const planRef = (month: string) => sdb.doc(`socialPlans/${month}`);
 
 /** Every date in `YYYY-MM`, in order. */
 export function daysOf(month: string): string[] {
@@ -177,7 +177,7 @@ export async function planMonth(month: string, research: ContentResearch | null 
     by = lead.employee.name;
     const { data } = await generateJson<Record<string, unknown>>({
       model: settings.textModel,
-      system: [systemFor(lead.employee, settings), BRAND, TASK(month, perDay)].join('\n\n'),
+      system: [systemFor(lead.employee, settings), brandBlock(), TASK(month, perDay)].join('\n\n'),
       what: 'The month plan',
       prompt: [`Month: ${month}. Today: ${new Date().toISOString().slice(0, 10)}.`, researchBlock(research)]
         .filter(Boolean)
@@ -202,18 +202,17 @@ export async function plannedSlots(date: string): Promise<PlannedSlot[]> {
 export async function ensureMonthPlan(month: string): Promise<void> {
   if ((await planRef(month).get()).exists) return;
   try {
-    const latest = await db.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
+    const latest = await sdb.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
     await planMonth(month, latest.empty ? null : (latest.docs[0].data() as ContentResearch));
   } catch (e) {
     logger.warn('social: could not plan the month; the rotation carries on', { month, message: (e as Error).message });
   }
 }
 
-export const adminPlanSocialMonth = onCall({ timeoutSeconds: 300, memory: '1GiB' }, async (req) => {
-  requireAdmin(req);
+export const adminPlanSocialMonth = deskCall('content', { timeoutSeconds: 300, memory: '1GiB' }, async (req) => {
   const parsed = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Pass the month as YYYY-MM.');
-  const latest = await db.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
+  const latest = await sdb.collection('socialResearch').orderBy('date', 'desc').limit(1).get();
   try {
     const plan = await planMonth(parsed.data.month, latest.empty ? null : (latest.docs[0].data() as ContentResearch));
     return { ok: true, days: Object.keys(plan.days).length };

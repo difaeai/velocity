@@ -129,6 +129,8 @@ export interface StillPaths {
   textFiles: string[];
   displayFont: string;
   bodyFont: string;
+  /** The brand line at the foot, as a file; absent means Velocity's own. */
+  wordmarkFile?: string;
 }
 
 /** The card as one ffmpeg filter graph. Pure, like `filterGraph` in reel.ts. */
@@ -172,7 +174,9 @@ export function stillGraph(card: StillCard, paths: StillPaths): string {
   }
 
   push(
-    `drawtext=fontfile='${escapeArg(paths.bodyFont)}':text='VELOCITY RIDES':fontcolor=${PAPER}@0.55:` +
+    `drawtext=fontfile='${escapeArg(paths.bodyFont)}':` +
+      (paths.wordmarkFile ? `textfile='${escapeArg(paths.wordmarkFile)}'` : `text='VELOCITY RIDES'`) +
+      `:fontcolor=${PAPER}@0.55:` +
       `fontsize=34:x=${SIDE}:y=${BAND[card.aspect].bottom + 30}`,
   );
 
@@ -182,7 +186,7 @@ export function stillGraph(card: StillCard, paths: StillPaths): string {
 }
 
 /** Render one card to JPEG bytes — the only format Instagram publishes. */
-export async function renderStill(card: StillCard, opts: { ffmpeg?: string } = {}): Promise<Buffer> {
+export async function renderStill(card: StillCard, opts: { ffmpeg?: string; wordmark?: string } = {}): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-still-'));
   try {
     const lines = [...card.headline.lines, ...(card.body?.lines ?? [])];
@@ -192,6 +196,8 @@ export async function renderStill(card: StillCard, opts: { ffmpeg?: string } = {
       await writeFile(file, line, 'utf8');
       textFiles.push(file);
     }
+    const wordmarkFile = opts.wordmark ? path.join(dir, 'wordmark.txt') : undefined;
+    if (wordmarkFile) await writeFile(wordmarkFile, opts.wordmark as string, 'utf8');
 
     const graphFile = path.join(dir, 'graph.txt');
     await writeFile(
@@ -200,6 +206,7 @@ export async function renderStill(card: StillCard, opts: { ffmpeg?: string } = {
         textFiles,
         displayFont: path.join(fontDir(), 'Outfit-Black.ttf'),
         bodyFont: path.join(fontDir(), 'WorkSans-SemiBold.ttf'),
+        wordmarkFile,
       }),
       'utf8',
     );

@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   SOCIAL_FORMATS,
@@ -56,6 +57,7 @@ const STATUS_DOT: Record<string, string> = {
 type Slot = SocialMonthPlan['days'][string][number];
 
 export default function CalendarPage() {
+  const { path } = useWorkspace();
   const today = todayPkt();
   const [cursor, setCursor] = useState(() => today.slice(0, 7)); // YYYY-MM
   /** Keyed by date, because one date can now hold several pieces. */
@@ -72,7 +74,7 @@ export default function CalendarPage() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(120)),
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(120)),
         (snap) => {
           const next: Record<string, SocialPostDoc[]> = {};
           snap.docs.forEach((d) => {
@@ -83,22 +85,22 @@ export default function CalendarPage() {
         },
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        doc(db, 'socialPlans', cursor),
+        doc(db, path(`socialPlans/${cursor}`)),
         (snap) => setPlan(snap.exists() ? (snap.data() as SocialMonthPlan) : null),
         () => setPlan(null),
       ),
-    [cursor],
+    [cursor, path],
   );
 
   useEffect(() => {
     socialApi.getSettings({}).then((r) => setSettings(r.settings)).catch(() => undefined);
-  }, []);
+  }, [path]);
 
   const cells = useMemo(() => buildMonth(cursor), [cursor]);
   const monthLabel = new Date(`${cursor}-01T00:00:00Z`).toLocaleDateString('en-GB', {

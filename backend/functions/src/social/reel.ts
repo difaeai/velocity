@@ -277,6 +277,8 @@ export interface GraphPaths {
   textFiles: string[][];
   displayFont: string;
   bodyFont: string;
+  /** The brand line at the foot, as a file; absent means Velocity's own. */
+  wordmarkFile?: string;
 }
 
 /**
@@ -424,7 +426,8 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
   // The wordmark, low and small, inside the safe zone the whole way through.
   steps.push(
     `[${last}]drawtext=fontfile='${escapeArg(paths.bodyFont)}':` +
-      `text='VELOCITY RIDES':fontcolor=${PAPER}@0.55:fontsize=34:` +
+      (paths.wordmarkFile ? `textfile='${escapeArg(paths.wordmarkFile)}'` : `text='VELOCITY RIDES'`) +
+      `:fontcolor=${PAPER}@0.55:fontsize=34:` +
       `x=${SAFE.side}:y=${SAFE.bottom - 56}[out]`,
   );
 
@@ -477,6 +480,8 @@ export async function renderReel(
     localClips?: string[];
     music?: string | null;
     voice?: { path: string; seconds: number } | null;
+    /** The brand line at the foot; absent means Velocity's own. */
+    wordmark?: string;
   } = {},
 ): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-reel-'));
@@ -498,11 +503,14 @@ export async function renderReel(
     const found = opts.localClips ?? [];
     const clips = found.length ? plan.beats.map((_, i) => found[i % found.length]) : [];
     const images = clips.length ? [] : (opts.localImages ?? []);
+    const wordmarkFile = opts.wordmark ? path.join(dir, 'wordmark.txt') : undefined;
+    if (wordmarkFile) await writeFile(wordmarkFile, opts.wordmark as string, 'utf8');
     const voice = opts.voice ? { tempo: voiceTempo(opts.voice.seconds, plan.seconds) } : null;
     const graph = filterGraph({ ...plan, images, clips, voice }, {
       textFiles,
       displayFont: path.join(fontDir(), 'Outfit-Black.ttf'),
       bodyFont: path.join(fontDir(), 'WorkSans-SemiBold.ttf'),
+      wordmarkFile,
     });
 
     // The graph is long and full of commas, colons and quotes. A script file

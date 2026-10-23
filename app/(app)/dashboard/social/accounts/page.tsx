@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   socialApi,
@@ -30,6 +31,7 @@ import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/sh
 import { InstagramConnect } from '@/components/social/instagramConnect';
 
 export default function AccountsPage() {
+  const { path } = useWorkspace();
   const [schema, setSchema] = useState<ConnectSchema | null>(null);
   const [accounts, setAccounts] = useState<Record<string, SocialAccountDoc>>({});
   const [openFor, setOpenFor] = useState<SocialPlatform | null>(null);
@@ -45,7 +47,7 @@ export default function AccountsPage() {
   useEffect(
     () =>
       onSnapshot(
-        collection(db, 'socialAccounts'),
+        collection(db, path('socialAccounts')),
         (snap) => {
           const next: Record<string, SocialAccountDoc> = {};
           snap.docs.forEach((d) => {
@@ -55,7 +57,7 @@ export default function AccountsPage() {
         },
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   return (

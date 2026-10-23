@@ -42,7 +42,8 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { requireAdmin, requireAuth } from '../lib/guards';
+import { currentWorkspace, deskCall, sdb } from './workspace';
 import { connectVerifiedAccount } from './accounts';
 import { open, seal, tokenVaultReady, type SealedSecret } from './secrets';
 
@@ -158,8 +159,7 @@ function redirectUri(): string {
 // ── what the console needs to draw the button ───────────────────────────────
 
 /** Can this desk run a one-click connect at all, and if not, what is missing? */
-export const adminGetMetaConnectState = onCall(async (req) => {
-  requireAdmin(req);
+export const adminGetMetaConnectState = deskCall('any', async () => {
   const app = await metaApp();
   return {
     ready: Boolean(app) && tokenVaultReady(),
@@ -221,8 +221,7 @@ export const adminSetMetaApp = onCall(async (req) => {
 // ── the three steps of a connect ────────────────────────────────────────────
 
 /** Step one: where to send the admin, and the one-time state that comes back. */
-export const adminStartMetaConnect = onCall(async (req) => {
-  requireAdmin(req);
+export const adminStartMetaConnect = deskCall('any', async (req) => {
   const ads = (req.data as { ads?: unknown } | undefined)?.ads === true;
   const app = await metaApp();
   if (!app) {
@@ -235,6 +234,8 @@ export const adminStartMetaConnect = onCall(async (req) => {
   const state = randomBytes(24).toString('base64url');
   await stateRef(state).set({
     uid: req.auth?.uid ?? null,
+    // The connect lands in the workspace it started from, never another.
+    wid: currentWorkspace(),
     createdAt: FieldValue.serverTimestamp(),
     expiresAt: Timestamp.fromMillis(Date.now() + STATE_TTL_MS),
     stage: 'started',
@@ -274,8 +275,8 @@ interface PageChoice {
  * returned, because the console has no business holding one even for the
  * seconds between this call and the next.
  */
-export const adminFinishMetaConnect = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminFinishMetaConnect = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({ code: z.string().min(10).max(2000), state: z.string().min(10).max(200) })
     .safeParse(req.data);
@@ -286,7 +287,7 @@ export const adminFinishMetaConnect = onCall(async (req) => {
 
   const snap = await stateRef(parsed.data.state).get();
   const state = snap.data();
-  if (!snap.exists || state?.uid !== ctx.uid) {
+  if (!snap.exists || state?.uid !== ctx.uid || (state?.wid ?? 'velocity') !== currentWorkspace()) {
     throw new HttpsError('permission-denied', 'That sign-in did not start here. Press Connect again.');
   }
   const expiresAtMs = (state.expiresAt as Timestamp | undefined)?.toMillis() ?? 0;
@@ -392,8 +393,8 @@ export const adminFinishMetaConnect = onCall(async (req) => {
  * audited and proved against the live API in exactly the same way, and there is
  * no second code path to keep in step.
  */
-export const adminChooseMetaPage = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminChooseMetaPage = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({
       state: z.string().min(10).max(200),
@@ -405,7 +406,7 @@ export const adminChooseMetaPage = onCall(async (req) => {
 
   const snap = await stateRef(parsed.data.state).get();
   const data = snap.data();
-  if (!snap.exists || data?.uid !== ctx.uid || data?.stage !== 'granted') {
+  if (!snap.exists || data?.uid !== ctx.uid || data?.stage !== 'granted' || (data?.wid ?? 'velocity') !== currentWorkspace()) {
     throw new HttpsError('permission-denied', 'That sign-in is no longer valid. Press Connect again.');
   }
 
@@ -459,7 +460,7 @@ export const adminChooseMetaPage = onCall(async (req) => {
     await db
       .batch()
       .set(
-        db.doc('system/socialAds'),
+        sdb.doc('system/socialAds'),
         {
           adAccountId: account.id,
           accountName: account.name ?? account.id,
@@ -475,7 +476,7 @@ export const adminChooseMetaPage = onCall(async (req) => {
         },
         { merge: true },
       )
-      .set(db.doc('system/socialAds/secret/credentials'), {
+      .set(sdb.doc('system/socialAds/secret/credentials'), {
         token: seal(userToken),
         updatedAt: FieldValue.serverTimestamp(),
       })

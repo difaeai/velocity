@@ -22,7 +22,7 @@
  */
 import { logger } from 'firebase-functions';
 
-import { feedbackBlock, planBlock, systemFor } from './crew';
+import { feedbackBlock, marketName, planBlock, systemFor } from './crew';
 import { generateJson, modelReady } from './engine';
 import { localAdPlan, localSearchPack, localSeoPack } from './local';
 import {
@@ -249,7 +249,7 @@ export async function adPass(params: {
 
 You are writing the brief for one YouTube campaign built around one finished video. A human runs it; you do not have an account and you must not pretend to.
 
-Be concrete about Pakistan: name real cities, real audience segments, and realistic daily budgets in PKR for a growing app rather than a multinational. The first five seconds are the whole job on a skippable ad, so your hook variants are five-second openings, not slogans.
+Be concrete about ${marketName()}: name real cities, real audience segments, and realistic daily budgets in the local currency for a growing business rather than a multinational. The first five seconds are the whole job on a skippable ad, so your hook variants are five-second openings, not slogans.
 
 Reply with one JSON object and nothing else:
 {

@@ -735,6 +735,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- workspaces/{wid} — Velocity Studio customers ---------------------
+    // A customer's whole desk lives under its workspace, in the same shapes as
+    // Velocity's own desk at the root. The owner's token carries `ws` (set only
+    // by the backend at sign-up), and that claim is the only way in. Direct
+    // children are readable — posts, plans, settings, campaigns, leads — but
+    // nothing deeper: the sealed tokens sit at .../secret/credentials, two
+    // levels down, and no rule here reaches them. Every write is a callable.
+    match /workspaces/{wid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.token.ws == wid);
+      allow write: if false;
+      match /{collectionId}/{docId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.token.ws == wid);
+        allow write: if false;
+      }
+    }
+
+    // ----- studioPayments/{id} ----------------------------------------------
+    // A customer's "I paid" — a transaction ID or a screenshot — waiting for an
+    // admin. The customer sees their own; the money decision is a callable.
+    match /studioPayments/{paymentId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.wid == request.auth.token.ws);
+      allow write: if false;
+    }
+
+    // ----- studioTxnRefs/{key} ----------------------------------------------
+    // One row per transaction ID ever sent, so it can buy one month once.
+    match /studioTxnRefs/{key} {
+      allow read, write: if false;
+    }
+
     // ----- platformLedger/{id} ----------------------------------------------
     // Realized platform revenue (ride commissions, subscription payments).
     // Written only by the backend inside money transactions; admin-readable.

@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
+import type { StudioPlanId } from './studio';
 
 /**
  * The Firebase callable serializer encodes `undefined` object values as `null`
@@ -1672,6 +1673,47 @@ export interface MetaPageChoice {
   followers: number | null;
   avatarUrl: string | null;
 }
+
+/** A customer's "I paid", waiting for an admin, at `studioPayments/{id}`. */
+export interface StudioPaymentDoc {
+  id: string;
+  wid: string;
+  uid: string;
+  business: string;
+  email: string | null;
+  plan: StudioPlanId;
+  amountUsd: number;
+  txnId: string | null;
+  screenshotPath: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAtMs: number;
+  decidedAtMs: number | null;
+  note: string | null;
+}
+
+/** Velocity Studio: sign-up, paying, and the admin's decision on a payment. */
+export const studioApi = {
+  createWorkspace: callable<
+    {
+      businessName: string;
+      website?: string;
+      what: string;
+      audience: string;
+      market: string;
+      language: string;
+      differences?: string;
+      plan: StudioPlanId;
+    },
+    { ok: boolean; workspaceId: string; trialEndsAtMs: number }
+  >('studioCreateWorkspace'),
+  submitPayment: callable<
+    { plan: StudioPlanId; txnId?: string; screenshotPath?: string },
+    { ok: boolean; paymentId: string }
+  >('studioSubmitPayment'),
+  decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
+    'adminDecideStudioPayment',
+  ),
+};
 
 export const socialApi = {
   connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),

@@ -19,6 +19,7 @@ import { deleteObject, listAll, ref, uploadBytes } from 'firebase/storage';
 
 import { colors } from '@/lib/config';
 import { storage } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import {
   SOCIAL_FORMATS,
   SOCIAL_PLATFORMS,
@@ -33,6 +34,7 @@ import { Button, Card } from '@/components/ui';
 import { FORMAT_META, PLATFORM_META, PlatformBadge, Readiness } from '@/components/social/shared';
 
 export default function AutomationPage() {
+  const { path } = useWorkspace();
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [readiness, setReadiness] = useState<SocialReadiness | null>(null);
   const [staffed, setStaffed] = useState(0);
@@ -249,7 +251,7 @@ export default function AutomationPage() {
       </Card>
 
       <Library
-        folder="socialMusic"
+        folder={path('socialMusic')}
         title="Reel music"
         accept="audio/*"
         maxMb={30}
@@ -267,7 +269,7 @@ export default function AutomationPage() {
       />
 
       <Library
-        folder="socialClips"
+        folder={path('socialClips')}
         title="Our clips"
         accept="video/*"
         maxMb={60}

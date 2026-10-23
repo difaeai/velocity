@@ -27,11 +27,12 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { BRAND } from './crew';
+import { brandBlock, marketName } from './crew';
 import { extractJson } from './engine';
 import { GeminiError, geminiReady, geminiText } from './gemini';
 import { ffmpegPath, runFfmpeg } from './reel';
 import type { ReferenceRead, SocialSettings } from './types';
+import { isHouse } from './workspace';
 
 /** Three minutes is past any reel; the rest of a long video costs tokens and teaches nothing. */
 const MAX_SECONDS = 180;
@@ -43,11 +44,13 @@ export class ReferenceError extends Error {
   }
 }
 
-const TASK = `You have a video and Google Search. Watch the whole video first — what is shown, what is said, the words on screen — and then search.
+const TASK = (): string => `You have a video and Google Search. Watch the whole video first — what is shown, what is said, the words on screen — and then search.
 
 The person wants a piece of ours made like this one. Find what makes it work so the team can do the same for our audience: the hook, the structure, the pacing, the look and the sound. Copy the structure, never the content: the original's footage, faces, logo, music and exact words belong to whoever made it.
 
-Then search: is this kind of video or topic travelling in Pakistan right now, who is making it, and how it lands with people who commute, share rides or travel between cities. Report what you found; if the search finds little, say so rather than filling the field.
+Then search: is this kind of video or topic travelling in ${marketName()} right now, who is making it, and how it lands with ${
+  isHouse() ? 'people who commute, share rides or travel between cities' : 'the people this business sells to'
+}. Report what you found; if the search finds little, say so rather than filling the field.
 
 Reply with one JSON object and nothing else:
 {
@@ -149,10 +152,10 @@ export async function watchReference(params: {
   const ask = (grounded: boolean) =>
     geminiText({
       model: params.settings.textModel,
-      system: [BRAND, TASK].join('\n\n'),
+      system: [brandBlock(), TASK()].join('\n\n'),
       prompt: grounded
-        ? `Date: ${params.date}. Market: Pakistan. Watch the video, search, then answer.`
-        : `Date: ${params.date}. Market: Pakistan. Search is not available this time: watch the video and answer, and set "market" to "Could not search the market alongside the video." rather than guessing.`,
+        ? `Date: ${params.date}. Market: ${marketName()}. Watch the video, search, then answer.`
+        : `Date: ${params.date}. Market: ${marketName()}. Search is not available this time: watch the video and answer, and set "market" to "Could not search the market alongside the video." rather than guessing.`,
       grounded,
       video,
     });

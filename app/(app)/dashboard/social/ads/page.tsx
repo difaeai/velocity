@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   adsApi,
@@ -42,6 +43,7 @@ import { GRADE_META, adMoney, campaignState, tone } from '@/components/social/ad
 const DAY_MS = 86_400_000;
 
 export default function AdsPage() {
+  const { path } = useWorkspace();
   const [cfg, setCfg] = useState<AdsConfigDoc | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
@@ -54,46 +56,46 @@ export default function AdsPage() {
   useEffect(
     () =>
       onSnapshot(
-        doc(db, 'system', 'socialAds'),
+        doc(db, path('system/socialAds')),
         (snap) => {
           setCfg(snap.exists() ? (snap.data() as AdsConfigDoc) : null);
           setLoaded(true);
         },
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        collection(db, 'socialAds'),
+        collection(db, path('socialAds')),
         (snap) => setCampaigns(snap.docs.map((d) => ({ ...(d.data() as AdCampaignDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(30)),
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(30)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         () => undefined,
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
-      onSnapshot(collection(db, 'socialEmployees'), (snap) => {
+      onSnapshot(collection(db, path('socialEmployees')), (snap) => {
         const people = snap.docs.map((d) => d.data() as SocialEmployee).filter((e) => e.status === 'active');
         setManager(
           (people.find((e) => e.role === 'social-manager') ?? people.find((e) => e.role === 'youtube-ads-expert'))
             ?.name ?? null,
         );
       }),
-    [],
+    [path],
   );
 
   // The clock, subscribed to rather than read in render.
@@ -518,6 +520,7 @@ function PlanCard({
 
 /** This week across the account, against what things cost here. */
 function Account({ cfg }: { cfg: AdsConfigDoc }) {
+  const { house } = useWorkspace();
   const a = cfg.account!;
   const w = a.week;
   const b = a.bench ?? undefined;
@@ -550,18 +553,23 @@ function Account({ cfg }: { cfg: AdsConfigDoc }) {
           hint="above 3.5 they stop noticing"
           colour={w.frequency > 3.5 ? colors.danger : colors.text}
         />
-        <Tile
-          label="Cost per order"
-          value={bl?.orders && w.spend ? adMoney(bl.costPerOrder, cur) : '—'}
-          hint={bl ? `${bl.orders.toLocaleString('en-PK')} completed rides, all riders` : 'rides not read yet'}
-          colour={colors.text}
-        />
-        <Tile
-          label="ROAS · return on ad spend"
-          value={bl?.roas != null ? `${bl.roas.toFixed(2)}×` : '—'}
-          hint={bl ? `${adMoney(bl.commission, 'PKR')} commission ÷ spend · 1.0 = break-even` : 'rides not read yet'}
-          colour={bl?.roas == null ? colors.text : bl.roas >= 1 ? colors.success : colors.danger}
-        />
+        {/* Velocity's rides only: a Studio customer's orders happen where we cannot see them. */}
+        {house ? (
+          <>
+            <Tile
+              label="Cost per order"
+              value={bl?.orders && w.spend ? adMoney(bl.costPerOrder, cur) : '—'}
+              hint={bl ? `${bl.orders.toLocaleString('en-PK')} completed rides, all riders` : 'rides not read yet'}
+              colour={colors.text}
+            />
+            <Tile
+              label="ROAS · return on ad spend"
+              value={bl?.roas != null ? `${bl.roas.toFixed(2)}×` : '—'}
+              hint={bl ? `${adMoney(bl.commission, 'PKR')} commission ÷ spend · 1.0 = break-even` : 'rides not read yet'}
+              colour={bl?.roas == null ? colors.text : bl.roas >= 1 ? colors.success : colors.danger}
+            />
+          </>
+        ) : null}
       </div>
 
       {cfg.review ? (
@@ -764,11 +772,11 @@ const NUMBERS: [name: string, formula: string, meaning: string][] = [
   ['CPC — cost per click', 'spend ÷ link clicks = CPM ÷ (CTR × 10)', 'What one visitor costs. It falls when the auction gets cheaper or the ad gets better.'],
   ['Frequency — seen per person', 'impressions ÷ reach', 'Above about 3.5 the same people stop noticing — change the picture before adding money.'],
   ['Cost per result', 'spend ÷ the campaign’s own result', 'Per click for traffic, per engagement for engagement, per 1,000 people reached for awareness.'],
-  ['Cost per order', 'spend ÷ completed rides', 'What the ads cost for each ride taken.'],
+  ['Cost per order', 'spend ÷ orders', 'What the ads cost for each order (for Velocity, each completed ride).'],
   [
     'ROAS — return on ad spend',
-    'commission ÷ spend',
-    'Velocity earns its commission, not the fare. 1.0 means the ads paid for themselves; under 1 they cost more than the rides earned.',
+    'revenue kept ÷ spend',
+    'What the business keeps, not the price paid — for Velocity, its commission, not the fare. 1.0 means the ads paid for themselves; under 1 they cost more than the orders earned.',
   ],
 ];
 
@@ -789,9 +797,10 @@ function NumbersGuide() {
           ))}
         </div>
         <p style={{ margin: '14px 0 0', fontSize: 12.5, color: colors.muted, lineHeight: 1.55 }}>
-          Cost per order and ROAS are <strong>blended</strong>: Meta can&apos;t see a ride booked in the app, so they set every
-          ride completed in the last 7 days, riders who came on their own included, against the same 7 days of ad spend.
-          Watch them for the trend over weeks. They can&apos;t tell you which campaign brought a ride.
+          Cost per order and ROAS are <strong>blended</strong>: Meta can&apos;t see an order made outside it (for Velocity, a
+          ride booked in the app), so they set every order in the last 7 days, customers who came on their own included,
+          against the same 7 days of ad spend. Watch them for the trend over weeks. They can&apos;t tell you which campaign
+          brought an order.
         </p>
       </details>
     </Card>

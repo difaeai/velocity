@@ -12,11 +12,12 @@
  * job. Direction for one *person* is not here — it lives on that employee's own
  * record, because it should follow them and disappear when they do.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { FieldValue } from '../lib/firebase';
+import { requireAuth } from '../lib/guards';
+import { deskCall, sdb } from './workspace';
 import { activeTeam, coverageGaps } from './employees';
 import { activeEngine } from './engine';
 import { tokenVaultReady } from './secrets';
@@ -32,7 +33,7 @@ import {
 const SETTINGS_PATH = 'system/socialAutomation';
 
 export async function getSocialSettings(): Promise<SocialSettings> {
-  const snap = await db.doc(SETTINGS_PATH).get();
+  const snap = await sdb.doc(SETTINGS_PATH).get();
   const stored = (snap.data() as Partial<SocialSettings> | undefined) ?? {};
   return {
     ...DEFAULT_SETTINGS,
@@ -45,7 +46,7 @@ export async function getSocialSettings(): Promise<SocialSettings> {
 }
 
 export async function recordRun(status: string): Promise<void> {
-  await db.doc(SETTINGS_PATH).set(
+  await sdb.doc(SETTINGS_PATH).set(
     { lastRunAtMs: Date.now(), lastRunStatus: status.slice(0, 300) },
     { merge: true },
   );
@@ -55,7 +56,7 @@ export async function recordRun(status: string): Promise<void> {
 export async function nextAngle(settings: SocialSettings): Promise<string> {
   const angles = settings.angles.length ? settings.angles : DEFAULT_SETTINGS.angles;
   const index = (settings.lastAngleIndex + 1) % angles.length;
-  await db.doc(SETTINGS_PATH).set({ lastAngleIndex: index }, { merge: true });
+  await sdb.doc(SETTINGS_PATH).set({ lastAngleIndex: index }, { merge: true });
   return angles[index];
 }
 
@@ -63,7 +64,7 @@ export async function nextAngle(settings: SocialSettings): Promise<string> {
 export async function nextFormat(settings: SocialSettings): Promise<ContentFormat> {
   const formats = settings.formats.length ? settings.formats : DEFAULT_SETTINGS.formats;
   const index = (settings.lastFormatIndex + 1) % formats.length;
-  await db.doc(SETTINGS_PATH).set({ lastFormatIndex: index }, { merge: true });
+  await sdb.doc(SETTINGS_PATH).set({ lastFormatIndex: index }, { merge: true });
   return formats[index];
 }
 
@@ -107,8 +108,7 @@ const settingsSchema = z.object({
   autoReply: z.boolean().optional(),
 });
 
-export const adminGetSocialSettings = onCall(async (req) => {
-  requireAdmin(req);
+export const adminGetSocialSettings = deskCall('any', async () => {
   const settings = await getSocialSettings();
   return {
     settings,
@@ -136,8 +136,8 @@ export const adminGetSocialSettings = onCall(async (req) => {
   };
 });
 
-export const adminUpdateSocialSettings = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminUpdateSocialSettings = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = settingsSchema.safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid settings.');
 
@@ -168,7 +168,7 @@ export const adminUpdateSocialSettings = onCall(async (req) => {
     }
   }
 
-  await db.doc(SETTINGS_PATH).set(
+  await sdb.doc(SETTINGS_PATH).set(
     { ...parsed.data, updatedAt: FieldValue.serverTimestamp(), updatedBy: ctx.uid },
     { merge: true },
   );
