@@ -38,6 +38,7 @@ import { Button, Card } from '@/components/ui';
 import { FORMAT_META, PlatformBadge, PLATFORM_META, StatusPill, longDate } from '@/components/social/shared';
 import { Blockers, readBlockers } from '@/components/social/blockers';
 import { adMoney } from '@/components/social/ads';
+import { LaunchSequence, localHourLabel } from '@/components/social/launch';
 import {
   AgentGrid,
   DASH_CSS,
@@ -62,7 +63,7 @@ const PLACEHOLDER: Record<Want, string> = {
 };
 
 export default function SocialOverview() {
-  const { path } = useWorkspace();
+  const { path, house } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -115,8 +116,9 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        // Two weeks at a few pieces a day: enough for the boxes and the weekly count.
-        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(40)),
+        // Two weeks at a few pieces a day, on top of up to a month made ahead —
+        // which sorts first by date and would otherwise push this week out.
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(80)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
@@ -239,7 +241,7 @@ export default function SocialOverview() {
         : { enabled: false },
       (s) =>
         on
-          ? `The desk is on. It works every day at ${hour(s.runHour)} PKT${
+          ? `The desk is on. It works every day at ${localHourLabel(s.runHour)} your time${
               s.autoPublish ? ' and posts what it makes directly.' : ', and everything it makes waits for your Approve.'
             }`
           : 'The desk is paused. Nothing will be made until you start it again, or ask for something above.',
@@ -306,6 +308,9 @@ export default function SocialOverview() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+
+      {/* a Studio workspace's first days: market read → content → posting → funnel → close */}
+      {!house ? <LaunchSequence settings={settings} /> : null}
 
       {/* what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
@@ -433,7 +438,7 @@ export default function SocialOverview() {
 
               <p style={{ fontSize: 13, color: colors.text, margin: '0 0 12px', lineHeight: 1.55 }}>
                 {running
-                  ? `Every day at ${hour(settings.runHour)} PKT it makes ${pieces(settings.postsPerDay)}${
+                  ? `Every day at ${localHourLabel(settings.runHour)} your time it makes ${pieces(settings.postsPerDay)}${
                       settings.dailyStory ? ' and a story' : ''
                     }, makes the pictures and videos, answers comments and measures the page.`
                   : `Start it and from ${nextRunWhenStarted(settings.runHour, nowMs)} it makes ${pieces(
@@ -462,7 +467,7 @@ export default function SocialOverview() {
                 {nextRun ? (
                   <Row
                     label="Next run"
-                    value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${hour(settings.runHour)}`}
+                    value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${localHourLabel(settings.runHour)}`}
                   />
                 ) : null}
                 <Row
@@ -883,8 +888,6 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
-
 const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
 
 /**
@@ -892,9 +895,9 @@ const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
  * the hour is still ahead, "tomorrow" once it has passed.
  */
 function nextRunWhenStarted(runHour: number, nowMs: number): string {
-  if (nowMs === 0) return `${hour(runHour)} PKT`;
+  if (nowMs === 0) return localHourLabel(runHour);
   const nowPkt = new Date(nowMs + 5 * 3600_000);
-  return `${nowPkt.getUTCHours() < runHour ? 'today' : 'tomorrow'} at ${hour(runHour)} PKT`;
+  return `${nowPkt.getUTCHours() < runHour ? 'today' : 'tomorrow'} at ${localHourLabel(runHour)}`;
 }
 
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };

@@ -7,12 +7,13 @@
  * daily cap. Or, in "find & write only", stop after writing: the customer copies
  * the email or opens it in their own mail app.
  *
- * What it deliberately does not do yet:
- * - follow-ups. One email per prospect. Without reading the inbox there is no
- *   safe way to stop a sequence when someone replies, and a follow-up to a
- *   person who already said no is the thing that gets a domain blacklisted.
- * - read replies. They land in the customer's own inbox; the lead is marked
- *   replied / won / lost / opted out by hand.
+ * And then the close (`inbox.ts`): in mailbox mode it reads the same mailbox
+ * for replies. A reply stops everything automatic for that lead and gets an
+ * answer drafted for the owner to send; "no" and "stop" close the lead. A lead
+ * that has not answered gets two short follow-ups in the same thread — only in
+ * a pass whose inbox read worked, because a follow-up to someone who already
+ * said no is the thing that gets a domain blacklisted. Won and lost are still
+ * the owner's call.
  *
  * Everything lives in the caller's workspace (`sdb`), and every callable needs
  * the `sales` part of a plan (Everything).
@@ -31,8 +32,9 @@ import { getSocialSettings } from '../social/settings';
 import { open, seal, tokenVaultReady, type SealedSecret } from '../social/secrets';
 import { deskCall, forEachWorkspace, sdb, workspaceBrand } from '../social/workspace';
 import { findBySearch, findOnMap, type FoundBusiness } from './find';
+import { followUpDue, imapHostFor, readReplies, type LeadRef } from './inbox';
 import { fetchPage, readSite } from './site';
-import { draftEmail, withFooter, type Seller } from './write';
+import { answerReply, draftEmail, draftFollowUp, withFooter, type Draft, type Seller } from './write';
 
 const REGION = 'asia-south1';
 const SETTINGS = 'system/sales';
@@ -60,6 +62,12 @@ interface SalesSettings {
   dailyCap: number;
   smtp: { host: string; port: number; user: string; from: string } | null;
   autoDaily: boolean;
+  /** Two follow-ups to a lead that has not answered — only ever after the inbox was read. */
+  followUps: boolean;
+  /** The mailbox's IMAP server; empty means the one that goes with the SMTP server. */
+  imapHost: string;
+  inboxCheckedAtMs: number;
+  inboxStatus: string | null;
   sentDay: string;
   sentCount: number;
   lastAutoDay: string;
@@ -79,11 +87,37 @@ const DEFAULTS: SalesSettings = {
   dailyCap: 20,
   smtp: null,
   autoDaily: true,
+  followUps: true,
+  imapHost: '',
+  inboxCheckedAtMs: 0,
+  inboxStatus: null,
   sentDay: '',
   sentCount: 0,
   lastAutoDay: '',
   lastStatus: null,
 };
+
+/** A lead as stored, with the close: the thread we started and what came back. */
+interface LeadDoc {
+  name: string;
+  website: string | null;
+  email: string | null;
+  title: string;
+  description: string;
+  signals: string[];
+  status: LeadStatus;
+  draft: Draft | null;
+  sentAtMs: number | null;
+  /** Message-ID of the first email: what a follow-up threads under. */
+  messageId?: string | null;
+  /** Every Message-ID we sent them, for matching a reply to its thread. */
+  threadIds?: string[];
+  followUps?: number;
+  lastSentAtMs?: number | null;
+  reply?: { atMs: number; text: string; messageId: string; intent: string } | null;
+  replyDraft?: Draft | null;
+  answeredAtMs?: number | null;
+}
 
 async function getSales(): Promise<SalesSettings> {
   const stored = ((await sdb.doc(SETTINGS).get()).data() ?? {}) as Partial<SalesSettings>;
@@ -224,27 +258,58 @@ async function writeFor(ids: string[] | null, max: number): Promise<number> {
   return written;
 }
 
+/** The mailbox password, opened from the vault; null when none is stored. */
+async function mailboxPassword(): Promise<string | null> {
+  const secret = (await sdb.doc(SECRET).get()).data() as { pass?: SealedSecret } | undefined;
+  return secret?.pass ? open(secret.pass) : null;
+}
+
+/** One email from the owner's mailbox; the Message-ID it went out under. */
+async function sendOne(
+  s: SalesSettings,
+  pass: string,
+  mail: { to: string; subject: string; body: string; inReplyTo?: string; references?: string[] },
+): Promise<string> {
+  const smtp = s.smtp!;
+  const info = await nodemailer
+    .createTransport({ host: smtp.host, port: smtp.port, secure: smtp.port === 465, auth: { user: smtp.user, pass } })
+    .sendMail({
+      from: { name: s.senderName || s.senderCompany, address: smtp.from },
+      to: mail.to,
+      subject: mail.subject,
+      text: withFooter(mail.body, s),
+      headers: { 'List-Unsubscribe': `<mailto:${smtp.from}?subject=unsubscribe>` },
+      ...(mail.inReplyTo ? { inReplyTo: mail.inReplyTo, references: mail.references ?? [mail.inReplyTo] } : {}),
+    });
+  return String(info.messageId ?? '');
+}
+
+/** How many more emails may go today, and the bookkeeping to call after sending some. */
+function dayRoom(s: SalesSettings): { room: number; record: (n: number) => Promise<void> } {
+  const today = pktDay();
+  const sentToday = s.sentDay === today ? s.sentCount : 0;
+  return {
+    room: Math.max(0, s.dailyCap - sentToday),
+    record: async (n) => {
+      if (n) await sdb.doc(SETTINGS).set({ sentDay: today, sentCount: sentToday + n }, { merge: true });
+    },
+  };
+}
+
 /** Send approved emails within today's cap. Returns how many went. */
 async function sendApproved(): Promise<number> {
   const s = await getSales();
   if (s.mode !== 'mailbox' || !s.smtp) return 0;
-  const today = pktDay();
-  const sentToday = s.sentDay === today ? s.sentCount : 0;
-  const room = Math.min(PER_PASS, s.dailyCap - sentToday);
+  const day = dayRoom(s);
+  const room = Math.min(PER_PASS, day.room);
   if (room <= 0) return 0;
-  const secret = (await sdb.doc(SECRET).get()).data() as { pass?: SealedSecret } | undefined;
-  if (!secret?.pass) return 0;
-  const transport = nodemailer.createTransport({
-    host: s.smtp.host,
-    port: s.smtp.port,
-    secure: s.smtp.port === 465,
-    auth: { user: s.smtp.user, pass: open(secret.pass) },
-  });
+  const pass = await mailboxPassword();
+  if (!pass) return 0;
 
   const due = (await sdb.collection(LEADS).where('status', '==', 'approved').limit(room).get()).docs;
   let sent = 0;
   for (const doc of due) {
-    const lead = doc.data() as { email: string | null; draft: { subject: string; body: string } | null };
+    const lead = doc.data() as LeadDoc;
     if (!lead.email || !lead.draft) {
       await doc.ref.update({ status: 'failed' as LeadStatus, error: 'No address or no email to send.' });
       continue;
@@ -254,21 +319,147 @@ async function sendApproved(): Promise<number> {
       continue;
     }
     try {
-      await transport.sendMail({
-        from: { name: s.senderName || s.senderCompany, address: s.smtp.from },
-        to: lead.email,
-        subject: lead.draft.subject,
-        text: withFooter(lead.draft.body, s),
-        headers: { 'List-Unsubscribe': `<mailto:${s.smtp.from}?subject=unsubscribe>` },
+      const messageId = await sendOne(s, pass, { to: lead.email, subject: lead.draft.subject, body: lead.draft.body });
+      await doc.ref.update({
+        status: 'sent' as LeadStatus,
+        sentAtMs: Date.now(),
+        lastSentAtMs: Date.now(),
+        messageId: messageId || null,
+        threadIds: messageId ? [messageId] : [],
+        followUps: 0,
+        error: null,
       });
-      await doc.ref.update({ status: 'sent' as LeadStatus, sentAtMs: Date.now(), error: null });
       sent++;
     } catch (e) {
       await doc.ref.update({ status: 'failed' as LeadStatus, error: `Sending failed: ${(e as Error).message}`.slice(0, 200) });
     }
   }
-  if (sent) await sdb.doc(SETTINGS).set({ sentDay: today, sentCount: sentToday + sent }, { merge: true });
+  await day.record(sent);
   return sent;
+}
+
+/**
+ * Read the mailbox for replies to the leads we wrote to. A reply stops
+ * everything automatic for that lead and gets an answer drafted for the owner;
+ * "no" and "stop" close it, and "stop" keeps the address off every list.
+ * `ok` is what lets follow-ups go in the same pass.
+ */
+async function checkInbox(s: SalesSettings): Promise<{ ok: boolean; replies: number }> {
+  if (s.mode !== 'mailbox' || !s.smtp) return { ok: false, replies: 0 };
+  const pass = await mailboxPassword();
+  if (!pass) return { ok: false, replies: 0 };
+  const waiting = (await sdb.collection(LEADS).where('status', '==', 'sent').limit(300).get()).docs;
+  const leads: LeadRef[] = waiting
+    .map((d) => ({ id: d.id, ...(d.data() as LeadDoc) }))
+    .filter((l) => l.email)
+    .map((l) => ({ id: l.id, email: l.email!, threadIds: l.threadIds ?? (l.messageId ? [l.messageId] : []) }));
+  const startedAtMs = Date.now();
+  if (!leads.length) {
+    await sdb.doc(SETTINGS).set({ inboxCheckedAtMs: startedAtMs }, { merge: true });
+    return { ok: true, replies: 0 };
+  }
+
+  let replies;
+  try {
+    replies = await readReplies({
+      host: s.imapHost || imapHostFor(s.smtp.host),
+      user: s.smtp.user,
+      pass,
+      // A day of overlap, because IMAP's SINCE is a date, not a moment; two weeks at most.
+      sinceMs: Math.max(s.inboxCheckedAtMs - 86_400_000, startedAtMs - 14 * 86_400_000),
+      leads,
+    });
+  } catch (e) {
+    await sdb.doc(SETTINGS).set({ inboxStatus: `Could not read the inbox: ${(e as Error).message}`.slice(0, 300) }, { merge: true });
+    return { ok: false, replies: 0 };
+  }
+
+  const settings = await getSocialSettings();
+  let answered = 0;
+  for (const reply of replies) {
+    const ref = sdb.doc(`${LEADS}/${reply.leadId}`);
+    const lead = (await ref.get()).data() as LeadDoc | undefined;
+    if (!lead || lead.status !== 'sent') continue; // already handled, or closed by hand
+    answered++;
+    let intent = 'other';
+    let draft: Draft | null = null;
+    try {
+      const out = await answerReply({ model: settings.textModel, seller: seller(s), lead, ours: lead.draft ?? { subject: '', body: '' }, theirs: reply.text });
+      intent = out.intent;
+      if (out.body) draft = { subject: /^re:/i.test(lead.draft?.subject ?? '') ? lead.draft!.subject : `Re: ${lead.draft?.subject ?? ''}`.trim(), body: out.body };
+    } catch (e) {
+      logger.warn('sales: could not draft an answer', { lead: reply.leadId, message: (e as Error).message });
+    }
+    const closed = intent === 'not_interested' || intent === 'unsubscribe';
+    if (intent === 'unsubscribe' && lead.email) await sdb.doc(`${SUPPRESS}/${emailKey(lead.email)}`).set({ atMs: Date.now() });
+    await ref.update({
+      status: (closed ? 'lost' : 'replied') as LeadStatus,
+      reply: { atMs: reply.atMs, text: reply.text, messageId: reply.messageId, intent },
+      replyDraft: draft,
+      error: closed ? (intent === 'unsubscribe' ? 'Asked not to be written to.' : 'Said no.') : null,
+    });
+  }
+  await sdb.doc(SETTINGS).set({ inboxCheckedAtMs: startedAtMs, inboxStatus: null }, { merge: true });
+  return { ok: true, replies: answered };
+}
+
+/** Two follow-ups at most to a lead that has not answered, within today's cap. Returns how many went. */
+async function sendFollowUps(s: SalesSettings): Promise<number> {
+  if (!s.followUps || s.mode !== 'mailbox' || !s.smtp) return 0;
+  const day = dayRoom(s);
+  const room = Math.min(PER_PASS, day.room);
+  if (room <= 0) return 0;
+  const pass = await mailboxPassword();
+  if (!pass) return 0;
+  const settings = await getSocialSettings();
+  const now = Date.now();
+  const due = (await sdb.collection(LEADS).where('status', '==', 'sent').limit(300).get()).docs
+    .map((d) => ({ ref: d.ref, lead: d.data() as LeadDoc, n: followUpDue(d.data() as LeadDoc, now) }))
+    .filter((x) => x.n !== null && x.lead.email && x.lead.draft)
+    .slice(0, room);
+
+  let sent = 0;
+  for (const { ref, lead, n } of due) {
+    if ((await sdb.doc(`${SUPPRESS}/${emailKey(lead.email!)}`).get()).exists) continue;
+    try {
+      const d = await draftFollowUp({ model: settings.textModel, seller: seller(s), lead, first: lead.draft!, n: n! });
+      // A follow-up the checks failed is not sent: the lead simply waits for the next pass.
+      if (d.problems.length) continue;
+      const messageId = await sendOne(s, pass, {
+        to: lead.email!,
+        subject: d.subject,
+        body: d.body,
+        inReplyTo: lead.messageId!,
+        references: lead.threadIds ?? [lead.messageId!],
+      });
+      await ref.update({
+        followUps: n,
+        lastSentAtMs: Date.now(),
+        ...(messageId ? { threadIds: FieldValue.arrayUnion(messageId) } : {}),
+      });
+      sent++;
+    } catch (e) {
+      logger.warn('sales: a follow-up failed', { message: (e as Error).message });
+    }
+  }
+  await day.record(sent);
+  return sent;
+}
+
+/** What the launch sequence needs to know about the sales agent. */
+export async function salesReadiness(): Promise<{ mailbox: boolean; kinds: number; city: string }> {
+  const s = await getSales();
+  return { mailbox: s.mode === 'mailbox' && Boolean(s.smtp), kinds: s.kinds.length, city: s.city };
+}
+
+/** Fill the sales agent's empty settings from the launch funnel — never over anything the owner wrote. */
+export async function seedSales(p: { offer: string; kinds: string[]; city: string }): Promise<void> {
+  const stored = ((await sdb.doc(SETTINGS).get()).data() ?? {}) as Partial<SalesSettings>;
+  const patch: Partial<SalesSettings> = {};
+  if (!stored.offer && p.offer) patch.offer = p.offer.slice(0, 600);
+  if (!stored.kinds?.length && p.kinds.length) patch.kinds = p.kinds.slice(0, 8).map((k) => k.slice(0, 40));
+  if (!stored.city && p.city) patch.city = p.city.slice(0, 80);
+  if (Object.keys(patch).length) await sdb.doc(SETTINGS).set(patch, { merge: true });
 }
 
 // ── callables ───────────────────────────────────────────────────────────────
@@ -285,6 +476,8 @@ const settingsSchema = z.object({
   sendMode: z.enum(['approve', 'direct']).optional(),
   dailyCap: z.number().int().min(1).max(50).optional(),
   autoDaily: z.boolean().optional(),
+  followUps: z.boolean().optional(),
+  imapHost: z.string().trim().max(120).regex(/^([a-z0-9.-]+)?$/i).optional(),
   smtp: z
     .object({
       host: z.string().trim().min(3).max(120).regex(/^[a-z0-9.-]+$/i),
@@ -377,7 +570,7 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
   const parsed = z
     .object({
       leadId: z.string().regex(/^[a-f0-9]{20}$/),
-      action: z.enum(['approve', 'send', 'sent', 'skip', 'replied', 'won', 'lost', 'optout', 'edit']),
+      action: z.enum(['approve', 'send', 'sent', 'skip', 'replied', 'won', 'lost', 'optout', 'edit', 'editReply', 'sendReply']),
       subject: z.string().trim().min(1).max(120).optional(),
       body: z.string().trim().min(10).max(2000).optional(),
     })
@@ -385,12 +578,34 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { leadId: id, action, subject, body } = parsed.data;
   const ref = sdb.doc(`${LEADS}/${id}`);
-  const lead = (await ref.get()).data() as { email: string | null; draft: { subject: string; body: string } | null } | undefined;
+  const lead = (await ref.get()).data() as LeadDoc | undefined;
   if (!lead) throw new HttpsError('not-found', 'No such lead.');
 
-  if (action === 'edit') {
+  if (action === 'edit' || action === 'editReply') {
     if (!subject || !body) throw new HttpsError('invalid-argument', 'A subject and a body are both needed.');
-    await ref.update({ draft: { subject, body }, problems: [] });
+    await ref.update(action === 'edit' ? { draft: { subject, body }, problems: [] } : { replyDraft: { subject, body } });
+    return { ok: true };
+  }
+  // The answer to someone who wrote back: always pressed by the owner, never sent by the sweep.
+  if (action === 'sendReply') {
+    const s = await getSales();
+    const pass = await mailboxPassword();
+    if (s.mode !== 'mailbox' || !s.smtp || !pass) {
+      throw new HttpsError('failed-precondition', 'Connect the mailbox on this page to send from here — or copy the answer into your own email.');
+    }
+    if (!lead.email || !lead.replyDraft) throw new HttpsError('failed-precondition', 'There is no drafted answer to send.');
+    const thread = [...(lead.threadIds ?? []), lead.reply?.messageId].filter((t): t is string => Boolean(t));
+    try {
+      await sendOne(s, pass, {
+        to: lead.email,
+        subject: lead.replyDraft.subject,
+        body: lead.replyDraft.body,
+        ...(lead.reply?.messageId ? { inReplyTo: lead.reply.messageId, references: thread } : {}),
+      });
+    } catch (e) {
+      throw new HttpsError('unavailable', `The mailbox refused it: ${(e as Error).message}`);
+    }
+    await ref.update({ answeredAtMs: Date.now() });
     return { ok: true };
   }
   if (action === 'optout') {
@@ -411,9 +626,10 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
 });
 
 /**
- * Every 15 minutes, per workspace with the sales agent: send what is approved
- * within the day's cap — and once a day, find and write for the next kind of
- * business on the list, so the pipeline fills itself.
+ * Every 15 minutes, per workspace with the sales agent: read the replies, send
+ * what is approved and the follow-ups that are due, within the day's cap — and
+ * once a day, find and write for the next kind of business on the list, so the
+ * pipeline fills itself.
  */
 export const salesSweep = onSchedule(
   { schedule: 'every 15 minutes', region: REGION, timeoutSeconds: 540, memory: '512MiB' },
@@ -430,11 +646,24 @@ export const salesSweep = onSchedule(
         const written = await writeFor(null, 10).catch(() => 0);
         notes.push(`Found ${found.added} new ${kind} in ${s.city}, wrote ${written}.`);
       }
+      // Replies first: whoever answered must be off the follow-up list before it is read.
+      const inbox = await checkInbox(s).catch((e) => {
+        logger.warn('sales: the inbox check failed', { message: (e as Error).message });
+        return { ok: false, replies: 0 };
+      });
+      if (inbox.replies) notes.push(`${inbox.replies} replied — answers drafted.`);
       const sent = await sendApproved().catch((e) => {
         logger.warn('sales: sending failed', { message: (e as Error).message });
         return 0;
       });
       if (sent) notes.push(`Sent ${sent}.`);
+      if (inbox.ok) {
+        const followed = await sendFollowUps(await getSales()).catch((e) => {
+          logger.warn('sales: follow-ups failed', { message: (e as Error).message });
+          return 0;
+        });
+        if (followed) notes.push(`Followed up ${followed}.`);
+      }
       if (notes.length) await sdb.doc(SETTINGS).set({ lastStatus: `${today}: ${notes.join(' ')}` }, { merge: true });
     }),
 );

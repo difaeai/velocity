@@ -95,7 +95,7 @@ describe('whose desk a call reaches', () => {
 
   it('refuses what the plan does not include', async () => {
     const wid = await signUp('content');
-    await expect(deskWorkspace(asUser({}, OWNER, { ws: wid }), 'ads')).rejects.toThrow(/does not include the ads expert/);
+    await expect(deskWorkspace(asUser({}, OWNER, { ws: wid }), 'ads')).rejects.toThrow(/does not include the Meta Ad Expert/);
   });
 
   it('refuses everything once the trial is over and nothing is paid', async () => {

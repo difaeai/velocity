@@ -109,10 +109,30 @@ export default function SalesPage() {
           <p style={{ color: colors.muted, margin: 0, lineHeight: 1.55 }}>
             Finds businesses that could buy from you, reads their websites, and writes each one a short, personal email.{' '}
             {mailbox
-              ? `It sends from ${settings.smtp!.from} — ${sentToday} of ${settings.dailyCap} today.`
-              : 'You send each one yourself, from your own email.'}
+              ? `It sends from ${settings.smtp!.from} — ${sentToday} of ${settings.dailyCap} today — reads the replies, follows up twice when nobody answers, and drafts your answer to everyone who writes back.`
+              : 'You send each one yourself, from your own email. Connect your mailbox in Settings and it also follows up and answers replies.'}
           </p>
           {settings.lastStatus ? <p style={{ fontSize: 12.5, color: colors.muted, margin: '6px 0 0' }}>Last run: {settings.lastStatus}</p> : null}
+          {mailbox ? (
+            <p style={{ fontSize: 12.5, color: settings.inboxStatus ? colors.danger : colors.muted, margin: '4px 0 0', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              {settings.inboxStatus ??
+                (settings.inboxCheckedAtMs ? `Inbox read ${new Date(settings.inboxCheckedAtMs).toLocaleString()}.` : 'The inbox is read every 15 minutes.')}
+              <button
+                type="button"
+                style={pill}
+                disabled={busy !== null}
+                onClick={() =>
+                  run('followups', async () => {
+                    const res = await salesApi.saveSettings({ followUps: !settings.followUps });
+                    setSettings(res.settings);
+                    return res.settings.followUps ? 'Follow-ups are on: two, three and seven days after the first email.' : 'Follow-ups are off.';
+                  })
+                }
+              >
+                Follow-ups: {settings.followUps ? 'on' : 'off'}
+              </button>
+            </p>
+          ) : null}
         </div>
         {setUp ? (
           <Button variant="ghost" onClick={() => setShowSetup(!showSetup)}>
@@ -507,6 +527,10 @@ function LeadBox({
         </span>
       )}
       {lead.error ? <span style={{ fontSize: 12, color: colors.danger }}>{lead.error}</span> : null}
+      {lead.status === 'sent' && lead.followUps ? (
+        <span style={{ fontSize: 12, color: colors.muted }}>Followed up {lead.followUps} of 2 times — no answer yet.</span>
+      ) : null}
+      {lead.reply ? <ReplyBox lead={lead} mailbox={mailbox} onError={onError} /> : null}
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {lead.draft && ['drafted', 'failed', 'approved'].includes(lead.status) ? (
@@ -575,6 +599,63 @@ function LeadBox({
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * They wrote back: what they said, and the answer the agent drafted — sent
+ * only when you press Send, because it speaks to a real person about a real deal.
+ */
+function ReplyBox({ lead, mailbox, onError }: { lead: SalesLeadDoc; mailbox: boolean; onError: (m: string) => void }) {
+  const [subject, setSubject] = useState(lead.replyDraft?.subject ?? '');
+  const [body, setBody] = useState(lead.replyDraft?.body ?? '');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const reply = lead.reply!;
+  const edited = lead.replyDraft && (subject !== lead.replyDraft.subject || body !== lead.replyDraft.body);
+
+  async function send() {
+    setBusy(true);
+    try {
+      if (edited) await salesApi.leadAction({ leadId: lead.id, action: 'editReply', subject, body });
+      await salesApi.leadAction({ leadId: lead.id, action: 'sendReply' });
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'That did not send.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8, padding: 10, borderRadius: 10, background: `${colors.success}0d`, border: `1px solid ${colors.success}33` }}>
+      <span style={{ fontSize: 11.5, fontWeight: 900, color: colors.success, textTransform: 'uppercase' }}>
+        They wrote back · {new Date(reply.atMs).toLocaleString()} · {reply.intent.replace('_', ' ')}
+      </span>
+      <span style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto' }}>{reply.text}</span>
+      {lead.replyDraft ? (
+        <>
+          <span style={{ fontSize: 11.5, fontWeight: 900, color: colors.muted, textTransform: 'uppercase' }}>
+            {lead.answeredAtMs ? `Answered ${new Date(lead.answeredAtMs).toLocaleString()}` : 'Your answer — check it, then send'}
+          </span>
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} style={{ ...input, fontWeight: 700 }} aria-label="Answer subject" />
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ ...input, minHeight: 110, lineHeight: 1.5 }} aria-label="Answer" />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {mailbox ? (
+              <Button onClick={send} disabled={busy || body.trim().length < 10}>
+                {busy ? 'Sending…' : lead.answeredAtMs ? 'Send again' : 'Send the answer'}
+              </Button>
+            ) : null}
+            <button
+              type="button"
+              style={pill}
+              onClick={() => void navigator.clipboard.writeText(`${subject}\n\n${body}`).then(() => setCopied(true))}
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

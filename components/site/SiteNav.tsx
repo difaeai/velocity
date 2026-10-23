@@ -7,14 +7,7 @@ import { InstallButton } from './InstallButton';
 import { VelocityMark } from '@/components/BrandMark';
 import styles from './site.module.css';
 
-const LINKS = [
-  { href: '#how', label: 'How it works' },
-  { href: '#services', label: 'Services' },
-  { href: '#app', label: 'The app' },
-  { href: '#earn', label: 'Earn' },
-  { href: '#safety', label: 'Safety' },
-  { href: '/studio', label: 'Velocity Studio' },
-];
+export type NavLink = { href: string; label: string };
 
 /**
  * The nav no longer takes a store URL.
@@ -23,8 +16,11 @@ const LINKS = [
  * only place to get the app. Now that both stores are live the button has to
  * pick one per visitor, and that decision belongs in InstallButton — passing a
  * URL in would just mean the nav hard-codes the wrong store for iPhone users.
+ *
+ * It does take its links: the homepage (Velocity Studio) and the ride app's
+ * page each point at their own sections.
  */
-export function SiteNav() {
+export function SiteNav({ links }: { links: NavLink[] }) {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [open, setOpen] = useState(false);
@@ -76,7 +72,7 @@ export function SiteNav() {
           </a>
 
           <div className={styles.navLinks}>
-            {LINKS.map((l) => (
+            {links.map((l) => (
               <a key={l.href} className={styles.navLink} href={l.href}>
                 {l.label}
               </a>
@@ -101,7 +97,7 @@ export function SiteNav() {
 
         {open ? (
           <div className={styles.mobileMenu} id={menuId}>
-            {LINKS.map((l) => (
+            {links.map((l) => (
               <a key={l.href} className={styles.navLink} href={l.href} onClick={() => setOpen(false)}>
                 {l.label}
               </a>

@@ -164,6 +164,31 @@ export function postIdFor(date: string, format: ContentFormat): string {
 }
 
 /**
+ * When a piece for `date` goes out: that Pakistan day at the desk's hour.
+ *
+ * A piece made weeks ahead is approved weeks ahead, and "approved means it goes
+ * out" would post the whole month the afternoon it was read. So a piece
+ * approved before its own day is marked `scheduled`, and the sweep holds it
+ * until this moment — worked out from the hour as it is then, so moving the
+ * posting time moves the month. A piece approved on its day or later goes at
+ * once, exactly as it always did.
+ */
+export function dueAtMs(date: string, runHour: number): number {
+  return Date.parse(`${date}T00:00:00Z`) - 5 * 3600_000 + runHour * 3600_000;
+}
+
+/** Approved before its own Pakistan day, so it waits for that day's hour. */
+export const isAhead = (date: string, nowMs = Date.now()): boolean => date > dayKey(nowMs);
+
+/** The month plan's slot as the brief and angle a piece is made from. */
+function fromSlot(slot: PlannedSlot): { angle?: string; brief: { text: string; by: string } } {
+  return {
+    angle: slot.pillar.length >= 2 ? slot.pillar : undefined,
+    brief: { text: `${slot.topic}${slot.hook ? ` — open with: ${slot.hook}` : ''}`, by: 'The month plan' },
+  };
+}
+
+/**
  * Whether a finished piece may go out with nobody having read it.
  *
  * A one-line rule, pulled out as a function because of what it decides: this is
@@ -289,7 +314,10 @@ async function runTeam(params: {
     await patch(params.id, { status: 'researching' as PostStatus });
     facts = await gatherFacts();
     const researcher = await who('research');
-    research = await runResearch({ settings, date: params.date, employee: researcher });
+    // Today's read, whatever day the piece is for: a piece made a fortnight
+    // ahead is written in front of this week's market, and keying the search
+    // to its own date would pay for one grounded search per day of the month.
+    research = await runResearch({ settings, date: dayKey(Date.now()), employee: researcher });
     await patch(params.id, { facts, research });
     if (researcher) {
       await done(
@@ -634,6 +662,18 @@ async function runTeam(params: {
     if (publishWhenDone) {
       logger.info('social: holding a locally written piece for approval', { id: params.id });
     }
+    return;
+  }
+
+  // Made ahead for a later day: approved now, posted on its own day at the
+  // desk's hour by the sweep — not the moment it happens to be finished.
+  if (isAhead(params.date)) {
+    await patch(params.id, {
+      status: 'ready' as PostStatus,
+      approvedBy: 'auto',
+      publishQueuedAtMs: Date.now(),
+      scheduled: true,
+    });
     return;
   }
 
@@ -1086,16 +1126,7 @@ async function runDaily(date: string): Promise<string> {
     const id = postIdFor(date, format);
     if ((await postRef(id).get()).exists) return;
     try {
-      await createPost({
-        date,
-        format,
-        ...(slot
-          ? {
-              angle: slot.pillar.length >= 2 ? slot.pillar : undefined,
-              brief: { text: `${slot.topic}${slot.hook ? ` — open with: ${slot.hook}` : ''}`, by: 'The month plan' },
-            }
-          : {}),
-      });
+      await createPost({ date, format, ...(slot ? fromSlot(slot) : {}) });
       made.push(format);
     } catch (e) {
       logger.error('social: a scheduled piece failed', { date, format, message: (e as Error).message });
@@ -1146,7 +1177,15 @@ async function daily(): Promise<void> {
     if (!settings.enabled) return;
 
     const nowPkt = new Date(Date.now() + 5 * 3600_000);
-    if (nowPkt.getUTCHours() !== settings.runHour) return;
+    if (nowPkt.getUTCHours() !== settings.runHour) {
+      // Every other hour the desk works ahead on the calendar, one piece at a time.
+      if (settings.makeAheadDays > 0) {
+        await makeAhead(settings).catch((e) =>
+          logger.error('social: making ahead failed', { message: (e as Error).message }),
+        );
+      }
+      return;
+    }
 
     if (!(await activeTeam()).length) {
       await recordRun('Skipped: nobody is on the team. Hire someone on the Employees page.');
@@ -1174,6 +1213,31 @@ async function daily(): Promise<void> {
       logger.error('social: daily run failed', { date, message });
       await recordRun(`Failed: ${message}`);
     }
+}
+
+/**
+ * Make the earliest planned piece in the next `makeAheadDays` that the
+ * calendar does not have yet — one per call, so a month fills over a day or two
+ * of hourly ticks instead of in one burst against the model's quota.
+ *
+ * Only planned slots, never the story: a story is about today and is made on
+ * the day. A piece that fails keeps its id, so the next tick moves past it
+ * instead of retrying it forever; the calendar shows it red to remake.
+ */
+// shortcut: one piece per workspace per hour; with many Studio customers on the shared free model, slow this further or move it to a job queue.
+async function makeAhead(settings: SocialSettings): Promise<void> {
+  if (!(await activeTeam()).length) return;
+  const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
+  for (let i = 1; i <= settings.makeAheadDays; i++) {
+    const date = dayKey(Date.now() + i * 86_400_000);
+    // The window crosses into next month long before the 1st's own run would plan it.
+    await ensureMonthPlan(date.slice(0, 7));
+    for (const slot of (await plannedSlots(date)).slice(0, wanted)) {
+      if ((await postRef(postIdFor(date, slot.format)).get()).exists) continue;
+      await createPost({ date, format: slot.format, ...fromSlot(slot) });
+      return;
+    }
+  }
 }
 
 /** A written piece still missing its picture or video, with automatic tries left. */
@@ -1220,11 +1284,12 @@ export const socialPublishSweep = onSchedule(
 
 /** One workspace's pass: make missing media, free stuck pieces, post what was approved. */
 async function sweep(): Promise<void> {
+    const settings = await getSocialSettings();
     // A picture or video the run could not make is made here, so nobody has to
     // press for it. Recent pieces only, two a pass (a reel takes a minute), and
     // `needsMedia` stops after three tries. Before the posting below, so an
     // approved piece that was missing its file goes out in the same pass.
-    if ((await getSocialSettings()).autoRenderVideo) {
+    if (settings.autoRenderVideo) {
       const recent = await sdb
         .collection('socialPosts')
         .where('date', '>=', dayKey(Date.now() - 3 * 86_400_000))
@@ -1241,15 +1306,18 @@ async function sweep(): Promise<void> {
     }
 
     const MAKING: PostStatus[] = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'];
+    // Room for a month approved ahead (all `ready`, waiting for their days) on
+    // top of whatever is stuck, so the stuck ones are never crowded out.
     const snap = await sdb
       .collection('socialPosts')
       .where('status', 'in', ['ready', 'publishing', ...MAKING])
-      .limit(30)
+      .limit(100)
       .get();
     for (const doc of snap.docs) {
       const post = doc.data() as SocialPost & {
         publishingSinceMs?: number;
         publishQueuedAtMs?: number;
+        scheduled?: boolean;
         updatedAt?: { toMillis(): number };
       };
 
@@ -1277,7 +1345,11 @@ async function sweep(): Promise<void> {
         continue;
       }
 
-      if (!post.publishQueuedAtMs || Date.now() - post.publishQueuedAtMs > 24 * 3600_000) continue;
+      // Approved, and — for one approved ahead — its day and hour have come.
+      // More than a day late is left for a person.
+      if (!post.publishQueuedAtMs) continue;
+      const due = post.scheduled ? dueAtMs(post.date, settings.runHour) : post.publishQueuedAtMs;
+      if (Date.now() < due || Date.now() - due > 24 * 3600_000) continue;
       try {
         await publishPost(doc.id);
       } catch (e) {
@@ -1564,18 +1636,27 @@ export const adminReviewSocialPost = deskCall('content',
       return { ok: true, status: 'rejected' };
     }
 
+    const post = (await postRef(postId).get()).data() as SocialPost | undefined;
+    if (!post) throw new HttpsError('not-found', 'No such post.');
+    const ahead = isAhead(post.date);
+
     // Approved means it goes out. `publishQueuedAtMs` is what the sweep below
     // looks for, so a piece approved without "now" — or whose tab was closed
     // mid-post — is still posted within minutes rather than sitting in `ready`.
+    // One for a later day is held for that day's hour (`scheduled`).
     await patch(postId, {
       status: 'ready' as PostStatus,
       approvedBy: ctx.uid,
       publishQueuedAtMs: Date.now(),
+      scheduled: ahead,
       error: null,
       ...(caption !== undefined ? { caption } : {}),
       ...(targets ? { targets } : {}),
     });
 
+    if (ahead) {
+      return { ok: true, status: 'scheduled', dueAtMs: dueAtMs(post.date, (await getSocialSettings()).runHour) };
+    }
     if (!publishNow) return { ok: true, status: 'ready' };
 
     const { published, failed } = await publishPost(postId, targets);

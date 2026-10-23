@@ -1283,8 +1283,11 @@ export interface SocialBrief {
 
 export interface SocialSettings {
   enabled: boolean;
+  /** Pakistan hour the team starts — and the hour a piece made ahead goes out on its day. */
   runHour: number;
   postsPerDay: number;
+  /** Days ahead the calendar is kept made; 0 makes each day on the day. */
+  makeAheadDays: number;
   /** A story every day on top of the rotation, rather than a turn at a slot. */
   dailyStory: boolean;
   platforms: SocialPlatform[];
@@ -1411,6 +1414,71 @@ export interface SocialMonthPlan {
   sales: string[];
 }
 
+// ── The launch sequence ─────────────────────────────────────────────────────
+// A new Studio workspace's first days, at `socialLaunch/*`. Mirrors
+// backend/functions/src/social/launch.ts and market.ts.
+
+export type LaunchStepId = 'market' | 'content' | 'execute' | 'funnel' | 'close';
+export const LAUNCH_STEPS: LaunchStepId[] = ['market', 'content', 'execute', 'funnel', 'close'];
+export type LaunchStepStatus = 'waiting' | 'working' | 'done' | 'needs_you' | 'failed' | 'skipped';
+
+/** `socialLaunch/state` */
+export interface LaunchStateDoc {
+  startedAtMs: number;
+  knowledge: string;
+  links: string[];
+  steps: Record<LaunchStepId, { status: LaunchStepStatus; atMs: number | null; note: string | null }>;
+}
+
+export interface AudiencePersona {
+  name: string;
+  who: string;
+  reaction: string;
+  wouldBuy: 'yes' | 'maybe' | 'no';
+  objection: string;
+  wouldShare: boolean;
+}
+
+/** `socialLaunch/market` */
+export interface MarketAnalysisDoc {
+  atMs: number;
+  engine: string;
+  grounded: boolean;
+  summary: string;
+  segments: { who: string; wants: string }[];
+  competitors: { name: string; url: string; knownFor: string }[];
+  positioning: string;
+  opportunities: string[];
+  risks: string[];
+  channels: string[];
+  offers: string[];
+  fromLinks: { url: string; takeaway: string }[];
+  test: {
+    verdict: 'go' | 'adjust' | 'not_yet';
+    score: number;
+    offer: string;
+    panel: AudiencePersona[];
+    objections: string[];
+    bestHook: string;
+    changes: string[];
+  } | null;
+  sources: { title: string; url: string }[];
+}
+
+/** `socialLaunch/funnel` */
+export interface FunnelPlanDoc {
+  atMs: number;
+  offer: string;
+  cta: string;
+  landing: string;
+  stages: { stage: string; how: string }[];
+  adBrief: string;
+  salesKinds: string[];
+  salesCity: string;
+  openingLine: string;
+  campaignId: string | null;
+}
+
 /** What the team saw in a video it was asked to make something like. Mirrors `ReferenceRead`. */
 export interface SocialReferenceRead {
   atMs: number;
@@ -1473,6 +1541,8 @@ export interface SocialPostDoc {
   autoPublish?: boolean | null;
   /** When it was approved to go out; the five-minute sweep posts it from here. */
   publishQueuedAtMs?: number;
+  /** Approved before its own day: goes out on that day at the desk's hour. */
+  scheduled?: boolean;
   publishingSinceMs?: number;
   team?: SocialTeamMemberRef[];
   work?: Partial<Record<SocialStage, SocialWorkEntry>>;
@@ -1711,6 +1781,14 @@ export interface SalesLeadDoc {
   createdAtMs: number;
   sentAtMs: number | null;
   error: string | null;
+  /** Follow-ups sent so far (two at most), in the first email's thread. */
+  followUps?: number;
+  lastSentAtMs?: number | null;
+  /** What they wrote back, read from the mailbox. */
+  reply?: { atMs: number; text: string; messageId: string; intent: string } | null;
+  /** The answer the agent drafted for it — sent only when the owner presses Send. */
+  replyDraft?: { subject: string; body: string } | null;
+  answeredAtMs?: number | null;
 }
 
 export interface SalesSettingsDoc {
@@ -1726,6 +1804,12 @@ export interface SalesSettingsDoc {
   dailyCap: number;
   smtp: { host: string; port: number; user: string; from: string } | null;
   autoDaily: boolean;
+  /** Two follow-ups to a lead that has not answered — only ever after the inbox was read. */
+  followUps: boolean;
+  /** The mailbox's IMAP server; empty means the one that goes with the SMTP server. */
+  imapHost: string;
+  inboxCheckedAtMs: number;
+  inboxStatus: string | null;
   sentDay: string;
   sentCount: number;
   lastStatus: string | null;
@@ -1752,7 +1836,7 @@ export const salesApi = {
   leadAction: callable<
     {
       leadId: string;
-      action: 'approve' | 'send' | 'sent' | 'skip' | 'replied' | 'won' | 'lost' | 'optout' | 'edit';
+      action: 'approve' | 'send' | 'sent' | 'skip' | 'replied' | 'won' | 'lost' | 'optout' | 'edit' | 'editReply' | 'sendReply';
       subject?: string;
       body?: string;
     },
@@ -1851,6 +1935,17 @@ export const socialApi = {
   ),
   /** Have the team (re)write the month's strategy. Read the result from `socialPlans/{month}`. */
   planMonth: callable<{ month: string }, { ok: boolean; days: number }>('adminPlanSocialMonth', LONG_CALL_MS),
+  /** Change one planned day's topic before the team makes it. */
+  editPlanSlot: callable<
+    { date: string; format: SocialFormat; topic: string; hook?: string },
+    { ok: boolean }
+  >('adminEditPlanSlot'),
+  /**
+   * The launch sequence's first box: save what the owner knows and their links,
+   * read the market (and run the audience test), then carry on down the
+   * sequence. Progress is read live from `socialLaunch/state`.
+   */
+  launchMarket: callable<{ knowledge?: string; links?: string[] }, { ok: boolean }>('adminLaunchMarket', 10 * 60_000),
 
   /**
    * Put the team on a piece. `brief` is what it should be about, in your own
@@ -1883,7 +1978,8 @@ export const socialApi = {
       targets?: SocialPlatform[];
       publishNow?: boolean;
     },
-    { ok: boolean; status?: string; published?: number; failed?: number }
+    /** `scheduled` (with `dueAtMs`) for a piece approved before its own day. */
+    { ok: boolean; status?: string; published?: number; failed?: number; dueAtMs?: number }
   >('adminReviewSocialPost', LONG_CALL_MS),
   publish: callable<
     { postId: string; platforms?: SocialPlatform[] },
@@ -1925,6 +2021,13 @@ export interface AdMetrics {
   cpm: number;
   results: number;
   costPerResult: number;
+  /** Sales, leads, chats, sign-ups or installs Meta could see; absent on reads before 2026-10-23. */
+  conversions?: number;
+  conversionKind?: 'purchase' | 'lead' | 'message' | 'signup' | 'install' | null;
+  conversionValue?: number;
+  costPerConversion?: number;
+  /** Worth ÷ spend; null when nothing says what a conversion is worth. */
+  roas?: number | null;
 }
 
 export interface AdBand {
@@ -1988,6 +2091,8 @@ export interface AdsConfigDoc {
   dailyCap: number;
   maxDays: number;
   link: string;
+  /** What one sale or lead is worth to the owner — prices conversions Meta cannot value. 0 = not said. */
+  valuePerConversion?: number;
   lastSyncAtMs: number | null;
   lastSyncStatus: string | null;
   review: { atMs: number; summary: string; moves: string[]; engine: string } | null;
@@ -2028,6 +2133,11 @@ export interface AdCampaignDoc {
   budgetNote?: string | null;
   engine?: string;
   plannedBy?: string;
+  /** Fresh creatives the expert has made for it, and when it last did. */
+  refreshes?: number;
+  lastRefreshMs?: number | null;
+  /** The old ad a fresh creative replaces, until Meta approves the new one. */
+  retireAdId?: string | null;
   autoActions?: { atMs: number; kind: string; detail: string }[];
   manualActions?: { atMs: number; by: string; action: string; detail: string }[];
   createdAtMs?: number;
@@ -2038,7 +2148,7 @@ export type AdSource = { kind: 'make' } | { kind: 'post'; postId: string } | { k
 
 export const adsApi = {
   settings: callable<
-    { mode?: 'ask' | 'direct'; dailyCap?: number; maxDays?: number; link?: string },
+    { mode?: 'ask' | 'direct'; dailyCap?: number; maxDays?: number; link?: string; valuePerConversion?: number },
     { ok: boolean; config: AdsConfigDoc }
   >('adminSetAdsSettings'),
   /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. */
@@ -2046,10 +2156,11 @@ export const adsApi = {
     { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean },
     { ok: boolean; campaignId: string; launched: boolean; budget: number; note: string | null; plan: AdPlan; forecast: AdForecast | null }
   >('adminCreateAd', 10 * 60_000),
+  // Ten minutes: "apply" on a worn-out campaign draws its fresh creative.
   action: callable<
     { campaignId: string; action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end'; dailyBudget?: number },
     { ok: boolean; message: string }
-  >('adminAdAction'),
+  >('adminAdAction', 10 * 60_000),
   sync: callable<Record<string, never>, { ok: boolean; status: string }>('adminSyncAds', 6 * 60_000),
 };
 

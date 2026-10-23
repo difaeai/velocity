@@ -2,7 +2,7 @@
  * Velocity Studio's plans, and what each one lets a workspace do.
  *
  * A customer gets exactly what they pay for and nothing else: the content desk,
- * the ads expert, or both plus the sales agent. Every check that matters runs on
+ * the Meta Ad Expert, or both plus the sales agent. Every check that matters runs on
  * the server (`social/workspace.ts`); the console only hides what a plan does
  * not include. Pure, so the rules are tested without a database.
  *
@@ -14,7 +14,7 @@ export type Need = 'content' | 'ads' | 'sales' | 'any';
 
 export const PLANS: Record<PlanId, { name: string; usd: number; can: Exclude<Need, 'any'>[] }> = {
   content: { name: 'Content', usd: 19, can: ['content'] },
-  ads: { name: 'Ads expert', usd: 24, can: ['ads'] },
+  ads: { name: 'Meta Ad Expert', usd: 24, can: ['ads'] },
   all: { name: 'Everything', usd: 32, can: ['content', 'ads', 'sales'] },
 };
 
@@ -72,7 +72,7 @@ export function refusal(
       ? 'Your Velocity Studio plan has run out. Pay for the next month on the Billing page to carry on.'
       : 'Your free day is over. Choose a plan and pay on the Billing page to carry on.';
   }
-  const what = need === 'ads' ? 'the ads expert' : need === 'sales' ? 'the sales agent' : 'the content team';
+  const what = need === 'ads' ? 'the Meta Ad Expert' : need === 'sales' ? 'the sales agent' : 'the content team';
   return `Your ${PLANS[ws.plan].name} plan does not include ${what}. Upgrade on the Billing page.`;
 }
 

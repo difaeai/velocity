@@ -517,6 +517,29 @@ CTR, CPC…" panel. Change one, change the other.
   campaign is credited with an order, and nothing steers money on it. Orders per
   campaign need tracking in the app (Meta's SDK or the Play install referrer),
   which means an app release.
+- **Conversions and ROAS per campaign, where Meta can see them** (since
+  2026-10-23). A Studio customer's sales, leads, WhatsApp chats, sign-ups or
+  installs come back in the Insights `actions`, with purchase value in
+  `action_values`. `conversionsFrom()` counts ONE kind per campaign, best first,
+  by the first name Meta reports it under — Meta lists one purchase as
+  `omni_purchase`, `purchase` and the pixel's own, and adding them would count
+  every sale three times. ROAS is the pixel's value ÷ spend, or conversions ×
+  the owner's "one sale is worth" (`valuePerConversion`) ÷ spend. With five or
+  more conversions, ROAS decides first: ≥ 2 scales, < 0.7 pauses, in between
+  keeps running untouched.
+
+### The Meta Ad Expert improves what is running
+
+In `direct` mode a worn-out campaign (`refresh`: weak CTR or frequency above
+3.5) gets a fresh creative on its own — at most every four days, three times
+per campaign. The model rewrites only the words (hook, first line, headline);
+audience, budget and objective are held to the old plan. The new ad goes into
+the same ad set beside the old one, and the old one (`retireAdId`) is paused at
+the first reading after Meta approves the new one, so the campaign never goes
+dark through a review. In `ask` mode the same thing is the "Apply: make a fresh
+creative" button. The plan and the daily note also read `planningResearch()` —
+this morning's market read plus the launch analysis — so a new angle is one
+the competition is not already running.
 
 ### Before it can run (console, not code)
 
@@ -530,6 +553,44 @@ CTR, CPC…" panel. Change one, change the other.
 Like every other adapter here, the Marketing API calls were written from
 Meta's documentation and have not yet run against the live account — the first
 campaign is the real test. Start it in `ask` mode with a small limit.
+
+## 6a. A Studio workspace's launch, and the calendar made ahead
+
+`social/launch.ts`. Five steps, run in order by `socialLaunchSweep` (every 10
+minutes, every live workspace) and started by the console the first time the
+owner lands: **market analysis** (the owner's notes and links, a grounded
+search, and an audience test — a simulated panel of ten customers built from
+the read, verdict decided in code by `verdictFor()`), **content setup** (the
+analysis fills only the EMPTY brief fields and competitors, this month and the
+next are planned, `makeAheadDays` set to 30), **execute** (the desk switches
+itself on once an account is connected and "ask me / post directly" is
+answered), **sales funnel** (offer, stages, the Meta Ad Expert's first campaign
+— created the moment the ad account, limit and mode exist — and the sales
+agent's targets, again only where empty), **lead close** (needs the mailbox). A
+step waiting on the owner (`needs_you`) lets the next one go ahead, so a
+customer still waiting on Meta's App Review still gets a funnel. Studio only:
+the house never has a `socialLaunch/state`, so the sweep skips it.
+
+**Made ahead, posted on its day.** With `makeAheadDays > 0`, every hour that is
+not the desk's hour makes the earliest planned piece in the window that does
+not exist yet — one an hour. A piece approved before its own Pakistan day is
+`scheduled`: the publish sweep holds it until `dueAtMs(date, runHour)`, worked
+out from the hour as it is then, so moving the posting time moves the month.
+Today's pieces, and anything approved on or after its day, go out at once as
+before. Research is keyed to the day the work happens, never the piece's date.
+
+## 6b. The sales agent closes
+
+`sales/inbox.ts` reads the mailbox the owner connected for sending (IMAP on the
+matching host, read-only, `BODY.PEEK` — nothing in their inbox is marked read),
+every 15 minutes, before anything is sent. A reply is matched by thread, then
+address, then company domain (never a free-mail one); it stops everything
+automatic for that lead and gets an answer drafted that waits for the owner's
+Send. "Not interested" closes the lead; "stop" also suppresses the address.
+Follow-ups: two at most, three and seven days after the first email, in its
+thread, and only in a pass whose inbox read worked. `imapflow` is pinned at
+2.3.0 (its releases were weeks apart before a burst of six in three days).
+Written from the RFCs and imapflow's docs; not yet run against a live mailbox.
 
 ---
 

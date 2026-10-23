@@ -28,6 +28,7 @@
     "firebase-functions": "^6.3.2",
     "geofire-common": "^6.0.0",
     "google-auth-library": "^10.7.0",
+    "imapflow": "2.3.0",
     "ngeohash": "^0.6.3",
     "nodemailer": "10.0.16",
     "sharp": "^0.35.5",

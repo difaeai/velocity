@@ -39,11 +39,12 @@ import { Button, Card } from '@/components/ui';
 import { ChartCard, Stat, TimeSeries, SERIES } from '@/components/charts';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GRADE_META, adMoney, campaignState, tone } from '@/components/social/ads';
+import { LaunchSequence } from '@/components/social/launch';
 
 const DAY_MS = 86_400_000;
 
 export default function AdsPage() {
-  const { path } = useWorkspace();
+  const { path, house, ws, includes } = useWorkspace();
   const [cfg, setCfg] = useState<AdsConfigDoc | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
@@ -142,11 +143,12 @@ export default function AdsPage() {
     <div>
       <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Ads</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Meta Ad Expert</h1>
           <p style={{ color: colors.muted, margin: 0, maxWidth: 760, lineHeight: 1.55 }}>
-            {manager ? `${manager}, your social media manager, runs` : 'The social media manager runs'} Velocity
-            Rides&apos; Meta ads. Say what an ad should do — the desk picks the audience and budget, makes it,
-            launches it, and watches what every click costs.
+            {manager ? `${manager}, your Meta Ad Expert, runs` : 'Your Meta Ad Expert runs'}{' '}
+            {house ? 'Velocity Rides’' : `${ws?.name ?? 'your'}’s`} Facebook and Instagram ads. Say what an ad should
+            do — it picks the audience and budget, makes it and launches it, then watches the cost, the conversions
+            and the ROAS every day: winners keep running, losers are paused, tired ads get a fresh creative.
           </p>
         </div>
         {connected ? (
@@ -158,6 +160,9 @@ export default function AdsPage() {
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+
+      {/* An ads-only workspace lands here, so its launch sequence lives here too. */}
+      {!house && !includes('content') ? <LaunchSequence settings={null} /> : null}
 
       {/* 1 — the ad account */}
       {loaded && (!connected || expired || (daysLeft !== null && daysLeft <= 7)) ? (
@@ -236,6 +241,7 @@ function Limits({
   const [cap, setCap] = useState(String(cfg.dailyCap || suggested));
   const [days, setDays] = useState(String(cfg.maxDays || 14));
   const [link, setLink] = useState(cfg.link);
+  const [worth, setWorth] = useState(cfg.valuePerConversion ? String(cfg.valuePerConversion) : '');
   const [busy, setBusy] = useState(false);
 
   async function save(mode: 'ask' | 'direct' | undefined) {
@@ -246,6 +252,7 @@ function Limits({
       await adsApi.settings({
         dailyCap: capN,
         maxDays: Math.min(30, Math.max(1, Math.round(Number(days) || 14))),
+        valuePerConversion: Math.max(0, Number(worth) || 0),
         ...(link.trim() && link.trim() !== cfg.link ? { link: link.trim() } : {}),
         ...(mode ? { mode } : {}),
       });
@@ -290,6 +297,16 @@ function Limits({
         <label style={{ ...label, flex: 1, minWidth: 240 }}>
           Ads send people to
           <input value={link} onChange={(e) => setLink(e.target.value)} style={{ ...input, width: '100%' }} />
+        </label>
+        <label style={label} title="Lets the expert work out ROAS for leads and chats, which Meta counts but cannot price.">
+          One sale or lead is worth ({cfg.currency})
+          <input
+            inputMode="numeric"
+            value={worth}
+            onChange={(e) => setWorth(e.target.value.replace(/[^\d.]/g, ''))}
+            placeholder="e.g. 1200"
+            style={input}
+          />
         </label>
       </div>
 
@@ -553,6 +570,23 @@ function Account({ cfg }: { cfg: AdsConfigDoc }) {
           hint="above 3.5 they stop noticing"
           colour={w.frequency > 3.5 ? colors.danger : colors.text}
         />
+        {/* A customer's own sales, leads and chats, as Meta saw them. */}
+        {!house ? (
+          <>
+            <Tile
+              label="Conversions · sales, leads, chats"
+              value={w.conversions ? w.conversions.toLocaleString('en-PK') : '—'}
+              hint={w.conversions ? `${adMoney(w.costPerConversion ?? 0, cur)} each` : 'needs a pixel, a lead form or click-to-chat ads'}
+              colour={colors.text}
+            />
+            <Tile
+              label="ROAS · return on ad spend"
+              value={w.roas != null ? `${w.roas.toFixed(2)}×` : '—'}
+              hint={w.roas != null ? 'worth ÷ spend · 1.0 = break-even' : 'set what one sale is worth under Limits'}
+              colour={w.roas == null ? colors.text : w.roas >= 1 ? colors.success : colors.danger}
+            />
+          </>
+        ) : null}
         {/* Velocity's rides only: a Studio customer's orders happen where we cannot see them. */}
         {house ? (
           <>
@@ -690,6 +724,13 @@ function CampaignRow({
             <Num label="CPM" value={m.cpm ? adMoney(m.cpm, cur) : '—'} />
             <Num label="CTR" value={`${m.ctr.toFixed(2)}%`} />
             <Num label="CPC" value={m.cpc ? adMoney(m.cpc, cur) : '—'} />
+            {m.conversions ? (
+              <>
+                <Num label="Conversions" value={m.conversions.toLocaleString('en-PK')} />
+                <Num label="Per conversion" value={adMoney(m.costPerConversion ?? 0, cur)} />
+                <Num label="ROAS" value={m.roas != null ? `${m.roas.toFixed(2)}×` : '—'} />
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -709,13 +750,17 @@ function CampaignRow({
           </Button>
         ) : null}
 
-        {next && (next.kind === 'pause' || next.kind === 'scale') && c.status === 'ACTIVE' ? (
+        {next && (next.kind === 'pause' || next.kind === 'scale' || (next.kind === 'refresh' && c.managed)) && c.status === 'ACTIVE' ? (
           <Button onClick={() => act('apply')} disabled={!!busy}>
             {busy === 'apply'
-              ? 'Applying…'
+              ? next.kind === 'refresh'
+                ? 'Making the new creative…'
+                : 'Applying…'
               : next.kind === 'pause'
                 ? 'Apply: pause it'
-                : `Apply: raise to ${adMoney(next.to, cur)}/day`}
+                : next.kind === 'refresh'
+                  ? 'Apply: make a fresh creative'
+                  : `Apply: raise to ${adMoney(next.to, cur)}/day`}
           </Button>
         ) : null}
 
@@ -749,7 +794,15 @@ function CampaignRow({
       </div>
 
       {next?.kind === 'refresh' ? (
-        <p style={{ fontSize: 12.5, color: colors.warn, margin: '8px 0 0' }}>{next.why}</p>
+        <p style={{ fontSize: 12.5, color: colors.warn, margin: '8px 0 0' }}>
+          {next.why}
+          {c.managed && cfg.mode === 'direct' ? ' The expert does this on its own at the next reading.' : ''}
+        </p>
+      ) : null}
+      {c.retireAdId ? (
+        <p style={{ fontSize: 12.5, color: colors.muted, margin: '6px 0 0' }}>
+          A fresh creative is in Meta review; the old one steps aside once it is approved.
+        </p>
       ) : null}
       {open && c.plan ? <PlanCard plan={c.plan} forecast={c.forecast} currency={cur} note={c.budgetNote} /> : null}
       {(c.autoActions ?? []).length ? (
@@ -773,6 +826,11 @@ const NUMBERS: [name: string, formula: string, meaning: string][] = [
   ['Frequency — seen per person', 'impressions ÷ reach', 'Above about 3.5 the same people stop noticing — change the picture before adding money.'],
   ['Cost per result', 'spend ÷ the campaign’s own result', 'Per click for traffic, per engagement for engagement, per 1,000 people reached for awareness.'],
   ['Cost per order', 'spend ÷ orders', 'What the ads cost for each order (for Velocity, each completed ride).'],
+  [
+    'Conversions',
+    'sales, leads or chats Meta saw',
+    'What the money was for. Meta sees them through a pixel on your site, a lead form, or a click-to-WhatsApp ad; the expert judges on these first.',
+  ],
   [
     'ROAS — return on ad spend',
     'revenue kept ÷ spend',

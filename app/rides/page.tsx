@@ -1,0 +1,1203 @@
+import type { Metadata } from 'next';
+
+import { VelocityMark } from '@/components/BrandMark';
+import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
+import { Counter } from '@/components/site/Counter';
+import { FareSplit } from '@/components/site/FareSplit';
+import { Marquee } from '@/components/site/Marquee';
+import { PhoneShowcase } from '@/components/site/PhoneShowcase';
+import { RouteMap } from '@/components/site/RouteMap';
+import { Reveal } from '@/components/site/Reveal';
+import { SiteNav } from '@/components/site/SiteNav';
+import { SpotlightGrid } from '@/components/site/Spotlight';
+import { SpeedStage } from '@/components/site/SpeedStage';
+import { InstallBarSubtitle, InstallButton } from '@/components/site/InstallButton';
+import {
+  AppleMark,
+  ArrowRight,
+  BadgeCheck,
+  Banknote,
+  Bell,
+  Bolt,
+  Car,
+  Check,
+  Clock,
+  Gauge,
+  GooglePlay,
+  Handshake,
+  MapPin,
+  Megaphone,
+  Mic,
+  Navigation,
+  Package,
+  Plus,
+  Route,
+  Shield,
+  Sparkle,
+  TrendingUp,
+  Users,
+  Wallet,
+} from '@/components/site/Icons';
+import styles from '@/components/site/site.module.css';
+import {
+  SITE_URL as SITE,
+  PRIVACY_URL,
+  TERMS_URL,
+  DELETE_ACCOUNT_URL,
+  SOCIAL_PROFILES,
+  FACEBOOK_URL,
+  INSTAGRAM_URL,
+  PLAY_URL,
+  APP_STORE_URL,
+  IOS_REQUIREMENT,
+  ANDROID_REQUIREMENT,
+} from '@/lib/site';
+
+/**
+ * Velocity Rides, the ride app, in full. This was the homepage until the
+ * homepage became Velocity Studio's (with the app in its hero); everything the
+ * app page said lives on here unchanged, so riders and drivers who land on the
+ * site still find fares, safety and earning, and search keeps its pages.
+ */
+export const metadata: Metadata = {
+  title: { absolute: 'Velocity Rides — name your fare, split the ride, keep the change' },
+  alternates: { canonical: '/rides' },
+};
+
+const RIDE_LINKS = [
+  { href: '#how', label: 'How it works' },
+  { href: '#services', label: 'Services' },
+  { href: '#app', label: 'The app' },
+  { href: '#earn', label: 'Earn' },
+  { href: '#safety', label: 'Safety' },
+  { href: '/', label: 'Velocity Studio' },
+];
+
+/**
+ * Store badge. Both platforms are live, so both are real links.
+ *
+ * The iOS half used to be a dead `<span>` reading "Coming soon to the App
+ * Store" — deliberately not a link, because it was not shipped. It has shipped,
+ * so it is a link like any other, and the muted `storeSoon` treatment that told
+ * people not to tap it is gone.
+ */
+function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
+  const ios = variant === 'ios';
+  return (
+    <a
+      className={styles.store}
+      href={ios ? APP_STORE_URL : PLAY_URL}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {ios ? <AppleMark /> : <GooglePlay />}
+      <span className={styles.storeText}>
+        <small>{ios ? 'Download on' : 'Get it on'}</small>
+        <strong>{ios ? 'the App Store' : 'Google Play'}</strong>
+      </span>
+    </a>
+  );
+}
+
+/**
+ * The two platforms, side by side, each with what it actually needs to run.
+ *
+ * A row of badges says "you can get this"; it does not say "and it will work
+ * on your phone", which is the question someone on a five-year-old Android
+ * handset is actually asking. The requirement line answers it before the tap.
+ */
+const PLATFORMS = [
+  {
+    id: 'ios' as const,
+    mark: AppleMark,
+    name: 'iPhone',
+    store: 'App Store',
+    requirement: IOS_REQUIREMENT,
+    href: APP_STORE_URL,
+  },
+  {
+    id: 'android' as const,
+    mark: GooglePlay,
+    name: 'Android',
+    store: 'Google Play',
+    requirement: ANDROID_REQUIREMENT,
+    href: PLAY_URL,
+  },
+];
+
+function AvailabilityCards() {
+  return (
+    <div className={styles.platformGrid}>
+      {PLATFORMS.map((p) => {
+        const Mark = p.mark;
+        return (
+          <a
+            key={p.id}
+            className={styles.platformCard}
+            href={p.href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className={styles.platformMark} aria-hidden="true">
+              <Mark />
+            </span>
+            <span className={styles.platformBody}>
+              <span className={styles.platformRow}>
+                <strong>{p.name}</strong>
+                <span className={styles.platformLive}>
+                  <span className={styles.pulse} aria-hidden="true" />
+                  Live
+                </span>
+              </span>
+              <small>{p.requirement}</small>
+            </span>
+            <span className={styles.platformGo}>
+              {p.store}
+              <ArrowRight />
+            </span>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The six services, in the ticker under the hero and again in the bento grid.
+ * One list, so the two can never disagree about what Velocity Rides actually does.
+ */
+const SERVICES = [
+  {
+    icon: MapPin,
+    tag: 'Everyday',
+    title: 'City rides',
+    body: 'Point to point across your city. Choose your vehicle, offer your fare, and pay in cash or from your wallet.',
+    wide: true,
+  },
+  {
+    icon: Users,
+    tag: 'Save up to 65%',
+    title: 'Pooled rides',
+    body: 'Share the car with people already going your way. Two riders pay 60% of the solo fare each, three pay 45%, four pay 35%.',
+    wide: true,
+  },
+  {
+    icon: Route,
+    tag: 'Intercity',
+    title: 'City to City',
+    body: 'Book a seat on a scheduled intercity trip — AC, business, coaster or Hiace — with pickup and drop-off points published up front.',
+    map: true,
+  },
+  {
+    icon: Package,
+    tag: 'Same city',
+    title: 'Couriers',
+    body: 'Send a document, a parcel or a box across town. Name the fare, track the status, and the recipient gets a call on arrival.',
+  },
+  {
+    icon: Car,
+    tag: 'Office & campus',
+    title: 'Corporate / Students',
+    body: 'Your own fleet for the office or campus run: add colleagues or classmates by username, ask them all in one message, and the car leaves full. Need a whole car instead? Rent one by the day.',
+  },
+  {
+    icon: Handshake,
+    tag: 'Community',
+    title: 'Travel Partner',
+    body: 'Find people who make the same commute you do, form groups, split the cost, and follow what is happening in your city. Ask a question, post a route, or just see who else is heading your way tomorrow morning.',
+    full: true,
+  },
+];
+
+/**
+ * The launch argument, stated as a change rather than a feature: what the
+ * reader does today, and what they do instead once the app is installed. Every
+ * "after" is something the product actually does — no aspirational copy.
+ */
+const CHANGES = [
+  {
+    before: 'Rs 480 out of your pocket, every single morning, for the same commute.',
+    after: 'Rs 168 each, four of you, one car.',
+    note: 'A four-person pool costs each rider 35% of the solo fare. Same road, same driver, a third of the money.',
+  },
+  {
+    before: 'Standing on the road arguing the fare through a car window.',
+    after: 'The price is agreed before the car moves.',
+    note: 'You offer what the trip is worth to you. Drivers nearby accept or they do not. Nothing is negotiated at the kerb.',
+  },
+  {
+    before: 'No card, no bank account, so no ride-hailing app at all.',
+    after: 'Cash is a full payment method.',
+    note: 'Not a fallback and not a penalty. Book, ride, hand the driver the fare. A wallet exists if you want one.',
+  },
+];
+
+const FEATURES = [
+  {
+    icon: Mic,
+    title: 'Book by speaking',
+    body: 'Say where you are going in Urdu-English the way you actually speak it. It runs entirely on your phone — no server, no data cost, works with the network down.',
+  },
+  {
+    icon: Banknote,
+    title: 'Cash is a first-class citizen',
+    body: 'No card, no top-up, no minimum balance. Pay the driver at the end of the ride, exactly like you always have.',
+  },
+  {
+    icon: Navigation,
+    title: 'A map that shows the city',
+    body: 'See anonymised supply and demand around you before you book — where the cars are and where people are asking for rides.',
+  },
+  {
+    icon: BadgeCheck,
+    title: 'Every driver verified',
+    body: 'CNIC, licence and vehicle documents are checked by a real person before a driver can accept a single ride.',
+  },
+  {
+    icon: Bell,
+    title: 'Told before you ask',
+    body: 'Driver assigned, driver arriving, fare settled, dispute resolved — push notifications that arrive with the app closed.',
+  },
+  {
+    icon: Wallet,
+    title: 'Money you can see',
+    body: 'Every fare, commission and settlement is written by the backend, not the app — so what you are shown is what actually happened.',
+  },
+];
+
+const EARN = [
+  {
+    icon: Car,
+    title: 'Drive',
+    body: 'Bring your car or bike, get your documents approved, and start accepting rides. See a heat map of where demand is, and hit your daily pool-ride target to drive the whole day commission-free.',
+    points: ['Cash collected stays with you', '16 pool rides in a day = no commission', 'Live demand heat map'],
+  },
+  {
+    icon: Wallet,
+    title: 'Rent out your car',
+    body: 'List a vehicle in the app and let it earn by the day, with or without you driving it. You set the rate, the days and the rules.',
+    points: ['With or without a driver', 'You set the daily rate', 'Renters are CNIC-verified'],
+  },
+  {
+    icon: Megaphone,
+    title: 'Advertise your shop',
+    body: 'Find your Customers puts your offer on the phones of people who pass your door — and you can send yourself a sample notification before you spend a rupee.',
+    points: ['Paid radius around your shop', 'See the ad on your own phone first', 'No daily-limit cost to test'],
+  },
+];
+
+/**
+ * Safety, ordered by when it happens rather than by what it is. A flat list of
+ * five features says "we have five features"; the same five on the timeline of
+ * an actual trip say "you are covered the whole way", which is the claim the
+ * section is making.
+ */
+const SAFETY = [
+  {
+    phase: 'Before you book',
+    items: [
+      [
+        'Documents checked by a person',
+        'CNIC, licence and vehicle papers are reviewed and approved before a driver can take a single ride.',
+      ],
+      [
+        'The whole driver, up front',
+        'Name, photo, car, number plate, rating and phone number — on screen before the car reaches you.',
+      ],
+      [
+        'Pools you set the rules for',
+        'Gender rules are chosen before you join, and every co-rider added mid-trip is shown to you.',
+      ],
+    ],
+  },
+  {
+    phase: 'While you are moving',
+    items: [
+      [
+        'Your family can watch the ride',
+        'Share a live link. It opens in any browser with no app, and shows the car moving, the plate and the driver\u2019s number.',
+      ],
+      [
+        'SOS that reaches somebody',
+        'The button inside the trip raises a live alert on a staffed safety desk, with your location if you share it.',
+      ],
+      [
+        'Police 15, one tap away',
+        'The Safety Centre dials the police emergency line and Rescue 1122 \u2014 and tells our safety desk the moment you do.',
+      ],
+    ],
+  },
+  {
+    phase: 'After you arrive',
+    items: [
+      [
+        'Ratings both ways',
+        'Passengers rate drivers and drivers rate passengers, and repeated reports are acted on.',
+      ],
+      [
+        'A dispute goes to a human',
+        'Fare and conduct disputes open a case on the same desk, and the settlement is written by the backend.',
+      ],
+      [
+        'Answered in seconds, by a person if you ask',
+        'Rapid Response replies immediately and hands you to a real member of the team the moment you want one.',
+      ],
+    ],
+  },
+];
+
+const FAQS = [
+  {
+    q: 'Do I need a card or a bank account?',
+    a: 'No. Cash is a full payment method on Velocity Rides, not a fallback. You book, you ride, you pay the driver at the end. A wallet is there if you want it, but nothing requires it.',
+  },
+  {
+    q: 'How does pooling actually save money?',
+    a: 'The fare for the trip is worked out once, then split by how many people are in the car. On your own you pay 100%. With two riders you each pay 60%, with three 45%, and with four 35% — so a full car costs each person about a third of the solo fare.',
+  },
+  {
+    q: 'Can I choose what to pay?',
+    a: 'You offer a fare when you book, and drivers nearby decide whether to take it. The fare engine on the server sets the bounds so nobody can offer something that would not cover the trip.',
+  },
+  {
+    q: 'What happens if something goes wrong mid-ride?',
+    a: 'For anything frightening \u2014 a fight, a threat, an assault \u2014 call the police on 15 from the Safety Centre inside the app. It dials for you and tells our safety desk at the same moment, with the plate, the driver and the last known position already attached. Rescue 1122 is on the same screen for an accident. The SOS button raises a live alert on the desk, route deviations can be flagged the same way, and every co-rider added to a pool mid-trip is shown to you.',
+  },
+  {
+    q: 'I want to drive \u2014 what do I actually earn?',
+    a: 'The fare is yours; you collect it in cash at the end of the ride. Velocity Rides takes a commission on the cash you collect, and it is charged by the day. Right now: complete 16 pool rides in a day and that whole day costs you no commission at all. Fall short and the day owes 5% of the cash you took — it becomes due at midnight, and you clear it by bank transfer before taking more rides, which the app walks you through in a couple of minutes. Nothing is ever owed while the day is still running, because you have the whole day to reach the target. The app shows your live count, what the day will cost you if you stop now, and exactly what is still missing if a day will not qualify.',
+  },
+  {
+    q: 'Can my family follow my ride?',
+    a: 'Yes. Tap share on the trip screen and you get a link that opens in any browser \u2014 no app, no account. Whoever you send it to sees the ride\u2019s status, the car moving on a map, the number plate and the driver\u2019s phone number, so they can act without having to reach you first. The link stops working when you arrive, and you can revoke it at any time.',
+  },
+  {
+    q: 'Someone tried to scam me. What do I do?',
+    a: 'Report it in two places, because they do different things. Velocity Rides can refund what we charged and ban the account \u2014 open the Safety Centre and file it there. Only Pakistan\u2019s cybercrime agency, NCCIA, can investigate and recover money: call 1799 or file at complaint.nccia.gov.pk. Keep your screenshots. And note that Velocity Rides staff never ask for an OTP, a PIN, a card number, or a transfer to a personal account \u2014 anyone who does is not us.',
+  },
+  {
+    q: 'Do I get a real person if I need one?',
+    a: 'Always. Velocity Rapid Response answers immediately so simple questions are settled in seconds, and the moment you ask for a human \u2014 in English or Urdu, typed or by tapping the button \u2014 the conversation moves to a member of our team in the same chat. Safety reports and scams never touch the assistant at all; they open as urgent tickets owned by a person from the first second.',
+  },
+  {
+    q: 'Is Velocity Rides on iPhone?',
+    a: 'Velocity Rides is on Google Play for Android today. The iOS build is in progress — the app is one codebase, so it is a release step rather than a rewrite.',
+  },
+  {
+    q: 'Which cities does it cover?',
+    a: 'Velocity Rides is built for Pakistan and works wherever there are drivers signed up nearby. Intercity seats run between the cities operators have published trips for, and you can see the list inside the app before you book.',
+  },
+];
+
+/**
+ * Structured data is generated from the same constants the page renders, so the
+ * markup and the schema can never drift apart. Deliberately no aggregateRating
+ * or install count: neither is verified, and inventing them is both a Google
+ * policy violation and a lie to the reader.
+ */
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE}#org`,
+      name: 'Velocity Rides',
+      // Velocity Rides is a brand, not a company. Spelled exactly as on the Meta
+      // business portfolio and berreto.com — Meta matches the two strings.
+      legalName: 'Berreto (Private) Limited',
+      parentOrganization: {
+        '@type': 'Organization',
+        name: 'Berreto (Private) Limited',
+        url: 'https://berreto.com',
+      },
+      url: SITE,
+      logo: `${SITE}/app/icon.png`,
+      areaServed: { '@type': 'Country', name: 'Pakistan' },
+      sameAs: SOCIAL_PROFILES,
+    },
+    // One node per store rather than one node listing two operating systems:
+    // `installUrl` is singular, and a single node would have to pick a store to
+    // point at — which is how the iOS listing stayed invisible to search after
+    // it shipped.
+    {
+      '@type': 'MobileApplication',
+      name: 'Velocity Rides',
+      operatingSystem: 'Android 7.0+',
+      applicationCategory: 'TravelApplication',
+      installUrl: PLAY_URL,
+      publisher: { '@id': `${SITE}#org` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
+    },
+    {
+      '@type': 'MobileApplication',
+      name: 'Velocity Rides',
+      operatingSystem: 'iOS 16.4+',
+      applicationCategory: 'TravelApplication',
+      installUrl: APP_STORE_URL,
+      publisher: { '@id': `${SITE}#org` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'PKR' },
+    },
+    {
+      '@type': 'FAQPage',
+      mainEntity: FAQS.map((f) => ({
+        '@type': 'Question',
+        name: f.q,
+        acceptedAnswer: { '@type': 'Answer', text: f.a },
+      })),
+    },
+  ],
+};
+
+export default function RidesPage() {
+  return (
+    <div className={styles.site} id="top">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
+      <SiteNav links={RIDE_LINKS} />
+
+      <main>
+        {/* ── hero ──────────────────────────────────────────────────────── */}
+        <section className={styles.hero}>
+          <span className={styles.heroAurora} aria-hidden="true" />
+          <span className={styles.heroGrid} aria-hidden="true" />
+
+          <div className={styles.wrap}>
+            <div className={styles.heroLayout}>
+              <div className={styles.heroCopy}>
+                <span className={styles.launchPill}>
+                  <span className={styles.pulse} aria-hidden="true" />
+                  Now live on iPhone and Android
+                </span>
+
+                {/* Each line rises out of its own mask. The text is real text —
+                    no per-character spans — so it stays selectable and legible
+                    to a crawler with JavaScript switched off. */}
+                <h1 className={styles.heroTitle}>
+                  <span className={styles.line}>
+                    <span style={{ ['--line-delay' as string]: '80ms' }}>Name your fare.</span>
+                  </span>
+                  <span className={styles.line}>
+                    <span style={{ ['--line-delay' as string]: '200ms' }}>Split the ride.</span>
+                  </span>
+                  <span className={styles.line}>
+                    <em style={{ ['--line-delay' as string]: '320ms' }}>Keep the change.</em>
+                  </span>
+                </h1>
+
+                <p className={styles.heroLead}>
+                  Velocity Rides is a ride-hailing app built for how Pakistan actually travels and actually
+                  pays. City rides, pooled seats, intercity trips and couriers — one app, one
+                  account, cash accepted everywhere.
+                </p>
+
+                <div className={styles.heroActions}>
+                  <StoreBadge variant="play" />
+                  <StoreBadge variant="ios" />
+                </div>
+
+                <p className={styles.heroNote}>
+                  <Check />
+                  Free to download · Free to join as a driver
+                </p>
+
+                <div className={styles.trustRow}>
+                  <span className={styles.trustItem}>
+                    <Banknote />
+                    Cash accepted
+                  </span>
+                  <span className={styles.trustItem}>
+                    <BadgeCheck />
+                    Verified drivers
+                  </span>
+                  <span className={styles.trustItem}>
+                    <Shield />
+                    In-app SOS
+                  </span>
+                  <span className={styles.trustItem}>
+                    <Mic />
+                    Book by voice
+                  </span>
+                </div>
+              </div>
+
+              <div className={styles.heroArt}>
+                <span className={styles.heroGlow} aria-hidden="true" />
+
+                {/* A radar sweep, not decoration for its own sake: it is the
+                    same idea as the live supply map inside the app. */}
+                <span className={styles.heroRings} aria-hidden="true">
+                  <span className={styles.ring} style={{ ['--size' as string]: '300px' }} />
+                  <span
+                    className={styles.ring}
+                    style={{ ['--size' as string]: '420px', ['--ring-delay' as string]: '1.1s' }}
+                  />
+                  <span
+                    className={styles.ring}
+                    style={{ ['--size' as string]: '560px', ['--ring-delay' as string]: '2.2s' }}
+                  />
+                </span>
+
+                <div className={styles.phoneStack}>
+                  <div
+                    className={styles.phone}
+                    role="img"
+                    aria-label="The Velocity Rides booking screen: a route pinned on the map, with a fare of 480 rupees offered and a Find a driver button."
+                  >
+                    <span className={styles.notch} aria-hidden="true" />
+                    <div className={styles.phoneScreen}>
+                      <ScreenBook />
+                    </div>
+                  </div>
+
+                  <div className={`${styles.floatCard} ${styles.floatA}`}>
+                    <span className={styles.floatIcon}>
+                      <Users />
+                    </span>
+                    <span>
+                      <b>3 riders matched</b>
+                      <span>Everyone pays 45%</span>
+                    </span>
+                  </div>
+
+                  <div className={`${styles.floatCard} ${styles.floatB}`}>
+                    <span className={styles.floatIcon}>
+                      <Clock />
+                    </span>
+                    <span>
+                      <b>Driver 2 min away</b>
+                      <span>Tracked live on the map</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── the scroll story ──────────────────────────────────────────────
+            The supercar stage is the second thing on the page, always. It is
+            the one set piece carried over untouched, and it earns the slot: it
+            is where the product's argument gets made at speed, before the
+            reader has been asked to read anything. ─────────────────────────── */}
+        <SpeedStage />
+
+        {/* ── services ticker, two rows running against each other ──────── */}
+        <div className={styles.marqueeStack}>
+          <Marquee items={SERVICES.map((s) => ({ icon: s.icon, label: s.title }))} />
+          <Marquee
+            items={[...SERVICES].reverse().map((s) => ({ icon: s.icon, label: s.tag }))}
+            reverse
+            muted
+          />
+        </div>
+
+        {/* ── facts strip ───────────────────────────────────────────────── */}
+        <section className={styles.sectionTight}>
+          <div className={styles.wrap}>
+            <Reveal className={styles.statStrip}>
+              <div className={styles.stat}>
+                <Counter to={35} suffix="%" className={styles.statNum} />
+                <span className={styles.statLabel}>
+                  of the solo fare, each, in a four-person pool
+                </span>
+              </div>
+              <div className={styles.stat}>
+                <Counter to={6} className={styles.statNum} />
+                <span className={styles.statLabel}>ways to travel or send something in one app</span>
+              </div>
+              <div className={styles.stat}>
+                <Counter to={0} className={styles.statNum} />
+                <span className={styles.statLabel}>
+                  cards required — cash is a full payment method
+                </span>
+              </div>
+              <div className={styles.stat}>
+                <span className={styles.statNum}>24/7</span>
+                <span className={styles.statLabel}>
+                  SOS and route-deviation alerts to a staffed desk
+                </span>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ── what changes ──────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.light}`} id="change">
+          <div className={styles.wrap}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>
+                <Sparkle />
+                Why it matters
+              </span>
+              <h2 className={styles.h2}>
+                What actually changes on <span className={styles.mark}>Monday morning</span>
+              </h2>
+              <p className={styles.lead} style={{ marginInline: 'auto' }}>
+                Not features — consequences. Three things about getting around that stop being true
+                the day you install it.
+              </p>
+            </Reveal>
+
+            <div className={styles.changeGrid}>
+              {CHANGES.map((c, i) => (
+                <Reveal key={c.after} delay={i * 110} className={styles.changeCard}>
+                  <div className={styles.changeBefore}>
+                    <span className={styles.changeTag}>Today</span>
+                    <p>{c.before}</p>
+                  </div>
+                  <div className={styles.changeAfter}>
+                    <span className={styles.changeTag}>With Velocity Rides</span>
+                    <p>{c.after}</p>
+                    <small>{c.note}</small>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── the interactive fare splitter ─────────────────────────────── */}
+        <section className={`${styles.section} ${styles.deep}`} id="pool">
+          <div className={styles.wrap}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>
+                <Users />
+                Try it
+              </span>
+              <h2 className={styles.h2}>
+                Fill the car. <span className={styles.accent}>Watch the fare fall.</span>
+              </h2>
+              <p className={styles.lead} style={{ marginInline: 'auto' }}>
+                This is the real split the fare engine applies — tap a number and see what a Rs 480
+                trip costs each person.
+              </p>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <FareSplit />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ── how it works — a route that draws itself as you scroll ─────
+            The connector above each step is a child of that step, so it fills
+            when the step reveals. The whole journey animates in sequence with
+            no scroll listener and no measurement. ────────────────────────── */}
+        <section className={styles.section} id="how">
+          <div className={styles.wrap}>
+            <div className={styles.howLayout}>
+              <div className={styles.howAside}>
+                <Reveal className={styles.sectionHead}>
+                  <span className={styles.eyebrow}>
+                    <Gauge />
+                    How it works
+                  </span>
+                  <h2 className={styles.h2}>
+                    From <span className={styles.accent}>&ldquo;where to?&rdquo;</span> to on your
+                    way
+                  </h2>
+                  <p className={styles.lead}>
+                    No haggling on the street, no waiting to find out the price. The whole trip is
+                    decided before the car moves.
+                  </p>
+                  <a
+                    className={`${styles.btn} ${styles.btnGhost}`}
+                    href={PLAY_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Try it yourself
+                    <ArrowRight />
+                  </a>
+                </Reveal>
+              </div>
+
+              <ol className={styles.route}>
+                {[
+                  {
+                    t: 'Say where you are going',
+                    b: 'Type it, pick it off the map, or just say it out loud in Urdu-English. Saved places and your recent trips are one tap away.',
+                    m: 'About 10 seconds',
+                  },
+                  {
+                    t: 'Choose solo or pooled, and name your fare',
+                    b: 'See what a pool would save you before you commit, then offer the fare you think the trip is worth. Drivers nearby decide.',
+                    m: 'You set the price',
+                  },
+                  {
+                    t: 'Ride, tracked the whole way',
+                    b: 'Your driver appears on the map, the trip is shareable with someone you trust, and the fare settles the moment you arrive.',
+                    m: 'Pay in cash at the end',
+                  },
+                ].map((st, i) => (
+                  <Reveal key={st.t} as="li" delay={i * 140} className={styles.routeStep}>
+                    <span className={styles.routeLeg} aria-hidden="true" />
+                    <span className={styles.routePin} aria-hidden="true">
+                      <MapPin />
+                    </span>
+                    <span className={styles.routeIndex}>Step {i + 1}</span>
+                    <h3>{st.t}</h3>
+                    <p>{st.b}</p>
+                    <span className={styles.routeMetric}>
+                      <Clock />
+                      {st.m}
+                    </span>
+                  </Reveal>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        {/* ── services bento ────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.light}`} id="services">
+          <div className={styles.wrap}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>
+                <Sparkle />
+                One app, six ways to move
+              </span>
+              <h2 className={styles.h2}>
+                Everything that needs to get across town — or across the country
+              </h2>
+              <p className={styles.lead}>
+                Velocity Rides is not only a taxi app. The same account books your morning commute, your
+                seat to Lahore, and the parcel that has to be there by five.
+              </p>
+            </Reveal>
+
+            <SpotlightGrid className={styles.bento}>
+              {SERVICES.map((s, i) => {
+                const Ico = s.icon;
+                return (
+                  <Reveal
+                    key={s.title}
+                    delay={(i % 3) * 80}
+                    data-tile=""
+                    className={`${styles.tile} ${
+                      s.full ? styles.tileFull : s.wide ? styles.tileWide : styles.tileThird
+                    }`}
+                  >
+                    <span className={styles.tileGlow} aria-hidden="true" />
+                    <span className={styles.tileIcon}>
+                      <Ico />
+                    </span>
+                    <span className={styles.tag}>{s.tag}</span>
+                    <h3>{s.title}</h3>
+                    <p>{s.body}</p>
+                    {s.map ? <RouteMap /> : null}
+                  </Reveal>
+                );
+              })}
+            </SpotlightGrid>
+          </div>
+        </section>
+
+        {/* ── the app itself ────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.deep}`} id="app">
+          <div className={styles.wrap}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>
+                <Bolt />
+                The app
+              </span>
+              <h2 className={styles.h2}>
+                It all happens on <span className={styles.accent}>your phone</span>
+              </h2>
+              <p className={styles.lead}>
+                Velocity Rides is a mobile app — there is no web booking. Here is what you actually do in
+                it, screen by screen.
+              </p>
+            </Reveal>
+
+            <PhoneShowcase />
+          </div>
+        </section>
+
+        {/* ── feature grid ──────────────────────────────────────────────── */}
+        <section className={styles.section}>
+          <div className={styles.wrap}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>
+                <Check />
+                Why it feels different
+              </span>
+              <h2 className={styles.h2}>Small things, done properly</h2>
+              <p className={styles.lead}>
+                The decisions that do not show up in a feature list, but are the reason the app is
+                usable on a slow connection, in a real city, with cash in your hand.
+              </p>
+            </Reveal>
+
+            <SpotlightGrid className={styles.featureGrid}>
+              {FEATURES.map((f, i) => {
+                const Ico = f.icon;
+                return (
+                  <Reveal
+                    key={f.title}
+                    delay={(i % 3) * 80}
+                    data-tile=""
+                    className={styles.feature}
+                  >
+                    <span className={styles.tileGlow} aria-hidden="true" />
+                    <span className={styles.featureNo}>
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span className={styles.featureIcon}>
+                      <Ico />
+                    </span>
+                    <h3>{f.title}</h3>
+                    <p>{f.body}</p>
+                  </Reveal>
+                );
+              })}
+            </SpotlightGrid>
+          </div>
+        </section>
+
+        {/* ── Earn with Velocity Rides — the partner program ───────────────────── */}
+        <section className={`${styles.section} ${styles.deep}`} id="earn">
+          <div className={styles.wrap}>
+            <div className={`${styles.split} ${styles.splitReverse}`}>
+              <Reveal className={styles.splitCopy}>
+                <span className={styles.eyebrow}>
+                  <TrendingUp />
+                  Earn with Velocity Rides
+                </span>
+                <h2 className={styles.h2}>
+                  Build a transport business without <span className={styles.accent}>owning a car</span>
+                </h2>
+                <p className={styles.lead}>
+                  Recruit drivers and riders onto Velocity Rides, run them as your fleet, and take a share
+                  of what Velocity Rides earns from every ride they complete. One five-digit code builds
+                  both fleets — a driver who redeems it joins your driver fleet, a passenger joins
+                  your rider fleet.
+                </p>
+
+                <p className={styles.ruleNote}>
+                  <Shield />
+                  <span>
+                    <b>You earn a share of Velocity Rides&apos; commission, never of the fare.</b> On a
+                    Rs 2,000 ride with a 5% commission, a 2% Pro rate pays you Rs 2 — 2% of the
+                    Rs 100 commission, not of the fare. The fare belongs to the driver.
+                  </span>
+                </p>
+
+                <div className={styles.tiers}>
+                  <span className={styles.tierHead}>
+                    <b />
+                    <b>Free</b>
+                    <b className={styles.tierPro}>Pro</b>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Driver fleet</small>
+                    <em>0.5%</em>
+                    <em className={styles.tierPro}>2%</em>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Rider fleet</small>
+                    <em>0.5%</em>
+                    <em className={styles.tierPro}>1.3%</em>
+                  </span>
+                  <span className={styles.tierRow}>
+                    <small>Costs you</small>
+                    <em>Nothing</em>
+                    <em className={styles.tierPro}>Rs 4,500/mo</em>
+                  </span>
+                </div>
+
+                <div className={styles.checkList}>
+                  {[
+                    ['Installs pay you nothing', 'only rides that actually complete do'],
+                    ['Withdraw from Rs 500', 'after a 72-hour hold that catches fraud'],
+                    ['A dashboard, not a promise', 'fleet, revenue and analytics, live in the app'],
+                  ].map(([b, t]) => (
+                    <span key={b} className={styles.checkItem}>
+                      <Check />
+                      <span>
+                        <b>{b}</b> — <span>{t}</span>
+                      </span>
+                    </span>
+                  ))}
+                </div>
+
+                {/* The driver's own deal. The Earn section was entirely about
+                    fleet owners, and a driver reading it learned nothing about
+                    what THEY make. The figures are the launch settings and an
+                    admin can change them from the console, so the mechanism is
+                    the promise and the numbers are explicitly "right now" —
+                    this page is prerendered and deliberately ships no Firebase
+                    SDK, so it cannot read the live config. Keep these in step
+                    with DEFAULT_DAILY_TARGET if the launch numbers change. */}
+                <div className={styles.ruleNote}>
+                  <TrendingUp />
+                  <span>
+                    <b>Driving yourself? Hit your daily target and the day is yours.</b> Right
+                    now that is <b>16 pool rides in a day</b>, and that whole day costs you{' '}
+                    <b>no commission at all</b>. Fall short and the day owes 5% of the cash you
+                    took, due at midnight and cleared by transfer before you take more rides.
+                    Nothing is owed while the day is still running — you have the whole day to get
+                    there. Your app shows the live count and the current target, which we can
+                    change.
+                  </span>
+                </div>
+
+                <a
+                  className={`${styles.btn} ${styles.btnLime}`}
+                  href={PLAY_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <GooglePlay />
+                  Start earning
+                </a>
+              </Reveal>
+
+              <Reveal delay={120} className={styles.splitArt}>
+                <div
+                  className={styles.phone}
+                  role="img"
+                  aria-label="The Earn with Velocity Rides dashboard: 18,420 rupees earned this month, a fleet of 24 drivers and 186 riders, and the fleet code 48213."
+                >
+                  <span className={styles.notch} aria-hidden="true" />
+                  <div className={styles.phoneScreen}>
+                    <ScreenEarn />
+                  </div>
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ── the other routes to income ────────────────────────────────── */}
+        <section className={styles.section}>
+          <div className={styles.wrap}>
+            <Reveal className={styles.sectionHead}>
+              <span className={styles.eyebrow}>
+                <Sparkle />
+                Other ways to earn
+              </span>
+              <h2 className={styles.h2}>
+                Velocity Rides is not only for the people <span className={styles.accent}>taking rides</span>
+              </h2>
+            </Reveal>
+
+            <div className={styles.featureGrid}>
+              {EARN.map((e, i) => {
+                const Ico = e.icon;
+                return (
+                  <Reveal key={e.title} delay={i * 90} className={styles.feature}>
+                    <span className={styles.featureIcon}>
+                      <Ico />
+                    </span>
+                    <h3>{e.title}</h3>
+                    <p>{e.body}</p>
+                    <div className={styles.checkList}>
+                      {e.points.map((pt) => (
+                        <span key={pt} className={styles.checkItem}>
+                          <Check />
+                          <span>{pt}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* ── safety ────────────────────────────────────────────────────── */}
+        <section className={`${styles.section} ${styles.light}`} id="safety">
+          <div className={styles.wrap}>
+            <div className={styles.split}>
+              <Reveal className={styles.splitCopy}>
+                <span className={styles.eyebrow}>
+                  <Shield />
+                  Safety
+                </span>
+                <h2 className={styles.h2}>Nobody gets in a car they know nothing about</h2>
+                <p className={styles.lead}>
+                  Safety on Velocity Rides is not a page in the settings. It is a set of checks that run
+                  before the ride, during it, and after it — which is why we are willing to call
+                  ourselves Pakistan&apos;s securest ride-hailing app and then list exactly what we mean
+                  by it.
+                </p>
+
+                <ol className={styles.timeline}>
+                  {SAFETY.map((group, gi) => (
+                    <Reveal key={group.phase} as="li" delay={gi * 110} className={styles.phase}>
+                      <span className={styles.phaseLeg} aria-hidden="true" />
+                      <span className={styles.phaseDot} aria-hidden="true">
+                        <Shield />
+                      </span>
+                      <span className={styles.phaseName}>{group.phase}</span>
+                      <div className={styles.phaseItems}>
+                        {group.items.map(([b, d]) => (
+                          <span key={b} className={styles.phaseItem}>
+                            <b>{b}</b>
+                            <span>{d}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </Reveal>
+                  ))}
+                </ol>
+              </Reveal>
+
+              <Reveal delay={120} className={styles.splitArt}>
+                <div
+                  className={styles.phone}
+                  role="img"
+                  aria-label="The Velocity Rides live trip screen: the driver tracked on the map, their name, rating and plate, and an SOS button."
+                >
+                  <span className={styles.notch} aria-hidden="true" />
+                  <div className={styles.phoneScreen}>
+                    <ScreenTrip />
+                  </div>
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ── FAQ (plain <details> — no JavaScript needed) ───────────────── */}
+        <section className={styles.section}>
+          <div className={styles.wrap}>
+            <Reveal className={`${styles.sectionHead} ${styles.center}`}>
+              <span className={styles.eyebrow}>
+                <Plus />
+                Questions
+              </span>
+              <h2 className={styles.h2}>The things people ask first</h2>
+            </Reveal>
+
+            <div className={styles.faq}>
+              {FAQS.map((f, i) => (
+                <Reveal key={f.q} delay={i * 50}>
+                  <details className={styles.faqItem}>
+                    <summary className={styles.faqQ}>
+                      {f.q}
+                      <Plus />
+                    </summary>
+                    <p className={styles.faqA}>{f.a}</p>
+                  </details>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── climax CTA + availability ─────────────────────────────────── */}
+        <section className={styles.sectionTight} id="get">
+          <div className={styles.wrap}>
+            <Reveal className={styles.ctaBand}>
+              <span className={styles.ctaStripes} aria-hidden="true" />
+              <span className={styles.eyebrow}>
+                <Bolt />
+                Get moving
+              </span>
+              <h2>One app, on both your phones</h2>
+              <p>
+                Velocity Rides is out now on iPhone and Android — the same account, the same rides and
+                the same cash payments on either. Free to install, free to join as a driver.
+              </p>
+              <AvailabilityCards />
+            </Reveal>
+          </div>
+        </section>
+      </main>
+
+      {/* Small screens get a persistent way to install without scrolling back
+          up — this is an app landing page, and the app is the conversion. */}
+      <div className={styles.mobileBar}>
+        <span className={styles.brandMark}>
+          <VelocityMark style={{ color: '#ccff00' }} />
+        </span>
+        <span className={styles.mobileBarText}>
+          <strong>Get Velocity Rides</strong>
+          <InstallBarSubtitle />
+        </span>
+        <InstallButton label="Install" />
+      </div>
+
+      {/* ── footer ──────────────────────────────────────────────────────── */}
+      <footer className={styles.footer}>
+        <div className={styles.wrap}>
+          <div className={styles.footerGrid}>
+            <div className={styles.footerBrand}>
+              <a className={styles.brand} href="#top">
+                <span className={styles.brandMark}>
+                  <VelocityMark style={{ color: '#ccff00' }} />
+                </span>
+                <span className={styles.brandName}>Velocity Rides</span>
+              </a>
+              <p>
+                Ride-hailing, pooling, intercity seats and couriers, built for Pakistan. Available on
+                the App Store and Google Play.
+              </p>
+              <div className={styles.footerStores}>
+                <StoreBadge variant="ios" />
+                <StoreBadge variant="play" />
+              </div>
+            </div>
+
+            <div className={styles.footerCol}>
+              <h3>Ride</h3>
+              <a href="#how">How it works</a>
+              <a href="#pool">Pooled fares</a>
+              <a href="#services">City to City</a>
+              <a href="#services">Couriers</a>
+              <a href="#services">Corporate / Students</a>
+            </div>
+
+            <div className={styles.footerCol}>
+              <h3>Earn</h3>
+              <a href="#earn">Drive with Velocity Rides</a>
+              <a href="#earn">Partner Program</a>
+              <a href="#earn">Rent out your car</a>
+              <a href="#earn">Advertise your shop</a>
+            </div>
+
+            <div className={styles.footerCol}>
+              <h3>Company</h3>
+              <a href="#safety">Safety</a>
+              <a href={FACEBOOK_URL} target="_blank" rel="noreferrer">
+                Facebook
+              </a>
+              <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer">
+                Instagram
+              </a>
+              <a href={PLAY_URL} target="_blank" rel="noreferrer">
+                Google Play
+              </a>
+            </div>
+          </div>
+
+          <div className={styles.footerBase}>
+            <span>
+              © {new Date().getFullYear()} Velocity Rides. Built for Pakistan. Velocity Rides is a
+              product of{' '}
+              <a
+                className={styles.footerOwner}
+                href="https://berreto.com"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Berreto (Private) Limited
+              </a>
+              .
+            </span>
+            <span className={styles.footerLegal}>
+              <a href={PRIVACY_URL}>Privacy</a>
+              <a href={TERMS_URL}>Terms</a>
+              <a href={DELETE_ACCOUNT_URL}>Delete your account</a>
+            </span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
