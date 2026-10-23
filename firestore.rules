@@ -735,6 +735,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----- salesLeads/{id}, salesSuppress/{emailHash} -----------------------
+    // Velocity's own sales agent: the businesses it found and the one email it
+    // wrote each. Written only by the backend; the opt-out list is never read
+    // by a client — it only stops a send.
+    match /salesLeads/{leadId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /salesSuppress/{key} {
+      allow read, write: if false;
+    }
+
     // ----- workspaces/{wid} — Velocity Studio customers ---------------------
     // A customer's whole desk lives under its workspace, in the same shapes as
     // Velocity's own desk at the root. The owner's token carries `ws` (set only

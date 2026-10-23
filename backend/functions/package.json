@@ -29,6 +29,7 @@
     "geofire-common": "^6.0.0",
     "google-auth-library": "^10.7.0",
     "ngeohash": "^0.6.3",
+    "nodemailer": "10.0.16",
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0",
     "zod": "^3.24.1"
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@types/nodemailer": "8.0.2",
     "@vitest/runner": "^4.1.9",
     "eslint": "^9.18.0",
     "firebase": "^12.15.0",
