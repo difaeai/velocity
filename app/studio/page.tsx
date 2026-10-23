@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VelocityMark } from '@/components/BrandMark';
-import { ArrowRight, Check, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS, STUDIO_TRIAL_HOURS } from '@/lib/studio';
+import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
+import { StudioFaq, StudioPricing } from '@/components/site/StudioSections';
+import { STUDIO_PLANS, STUDIO_TRIAL_HOURS } from '@/lib/studio';
 import site from '@/components/site/site.module.css';
 
 import s from './studio.module.css';
@@ -36,7 +37,11 @@ const TEAM = [
   { name: 'Raftar', role: 'Video editor', does: 'Cuts reels with real footage, music and a spoken voice-over.' },
   { name: 'Talha', role: 'SEO', does: 'Chooses the words and hashtags people actually search on Instagram, TikTok and YouTube.' },
   { name: 'Awaaz', role: 'Social media manager', does: 'Posts at the right time, answers comments, and learns from your best posts.' },
-  { name: 'Bilal', role: 'Ads expert', does: 'Plans, writes and runs Meta ads inside the daily limit you set — and reads every number.' },
+  {
+    name: 'Bilal',
+    role: 'Meta Ad Expert',
+    does: 'Runs your Meta ads inside the daily limit you set, and improves them every day — cost, conversions and ROAS.',
+  },
   { name: 'Sales', role: 'Sales agent', does: 'Finds businesses that could buy from you and writes each one a short, personal email.' },
 ];
 
@@ -47,33 +52,6 @@ const MAKES = [
   { icon: TrendingUp, text: 'What is going viral in your niche — and a version of your own' },
   { icon: Megaphone, text: 'Facebook and Instagram ads, with your budget guarded in code' },
   { icon: Handshake, text: 'New customers found and emailed for you' },
-];
-
-const FAQ = [
-  {
-    q: 'Do I need to know anything about marketing or tech?',
-    a: 'No. You answer five questions about your business, connect your Instagram and Facebook with one sign-in, and the team starts. You can tell any agent what you want in plain words.',
-  },
-  {
-    q: 'Will it post without asking me?',
-    a: 'Only if you say so. On day one you choose once: every piece waits for your Approve, or finished pieces go straight out. You can change it any time.',
-  },
-  {
-    q: 'Which accounts can it post to?',
-    a: 'Instagram (a Business or Creator account) and the Facebook Page it is linked to. The ads expert works with your own Meta ad account.',
-  },
-  {
-    q: 'Is the music safe to use?',
-    a: 'Yes. Reels use public-domain tracks, or music you add yourself. Instagram’s own trending sounds can’t be added by any app, so the team lists them for you to add when you post.',
-  },
-  {
-    q: 'How do I pay?',
-    a: 'By bank transfer, EasyPaisa or JazzCash. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.',
-  },
-  {
-    q: 'Can I stop?',
-    a: 'Any time. Plans are month to month: if you don’t pay for the next month, the team simply pauses. Nothing is posted after that.',
-  },
 ];
 
 export default function StudioPage() {
@@ -220,61 +198,8 @@ export default function StudioPage() {
         </div>
       </section>
 
-      <section id="pricing" className={`${site.section} ${site.light}`}>
-        <div className={site.wrap}>
-          <div className={`${site.sectionHead} ${site.center}`}>
-            <span className={site.eyebrow}>Pricing</span>
-            <h2 className={site.h2}>Pay for what you use. Nothing else.</h2>
-            <p className={`${site.lead} ${site.center}`}>Every plan starts with a free day. Month to month — stop any time.</p>
-          </div>
-          <div className={s.plans}>
-            {STUDIO_PLAN_IDS.map((id) => {
-              const p = STUDIO_PLANS[id];
-              const best = id === 'all';
-              return (
-                <div key={id} className={`${s.plan} ${best ? s.planBest : ''}`}>
-                  {best ? <span className={s.planTag}>The whole team</span> : null}
-                  <h3>{p.name}</h3>
-                  <div className={s.price}>
-                    ${p.usd}
-                    <small>/month</small>
-                  </div>
-                  <p className={s.planTagline}>{p.tagline}</p>
-                  <ul className={s.planList}>
-                    {p.includes.map((line) => (
-                      <li key={line}>
-                        <Check />
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link href={`/studio/start?plan=${id}`} className={`${site.btn} ${best ? site.btnLime : site.btnGhost}`}>
-                    Start free <ArrowRight />
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
-          <p className={s.payNote}>Pay by bank transfer, EasyPaisa or JazzCash.</p>
-        </div>
-      </section>
-
-      <section className={site.section}>
-        <div className={site.wrap}>
-          <div className={`${site.sectionHead} ${site.center}`}>
-            <span className={site.eyebrow}>Questions</span>
-            <h2 className={site.h2}>Before you start</h2>
-          </div>
-          <div className={s.faq}>
-            {FAQ.map((f) => (
-              <details key={f.q}>
-                <summary>{f.q}</summary>
-                <p>{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
+      <StudioPricing />
+      <StudioFaq />
 
       <section className={`${s.closing} ${site.deep}`}>
         <div className={site.wrap}>
