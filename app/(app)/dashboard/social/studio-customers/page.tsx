@@ -134,7 +134,8 @@ export default function StudioCustomersPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ minWidth: 110, color: colors.muted }}>{day(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {p.business} · {STUDIO_PLANS[p.plan].name} · ${p.amountUsd}
+                  {p.business} · {STUDIO_PLANS[p.plan].name}
+                  {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
                 <strong style={{ color: p.status === 'approved' ? colors.success : colors.danger }}>{p.status}</strong>
@@ -184,7 +185,8 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
           <strong>{p.business}</strong> · {p.email ?? 'no email'}
         </div>
         <div>
-          {STUDIO_PLANS[p.plan].name} plan · <strong>${p.amountUsd}</strong> (about Rs{' '}
+          {STUDIO_PLANS[p.plan].name} plan · <strong>{p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
+          <strong>${p.amountUsd}</strong> (about Rs{' '}
           {(p.amountUsd * PKR_PER_USD).toLocaleString('en-PK')}) · sent {day(p.createdAtMs)}
         </div>
         <div>

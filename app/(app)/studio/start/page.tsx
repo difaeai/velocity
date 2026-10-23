@@ -18,7 +18,14 @@ import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { studioApi } from '@/lib/api';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS, STUDIO_TRIAL_HOURS, type StudioPlanId } from '@/lib/studio';
+import {
+  STUDIO_PLAN_IDS,
+  STUDIO_PLANS,
+  STUDIO_TRIAL_HOURS,
+  studioPriceUsd,
+  type StudioBilling,
+  type StudioPlanId,
+} from '@/lib/studio';
 import { Button, Card } from '@/components/ui';
 import { VelocityIcon } from '@/components/BrandMark';
 
@@ -33,10 +40,12 @@ export default function StudioStartPage() {
 function Start() {
   const { user, isAdmin, workspaceId, initializing, signOut } = useAuth();
   const router = useRouter();
-  const asked = useSearchParams().get('plan');
+  const params = useSearchParams();
+  const asked = params.get('plan');
   const [plan, setPlan] = useState<StudioPlanId>(
     STUDIO_PLAN_IDS.includes(asked as StudioPlanId) ? (asked as StudioPlanId) : 'all',
   );
+  const billing: StudioBilling = params.get('billing') === 'year' ? 'year' : 'month';
 
   useEffect(() => {
     if (!initializing && workspaceId) router.replace('/dashboard/social');
@@ -71,7 +80,7 @@ function Start() {
             </Button>
           </Card>
         ) : (
-          <BusinessCard plan={plan} email={user.email} onSignOut={signOut} />
+          <BusinessCard plan={plan} billing={billing} email={user.email} onSignOut={signOut} />
         )}
       </div>
     </main>
@@ -176,7 +185,17 @@ function AccountCard() {
   );
 }
 
-function BusinessCard({ plan, email, onSignOut }: { plan: StudioPlanId; email: string | null; onSignOut: () => void }) {
+function BusinessCard({
+  plan,
+  billing,
+  email,
+  onSignOut,
+}: {
+  plan: StudioPlanId;
+  billing: StudioBilling;
+  email: string | null;
+  onSignOut: () => void;
+}) {
   const router = useRouter();
   const [f, setF] = useState({
     businessName: '',
@@ -246,8 +265,9 @@ function BusinessCard({ plan, email, onSignOut }: { plan: StudioPlanId; email: s
           {busy ? 'Setting up your team…' : `Start my free day — ${STUDIO_PLANS[plan].name} plan`}
         </Button>
         <p style={{ fontSize: 12, color: colors.muted, margin: 0 }}>
-          No card needed. After {STUDIO_TRIAL_HOURS} hours, pay ${STUDIO_PLANS[plan].usd}/month by bank transfer, EasyPaisa
-          or JazzCash to carry on.
+          No card needed. After {STUDIO_TRIAL_HOURS} hours, pay{' '}
+          {billing === 'year' ? `$${studioPriceUsd(plan, 'year')} for a year` : `$${STUDIO_PLANS[plan].usd}/month`} by bank
+          transfer, EasyPaisa or JazzCash to carry on.
         </p>
       </div>
     </Card>

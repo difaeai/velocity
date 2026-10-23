@@ -23,3 +23,11 @@ const getServerSnapshot = () => false;
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
+
+const never = () => () => {};
+const savingData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+
+/** The browser's Data Saver: films then show their posters and download nothing. */
+export function useSaveData(): boolean {
+  return useSyncExternalStore(never, savingData, () => false);
+}

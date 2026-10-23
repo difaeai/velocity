@@ -57,6 +57,16 @@ export const STUDIO_PLANS: Record<
 
 export const STUDIO_PLAN_IDS = Object.keys(STUDIO_PLANS) as StudioPlanId[];
 
+/** Paid a month at a time, or a year up front for less. */
+export type StudioBilling = 'month' | 'year';
+export const STUDIO_YEAR_DISCOUNT_PCT = 13;
+
+/** A year is twelve months less 13%, rounded down so the saving is never under 13%. */
+export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling): number =>
+  billing === 'year'
+    ? Math.floor((STUDIO_PLANS[plan].usd * 12 * (100 - STUDIO_YEAR_DISCOUNT_PCT)) / 100)
+    : STUDIO_PLANS[plan].usd;
+
 export const STUDIO_TRIAL_HOURS = 24;
 
 /** `workspaces/{id}` as the console reads it. */

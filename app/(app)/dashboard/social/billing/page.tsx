@@ -18,7 +18,14 @@ import { db, storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { studioApi, type StudioPaymentDoc } from '@/lib/api';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS, type StudioPlanId } from '@/lib/studio';
+import {
+  STUDIO_PLAN_IDS,
+  STUDIO_PLANS,
+  STUDIO_YEAR_DISCOUNT_PCT,
+  studioPriceUsd,
+  type StudioBilling,
+  type StudioPlanId,
+} from '@/lib/studio';
 import { Button, Card } from '@/components/ui';
 
 // shortcut: a fixed rate for showing a PKR figure next to the USD price; read it from config when it matters.
@@ -35,6 +42,7 @@ interface ReceivingAccounts {
 export default function BillingPage() {
   const { wid, ws } = useWorkspace();
   const [plan, setPlan] = useState<StudioPlanId | null>(null);
+  const [billing, setBilling] = useState<StudioBilling>('month');
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
   const [txnId, setTxnId] = useState('');
@@ -72,6 +80,7 @@ export default function BillingPage() {
   }
 
   const chosen = plan ?? ws.plan;
+  const amount = studioPriceUsd(chosen, billing);
   const pending = payments.find((p) => p.status === 'pending');
   const until = Math.max(ws.trialEndsAtMs, ws.paidUntilMs);
   const live = nowMs > 0 && until > nowMs;
@@ -88,7 +97,7 @@ export default function BillingPage() {
         screenshotPath = `workspaces/${wid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
         await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
       }
-      await studioApi.submitPayment({ plan: chosen, txnId: txnId.trim() || undefined, screenshotPath });
+      await studioApi.submitPayment({ plan: chosen, billing, txnId: txnId.trim() || undefined, screenshotPath });
       setTxnId('');
       setFile(null);
       setNotice('Thank you — we will check the payment and switch your plan on, usually within a few hours.');
@@ -120,6 +129,29 @@ export default function BillingPage() {
 
       <Card>
         <h2 style={h2}>1. Choose the plan to pay for</h2>
+        <div role="radiogroup" aria-label="Pay for" style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          {(['month', 'year'] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              role="radio"
+              aria-checked={billing === b}
+              onClick={() => setBilling(b)}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 999,
+                border: `${billing === b ? 2 : 1}px solid ${billing === b ? colors.primary : colors.border}`,
+                background: colors.surface,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 800,
+                color: colors.text,
+              }}
+            >
+              {b === 'month' ? 'A month' : `A year — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
+            </button>
+          ))}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }} role="radiogroup">
           {STUDIO_PLAN_IDS.map((id) => {
             const p = STUDIO_PLANS[id];
@@ -144,8 +176,8 @@ export default function BillingPage() {
               >
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
                   <strong>{p.name}</strong>
-                  <span style={{ marginLeft: 'auto', fontWeight: 900, fontSize: 18 }}>${p.usd}</span>
-                  <span style={{ fontSize: 12, color: colors.muted }}>/month</span>
+                  <span style={{ marginLeft: 'auto', fontWeight: 900, fontSize: 18 }}>${studioPriceUsd(id, billing)}</span>
+                  <span style={{ fontSize: 12, color: colors.muted }}>/{billing}</span>
                 </span>
                 <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>
                   {p.includes.map((line) => (
@@ -160,7 +192,8 @@ export default function BillingPage() {
 
       <Card>
         <h2 style={h2}>
-          2. Send ${STUDIO_PLANS[chosen].usd} (about Rs {(STUDIO_PLANS[chosen].usd * PKR_PER_USD).toLocaleString('en-PK')})
+          2. Send ${amount} (about Rs {(amount * PKR_PER_USD).toLocaleString('en-PK')})
+          {billing === 'year' ? ` for a year — you save $${STUDIO_PLANS[chosen].usd * 12 - amount}` : ''}
         </h2>
         {accounts === null ? (
           <p style={{ color: colors.muted, margin: 0 }}>Loading where to pay…</p>
@@ -183,7 +216,8 @@ export default function BillingPage() {
         <h2 style={h2}>3. Tell us you paid</h2>
         {pending ? (
           <p style={{ margin: 0, fontSize: 14 }}>
-            We have your payment for the <strong>{STUDIO_PLANS[pending.plan].name}</strong> plan, sent {when(pending.createdAtMs)}.
+            We have your payment for {pending.billing === 'year' ? 'a year of ' : ''}the{' '}
+            <strong>{STUDIO_PLANS[pending.plan].name}</strong> plan, sent {when(pending.createdAtMs)}.
             It is being checked — the plan switches on as soon as it is approved.
           </p>
         ) : (
@@ -203,7 +237,7 @@ export default function BillingPage() {
             </label>
             <div>
               <Button onClick={send} disabled={busy || (!file && txnId.trim().length < 6)}>
-                {busy ? 'Sending…' : `I paid for ${STUDIO_PLANS[chosen].name}`}
+                {busy ? 'Sending…' : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
               </Button>
             </div>
           </div>
@@ -218,7 +252,8 @@ export default function BillingPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 120 }}>{when(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {STUDIO_PLANS[p.plan].name} · ${p.amountUsd}
+                  {STUDIO_PLANS[p.plan].name}
+                  {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
                 <span

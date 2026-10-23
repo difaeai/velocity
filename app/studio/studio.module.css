@@ -237,94 +237,7 @@
   color: var(--brand);
 }
 
-/* ── pricing ───────────────────────────────────────────────────────────── */
-.plans {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  align-items: stretch;
-}
-
-.plan {
-  border: 1px solid var(--line-hi);
-  border-radius: var(--r-xl);
-  padding: 30px 26px;
-  background: var(--card);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.planBest {
-  border: 2px solid var(--lime);
-  box-shadow: var(--shadow-lime);
-  position: relative;
-}
-
-.planTag {
-  position: absolute;
-  top: -13px;
-  left: 26px;
-  font-family: var(--font-mono), monospace;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  background: var(--lime);
-  color: #0b1400;
-  padding: 4px 10px;
-  border-radius: var(--r-pill);
-}
-
-.plan h3 {
-  font-size: 24px;
-  margin: 0;
-}
-
-.price {
-  font-family: var(--font-mono), monospace;
-  font-size: 46px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-
-.price small {
-  font-size: 15px;
-  color: var(--text-mut);
-  font-weight: 400;
-  margin-left: 6px;
-}
-
-.planTagline {
-  color: var(--text-mut);
-  font-size: 15px;
-  margin: 0;
-}
-
-.planList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 9px;
-  flex: 1;
-}
-
-.planList li {
-  display: flex;
-  gap: 9px;
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.planList svg {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  color: var(--lime);
-  margin-top: 2px;
-}
-
+/* ── pricing (the cards live in components/site/pricing.module.css) ───── */
 .payNote {
   margin-top: 22px;
   text-align: center;
@@ -420,8 +333,7 @@
 
 @media (max-width: 940px) {
   .heroGrid,
-  .steps,
-  .plans {
+  .steps {
     grid-template-columns: minmax(0, 1fr);
   }
   .topHide {

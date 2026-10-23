@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PERIOD_MS, canUse, extendPaid, refusal } from '../plans';
+import { PERIOD_MS, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, priceUsd, refusal } from '../plans';
 
 const NOW = 1_800_000_000_000;
 const live = { trialEndsAtMs: NOW + 1000, paidUntilMs: 0 };
@@ -58,5 +58,20 @@ describe('extendPaid', () => {
   });
   it('adds a month to the end of the paid time, so paying early loses nothing', () => {
     expect(extendPaid(NOW + 10, NOW)).toBe(NOW + 10 + PERIOD_MS);
+  });
+  it('adds a year for a yearly payment', () => {
+    expect(extendPaid(NOW + 10, NOW, YEAR_MS)).toBe(NOW + 10 + YEAR_MS);
+  });
+});
+
+describe('priceUsd', () => {
+  it('charges the monthly price for a month', () => {
+    expect(priceUsd('content', 'month')).toBe(PLANS.content.usd);
+  });
+  it('prices a year at the figures the site shows', () => {
+    expect([priceUsd('content', 'year'), priceUsd('ads', 'year'), priceUsd('all', 'year')]).toEqual([198, 250, 334]);
+  });
+  it('never saves less than 13% on twelve months', () => {
+    for (const id of PLAN_IDS) expect(priceUsd(id, 'year')).toBeLessThanOrEqual(PLANS[id].usd * 12 * 0.87);
   });
 });
