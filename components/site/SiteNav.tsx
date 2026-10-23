@@ -13,6 +13,7 @@ const LINKS = [
   { href: '#app', label: 'The app' },
   { href: '#earn', label: 'Earn' },
   { href: '#safety', label: 'Safety' },
+  { href: '/studio', label: 'Velocity Studio' },
 ];
 
 /**
@@ -53,7 +54,7 @@ export function SiteNav() {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    const mq = window.matchMedia('(min-width: 941px)');
+    const mq = window.matchMedia('(min-width: 1081px)');
     const onWide = () => mq.matches && setOpen(false);
     window.addEventListener('keydown', onKey);
     mq.addEventListener('change', onWide);
