@@ -2604,9 +2604,8 @@
     width: 48px;
     height: 48px;
   }
-}
 
-@media (max-width: 940px) {
+  /* Six links stop fitting on one line below 1080px (measured), so the burger takes over here. */
   .navLinks,
   .navCta {
     display: none;
@@ -2619,7 +2618,9 @@
   .mobileBar {
     display: flex;
   }
+}
 
+@media (max-width: 940px) {
   .statStrip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
