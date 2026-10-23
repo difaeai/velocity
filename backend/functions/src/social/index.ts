@@ -34,6 +34,9 @@ export {
 
 export { adminGetSocialSettings, adminUpdateSocialSettings } from './settings';
 
+/** The month plan the calendar shows and the daily run follows. */
+export { adminPlanSocialMonth } from './strategy';
+
 export {
   socialDailyContent,
   socialPublishSweep,

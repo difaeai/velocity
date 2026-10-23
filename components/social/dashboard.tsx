@@ -1,12 +1,11 @@
 'use client';
 
 /**
- * The overview's sections: the numbers across the top, the team as cards, what
- * is ready for you, what just happened and what worked.
+ * The overview's sections: the numbers, the pieces as boxes, the team as cards,
+ * what is travelling this week and what worked.
  *
  * Everything is read from documents the overview already watches. `readDesk`
- * is pure and does all the deciding, so the drawing below only draws — the
- * same split as `readPipeline` in ./pipeline.tsx.
+ * is pure and does all the deciding, so the drawing below only draws.
  */
 
 import { useState } from 'react';
@@ -15,29 +14,24 @@ import Link from 'next/link';
 import { colors } from '@/lib/config';
 import {
   postAssets,
+  socialApi,
   type SocialEmployee,
   type SocialPageRead,
   type SocialPostDoc,
+  type SocialResearch,
   type SocialRole,
   type SocialStage,
 } from '@/lib/api';
-import { SERIES, TimeSeries, compact } from '@/components/charts';
-import { FormatChip, Mascot, PLATFORM_META, ROLE_META, STAGE_META, StatusPill, longDate, postSummary } from './shared';
+import { compact } from '@/components/charts';
+import { FormatChip, Mascot, ROLE_META, STAGE_META, StatusPill, longDate, postSummary } from './shared';
 
-const LIME = '#ccff00';
 const WAITING = ['awaiting_approval', 'partial', 'failed'];
+/** Needs you, then being made, then the rest — the order a box is worth looking at. */
+const NEEDS_YOU = ['awaiting_approval', 'changes_requested', 'failed', 'partial'];
+const MAKING = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering', 'publishing'];
 
 /** Pakistan's calendar day for a moment — post ids and `date` are PKT days. */
 export const pktDay = (ms: number) => new Date(ms + 5 * 3600_000).toISOString().slice(0, 10);
-
-export interface Activity {
-  atMs: number;
-  who: string;
-  role: SocialRole | null;
-  what: string;
-  postId: string;
-  failed: boolean;
-}
 
 export interface Doing {
   now: boolean;
@@ -53,23 +47,11 @@ export function readDesk(posts: SocialPostDoc[], nowMs: number) {
   const day = (back: number) => pktDay(nowMs - back * 86_400_000);
   const posted = posts.filter((p) => p.status === 'published' || p.status === 'partial');
 
-  const activity: Activity[] = [];
   const doing = new Map<string, Doing>();
   for (const post of posts) {
     for (const [stage, w] of Object.entries(post.work ?? {}) as [SocialStage, NonNullable<SocialPostDoc['work']>[SocialStage]][]) {
-      if (!w) continue;
+      if (!w?.employeeId) continue;
       const atMs = (w.state === 'working' ? w.startedAtMs : w.finishedAtMs) ?? w.startedAtMs ?? 0;
-      if (w.state !== 'working' && atMs) {
-        activity.push({
-          atMs,
-          who: w.name,
-          role: w.role,
-          what: `${STAGE_META[stage].label} — ${w.error ?? w.note ?? 'done'}`,
-          postId: post.id,
-          failed: w.state === 'failed',
-        });
-      }
-      if (!w.employeeId) continue;
       const seen = doing.get(w.employeeId);
       const now = w.state === 'working';
       // Working beats finished; otherwise the latest thing they touched.
@@ -77,38 +59,17 @@ export function readDesk(posts: SocialPostDoc[], nowMs: number) {
         doing.set(w.employeeId, { now, stage, note: w.note, atMs, post });
       }
     }
-    for (const [platform, r] of Object.entries(post.results ?? {})) {
-      if (r?.ok && r.atMs) {
-        activity.push({
-          atMs: r.atMs,
-          who: 'Posted',
-          role: 'social-manager',
-          what: `Live on ${PLATFORM_META[platform as keyof typeof PLATFORM_META]?.label ?? platform} — ${postSummary(post)}`,
-          postId: post.id,
-          failed: false,
-        });
-      }
-    }
   }
-  activity.sort((a, b) => b.atMs - a.atMs);
 
+  const rank = (p: SocialPostDoc) => (NEEDS_YOU.includes(p.status) ? 0 : MAKING.includes(p.status) ? 1 : 2);
   return {
     today,
     postedThisWeek: posted.filter((p) => p.date > day(7)).length,
     postedLastWeek: posted.filter((p) => p.date > day(14) && p.date <= day(7)).length,
     waiting: posts.filter((p) => WAITING.includes(p.status)),
-    activity: activity.slice(0, 8),
     doing,
-    /** The week so far, oldest first, for the calendar strip. */
-    week: Array.from({ length: 7 }, (_, i) => day(6 - i)),
-    /** Fourteen days of made against posted, for the chart. */
-    days: Array.from({ length: 14 }, (_, i) => {
-      const d = day(13 - i);
-      return {
-        label: longDate(d).replace(/^\w+ /, ''),
-        values: [posts.filter((p) => p.date === d).length, posted.filter((p) => p.date === d).length],
-      };
-    }),
+    /** The boxes, most urgent first; posts arrive newest first and sort is stable. */
+    boxes: [...posts].sort((a, b) => rank(a) - rank(b)).slice(0, 8),
   };
 }
 
@@ -172,144 +133,162 @@ export function Kpi({
   );
 }
 
-// ── the banner ──────────────────────────────────────────────────────────────
+// ── the pieces, as boxes ───────────────────────────────────────────────────
 
-export type QuickAction = 'reel' | 'post' | 'ad' | 'like';
-
-export function Hero({
-  workspace,
-  waiting,
-  onMake,
-}: {
-  workspace: string;
-  waiting: number;
-  onMake: (what: QuickAction) => void;
-}) {
+/**
+ * What the team made, one box each, most urgent first. A box waiting for you
+ * can be approved right here; everything else opens in the queue.
+ */
+export function PostBoxes({ posts, direct }: { posts: SocialPostDoc[]; direct: boolean }) {
   return (
-    <section className="sd-hero" aria-label="Your social media team">
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: LIME, marginBottom: 10 }}>{workspace}</div>
-        <h2 style={{ fontSize: 26, lineHeight: 1.2, fontWeight: 900, margin: '0 0 10px', color: '#fff' }}>
-          Your social media team,
-          <br />
-          run by AI agents
-        </h2>
-        <p style={{ margin: '0 0 18px', fontSize: 14, lineHeight: 1.55, color: '#d6e6dc', maxWidth: 380 }}>
-          Say what you want. The team writes it, makes the picture or video, posts it, answers comments — and tells you
-          what worked.
+    <div className="sd-card">
+      <SectionHead
+        title="What the team made"
+        href="/dashboard/social/queue"
+        link="All posts"
+        sub={
+          direct
+            ? 'Finished pieces post themselves. Anything that could not go out waits here.'
+            : 'Check a piece and press Approve — it goes live within five minutes.'
+        }
+      />
+      {posts.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
+          Nothing yet. Ask for something above and it shows up here.
         </p>
-        <button type="button" className="sd-cta" onClick={() => onMake('reel')}>
-          Create new post →
-        </button>
-      </div>
-
-      <div className="sd-hero-art" aria-hidden>
-        <span className="sd-orbit">
-          {(['content-writer', 'designer', 'video-editor'] as SocialRole[]).map((role, i) => (
-            <span key={role} className="sd-face" style={{ left: `${i * 46}px`, top: i === 1 ? 0 : 26 }}>
-              <Mascot role={role} size={56} />
-            </span>
+      ) : (
+        <div className="sd-boxes">
+          {posts.map((p) => (
+            <PostBox key={p.id} post={p} />
           ))}
-        </span>
-        {(['instagram', 'facebook', 'tiktok', 'youtube'] as const).map((p, i) => (
-          <span
-            key={p}
-            className="sd-float sd-badge"
-            style={{
-              background: PLATFORM_META[p].brand,
-              animationDelay: `${i * 0.7}s`,
-              ...[{ left: 0, top: 0 }, { right: 0, top: 6 }, { left: 12, bottom: 0 }, { right: 8, bottom: 4 }][i],
-            }}
-          >
-            {PLATFORM_META[p].glyph}
-          </span>
-        ))}
-      </div>
-
-      <div className="sd-quick">
-        <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', marginBottom: 10 }}>Quick actions</div>
-        <button type="button" className="sd-qa" onClick={() => onMake('reel')}>
-          <span>📱 Make a reel</span>→
-        </button>
-        <button type="button" className="sd-qa" onClick={() => onMake('like')}>
-          <span>🎬 Make one like a video</span>→
-        </button>
-        <button type="button" className="sd-qa" onClick={() => onMake('post')}>
-          <span>🖼️ Make a post</span>→
-        </button>
-        <button type="button" className="sd-qa" onClick={() => onMake('ad')}>
-          <span>📣 Make a paid ad</span>→
-        </button>
-        <Link className="sd-qa" href="/dashboard/social/queue">
-          <span>✅ Check &amp; approve{waiting ? ` (${waiting})` : ''}</span>→
-        </Link>
-        <Link className="sd-qa" href="/dashboard/social/performance">
-          <span>📈 See what is working</span>→
-        </Link>
-      </div>
-    </section>
+        </div>
+      )}
+    </div>
   );
 }
 
-// ── ready for you ───────────────────────────────────────────────────────────
+function PostBox({ post }: { post: SocialPostDoc }) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const assets = postAssets(post);
+  const image = assets.find((a) => a.kind === 'image' && a.url);
+  const video = assets.find((a) => a.kind === 'video' && a.url);
+  const open = `/dashboard/social/queue?open=${post.id}`;
+  // The queue refuses an approve with nothing to post; so does the box.
+  const canApprove = post.status === 'awaiting_approval' && assets.length > 0;
 
-/** What is waiting, and the three steps between "made" and "live". */
-export function ReadyForYou({ waiting, direct }: { waiting: SocialPostDoc[]; direct: boolean }) {
-  const steps = [
-    { n: 1, title: 'The team makes it', text: 'Words, picture or video, captions — about ten minutes.' },
-    direct
-      ? { n: 2, title: 'It posts itself', text: 'You chose "post directly". Anything that could not go out waits here.' }
-      : { n: 2, title: 'You check it', text: 'Open it, read it, press Approve & post — or say what to fix.' },
-    { n: 3, title: 'It goes live', text: 'On Instagram and Facebook within five minutes. Numbers follow next day.' },
-  ];
+  async function approve() {
+    setBusy(true);
+    setSaid(null);
+    try {
+      const res = await socialApi.review({
+        postId: post.id,
+        approve: true,
+        caption: post.caption,
+        targets: post.targets,
+        publishNow: true,
+      });
+      setSaid(res.failed ? `${res.failed} network(s) failed — open it` : 'Posted');
+    } catch (e) {
+      setSaid(e instanceof Error ? e.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="sd-box sd-lift">
+      <Link href={open} className="sd-box-media" aria-label={`Open ${postSummary(post)}`}>
+        {video ? (
+          <video
+            src={video.url ?? undefined}
+            muted
+            playsInline
+            preload="metadata"
+            onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})}
+            onMouseLeave={(e) => e.currentTarget.pause()}
+          />
+        ) : image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={image.url ?? ''} alt={image.alt ?? ''} />
+        ) : (
+          <span>{MAKING.includes(post.status) ? 'Being made…' : 'No picture yet'}</span>
+        )}
+        {video ? <span className="sd-box-play">▶</span> : null}
+      </Link>
+      <div style={{ display: 'grid', gap: 7, padding: 11 }}>
+        <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormatChip format={post.format} />
+          <StatusPill status={post.status} />
+        </span>
+        <span className="sd-clip2" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, minHeight: 35 }}>
+          {postSummary(post)}
+        </span>
+        <span style={{ fontSize: 11.5, color: colors.muted }}>{longDate(post.date)}</span>
+        {said ? <span style={{ fontSize: 12, fontWeight: 700, color: colors.success }}>{said}</span> : null}
+        {canApprove && !said ? (
+          <button type="button" className="sd-box-go" onClick={approve} disabled={busy}>
+            {busy ? 'Posting…' : 'Approve & post'}
+          </button>
+        ) : (
+          <Link href={open} className="sd-box-open">
+            {NEEDS_YOU.includes(post.status) ? 'Open & fix →' : 'Open →'}
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── travelling this week ────────────────────────────────────────────────────
+
+/** A YouTube link is the one kind of address the team can watch for "make one like this". */
+export const isYouTube = (url: string) => /^https:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//.test(url);
+
+/**
+ * Real posts the morning search found travelling this week, and why. A YouTube
+ * one can go straight into the box above as "make one like this".
+ */
+export function ViralFinds({
+  research,
+  onLike,
+}: {
+  research: SocialResearch | null;
+  onLike: (url: string, title: string) => void;
+}) {
+  const finds = research?.viral ?? [];
   return (
     <div className="sd-card">
-      <SectionHead title="Ready for you" href="/dashboard/social/queue" link="Open the queue" />
-      <ol className="sd-steps">
-        {steps.map((s) => (
-          <li key={s.n}>
-            <span className="sd-step-n">{s.n}</span>
-            <span>
-              <strong style={{ display: 'block', fontSize: 13 }}>{s.title}</strong>
-              <span style={{ fontSize: 12, color: colors.muted, lineHeight: 1.45 }}>{s.text}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-      {waiting.length === 0 ? (
-        <p style={{ margin: '12px 0 0', fontSize: 13, color: colors.muted }}>Nothing is waiting for you.</p>
+      <SectionHead
+        title="Viral this week"
+        sub="Found by the research agent this morning. Open one, or have the team make one like it."
+      />
+      {finds.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: colors.muted, lineHeight: 1.5 }}>
+          {research?.error
+            ? `No list today: ${research.error}`
+            : 'The research agent lists what is travelling after its next morning search.'}
+        </p>
       ) : (
-        <div style={{ display: 'grid', gap: 2, marginTop: 12 }}>
-          {waiting.slice(0, 4).map((p) => {
-            const thumb = postAssets(p).find((a) => a.kind === 'image' && a.url);
-            const video = postAssets(p).some((a) => a.kind === 'video' && a.url);
-            return (
-              <Link key={p.id} href={`/dashboard/social/queue?open=${p.id}`} className="sd-row">
-                <span className="sd-thumb">
-                  {thumb ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb.url ?? ''} alt="" />
-                  ) : video ? (
-                    '▶'
-                  ) : (
-                    '…'
-                  )}
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
-                    <FormatChip format={p.format} />
-                    <span style={{ fontSize: 11.5, color: colors.muted }}>{longDate(p.date)}</span>
-                  </span>
-                  <span className="sd-clip" style={{ fontSize: 13, fontWeight: 700 }}>
-                    {postSummary(p)}
-                  </span>
-                </span>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: colors.primary, whiteSpace: 'nowrap' }}>
-                  {p.status === 'awaiting_approval' ? 'Review & post →' : 'Fix →'}
-                </span>
-              </Link>
-            );
-          })}
+        <div style={{ display: 'grid', gap: 10 }}>
+          {finds.map((f) => (
+            <div key={f.url} className="sd-top">
+              <a href={f.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: 'inherit' }}>
+                {f.title} ↗
+              </a>
+              {f.why ? <span style={{ fontSize: 12, color: colors.muted, lineHeight: 1.45 }}>{f.why}</span> : null}
+              {isYouTube(f.url) ? (
+                <button
+                  type="button"
+                  className="sd-box-open"
+                  style={{ justifySelf: 'start' }}
+                  onClick={() => onLike(f.url, f.title)}
+                >
+                  🎬 Make one like this
+                </button>
+              ) : null}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -438,111 +417,7 @@ export function AgentGrid({
   );
 }
 
-// ── the week ────────────────────────────────────────────────────────────────
-
-export function WeekStrip({ posts, desk }: { posts: SocialPostDoc[]; desk: DeskRead }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  const day = picked ?? desk.today;
-  const onDay = posts.filter((p) => p.date === day);
-  return (
-    <div className="sd-card">
-      <SectionHead title="This week" href="/dashboard/social/calendar" link="Calendar" />
-      <div className="sd-days" role="tablist" aria-label="Days">
-        {desk.week.map((d) => {
-          const n = posts.filter((p) => p.date === d).length;
-          const [wd, dm, mon] = longDate(d).split(' ');
-          return (
-            <button
-              key={d}
-              type="button"
-              role="tab"
-              aria-selected={d === day}
-              className={d === day ? 'sd-day sd-day-on' : 'sd-day'}
-              onClick={() => setPicked(d)}
-            >
-              <span style={{ fontWeight: 800 }}>{wd.replace(',', '')}</span>
-              <span>
-                {dm} {mon}
-              </span>
-              <span className="sd-day-n">{n || '·'}</span>
-            </button>
-          );
-        })}
-      </div>
-      {onDay.length === 0 ? (
-        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: colors.muted }}>Nothing made on this day.</p>
-      ) : (
-        <div style={{ display: 'grid', gap: 2, marginTop: 8 }}>
-          {onDay.map((p) => (
-            <Link key={p.id} href={`/dashboard/social/queue?open=${p.id}`} className="sd-row">
-              <FormatChip format={p.format} />
-              <span className="sd-clip" style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600 }}>
-                {postSummary(p)}
-              </span>
-              <StatusPill status={p.status} />
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function MadeChart({ desk }: { desk: DeskRead }) {
-  return (
-    <div className="sd-card">
-      <SectionHead title="Made and posted" sub="The last 14 days" />
-      <TimeSeries
-        points={desk.days}
-        series={[
-          { key: 'made', label: 'Made', color: SERIES[0] },
-          { key: 'posted', label: 'Posted', color: '#0ca30c' },
-        ]}
-        height={170}
-      />
-      <div style={{ display: 'flex', gap: 14, fontSize: 12, color: colors.muted, marginTop: 6 }}>
-        <span>
-          <span className="sd-key" style={{ background: SERIES[0] }} /> Made
-        </span>
-        <span>
-          <span className="sd-key" style={{ background: '#0ca30c' }} /> Posted
-        </span>
-      </div>
-    </div>
-  );
-}
-
 // ── the right column ────────────────────────────────────────────────────────
-
-export function RecentActivity({ desk, nowMs }: { desk: DeskRead; nowMs: number }) {
-  return (
-    <div className="sd-card">
-      <SectionHead title="Recent activity" href="/dashboard/social/queue" link="View all" />
-      {desk.activity.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>Nothing has happened yet.</p>
-      ) : (
-        <div style={{ display: 'grid', gap: 12 }}>
-          {desk.activity.map((a, i) => (
-            <Link key={i} href={`/dashboard/social/queue?open=${a.postId}`} style={{ display: 'flex', gap: 10 }}>
-              <span className="sd-avatar sd-avatar-sm" style={{ background: a.role ? `${ROLE_META[a.role].colour}33` : colors.bg }}>
-                {a.role ? <Mascot role={a.role} size={24} /> : null}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'flex', gap: 6 }}>
-                  <strong style={{ fontSize: 12.5, flex: 1 }}>{a.who}</strong>
-                  <span style={{ fontSize: 11, color: colors.muted, whiteSpace: 'nowrap' }}>{ago(a.atMs, nowMs)}</span>
-                </span>
-                <span className="sd-clip2" style={{ fontSize: 12, color: a.failed ? colors.danger : colors.muted, lineHeight: 1.4 }}>
-                  {a.what}
-                </span>
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function TopContent({ read }: { read: SocialPageRead | null }) {
   const best = read?.best.slice(0, 3) ?? [];
@@ -610,83 +485,49 @@ export const DASH_CSS = `
 .sd-card { background: ${colors.surface}; border: 1px solid ${colors.border}; border-radius: 16px; padding: 18px; min-width: 0; }
 .sd-lift { transition: box-shadow .18s ease, transform .18s ease; }
 .sd-lift:hover { box-shadow: 0 10px 28px rgba(0, 57, 36, .10); transform: translateY(-2px); }
+.sd-stack { display: grid; gap: 18px; margin-bottom: 18px; }
 .sd-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .sd-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
 .sd-col { display: grid; gap: 18px; min-width: 0; }
-.sd-row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-
-.sd-hero { position: relative; overflow: hidden; border-radius: 18px; padding: 26px; display: grid;
-  grid-template-columns: minmax(0, 1fr) 170px 250px; gap: 18px; align-items: center;
-  background: radial-gradient(120% 140% at 0% 0%, #0b6b45 0%, ${colors.primary} 45%, ${colors.primaryDark} 100%); }
-.sd-hero::after { content: ''; position: absolute; inset: auto -60px -80px auto; width: 260px; height: 260px;
-  border-radius: 50%; background: ${LIME}; opacity: .07; }
-.sd-cta { background: ${LIME}; color: #10210f; border: 0; border-radius: 10px; padding: 10px 18px; font-weight: 900;
-  font-size: 14px; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
-.sd-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(204, 255, 0, .35); }
-.sd-hero-art { position: relative; height: 150px; }
-.sd-orbit { position: absolute; left: 50%; top: 50%; width: 148px; height: 82px; transform: translate(-50%, -50%); }
-.sd-face { position: absolute; width: 60px; height: 60px; border-radius: 50%; background: #fff; display: grid;
-  place-items: center; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); }
-.sd-badge { position: absolute; width: 30px; height: 30px; border-radius: 9px; color: #fff; display: grid;
-  place-items: center; font-weight: 900; font-size: 13px; box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
-.sd-quick { position: relative; z-index: 1; background: rgba(0, 0, 0, .22); border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 14px; padding: 14px; display: grid; gap: 7px; }
-.sd-qa { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left;
-  background: rgba(255, 255, 255, .06); color: #fff; border: 1px solid rgba(255, 255, 255, .14); border-radius: 9px;
-  padding: 8px 11px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s ease, border-color .15s ease; }
-.sd-qa:hover { background: rgba(204, 255, 0, .14); border-color: ${LIME}; }
-
-.sd-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.sd-steps li { display: flex; gap: 9px; background: ${colors.bg}; border-radius: 12px; padding: 10px; }
-.sd-step-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: ${colors.primary}; color: ${LIME};
-  display: grid; place-items: center; font-weight: 900; font-size: 12px; }
-.sd-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; color: inherit; min-width: 0;
-  transition: background .15s ease; }
-.sd-row:hover { background: ${colors.bg}; }
-.sd-thumb { width: 36px; height: 46px; flex: none; border-radius: 7px; overflow: hidden; background: #1a1c1c;
-  color: ${LIME}; display: grid; place-items: center; font-size: 13px; }
-.sd-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .sd-clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-clip2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.sd-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.sd-box { display: grid; grid-template-rows: auto 1fr; border: 1px solid ${colors.border}; border-radius: 14px;
+  overflow: hidden; background: ${colors.surface}; min-width: 0; }
+.sd-box-media { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: #1a1c1c;
+  color: #ccff00; font-size: 12.5px; font-weight: 700; overflow: hidden; }
+.sd-box-media img, .sd-box-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sd-box-play { position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); color: #fff; display: grid; place-items: center; font-size: 11px; pointer-events: none; }
+.sd-box-go { border: 0; border-radius: 9px; padding: 8px 10px; background: ${colors.primary}; color: #fff;
+  font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; }
+.sd-box-go:disabled { opacity: .6; cursor: wait; }
+.sd-box-open { border: 1px solid ${colors.border}; border-radius: 9px; padding: 7px 10px; background: ${colors.surface};
+  color: ${colors.primary}; font: inherit; font-size: 12.5px; font-weight: 800; text-align: center; cursor: pointer; }
 
 .sd-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 12px; align-items: start; }
 .sd-agent { display: grid; gap: 10px; align-content: start; text-align: left; font: inherit; color: inherit;
   background: ${colors.surface}; border: 1px solid ${colors.border}; border-radius: 14px; padding: 13px; cursor: pointer; }
 .sd-avatar { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; }
-.sd-avatar-sm { width: 30px; height: 30px; border-radius: 9px; }
 .sd-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .sd-badge-pill { font-size: 11.5px; font-weight: 800; color: ${colors.success}; background: ${colors.success}14;
   border-radius: 999px; padding: 2px 9px; }
-
-.sd-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-.sd-day { display: grid; gap: 1px; justify-items: center; padding: 7px 2px; border-radius: 10px; font: inherit;
-  font-size: 11px; color: ${colors.muted}; background: ${colors.bg}; border: 1px solid transparent; cursor: pointer; }
-.sd-day:hover { border-color: ${colors.border}; }
-.sd-day-on { background: ${colors.primary}; color: #fff; }
-.sd-day-n { font-weight: 900; font-size: 12.5px; color: inherit; }
-.sd-key { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
 .sd-top { display: grid; gap: 5px; padding: 10px; border-radius: 12px; border: 1px solid ${colors.border}; color: inherit;
   transition: border-color .15s ease; }
 .sd-top:hover { border-color: ${colors.primary}; }
 
 .sd-pulse { animation: sd-pulse 1.6s ease-out infinite; }
 @keyframes sd-pulse { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, .55); } 75%, 100% { box-shadow: 0 0 0 7px rgba(12, 163, 12, 0); } }
-.sd-float { animation: sd-float 5s ease-in-out infinite; }
-@keyframes sd-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 
-@media (max-width: 1240px) {
-  .sd-grid { grid-template-columns: minmax(0, 1fr); }
-  .sd-hero { grid-template-columns: minmax(0, 1fr) 250px; }
-  .sd-hero-art { display: none; }
+@media (max-width: 1240px) { .sd-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .sd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) {
+  .sd-kpis { grid-template-columns: minmax(0, 1fr); }
+  .sd-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 900px) {
-  .sd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sd-row2, .sd-hero, .sd-steps { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 520px) { .sd-kpis { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) {
-  .sd-pulse, .sd-float { animation: none; }
-  .sd-lift:hover, .sd-cta:hover { transform: none; }
+  .sd-pulse { animation: none; }
+  .sd-lift:hover { transform: none; }
 }
 `;

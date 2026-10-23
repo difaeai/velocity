@@ -61,6 +61,7 @@ import { renderStill, stillCards } from './still';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
 import { adPass, searchPass, seoPass } from './seo';
 import { getSocialSettings, nextAngle, nextFormat, recordRun } from './settings';
+import { ensureMonthPlan, plannedSlots, type PlannedSlot } from './strategy';
 import { planCut, storeVideo } from './video';
 import {
   FORMATS,
@@ -698,10 +699,16 @@ async function renderAndAttach(params: {
       scenes: plan.beats.map((b) => b.scene),
       orientation: params.format === 'video' ? 'landscape' : 'portrait',
       footage: !local.paths.length,
+      voiceover: params.script.voiceover,
     });
 
     try {
-      const bytes = await renderReel(plan, { localImages: local.paths, localClips: under.clips, music: under.music });
+      const bytes = await renderReel(plan, {
+        localImages: local.paths,
+        localClips: under.clips,
+        music: under.music,
+        voice: under.voice,
+      });
       const stored = await storeVideo(params.id, bytes);
 
       const asset: MediaAsset = {
@@ -1073,18 +1080,31 @@ async function runDaily(date: string): Promise<string> {
   const made: string[] = [];
 
   /** Queue one piece, unless this date already has that format. */
-  const queue = async (format: ContentFormat): Promise<void> => {
+  const queue = async (format: ContentFormat, slot?: PlannedSlot): Promise<void> => {
     const id = postIdFor(date, format);
     if ((await postRef(id).get()).exists) return;
     try {
-      await createPost({ date, format });
+      await createPost({
+        date,
+        format,
+        ...(slot
+          ? {
+              angle: slot.pillar.length >= 2 ? slot.pillar : undefined,
+              brief: { text: `${slot.topic}${slot.hook ? ` — open with: ${slot.hook}` : ''}`, by: 'The month plan' },
+            }
+          : {}),
+      });
       made.push(format);
     } catch (e) {
       logger.error('social: a scheduled piece failed', { date, format, message: (e as Error).message });
     }
   };
 
-  for (let i = 0; i < wanted; i++) {
+  // The month plan decides the day when it has one; the rotation fills the rest.
+  const planned = (await plannedSlots(date)).slice(0, wanted);
+  for (const slot of planned) await queue(slot.format, slot);
+
+  for (let i = planned.length; i < wanted; i++) {
     // Re-read: nextFormat advances the stored index, so a second piece the same
     // morning has to see the first one's advance or it makes the same format
     // twice and then skips itself on the duplicate id.
@@ -1129,6 +1149,7 @@ export const socialDailyContent = onSchedule(
 
     const date = dayKey(Date.now());
     try {
+      await ensureMonthPlan(date.slice(0, 7));
       const outcome = await runDaily(date);
       // Which engine ran is recorded with the outcome: the four produce
       // visibly different work, and "why does today read like a template"

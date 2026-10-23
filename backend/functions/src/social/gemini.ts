@@ -144,6 +144,8 @@ interface Annotation {
 interface Block {
   type?: string;
   text?: unknown;
+  /** Base64 audio, on a block of type `audio`. */
+  data?: unknown;
   annotations?: Annotation[];
 }
 
@@ -312,4 +314,35 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
   }
 
   return result;
+}
+
+/** Free on the same key, and the only TTS that follows a style note in plain words. */
+export const SPEECH_MODEL = 'gemini-3.8-flash-tts';
+
+/**
+ * Read a line aloud: a WAV (24 kHz, mono, 16-bit) the reel mixes under its
+ * words. Same endpoint and the same rate-limit handling as the text calls; the
+ * audio is the last `audio` block of the model's output.
+ */
+export async function geminiSpeech(text: string, style: string, voice = 'Puck'): Promise<Buffer> {
+  if (!geminiReady()) throw new GeminiError('GEMINI_KEY_RESEARCH is not configured.');
+  const data = await post({
+    model: SPEECH_MODEL,
+    input: [
+      {
+        type: 'user_input',
+        content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }],
+      },
+    ],
+    response_format: { type: 'audio' },
+    generation_config: { speech_config: [{ voice }] },
+    store: false,
+  });
+  const audio = (data.steps ?? [])
+    .filter((s) => s.type === 'model_output')
+    .flatMap((s) => s.content ?? [])
+    .filter((b) => b.type === 'audio' && typeof b.data === 'string')
+    .pop();
+  if (!audio) throw new GeminiError('Gemini returned no audio.');
+  return Buffer.from(audio.data as string, 'base64');
 }

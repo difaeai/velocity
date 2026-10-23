@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { escapeArg, ffmpegPath, filterGraph, planReel, wrap } from '../reel';
+import { escapeArg, ffmpegPath, filterGraph, planReel, voiceTempo, wrap } from '../reel';
 import type { PostScript } from '../types';
 
 const script = (over: Partial<PostScript> = {}): PostScript => ({
@@ -221,6 +221,23 @@ describe('filterGraph', () => {
     const graph = graphFor();
     expect(graph).toMatch(/^\[0:a\]afade=t=in:st=0:d=0\.4,afade=t=out:st=18\.5:d=1\.5\[aout\]/);
   });
+
+  it('ducks the music under a voice-over, which is the input after it', () => {
+    const plan = planReel({ script: script(), format: 'reel' });
+    const graph = filterGraph(
+      { ...plan, voice: { tempo: 1.1 } },
+      { ...paths, textFiles: plan.beats.map((b) => b.lines.map((_, i) => `/tmp/${i}.txt`)) },
+    );
+    expect(graph).toMatch(/^\[0:a\]volume=0\.22\[bed\];\[1:a\]aresample=44100[^;]*atempo=1\.1,adelay=300:all=1\[vo\]/);
+    expect(graph).toContain('[bed][vo]amix=inputs=2:duration=first');
+    expect(graph).toMatch(/afade=t=out:st=18\.5:d=1\.5\[aout\]/);
+  });
+});
+
+describe('voiceTempo', () => {
+  it('leaves a voice that fits alone', () => expect(voiceTempo(12, 20)).toBe(1));
+  it('speeds up one that runs long, just enough', () => expect(voiceTempo(23, 20)).toBeCloseTo(23 / 19.2, 3));
+  it('never past 1.35x — the rest is cut by the reel', () => expect(voiceTempo(60, 20)).toBe(1.35));
 });
 
 describe('escapeArg', () => {

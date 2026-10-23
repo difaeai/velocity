@@ -1390,8 +1390,24 @@ export interface SocialResearch {
   hookPatterns: string[];
   avoid: string[];
   sounds?: string[];
+  /** Real posts travelling this week, found by the morning search. */
+  viral?: { title: string; url: string; why: string }[];
   sources: { title: string; url: string }[];
   error: string | null;
+}
+
+/** The month's strategy at `socialPlans/{YYYY-MM}`. Mirrors `MonthPlan` in social/strategy.ts. */
+export interface SocialMonthPlan {
+  month: string;
+  atMs: number;
+  by: string;
+  engine: string;
+  goal: string;
+  pillars: string[];
+  weeks: { theme: string; focus: string }[];
+  days: Record<string, { format: SocialFormat; topic: string; hook: string; pillar: string }[]>;
+  ads: string[];
+  sales: string[];
 }
 
 /** What the team saw in a video it was asked to make something like. Mirrors `ReferenceRead`. */
@@ -1722,6 +1738,8 @@ export const socialApi = {
   updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings }>(
     'adminUpdateSocialSettings',
   ),
+  /** Have the team (re)write the month's strategy. Read the result from `socialPlans/{month}`. */
+  planMonth: callable<{ month: string }, { ok: boolean; days: number }>('adminPlanSocialMonth', LONG_CALL_MS),
 
   /**
    * Put the team on a piece. `brief` is what it should be about, in your own

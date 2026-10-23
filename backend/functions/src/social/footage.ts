@@ -12,11 +12,14 @@
  *   Pixabay needs `PIXABAY_API_KEY` (free). With neither, the reel stays
  *   typography.
  * - **Music** is the library under `socialMusic/`, filled from Automation with
- *   tracks cleared for Instagram (Meta Sound Collection, Pixabay Music).
- *   Instagram's own trending sounds cannot be attached through any API, and a
- *   copyrighted song baked into the file gets the reel muted — so the research
- *   desk lists this week's trending sounds in the queue instead, for whoever
- *   posts by hand. Empty library, silent reel.
+ *   tracks cleared for Instagram (Meta Sound Collection, Pixabay Music), and
+ *   the shared public-domain starter tracks under `studioMusic/` while that is
+ *   empty. Instagram's own trending sounds cannot be attached through any API,
+ *   and a copyrighted song baked into the file gets the reel muted — so the
+ *   research desk lists this week's trending sounds in the queue instead, for
+ *   whoever posts by hand.
+ * - **Voice-over** is the writer's spoken line read by Gemini's free speech
+ *   model, mixed over the music. No key, no voice.
  *
  * Everything here fails soft: a missing clip or track is a plainer reel, never
  * a failed one.
@@ -29,10 +32,13 @@ import path from 'node:path';
 import { logger } from 'firebase-functions';
 
 import { db, storage } from '../lib/firebase';
+import { geminiReady, geminiSpeech } from './gemini';
 
 /** Where the admin's libraries live in the bucket. */
 export const MUSIC_FOLDER = 'socialMusic/';
 export const CLIPS_FOLDER = 'socialClips/';
+/** Public-domain (CC0) starter tracks every desk falls back to while its own library is empty. */
+export const SHARED_MUSIC_FOLDER = 'studioMusic/';
 
 /** What to search when a scene finds nothing — on-brand, and stock has plenty of it. */
 const FALLBACK_SCENE = 'city traffic night';
@@ -181,13 +187,31 @@ async function ownClips(postId: string, count: number, dir: string): Promise<str
   return paths;
 }
 
-/** The library track for this piece, downloaded into `dir`, or null when the library is empty. */
+/** The library track for this piece, downloaded into `dir`; the shared starter tracks when ours is empty. */
 async function libraryTrack(postId: string, dir: string): Promise<{ path: string; name: string } | null> {
-  const [track] = rotate(await library(MUSIC_FOLDER), postId, 1);
+  const own = await library(MUSIC_FOLDER);
+  const [track] = rotate(own.length ? own : await library(SHARED_MUSIC_FOLDER), postId, 1);
   if (!track) return null;
   const out = path.join(dir, `music${path.extname(track.name)}`);
   await track.download({ destination: out });
   return { path: out, name: path.basename(track.name) };
+}
+
+/** How a voice-over is read: like somebody talking to camera, not an announcement. */
+export const VOICE_STYLE =
+  'Warm, upbeat and conversational, like a creator talking to the camera. Natural pace. ' +
+  'Where the words are Roman Urdu, say them the way a Pakistani speaker would.';
+
+/** Seconds of audio in a 24 kHz mono 16-bit WAV, which is what the speech model returns. */
+export const wavSeconds = (bytes: number) => Math.max(0, bytes - 44) / 48_000;
+
+/** The writer's spoken line, read aloud into `dir`, or null with no key or no line. */
+async function voiceOver(text: string, dir: string): Promise<{ path: string; seconds: number } | null> {
+  if (!text.trim() || !geminiReady()) return null;
+  const wav = await geminiSpeech(text.trim(), VOICE_STYLE);
+  const out = path.join(dir, 'voice.wav');
+  await writeFile(out, wav);
+  return { path: out, seconds: wavSeconds(wav.length) };
 }
 
 /**
@@ -202,7 +226,15 @@ export async function underlay(params: {
   scenes: string[];
   orientation: 'portrait' | 'landscape';
   footage: boolean;
-}): Promise<{ clips: string[]; music: string | null; note: string; cleanup: () => Promise<void> }> {
+  /** The script's spoken line; empty means no voice-over. */
+  voiceover?: string;
+}): Promise<{
+  clips: string[];
+  music: string | null;
+  voice: { path: string; seconds: number } | null;
+  note: string;
+  cleanup: () => Promise<void>;
+}> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-underlay-'));
   const cleanup = () => rm(dir, { recursive: true, force: true }).catch(() => {});
   const soft = <T>(what: string, fallback: T) => (e: unknown) => {
@@ -214,6 +246,7 @@ export async function underlay(params: {
   const own = params.footage ? await ownClips(params.postId, params.scenes.length, dir).catch(soft('our clips', [])) : [];
   const stock = params.footage ? await stockClips(params.scenes.slice(own.length), params.orientation, dir) : [];
   const track = await libraryTrack(params.postId, dir).catch(soft('a music track', null));
+  const voice = await voiceOver(params.voiceover ?? '', dir).catch(soft('the voice-over', null));
 
   const notes = [
     own.length ? `${own.length} of our clips` : null,
@@ -221,7 +254,14 @@ export async function underlay(params: {
     params.footage && !own.length && !stock.length
       ? `no footage (${process.env.PIXABAY_API_KEY?.trim() ? 'none found' : 'no clips in the library, no Pixabay key'})`
       : null,
-    track ? `music: ${track.name}` : 'no music (the library on Automation is empty)',
+    track ? `music: ${track.name}` : 'no music (no track in either library)',
+    voice ? `voice-over ${voice.seconds.toFixed(1)}s` : params.voiceover?.trim() ? 'no voice-over' : null,
   ];
-  return { clips: [...own, ...stock], music: track?.path ?? null, note: notes.filter(Boolean).join(', '), cleanup };
+  return {
+    clips: [...own, ...stock],
+    music: track?.path ?? null,
+    voice,
+    note: notes.filter(Boolean).join(', '),
+    cleanup,
+  };
 }

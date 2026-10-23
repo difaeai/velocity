@@ -545,6 +545,7 @@ export {
   adminSeedSocialTeam,
   adminGetSocialSettings,
   adminUpdateSocialSettings,
+  adminPlanSocialMonth,
   socialDailyContent,
   socialPublishSweep,
   adminGenerateSocialPost,
