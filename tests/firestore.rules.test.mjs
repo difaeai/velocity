@@ -1008,3 +1008,35 @@ test('an in-app call is readable by its two people only, and each writes only it
   await assertFails(updateDoc(doc(driver, 'calls/call2'), { status: 'active' }));
   await assertFails(updateDoc(doc(passenger, 'calls/call2'), { status: 'ringing' }));
 });
+
+test('Velocity Studio: a customer reads only their own workspace, never its secrets, and writes nothing', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'workspaces/wsA'), { ownerUid: 'ownerA', plan: 'content' });
+    await setDoc(doc(db, 'workspaces/wsA/socialPosts/p1'), { status: 'awaiting_approval' });
+    await setDoc(doc(db, 'workspaces/wsA/system/socialAutomation'), { enabled: false });
+    await setDoc(doc(db, 'workspaces/wsA/socialAccounts/instagram/secret/credentials'), { token: 'sealed' });
+    await setDoc(doc(db, 'workspaces/wsB/socialPosts/p1'), { status: 'published' });
+    await setDoc(doc(db, 'studioPayments/payA'), { wid: 'wsA', status: 'pending' });
+    await setDoc(doc(db, 'studioPayments/payB'), { wid: 'wsB', status: 'pending' });
+  });
+  const ownerA = testEnv.authenticatedContext('ownerA', { ws: 'wsA' }).firestore();
+
+  await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA')));
+  await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA/socialPosts/p1')));
+  await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA/system/socialAutomation')));
+  await assertFails(getDoc(doc(ownerA, 'workspaces/wsA/socialAccounts/instagram/secret/credentials')));
+  await assertFails(getDoc(doc(ownerA, 'workspaces/wsB/socialPosts/p1')));
+  await assertFails(getDoc(doc(ownerA, 'socialPosts/anything')));
+  await assertFails(setDoc(doc(ownerA, 'workspaces/wsA/socialPosts/p2'), { status: 'published' }));
+  await assertFails(updateDoc(doc(ownerA, 'workspaces/wsA'), { plan: 'all', paidUntilMs: 9e15 }));
+
+  await assertSucceeds(getDoc(doc(ownerA, 'studioPayments/payA')));
+  await assertFails(getDoc(doc(ownerA, 'studioPayments/payB')));
+  await assertFails(setDoc(doc(ownerA, 'studioPayments/forged'), { wid: 'wsA', status: 'approved' }));
+  await assertFails(getDoc(doc(ownerA, 'studioTxnRefs/ANY')));
+
+  // A rider with no workspace sees none; an admin sees all.
+  await assertFails(getDoc(doc(passenger, 'workspaces/wsA')));
+  await assertSucceeds(getDoc(doc(admin, 'workspaces/wsA/socialPosts/p1')));
+});

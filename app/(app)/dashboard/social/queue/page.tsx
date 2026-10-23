@@ -32,6 +32,7 @@ import { collection, onSnapshot, orderBy, query, limit } from 'firebase/firestor
 import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import {
   postAssets,
@@ -88,6 +89,7 @@ const WORKING_STATES = [
 ];
 
 export default function QueuePage() {
+  const { path } = useWorkspace();
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [shelf, setShelf] = useState<Shelf>('needs');
@@ -97,11 +99,11 @@ export default function QueuePage() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(pageSize)),
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(pageSize)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
-    [pageSize],
+    [pageSize, path],
   );
 
   // `?open=<id>` from the overview opens that piece on the shelf that shows it.
@@ -113,7 +115,7 @@ export default function QueuePage() {
       setShelf('all');
     }, 0);
     return () => clearTimeout(t);
-  }, []);
+  }, [path]);
 
   const counts = useMemo(
     () =>
@@ -287,6 +289,7 @@ function PostTile({ post, open, onOpen }: { post: SocialPostDoc; open: boolean; 
 }
 
 function PostCard({ post }: { post: SocialPostDoc }) {
+  const { path } = useWorkspace();
   const [caption, setCaption] = useState(post.caption);
   const [targets, setTargets] = useState<SocialPlatform[]>(post.targets ?? []);
   const [feedback, setFeedback] = useState('');
@@ -398,9 +401,9 @@ function PostCard({ post }: { post: SocialPostDoc }) {
   async function attach(file: File) {
     await run('attach', async () => {
       const kind = file.type.startsWith('video') ? 'video' : 'image';
-      const path = `socialUploads/${post.id}-${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
-      await uploadBytes(ref(storage, path), file);
-      await socialApi.attachMedia({ postId: post.id, storagePath: path, kind });
+      const upload = path(`socialUploads/${post.id}-${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`);
+      await uploadBytes(ref(storage, upload), file);
+      await socialApi.attachMedia({ postId: post.id, storagePath: upload, kind });
       return `${kind === 'video' ? 'Video' : 'Image'} attached.`;
     });
   }

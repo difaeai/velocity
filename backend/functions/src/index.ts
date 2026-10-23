@@ -570,6 +570,20 @@ export {
   adminAuditProfile,
 } from './social';
 
+// Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals
+export { studioCreateWorkspace, studioSubmitPayment, adminDecideStudioPayment } from './studio';
+
+// The sales agent — find businesses, write one short email each, send from the customer's own mailbox
+export {
+  salesGetSettings,
+  salesSaveSettings,
+  salesFindLeads,
+  salesAddLeads,
+  salesWriteEmails,
+  salesLeadAction,
+  salesSweep,
+} from './sales';
+
 // What Velocity pays its vendors — pulled from Google Cloud, Anthropic and Meta
 export { refreshPlatformCosts, adminRefreshPlatformCosts } from './costs';
 

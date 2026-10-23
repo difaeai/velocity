@@ -12,7 +12,7 @@ import { Button, Card } from '@/components/ui';
 import { VelocityIcon } from '@/components/BrandMark';
 
 export default function Login() {
-  const { user, isAdmin, initializing, signOut } = useAuth();
+  const { user, isAdmin, workspaceId, initializing, signOut } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +21,8 @@ export default function Login() {
 
   useEffect(() => {
     if (!initializing && user && isAdmin) router.replace('/dashboard');
-  }, [initializing, user, isAdmin, router]);
+    else if (!initializing && user && workspaceId) router.replace('/dashboard/social');
+  }, [initializing, user, isAdmin, workspaceId, router]);
 
   async function submit() {
     setError(null);
@@ -35,7 +36,7 @@ export default function Login() {
     }
   }
 
-  const signedInNotAdmin = !initializing && !!user && !isAdmin;
+  const signedInNotAdmin = !initializing && !!user && !isAdmin && !workspaceId;
 
   return (
     <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
@@ -51,7 +52,11 @@ export default function Login() {
               This account doesn&apos;t have admin access.
             </p>
             <p style={{ color: colors.muted, fontSize: 13 }}>
-              Ask an existing admin to grant your account the <code>admin</code> role.
+              Ask an existing admin to grant your account the <code>admin</code> role — or{' '}
+              <a href="/studio/start" style={{ color: colors.secondary, fontWeight: 700 }}>
+                start Velocity Studio
+              </a>{' '}
+              for your own business.
             </p>
             <Button variant="secondary" onClick={signOut}>
               Sign out

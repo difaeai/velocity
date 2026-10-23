@@ -26,17 +26,17 @@
  * The reads are free: Instagram's insights cost nothing through the Graph API.
  * One model call a day summarises them, and one a month scores the profile.
  */
-import { onCall } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
-import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { FieldValue } from '../lib/firebase';
+import { deskCall, forEachWorkspace, sdb } from './workspace';
+
 import { dayKey } from '../analytics';
 import { connectedPlatforms, loadCredentials } from './accounts';
 import { generateJson, modelReady } from './engine';
 import { localLessons } from './local';
-import { BRAND, HARD_RULES, briefBlock, standingInstructions } from './crew';
+import { brandBlock, briefBlock, hardRules, standingInstructions } from './crew';
 import { activeTeam, assign } from './employees';
 import { scoreHook } from './lint';
 import { ADAPTERS, type PostPerformance, type ProfileDetail } from './platforms';
@@ -233,9 +233,9 @@ export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
       model: settings.textModel,
       system: [
         reader ? `You are ${reader.name}, ${reader.title}.` : '',
-        BRAND,
+        brandBlock(),
         briefBlock(settings, 'research-assistant'),
-        HARD_RULES,
+        hardRules(),
         LESSON_SYSTEM,
         standingInstructions(settings),
       ]
@@ -282,7 +282,7 @@ export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
 
 /** The last read, for the standup and the console. */
 export async function latestPageRead(): Promise<PageRead | null> {
-  const snap = await db.doc(INSIGHTS_PATH).get();
+  const snap = await sdb.doc(INSIGHTS_PATH).get();
   return snap.exists ? (snap.data() as PageRead) : null;
 }
 
@@ -376,9 +376,9 @@ export async function auditProfile(settings: SocialSettings): Promise<ProfileAud
       model: settings.textModel,
       system: [
         auditor ? `You are ${auditor.name}, ${auditor.title}.` : '',
-        BRAND,
+        brandBlock(),
         briefBlock(settings, auditor?.role ?? null),
-        HARD_RULES,
+        hardRules(),
         AUDIT_SYSTEM,
         standingInstructions(settings),
       ]
@@ -444,48 +444,48 @@ export async function auditProfile(settings: SocialSettings): Promise<ProfileAud
  */
 export const socialPageRead = onSchedule(
   { schedule: '0 * * * *', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 540, memory: '1GiB' },
-  async () => {
-    const settings = await getSocialSettings();
-    if (!settings.enabled || !settings.learnFromOwnPage) return;
+  () =>
+    forEachWorkspace('content', async () => {
+      const settings = await getSocialSettings();
+      if (!settings.enabled || !settings.learnFromOwnPage) return;
 
-    const nowPkt = new Date(Date.now() + 5 * 3600_000);
-    const hour = (settings.runHour + 23) % 24;
-    if (nowPkt.getUTCHours() !== hour) return;
+      const nowPkt = new Date(Date.now() + 5 * 3600_000);
+      const hour = (settings.runHour + 23) % 24;
+      if (nowPkt.getUTCHours() !== hour) return;
 
-    const read = await readOwnPage(settings);
-    await db.doc(INSIGHTS_PATH).set(read);
-    logger.info('social: read our own page', {
-      sampled: read.sampled,
-      median: read.medianReach,
-      error: read.error,
-    });
-  },
+      const read = await readOwnPage(settings);
+      await sdb.doc(INSIGHTS_PATH).set(read);
+      logger.info('social: read our own page', {
+        sampled: read.sampled,
+        median: read.medianReach,
+        error: read.error,
+      });
+    }),
 );
 
 /** Score the profile once a week. It changes slowly; a daily call would be waste. */
 export const socialProfileAudit = onSchedule(
   { schedule: '0 9 * * 1', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 540, memory: '1GiB' },
-  async () => {
-    const settings = await getSocialSettings();
-    if (!settings.enabled || !settings.learnFromOwnPage) return;
-    const audit = await auditProfile(settings);
-    await db.doc(AUDIT_PATH).set(audit);
-    logger.info('social: scored the profile', { score: audit.score, error: audit.error });
-  },
+  () =>
+    forEachWorkspace('content', async () => {
+      const settings = await getSocialSettings();
+      if (!settings.enabled || !settings.learnFromOwnPage) return;
+      const audit = await auditProfile(settings);
+      await sdb.doc(AUDIT_PATH).set(audit);
+      logger.info('social: scored the profile', { score: audit.score, error: audit.error });
+    }),
 );
 
 // ── on demand ───────────────────────────────────────────────────────────────
 
-export const adminReadOwnPage = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
-  requireAdmin(req);
+export const adminReadOwnPage = deskCall('content', { timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const read = await readOwnPage(await getSocialSettings());
-  await db.doc(INSIGHTS_PATH).set(read);
+  await sdb.doc(INSIGHTS_PATH).set(read);
   return read;
 });
 
-export const adminAuditProfile = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
-  requireAdmin(req);
+export const adminAuditProfile = deskCall('content', { timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const audit = await auditProfile(await getSocialSettings());
-  await db.doc(AUDIT_PATH).set({ ...audit, updatedAt: FieldValue.serverTimestamp() });
+  await sdb.doc(AUDIT_PATH).set({ ...audit, updatedAt: FieldValue.serverTimestamp() });
   return audit;
 });

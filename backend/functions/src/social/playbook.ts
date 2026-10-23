@@ -109,7 +109,7 @@ HOW A HOOK IS BUILT:
 - Put the payload in the first three words. The interesting word cannot be in position nine.
 - Speak to one person: "you", singular — or open on an imperative.
 - Something has to be at stake. A line with no tension is a statement, not a hook.
-- If the hook would work for any other ride-hailing app, it is not our hook.
+- If the hook would work for any other business selling the same thing, it is not our hook.
 - A hook promises something. Deliver it before the halfway mark.
 
 NEVER, in any hook: "stop scrolling", "don't scroll", "in this video", "wait for it", "watch till the end", a greeting of any kind, a hashtag, or an emoji.`;
@@ -221,7 +221,7 @@ const DESIGN_CRAFT = `WHAT A PICTURE HAS TO DO BEFORE IT IS PRETTY:
 - Text away from the edges: Instagram's own UI covers the top and bottom of a 9:16 frame, and a grid crop eats the sides of a 4:5.
 - Reel covers are chosen, never left as frame one, because nine of them in a row are the first thing a stranger sees on the profile.
 - One idea per frame. The overlay is six words at most.
-- Real Pakistani streets, real light, real cars. Stock-looking polish reads as an advert, and an advert is scrolled past.`;
+- Real streets, real light, real people. Stock-looking polish reads as an advert, and an advert is scrolled past.`;
 
 const EDIT_CRAFT = `THE CUT, IN SECONDS:
 Write the brief to the clock, because whoever shoots it cannot add time later.
@@ -252,9 +252,9 @@ export const AD_NUMBERS = `THE AD NUMBERS — what each one is, how it is worked
 - CPC (cost per link click) = spend ÷ link clicks, which is also CPM ÷ (CTR × 10). A click gets cheaper two ways, a cheaper auction or a better ad — fix CTR first, it is the one you control.
 - Frequency = impressions ÷ reach. Above about 3.5 the same people stop noticing; change the creative before adding budget.
 - Cost per result = spend ÷ the objective's own result (link clicks, engagements, or people reached per 1,000).
-- Cost per order = spend ÷ orders. An order is a completed ride.
-- ROAS (return on ad spend) = revenue ÷ spend. Velocity's revenue is its commission, not the fare, so ROAS here is commission ÷ spend: 1.0 is break-even, under 1 the ads cost more than the rides earned. Guides quote ROAS on sales; on fares it looks many times bigger than what Velocity keeps, so never compare the two.
-- Meta cannot see a ride booked in the app, so cost per order and ROAS are BLENDED: every completed ride in the week against the whole week's ad bill. Riders who came on their own are in it too, so it flatters the ads. Read it as a trend over weeks; never credit or blame one campaign with it, and never claim a campaign brought orders.`;
+- Cost per order = spend ÷ orders. For Velocity an order is a completed ride.
+- ROAS (return on ad spend) = revenue ÷ spend, where revenue is what the business itself keeps. For a marketplace like Velocity that is its commission, not the fare: 1.0 is break-even, under 1 the ads cost more than the orders earned. Guides quote ROAS on sales; for a marketplace that looks many times bigger than what it keeps, so never compare the two.
+- Meta cannot see an order made outside it (for Velocity, a ride booked in the app), so cost per order and ROAS are BLENDED: every completed ride in the week against the whole week's ad bill. Riders who came on their own are in it too, so it flatters the ads. Read it as a trend over weeks; never credit or blame one campaign with it, and never claim a campaign brought orders.`;
 
 const SEARCH_CRAFT = `IN-PLATFORM SEARCH:
 People type questions into Instagram, TikTok and YouTube the way they type them into Google — "sasti ride Lahore", "Lahore to Islamabad kiraya". A question asked in the viewer's own words, left in the caption and said out loud in the first lines, is what search matches on weeks later.

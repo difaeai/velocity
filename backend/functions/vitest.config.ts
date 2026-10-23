@@ -38,6 +38,10 @@ export default defineConfig({
       'src/whatsapp/__tests__/**/*.test.ts',
       'src/specialRides/__tests__/**/*.test.ts',
       'src/traffic/__tests__/**/*.test.ts',
+      // Velocity Studio: workspaces, plans and payments for the desk's customers.
+      'src/studio/__tests__/**/*.test.ts',
+      // The sales agent: what it fetches, reads, asks the map for and refuses to send.
+      'src/sales/__tests__/**/*.test.ts',
       // The engine that watches every other feature. Easy one to forget, and
       // a QA engine nobody tests is a QA engine nobody can trust.
       'src/qa/__tests__/**/*.test.ts',

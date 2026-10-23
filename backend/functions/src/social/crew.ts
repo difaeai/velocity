@@ -23,6 +23,7 @@ import {
   type Role,
   type SocialSettings,
 } from './types';
+import { isHouse, workspaceBrand } from './workspace';
 
 /**
  * The only things about Velocity worth saying. Shared by everyone so the
@@ -46,6 +47,41 @@ export const HARD_RULES = `Rules no instruction overrides:
 3. No guaranteed-income language ("earn X per month"). Describe how earnings work, not what someone will make.
 4. Urdu/English code-switching is natural for this audience — use it where it sounds right. Keep on-screen text short and mostly English.
 5. Nothing that would embarrass a driver, a rider, or a regulator reading it back a year later.`;
+
+/**
+ * The brand block for whoever's desk this is: Velocity's own words in the
+ * house, the customer's sign-up answers in a Velocity Studio workspace.
+ */
+export function brandBlock(): string {
+  const b = workspaceBrand();
+  if (!b) return BRAND;
+  return [
+    `${b.name}: ${b.what}`,
+    b.differences ? `What makes it different — the only things worth saying:\n${b.differences}` : '',
+    b.audience ? `Who buys it: ${b.audience}` : '',
+    b.market ? `Where: ${b.market}` : '',
+    b.website ? `Website: ${b.website}` : '',
+    'Look and feel: real people, real places, natural light. Confident, never cheesy, never stock-footage.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** HARD_RULES, with the language rule and the people it protects made the customer's own. */
+export function hardRules(): string {
+  const b = workspaceBrand();
+  if (!b) return HARD_RULES;
+  return HARD_RULES.replace(
+    /\n4\. [^\n]*\n5\. [^\n]*$/,
+    `\n4. Write in ${b.language || 'the language these customers speak'}, the way they actually speak it. Keep on-screen text short.\n5. Nothing that would embarrass a customer, the business, or a regulator reading it back a year later.`,
+  );
+}
+
+export const brandName = (): string => workspaceBrand()?.name ?? 'Velocity Rides';
+export const marketName = (): string => workspaceBrand()?.market || 'Pakistan';
+
+/** The line burned into the foot of every picture and reel; undefined keeps Velocity's own. */
+export const wordmark = (): string | undefined => (isHouse() ? undefined : brandName().toUpperCase().slice(0, 40));
 
 /** What the admin has told the whole team. */
 export function standingInstructions(settings: SocialSettings): string {
@@ -112,11 +148,11 @@ export function systemFor(
   return [
     employeeIntro(employee),
     '',
-    BRAND,
+    brandBlock(),
     '',
     briefBlock(settings, employee.role),
     '',
-    HARD_RULES,
+    hardRules(),
     '',
     playbookFor(employee.role, format),
     '',
@@ -196,13 +232,13 @@ export async function planContent(params: {
 
   const spec = FORMAT_SPECS[params.format];
 
-  const system = `You are running the daily standup of Velocity Rides' social content team.
+  const system = `You are running the daily standup of ${brandName()}'s social content team.
 
-${BRAND}
+${brandBlock()}
 
 ${briefBlock(params.settings, null)}
 
-${HARD_RULES}
+${hardRules()}
 
 ${playbookForStandup(params.format)}
 
@@ -211,7 +247,11 @@ ${roster(params.team)}
 
 Your job is to settle ONE concept the team will then execute. Argue it briefly in their voices — use their real names — then commit. A concept is not a topic: "drivers earn well" is a topic, "a driver counts out today's cash on his bonnet while the fare he refused scrolls past" is a concept.
 
-What travels in this market: a specific person in a specific place; a number that surprises; a frustration everyone has had with getting around a Pakistani city; something that resolves in under three seconds. What does not: slogans, stock smiles, app screenshots with no human in them.
+What travels in this market: a specific person in a specific place; a number that surprises; ${
+    isHouse()
+      ? 'a frustration everyone has had with getting around a Pakistani city'
+      : 'a frustration every customer of this business has had'
+  }; something that resolves in under three seconds. What does not: slogans, stock smiles, app screenshots with no human in them.
 
 Only give notes to people who are actually in the room, keyed by the id shown above.
 

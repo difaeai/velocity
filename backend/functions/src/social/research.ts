@@ -28,30 +28,39 @@
  */
 import { logger } from 'firebase-functions';
 
-import { db } from '../lib/firebase';
-import { BRAND, systemFor } from './crew';
+import { isHouse, sdb, workspaceBrand } from './workspace';
+import { brandBlock, brandName, marketName, systemFor } from './crew';
 import { generateJson, modelReady } from './engine';
 import { localResearch } from './local';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings, type ViralFind } from './types';
 
 /** Kept per day so a second run the same morning does not pay for it twice. */
-const researchRef = (date: string) => db.doc(`socialResearch/${date}`);
+const researchRef = (date: string) => sdb.doc(`socialResearch/${date}`);
 
-const TASK = `You have Google Search. Use it. Look for: what short-form content about transport, commuting, fuel prices, driver income and city life in Pakistan is getting traction in the last two weeks; what the other ride-hailing and delivery apps in Pakistan are publishing and how it is landing; hook and format patterns that keep recurring on Reels and TikTok in this market.
+/** What to search for: Velocity's own beat in the house, the customer's niche in their market otherwise. */
+const LOOK_FOR = (): string => {
+  if (isHouse()) {
+    return 'what short-form content about transport, commuting, fuel prices, driver income and city life in Pakistan is getting traction in the last two weeks; what the other ride-hailing and delivery apps in Pakistan are publishing and how it is landing';
+  }
+  const b = workspaceBrand();
+  return `what short-form content about ${b?.what || 'this kind of business'} is getting traction in ${marketName()} in the last two weeks, with ${b?.audience || 'its customers'}; what the other businesses selling the same thing there are publishing and how it is landing`;
+};
+
+const TASK = (): string => `You have Google Search. Use it. Look for: ${LOOK_FOR()}; hook and format patterns that keep recurring on Reels and TikTok in this market.
 
 Report what you found, not what you assume. If the search returns little on a point, say so in that field rather than filling it with plausible-sounding filler — an empty list is a usable answer and an invented one is not.
 
 Never suggest copying a competitor's post. Patterns and gaps only.
 
-Also look up which sounds are trending on Instagram Reels right now: this week's or last week's published trending-audio roundups, Pakistani ones first if any exist. Only list a sound a source actually named.
+Also look up which sounds are trending on Instagram Reels right now: this week's or last week's published trending-audio roundups, ones from ${marketName()} first if any exist. Only list a sound a source actually named.
 
 Also find the posts themselves: 3-6 short videos or posts in this market and niche that are travelling unusually well right now. Each must be one you found in search, with its real address — YouTube Shorts links first, because the team can watch those. Never guess an address; leave an item out instead.
 
 Reply with one JSON object and nothing else:
 {
   "trends": ["4-7 short observations about what is travelling right now, each with the specific thing that made it travel"],
-  "competitorMoves": ["3-6 things the other apps are actually doing this month"],
-  "opportunities": ["3-6 gaps Velocity Rides can take, each one specific enough to film"],
+  "competitorMoves": ["3-6 things the competitors are actually doing this month"],
+  "opportunities": ["3-6 gaps ${brandName()} can take, each one specific enough to film"],
   "hookPatterns": ["3-6 hook shapes that are working, as patterns not copy"],
   "avoid": ["2-4 things that are done to death or that would land badly here"],
   "sounds": ["3-6 sounds trending on Instagram Reels this week, each as 'Title — Artist: the kind of reel using it'"],
@@ -131,20 +140,22 @@ export async function runResearch(params: {
         own
           ? ''
           : `Today you are also covering research, because nobody is hired into it. Do it properly but do not pretend to be a specialist: ${ROLE_SPECS['research-assistant'].blurb}`,
-        BRAND,
-        TASK,
+        brandBlock(),
+        TASK(),
       ]
         .filter(Boolean)
         .join('\n\n'),
       what: 'The market read',
       grounded: true,
       prompt: [
-        `Date: ${params.date}. Market: Pakistan.`,
+        `Date: ${params.date}. Market: ${marketName()}.`,
         competitors.length
-          ? `The apps to read around (never to name in our own posts):\n${competitors
+          ? `The competitors to read around (never to name in our own posts):\n${competitors
               .map((c) => `- ${c.name}${c.url ? ` — ${c.url}` : ''}`)
               .join('\n')}`
-          : 'No competitor list was configured — search for the main ride-hailing and delivery apps operating in Pakistan yourself.',
+          : isHouse()
+            ? 'No competitor list was configured — search for the main ride-hailing and delivery apps operating in Pakistan yourself.'
+            : `No competitor list was configured — search for the main businesses selling the same thing in ${marketName()} yourself.`,
         '',
         'Search first, then answer. Include what you actually found this time, not what was true last year.',
       ].join('\n'),

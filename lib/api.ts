@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
+import type { StudioPlanId } from './studio';
 
 /**
  * The Firebase callable serializer encodes `undefined` object values as `null`
@@ -1672,6 +1673,116 @@ export interface MetaPageChoice {
   followers: number | null;
   avatarUrl: string | null;
 }
+
+/** A customer's "I paid", waiting for an admin, at `studioPayments/{id}`. */
+export interface StudioPaymentDoc {
+  id: string;
+  wid: string;
+  uid: string;
+  business: string;
+  email: string | null;
+  plan: StudioPlanId;
+  amountUsd: number;
+  txnId: string | null;
+  screenshotPath: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAtMs: number;
+  decidedAtMs: number | null;
+  note: string | null;
+}
+
+export type SalesLeadStatus = 'new' | 'drafted' | 'approved' | 'sent' | 'replied' | 'won' | 'lost' | 'skipped' | 'failed';
+
+/** A business the sales agent found, at `salesLeads/{id}`. Mirrors the backend's lead record. */
+export interface SalesLeadDoc {
+  id: string;
+  name: string;
+  website: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string;
+  source: 'map' | 'search';
+  status: SalesLeadStatus;
+  title: string;
+  description: string;
+  signals: string[];
+  draft: { subject: string; body: string } | null;
+  problems: string[];
+  createdAtMs: number;
+  sentAtMs: number | null;
+  error: string | null;
+}
+
+export interface SalesSettingsDoc {
+  product: string;
+  offer: string;
+  kinds: string[];
+  city: string;
+  senderName: string;
+  senderCompany: string;
+  senderAddress: string;
+  mode: 'copy' | 'mailbox';
+  sendMode: 'approve' | 'direct' | null;
+  dailyCap: number;
+  smtp: { host: string; port: number; user: string; from: string } | null;
+  autoDaily: boolean;
+  sentDay: string;
+  sentCount: number;
+  lastStatus: string | null;
+}
+
+/** The sales agent: settings, finding, writing, and what happens to each lead. */
+export const salesApi = {
+  getSettings: callable<Record<string, never>, { settings: SalesSettingsDoc; hasPassword: boolean; vaultReady: boolean }>(
+    'salesGetSettings',
+  ),
+  saveSettings: callable<
+    Partial<Omit<SalesSettingsDoc, 'smtp' | 'sendMode'>> & {
+      sendMode?: 'approve' | 'direct';
+      smtp?: { host: string; port: 465 | 587; user: string; from: string; pass?: string };
+    },
+    { ok: boolean; settings: SalesSettingsDoc }
+  >('salesSaveSettings'),
+  findLeads: callable<
+    { kind: string; city: string; write?: boolean },
+    { ok: boolean; found: number; added: number; written: number; note: string }
+  >('salesFindLeads', LONG_CALL_MS),
+  addLeads: callable<{ lines: string; city?: string }, { ok: boolean; added: number }>('salesAddLeads', LONG_CALL_MS),
+  writeEmails: callable<{ leadIds?: string[] }, { ok: boolean; written: number }>('salesWriteEmails', LONG_CALL_MS),
+  leadAction: callable<
+    {
+      leadId: string;
+      action: 'approve' | 'send' | 'sent' | 'skip' | 'replied' | 'won' | 'lost' | 'optout' | 'edit';
+      subject?: string;
+      body?: string;
+    },
+    { ok: boolean; sent?: number }
+  >('salesLeadAction'),
+};
+
+/** Velocity Studio: sign-up, paying, and the admin's decision on a payment. */
+export const studioApi = {
+  createWorkspace: callable<
+    {
+      businessName: string;
+      website?: string;
+      what: string;
+      audience: string;
+      market: string;
+      language: string;
+      differences?: string;
+      plan: StudioPlanId;
+    },
+    { ok: boolean; workspaceId: string; trialEndsAtMs: number }
+  >('studioCreateWorkspace'),
+  submitPayment: callable<
+    { plan: StudioPlanId; txnId?: string; screenshotPath?: string },
+    { ok: boolean; paymentId: string }
+  >('studioSubmitPayment'),
+  decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
+    'adminDecideStudioPayment',
+  ),
+};
 
 export const socialApi = {
   connectSchema: callable<Record<string, never>, ConnectSchema>('adminGetSocialConnectSchema'),

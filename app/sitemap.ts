@@ -13,6 +13,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
   return [
     { url: SITE, lastModified, changeFrequency: 'weekly', priority: 1 },
+    // Velocity Studio's sales page — the desk sold to other businesses.
+    { url: `${SITE}/studio`, lastModified, changeFrequency: 'weekly', priority: 0.8 },
     { url: TERMS_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: PRIVACY_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: DELETE_ACCOUNT_URL, lastModified, changeFrequency: 'yearly', priority: 0.3 },

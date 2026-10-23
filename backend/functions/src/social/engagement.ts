@@ -18,15 +18,16 @@
  * - It never invents a fact. Same FACTS rule as the writer: if the answer needs
  *   a number nobody gave it, the reply says a human will come back.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { FieldValue } from '../lib/firebase';
+import { deskCall, forEachWorkspace, sdb } from './workspace';
+
 import { loadCredentials, markAccountError } from './accounts';
-import { systemFor } from './crew';
+import { brandName, systemFor } from './crew';
 import { generateJson, modelReady } from './engine';
 import { localReplies } from './local';
 import { canListComments, listComments, PlatformError, replyToComment } from './platforms';
@@ -48,12 +49,12 @@ const LOOKBACK_DAYS = 14;
 const DRAFT_BATCH = 12;
 
 const commentId = (platform: Platform, id: string) => `${platform}_${id.replace(/\//g, '-')}`;
-const commentRef = (platform: Platform, id: string) => db.doc(`socialComments/${commentId(platform, id)}`);
+const commentRef = (platform: Platform, id: string) => sdb.doc(`socialComments/${commentId(platform, id)}`);
 
 /** Everything this desk has published lately, as network media ids per network. */
 async function recentlyPublished(): Promise<Map<Platform, { mediaId: string; postId: string }[]>> {
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 3600_000).toISOString().slice(0, 10);
-  const snap = await db.collection('socialPosts').where('date', '>=', since).get();
+  const snap = await sdb.collection('socialPosts').where('date', '>=', since).get();
 
   const byPlatform = new Map<Platform, { mediaId: string; postId: string }[]>();
   for (const doc of snap.docs) {
@@ -128,15 +129,15 @@ export async function syncComments(): Promise<{ found: number; added: number; er
   return { found, added, errors };
 }
 
-const DRAFT_SYSTEM = `You are answering comments on Velocity Rides' own social accounts.
+const DRAFT_SYSTEM = (): string => `You are answering comments on ${brandName()}'s own social accounts.
 
-Read each comment, decide what it is, and write the reply Velocity Rides should post.
+Read each comment, decide what it is, and write the reply ${brandName()} should post.
 
 How to classify:
 - "praise" — they like it. Reply warmly, one line, no sales pitch.
 - "question" — they want to know something. Answer it plainly if the answer is in the brief; otherwise say a human will follow up.
 - "complaint" — something went wrong for them. Acknowledge it, do not argue, do not explain the policy, point them at support. One or two lines.
-- "safety" — anything about an accident, harassment, a threat, a woman feeling unsafe, a crash, the police. Never defend, never minimise. One short line saying we want the trip details and that support is on it.
+- "safety" — anything about an accident, harassment, a threat, a woman feeling unsafe, a crash, the police. Never defend, never minimise. One short line saying we want the details and that a person is on it.
 - "spam" — promotion, scam links, unrelated nonsense. Reply with an empty string.
 - "other" — anything else.
 
@@ -162,7 +163,7 @@ export async function draftReplies(
   const manager = assign(await activeTeam(), 'distribute')?.employee ?? null;
   if (!manager) return { drafted: 0, sent: 0, failed: 0, by: null };
 
-  const snap = await db
+  const snap = await sdb
     .collection('socialComments')
     .where('status', '==', 'new')
     .limit(DRAFT_BATCH * 3)
@@ -189,7 +190,7 @@ export async function draftReplies(
       try {
         const { data } = await generateJson<{ replies?: unknown }>({
           model: settings.textModel,
-          system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM}`,
+          system: `${systemFor(manager, settings)}\n\n${DRAFT_SYSTEM()}`,
           what: 'The comment replies',
           prompt: [
             'COMMENTS:',
@@ -290,7 +291,7 @@ export async function runEngagement(): Promise<string> {
     .filter(Boolean)
     .join(', ');
 
-  await db.doc('system/socialAutomation').set(
+  await sdb.doc('system/socialAutomation').set(
     { lastEngagementAtMs: Date.now(), lastEngagementStatus: summary.slice(0, 300) },
     { merge: true },
   );
@@ -309,25 +310,25 @@ export const socialEngagement = onSchedule(
     timeoutSeconds: 540,
     memory: '512MiB',
   },
-  async () => {
-    const settings = await getSocialSettings();
-    if (!settings.enabled || !settings.engagementEnabled) return;
-    try {
-      const summary = await runEngagement();
-      logger.info('social: engagement pass finished', { summary });
-    } catch (e) {
-      logger.error('social: engagement pass failed', { message: (e as Error).message });
-    }
-  },
+  () =>
+    forEachWorkspace('content', async () => {
+      const settings = await getSocialSettings();
+      if (!settings.enabled || !settings.engagementEnabled) return;
+      try {
+        const summary = await runEngagement();
+        logger.info('social: engagement pass finished', { summary });
+      } catch (e) {
+        logger.error('social: engagement pass failed', { message: (e as Error).message });
+      }
+    }),
 );
 
 // ── console actions ─────────────────────────────────────────────────────────
 
 /** "Check the comments now" — the same pass the scheduler does, on demand. */
-export const adminSyncSocialComments = onCall(
+export const adminSyncSocialComments = deskCall('content', 
   { timeoutSeconds: 540, memory: '512MiB' },
-  async (req) => {
-    requireAdmin(req);
+  async () => {
     const summary = await runEngagement();
     return { ok: true, summary };
   },
@@ -338,8 +339,7 @@ export const adminSyncSocialComments = onCall(
  * admin's rewrite of it — because the person who has to stand behind the reply
  * should be the one choosing its words.
  */
-export const adminReplySocialComment = onCall(async (req) => {
-  requireAdmin(req);
+export const adminReplySocialComment = deskCall('content', async (req) => {
   const parsed = z
     .object({
       platform: z.enum(PLATFORMS),
@@ -355,8 +355,7 @@ export const adminReplySocialComment = onCall(async (req) => {
 });
 
 /** Close a comment without answering it — spam, or something already handled. */
-export const adminSetCommentStatus = onCall(async (req) => {
-  requireAdmin(req);
+export const adminSetCommentStatus = deskCall('content', async (req) => {
   const parsed = z
     .object({
       platform: z.enum(PLATFORMS),

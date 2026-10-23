@@ -17,7 +17,8 @@
  * apart made sense while something downstream reassembled them; now the person
  * reading it is the renderer.
  */
-import { feedbackBlock, planBlock, systemFor } from './crew';
+import { feedbackBlock, marketName, planBlock, systemFor } from './crew';
+import { isHouse } from './workspace';
 import { generateJson, modelReady } from './engine';
 import { localFrames } from './local';
 import {
@@ -42,6 +43,12 @@ const HOUSE_STYLE = [
   'Brand palette: near-black #1a1c1c grounds the frame, bright lime #ccff00 is the single accent — a jacket, a sign, a highlight, never the whole image.',
   'No watermarks. No gibberish text. No fake app screenshots. No Western suburbs.',
 ].join(' ');
+
+/** A customer's house style: the same standard, in their market, with no palette of ours. */
+const houseStyle = (): string =>
+  isHouse()
+    ? HOUSE_STYLE
+    : `Photographic, editorial quality, shot on a full-frame camera. Natural light in ${marketName()}, real places, real people, nothing that looks like stock photography. No watermarks. No gibberish text. No fake screenshots.`;
 
 interface DirectedFrame {
   prompt: string;
@@ -74,7 +81,7 @@ export async function directFrames(params: {
   // so locally this stage adds the standing craft block and the alt text and
   // stops. It does not paraphrase a brief that is already a brief.
   if (!modelReady()) {
-    return localFrames({ script: params.script, count: params.count, craft: HOUSE_STYLE, seo: params.seo });
+    return localFrames({ script: params.script, count: params.count, craft: houseStyle(), seo: params.seo });
   }
 
   const { data } = await generateJson<{ frames?: unknown }>({
@@ -147,7 +154,7 @@ function briefFor(frame: DirectedFrame, aspect: string): string {
     frame.overlay
       ? `Text on this frame, in a heavy modern sans-serif, spelled exactly: "${frame.overlay}". Place it clear of faces.`
       : 'No text on this frame.',
-    HOUSE_STYLE,
+    houseStyle(),
     `Aspect ratio ${aspect}.`,
   ].join('\n');
 }

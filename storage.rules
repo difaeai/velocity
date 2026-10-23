@@ -210,6 +210,37 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Velocity Studio customers: the same four folders as the desk above, under
+    // their own workspace, reachable only with the `ws` claim the backend set
+    // at sign-up. `payments/` holds the screenshot sent with a payment. What the
+    // desk renders goes to workspaces/{wid}/social/ and is written only by
+    // Cloud Functions.
+    function ownsWorkspace(wid) {
+      return isSignedIn() && request.auth.token.ws == wid;
+    }
+    match /workspaces/{wid}/socialUploads/{fileName} {
+      allow read: if ownsWorkspace(wid) || isAdmin();
+      allow write: if ownsWorkspace(wid)
+                   && underSize(200)
+                   && (request.resource.contentType.matches('video/.*') || isImage());
+    }
+    match /workspaces/{wid}/socialMusic/{fileName} {
+      allow read, delete: if ownsWorkspace(wid);
+      allow create, update: if ownsWorkspace(wid)
+                            && underSize(30)
+                            && request.resource.contentType.matches('audio/.*');
+    }
+    match /workspaces/{wid}/socialClips/{fileName} {
+      allow read, delete: if ownsWorkspace(wid);
+      allow create, update: if ownsWorkspace(wid)
+                            && underSize(60)
+                            && request.resource.contentType.matches('video/.*');
+    }
+    match /workspaces/{wid}/payments/{fileName} {
+      allow read: if ownsWorkspace(wid) || isAdmin();
+      allow create: if ownsWorkspace(wid) && underSize(10) && isImage();
+    }
+
     // Everything else is denied.
     match /{allPaths=**} {
       allow read, write: if false;

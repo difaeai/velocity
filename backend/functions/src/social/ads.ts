@@ -28,14 +28,15 @@
  * same Facebook sign-in as Instagram, started from the Ads page with the ads
  * scopes added (see `meta.ts`), and lasts about sixty days.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { dateRange, statsFor } from '../analytics';
-import { db, FieldValue } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { FieldValue } from '../lib/firebase';
+import { requireAuth } from '../lib/guards';
+import { deskCall, forEachWorkspace, isHouse, sdb, wsPath } from './workspace';
 import {
   AD_OBJECTIVES,
   META_OBJECTIVE,
@@ -64,7 +65,7 @@ import {
   type Verdict,
 } from './adsExpert';
 import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
-import { BRAND, HARD_RULES, briefBlock, standingInstructions } from './crew';
+import { brandBlock, brandName, briefBlock, hardRules, marketName, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { AD_NUMBERS } from './playbook';
@@ -80,7 +81,7 @@ const CONFIG_PATH = 'system/socialAds';
 const SECRET_PATH = 'system/socialAds/secret/credentials';
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.velocityridzpk.app';
 
-const campaignRef = (id: string) => db.doc(`socialAds/${id}`);
+const campaignRef = (id: string) => sdb.doc(`socialAds/${id}`);
 
 export interface AdsConfig {
   adAccountId: string | null;
@@ -119,13 +120,13 @@ const DEFAULTS: AdsConfig = {
 };
 
 async function adsConfig(): Promise<AdsConfig> {
-  const snap = await db.doc(CONFIG_PATH).get();
+  const snap = await sdb.doc(CONFIG_PATH).get();
   return { ...DEFAULTS, ...((snap.data() as Partial<AdsConfig> | undefined) ?? {}) };
 }
 
 async function adsToken(): Promise<string> {
   if (!tokenVaultReady()) throw new HttpsError('failed-precondition', 'SOCIAL_TOKEN_KEY is not configured.');
-  const snap = await db.doc(SECRET_PATH).get();
+  const snap = await sdb.doc(SECRET_PATH).get();
   const sealed = snap.data()?.token as SealedSecret | undefined;
   if (!sealed) {
     throw new HttpsError('failed-precondition', 'No ad account is connected yet. Connect one on the Ads page.');
@@ -296,7 +297,7 @@ async function buildCreative(
   let videoUrl: string | null = null;
 
   if (source.kind === 'post') {
-    const post = (await db.doc(`socialPosts/${source.postId}`).get()).data() as SocialPost | undefined;
+    const post = (await sdb.doc(`socialPosts/${source.postId}`).get()).data() as SocialPost | undefined;
     if (!post) throw new HttpsError('not-found', 'No such piece.');
     const media = await refreshAssetUrls(postMedia(post));
     const video = media.find((m) => m.kind === 'video' && m.url);
@@ -305,7 +306,7 @@ async function buildCreative(
     videoUrl = video?.url ?? null;
     still = image
       ? await downloadAsset(image)
-      : await renderStill(planStill({ headline: post.script?.hook || plan.lines[0], aspect: '9:16' }));
+      : await renderStill(planStill({ headline: post.script?.hook || plan.lines[0], aspect: '9:16' }), { wordmark: wordmark() });
   } else if (plan.format === 'video') {
     const reel = planReel({
       format: 'reel',
@@ -320,18 +321,18 @@ async function buildCreative(
       },
     });
     const stored = await storeFile({
-      path: `socialAds/${stamp}/video.mp4`,
-      bytes: await renderReel(reel),
+      path: wsPath(`socialAds/${stamp}/video.mp4`),
+      bytes: await renderReel(reel, { wordmark: wordmark() }),
       contentType: 'video/mp4',
     });
     videoUrl = stored.url;
-    still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16' }));
+    still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16' }), { wordmark: wordmark() });
   } else {
     const body = plan.lines.slice(1).join(' ') || (plan.headline !== plan.lines[0] ? plan.headline : null);
-    still = await renderStill(planStill({ headline: plan.lines[0], body, aspect: '4:5' }));
+    still = await renderStill(planStill({ headline: plan.lines[0], body, aspect: '4:5' }), { wordmark: wordmark() });
   }
 
-  const preview = await storeFile({ path: `socialAds/${stamp}/preview.jpg`, bytes: still, contentType: 'image/jpeg' });
+  const preview = await storeFile({ path: wsPath(`socialAds/${stamp}/preview.jpg`), bytes: still, contentType: 'image/jpeg' });
   const imageHash = await uploadImage(token, cfg, still);
 
   const story = videoUrl
@@ -366,7 +367,7 @@ async function buildCreative(
 
 /** What the desk's own running campaigns already spend a day. */
 async function committedDaily(exceptId?: string): Promise<number> {
-  const snap = await db.collection('socialAds').where('managed', '==', true).get();
+  const snap = await sdb.collection('socialAds').where('managed', '==', true).get();
   const now = Date.now();
   return snap.docs
     .filter((d) => d.id !== exceptId)
@@ -378,9 +379,10 @@ async function committedDaily(exceptId?: string): Promise<number> {
 
 /** The yardstick: our own medians once there are some, Pakistan's until then. */
 async function benchmarksNow(cfg: AdsConfig): Promise<Benchmarks | null> {
-  const snap = await db.collection('socialAds').limit(100).get();
+  const snap = await sdb.collection('socialAds').limit(100).get();
   const history = snap.docs.map((d) => (d.data() as { lifetime?: AdMetrics }).lifetime).filter(Boolean) as AdMetrics[];
-  return ownBenchmarks(history, marketBenchmarks(cfg.currency));
+  // The built-in yardstick is Pakistan's; elsewhere there is none until the account has its own.
+  return ownBenchmarks(history, /pakistan/i.test(marketName()) ? marketBenchmarks(cfg.currency) : null);
 }
 
 /** Whoever manages social runs the ads, and signs the plan. */
@@ -394,20 +396,21 @@ const ADS_CRAFT = `HOW PAID SOCIAL WORKS ON META IN 2026 — your craft:
 - The creative IS the targeting now. Broad audiences with a strong creative beat narrow interest stacks; add interests only when the brief names a clear niche.
 - The first three words of the primary text and the first second of a video decide everything. 125 characters show before "more". Headline 40 characters or fewer.
 - One clear action. The picture must make sense with the sound off, on a phone, in a second.
-- Looks native, not polished: real streets, real people, plain words. Urdu/English as people actually speak works in Pakistan.
+- Looks native, not polished: real streets, real people, plain words, in the language the audience actually speaks.
 - Meta policy: never assert a personal attribute ("Are you unemployed?", "Struggling with money?"), no income claims, no fake buttons, no before/after, nothing sensational.
-- Structure: one campaign, one ad set, one ad, budget at campaign level. A test runs 7–14 days and is not edited in its first 48 hours.
-- Pakistan: CPMs are among the cheapest in the world; Instagram skews young and urban, Facebook broader and older; evenings to midnight are the busy hours; Karachi, Lahore and Islamabad are the most contested auctions.`;
+- Structure: one campaign, one ad set, one ad, budget at campaign level. A test runs 7–14 days and is not edited in its first 48 hours.`;
+
+/** Market notes for Pakistan: the house always, a customer only when that is where they sell. */
+const PAKISTAN_ADS = `- Pakistan: CPMs are among the cheapest in the world; Instagram skews young and urban, Facebook broader and older; evenings to midnight are the busy hours; Karachi, Lahore and Islamabad are the most contested auctions. Urdu/English as people actually speak works.`;
 
 function adsSystem(person: Employee | null, settings: Awaited<ReturnType<typeof getSocialSettings>>): string {
+  const job = `run ${brandName()}'s paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPM, CTR, CPC, frequency, cost per result, cost per order and ROAS.`;
   return [
-    person
-      ? `${employeeIntro(person)}\n\nYou also run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPM, CTR, CPC, frequency, cost per result, cost per order and ROAS.`
-      : "You run Velocity Rides' paid social on Meta: you plan the campaigns, write the ads, decide the audience, and read the numbers afterwards — CPM, CTR, CPC, frequency, cost per result, cost per order and ROAS.",
-    BRAND,
+    person ? `${employeeIntro(person)}\n\nYou also ${job}` : `You ${job}`,
+    brandBlock(),
     briefBlock(settings, 'social-manager'),
-    HARD_RULES,
-    ADS_CRAFT,
+    hardRules(),
+    /pakistan/i.test(marketName()) ? `${ADS_CRAFT}\n${PAKISTAN_ADS}` : ADS_CRAFT,
     AD_NUMBERS,
     standingInstructions(settings),
   ]
@@ -435,7 +438,7 @@ async function planAd(params: {
   if (!modelReady()) return { plan: fallback, engine: 'local' };
 
   const settings = await getSocialSettings();
-  const past = (await db.collection('socialAds').limit(30).get()).docs
+  const past = (await sdb.collection('socialAds').limit(30).get()).docs
     .map((d) => d.data() as { name?: string; objectiveKind?: string; lifetime?: AdMetrics; verdict?: Verdict })
     .filter((c) => c.lifetime && c.lifetime.spend > 0)
     .slice(0, 8)
@@ -472,7 +475,7 @@ async function planAd(params: {
 {
   "name": "short campaign name",
   "objective": "traffic" | "awareness" | "engagement",
-  "audience": { "cities": ["Lahore", ...] (empty for all Pakistan), "ageMin": 18, "ageMax": 45, "genders": "all" | "men" | "women", "interests": ["only if clearly needed", ...] },
+  "audience": { "cities": ["Lahore", ...] (empty for the whole market), "ageMin": 18, "ageMax": 45, "genders": "all" | "men" | "women", "interests": ["only if clearly needed", ...] },
   "dailyBudget": number in ${cfg.currency} — enough to leave learning, inside the limit,
   "days": number,
   "format": "image" | "video",
@@ -751,10 +754,13 @@ async function syncAds(): Promise<string> {
   const totals = metricsFrom(accountWeek.data?.[0] ?? {}, 'link_click');
 
   // Our own rides over the same week as Meta's last_7d: the seven days before today.
-  const rides = await statsFor(dateRange(8, now).slice(0, 7), now).catch((e) => {
-    logger.warn('ads: could not read our own rides for cost per order', { message: (e as Error).message });
-    return null;
-  });
+  // Only Velocity's desk has rides to count; a customer's orders are not ours to see.
+  const rides = !isHouse()
+    ? null
+    : await statsFor(dateRange(8, now).slice(0, 7), now).catch((e) => {
+        logger.warn('ads: could not read our own rides for cost per order', { message: (e as Error).message });
+        return null;
+      });
   const returns = rides
     ? blended({
         spend: totals.spend,
@@ -777,7 +783,7 @@ async function syncAds(): Promise<string> {
   if (!cfg.review || now - cfg.review.atMs > 20 * 3600_000) {
     patch.review = await reviewAccount(cfg, judged, totals, returns);
   }
-  await db.doc(CONFIG_PATH).set(patch, { merge: true });
+  await sdb.doc(CONFIG_PATH).set(patch, { merge: true });
   return status;
 }
 
@@ -845,7 +851,7 @@ async function syncAndRecord(): Promise<string> {
       e instanceof AdsError && e.expired
         ? 'The Facebook sign-in for ads has expired. Press Reconnect on the Ads page.'
         : (e as Error).message;
-    await db.doc(CONFIG_PATH).set({ lastSyncAtMs: Date.now(), lastSyncStatus: `Failed: ${message}`.slice(0, 600) }, { merge: true });
+    await sdb.doc(CONFIG_PATH).set({ lastSyncAtMs: Date.now(), lastSyncStatus: `Failed: ${message}`.slice(0, 600) }, { merge: true });
     throw e;
   }
 }
@@ -855,15 +861,15 @@ async function syncAndRecord(): Promise<string> {
 /** Every three hours: read the numbers, judge them, steer what the desk may. */
 export const socialAdsSync = onSchedule(
   { schedule: 'every 3 hours', timeZone: 'Asia/Karachi', region: REGION, timeoutSeconds: 300, memory: '512MiB' },
-  async () => {
-    const cfg = await adsConfig();
-    if (!cfg.adAccountId) return;
-    await syncAndRecord().catch((e) => logger.error('ads: sync failed', { message: (e as Error).message }));
-  },
+  () =>
+    forEachWorkspace('ads', async () => {
+      const cfg = await adsConfig();
+      if (!cfg.adAccountId) return;
+      await syncAndRecord().catch((e) => logger.error('ads: sync failed', { message: (e as Error).message }));
+    }),
 );
 
-export const adminSyncAds = onCall({ timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
-  requireAdmin(req);
+export const adminSyncAds = deskCall('ads', { timeoutSeconds: 300, memory: '512MiB' }, async () => {
   try {
     return { ok: true, status: await syncAndRecord() };
   } catch (e) {
@@ -872,8 +878,8 @@ export const adminSyncAds = onCall({ timeoutSeconds: 300, memory: '512MiB' }, as
   }
 });
 
-export const adminSetAdsSettings = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminSetAdsSettings = deskCall('ads', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({
       mode: z.enum(['ask', 'direct']).optional(),
@@ -883,7 +889,7 @@ export const adminSetAdsSettings = onCall(async (req) => {
     })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid ads settings.');
-  await db.doc(CONFIG_PATH).set({ ...parsed.data, updatedBy: ctx.uid, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  await sdb.doc(CONFIG_PATH).set({ ...parsed.data, updatedBy: ctx.uid, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { ok: true, config: await adsConfig() };
 });
 
@@ -894,8 +900,8 @@ export const adminSetAdsSettings = onCall(async (req) => {
  * this one), otherwise created paused and waiting for Approve. Either way the
  * budget has already been held to the daily limit by the time Meta hears of it.
  */
-export const adminCreateAd = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (req) => {
-  const ctx = requireAdmin(req);
+export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2GiB' }, async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({
       brief: z.string().trim().min(5).max(2000),
@@ -986,8 +992,8 @@ export const adminCreateAd = onCall({ timeoutSeconds: 540, memory: '2GiB' }, asy
  * One button on a campaign row. Pause and end are always allowed; anything
  * that raises what the desk spends is held to the daily limit first.
  */
-export const adminAdAction = onCall({ timeoutSeconds: 120 }, async (req) => {
-  const ctx = requireAdmin(req);
+export const adminAdAction = deskCall('ads', { timeoutSeconds: 120 }, async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z
     .object({
       campaignId: z.string().regex(/^\d{5,40}$/),

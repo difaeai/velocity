@@ -13,12 +13,13 @@
  * `socialAccounts/{platform}/secret/credentials`, encrypted, and the security
  * rules deny every client read of it — see firestore.rules.
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue, Timestamp } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { requireAuth } from '../lib/guards';
+import { deskCall, sdb } from './workspace';
 import { ADAPTERS, PlatformError } from './platforms';
 import { fingerprint, open, seal, tokenVaultReady, type SealedSecret } from './secrets';
 import {
@@ -42,8 +43,8 @@ const connectSchema = z.object({
   expiresInDays: z.number().int().min(1).max(3650).optional(),
 });
 
-const accountRef = (platform: Platform) => db.doc(`socialAccounts/${platform}`);
-const credentialRef = (platform: Platform) => db.doc(`socialAccounts/${platform}/secret/credentials`);
+const accountRef = (platform: Platform) => sdb.doc(`socialAccounts/${platform}`);
+const credentialRef = (platform: Platform) => sdb.doc(`socialAccounts/${platform}/secret/credentials`);
 
 /** Read back the sealed credential for a connected account. */
 export async function loadCredentials(platform: Platform): Promise<PlatformCredentials | null> {
@@ -74,7 +75,7 @@ export async function loadCredentials(platform: Platform): Promise<PlatformCrede
 
 /** Every platform with a working credential right now. */
 export async function connectedPlatforms(): Promise<Platform[]> {
-  const snap = await db.collection('socialAccounts').where('status', '==', 'connected').get();
+  const snap = await sdb.collection('socialAccounts').where('status', '==', 'connected').get();
   return snap.docs.map((d) => d.id as Platform).filter((p) => PLATFORMS.includes(p));
 }
 
@@ -186,8 +187,8 @@ export async function connectVerifiedAccount(
 }
 
 /** Paste a credential, prove it, keep it. */
-export const adminConnectSocialAccount = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminConnectSocialAccount = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = connectSchema.safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { platform, expiresInDays, ...rest } = parsed.data;
@@ -204,8 +205,8 @@ export const adminConnectSocialAccount = onCall(async (req) => {
 });
 
 /** Re-check a stored credential — the console's "is this still good?" button. */
-export const adminVerifySocialAccount = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminVerifySocialAccount = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z.object({ platform: platformSchema }).safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { platform } = parsed.data;
@@ -224,8 +225,8 @@ export const adminVerifySocialAccount = onCall(async (req) => {
 });
 
 /** Forget a credential entirely. The profile row stays, marked disconnected. */
-export const adminDisconnectSocialAccount = onCall(async (req) => {
-  const ctx = requireAdmin(req);
+export const adminDisconnectSocialAccount = deskCall('any', async (req) => {
+  const ctx = requireAuth(req);
   const parsed = z.object({ platform: platformSchema }).safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { platform } = parsed.data;
@@ -258,8 +259,7 @@ export const adminDisconnectSocialAccount = onCall(async (req) => {
  * What the connect form should ask for, per network — kept on the backend so
  * the console never gets out of step with what the adapters actually need.
  */
-export const adminGetSocialConnectSchema = onCall(async (req) => {
-  requireAdmin(req);
+export const adminGetSocialConnectSchema = deskCall('any', async () => {
   return {
     vaultReady: tokenVaultReady(),
     platforms: PLATFORMS.map((p) => ({

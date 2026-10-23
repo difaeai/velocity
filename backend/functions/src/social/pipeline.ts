@@ -36,17 +36,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { db, FieldValue, storage } from '../lib/firebase';
-import { requireAdmin } from '../lib/guards';
+import { requireAuth } from '../lib/guards';
+import { deskCall, forEachWorkspace, sdb, wsPath } from './workspace';
 import { dayKey } from '../analytics';
 import { loadCredentials, markAccountError, publishableAccounts } from './accounts';
 import { postFolder, refreshAssetUrls, storeFile } from './assets';
-import { planContent } from './crew';
+import { brandName, planContent, wordmark } from './crew';
 import { design, DesignError } from './designer';
 import { activeTeam, assign, creditWork, teamRefs } from './employees';
 import { activeEngine, modelReady, type Engine } from './engine';
@@ -93,7 +94,7 @@ const REGION = 'asia-south1';
 /** Research, several model calls and a render. The run needs room. */
 const RUN_TIMEOUT_SECONDS = 900;
 
-const postRef = (id: string) => db.doc(`socialPosts/${id}`);
+const postRef = (id: string) => sdb.doc(`socialPosts/${id}`);
 
 async function patch(id: string, fields: Record<string, unknown>): Promise<void> {
   await postRef(id).set({ ...fields, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -141,7 +142,7 @@ async function noteNobody(id: string, stage: Stage): Promise<void> {
 
 /** The hooks and concepts of the last fortnight, so the team doesn't repeat itself. */
 async function recentWork(): Promise<{ hooks: string[]; concepts: string[] }> {
-  const snap = await db.collection('socialPosts').orderBy('date', 'desc').limit(14).get();
+  const snap = await sdb.collection('socialPosts').orderBy('date', 'desc').limit(14).get();
   const hooks: string[] = [];
   const concepts: string[] = [];
   for (const doc of snap.docs) {
@@ -708,6 +709,7 @@ async function renderAndAttach(params: {
         localClips: under.clips,
         music: under.music,
         voice: under.voice,
+        wordmark: wordmark(),
       });
       const stored = await storeVideo(params.id, bytes);
 
@@ -773,7 +775,7 @@ async function renderStillsAndAttach(params: {
       if (byHand.has(slide)) continue;
       const stored = await storeFile({
         path: `${postFolder(params.id)}/slide-${slide}.jpg`,
-        bytes: await renderStill(card),
+        bytes: await renderStill(card, { wordmark: wordmark() }),
         contentType: 'image/jpeg',
       });
       made.push({
@@ -1031,7 +1033,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
         format,
         media,
         caption: captionFor(platform, post.caption, post.captions),
-        title: post.script?.hook ?? 'Velocity Rides',
+        title: post.script?.hook ?? brandName(),
         tags: post.hashtags ?? [],
         youtube: post.search?.youtube ?? null,
       });
@@ -1135,7 +1137,11 @@ export const socialDailyContent = onSchedule(
     // it in seconds rather than minutes.
     memory: '2GiB',
   },
-  async () => {
+  () => forEachWorkspace('content', daily),
+);
+
+/** One workspace's hourly check: is it this desk's hour, and is anyone hired. */
+async function daily(): Promise<void> {
     const settings = await getSocialSettings();
     if (!settings.enabled) return;
 
@@ -1168,8 +1174,7 @@ export const socialDailyContent = onSchedule(
       logger.error('social: daily run failed', { date, message });
       await recordRun(`Failed: ${message}`);
     }
-  },
-);
+}
 
 /** A written piece still missing its picture or video, with automatic tries left. */
 export function needsMedia(post: Partial<SocialPost> & { renderTries?: number }): boolean {
@@ -1210,13 +1215,17 @@ async function makeMedia(postId: string, post: SocialPost): Promise<{ made: numb
 export const socialPublishSweep = onSchedule(
   // 2GiB because it may cut a reel, and on Cloud Functions the memory tier buys the CPU.
   { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
-  async () => {
+  () => forEachWorkspace('content', sweep),
+);
+
+/** One workspace's pass: make missing media, free stuck pieces, post what was approved. */
+async function sweep(): Promise<void> {
     // A picture or video the run could not make is made here, so nobody has to
     // press for it. Recent pieces only, two a pass (a reel takes a minute), and
     // `needsMedia` stops after three tries. Before the posting below, so an
     // approved piece that was missing its file goes out in the same pass.
     if ((await getSocialSettings()).autoRenderVideo) {
-      const recent = await db
+      const recent = await sdb
         .collection('socialPosts')
         .where('date', '>=', dayKey(Date.now() - 3 * 86_400_000))
         .get();
@@ -1232,7 +1241,7 @@ export const socialPublishSweep = onSchedule(
     }
 
     const MAKING: PostStatus[] = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'];
-    const snap = await db
+    const snap = await sdb
       .collection('socialPosts')
       .where('status', 'in', ['ready', 'publishing', ...MAKING])
       .limit(30)
@@ -1278,8 +1287,7 @@ export const socialPublishSweep = onSchedule(
         await patch(doc.id, { status: 'awaiting_approval' as PostStatus, error: (e as Error).message });
       }
     }
-  },
-);
+}
 
 // ── console actions ─────────────────────────────────────────────────────────
 
@@ -1287,6 +1295,10 @@ const formatSchema = z.enum(FORMATS);
 
 /** storage.rules lets the console upload 200 MB to socialUploads/; a reel is a few MB. */
 const MAX_REFERENCE_BYTES = 200 * 1024 * 1024;
+
+/** A path the caller may hand the desk: an upload in this workspace's own folder, nothing else. */
+export const ownUpload = (storagePath: string): boolean =>
+  storagePath.startsWith(wsPath('socialUploads/')) && !storagePath.includes('..');
 
 /** Watch the video a piece is to be made like, answering in words the console can show. */
 async function readReference(
@@ -1305,6 +1317,7 @@ async function readReference(
       );
     }
   } else {
+    if (!ownUpload(ref.storagePath as string)) throw new HttpsError('permission-denied', 'That file is not yours.');
     const source = storage.bucket().file(ref.storagePath as string);
     const [meta] = await source.getMetadata().catch(() => [null]);
     if (!meta) throw new HttpsError('not-found', 'The uploaded video was not found. Upload it again.');
@@ -1327,10 +1340,10 @@ async function readReference(
 }
 
 /** "Put the team on it" — the same run the scheduler does, on demand. */
-export const adminGenerateSocialPost = onCall(
+export const adminGenerateSocialPost = deskCall('content', 
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
-    const ctx = requireAdmin(req);
+    const ctx = requireAuth(req);
     const parsed = z
       .object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -1348,7 +1361,7 @@ export const adminGenerateSocialPost = onCall(
             youtube: z.string().trim().max(300).optional(),
             storagePath: z
               .string()
-              .regex(/^socialUploads\/[\w.-]+$/)
+              .regex(/^(workspaces\/[\w-]+\/)?socialUploads\/[\w.-]+$/)
               .max(300)
               .optional(),
           })
@@ -1435,10 +1448,10 @@ const SCOPE_STAGES: Record<RevisionScope, Stage[]> = {
  * everyone who touches it later, so "stop saying seamless" said once keeps
  * being true.
  */
-export const adminRequestSocialChanges = onCall(
+export const adminRequestSocialChanges = deskCall('content', 
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
-    const ctx = requireAdmin(req);
+    const ctx = requireAuth(req);
     const parsed = z
       .object({
         postId: z.string().min(1).max(64),
@@ -1530,10 +1543,10 @@ export const adminRequestSocialChanges = onCall(
  * Approve or reject. Approving marks it ready; `publishNow` takes it all the
  * way out to the networks.
  */
-export const adminReviewSocialPost = onCall(
+export const adminReviewSocialPost = deskCall('content', 
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '512MiB' },
   async (req) => {
-    const ctx = requireAdmin(req);
+    const ctx = requireAuth(req);
     const parsed = z
       .object({
         postId: z.string().min(1).max(64),
@@ -1571,10 +1584,9 @@ export const adminReviewSocialPost = onCall(
 );
 
 /** Publish (or re-publish to the networks that failed) an approved piece. */
-export const adminPublishSocialPost = onCall(
+export const adminPublishSocialPost = deskCall('content', 
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '512MiB' },
   async (req) => {
-    requireAdmin(req);
     const parsed = z
       .object({ postId: z.string().min(1).max(64), platforms: z.array(z.enum(PLATFORMS)).optional() })
       .safeParse(req.data);
@@ -1593,10 +1605,9 @@ export const adminPublishSocialPost = onCall(
  * the queue without re-running the team. A failure answers with the renderer's
  * own last words rather than "something went wrong".
  */
-export const adminRenderSocialPost = onCall(
+export const adminRenderSocialPost = deskCall('content', 
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
-    requireAdmin(req);
     const parsed = z.object({ postId: z.string().min(1).max(64) }).safeParse(req.data);
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
     const { postId } = parsed.data;
@@ -1640,8 +1651,7 @@ async function asJpeg(bytes: Buffer): Promise<Buffer> {
  * is uploaded to Storage by the console and handed over as a path, so it goes
  * through exactly the same publish path as a rendered one.
  */
-export const adminAttachSocialMedia = onCall(async (req) => {
-  requireAdmin(req);
+export const adminAttachSocialMedia = deskCall('content', async (req) => {
   const parsed = z
     .object({
       postId: z.string().min(1).max(64),
@@ -1656,6 +1666,7 @@ export const adminAttachSocialMedia = onCall(async (req) => {
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
 
   const { postId, storagePath, slide, alt } = parsed.data;
+  if (!ownUpload(storagePath)) throw new HttpsError('permission-denied', 'Attach a file uploaded from this console.');
   const snap = await postRef(postId).get();
   if (!snap.exists) throw new HttpsError('not-found', 'No such post.');
   const post = snap.data() as SocialPost;
@@ -1705,8 +1716,7 @@ export const adminAttachSocialMedia = onCall(async (req) => {
   return { ok: true };
 });
 
-export const adminDeleteSocialPost = onCall(async (req) => {
-  requireAdmin(req);
+export const adminDeleteSocialPost = deskCall('content', async (req) => {
   const parsed = z.object({ postId: z.string().min(1).max(64) }).safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   await postRef(parsed.data.postId).delete();

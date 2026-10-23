@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { socialApi, type SocialCommentDoc, type SocialSettings } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
@@ -35,6 +36,7 @@ const INTENT_LABEL: Record<string, string> = {
 const OPEN = ['new', 'drafted', 'escalated'];
 
 export default function InboxPage() {
+  const { path } = useWorkspace();
   const [comments, setComments] = useState<SocialCommentDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
   const [tab, setTab] = useState<'open' | 'all'>('open');
@@ -45,11 +47,11 @@ export default function InboxPage() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialComments'), orderBy('createdAtMs', 'desc'), limit(100)),
+        query(collection(db, path('socialComments')), orderBy('createdAtMs', 'desc'), limit(100)),
         (snap) => setComments(snap.docs.map((d) => ({ ...(d.data() as SocialCommentDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(() => {

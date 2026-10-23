@@ -18,6 +18,7 @@ import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/fir
 import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
+import { useWorkspace } from '@/lib/workspace';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import {
@@ -61,6 +62,7 @@ const PLACEHOLDER: Record<Want, string> = {
 };
 
 export default function SocialOverview() {
+  const { path } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -82,7 +84,7 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        collection(db, 'socialAccounts'),
+        collection(db, path('socialAccounts')),
         (snap) =>
           setAccounts(
             snap.docs.map((d) => ({
@@ -92,13 +94,13 @@ export default function SocialOverview() {
           ),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        collection(db, 'socialEmployees'),
+        collection(db, path('socialEmployees')),
         (snap) =>
           setStaff(
             snap.docs
@@ -107,48 +109,48 @@ export default function SocialOverview() {
           ),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
         // Two weeks at a few pieces a day: enough for the boxes and the weekly count.
-        query(collection(db, 'socialPosts'), orderBy('date', 'desc'), limit(40)),
+        query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(40)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         (e) => setError(e.message),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, 'socialResearch'), orderBy('date', 'desc'), limit(1)),
+        query(collection(db, path('socialResearch')), orderBy('date', 'desc'), limit(1)),
         (snap) => setResearch(snap.empty ? null : (snap.docs[0].data() as SocialResearch)),
         () => setResearch(null),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        doc(db, 'socialInsights/latest'),
+        doc(db, path('socialInsights/latest')),
         (snap) => setPageRead(snap.exists() ? (snap.data() as SocialPageRead) : null),
         () => setPageRead(null),
       ),
-    [],
+    [path],
   );
 
   useEffect(
     () =>
       onSnapshot(
-        doc(db, 'system', 'socialAds'),
+        doc(db, path('system/socialAds')),
         (snap) => setAds(snap.exists() ? (snap.data() as AdsConfigDoc) : null),
         () => setAds(null),
       ),
-    [],
+    [path],
   );
 
   // Settings come through the callable (it also reports which keys exist), but
@@ -163,10 +165,10 @@ export default function SocialOverview() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the automation settings.'));
 
-    return onSnapshot(doc(db, 'system', 'socialAutomation'), (snap) => {
+    return onSnapshot(doc(db, path('system/socialAutomation')), (snap) => {
       if (snap.exists()) setSettings((prev) => (prev ? { ...prev, ...(snap.data() as Partial<SocialSettings>) } : prev));
     });
-  }, []);
+  }, [path]);
 
   const onShift = staff.filter((e) => e.status === 'active');
   const connected = accounts.filter((a) => a.status === 'connected');
@@ -557,6 +559,7 @@ function Composer({
   onDone: (message: string) => void;
   onError: (message: string) => void;
 }) {
+  const { path } = useWorkspace();
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refAsked, setRefAsked] = useState(false);
   const [direct, setDirect] = useState<boolean | null>(null);
@@ -577,9 +580,9 @@ function Composer({
       if (want !== 'ad' && refFile) {
         // storage.rules refuses anything bigger, with an error nobody could read.
         if (refFile.size > 200 * 1024 * 1024) throw new Error('That video is over 200 MB. Trim it to the part that matters.');
-        const path = `socialUploads/ref-${Date.now()}-${refFile.name.replace(/[^\w.-]/g, '')}`;
-        await uploadBytes(ref(storage, path), refFile, { contentType: refFile.type || 'video/mp4' });
-        reference = { storagePath: path };
+        const upload = path(`socialUploads/ref-${Date.now()}-${refFile.name.replace(/[^\w.-]/g, '')}`);
+        await uploadBytes(ref(storage, upload), refFile, { contentType: refFile.type || 'video/mp4' });
+        reference = { storagePath: upload };
       } else if (want !== 'ad' && refLink.trim()) {
         reference = { youtube: refLink.trim() };
       }

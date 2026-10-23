@@ -15,7 +15,8 @@
  */
 import { logger } from 'firebase-functions';
 
-import { feedbackBlock, planBlock, systemFor } from './crew';
+import { brandName, feedbackBlock, marketName, planBlock, systemFor } from './crew';
+import { isHouse } from './workspace';
 import { postFolder, storeFile } from './assets';
 import { generateJson, modelReady } from './engine';
 import {
@@ -118,9 +119,16 @@ Reply with one JSON object and nothing else:
  */
 export function assembleCut(script: PostScript, aspect: string): string {
   return [
-    `A ${aspect} short-form advert for Velocity Rides, a ride-hailing app in Pakistan.`,
-    'Look: modern Pakistani city streets — Lahore, Karachi, Islamabad — real cars, real drivers, natural daylight.',
-    'Brand palette: near-black (#1a1c1c) and bright lime (#ccff00). Clean, confident, no stock-footage cheesiness.',
+    ...(isHouse()
+      ? [
+          `A ${aspect} short-form advert for Velocity Rides, a ride-hailing app in Pakistan.`,
+          'Look: modern Pakistani city streets — Lahore, Karachi, Islamabad — real cars, real drivers, natural daylight.',
+          'Brand palette: near-black (#1a1c1c) and bright lime (#ccff00). Clean, confident, no stock-footage cheesiness.',
+        ]
+      : [
+          `A ${aspect} short-form advert for ${brandName()}, in ${marketName()}.`,
+          'Look: real people and real places, natural light. Clean, confident, no stock-footage cheesiness.',
+        ]),
     '',
     'Shots:',
     ...script.frames.map((f, i) => `${i + 1}. ${f.scene}`),
