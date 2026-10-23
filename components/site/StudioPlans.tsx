@@ -7,7 +7,8 @@
  *
  * Each card rises in the first time it is seen, and its film plays only while
  * the card is on screen. With reduced motion or Data Saver the films show their
- * posters and download nothing.
+ * posters and download nothing. Flipping the switch runs the figures to their
+ * new values; hovering pulls a card forward, tilted toward the mouse.
  */
 
 import Link from 'next/link';
@@ -42,6 +43,46 @@ const FILMS: Record<StudioPlanId, { chip: string; alt: string }> = {
 };
 
 const dollars = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+
+/** Runs a figure from where it stood to `to` in a fast ease-out, so flipping Monthly / Yearly reads as the price moving. */
+function Count({ to, from = to }: { to: number; from?: number }) {
+  const reduced = useReducedMotion();
+  const [shown, setShown] = useState(from);
+  const at = useRef(from);
+
+  useEffect(() => {
+    if (reduced || at.current === to) return;
+    const start = at.current;
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function step(t) {
+      const k = Math.min(1, (t - t0) / 650);
+      at.current = start + (to - start) * (1 - (1 - k) ** 4);
+      setShown(at.current);
+      if (k < 1) raf = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [to, reduced]);
+
+  const v = reduced ? to : shown;
+  return <>{dollars(Number.isInteger(to) ? Math.round(v) : v)}</>;
+}
+
+/** Tilts the hovered card toward the mouse and tells its glow where the mouse is. */
+function tilt(e: React.PointerEvent<HTMLElement>) {
+  if (e.pointerType !== 'mouse') return;
+  const card = e.currentTarget;
+  const r = card.getBoundingClientRect();
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  card.style.setProperty('--rx', `${(x / r.width - 0.5) * 6}deg`);
+  card.style.setProperty('--ry', `${(0.5 - y / r.height) * 4}deg`);
+  card.style.setProperty('--mx', `${x}px`);
+  card.style.setProperty('--my', `${y}px`);
+}
+
+function untilt(e: React.PointerEvent<HTMLElement>) {
+  for (const v of ['--rx', '--ry']) e.currentTarget.style.removeProperty(v);
+}
 
 export function StudioPlans() {
   const reduced = useReducedMotion();
@@ -98,6 +139,8 @@ export function StudioPlans() {
               data-i={i}
               className={`${styles.card} ${best ? styles.best : ''} ${seen[i] ? styles.seen : ''}`}
               style={{ ['--i' as string]: i }}
+              onPointerMove={tilt}
+              onPointerLeave={untilt}
             >
               {best ? <span className={styles.tag}>The whole team</span> : null}
               <div className={styles.film}>
@@ -122,22 +165,30 @@ export function StudioPlans() {
 
               <div className={styles.body}>
                 <h3>{p.name}</h3>
-                {/* Keyed on billing so the figure replays its entrance when the switch flips. */}
-                <div key={billing} className={styles.price}>
-                  <strong>${studioPriceUsd(id, billing)}</strong>
-                  <small>/{billing}</small>
+                <div className={styles.priceBox}>
+                  {/* Keyed on billing so the sweep, the unit and the line under it replay when the switch flips. */}
+                  <span key={`sheen-${billing}`} className={styles.sheen} aria-hidden />
+                  <div className={styles.price}>
+                    <strong>
+                      <Count to={studioPriceUsd(id, billing)} />
+                    </strong>
+                    <small key={billing}>/{billing}</small>
+                  </div>
+                  <p key={`save-${billing}`} className={styles.save}>
+                    {billing === 'year' ? (
+                      <>
+                        <s>${twelve}</s> <Count from={p.usd} to={year / 12} /> a month ·{' '}
+                        <mark>
+                          you save <Count from={0} to={twelve - year} />
+                        </mark>
+                      </>
+                    ) : (
+                      <>
+                        or ${year} a year — save ${twelve - year}
+                      </>
+                    )}
+                  </p>
                 </div>
-                <p className={styles.save}>
-                  {billing === 'year' ? (
-                    <>
-                      <s>${twelve}</s> {dollars(year / 12)} a month · <mark>you save ${twelve - year}</mark>
-                    </>
-                  ) : (
-                    <>
-                      or ${year} a year — save ${twelve - year}
-                    </>
-                  )}
-                </p>
                 <p className={styles.tagline}>{p.tagline}</p>
                 <ul className={styles.list}>
                   {p.includes.map((line, j) => (
