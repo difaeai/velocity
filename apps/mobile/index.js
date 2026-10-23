@@ -12,6 +12,9 @@
 // (`qualified-entry`) — which is the thing that pulls in every screen. By that
 // point `colors` already holds the correct palette, so styles bake correctly.
 import '@expo/metro-runtime';
+// Before anything else: a call that rings a closed phone runs this task
+// headless, and a headless run never gets as far as the router below.
+import './src/lib/incomingCallTask';
 import React from 'react';
 import { renderRootComponent } from 'expo-router/build/renderRootComponent';
 import AsyncStorage from '@react-native-async-storage/async-storage';

@@ -9,7 +9,9 @@
  *                       call button can never become a way to reach a stranger,
  *                       or a driver after the ride is over;
  *   ringing             a push to the other phone, because a Firestore listener
- *                       cannot wake an app that is closed;
+ *                       cannot wake an app that is closed. On Android it is a
+ *                       data push the app turns into a full-screen, looping
+ *                       ring (lib/fcm.ts → sendCallToUser);
  *   the way through     free STUN always, plus Cloudflare TURN relay credentials
  *                       when the key is configured. Two phones behind carrier NAT
  *                       often cannot reach each other directly, and TURN is what
@@ -26,7 +28,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { sendToUser } from '../lib/fcm';
+import { sendCallToUser } from '../lib/fcm';
 
 /** A driver on the way, waiting at the pickup, or driving. */
 const LIVE_TRIP = new Set(['matched', 'arriving', 'arrived', 'in_progress']);
@@ -178,10 +180,10 @@ export const startCall = onCall(async (req) => {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  await sendToUser(
+  await sendCallToUser(
     callee,
-    '📞 Incoming call',
-    `${callerName} (${callerIsDriver ? 'your driver' : 'your passenger'}) is calling — tap to answer`,
+    `📞 ${callerName} is calling`,
+    `${callerIsDriver ? 'Your driver' : 'Your passenger'} · free call on Velocity Rides`,
     { screen: 'call', callId: ref.id },
   );
 

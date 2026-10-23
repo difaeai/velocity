@@ -13,12 +13,12 @@
  * lands on "Missed call" with a way to ring back).
  *
  * The call lives as long as this screen, so the hardware Back key is held while
- * it is up — the red button is the way out.
+ * it is up — the red button is the way out. Leaving the APP is fine on Android:
+ * a microphone foreground service (modules/velocity-calls) keeps the call going
+ * through Google Maps or a dark screen, and a call that comes in while the phone
+ * is locked rings full-screen and opens this screen over the lock screen.
  *
- * shortcut: foreground only — no CallKit/ConnectionService, so a locked phone
- * shows a notification rather than a full-screen ringer, and Android stops the
- * microphone if the app is backgrounded mid-call. Add react-native-callkeep and
- * a microphone foreground service if drivers need to talk while navigating.
+ * shortcut: iPhone is still foreground-only — that needs CallKit + VoIP push.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, Pressable, StyleSheet, View } from 'react-native';
@@ -34,6 +34,7 @@ import {
 } from 'react-native-webrtc';
 import InCallManager from 'react-native-incall-manager';
 
+import { callSystem } from '../../modules/velocity-calls';
 import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
@@ -46,6 +47,7 @@ type Status = 'ringing' | 'active' | 'declined' | 'cancelled' | 'missed' | 'ende
 type Sdp = { type: 'offer' | 'answer'; sdp: string };
 
 interface CallDoc {
+  id: string;
   callerId: string;
   calleeId: string;
   driverId: string | null;
@@ -115,6 +117,8 @@ function CallScreen() {
     calleeId?: string;
     name?: string;
     phone?: string;
+    /** "1" when Answer was pressed on the ringing notification. */
+    answer?: string;
   }>();
   const { user } = useAuth();
   const uid = user?.uid ?? '';
@@ -150,6 +154,8 @@ function CallScreen() {
     InCallManager.stopRingtone();
     InCallManager.stopRingback();
     InCallManager.stop();
+    callSystem.stopOngoing();
+    if (latest.current) callSystem.dismissIncoming(latest.current.id);
     setOver(text);
     setPhase('over');
   }, []);
@@ -191,6 +197,10 @@ function CallScreen() {
     const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
     mic.current = stream;
     stream.getTracks().forEach((t) => conn.addTrack(t, stream));
+    // Only now: Android refuses a microphone service before the permission exists.
+    const c = latest.current;
+    const name = c ? (c.callerId === uid ? c.calleeName : c.callerName) : 'Velocity Rides';
+    callSystem.startOngoing(`On a call with ${name}`, 'Tap to return to the call');
   }
 
   function micError(e: unknown): string {
@@ -270,10 +280,20 @@ function CallScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Over the lock screen while this screen is up — a call can arrive on a locked phone.
+  useEffect(() => {
+    callSystem.showOverLockScreen(true);
+    return () => {
+      callSystem.showOverLockScreen(false);
+    };
+  }, []);
+
   // Follow the call document.
   useEffect(() => {
     if (!callId) return;
     openCalls.add(callId);
+    // This screen rings from here on; silence the notification that brought it up.
+    callSystem.dismissIncoming(callId);
     const unsub = onSnapshot(
       doc(db, 'calls', callId),
       (snap) => {
@@ -301,8 +321,13 @@ function CallScreen() {
       // Opened from a notification. A ringing call rings; anything else is a
       // call this phone is not actually carrying any more — close it properly.
       if (!iAmCaller && call.status === 'ringing') {
-        setPhase('incoming');
-        InCallManager.startRingtone('_DEFAULT_', 0, 'playback', 45);
+        if (p.answer === '1') {
+          // Answer was already pressed on the ringing notification.
+          void accept();
+        } else {
+          setPhase('incoming');
+          InCallManager.startRingtone('_DEFAULT_', 0, 'playback', 45);
+        }
       } else {
         endCall();
       }

@@ -205,6 +205,61 @@ export async function sendToUser(
   await deliver(tokens, title, body, data ?? {}, opts);
 }
 
+/**
+ * Ring a phone for an in-app call (calls/index.ts).
+ *
+ * Android gets a DATA message with no title. expo-notifications does not show
+ * one of those; it hands it to the app's incoming-call task instead, which puts
+ * up a full-screen, looping call notification even when the app is closed (see
+ * apps/mobile/src/lib/incomingCallTask.ts). iPhones and the web get the ordinary
+ * notification — a data push there is silent. The ring is useless once the
+ * caller has given up, so it expires with them.
+ */
+export async function sendCallToUser(
+  uid: string,
+  title: string,
+  body: string,
+  data: Record<string, string>,
+): Promise<void> {
+  const snap = await db.collection(`users/${uid}/fcmTokens`).get();
+  const android: StoredToken[] = [];
+  const other: StoredToken[] = [];
+  for (const d of snap.docs) {
+    const token = d.get('token') as string | undefined;
+    if (!token) continue;
+    const platform = d.get('platform') as string | undefined;
+    (platform === 'ios' || platform === 'web' ? other : android).push({ token, kind: tokenKind(token) });
+  }
+  const ring = { ...data, callTitle: title, callText: body };
+  const fcm = android.filter((t) => t.kind === 'fcm').map((t) => t.token);
+  const expo = android.filter((t) => t.kind === 'expo').map((t) => t.token);
+
+  await Promise.all([
+    other.length > 0 ? deliver(other, title, body, data, {}) : Promise.resolve(),
+    fcm.length > 0
+      ? getMessaging()
+          .sendEachForMulticast({ tokens: fcm, data: ring, android: { priority: 'high', ttl: 45_000 } })
+          .then((res) => {
+            if (res.failureCount > 0) {
+              logger.warn('FCM: some call rings failed', { failCount: res.failureCount });
+            }
+          })
+          .catch((err) => logger.error('FCM call ring error', { err }))
+      : Promise.resolve(),
+    expo.length > 0
+      ? fetch(EXPO_PUSH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(expo.map((to) => ({ to, data: ring, priority: 'high', ttl: 45 }))),
+        })
+          .then((res) => {
+            if (!res.ok) logger.warn('Expo call ring: HTTP error', { status: res.status });
+          })
+          .catch((err) => logger.error('Expo call ring error', { err }))
+      : Promise.resolve(),
+  ]);
+}
+
 export async function sendToUsers(
   uids: string[],
   title: string,

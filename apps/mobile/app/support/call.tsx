@@ -34,6 +34,7 @@ import {
   toggleRecording,
 } from '@speechmatics/expo-two-way-audio';
 
+import { callSystem } from '../../modules/velocity-calls';
 import { api } from '../../src/api/client';
 import { colors } from '../../src/config';
 import {
@@ -107,6 +108,7 @@ export default function HelplineCall() {
     ws.current?.close();
     ws.current = null;
     queue.current = [];
+    callSystem.stopOngoing();
     if (callId.current) {
       api.logHelplineCall({ callId: callId.current, transcript: record(), ended: true }).catch(() => {});
     }
@@ -199,6 +201,8 @@ export default function HelplineCall() {
         end("Couldn't start the phone's audio.", true);
         return;
       }
+      // Keeps the microphone if the caller leaves the app mid-call (Android).
+      callSystem.startOngoing('Velocity Rides helpline', 'Tap to return to the call');
       limit.current = setTimeout(
         () => end('That is the longest one call can be. Call again, or write to us.', true),
         res.maxSeconds * 1000,
