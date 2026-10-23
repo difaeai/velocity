@@ -20,10 +20,20 @@ export const PLANS: Record<PlanId, { name: string; usd: number; can: Exclude<Nee
 
 export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
 
+/** Paid a month at a time, or a year up front for less. */
+export type Billing = 'month' | 'year';
+export const YEAR_DISCOUNT_PCT = 13;
+
+/** A year is twelve months less 13%, rounded down so the saving is never under 13%. */
+export const priceUsd = (plan: PlanId, billing: Billing): number =>
+  billing === 'year' ? Math.floor((PLANS[plan].usd * 12 * (100 - YEAR_DISCOUNT_PCT)) / 100) : PLANS[plan].usd;
+
 /** One free day, then a plan has to be paid for. */
 export const TRIAL_MS = 24 * 3600_000;
-/** What one approved payment buys. */
+/** What one approved monthly payment buys. */
 export const PERIOD_MS = 30 * 86_400_000;
+/** What one approved yearly payment buys. */
+export const YEAR_MS = 365 * 86_400_000;
 
 /** What the desk is told about a business, from the sign-up form. */
 export interface Brand {
@@ -77,10 +87,10 @@ export function refusal(
 }
 
 /**
- * The new paid-until after one approved payment: a month from whichever is
- * later, now or the end of what is already paid — so paying early never loses
- * days, and paying late does not back-date the month.
+ * The new paid-until after one approved payment: a month (or a year) from
+ * whichever is later, now or the end of what is already paid — so paying early
+ * never loses days, and paying late does not back-date the period.
  */
-export function extendPaid(paidUntilMs: number, nowMs: number): number {
-  return Math.max(paidUntilMs, nowMs) + PERIOD_MS;
+export function extendPaid(paidUntilMs: number, nowMs: number, periodMs = PERIOD_MS): number {
+  return Math.max(paidUntilMs, nowMs) + periodMs;
 }

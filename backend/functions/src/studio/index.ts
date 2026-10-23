@@ -13,7 +13,7 @@
  *    transaction ID can be claimed once, ever — the same bookkeeping defence the
  *    driver top-ups use, because the screenshot itself proves nothing.
  * 3. **Approving.** An admin checks the money arrived and approves: the plan is
- *    set to what was paid for and a month is added. Rejecting frees the
+ *    set to what was paid for and a month (or a year) is added. Rejecting frees the
  *    transaction ID so an honest typo can be sent again.
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -25,7 +25,17 @@ import { seedTeam } from '../social/employees';
 import { freshLaunch, stateRef } from '../social/launch';
 import { EMPTY_BRIEF } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
-import { PLAN_IDS, PLANS, TRIAL_MS, extendPaid, type PlanId, type Workspace } from './plans';
+import {
+  PERIOD_MS,
+  PLAN_IDS,
+  TRIAL_MS,
+  YEAR_MS,
+  extendPaid,
+  priceUsd,
+  type Billing,
+  type PlanId,
+  type Workspace,
+} from './plans';
 
 /** Angles that fit any business; the customer edits them in Settings. */
 export const STUDIO_ANGLES = [
@@ -132,12 +142,13 @@ export const studioSubmitPayment = onCall(async (req) => {
   const parsed = z
     .object({
       plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
+      billing: z.enum(['month', 'year']).optional().default('month'),
       txnId: text(60).optional().default(''),
       screenshotPath: text(300).optional().default(''),
     })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
-  const { plan, txnId, screenshotPath } = parsed.data;
+  const { plan, billing, txnId, screenshotPath } = parsed.data;
   const key = txnKey(txnId);
   if (!screenshotPath && key.length < 6) {
     throw new HttpsError('invalid-argument', 'Upload the payment screenshot or type the transaction ID (at least 6 letters or digits).');
@@ -164,7 +175,8 @@ export const studioSubmitPayment = onCall(async (req) => {
       business: ws.name,
       email: ws.ownerEmail,
       plan,
-      amountUsd: PLANS[plan].usd,
+      billing,
+      amountUsd: priceUsd(plan, billing),
       txnId: txnId || null,
       txnKey: key || null,
       screenshotPath: screenshotPath || null,
@@ -189,7 +201,7 @@ export const adminDecideStudioPayment = onCall(async (req) => {
   return db.runTransaction(async (tx) => {
     const payRef = db.doc(`studioPayments/${paymentId}`);
     const pay = (await tx.get(payRef)).data() as
-      | { wid: string; plan: PlanId; status: string; txnKey: string | null }
+      | { wid: string; plan: PlanId; billing?: Billing; status: string; txnKey: string | null }
       | undefined;
     if (!pay) throw new HttpsError('not-found', 'No such payment.');
     if (pay.status !== 'pending') throw new HttpsError('failed-precondition', `Already ${pay.status}.`);
@@ -205,7 +217,8 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     const wsRef = workspaceRef(pay.wid);
     const ws = (await tx.get(wsRef)).data() as Workspace | undefined;
     if (!ws) throw new HttpsError('not-found', 'That workspace no longer exists.');
-    const paidUntilMs = extendPaid(ws.paidUntilMs, now);
+    // Payments sent before yearly billing existed have no `billing`: they were monthly.
+    const paidUntilMs = extendPaid(ws.paidUntilMs, now, pay.billing === 'year' ? YEAR_MS : PERIOD_MS);
     tx.update(payRef, decided);
     tx.update(wsRef, {
       plan: pay.plan,

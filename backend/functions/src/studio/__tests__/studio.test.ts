@@ -9,7 +9,7 @@ import type { CallableRequest } from 'firebase-functions/v2/https';
 
 import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
 import { adminDecideStudioPayment, studioCreateWorkspace, studioSubmitPayment, txnKey } from '../index';
-import { PERIOD_MS } from '../plans';
+import { PERIOD_MS, YEAR_MS } from '../plans';
 import { HOUSE, deskWorkspace, inWorkspace, liveWorkspaces, sdb, wsPath } from '../../social/workspace';
 
 const OWNER = 'studio-owner';
@@ -138,6 +138,21 @@ describe('paying', () => {
     await expect(
       adminDecideStudioPayment.run(asUser({ paymentId: sent.paymentId, approve: true }, ADMIN, { role: 'admin' })),
     ).rejects.toThrow(/Already approved/);
+  });
+
+  it('a yearly payment is priced 13% off and adds a year when approved', async () => {
+    const wid = await signUp('content');
+    const sent = (await studioSubmitPayment.run(
+      asUser({ plan: 'ads', billing: 'year', txnId: 'EP-445566' }, OWNER, { ws: wid }),
+    )) as { paymentId: string };
+    const pay = (await db().doc(`studioPayments/${sent.paymentId}`).get()).data()!;
+    expect(pay).toMatchObject({ billing: 'year', amountUsd: 250 });
+
+    const before = Date.now();
+    await adminDecideStudioPayment.run(asUser({ paymentId: sent.paymentId, approve: true }, ADMIN, { role: 'admin' }));
+    const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
+    expect(ws.plan).toBe('ads');
+    expect(ws.paidUntilMs).toBeGreaterThanOrEqual(before + YEAR_MS);
   });
 
   it('rejecting frees the ID so an honest mistake can be sent again', async () => {

@@ -16,9 +16,9 @@
  * video is downloaded at all.
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { useReducedMotion } from './useReducedMotion';
+import { useReducedMotion, useSaveData } from './useReducedMotion';
 import styles from './hero.module.css';
 
 export interface HeroBeat {
@@ -38,12 +38,9 @@ export interface HeroSlide {
   copy: ReactNode;
 }
 
-const never = () => () => {};
-const savingData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
-
 export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
   const reduced = useReducedMotion();
-  const saveData = useSyncExternalStore(never, savingData, () => false);
+  const saveData = useSaveData();
   const still = reduced || saveData;
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);

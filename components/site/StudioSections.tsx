@@ -1,9 +1,7 @@
-import Link from 'next/link';
-
-import { ArrowRight, Check } from '@/components/site/Icons';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS } from '@/lib/studio';
+import { STUDIO_YEAR_DISCOUNT_PCT } from '@/lib/studio';
 import s from '@/app/studio/studio.module.css';
 import site from './site.module.css';
+import { StudioPlans } from './StudioPlans';
 
 /**
  * Velocity Studio's pricing and questions — the same on the homepage and on
@@ -38,11 +36,11 @@ export const STUDIO_FAQ = [
   },
   {
     q: 'How do I pay?',
-    a: 'By bank transfer, EasyPaisa or JazzCash. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.',
+    a: 'By bank transfer, EasyPaisa or JazzCash, for a month or for a year at 13% less. Send the payment, then upload the screenshot or type the transaction ID — your plan switches on as soon as it is checked.',
   },
   {
     q: 'Can I stop?',
-    a: 'Any time. Plans are month to month: if you don’t pay for the next month, the team simply pauses. Nothing is posted after that.',
+    a: 'Any time. A monthly plan runs month to month: if you don’t pay for the next month, the team simply pauses and nothing is posted after that. A yearly plan runs for the year you paid for.',
   },
 ];
 
@@ -53,36 +51,12 @@ export function StudioPricing({ heading = 'Pay for what you use. Nothing else.' 
         <div className={`${site.sectionHead} ${site.center}`}>
           <span className={site.eyebrow}>Pricing</span>
           <h2 className={site.h2}>{heading}</h2>
-          <p className={`${site.lead} ${site.center}`}>Every plan starts with a free day. Month to month — stop any time.</p>
+          <p className={`${site.lead} ${site.center}`}>
+            Every plan starts with a free day. Pay monthly and stop any time, or pay for a year and save{' '}
+            {STUDIO_YEAR_DISCOUNT_PCT}%.
+          </p>
         </div>
-        <div className={s.plans}>
-          {STUDIO_PLAN_IDS.map((id) => {
-            const p = STUDIO_PLANS[id];
-            const best = id === 'all';
-            return (
-              <div key={id} className={`${s.plan} ${best ? s.planBest : ''}`}>
-                {best ? <span className={s.planTag}>The whole team</span> : null}
-                <h3>{p.name}</h3>
-                <div className={s.price}>
-                  ${p.usd}
-                  <small>/month</small>
-                </div>
-                <p className={s.planTagline}>{p.tagline}</p>
-                <ul className={s.planList}>
-                  {p.includes.map((line) => (
-                    <li key={line}>
-                      <Check />
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-                <Link href={`/studio/start?plan=${id}`} className={`${site.btn} ${best ? site.btnLime : site.btnGhost}`}>
-                  Start free <ArrowRight />
-                </Link>
-              </div>
-            );
-          })}
-        </div>
+        <StudioPlans />
         <p className={s.payNote}>Pay by bank transfer, EasyPaisa or JazzCash.</p>
       </div>
     </section>

@@ -1,0 +1,397 @@
+/* Velocity Studio's plan cards (StudioPlans.tsx): a film of each team at work on
+   top, the price under it, and a Monthly / Yearly switch above the three.
+   Sits inside a `.light` section, so --card / --line-hi / --text-* are the
+   light values. Every movement is opt-in under no-preference at the bottom. */
+
+/* ── Monthly / Yearly ─────────────────────────────────────────────────── */
+.switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: max-content;
+  margin: 0 auto clamp(40px, 5vw, 60px);
+  padding: 5px;
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  box-shadow: 0 8px 28px rgba(4, 18, 12, 0.07);
+}
+
+.switch button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  font-family: var(--font-display), sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition: color 260ms var(--ease);
+}
+
+.switch button[aria-checked="true"] {
+  color: #eaf4ee;
+}
+
+.switch em {
+  font-style: normal;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  background: var(--lime);
+  color: #0b1400;
+}
+
+.thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc(50% - 5px);
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  box-shadow: 0 6px 18px rgba(4, 18, 12, 0.3);
+}
+
+.switch[data-billing="year"] .thumb {
+  transform: translateX(100%);
+}
+
+/* ── the cards ────────────────────────────────────────────────────────── */
+.plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-hi);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow:
+    0 1px 2px rgba(4, 18, 12, 0.04),
+    0 22px 48px -30px rgba(4, 18, 12, 0.3);
+}
+
+/* The whole-team card wears a lime ring that turns slowly. */
+@property --spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.best {
+  border-color: transparent;
+  box-shadow: 0 28px 70px -28px rgba(140, 190, 0, 0.55);
+}
+
+.best::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--spin),
+    var(--lime),
+    var(--brand-hi) 25%,
+    rgba(204, 255, 0, 0.2) 50%,
+    var(--brand-hi) 75%,
+    var(--lime)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.tag {
+  position: absolute;
+  z-index: 2;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--lime);
+  color: #0b1400;
+  box-shadow: 0 8px 22px rgba(160, 210, 0, 0.45);
+}
+
+/* ── the film ─────────────────────────────────────────────────────────── */
+.film {
+  position: relative;
+  margin: 10px 10px 0;
+  aspect-ratio: 16 / 9;
+  border-radius: calc(var(--r-xl) - 10px);
+  overflow: hidden;
+  background: var(--ink);
+  isolation: isolate;
+}
+
+.film video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.film::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 50%, rgba(4, 18, 12, 0.6));
+  pointer-events: none;
+}
+
+.live {
+  position: absolute;
+  z-index: 1;
+  left: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border: 1px solid rgba(204, 255, 0, 0.32);
+  border-radius: var(--r-pill);
+  background: rgba(4, 18, 12, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #eaf4ee;
+}
+
+.live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+/* ── the price and what is in it ──────────────────────────────────────── */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  padding: 24px 26px 28px;
+}
+
+.body h3 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.price strong {
+  font-family: var(--font-mono), monospace;
+  font-size: 52px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.price small {
+  font-size: 15px;
+  color: var(--text-mut);
+}
+
+.save {
+  margin: -4px 0 0;
+  font-size: 14px;
+  color: var(--text-mut);
+}
+
+.save s {
+  color: var(--text-dim);
+}
+
+.save mark {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: #eef7d9;
+  color: #2c6410;
+  font-weight: 700;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--text-mut);
+  font-size: 15px;
+}
+
+.list {
+  list-style: none;
+  margin: 2px 0 8px;
+  padding: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  flex: 1;
+}
+
+.list li {
+  display: flex;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.list svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--lime);
+  color: #0b1400;
+  stroke-width: 3;
+}
+
+.cta {
+  width: 100%;
+}
+
+/* ── motion, only for people who have not asked for less ──────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .thumb {
+    transition: transform 440ms var(--ease-out);
+  }
+
+  .card {
+    transition:
+      transform 380ms var(--ease-out),
+      box-shadow 380ms var(--ease-out),
+      border-color 380ms var(--ease);
+  }
+
+  .card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 34px 80px -34px rgba(4, 18, 12, 0.5);
+  }
+
+  .card:not(.best):hover {
+    border-color: #9fc7ae;
+  }
+
+  .best:hover {
+    box-shadow: 0 36px 90px -30px rgba(140, 190, 0, 0.7);
+  }
+
+  /* `backwards`, not `both`: once risen, the card's own transform (hover) wins again. */
+  .seen {
+    animation: rise 900ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i) * 130ms);
+  }
+
+  .seen .list li {
+    animation: rise 650ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i) * 130ms + 380ms + var(--j) * 70ms);
+  }
+
+  .best::before {
+    animation: spin 6s linear infinite;
+  }
+
+  .film video {
+    transition: transform 1100ms var(--ease-out);
+  }
+
+  .card:hover .film video {
+    transform: scale(1.06);
+  }
+
+  .live i {
+    animation: pulse 1.8s var(--ease) infinite;
+  }
+
+  .price {
+    animation: flip 520ms var(--ease-out);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.97);
+  }
+}
+
+@keyframes spin {
+  to {
+    --spin: 360deg;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.75);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px rgba(204, 255, 0, 0);
+  }
+}
+
+@keyframes flip {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(4px);
+  }
+}
+
+@media (max-width: 940px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 540px;
+    margin-inline: auto;
+    gap: 34px;
+  }
+}
+
+@media (max-width: 420px) {
+  .switch button {
+    padding: 0 14px;
+  }
+
+  .body {
+    padding: 20px 20px 24px;
+  }
+
+  .price strong {
+    font-size: 44px;
+  }
+}

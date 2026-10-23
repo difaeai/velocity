@@ -1,6 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
-import type { StudioPlanId } from './studio';
+import type { StudioBilling, StudioPlanId } from './studio';
 
 /**
  * The Firebase callable serializer encodes `undefined` object values as `null`
@@ -1752,6 +1752,8 @@ export interface StudioPaymentDoc {
   business: string;
   email: string | null;
   plan: StudioPlanId;
+  /** Absent on payments sent before yearly billing existed: those were monthly. */
+  billing?: StudioBilling;
   amountUsd: number;
   txnId: string | null;
   screenshotPath: string | null;
@@ -1860,7 +1862,7 @@ export const studioApi = {
     { ok: boolean; workspaceId: string; trialEndsAtMs: number }
   >('studioCreateWorkspace'),
   submitPayment: callable<
-    { plan: StudioPlanId; txnId?: string; screenshotPath?: string },
+    { plan: StudioPlanId; billing?: StudioBilling; txnId?: string; screenshotPath?: string },
     { ok: boolean; paymentId: string }
   >('studioSubmitPayment'),
   decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
