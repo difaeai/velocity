@@ -6,6 +6,7 @@ import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
 import { StudioHow, type StudioStep } from '@/components/site/StudioHow';
+import { StudioScrub } from '@/components/site/StudioScrub';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { AppleMark, ArrowRight, Check, GooglePlay, Sparkle } from '@/components/site/Icons';
 import styles from '@/components/site/site.module.css';
@@ -286,6 +287,8 @@ export default function Home() {
 
       <main>
         <HeroSlider slides={SLIDES} />
+
+        <StudioScrub />
 
         {/* ── how it works: five films, played as you scroll to them ─────── */}
         <section id="how-it-works" className={`${styles.section} ${styles.deep} ${home.how}`}>
