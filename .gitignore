@@ -8,6 +8,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+# Gradle's cache, made beside any build.gradle (the native calls module) by a build or an editor sync.
+.gradle/
 
 # Next.js (admin app at repo root)
 /.next/
