@@ -211,6 +211,7 @@
   position: relative;
   overflow: hidden;
   display: grid;
+  justify-items: start;
   gap: 10px;
   padding: clamp(22px, 3vw, 34px);
   border-radius: var(--r-lg);
