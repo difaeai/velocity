@@ -1,0 +1,81 @@
+VELOCITY RIDES 1.20.0  ·  Android versionCode 47  ·  iOS build 20
+=================================================================
+
+WHY 1.20.0. iOS 1.19.0 (build 19) is READY_FOR_SALE, read from the App Store
+Connect API on 23 Oct before choosing — an approved version string closes its
+train (ITMS-90186), so nothing more can go up as 1.19.0.
+
+VERSION STATE — check the stores, not this file.
+  iOS      Live: 1.19.0 build 19, from cc4574d (17 Oct). This release carries
+           every mobile commit since. Build 20 needs a NEW 1.20.0 version
+           record with the What's New below, and build 20 attached to it.
+  Android  Play's state cannot be read from this machine (no Play API key, and
+           `eas submit` cannot set one non-interactively). vc47 supersedes
+           vc46; roll it into EVERY track that still holds an older bundle.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number
+(1.20.0 + 47 for Play; 1.20.0 + 20 in the iOS section, only once Apple has
+RELEASED it), or the in-app update prompt tells nobody.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Call your driver for free.
+
+• Every Call button now rings over the internet — no airtime, and your number
+  stays private. Calls keep going with the screen off and ring a locked phone
+• Call our helpline and talk to an assistant in Urdu or English
+• Fleets: add the people you travel with by username and fill a shared ride
+  before a driver is asked
+• Dash cam: every ride is recorded, and you can watch your part for 24 hours
+• Sign-up is one screen
+
+
+APP STORE "WHAT'S NEW" (set on a NEW 1.20.0 version record)
+-----------------------------------------------------------
+CALL YOUR DRIVER FOR FREE
+
+Every Call button on a ride now opens a voice call over the internet instead of
+dialling your SIM. It costs no airtime, your phone number stays private, and it
+only works between the people on the same live ride.
+
+A HELPLINE THAT ANSWERS
+
+Call the helpline from the app and an assistant answers in Urdu or English,
+already knowing whether you are a rider or a driver. If it cannot sort it out,
+it hands you to our team with the conversation attached.
+
+FLEETS: RIDE WITH YOUR OWN PEOPLE
+
+Pick a username, add the people you travel with, and ask them all at once —
+"I'm going to Gulberg now, coming?". Everyone who says yes is seated before a
+driver is asked, so the ride leaves full. Find it under Corporate / Students.
+
+A DASH CAM ON EVERY RIDE
+
+The driver's phone records the cabin for the whole ride. You can watch your own
+part of it for 24 hours after the ride ends; then it is deleted.
+
+ALSO
+
+Sign-up is one screen: username, photo, name, gender and date of birth
+together. Drivers see their mobile-holder credits at the top of the home screen.
+And the app now recovers from errors with a retry screen instead of closing.
+
+
+WHAT THIS CARRIES (for the team; not store copy)
+------------------------------------------------
+Mobile commits since 1.19.0 (cc4574d):
+  - 83995f7 / bf442da  usernames + personal fleets; Corporate / Students drawer row
+  - 064f200            ten abuse paths closed (gender once, pool docs locked, ...)
+  - 47835f2 / 2e958b1  ride dash cam; error boundary + crash reports; a11y labels
+  - cab394a            WebRTC rider↔driver calls + AI phone helpline
+                       (react-native-webrtc 124.0.8, incall-manager 4.3.0,
+                       expo-two-way-audio 0.1.2 — FIRST store build with them)
+  - 1ec40b2            Android background calls (local module velocity-calls,
+                       Android-only); one-screen sign-up
+  - 916db36            driver wallet card with mobile-holder credits
+
+iOS calls are foreground-only: no CallKit/PushKit, so a locked iPhone gets a
+notification, not a ringer. The store copy above says "ring a locked phone"
+only in the Play block, which is Android-only.
