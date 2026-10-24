@@ -126,7 +126,10 @@ export function ShareGenderPill({ onPress }: { onPress: () => void }) {
         ) : (
           <>
             <Text style={styles.pillPromptIcon}>♂♀</Text>
-            <Text style={styles.pillPromptLabel} numberOfLines={1}>
+            {/* Two lines allowed: the live legend shares this strip of map now,
+                and on a narrow handset the question wraps rather than losing
+                its end. */}
+            <Text style={styles.pillPromptLabel} numberOfLines={2}>
               Who will you share a ride with?
             </Text>
             <View style={styles.pillChoose}>
@@ -339,11 +342,11 @@ const styles = themed(() => StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
   },
   pillDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: LIME },
-  pillLabel: { color: '#ffffff', fontSize: 11.5, fontWeight: '900' },
+  pillLabel: { flexShrink: 1, color: '#ffffff', fontSize: 11.5, fontWeight: '900' },
   pillSub: { color: '#9aa2a0', fontSize: 10, fontWeight: '700' },
   pillChevron: { color: '#9aa2a0', fontSize: 14, fontWeight: '900', marginLeft: -2 },
   pillPromptIcon: { color: LIME, fontSize: 12, fontWeight: '900' },
-  pillPromptLabel: { color: '#ffffff', fontSize: 11.5, fontWeight: '800' },
+  pillPromptLabel: { flexShrink: 1, color: '#ffffff', fontSize: 11.5, fontWeight: '800' },
   pillChoose: {
     paddingHorizontal: 8,
     paddingVertical: 3,

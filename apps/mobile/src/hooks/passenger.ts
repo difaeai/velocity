@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 
 import { db } from '../firebase';
 import type { CnicVerification } from '../api/client';
@@ -111,4 +111,90 @@ export function useCnicVerification(uid?: string): CnicVerification | null | und
   }, [uid]);
 
   return record;
+}
+
+/**
+ * The signed-in rider as the menu shows them, read from `users/{uid}`.
+ *
+ * Not from Firebase Auth: phone sign-in mints a custom token, so the Auth user
+ * has no display name or photo and the drawer used to say "Your account" over a
+ * blank mark. The name and picture a rider gave at onboarding live on the
+ * profile document (`name`, `photoURL`), with `username` from claimUsername.
+ * `null` until the first read lands.
+ */
+export interface MyProfile {
+  name: string | null;
+  photoURL: string | null;
+  username: string | null;
+  phone: string | null;
+}
+
+export function useMyProfile(uid?: string): MyProfile | null {
+  const [me, setMe] = useState<MyProfile | null>(null);
+
+  useEffect(() => {
+    if (!uid) { setMe(null); return; }
+    return onSnapshot(
+      doc(db, 'users', uid),
+      (snap) => {
+        const d = snap.data() ?? {};
+        const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+        // onUserCreate provisions displayName as 'New User' — a placeholder, not a name.
+        const displayName = str(d.displayName);
+        setMe({
+          name: str(d.name) ?? (displayName === 'New User' ? null : displayName),
+          photoURL: str(d.photoURL),
+          username: str(d.username),
+          phone: str(d.phoneNumber),
+        });
+      },
+      () => setMe(null),
+    );
+  }, [uid]);
+
+  return me;
+}
+
+/** A saved place on a daily route: where it is and what the rider called it. */
+export interface RoutePlace {
+  lat: number;
+  lng: number;
+  address: string;
+}
+
+/** One of the rider's regular trips, `users/{uid}/dailyRoutes/{id}`. */
+export interface DailyRoute {
+  id: string;
+  label?: string;
+  pickup: RoutePlace;
+  dropoff: RoutePlace;
+  /** "HH:MM", or null for any time — see src/lib/dailyRouteTime.ts. */
+  time: string | null;
+  radiusKm?: number;
+  notify?: boolean;
+}
+
+/**
+ * The rider's saved daily routes, earliest time first (any-time routes lead,
+ * since null sorts first). `null` until the first read lands, so the map pill
+ * never flashes "add your route" at someone who already has one.
+ */
+export function useDailyRoutes(uid?: string): DailyRoute[] | null {
+  const [routes, setRoutes] = useState<DailyRoute[] | null>(null);
+
+  useEffect(() => {
+    if (!uid) { setRoutes(null); return; }
+    return onSnapshot(
+      query(collection(db, 'users', uid, 'dailyRoutes'), orderBy('time', 'asc')),
+      (snap) => setRoutes(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as DailyRoute)
+          // A route needs both ends to mean anything; a half-written doc is skipped, not drawn.
+          .filter((r) => r.pickup?.address && r.dropoff?.address),
+      ),
+      () => setRoutes([]),
+    );
+  }, [uid]);
+
+  return routes;
 }

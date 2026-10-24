@@ -35,7 +35,7 @@ interface DailyRoute {
   pickup: GeoPoint;
   dropoff: GeoPoint;
   radiusKm: number;
-  time: string; // HH:MM
+  time: string | null; // HH:MM, or null for any time (saved that way from the map)
   notify: boolean;
   createdAt: Timestamp | null;
 }
@@ -93,6 +93,7 @@ export default function DailyRoutesScreen() {
   const [dropoff, setDropoff] = useState('');
   const [hour, setHour] = useState(8);
   const [minute, setMinute] = useState(30);
+  const [anyTime, setAnyTime] = useState(false);
   const [radiusKm, setRadiusKm] = useState<number>(3);
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -140,6 +141,7 @@ export default function DailyRoutesScreen() {
     setDropoff('');
     setHour(8);
     setMinute(30);
+    setAnyTime(false);
     setRadiusKm(3);
     setNotify(true);
     setPickupCoords(null);
@@ -157,6 +159,9 @@ export default function DailyRoutesScreen() {
     const m = parseInt(parts[1] ?? '30', 10);
     setHour(Number.isFinite(h) ? h : 8);
     setMinute(Number.isFinite(m) ? m : 30);
+    // A route saved from the map may have no time; editing it here must not
+    // quietly give it 08:30.
+    setAnyTime(r.time == null);
     setRadiusKm(r.radiusKm ?? 3);
     setNotify(r.notify ?? true);
     setPickupCoords(r.pickup);
@@ -189,7 +194,7 @@ export default function DailyRoutesScreen() {
         pickup: p,
         dropoff: d,
         radiusKm,
-        time: fmtTime(hour, minute),
+        time: anyTime ? null : fmtTime(hour, minute),
         notify,
         updatedAt: serverTimestamp(),
       };
@@ -375,7 +380,7 @@ export default function DailyRoutesScreen() {
                         <Text style={styles.routeLabel} numberOfLines={1}>{r.label}</Text>
                         <View style={[styles.timePill, !r.notify && styles.timePillMuted]}>
                           <Text style={[styles.timePillTxt, !r.notify && styles.timePillTxtMuted]}>
-                            {r.notify ? `🕒 ${r.time}` : 'Alerts off'}
+                            {r.notify ? (r.time ? `🕒 ${r.time}` : 'Any time') : 'Alerts off'}
                           </Text>
                         </View>
                       </View>
@@ -550,28 +555,48 @@ export default function DailyRoutesScreen() {
               />
 
               <Text style={styles.fieldLabel}>TIME</Text>
-              <Text style={styles.fieldHint}>We'll alert you about pools opened around this time.</Text>
-              <View style={styles.timeRow}>
-                <View style={styles.stepper}>
-                  <Pressable style={styles.stepBtn} onPress={() => setHour((h) => (h + 23) % 24)}>
-                    <Text style={styles.stepBtnTxt}>−</Text>
-                  </Pressable>
-                  <Text style={styles.stepVal}>{String(hour).padStart(2, '0')}</Text>
-                  <Pressable style={styles.stepBtn} onPress={() => setHour((h) => (h + 1) % 24)}>
-                    <Text style={styles.stepBtnTxt}>+</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.colon}>:</Text>
-                <View style={styles.stepper}>
-                  <Pressable style={styles.stepBtn} onPress={() => setMinute((m) => (m + 45) % 60)}>
-                    <Text style={styles.stepBtnTxt}>−</Text>
-                  </Pressable>
-                  <Text style={styles.stepVal}>{String(minute).padStart(2, '0')}</Text>
-                  <Pressable style={styles.stepBtn} onPress={() => setMinute((m) => (m + 15) % 60)}>
-                    <Text style={styles.stepBtnTxt}>+</Text>
-                  </Pressable>
-                </View>
+              <View style={styles.radiusRow}>
+                <Pressable
+                  style={[styles.radiusChip, anyTime && styles.radiusChipActive]}
+                  onPress={() => setAnyTime(true)}
+                >
+                  <Text style={[styles.radiusChipTxt, anyTime && styles.radiusChipTxtActive]}>Any time</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.radiusChip, !anyTime && styles.radiusChipActive]}
+                  onPress={() => setAnyTime(false)}
+                >
+                  <Text style={[styles.radiusChipTxt, !anyTime && styles.radiusChipTxtActive]}>Set a time</Text>
+                </Pressable>
               </View>
+              <Text style={styles.fieldHint}>
+                {anyTime
+                  ? 'We will alert you to shared rides on this route at any hour.'
+                  : "We'll alert you about pools opened around this time."}
+              </Text>
+              {anyTime ? null : (
+                <View style={styles.timeRow}>
+                  <View style={styles.stepper}>
+                    <Pressable style={styles.stepBtn} onPress={() => setHour((h) => (h + 23) % 24)}>
+                      <Text style={styles.stepBtnTxt}>−</Text>
+                    </Pressable>
+                    <Text style={styles.stepVal}>{String(hour).padStart(2, '0')}</Text>
+                    <Pressable style={styles.stepBtn} onPress={() => setHour((h) => (h + 1) % 24)}>
+                      <Text style={styles.stepBtnTxt}>+</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.colon}>:</Text>
+                  <View style={styles.stepper}>
+                    <Pressable style={styles.stepBtn} onPress={() => setMinute((m) => (m + 45) % 60)}>
+                      <Text style={styles.stepBtnTxt}>−</Text>
+                    </Pressable>
+                    <Text style={styles.stepVal}>{String(minute).padStart(2, '0')}</Text>
+                    <Pressable style={styles.stepBtn} onPress={() => setMinute((m) => (m + 15) % 60)}>
+                      <Text style={styles.stepBtnTxt}>+</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
 
               <Text style={styles.fieldLabel}>MATCH RADIUS</Text>
               <View style={styles.radiusRow}>
