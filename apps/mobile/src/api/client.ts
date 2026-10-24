@@ -1122,7 +1122,15 @@ export const api = {
     { ok: boolean; remaining: number; fare: number; name: string }
   >('dropOffRider'),
 
-  placeBid: callable<{ tripId: string; fare: number }, { ok: boolean; bidId: string }>('placeBid'),
+  /**
+   * `matched`: the driver took the passenger's own fare, so the ride is theirs
+   * now. `taken`: another driver got there first. Neither: a counter-offer the
+   * passenger will accept or decline.
+   */
+  placeBid: callable<
+    { tripId: string; fare: number },
+    { ok: boolean; bidId: string; matched?: boolean; taken?: boolean }
+  >('placeBid'),
   raiseTripFare: callable<{ tripId: string; fare: number }, { ok: boolean; offeredFare: number }>(
     'raiseTripFare',
   ),

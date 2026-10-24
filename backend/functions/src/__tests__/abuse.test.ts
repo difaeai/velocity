@@ -109,12 +109,27 @@ describe('Attack 5: get one driver matched to two riders at once', () => {
     });
     const { tripId: a } = (await createTrip.run(makeReq(TRIP, 'riderA'))) as { tripId: string };
     const { tripId: b } = (await createTrip.run(makeReq(TRIP, 'riderB'))) as { tripId: string };
-    // The driver offers on both — which every driver does.
-    const { bidId: bidA } = (await placeBid.run(driverReq({ tripId: a, fare: 400 }, 'drv'))) as { bidId: string };
-    const { bidId: bidB } = (await placeBid.run(driverReq({ tripId: b, fare: 400 }, 'drv'))) as { bidId: string };
+    // The driver counter-offers on both — which every driver does.
+    const { bidId: bidA } = (await placeBid.run(driverReq({ tripId: a, fare: 450 }, 'drv'))) as { bidId: string };
+    const { bidId: bidB } = (await placeBid.run(driverReq({ tripId: b, fare: 450 }, 'drv'))) as { bidId: string };
 
     await acceptBid.run(makeReq({ tripId: a, bidId: bidA }, 'riderA'));
     await expect(acceptBid.run(makeReq({ tripId: b, bidId: bidB }, 'riderB'))).rejects.toThrow(/just taken another ride/);
+    expect((await db().doc(`trips/${b}`).get()).get('status')).toBe('requested');
+  });
+
+  it('a driver taking two riders at their own fare gets the first; the second stays open', async () => {
+    await db().doc('drivers/drv').set({
+      verificationStatus: 'approved', online: true, lastLocation: { lat: PICKUP.lat, lng: PICKUP.lng },
+      vehicleLabel: 'Suzuki Alto', plate: 'ABC-123', rating: 5, ...confirmedCar(),
+    });
+    const { tripId: a } = (await createTrip.run(makeReq(TRIP, 'riderA'))) as { tripId: string };
+    const { tripId: b } = (await createTrip.run(makeReq(TRIP, 'riderB'))) as { tripId: string };
+
+    expect(await placeBid.run(driverReq({ tripId: a, fare: 400 }, 'drv'))).toMatchObject({ matched: true });
+    // Busy on A, so B is not locked to a car that is not coming — it stays an
+    // offer rider B can still see, and acceptBid refuses it like before.
+    expect(await placeBid.run(driverReq({ tripId: b, fare: 400 }, 'drv'))).toMatchObject({ matched: false, taken: false });
     expect((await db().doc(`trips/${b}`).get()).get('status')).toBe('requested');
   });
 });

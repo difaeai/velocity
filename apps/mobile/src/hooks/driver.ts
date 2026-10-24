@@ -27,6 +27,8 @@ export interface DriverProfile {
   fullName?: string;
   verificationStatus?: string;
   online?: boolean;
+  /** Left by the old Solo | Sharing switch; 'solo' keeps a driver out of the shared-ride offer ladder. */
+  rideMode?: 'solo' | 'sharing';
   rating?: number;
   tripsCount?: number;
   reviewReason?: string;

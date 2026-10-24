@@ -91,8 +91,15 @@ const registerFcmTokenSchema = z.object({
   platform: z.enum(['ios', 'android', 'web']).optional(),
 });
 
-/** Mobile: register or refresh an FCM token for the signed-in user. */
-export const registerFcmToken = onCall(async (req) => {
+/**
+ * Mobile: register or refresh an FCM token for the signed-in user.
+ *
+ * `invoker: 'public'` is stated outright because a deploy only grants it when it
+ * CREATES the service. This one lost its allUsers binding in October 2026 and
+ * every redeploy left it so: Cloud Run answered 401 before our code ran, so no
+ * phone could register for pushes — call rings and ride alerts included.
+ */
+export const registerFcmToken = onCall({ invoker: 'public' }, async (req) => {
   const ctx = requireAuth(req);
   const parsed = registerFcmTokenSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid FCM token.');
@@ -127,7 +134,7 @@ export async function setAccountDisabled(uid: string, disabled: boolean): Promis
 }
 
 /** Admin-only: ban or unban a passenger. */
-export const banPassenger = onCall(async (req) => {
+export const banPassenger = onCall({ invoker: 'public' }, async (req) => {
   const admin = requireAdmin(req);
   const parsed = banPassengerSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid passengerId and banned flag.');
@@ -155,7 +162,7 @@ const resolveDisputeSchema = z.object({
 });
 
 /** Admin-only: resolve a dispute, optionally credit passenger wallet. */
-export const resolveDispute = onCall(async (req) => {
+export const resolveDispute = onCall({ invoker: 'public' }, async (req) => {
   const admin = requireAdmin(req);
   const parsed = resolveDisputeSchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid dispute resolution input.');

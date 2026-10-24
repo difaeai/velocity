@@ -38,6 +38,31 @@ const LIVE_POOL_RIDE = new Set(['open', 'collecting', 'full', 'boarding', 'in_pr
 /** How long relay credentials live. Longer than any ride call, short enough to be useless later. */
 const TURN_TTL_SEC = 2 * 60 * 60;
 
+/** Past this a "ringing" call was left by a caller whose app died — phones ring for 45 s. */
+const RING_STALE_MS = 60_000;
+/** Past this an "active" call is a hang-up neither phone lived to write down. */
+const ACTIVE_STALE_MS = 30 * 60_000;
+
+/** What `callIsLive` reads off a call document. */
+export interface CallLiveness {
+  status?: string;
+  createdAt?: { toMillis(): number } | null;
+  answeredAt?: { toMillis(): number } | null;
+}
+
+/**
+ * Whether a call still ties up the two people on it. Status alone is not enough:
+ * a phone killed mid-call never writes its hang-up, and a line held for ever by
+ * a dead call would leave that driver unreachable for the rest of the day.
+ */
+export function callIsLive(c: CallLiveness, nowMs: number): boolean {
+  if (c.status === 'ringing') return nowMs - (c.createdAt?.toMillis() ?? 0) < RING_STALE_MS;
+  if (c.status === 'active') {
+    return nowMs - (c.answeredAt?.toMillis() ?? c.createdAt?.toMillis() ?? 0) < ACTIVE_STALE_MS;
+  }
+  return false;
+}
+
 export interface IceServer {
   urls: string[];
   username?: string;
@@ -164,20 +189,58 @@ export const startCall = onCall(async (req) => {
   const callerName = firstName(me.get('displayName'), callerIsDriver ? 'Your driver' : 'Your passenger');
 
   const ref = db.collection('calls').doc();
-  await ref.set({
-    id: ref.id,
-    callerId: ctx.uid,
-    calleeId: callee,
-    driverId: parties.driverId,
-    callerName,
-    calleeName: firstName(them.get('displayName'), callerIsDriver ? 'Passenger' : 'Driver'),
-    rideKind,
-    rideId,
-    status: 'ringing',
-    iceServers: servers,
-    offer: null,
-    answer: null,
-    createdAt: FieldValue.serverTimestamp(),
+  const calleeLabel = callerIsDriver ? 'Your passenger' : 'Your driver';
+  /**
+   * One call per person at a time, decided here rather than on the phones.
+   *
+   * On a shared ride three riders can ring the one driver in the same second.
+   * The phone alone cannot sort that out — every call would ring, stack screens
+   * and ringtones, or sit unanswered for 45 seconds before saying "No answer".
+   * So each person has a line (`callLines/{uid}`, server-only) naming the call
+   * they are on, and this transaction serialises on both lines: whoever is
+   * second hears at once that the other person is busy, and only one call ever
+   * reaches a phone.
+   */
+  await db.runTransaction(async (tx) => {
+    const lines = await Promise.all([ctx.uid, callee].map((u) => tx.get(db.doc(`callLines/${u}`))));
+    const ids = [...new Set(lines.map((l) => l.get('callId') as string | undefined).filter((id): id is string => !!id))];
+    const held = await Promise.all(ids.map((id) => tx.get(db.doc(`calls/${id}`))));
+    const now = Date.now();
+    for (const c of held) {
+      if (!c.exists || !callIsLive(c.data() as CallLiveness, now)) continue;
+      // Calling again over your own call to the same person — a redial, or a
+      // screen that died mid-ring. The new call replaces it.
+      if (c.get('callerId') === ctx.uid && c.get('calleeId') === callee) {
+        tx.update(c.ref, { status: 'ended', endedAt: FieldValue.serverTimestamp() });
+        continue;
+      }
+      if (c.get('callerId') === callee && c.get('calleeId') === ctx.uid) {
+        throw new HttpsError('failed-precondition', `${calleeLabel} is calling you right now.`);
+      }
+      const theirs = c.get('callerId') === callee || c.get('calleeId') === callee;
+      throw new HttpsError(
+        'failed-precondition',
+        theirs ? `${calleeLabel} is on another call. Try again in a minute.` : 'You are already on a call.',
+      );
+    }
+    tx.set(ref, {
+      id: ref.id,
+      callerId: ctx.uid,
+      calleeId: callee,
+      driverId: parties.driverId,
+      callerName,
+      calleeName: firstName(them.get('displayName'), callerIsDriver ? 'Passenger' : 'Driver'),
+      rideKind,
+      rideId,
+      status: 'ringing',
+      iceServers: servers,
+      offer: null,
+      answer: null,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    for (const u of [ctx.uid, callee]) {
+      tx.set(db.doc(`callLines/${u}`), { callId: ref.id, at: FieldValue.serverTimestamp() });
+    }
   });
 
   await sendCallToUser(

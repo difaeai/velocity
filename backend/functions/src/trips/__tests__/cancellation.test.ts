@@ -18,7 +18,7 @@ import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
 import { clearFirestore, confirmedCar, db, makeReq } from '../../travelMate/__tests__/helpers';
-import { createTrip, placeBid, acceptBid, cancelTrip } from '../index';
+import { createTrip, placeBid, cancelTrip } from '../index';
 
 const PASSENGER = 'cancel-passenger';
 const DRIVER = 'cancel-driver';
@@ -69,13 +69,13 @@ async function wallet(uid: string): Promise<{ balance: number; outstanding: numb
   };
 }
 
-/** Create a trip, have the driver bid, and have the passenger accept it. */
+/** Create a trip and have the driver take it at the passenger's own fare — which matches it. */
 async function matchedTrip(overrides: Record<string, unknown> = {}): Promise<string> {
   const { tripId } = await createTrip.run(
     makeReq({ ...BASE_TRIP, ...overrides }, PASSENGER),
   ) as { tripId: string };
-  const { bidId } = await placeBid.run(driverReq({ tripId, fare: FARE })) as { bidId: string };
-  await acceptBid.run(makeReq({ tripId, bidId }, PASSENGER));
+  const res = await placeBid.run(driverReq({ tripId, fare: FARE })) as { matched: boolean };
+  expect(res.matched).toBe(true);
   return tripId;
 }
 
@@ -161,7 +161,7 @@ describe('cancelTrip — after a driver accepts', () => {
   });
 
   it("pays a cancelling passenger's fee out of the ride hold it just released", async () => {
-    // Wallet ride: acceptBid holds the full fare, so the balance drops to 100.
+    // Wallet ride: the match holds the full fare, so the balance drops to 100.
     // Wallet rides open with top-ups, so the flag has to be on for one to exist.
     await db().doc('config/featureFlags').set({ walletTopupEnabled: true });
     await db().doc(`wallets/${PASSENGER}`).set({ balance: 500 });

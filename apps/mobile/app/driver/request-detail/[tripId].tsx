@@ -4,11 +4,11 @@
  * The job laid out over the map: both legs with their ETAs, who is hailing,
  * where they are going, and what they will pay.
  *
- * Fare model (unchanged, and the same one the passenger app expects):
- *   • "Accept for PKR X"  → a bid at exactly the fare the passenger offered.
- *   • "Offer your fare"   → a bid above it.
- * Either way the passenger sees every driver who responded and picks one —
- * accepting does not silently lock the ride to this driver.
+ * Fare model:
+ *   • "Accept for PKR X"  → the passenger's own fare. Nothing is left for them
+ *     to decide, so the ride is this driver's at once (placeBid locks it in).
+ *   • "Offer your fare"   → a counter-offer above it, which the passenger
+ *     accepts or declines. Not offered on a shared ride: its fare is fixed.
  */
 import { useState } from 'react';
 import {
@@ -76,12 +76,20 @@ export default function RequestDetailScreen() {
     if (!tripId || !request) return;
     setBusy(true);
     try {
-      await api.placeBid({ tripId, fare });
+      const res = await api.placeBid({ tripId, fare });
+      if (res.matched) {
+        // Home shows the live trip card the moment the trip doc says so.
+        if (router.canGoBack()) router.back();
+        else router.replace('/driver/home');
+        return;
+      }
       Alert.alert(
-        isCounterOffer ? 'Offer sent' : 'Accepted',
-        isCounterOffer
-          ? `Your fare of PKR ${fare.toLocaleString()} was sent to the passenger.`
-          : `You accepted PKR ${fare.toLocaleString()}. The passenger will confirm shortly.`,
+        res.taken ? 'Ride already taken' : isCounterOffer ? 'Offer sent' : 'Sent to the passenger',
+        res.taken
+          ? 'Another driver accepted this ride a moment before you.'
+          : isCounterOffer
+            ? `Your fare of PKR ${fare.toLocaleString()} was sent to the passenger. They will accept or decline it.`
+            : `PKR ${fare.toLocaleString()} was sent to the passenger to confirm.`,
         [{ text: 'OK', onPress: () => router.back() }],
       );
     } catch (e) {
@@ -251,9 +259,9 @@ export default function RequestDetailScreen() {
               </Text>
             </View>
           ) : (
-            <View style={styles.jobBanner}>
+            <View style={[styles.jobBanner, styles.jobBannerSolo]}>
               <Text style={[styles.jobBannerTag, styles.jobBannerTagSolo]}>SOLO RIDE</Text>
-              <Text style={styles.jobBannerTxt}>One pickup, one drop-off — no other riders.</Text>
+              <Text style={styles.jobBannerTxt}>Booked by one passenger — one pickup, one drop-off, no other riders.</Text>
             </View>
           )}
 
@@ -343,6 +351,8 @@ export default function RequestDetailScreen() {
             </Text>
           </Pressable>
 
+          {request.pool !== true ? (
+          <>
           <Text style={styles.offerLabel}>Offer your fare</Text>
           <View style={styles.offerRow}>
             {offers.map((amount) => (
@@ -365,6 +375,8 @@ export default function RequestDetailScreen() {
               </Svg>
             </Pressable>
           </View>
+          </>
+          ) : null}
 
           <Pressable style={styles.closeBtn} onPress={() => router.back()}>
             <Text style={styles.closeTxt}>Close</Text>
@@ -483,25 +495,29 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  // Blue shared, pink solo — the same colours as the box in the feed.
   jobBannerPool: {
-    borderColor: colors.glassLimeBorder,
-    backgroundColor: colors.glassLime,
+    borderColor: '#3b82f6',
+    backgroundColor: 'rgba(59,130,246,0.14)',
+  },
+  jobBannerSolo: {
+    borderColor: '#ec4899',
+    backgroundColor: 'rgba(236,72,153,0.14)',
   },
   jobBannerTag: {
     alignSelf: 'flex-start',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.8,
-    color: '#000',
-    backgroundColor: colors.primary,
+    color: '#fff',
+    backgroundColor: '#3b82f6',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 2,
     overflow: 'hidden',
   },
   jobBannerTagSolo: {
-    color: colors.text,
-    backgroundColor: colors.glassStrong,
+    backgroundColor: '#ec4899',
   },
   jobBannerTxt: { fontSize: 12, fontWeight: '600', color: colors.text, lineHeight: 17 },
 

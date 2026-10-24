@@ -327,7 +327,7 @@ export const socialEngagement = onSchedule(
 
 /** "Check the comments now" — the same pass the scheduler does, on demand. */
 export const adminSyncSocialComments = deskCall('content', 
-  { timeoutSeconds: 540, memory: '512MiB' },
+  { timeoutSeconds: 540, memory: '512MiB', invoker: 'public' },
   async () => {
     const summary = await runEngagement();
     return { ok: true, summary };

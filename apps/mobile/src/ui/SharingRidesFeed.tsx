@@ -1,6 +1,7 @@
 /**
- * Driver "Sharing rides" mode — the body of the driver home screen when the
- * Solo | Sharing selector is on Sharing.
+ * Shared-ride pools in the driver's feed — a section at the top of the one ride
+ * list on the driver home screen (there is no Solo | Sharing switch any more).
+ * Renders nothing at all when there is no pool to show.
  *
  * Two jobs:
  *  1. "Your shared pool" — the pool this driver has accepted, live from
@@ -20,11 +21,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
-  RefreshControl,
   StyleSheet,
   View,
 } from 'react-native';
@@ -37,7 +35,6 @@ import { api, type NearbyPoolRequest, type PoolJoinRequest } from '../api/client
 import { colors } from '../config';
 import { themed } from '../theme';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
-import { DRIVER_TAB_BAR_HEIGHT } from './DriverTabBar';
 import { OfferCountdown } from './OfferCountdown';
 
 /** Mirrors POOL_NO_JOINER_WINDOW_MS on the backend. */
@@ -169,7 +166,7 @@ function MyPoolCard({ pool }: { pool: MyPool }) {
   return (
     <View style={styles.myPoolCard}>
       <View style={styles.myPoolHeader}>
-        <Text style={styles.myPoolTitle}>🚕 Your shared pool</Text>
+        <Text style={styles.myPoolTitle}>🚕 Your shared ride</Text>
         <View style={styles.genderBadge}>
           <Text style={styles.genderBadgeText}>{GENDER_LABEL[pool.genderPref] ?? pool.genderPref}</Text>
         </View>
@@ -220,7 +217,7 @@ function MyPoolCard({ pool }: { pool: MyPool }) {
       )}
       {alone && !pool.goAnywayConfirmed && remainingMs !== null && remainingMs <= 0 && (
         <View style={styles.decideBox}>
-          <Text style={styles.decideTitle}>Nobody joined the pool</Text>
+          <Text style={styles.decideTitle}>Nobody joined the ride</Text>
           <Text style={styles.decideText}>
             {leaderReady
               ? `${leaderName} is ready to go with just the two of you.`
@@ -316,6 +313,11 @@ function PoolRequestBox({
 }) {
   return (
     <View style={styles.card}>
+      {/* Same blue box as a shared ride in the request list (RequestCard). */}
+      <View style={styles.kindBanner}>
+        <Text style={styles.kindTag}>SHARED</Text>
+        <Text style={styles.kindTxt} numberOfLines={1}>Shared ride with other passengers</Text>
+      </View>
       {/* The exclusive hold, when this ride is this driver's alone. */}
       <OfferCountdown exclusive={req.exclusive} offerExpiresAt={req.offerExpiresAt} />
       <View style={styles.cardHeader}>
@@ -371,7 +373,7 @@ function PoolRequestBox({
           <Text style={styles.rejectBtnText}>Reject</Text>
         </Pressable>
       </View>
-      <Text style={styles.fixedFareNote}>Pool fares are fixed — no counter offers.</Text>
+      <Text style={styles.fixedFareNote}>Shared-ride fares are fixed — no counter offers.</Text>
     </View>
   );
 }
@@ -387,8 +389,6 @@ export function SharingRidesFeed({
 }) {
   const [radiusKm, setRadiusKm] = useState<number>(5);
   const [requests, setRequests] = useState<NearbyPoolRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
   const [myPools, setMyPools] = useState<MyPool[]>([]);
@@ -425,17 +425,13 @@ export function SharingRidesFeed({
     return unsub;
   }, [uid]);
 
-  const load = useCallback(async (asRefresh = false) => {
-    if (!coords) { setLoading(false); return; }
-    if (asRefresh) setRefreshing(true);
+  const load = useCallback(async () => {
+    if (!coords) return;
     try {
       const res = await api.getNearbyPoolRequests({ lat: coords.lat, lng: coords.lng, radiusKm });
       setRequests(res.requests);
     } catch {
       // keep whatever is on screen
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
   }, [coords?.lat, coords?.lng, radiusKm]);
 
@@ -444,7 +440,6 @@ export function SharingRidesFeed({
 
   function setRadius(km: number) {
     setRadiusKm(km);
-    setLoading(true);
     AsyncStorage.setItem(RADIUS_KEY, String(km)).catch(() => {});
   }
 
@@ -473,7 +468,7 @@ export function SharingRidesFeed({
     try {
       await api.driverRespondToRequest({ requestId: req.requestId, action: 'accept' });
       Alert.alert(
-        'Pool accepted',
+        'Shared ride accepted',
         `${req.filledSlots} rider${req.filledSlots > 1 ? 's' : ''} at ${req.farePerSeat} PKR each — ` +
         `pick up from ${req.pickupAreaName}. Riders can keep joining until the seats fill.`,
       );
@@ -491,11 +486,15 @@ export function SharingRidesFeed({
     [requests, rejectedIds],
   );
 
-  const header = (
-    <View style={styles.headerArea}>
+  // A section in somebody else's list: say nothing when there is nothing.
+  if (myPools.length === 0 && visible.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
       {myPools.map((p) => <MyPoolCard key={p.id} pool={p} />)}
+      {visible.length > 0 ? (
       <View style={styles.radiusRow}>
-        <Text style={styles.radiusLabel}>Pools within</Text>
+        <Text style={styles.radiusLabel}>Shared rides within</Text>
         {RADIUS_OPTIONS.map((km) => (
           <Pressable
             key={km}
@@ -508,60 +507,22 @@ export function SharingRidesFeed({
           </Pressable>
         ))}
       </View>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.flexCenter}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Finding shared-ride pools near you…</Text>
-      </View>
-    );
-  }
-
-  return (
-    <FlatList
-      data={visible}
-      keyExtractor={(r) => r.requestId}
-      contentContainerStyle={styles.list}
-      ListHeaderComponent={header}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.primary} />
-      }
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>👥</Text>
-          <Text style={styles.emptyTitle}>No pools nearby</Text>
-          <Text style={styles.emptyText}>
-            {coords
-              ? `No shared-ride pools within ${radiusKm} km right now. New ones appear here automatically.`
-              : 'Waiting for your location to find pools near you…'}
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => (
+      ) : null}
+      {visible.map((item) => (
         <PoolRequestBox
+          key={item.requestId}
           req={item}
           busy={acting === item.requestId}
           onAccept={() => accept(item)}
           onReject={() => reject(item.requestId)}
         />
-      )}
-    />
+      ))}
+    </View>
   );
 }
 
 const styles = themed(() => StyleSheet.create({
-  flexCenter:   { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText:  { fontSize: 13, color: colors.muted },
-  list:         { padding: 16, gap: 12, paddingBottom: DRIVER_TAB_BAR_HEIGHT + 16 },
-  headerArea:   { gap: 12, marginBottom: 4 },
-
-  empty:        { paddingTop: 48, alignItems: 'center', gap: 10, paddingHorizontal: 32 },
-  emptyIcon:    { fontSize: 44 },
-  emptyTitle:   { fontSize: 17, fontWeight: '800', color: colors.text },
-  emptyText:    { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  section:      { paddingHorizontal: 12, paddingTop: 10, gap: 10 },
 
   radiusRow:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
   radiusLabel:    { fontSize: 12, color: colors.muted, fontWeight: '700' },
@@ -570,7 +531,11 @@ const styles = themed(() => StyleSheet.create({
   radiusChipText:       { fontSize: 12, fontWeight: '800', color: colors.muted },
   radiusChipTextActive: { color: '#000' },
 
-  card:         { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  // The shared-ride blue — RequestCard uses the same so both pool feeds read as one kind.
+  card:         { backgroundColor: 'rgba(59,130,246,0.12)', borderRadius: 16, borderWidth: 1.5, borderColor: '#3b82f6', overflow: 'hidden' },
+  kindBanner:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(59,130,246,0.18)' },
+  kindTag:      { fontSize: 11, fontWeight: '900', color: '#fff', backgroundColor: '#3b82f6', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, letterSpacing: 0.6, overflow: 'hidden' },
+  kindTxt:      { flex: 1, fontSize: 13, fontWeight: '800', color: colors.text },
   cardHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
   distLabel:    { fontSize: 12, color: colors.muted, fontWeight: '700' },
   genderBadge:  { backgroundColor: colors.glassLime, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },

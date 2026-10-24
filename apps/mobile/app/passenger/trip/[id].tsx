@@ -510,7 +510,7 @@ export default function TripScreen() {
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={styles.viewersText}>
                 {pendingBids.length > 0
-                  ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} offered — pick below`
+                  ? `${pendingBids.length} driver${pendingBids.length > 1 ? 's' : ''} asked a different fare`
                   : 'Contacting nearby drivers…'}
               </Text>
             </View>
@@ -540,6 +540,69 @@ export default function TripScreen() {
               </View>
             ) : null}
           </View>
+
+          {/* Counter-offers, on the map where the rider is already looking.
+              A driver who takes the rider's own fare gets the ride outright
+              (placeBid), so what lands here is only a driver asking for a
+              DIFFERENT price — the one thing the rider must answer. It used to
+              sit inside the sheet below the fold, so a rider had to scroll to
+              find out a driver was waiting on them. */}
+          {pendingBids.length > 0 ? (
+            <ScrollView
+              style={styles.offersOverlay}
+              contentContainerStyle={styles.offersOverlayBody}
+              keyboardShouldPersistTaps="handled"
+            >
+              {pendingBids.map((b) => (
+                <View key={b.id} style={[styles.driverBidCard, styles.offerCardFloating]}>
+                  <View style={styles.bidMetaRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bidDriverName}>{b.driverInfo.displayName}</Text>
+                      <Text style={styles.bidDriverVehicle}>
+                        {b.driverInfo.vehicleLabel} · {b.driverInfo.plate} · {b.driverInfo.rating}★
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.bidFarePKR}>{b.fare} PKR</Text>
+                      {b.fare !== trip.offeredFare ? (
+                        <Text style={styles.bidDriverVehicle}>
+                          {b.fare > trip.offeredFare
+                            ? `PKR ${b.fare - trip.offeredFare} more than yours`
+                            : `PKR ${trip.offeredFare - b.fare} less than yours`}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  {isHost ? (
+                    // Two answers, not one. Declining clears just that offer;
+                    // every other driver's still stands.
+                    <View style={styles.bidActionRow}>
+                      <Pressable
+                        style={({ pressed }) => [styles.rejectBidBtn, pressed && { opacity: 0.7 }]}
+                        disabled={busy}
+                        onPress={() => run(() => api.declineBid({ tripId: trip.id, bidId: b.id }))}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Reject ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
+                      >
+                        <Text style={styles.rejectBidBtnText}>Reject</Text>
+                      </Pressable>
+                      <Pressable
+                        style={({ pressed }) => [styles.acceptBidBtn, pressed && { opacity: 0.85 }]}
+                        disabled={busy}
+                        onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Accept ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
+                      >
+                        <Text style={styles.acceptBidBtnText}>Accept {b.fare} PKR</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text style={styles.joinerNote}>The pool host picks the driver</Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
         </SafeAreaView>
 
         {/* 3. Bottom sheet — offers first, everything else below. Drag the
@@ -547,7 +610,7 @@ export default function TripScreen() {
         <DraggableSheet style={styles.bottomBiddingSheet}>
           <View style={styles.priorityBanner}>
             <Text style={styles.priorityText}>
-              {pendingBids.length > 0 ? 'Driver offers' : 'Finding you a driver…'}
+              {pendingBids.length > 0 ? 'Answer an offer above' : 'Finding you a driver…'}
             </Text>
             <Text style={styles.countdownText}>{formatTime(timeLeft)}</Text>
           </View>
@@ -556,60 +619,15 @@ export default function TripScreen() {
           </View>
 
           <ScrollView style={styles.sheetScroll} contentContainerStyle={{ paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
-            {/* Driver offers pop in here as they arrive */}
+            {/* One line, not a panel. This is the state the rider spends the
+                most time in and it says the least — the countdown above it is
+                already saying "we are looking". Offers themselves sit on the
+                map, above this sheet. */}
             {pendingBids.length === 0 ? (
-              // One line, not a panel. This is the state the rider spends the
-              // most time in and it says the least — the countdown above it is
-              // already saying "we are looking", so a tall card repeating that
-              // was pushing the actual content off the screen.
               <Text style={styles.waitingLine}>
-                Your offer of PKR {trip.offeredFare} is live — driver offers appear here.
+                Your offer of PKR {trip.offeredFare} is live — a driver who accepts it is yours straight away.
               </Text>
-            ) : (
-              <View style={styles.driverBidsSection}>
-                {pendingBids.map((b) => (
-                  <View key={b.id} style={styles.driverBidCard}>
-                    <View style={styles.bidMetaRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.bidDriverName}>{b.driverInfo.displayName}</Text>
-                        <Text style={styles.bidDriverVehicle}>
-                          {b.driverInfo.vehicleLabel} · {b.driverInfo.plate} · {b.driverInfo.rating}★
-                        </Text>
-                      </View>
-                      <Text style={styles.bidFarePKR}>{b.fare} PKR</Text>
-                    </View>
-                    {isHost ? (
-                      // Two answers, not one. A driver who counter-offers above
-                      // what the rider will pay used to have to be waited out —
-                      // the card sat there until the timer expired. Declining
-                      // clears just that offer; every other driver's still stands.
-                      <View style={styles.bidActionRow}>
-                        <Pressable
-                          style={({ pressed }) => [styles.rejectBidBtn, pressed && { opacity: 0.7 }]}
-                          disabled={busy}
-                          onPress={() => run(() => api.declineBid({ tripId: trip.id, bidId: b.id }))}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Reject ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
-                        >
-                          <Text style={styles.rejectBidBtnText}>Reject</Text>
-                        </Pressable>
-                        <Pressable
-                          style={({ pressed }) => [styles.acceptBidBtn, pressed && { opacity: 0.85 }]}
-                          disabled={busy}
-                          onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Accept ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
-                        >
-                          <Text style={styles.acceptBidBtnText}>Accept Offer</Text>
-                        </Pressable>
-                      </View>
-                    ) : (
-                      <Text style={styles.joinerNote}>The pool host picks the driver</Text>
-                    )}
-                  </View>
-                ))}
-              </View>
-            )}
+            ) : null}
 
             {/* Route */}
             <View style={styles.routePillCard}>
@@ -1765,9 +1783,20 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
-  driverBidsSection: {
-    marginTop: 16,
-    gap: 10,
+  /* Counter-offers over the map: capped so a busy minute never hides the map. */
+  offersOverlay: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    maxHeight: 330,
+  },
+  offersOverlayBody: { gap: 8 },
+  offerCardFloating: {
+    backgroundColor: 'rgba(16,18,17,0.96)',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   driverBidsTitle: {
     fontSize: 13,
