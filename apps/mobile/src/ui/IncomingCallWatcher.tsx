@@ -46,6 +46,8 @@ export function IncomingCallWatcher() {
           if (AppState.currentState !== 'active') continue;
           rung.add(d.id);
           router.push(`/call/${d.id}`);
+          // One screen per snapshot: openCalls only fills once that screen mounts.
+          break;
         }
       },
       // Offline or signing out: the push still rings.

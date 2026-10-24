@@ -19,7 +19,7 @@ import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
 import { clearFirestore, confirmedCar, db, makeReq } from '../../travelMate/__tests__/helpers';
-import { createTrip, placeBid, acceptBid, updateTripStatus, completeTrip } from '../../trips/index';
+import { createTrip, placeBid, updateTripStatus, completeTrip } from '../../trips/index';
 
 const PASSENGER = 'partner-passenger';
 const DRIVER = 'partner-driver';
@@ -119,8 +119,8 @@ async function bindReferral(
 /** Run a full ride to completion and hand back the settlement. */
 async function runRide(): Promise<{ tripId: string; settlement: Record<string, number> }> {
   const { tripId } = (await createTrip.run(makeReq(BASE_TRIP, PASSENGER))) as { tripId: string };
-  const { bidId } = (await placeBid.run(driverReq({ tripId, fare: FARE }))) as { bidId: string };
-  await acceptBid.run(makeReq({ tripId, bidId }, PASSENGER));
+  // Taking the passenger's own fare matches the ride — no second yes needed.
+  await placeBid.run(driverReq({ tripId, fare: FARE }));
   // The driver walks the real state machine: matched → arriving → arrived → in_progress.
   await updateTripStatus.run(driverReq({ tripId, to: 'arriving' }));
   await updateTripStatus.run(driverReq({ tripId, to: 'arrived' }));

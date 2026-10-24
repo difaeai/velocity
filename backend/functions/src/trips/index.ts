@@ -563,21 +563,45 @@ export const placeBid = onCall(async (req) => {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  // Notify passenger of the new bid
-  const passengerId = (await db.doc(`trips/${tripId}`).get()).get('passengerId') as string | undefined;
+  /**
+   * A driver who takes the passenger's own fare has agreed to the ride the
+   * passenger asked for — nothing is left for the passenger to decide, so it is
+   * theirs now, not an offer to confirm. Only a different number (a counter-
+   * offer) goes back to the passenger. A shared ride's fare is fixed, so a bid
+   * on one always lands here.
+   *
+   * If the lock-in fails — another driver got there first, the rider's wallet
+   * cannot cover it — the bid above simply stays pending, which is exactly
+   * what every bid was before this.
+   */
+  if (bidFare === tripSnap.get('offeredFare')) {
+    try {
+      await lockInBid(tripId, bidRef.id, { by: 'driver', uid: ctx.uid });
+      logger.info('Bid placed', { tripId, driver: ctx.uid, fare: bidFare, pool: isPoolBid, matched: true });
+      return { ok: true, bidId: bidRef.id, matched: true, taken: false };
+    } catch (e) {
+      const status = (await db.doc(`trips/${tripId}`).get()).get('status');
+      if (status !== 'requested') {
+        logger.info('Bid placed', { tripId, driver: ctx.uid, fare: bidFare, matched: false, taken: true });
+        return { ok: true, bidId: bidRef.id, matched: false, taken: true };
+      }
+      logger.warn('Bid lock-in failed, left pending', { tripId, driver: ctx.uid, error: (e as Error).message });
+    }
+  }
+
+  // A counter-offer: the passenger accepts or declines it.
+  const passengerId = tripSnap.get('passengerId') as string | undefined;
   if (passengerId) {
     await sendToUser(
       passengerId,
-      isPoolBid ? '🚗 A driver will take your shared ride' : '🚗 New driver offer',
-      isPoolBid
-        ? `A driver accepted PKR ${bidFare} for your shared ride — open it to confirm.`
-        : `A driver offered PKR ${bidFare} for your ride`,
+      '🚗 New driver offer',
+      `A driver offered PKR ${bidFare} for your ride — open it to accept or decline.`,
       { tripId },
     );
   }
 
   logger.info('Bid placed', { tripId, driver: ctx.uid, fare: bidFare, pool: isPoolBid });
-  return { ok: true, bidId: bidRef.id };
+  return { ok: true, bidId: bidRef.id, matched: false, taken: false };
 });
 
 const raiseFareSchema = z.object({
@@ -681,13 +705,29 @@ export const acceptBid = onCall(async (req) => {
   if (!parsed.success) invalid('Provide a valid tripId and bidId.');
   const { tripId, bidId } = parsed.data;
 
+  const result = await lockInBid(tripId, bidId, { by: 'passenger', uid: ctx.uid });
+  return { ok: true, ...result };
+});
+
+/**
+ * Lock a trip to one pending bid: the driver is assigned and the fare is fixed.
+ *
+ * The one write behind both ways a ride gets its driver — the passenger
+ * accepting a counter-offer (`acceptBid`), and a driver taking the passenger's
+ * own fare (`placeBid`), which needs no second yes from anybody.
+ */
+async function lockInBid(
+  tripId: string,
+  bidId: string,
+  actor: { by: 'passenger' | 'driver'; uid: string },
+): Promise<{ fare: number; driverId: string }> {
   const tripRef = db.doc(`trips/${tripId}`);
   const bidRef = db.doc(`trips/${tripId}/bids/${bidId}`);
 
   const result = await db.runTransaction(async (tx) => {
     const tripSnap = await tx.get(tripRef);
     if (!tripSnap.exists) invalid('Trip not found.');
-    if (tripSnap.get('passengerId') !== ctx.uid) {
+    if (actor.by === 'passenger' && tripSnap.get('passengerId') !== actor.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
     }
     if (tripSnap.get('status') !== 'requested') {
@@ -696,6 +736,14 @@ export const acceptBid = onCall(async (req) => {
     const bidSnap = await tx.get(bidRef);
     if (!bidSnap.exists || bidSnap.get('status') !== 'pending') {
       invalid('Bid is no longer available.');
+    }
+    if (actor.by === 'driver' && bidSnap.get('driverId') !== actor.uid) {
+      throw new HttpsError('permission-denied', 'Not your bid.');
+    }
+    // A driver may only lock in the passenger's CURRENT price — one raised a
+    // moment ago makes this bid a counter-offer again.
+    if (actor.by === 'driver' && bidSnap.get('fare') !== tripSnap.get('offeredFare')) {
+      throw new HttpsError('failed-precondition', 'The passenger changed their fare.');
     }
 
     const driverInfo = bidSnap.get('driverInfo') as DriverPublicInfo;
@@ -780,21 +828,18 @@ export const acceptBid = onCall(async (req) => {
     tx.set(bidRef, { status: 'accepted' }, { merge: true });
     tx.set(db.doc(`drivers/${driverInfo.driverId}`), { activeTripId: tripId }, { merge: true });
     tx.delete(db.doc(`openRequests/${tripId}`)); // no longer open
-    return { fare, driverId: driverInfo.driverId };
+    return { fare, driverId: driverInfo.driverId, passengerId };
   });
 
-  // Notify driver they were chosen
-  await sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId });
-  // Notify passenger match confirmed
-  const passengerSnap = await db.doc(`trips/${tripId}`).get();
-  const passengerId = passengerSnap.get('passengerId') as string | undefined;
-  if (passengerId) {
-    await sendToUser(passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId });
+  // The driver took the ride themselves and is already looking at it.
+  if (actor.by === 'passenger') {
+    await sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId });
   }
+  await sendToUser(result.passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId });
 
-  logger.info('Bid accepted', { tripId, ...result });
-  return { ok: true, ...result };
-});
+  logger.info('Bid accepted', { tripId, fare: result.fare, driverId: result.driverId, by: actor.by });
+  return { fare: result.fare, driverId: result.driverId };
+}
 
 const declineBidSchema = z.object({
   tripId: docId,

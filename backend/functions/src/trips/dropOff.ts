@@ -34,7 +34,7 @@ const dropSchema = z.object({
   riderUid: docId,
 });
 
-export const dropOffRider = onCall(async (req) => {
+export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
   const ctx = requireRole(req, 'driver');
   const parsed = dropSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId and riderUid.');

@@ -177,3 +177,63 @@ describe('startCall', () => {
     ).rejects.toThrow(/current ride/);
   });
 });
+
+describe('one call per person at a time', () => {
+  beforeEach(clearFirestore);
+
+  const pool = () =>
+    db().doc('trips/tp').set({
+      passengerId: 'call-r1',
+      driverId: 'call-driver',
+      status: 'arriving',
+      pool: true,
+      poolMembers: ['call-r1', 'call-r2', 'call-r3'],
+    });
+  const ring = (uid: string, calleeId?: string) =>
+    startCall.run(makeReq({ rideKind: 'trip', rideId: 'tp', ...(calleeId ? { calleeId } : {}) }, uid));
+
+  it('rings the driver for ONE of three riders calling in the same second', async () => {
+    await pool();
+    const results = await Promise.allSettled([ring('call-r1'), ring('call-r2'), ring('call-r3')]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    for (const r of results.filter((x) => x.status === 'rejected')) {
+      expect(String((r as PromiseRejectedResult).reason)).toMatch(/Your driver is on another call/);
+    }
+    const ringing = await db().collection('calls').where('status', '==', 'ringing').get();
+    expect(ringing.size).toBe(1);
+  });
+
+  it('frees the line the moment the call ends', async () => {
+    await pool();
+    const { callId } = await ring('call-r1');
+    await expect(ring('call-r2')).rejects.toThrow(/on another call/);
+
+    await db().doc(`calls/${callId}`).update({ status: 'ended' });
+    await expect(ring('call-r2')).resolves.toHaveProperty('callId');
+  });
+
+  it('tells the driver they are already on a call instead of ringing a second rider', async () => {
+    await pool();
+    await ring('call-r1');
+    await expect(ring('call-driver', 'call-r2')).rejects.toThrow(/already on a call/);
+  });
+
+  it('does not let a dead call hold the line for ever', async () => {
+    await pool();
+    await db().doc('calls/old').set({
+      callerId: 'call-r1', calleeId: 'call-driver', status: 'ringing',
+      createdAt: new Date(Date.now() - 5 * 60_000),
+    });
+    await db().doc('callLines/call-driver').set({ callId: 'old' });
+    await expect(ring('call-r2')).resolves.toHaveProperty('callId');
+  });
+
+  it('replaces a rider’s own ringing call when they redial', async () => {
+    await pool();
+    const first = await ring('call-r1');
+    const second = await ring('call-r1');
+    expect(second.callId).not.toBe(first.callId);
+    expect((await db().doc(`calls/${first.callId}`).get()).get('status')).toBe('ended');
+  });
+});

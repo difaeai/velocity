@@ -88,9 +88,6 @@ const SCAN_MS = 3500;
 const SKIP_KEY = 'driver_skipped_requests';
 const SKIP_TTL = 60 * 60 * 1000;
 
-/** Which feed the driver last worked: solo requests or shared-ride pools. */
-const RIDE_MODE_KEY = 'driver_ride_mode';
-
 export default function DriverHome() {
   const { user, signOut } = useAuth();
   const uid = user?.uid;
@@ -138,28 +135,17 @@ export default function DriverHome() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Solo | Sharing rides — which feed the body shows while online. Solo is the
-  // classic open-requests list; Sharing lays out nearby pools box by box with
-  // every rider's name and fare so the driver can pick a pool on its numbers.
-  const [rideMode, setRideMode] = useState<'solo' | 'sharing'>('sharing');
+  // There used to be a Solo | Sharing switch here, and a shared ride booked from
+  // the rider app landed under "Solo" — the feed it actually lives in — so the
+  // driver saw a shared ride filed as solo. Every ride is in one list now, each
+  // boxed by kind. A driver who last left the switch on Solo is still skipped
+  // by the shared-ride offer ladder (poolRideRequests/dispatch.ts) until the
+  // field says otherwise, so put them back in it.
   useEffect(() => {
-    AsyncStorage.getItem(RIDE_MODE_KEY).then((v) => {
-      if (v === 'sharing' || v === 'solo') setRideMode(v);
-    }).catch(() => {});
-  }, []);
-  const switchRideMode = useCallback((m: 'solo' | 'sharing') => {
-    setRideMode(m);
-    AsyncStorage.setItem(RIDE_MODE_KEY, m).catch(() => {});
-    // Also on the driver document, because the server has to know. Shared rides
-    // are now offered to one driver at a time, and a driver in Solo mode who is
-    // handed a pool offer burns a rung of that ladder and 25 seconds of the
-    // rider's time saying nothing. The backend treats a MISSING `rideMode` as
-    // available — every build before this one writes none — so this only ever
-    // takes a driver out of the pool ladder, never into it.
-    if (uid) {
-      setDoc(doc(db, 'drivers', uid), { rideMode: m }, { merge: true }).catch(() => {});
+    if (uid && profile?.rideMode === 'solo') {
+      setDoc(doc(db, 'drivers', uid), { rideMode: 'sharing' }, { merge: true }).catch(() => {});
     }
-  }, [uid]);
+  }, [uid, profile?.rideMode]);
   // A push only reaches a backgrounded app. With the trip screen open —
   // which is exactly where a driver sits while the passenger is writing —
   // Android shows nothing, so the button has to carry the news itself.
@@ -701,26 +687,6 @@ export default function DriverHome() {
         </View>
       ) : null}
 
-      {/* ── Solo | Sharing rides ── right below Offline/Online: which kind of
-          work this driver wants. Solo keeps the classic feed; Sharing shows
-          whole pools (names, fares, totals) to accept or reject. */}
-      <View style={styles.modeRow}>
-        <View style={styles.modeToggle}>
-          <Pressable
-            style={[styles.modeHalf, rideMode === 'sharing' && styles.modeActive]}
-            onPress={() => switchRideMode('sharing')}
-          >
-            <Text style={[styles.modeTxt, rideMode === 'sharing' && styles.modeTxtActive]}>Sharing Rides</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modeHalf, rideMode === 'solo' && styles.modeActive]}
-            onPress={() => switchRideMode('solo')}
-          >
-            <Text style={[styles.modeTxt, rideMode === 'solo' && styles.modeTxtActive]}>Solo Rides</Text>
-          </Pressable>
-        </View>
-      </View>
-
       {/* ── Today's target ── Above the body rather than inside one of its five
           branches: the count has to be there whether the driver is offline,
           waiting on the radar, or scrolling a full feed, because it is what
@@ -963,33 +929,27 @@ export default function DriverHome() {
             subtitle="Go online to start receiving ride requests from passengers near you."
           />
         </View>
-      ) : rideMode === 'sharing' && uid ? (
-        <View style={styles.flex}>
-          <SharingRidesFeed uid={uid} coords={driverCoords} />
-        </View>
-      ) : scanning || shown.length === 0 ? (
-        <View style={styles.flex}>
-          <RadarScan
-            scanning
-            title="Searching for orders nearby..."
-            subtitle={
-              scanning
-                ? undefined
-                : 'No open requests around you right now. Stay online — new ones appear here automatically.'
-            }
-          />
-          {/* A request landing during the sweep is still announced. */}
-          {!scanning && pendingCount > 0 && (
-            <NewRequestsPill count={pendingCount} onPress={showNewRequests} floating={false} />
-          )}
-        </View>
       ) : (
+        // Every ride in one list: the rider-booked rides (solo and shared, one
+        // feed on the server) as rows, the passenger-posted shared-ride pools in
+        // the header. Each is boxed by kind — blue shared, pink solo.
         <View style={styles.flex}>
           <FlatList
             ref={listRef}
-            data={shown}
+            data={scanning ? [] : shown}
             keyExtractor={(r) => r.tripId}
             contentContainerStyle={{ paddingBottom: DRIVER_TAB_BAR_HEIGHT }}
+            ListEmptyComponent={
+              <RadarScan
+                scanning
+                title="Searching for orders nearby..."
+                subtitle={
+                  scanning
+                    ? undefined
+                    : 'No open requests around you right now. Stay online — new ones appear here automatically.'
+                }
+              />
+            }
             ListHeaderComponent={
               <>
                 {/* Where this driver stands. Shown above the feed because it is
@@ -1011,16 +971,10 @@ export default function DriverHome() {
                     Set your route and we'll show you pool riders standing on it.
                   </Text>
                 </Pressable>
-                {/* This feed is solo + pool trips mixed together. Passengers who
-                    asked for a shared ride and named their own fare live in a
-                    separate queue — surfaced here because a driver who never
-                    opens the drawer would otherwise never find that work. */}
-                <Pressable style={styles.poolCta} onPress={() => switchRideMode('sharing')}>
-                  <Text style={styles.routeCtaTitle}>👥 Sharing rides</Text>
-                  <Text style={styles.routeCtaBody}>
-                    See whole pools — every rider's name and fare. Their fare is fixed: accept or reject.
-                  </Text>
-                </Pressable>
+                {/* Shared-ride pools passengers posted themselves — a separate
+                    queue on the server, shown here so no ride lives behind a
+                    tab the driver never opens. Renders nothing when quiet. */}
+                {uid ? <SharingRidesFeed uid={uid} coords={driverCoords} /> : null}
                 {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
               </>
             }
@@ -1272,20 +1226,7 @@ const styles = themed(() => StyleSheet.create({
   carBannerBody2: { fontSize: 12, lineHeight: 17, color: colors.muted },
   carBannerChevron: { fontSize: 22, color: '#f59e0b', fontWeight: '700' },
 
-  modeRow: { alignItems: 'center', paddingBottom: 8 },
   targetWrap: { paddingHorizontal: 16, paddingBottom: 2 },
-  modeToggle: {
-    flexDirection: 'row',
-    width: 260,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.glassStrong,
-    padding: 3,
-  },
-  modeHalf: { flex: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  modeActive: { backgroundColor: colors.glassLime, borderWidth: 1, borderColor: `${colors.primary}60` },
-  modeTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
-  modeTxtActive: { color: colors.primary, fontWeight: '800' },
 
   // ── "Show new requests" pill ──
   pillWrap: { alignItems: 'center', paddingVertical: 10 },
@@ -1345,18 +1286,6 @@ const styles = themed(() => StyleSheet.create({
   },
   routeCtaTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   routeCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
-  // Same shape as routeCta, tinted lime so pool work reads as its own lane
-  // rather than another row of the solo feed.
-  poolCta: {
-    backgroundColor: colors.glassLime,
-    borderWidth: 1,
-    borderColor: colors.glassLimeBorder,
-    borderRadius: 14,
-    padding: 14,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 4,
-  },
   tripTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   tripFare: { fontSize: 18, fontWeight: '900', color: colors.primary, marginVertical: 8 },
   cancelFeeNote: {

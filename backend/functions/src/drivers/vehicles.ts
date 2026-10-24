@@ -386,7 +386,7 @@ const reviewVehicleSchema = z.object({
 });
 
 /** Admin: approve or reject a car a driver added. */
-export const adminReviewDriverVehicle = onCall(async (req) => {
+export const adminReviewDriverVehicle = onCall({ invoker: 'public' }, async (req) => {
   const admin = requireAdmin(req);
   const parsed = reviewVehicleSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a driver and a vehicle.');

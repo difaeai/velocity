@@ -271,9 +271,13 @@ function CallScreen() {
         setCallId(id);
         setPhase('ringing');
       })
+      // Not on this ride, or the other person is busy on another call — the
+      // server's words say which, so show them rather than a vague failure.
       .catch((e: { code?: string; message?: string }) =>
         finish(
-          e?.code === 'functions/permission-denied' && e.message ? e.message : "Couldn't start the call",
+          (e?.code === 'functions/permission-denied' || e?.code === 'functions/failed-precondition') && e.message
+            ? e.message
+            : "Couldn't start the call",
         ),
       );
     // Runs once: the screen IS this one call.
