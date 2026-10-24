@@ -42,7 +42,7 @@ import {
   type OpenRequest,
 } from '../../src/hooks/driver';
 import { CommissionLock } from '../../src/ui/CommissionLock';
-import { DailyTargetCard } from '../../src/ui/DailyTargetCard';
+import { DailyTargetTicker } from '../../src/ui/DailyTargetTicker';
 import { WalletCard } from '../../src/ui/WalletCard';
 import { OutstandingFees } from '../../src/ui/OutstandingFees';
 import { colors } from '../../src/config';
@@ -68,6 +68,7 @@ import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
+import { documentsExpiringSoon } from '../../src/domain/documentExpiry';
 
 const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
   matched: { label: 'Head to pickup', to: 'arriving' },
@@ -130,6 +131,8 @@ export default function DriverHome() {
   // a day, enforced by the rules and the trip guards, so the toggle has to know
   // about it for exactly the same reason as the car photo above.
   const faceCheck = faceCheckInStatus(profile);
+  // Papers running out within the month — the only countdown a driver is shown.
+  const expiring = documentsExpiringSoon(profile);
 
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -677,6 +680,27 @@ export default function DriverHome() {
         </Pressable>
       ) : null}
 
+      {/* ── Papers running out ── Shown only inside the last 30 days, the same
+          days the server pushes its warnings: once a paper lapses the driver is
+          stopped until the renewed one is checked. Not a button — there is no
+          renewal flow in the app to send them to. */}
+      {expiring[0] && !activeTrip ? (
+        <View style={styles.carBanner}>
+          <Text style={styles.carBannerIcon}>📄</Text>
+          <View style={styles.carBannerBody}>
+            {expiring.map((doc) => (
+              <Text key={doc.key} style={styles.carBannerTitle}>
+                Your {doc.label} expires{' '}
+                {doc.daysLeft === 0 ? 'today' : doc.daysLeft === 1 ? 'tomorrow' : `in ${doc.daysLeft} days`}
+              </Text>
+            ))}
+            <Text style={styles.carBannerBody2}>
+              Renew it before then. Once it lapses you cannot take rides until the new one is checked.
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {/* ── Solo | Sharing rides ── right below Offline/Online: which kind of
           work this driver wants. Solo keeps the classic feed; Sharing shows
           whole pools (names, fares, totals) to accept or reject. */}
@@ -701,10 +725,11 @@ export default function DriverHome() {
           branches: the count has to be there whether the driver is offline,
           waiting on the radar, or scrolling a full feed, because it is what
           they are deciding against. Hidden mid-trip (nothing to decide) and
-          while a settle screen owns the view. */}
+          while a settle screen owns the view. One line, so the requests below
+          it start near the top of the screen; the full card is on Earnings. */}
       {!activeTrip && !commissionLocked && !outstanding.blocked && dailyTarget.progress.enabled ? (
         <View style={styles.targetWrap}>
-          <DailyTargetCard
+          <DailyTargetTicker
             progress={dailyTarget.progress}
             bonusBalance={commission.bonus}
             todayCashFare={commission.todayCashFare}

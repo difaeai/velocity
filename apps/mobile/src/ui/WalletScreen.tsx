@@ -247,7 +247,7 @@ export function WalletScreen({ role }: { role: 'passenger' | 'driver' }) {
             ) : (
               <Text style={styles.payoutHint}>
                 {commission.dailyTargetEnabled
-                  ? `Finish ${commission.dailyTargetRides} ${commission.dailyTargetPoolOnly ? 'pool rides' : 'rides'} today and the whole day costs you no commission. Short of that, ${Math.round(commission.rate * 100)}% of today's cash is due at midnight and you pay it by transfer with a screenshot.`
+                  ? `Finish ${commission.dailyTargetRides} ${commission.dailyTargetPoolOnly ? 'shared rides' : 'rides'} today and the whole day costs you no commission. Short of that, ${Math.round(commission.rate * 100)}% of today's cash is due at midnight and you pay it by transfer with a screenshot.`
                   : `Today's commission becomes due at midnight. You pay it by transfer with a screenshot.`}
                 {' '}Commission on online rides is collected automatically.
               </Text>

@@ -131,6 +131,8 @@ export interface DriverProfile {
     reasons?: { code: string; detail: string; severity: 'fatal' | 'major' | 'minor' }[];
     decidedAt?: { seconds: number };
     decidedBy?: string;
+    /** Expiry dates as read off the cards; preferred over the typed ones below. */
+    expiries?: Partial<Record<'license' | 'cnic' | 'vehicleRegistration', { resolved?: string | null }>>;
   };
   // ── Submitted application details — used to re-fill the onboarding forms on
   //    resubmission so a rejection only costs the driver the rejected sections.

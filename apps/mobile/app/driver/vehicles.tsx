@@ -170,9 +170,9 @@ export default function DriverVehicles() {
                   onPress={() => router.push('/driver/car-verification')}
                 >
                   <Text style={[styles.checkTxt, check.needsPhoto && styles.checkTxtWarn]}>
-                    {check.needsPhoto
-                      ? '📸 Photo needed before you can go online'
-                      : `📸 Photo confirmed · ${check.daysLeft} day${check.daysLeft === 1 ? '' : 's'} left`}
+                    {/* No countdown: the only timers a driver sees are papers about
+                        to expire. A fresh photo is asked for when it is due. */}
+                    {check.needsPhoto ? '📸 Photo needed before you can go online' : '📸 Photo confirmed'}
                   </Text>
                   <Text style={styles.checkChevron}>›</Text>
                 </Pressable>
