@@ -45,7 +45,7 @@ import { db, FieldValue, storage } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { deskCall, forEachWorkspace, sdb, wsPath } from './workspace';
 import { dayKey } from '../analytics';
-import { loadCredentials, markAccountError, publishableAccounts } from './accounts';
+import { flagIfDead, healAccounts, loadCredentials, publishableAccounts } from './accounts';
 import { postFolder, refreshAssetUrls, storeFile } from './assets';
 import { brandName, planContent, wordmark } from './crew';
 import { design, DesignError } from './designer';
@@ -1085,8 +1085,9 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
       results[platform] = { ok: false, id: null, url: null, error: message.slice(0, 500), atMs: Date.now() };
       failed++;
       // A rejected credential is an account problem, not a post problem — flag
-      // it on the account so the console stops showing it as healthy.
-      if (/token|expired|permission|oauth|scope/i.test(message)) await markAccountError(platform, message);
+      // it on the account so the console stops showing it as healthy. Only when
+      // the credential itself fails a re-check: see flagIfDead.
+      await flagIfDead(platform, credentials, message);
     }
   }
 
@@ -1173,6 +1174,7 @@ export const socialDailyContent = onSchedule(
 
 /** One workspace's hourly check: is it this desk's hour, and is anyone hired. */
 async function daily(): Promise<void> {
+    await healAccounts().catch((e) => logger.error('social: account re-check failed', { message: (e as Error).message }));
     const settings = await getSocialSettings();
     if (!settings.enabled) return;
 
@@ -1226,7 +1228,10 @@ async function daily(): Promise<void> {
  */
 // shortcut: one piece per workspace per hour; with many Studio customers on the shared free model, slow this further or move it to a job queue.
 async function makeAhead(settings: SocialSettings): Promise<void> {
-  if (!(await activeTeam()).length) return;
+  // Only with a model: a piece the local writer makes a month early is the same
+  // piece it makes on the day, held for approval meanwhile. The plan's slots
+  // already fill the calendar either way.
+  if (!modelReady() || !(await activeTeam()).length) return;
   const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
   for (let i = 1; i <= settings.makeAheadDays; i++) {
     const date = dayKey(Date.now() + i * 86_400_000);

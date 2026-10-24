@@ -28,6 +28,12 @@ export const YEAR_DISCOUNT_PCT = 13;
 export const priceUsd = (plan: PlanId, billing: Billing): number =>
   billing === 'year' ? Math.floor((PLANS[plan].usd * 12 * (100 - YEAR_DISCOUNT_PCT)) / 100) : PLANS[plan].usd;
 
+// shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in lib/studio.ts. Read it from config when the rupee moves.
+export const PKR_PER_USD = 280;
+
+/** What this plan costs in rupees, the figure the Billing page asks for. */
+export const pricePkr = (plan: PlanId, billing: Billing): number => priceUsd(plan, billing) * PKR_PER_USD;
+
 /** One free day, then a plan has to be paid for. */
 export const TRIAL_MS = 24 * 3600_000;
 /** What one approved monthly payment buys. */
@@ -62,21 +68,31 @@ export interface Workspace {
   accessUntilMs: number;
   createdAtMs: number;
   brand: Brand;
+  /** Paused by a Velocity admin: no desk, no schedules, whatever is paid. */
+  suspended?: boolean;
+  /** The admin's own notes on this customer. Never shown to them. */
+  adminNote?: string;
 }
 
 /** Whether this workspace may do this, now. */
-export function canUse(ws: Pick<Workspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs'>, need: Need, nowMs: number): boolean {
+export function canUse(
+  ws: Pick<Workspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs' | 'suspended'>,
+  need: Need,
+  nowMs: number,
+): boolean {
+  if (ws.suspended) return false;
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) return false;
   return need === 'any' || PLANS[ws.plan].can.includes(need);
 }
 
 /** Why not, in words the customer can act on. Null when they can. */
 export function refusal(
-  ws: Pick<Workspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs'>,
+  ws: Pick<Workspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs' | 'suspended'>,
   need: Need,
   nowMs: number,
 ): string | null {
   if (canUse(ws, need, nowMs)) return null;
+  if (ws.suspended) return 'Velocity has paused this workspace. Email business@velocityrides.app to sort it out.';
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) {
     return ws.paidUntilMs
       ? 'Your Velocity Studio plan has run out. Pay for the next month on the Billing page to carry on.'

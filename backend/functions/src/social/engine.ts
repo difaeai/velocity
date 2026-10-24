@@ -82,11 +82,29 @@ export class ModelError extends Error {
   }
 }
 
+/**
+ * Engines whose account refused for money or a spent quota, and until when.
+ * Per instance on purpose: each instance pays one failed call to learn it, and
+ * nothing needs clearing when the credit comes back — the hour simply runs out.
+ */
+const benchedUntil: Partial<Record<Engine, number>> = {};
+const BENCH_MS = 3600_000;
+const benched = (e: Engine): boolean => (benchedUntil[e] ?? 0) > Date.now();
+
+/**
+ * A refusal that trying again this hour will not change: no credit left,
+ * billing off, a spent quota. Gemini answered "402: Your prepayment credits are
+ * depleted" on 2026-10-24 and, with nothing behind it, the desk stopped writing.
+ */
+export function outOfCredit(message: string): boolean {
+  return /^(402|429)\b|credit|quota|billing|RESOURCE_EXHAUSTED/i.test(message);
+}
+
 /** Which engine a call made right now would go to. */
 export function activeEngine(): Engine {
-  if (claudeReady()) return 'claude';
-  if (geminiReady()) return 'gemini';
-  if (freeModelReady()) return 'free';
+  if (claudeReady() && !benched('claude')) return 'claude';
+  if (geminiReady() && !benched('gemini')) return 'gemini';
+  if (freeModelReady() && !benched('free')) return 'free';
   return 'local';
 }
 
@@ -99,22 +117,44 @@ export function modelReady(): boolean {
   return activeEngine() !== 'local';
 }
 
+/**
+ * Ask whichever engine is first. One that is out of credit sits out for an hour
+ * and the next one answers the same request — the desk keeps writing on the
+ * free model rather than stopping because one account ran dry.
+ */
 export async function generateText(req: TextRequest): Promise<TextResult> {
-  switch (activeEngine()) {
-    case 'claude':
-      return claudeText(req);
-    case 'gemini':
-      return geminiText(req);
-    case 'free':
-      return freeModelText(req);
-    default:
-      // Reached only by a caller that skipped `modelReady()`. Every stage
-      // checks, so this is a programming error rather than a configuration
-      // one, and it says so.
-      throw new ModelError(
-        'No model is configured. Every stage is meant to check modelReady() and compose locally instead.',
-      );
+  for (;;) {
+    const engine = activeEngine();
+    try {
+      switch (engine) {
+        case 'claude':
+          return await claudeText(req);
+        case 'gemini':
+          return await geminiText(req);
+        case 'free':
+          return await freeModelText(req);
+        default:
+          // Reached only by a caller that skipped `modelReady()`. Every stage
+          // checks, so this is a programming error rather than a configuration
+          // one, and it says so.
+          throw new ModelError(
+            'No model is configured. Every stage is meant to check modelReady() and compose locally instead.',
+          );
+      }
+    } catch (e) {
+      const message = (e as Error).message ?? '';
+      if (engine === 'local' || !outOfCredit(message)) throw e;
+      benchedUntil[engine] = Date.now() + BENCH_MS;
+      logger.warn('social: an engine is out of credit; the next one answers', { engine, message: message.slice(0, 200) });
+      // Only the local writer left: the stage composes it itself on its next call.
+      if (activeEngine() === 'local') throw e;
+    }
   }
+}
+
+/** Tests only: forget every bench. */
+export function resetEngineBench(): void {
+  for (const e of Object.keys(benchedUntil) as Engine[]) delete benchedUntil[e];
 }
 
 /**

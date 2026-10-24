@@ -94,6 +94,47 @@ export async function markAccountError(platform: Platform, message: string): Pro
 }
 
 /**
+ * A failed call takes the account offline only when the credential itself
+ * fails its own profile read.
+ *
+ * Meta answers "does not exist, cannot be loaded due to missing permissions, or
+ * does not support this operation" about ONE story or deleted post too. Read as
+ * an account problem, that single reply flagged a working Instagram account on
+ * 2026-10-24 and every post after it skipped Instagram. A network hiccup on the
+ * re-check proves nothing either way, so it flags nothing.
+ */
+export async function flagIfDead(platform: Platform, credentials: PlatformCredentials, message: string): Promise<void> {
+  if (!/token|expired|permission|oauth|scope|session/i.test(message)) return;
+  try {
+    await ADAPTERS[platform].verify(credentials);
+  } catch (e) {
+    if (e instanceof PlatformError && !e.message.startsWith('Network error')) await markAccountError(platform, e.message);
+  }
+}
+
+/**
+ * Hourly: an account marked broken whose stored credential answers again goes
+ * back to connected by itself. Connect once and it stays connected — only a
+ * credential the network itself refuses (password changed, app removed, Page
+ * role lost) keeps the red badge, and that one needs a person anyway.
+ */
+export async function healAccounts(): Promise<void> {
+  const snap = await sdb.collection('socialAccounts').where('status', '==', 'error').get();
+  for (const doc of snap.docs) {
+    const platform = doc.id as Platform;
+    if (!PLATFORMS.includes(platform)) continue;
+    const credentials = await loadCredentials(platform);
+    if (!credentials) continue;
+    try {
+      await verifyAndStore(platform, credentials, { persist: false, uid: (doc.get('connectedBy') as string) ?? 'system' });
+      logger.info('social: an account answered again and is connected', { platform });
+    } catch {
+      /* still refused — the red badge and its reason stay */
+    }
+  }
+}
+
+/**
  * Verify a credential against the live network and write the profile it
  * returns. Shared by connect (with freshly pasted values) and re-verify (with
  * the stored ones).

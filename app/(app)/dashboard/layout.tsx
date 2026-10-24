@@ -21,6 +21,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { useAuth } from '@/lib/auth';
+import { SUPPORT_EMAIL } from '@/lib/site';
 import { STUDIO_PLANS, type StudioNeed } from '@/lib/studio';
 import { WorkspaceProvider, useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
@@ -128,10 +129,14 @@ const SOCIAL_NAV: NavGroup[] = [
   },
 ];
 
-/** Admins only: the businesses using Velocity Studio, and the payments waiting for a decision. */
+/** Admins only: everyone on Velocity Studio, the payments our AI has read, and the sign-up mailbox. */
 const STUDIO_ADMIN_NAV: NavGroup = {
-  title: 'Velocity Studio',
-  items: [{ href: '/dashboard/social/studio-customers', label: '💼 Customers & payments' }],
+  title: 'Velocity AI Studio',
+  items: [
+    { href: '/dashboard/social/studio-customers', label: '👥 Users' },
+    { href: '/dashboard/social/studio-payments', label: '🧾 Payments · AI checked' },
+    { href: '/dashboard/social/studio-email', label: '✉️ Sign-up email' },
+  ],
 };
 
 /** Which plan part each desk page belongs to; a customer sees only what theirs includes. */
@@ -296,7 +301,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   // Customers have no business outside the social desk, nor on its admin pages.
   const misplaced =
     !pathname.startsWith('/dashboard/social') ||
-    pathname === '/dashboard/social/studio-customers' ||
+    pathname.startsWith('/dashboard/social/studio-') ||
     (pathname === '/dashboard/social' && home !== pathname);
   useEffect(() => {
     if (ws && misplaced) router.replace(home);
@@ -371,12 +376,17 @@ function StudioShell({ email, signOut, children }: ShellProps) {
         </div>
       </aside>
       <main style={{ flex: 1, padding: 28, overflow: 'auto', minWidth: 0 }}>
-        {trial ? (
+        {ws.suspended ? (
+          <Banner tone="stop" href={`mailto:${SUPPORT_EMAIL}`} cta="Email us">
+            Velocity has paused this workspace. The team is stopped until it is resumed.
+          </Banner>
+        ) : null}
+        {trial && !ws.suspended ? (
           <Banner tone="info" href="/dashboard/social/billing" cta="Choose a plan">
             Free trial — {hoursLeft} hour{hoursLeft === 1 ? '' : 's'} left. Pay before it ends and nothing stops.
           </Banner>
         ) : null}
-        {over && pathname !== '/dashboard/social/billing' ? (
+        {over && !ws.suspended && pathname !== '/dashboard/social/billing' ? (
           <Banner tone="stop" href="/dashboard/social/billing" cta="Pay now">
             {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} The team is paused until a payment is
             approved.

@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { FieldValue } from '../lib/firebase';
 import { deskCall, forEachWorkspace, sdb } from './workspace';
 
-import { loadCredentials, markAccountError } from './accounts';
+import { flagIfDead, loadCredentials } from './accounts';
 import { brandName, systemFor } from './crew';
 import { generateJson, modelReady } from './engine';
 import { localReplies } from './local';
@@ -59,6 +59,8 @@ async function recentlyPublished(): Promise<Map<Platform, { mediaId: string; pos
   const byPlatform = new Map<Platform, { mediaId: string; postId: string }[]>();
   for (const doc of snap.docs) {
     const post = doc.data() as SocialPost;
+    // A story takes no comments on any network; asking is an error every pass.
+    if (post.format === 'story') continue;
     for (const platform of PLATFORMS) {
       const result = post.results?.[platform];
       if (!result?.ok || !result.id) continue;
@@ -93,7 +95,7 @@ export async function syncComments(): Promise<{ found: number; added: number; er
       } catch (e) {
         const message = e instanceof PlatformError ? e.message : (e as Error).message;
         errors.push(`${platform}: ${message}`);
-        if (/token|expired|permission|oauth|scope/i.test(message)) await markAccountError(platform, message);
+        await flagIfDead(platform, credentials, message);
         continue;
       }
 
@@ -269,7 +271,7 @@ export async function sendReply(
     const message = e instanceof PlatformError ? e.message : (e as Error).message;
     logger.error('social: reply failed', { platform, message });
     await ref.set({ error: message.slice(0, 400) }, { merge: true });
-    if (/token|expired|permission|oauth|scope/i.test(message)) await markAccountError(platform, message);
+    await flagIfDead(platform, credentials, message);
     return { ok: false, error: message };
   }
 }

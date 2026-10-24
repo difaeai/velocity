@@ -777,6 +777,26 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- studioReceiptHashes/{sha} ----------------------------------------
+    // One row per receipt screenshot ever sent, so one picture pays once.
+    match /studioReceiptHashes/{sha} {
+      allow read, write: if false;
+    }
+
+    // ----- studioUsers/{uid} ------------------------------------------------
+    // Everyone who started a Studio sign-up, finished or not: the admin's
+    // Users list. Written only by the sign-up callables.
+    match /studioUsers/{uid} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- studioEmailCodes/{uid} -------------------------------------------
+    // The hashed sign-up code. Nobody reads it, not even an admin.
+    match /studioEmailCodes/{uid} {
+      allow read, write: if false;
+    }
+
     // ----- platformLedger/{id} ----------------------------------------------
     // Realized platform revenue (ride commissions, subscription payments).
     // Written only by the backend inside money transactions; admin-readable.

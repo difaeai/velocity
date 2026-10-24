@@ -3,28 +3,34 @@
  *
  * Three things happen here and nowhere else:
  *
- * 1. **Sign-up.** A signed-in person describes their business and picks a plan;
- *    they get a workspace, a one-day trial of that plan, the eight agents, and a
- *    brief written from their answers. Their account is tied to it by a `ws`
- *    custom claim, which is what every rule and every desk call checks.
+ * 1. **Sign-up.** A signed-in person with a verified email (Google, or the
+ *    code in `emailCode.ts`) describes their business and picks a plan; they get
+ *    a workspace, a one-day trial of that plan, the eight agents, and a brief
+ *    written from their answers. Their account is tied to it by a `ws` custom
+ *    claim, which is what every rule and every desk call checks.
  * 2. **Paying.** There is no card gateway yet (the user chose manual payment):
  *    the customer pays by bank transfer / EasyPaisa / JazzCash to the receiving
- *    accounts on file, then sends a screenshot or the transaction ID. A
+ *    accounts on file, then sends the screenshot AND the transaction ID. A
  *    transaction ID can be claimed once, ever — the same bookkeeping defence the
- *    driver top-ups use, because the screenshot itself proves nothing.
+ *    driver top-ups use — and the receipt is read on the spot by our own OCR
+ *    (`paymentCheck.ts`) so the admin sees what it says before opening it.
  * 3. **Approving.** An admin checks the money arrived and approves: the plan is
  *    set to what was paid for and a month (or a year) is added. Rejecting frees the
- *    transaction ID so an honest typo can be sent again.
+ *    transaction ID and the screenshot so an honest mistake can be sent again.
+ * 4. **Managing.** Admins extend a trial, give days, change a plan, pause or
+ *    resume a workspace and keep a note on it (`adminManageStudioCustomer`).
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { auth, db, FieldValue } from '../lib/firebase';
-import { requireAdmin, requireAuth } from '../lib/guards';
+import { isDocId, requireAdmin, requireAuth } from '../lib/guards';
 import { seedTeam } from '../social/employees';
 import { freshLaunch, stateRef } from '../social/launch';
 import { EMPTY_BRIEF } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
+import { signInMethod, touchStudioUser } from './emailCode';
+import { checkStudioPayment } from './paymentCheck';
 import {
   PERIOD_MS,
   PLAN_IDS,
@@ -80,6 +86,10 @@ export const studioCreateWorkspace = onCall(async (req) => {
   if (ctx.role === 'admin') {
     throw new HttpsError('failed-precondition', 'Admins run the Velocity desk. Sign up with a different account.');
   }
+  // The free day is for a real address: Google's, or one proved with the emailed code.
+  if (ctx.token.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'Verify your email first — type the code we sent you.');
+  }
   const parsed = signUpSchema.safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Fill in your business name, what you sell, who buys it and where.');
   const s = parsed.data;
@@ -128,6 +138,7 @@ export const studioCreateWorkspace = onCall(async (req) => {
   // Merged, never replaced: a person may also hold a role claim from the ride app.
   const user = await auth.getUser(ctx.uid);
   await auth.setCustomUserClaims(ctx.uid, { ...(user.customClaims ?? {}), ws: ref.id });
+  await touchStudioUser(ctx.uid, ctx.token, { workspaceId: ref.id, method: signInMethod(ctx.token) });
 
   return { ok: true, workspaceId: ref.id, trialEndsAtMs: workspace.trialEndsAtMs };
 });
@@ -135,7 +146,8 @@ export const studioCreateWorkspace = onCall(async (req) => {
 /** Upper case letters and digits only: "TXN 12-ab" and "txn12AB" are the same transfer. */
 export const txnKey = (txnId: string): string => txnId.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-export const studioSubmitPayment = onCall(async (req) => {
+// 1GiB and two minutes: the receipt is read by Tesseract on this function's CPU.
+export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' }, async (req) => {
   const ctx = requireAuth(req);
   const wid = ctx.token.ws;
   if (typeof wid !== 'string') throw new HttpsError('failed-precondition', 'Sign up for Velocity Studio first.');
@@ -150,10 +162,11 @@ export const studioSubmitPayment = onCall(async (req) => {
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
   const { plan, billing, txnId, screenshotPath } = parsed.data;
   const key = txnKey(txnId);
-  if (!screenshotPath && key.length < 6) {
-    throw new HttpsError('invalid-argument', 'Upload the payment screenshot or type the transaction ID (at least 6 letters or digits).');
+  // Both, always: the ID is what can be claimed once, the screenshot what the check reads.
+  if (!screenshotPath || key.length < 6) {
+    throw new HttpsError('invalid-argument', 'Upload the payment screenshot and type the transaction ID (at least 6 letters or digits).');
   }
-  if (screenshotPath && !screenshotPath.startsWith(`workspaces/${wid}/payments/`)) {
+  if (!screenshotPath.startsWith(`workspaces/${wid}/payments/`)) {
     throw new HttpsError('permission-denied', 'Upload the screenshot from the Billing page.');
   }
 
@@ -162,13 +175,11 @@ export const studioSubmitPayment = onCall(async (req) => {
 
   const paymentRef = db.collection('studioPayments').doc();
   await db.runTransaction(async (tx) => {
-    if (key) {
-      const claimRef = db.doc(`studioTxnRefs/${key}`);
-      if ((await tx.get(claimRef)).exists) {
-        throw new HttpsError('already-exists', 'That transaction ID has already been sent. If this is a mistake, contact us.');
-      }
-      tx.set(claimRef, { paymentId: paymentRef.id, wid, atMs: Date.now() });
+    const claimRef = db.doc(`studioTxnRefs/${key}`);
+    if ((await tx.get(claimRef)).exists) {
+      throw new HttpsError('already-exists', 'That transaction ID has already been sent. If this is a mistake, contact us.');
     }
+    tx.set(claimRef, { paymentId: paymentRef.id, wid, atMs: Date.now() });
     tx.set(paymentRef, {
       wid,
       uid: ctx.uid,
@@ -177,9 +188,10 @@ export const studioSubmitPayment = onCall(async (req) => {
       plan,
       billing,
       amountUsd: priceUsd(plan, billing),
-      txnId: txnId || null,
-      txnKey: key || null,
-      screenshotPath: screenshotPath || null,
+      txnId,
+      txnKey: key,
+      screenshotPath,
+      analysis: null,
       status: 'pending',
       createdAtMs: Date.now(),
       decidedAtMs: null,
@@ -187,6 +199,8 @@ export const studioSubmitPayment = onCall(async (req) => {
       note: null,
     });
   });
+  // Read the receipt now, while the admin queue is already showing the payment.
+  await checkStudioPayment(paymentRef.id);
   return { ok: true, paymentId: paymentRef.id };
 });
 
@@ -201,7 +215,7 @@ export const adminDecideStudioPayment = onCall(async (req) => {
   return db.runTransaction(async (tx) => {
     const payRef = db.doc(`studioPayments/${paymentId}`);
     const pay = (await tx.get(payRef)).data() as
-      | { wid: string; plan: PlanId; billing?: Billing; status: string; txnKey: string | null }
+      | { wid: string; plan: PlanId; billing?: Billing; status: string; txnKey: string | null; imageSha?: string | null }
       | undefined;
     if (!pay) throw new HttpsError('not-found', 'No such payment.');
     if (pay.status !== 'pending') throw new HttpsError('failed-precondition', `Already ${pay.status}.`);
@@ -211,6 +225,7 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     if (!approve) {
       tx.update(payRef, decided);
       if (pay.txnKey) tx.delete(db.doc(`studioTxnRefs/${pay.txnKey}`));
+      if (pay.imageSha) tx.delete(db.doc(`studioReceiptHashes/${pay.imageSha}`));
       return { ok: true, status: 'rejected' };
     }
 
@@ -227,4 +242,70 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     });
     return { ok: true, status: 'approved', paidUntilMs };
   });
+});
+
+const DAY_MS = 86_400_000;
+
+const manageSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('extendTrial'), days: z.number().int().min(1).max(30) }),
+  z.object({ action: z.literal('giveDays'), days: z.number().int().min(1).max(366) }),
+  z.object({ action: z.literal('setPlan'), plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]) }),
+  z.object({ action: z.literal('suspend') }),
+  z.object({ action: z.literal('resume') }),
+  z.object({ action: z.literal('note'), note: text(2000) }),
+]);
+
+export type ManageChange = z.infer<typeof manageSchema>;
+
+/** What one management action does to a workspace. Pure, so it is tested without a database. */
+export function applyManage(ws: Workspace, change: ManageChange, nowMs: number): Partial<Workspace> {
+  const access = (trialEndsAtMs: number, paidUntilMs: number) => ({ accessUntilMs: Math.max(trialEndsAtMs, paidUntilMs) });
+  switch (change.action) {
+    case 'extendTrial': {
+      const trialEndsAtMs = Math.max(ws.trialEndsAtMs, nowMs) + change.days * DAY_MS;
+      return { trialEndsAtMs, ...access(trialEndsAtMs, ws.paidUntilMs) };
+    }
+    case 'giveDays': {
+      // Days given by Velocity count as paid time, exactly like an approved payment.
+      const paidUntilMs = extendPaid(ws.paidUntilMs, nowMs, change.days * DAY_MS);
+      return { paidUntilMs, ...access(ws.trialEndsAtMs, paidUntilMs) };
+    }
+    case 'setPlan':
+      return { plan: change.plan };
+    case 'suspend':
+      return { suspended: true };
+    case 'resume':
+      return { suspended: false };
+    case 'note':
+      return { adminNote: change.note };
+  }
+}
+
+/** Velocity AI Studio → Users: one admin action on one customer, written to the audit log. */
+export const adminManageStudioCustomer = onCall(async (req) => {
+  const ctx = requireAdmin(req);
+  const wid = (req.data as { wid?: unknown } | undefined)?.wid;
+  const parsed = manageSchema.safeParse(req.data ?? {});
+  if (!parsed.success || typeof wid !== 'string' || !isDocId(wid)) {
+    throw new HttpsError('invalid-argument', 'Invalid request.');
+  }
+  const change = parsed.data;
+
+  const updated = await db.runTransaction(async (tx) => {
+    const ref = workspaceRef(wid);
+    const ws = (await tx.get(ref)).data() as Workspace | undefined;
+    if (!ws) throw new HttpsError('not-found', 'That workspace no longer exists.');
+    const patch = applyManage(ws, change, Date.now());
+    tx.update(ref, patch);
+    return { ...ws, ...patch };
+  });
+
+  await db.collection('auditLogs').add({
+    type: `studio.${change.action}`,
+    actor: ctx.uid,
+    wid,
+    detail: change,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true, workspace: updated };
 });

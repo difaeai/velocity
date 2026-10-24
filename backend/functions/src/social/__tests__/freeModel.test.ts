@@ -21,7 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freeModelReady, freeModelText, resolveFreeModel } from '../freeModel';
-import { activeEngine, modelReady } from '../engine';
+import { activeEngine, generateText, modelReady, outOfCredit, resetEngineBench } from '../engine';
 import { DEFAULT_FREE_MODEL } from '../types';
 
 const saved = {
@@ -63,7 +63,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
+  resetEngineBench();
   for (const [name, value] of [
     ['FREE_MODEL_KEY', saved.key],
     ['FREE_MODEL_URL', saved.url],
@@ -100,6 +102,35 @@ describe('which engine answers', () => {
     expect(freeModelReady()).toBe(false);
     expect(activeEngine()).toBe('local');
     expect(modelReady()).toBe(false);
+  });
+
+  it('hands the same request to the free model when Gemini is out of credit, and benches Gemini', async () => {
+    // What production said on 2026-10-24, word for word up to the link.
+    process.env.GEMINI_KEY_RESEARCH = 'gem-test';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(failure(402, 'Your prepayment credits are depleted. Please go to AI Studio'))
+      .mockResolvedValueOnce(reply('a caption'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await generateText({ model: '', system: 's', prompt: 'p' });
+    expect(out.text).toBe('a caption');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(activeEngine()).toBe('free');
+  });
+
+  it('does not bench an engine over an ordinary refusal', async () => {
+    process.env.GEMINI_KEY_RESEARCH = 'gem-test';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failure(400, 'Invalid argument: the prompt is empty')));
+    await expect(generateText({ model: '', system: 's', prompt: 'p' })).rejects.toThrow(/400/);
+    expect(activeEngine()).toBe('gemini');
+  });
+
+  it('knows a spent account from a bad request', () => {
+    expect(outOfCredit('402: Your prepayment credits are depleted.')).toBe(true);
+    expect(outOfCredit('Your credit balance is too low to access the Anthropic API.')).toBe(true);
+    expect(outOfCredit('429: Resource has been exhausted (e.g. check quota).')).toBe(true);
+    expect(outOfCredit('400: Invalid argument')).toBe(false);
   });
 });
 

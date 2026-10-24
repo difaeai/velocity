@@ -90,7 +90,7 @@ async function velocityAccounts(): Promise<VelocityAccounts> {
 }
 
 /** Pull one Storage object into memory, refusing anything that is not an image. */
-async function loadProof(path: string): Promise<Buffer | null> {
+export async function loadProof(path: string): Promise<Buffer | null> {
   try {
     const file = storage.bucket().file(path);
     const [meta] = await file.getMetadata();
