@@ -68,7 +68,7 @@ describe('dailyTargetProgress', () => {
     expect(p.target).toBe(16);
     expect(p.ridesToGo).toBe(7);
     expect(p.poolOnly).toBe(true);
-    expect(p.blockers.find((b) => b.key === 'rides')!.label).toBe('16 pool rides of PKR 150+');
+    expect(p.blockers.find((b) => b.key === 'rides')!.label).toBe('16 shared rides of PKR 150+');
   });
 
   it('drops the word "pool" when the admin turns pool-only off', () => {

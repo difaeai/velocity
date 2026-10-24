@@ -72,7 +72,7 @@ export function CommissionLock({
   // Online fares inside the days being charged — their commission was taken at
   // completion, so saying so here is what stops "am I paying twice?".
   const onlineFare = Math.max(0, settleableGrossFare - settleableCashFare);
-  const rideWord = status.dailyTargetPoolOnly ? 'pool rides' : 'rides';
+  const rideWord = status.dailyTargetPoolOnly ? 'shared rides' : 'rides';
 
   // Which methods we can actually receive on.
   const available: PayMethod[] = [];

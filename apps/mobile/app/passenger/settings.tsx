@@ -217,7 +217,7 @@ export default function Settings() {
             <Text style={styles.hint}>
               {carCheck.needsPhoto
                 ? 'Take a photo of the car you are driving before you go online — it is what stands behind the plate your passenger is watching for.'
-                : `Confirmed. We will ask again in ${carCheck.daysLeft} day${carCheck.daysLeft === 1 ? '' : 's'}, or straight away if you switch cars.`}
+                : 'Confirmed. We will tell you when a fresh photo is needed, and straight away if you switch cars.'}
             </Text>
           </>
         )}

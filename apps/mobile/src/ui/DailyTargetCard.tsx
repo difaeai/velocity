@@ -55,7 +55,7 @@ export function DailyTargetCard({
 
   const pct = Math.min(100, Math.round((progress.rides / Math.max(1, progress.target)) * 100));
   const done = progress.granted || progress.met;
-  const rideWord = progress.poolOnly ? 'pool rides' : 'rides';
+  const rideWord = progress.poolOnly ? 'shared rides' : 'rides';
   // What the day is worth, in the driver's own money. Once the day is waived
   // this is what they kept; before that it is what it will cost them.
   const atStake = Math.round(todayCashFare * rate);
@@ -80,7 +80,7 @@ export function DailyTargetCard({
         {done
           ? "Today's rides are commission-free"
           : progress.ridesToGo === 1
-            ? `1 more ${progress.poolOnly ? 'pool ride' : 'ride'} to go`
+            ? `1 more ${progress.poolOnly ? 'shared ride' : 'ride'} to go`
             : `${progress.ridesToGo} more ${rideWord} to go`}
       </Text>
 

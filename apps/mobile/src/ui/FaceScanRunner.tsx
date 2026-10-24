@@ -27,10 +27,11 @@
  * on the server, where a patched build cannot reach them.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 
 import { Text } from './Text';
 import { useAuth } from '../auth/AuthContext';
@@ -364,6 +365,14 @@ export function FaceScanRunner(props: FaceScanRunnerProps) {
 
   // ── Running ───────────────────────────────────────────────────────────────
   const pose = scan?.poses[step];
+  // The preview is a mirror, so a driver turning to their own right turns
+  // towards the right of the screen: the arrows sit on the side they turn to.
+  const turnSide =
+    cameraReady && pose?.challenge === 'turn_right'
+      ? 'right'
+      : cameraReady && pose?.challenge === 'turn_left'
+        ? 'left'
+        : null;
   return (
     <View style={styles.cameraWrap}>
       {/* No `mirror`: the saved frame is compared with the CNIC photo, which is
@@ -383,7 +392,9 @@ export function FaceScanRunner(props: FaceScanRunnerProps) {
           ))}
         </View>
 
-        <View style={[styles.oval, faceSeen && styles.ovalSeen]} pointerEvents="none" />
+        <View style={[styles.oval, faceSeen && styles.ovalSeen]} pointerEvents="none">
+          {turnSide ? <TurnArrows key={turnSide} side={turnSide} /> : null}
+        </View>
 
         <View style={styles.promptCard}>
           {scan && pose && cameraReady ? (
@@ -405,6 +416,48 @@ export function FaceScanRunner(props: FaceScanRunnerProps) {
           )}
         </View>
       </SafeAreaView>
+    </View>
+  );
+}
+
+/** Each chevron's brightness over one sweep, innermost first, so they light up outwards. */
+const ARROW_DIM = 0.25;
+const ARROW_SWEEP = [
+  { inputRange: [0, 0.25, 0.5, 1], outputRange: [ARROW_DIM, 1, ARROW_DIM, ARROW_DIM] },
+  { inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [ARROW_DIM, ARROW_DIM, 1, ARROW_DIM, ARROW_DIM] },
+  { inputRange: [0, 0.5, 0.75, 1], outputRange: [ARROW_DIM, ARROW_DIM, 1, ARROW_DIM] },
+];
+
+/**
+ * Three chevrons beside the oval, lighting up one after another towards the
+ * side to turn to — the instruction for a driver who cannot read the prompt.
+ * Drawn for the right and mirrored for the left.
+ */
+function TurnArrows({ side }: { side: 'left' | 'right' }) {
+  const sweep = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(sweep, { toValue: 1, duration: 1100, easing: Easing.linear, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sweep]);
+
+  return (
+    <View
+      style={[styles.arrows, side === 'left' ? styles.arrowsLeft : styles.arrowsRight]}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+    >
+      {ARROW_SWEEP.map((range, i) => (
+        <Animated.View key={i} style={{ opacity: sweep.interpolate(range) }}>
+          <Svg width={14} height={28} viewBox="0 0 14 28">
+            {/* A dark edge under the green, so the arrow reads on any background. */}
+            <Path d="M3 3 L11 14 L3 25" stroke="rgba(0,0,0,0.5)" strokeWidth={7} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M3 3 L11 14 L3 25" stroke={oc.green} strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </Animated.View>
+      ))}
     </View>
   );
 }
@@ -458,6 +511,11 @@ const styles = themed(() => StyleSheet.create({
     borderWidth: 3, borderColor: 'rgba(255,255,255,0.85)',
   },
   ovalSeen: { borderColor: oc.green },
+  // Just outside the oval's edge, level with the eyes' middle; 42 wide so a
+  // 360-wide screen still fits oval and arrows.
+  arrows: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row' },
+  arrowsRight: { left: '100%', marginLeft: 6 },
+  arrowsLeft: { right: '100%', marginRight: 6, transform: [{ scaleX: -1 }] },
   promptCard: {
     alignSelf: 'stretch', marginHorizontal: 20, padding: 18, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', gap: 6,
