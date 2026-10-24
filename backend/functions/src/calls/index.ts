@@ -29,6 +29,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { sendCallToUser } from '../lib/fcm';
+import { isWarmPing, warmUp } from '../lib/warmup';
 
 /** A driver on the way, waiting at the pickup, or driving. */
 const LIVE_TRIP = new Set(['matched', 'arriving', 'arrived', 'in_progress']);
@@ -168,6 +169,7 @@ const startSchema = z.object({
 /** Ring the other side of a live ride. Returns the call the two phones then share. */
 export const startCall = onCall(async (req) => {
   const ctx = requireAuth(req);
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = startSchema.safeParse(req.data);
   if (!parsed.success) invalid('Which ride is this call about?');
   const { rideKind, rideId, calleeId } = parsed.data;

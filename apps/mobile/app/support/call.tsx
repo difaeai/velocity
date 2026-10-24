@@ -95,7 +95,7 @@ export default function HelplineCall() {
   const record = () =>
     transcript.current.slice(-400).map((l) => ({ who: l.who, text: l.text.slice(0, 2000) }));
 
-  const end = useCallback((text = 'Call ended', writeInstead = false) => {
+  const end = useCallback((text = 'Call ended', writeInstead = false, error?: string) => {
     if (done.current) return;
     done.current = true;
     if (limit.current) clearTimeout(limit.current);
@@ -110,7 +110,7 @@ export default function HelplineCall() {
     queue.current = [];
     callSystem.stopOngoing();
     if (callId.current) {
-      api.logHelplineCall({ callId: callId.current, transcript: record(), ended: true }).catch(() => {});
+      api.logHelplineCall({ callId: callId.current, transcript: record(), ended: true, error }).catch(() => {});
     }
     setOver({ text, writeInstead });
     setPhase('over');
@@ -213,10 +213,10 @@ export default function HelplineCall() {
       ws.current = socket;
       socket.onopen = () => socket.send(JSON.stringify({ setup: { model: `models/${res.model}` } }));
       socket.onmessage = (ev) => onMessage(ev.data);
-      socket.onclose = () => {
+      socket.onclose = (ev) => {
         if (done.current) return;
         if (live.current) end();
-        else end('The helpline is busy right now.', true);
+        else end('The helpline is busy right now.', true, `${ev.code} ${ev.reason ?? ''}`.slice(0, 300));
       };
     })().catch(() => end('The helpline cannot take calls right now.', true));
 

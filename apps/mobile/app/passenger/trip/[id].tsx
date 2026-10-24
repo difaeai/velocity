@@ -43,7 +43,7 @@ import { EnRouteSavingsCard } from '../../../src/ui/EnRouteSavingsCard';
 import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
 import { dashcamWatchable } from '../../../src/domain/dashcam';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
-import { callInApp } from '../../../src/lib/inAppCall';
+import { callInApp, useWarmRideLine } from '../../../src/lib/inAppCall';
 import { useUnreadChat } from '../../../src/hooks/useUnreadChat';
 
 /**
@@ -97,6 +97,9 @@ export default function TripScreen() {
   // Same reason as the driver side: a push is invisible to an app already in
   // the foreground, and the rider is usually watching this very screen.
   const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(tripId, user?.uid);
+  useWarmRideLine(
+    trip?.status === 'matched' || trip?.status === 'arriving' || trip?.status === 'arrived' || trip?.status === 'in_progress',
+  );
   const [reportOpen,   setReportOpen]   = useState(false);
   // The live-tracking token, cached for this screen so sharing twice hands the
   // family one URL rather than two. Null = nothing shared yet, or revoked.

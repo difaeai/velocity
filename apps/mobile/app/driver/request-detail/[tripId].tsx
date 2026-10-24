@@ -26,7 +26,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { api, type ReportReason } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { useDriverProfile, useOpenRequests } from '../../../src/hooks/driver';
+import { useDriverProfile, useOpenRequests, type OpenRequest } from '../../../src/hooks/driver';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
@@ -55,7 +55,11 @@ export default function RequestDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const requests = useOpenRequests(true, coords?.lat, coords?.lng);
-  const request = requests.find((r) => r.tripId === tripId);
+  // placeBid deletes the feed doc inside its lock-in, and the listener hears
+  // that before the call returns — so the driver who just WON the ride was
+  // told it was gone. The copy held from the tap is shown until we leave.
+  const [held, setHeld] = useState<OpenRequest | null>(null);
+  const request = requests.find((r) => r.tripId === tripId) ?? held ?? undefined;
 
   const [selectedFare, setSelectedFare] = useState<number | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
@@ -75,6 +79,7 @@ export default function RequestDetailScreen() {
   async function sendOffer() {
     if (!tripId || !request) return;
     setBusy(true);
+    setHeld(request);
     try {
       const res = await api.placeBid({ tripId, fare });
       if (res.matched) {
@@ -93,6 +98,7 @@ export default function RequestDetailScreen() {
         [{ text: 'OK', onPress: () => router.back() }],
       );
     } catch (e) {
+      setHeld(null);
       Alert.alert('Could not send', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setBusy(false);

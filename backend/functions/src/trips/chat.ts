@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
+import { isWarmPing, warmUp } from '../lib/warmup';
 
 const sendSchema = z.object({
   tripId: docId,
@@ -39,11 +40,15 @@ function preview(text: string): string {
 
 export const sendTripMessage = onCall(async (req) => {
   const ctx = requireAuth(req);
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = sendSchema.safeParse(req.data);
   if (!parsed.success) invalid('Write a message first.');
   const { tripId, text } = parsed.data;
 
-  const tripSnap = await db.doc(`trips/${tripId}`).get();
+  const [tripSnap, userSnap] = await Promise.all([
+    db.doc(`trips/${tripId}`).get(),
+    db.doc(`users/${ctx.uid}`).get(),
+  ]);
   if (!tripSnap.exists) invalid('Trip not found.');
 
   const passengerId = tripSnap.get('passengerId') as string | undefined;
@@ -58,7 +63,6 @@ export const sendTripMessage = onCall(async (req) => {
     throw new HttpsError('permission-denied', 'Not your ride.');
   }
 
-  const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const senderName =
     (userSnap.get('displayName') as string | undefined) ??
     (userSnap.get('name') as string | undefined) ??

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -41,7 +42,10 @@ interface Props {
 export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherName, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text,     setText]     = useState('');
-  const [busy,     setBusy]     = useState(false);
+  // Shown the moment Send is tapped; the callable takes a second or more. Each
+  // remembers how many identical lines of mine were already in the room, so it
+  // hides itself as soon as its own copy arrives from the server.
+  const [pending,  setPending]  = useState<(ChatMessage & { seen: number })[]>([]);
   const listRef = useRef<FlatList>(null);
 
   const collPath = isPoolRide
@@ -60,10 +64,24 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
     });
   }, [visible, roomId, collPath]);
 
+  const mineCount = (list: ChatMessage[], t: string) =>
+    list.filter((m) => m.senderId === myUid && m.text === t).length;
+  const shown = [...messages, ...pending.filter((p) => mineCount(messages, p.text) <= p.seen)];
+
   async function send() {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
+    if (!trimmed) return;
+    const temp = {
+      id: `pending-${Date.now()}`,
+      senderId: myUid,
+      senderName: myName,
+      text: trimmed,
+      sentAt: null,
+      seen: mineCount(messages, trimmed),
+    };
+    setPending((p) => [...p, temp]);
+    setText('');
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     try {
       if (isPoolRide) {
         // Pool-ride rooms still write directly; only trip chat has a callable.
@@ -79,11 +97,11 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
         // else — which is most of the time, for a driver who is driving.
         await api.sendTripMessage({ tripId: roomId, text: trimmed });
       }
-      setText('');
     } catch {
-      // silently ignore — user can retry
+      setText((t) => t || trimmed);
+      Alert.alert('Message not sent', 'Check your internet and tap Send again.');
     } finally {
-      setBusy(false);
+      setPending((p) => p.filter((m) => m !== temp));
     }
   }
 
@@ -107,7 +125,7 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
         >
           <FlatList
             ref={listRef}
-            data={messages}
+            data={shown}
             keyExtractor={(m) => m.id}
             contentContainerStyle={styles.msgList}
             ListEmptyComponent={
@@ -144,9 +162,9 @@ export function ChatModal({ visible, roomId, isPoolRide, myUid, myName, otherNam
               maxLength={500}
             />
             <Pressable
-              style={[styles.sendBtn, (!text.trim() || busy) && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
               onPress={send}
-              disabled={!text.trim() || busy}
+              disabled={!text.trim()}
             >
               <Text style={styles.sendBtnText}>Send</Text>
             </Pressable>
