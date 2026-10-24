@@ -76,5 +76,9 @@ export const CHALLENGE_GLYPH: Record<FaceChallenge, string> = {
   open_mouth: '○',
 };
 
-/** Seconds a driver is given to settle into each pose before the shutter fires. */
+/**
+ * Seconds before the shutter fires on a pose the phone cannot read for itself
+ * (no reader on the build, or a pose outside ./faceLiveness.ts JUDGED_ON_PHONE).
+ * Every other pose is captured the moment it is seen.
+ */
 export const POSE_COUNTDOWN_SECONDS = 3;

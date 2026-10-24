@@ -28,7 +28,7 @@ export default function FaceScanScreen() {
       purpose="onboarding"
       title="Face scan"
       introTitle="Let us see you"
-      introText="This proves you are a real person and that the documents you uploaded are yours. It takes about fifteen seconds."
+      introText="This proves you are a real person and that the documents you uploaded are yours. It takes a few seconds."
       startLabel="Start face scan"
       doneTitle="Face scan complete"
       doneText="That is everything. Your application is with us now — we will let you know as soon as it is checked."

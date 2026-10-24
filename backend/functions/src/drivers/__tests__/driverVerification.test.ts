@@ -693,9 +693,17 @@ describe('pickChallenges', () => {
   });
 
   it('draws from the real vocabulary and honours the count', () => {
-    const picked = pickChallenges(4, () => 0.5);
-    expect(picked).toHaveLength(4);
+    const picked = pickChallenges(2, () => 0.5);
+    expect(picked).toHaveLength(2);
     for (const c of picked) expect(FACE_CHALLENGES).toContain(c);
+  });
+
+  it('asks for a head turn each way and nothing the phone cannot see', () => {
+    // The app captures each pose the moment it reads it on the phone, and a
+    // turn is the pose it can read on both platforms.
+    for (let i = 0; i < 20; i++) {
+      expect(new Set(pickChallenges(3))).toEqual(new Set(['look_straight', 'turn_left', 'turn_right']));
+    }
   });
 });
 

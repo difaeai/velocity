@@ -770,6 +770,13 @@ export const api = {
       canRetry: boolean;
     }
   >('submitFaceScan'),
+  /**
+   * Wake a face-scan function a few seconds before it is needed, so the
+   * driver looking at the camera never waits out a cold start. Does nothing
+   * else — no scan is started. Same scheme as `warmSignIn`.
+   */
+  warmFaceScan: (name: 'startFaceScan' | 'submitFaceScan') =>
+    callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
 
   // ── The driver's cars ─────────────────────────────────────────────────────
   /**

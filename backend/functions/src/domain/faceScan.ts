@@ -4,9 +4,9 @@
  * An uploaded selfie proves nothing: the easiest fake driver account in
  * Pakistan is built from somebody else's CNIC and a photo of that somebody
  * pulled off Facebook. So before a driver's papers are judged at all, they are
- * asked to look into the front camera and do three things — turn left, smile,
- * look up — and we check that the three frames that come back actually show
- * those three things, in that order, on one face.
+ * asked to look into the front camera, look straight, then turn their head one
+ * way and the other — and we check that the frames that come back actually show
+ * those things, in that order, on one face.
  *
  * WHY THE SERVER PICKS THE POSES. The whole scheme rests on the applicant not
  * knowing what they will be asked until they are asked. If the handset chose
@@ -62,8 +62,8 @@ export type FaceChallenge = (typeof FACE_CHALLENGES)[number];
 /** What the driver is told to do, on screen, in English (see the i18n rule). */
 export const CHALLENGE_PROMPT: Record<FaceChallenge, string> = {
   look_straight: 'Look straight at the camera',
-  turn_left: 'Slowly turn your head to the left',
-  turn_right: 'Slowly turn your head to the right',
+  turn_left: 'Turn your head slightly to the left',
+  turn_right: 'Turn your head slightly to the right',
   look_up: 'Tilt your head up a little',
   smile: 'Smile',
   open_mouth: 'Open your mouth',
@@ -222,12 +222,25 @@ export interface FaceScanVerdict {
 }
 
 /**
+ * The poses a scan actually asks for: head turns, one each way.
+ *
+ * A turn is the one movement the phone can see the moment it happens
+ * (apps/mobile/src/domain/faceLiveness.ts), so the app captures it then instead
+ * of on a timer, and the one an honest driver gets right first time. A
+ * photograph still cannot do it. Smiling, opening the mouth and looking up stay
+ * in FACE_CHALLENGES so older scan records still read, but are no longer asked:
+ * an iPhone cannot read a smile on the device, and every one of them was a pose
+ * a driver could perform and still be marked wrong.
+ */
+export const ASKED_CHALLENGES: readonly FaceChallenge[] = ['turn_left', 'turn_right'];
+
+/**
  * Pick the poses for one scan.
  *
  * Always starts with `look_straight` — that frame is the one later compared
  * against the CNIC photograph, and a face comparison wants a front-on shot.
- * The rest are drawn without replacement from the remaining poses, so no scan
- * repeats a pose and no two scans are reliably alike.
+ * The rest are drawn without replacement from ASKED_CHALLENGES, so no scan
+ * repeats a pose; at most one turn each way follows.
  *
  * `random` is injected so the tests can pin the sequence.
  */
@@ -235,7 +248,7 @@ export function pickChallenges(
   count: number = FACE_SCAN_FRAMES,
   random: () => number = Math.random,
 ): FaceChallenge[] {
-  const pool = FACE_CHALLENGES.filter((c) => c !== 'look_straight');
+  const pool = [...ASKED_CHALLENGES];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
