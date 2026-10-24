@@ -94,10 +94,13 @@ const registerFcmTokenSchema = z.object({
 /**
  * Mobile: register or refresh an FCM token for the signed-in user.
  *
- * `invoker: 'public'` is stated outright because a deploy only grants it when it
- * CREATES the service. This one lost its allUsers binding in October 2026 and
- * every redeploy left it so: Cloud Run answered 401 before our code ran, so no
- * phone could register for pushes — call rings and ride alerts included.
+ * `invoker: 'public'` covers the service being (re)created. It does NOT repair
+ * a lost binding: a deploy that UPDATES a callable never touches its IAM. This
+ * one lost its allUsers invoker in October 2026 and Cloud Run answered 401
+ * before our code ran, so no phone could register for pushes — call rings and
+ * ride alerts included. Restoring it takes an IAM grant on the service
+ * (`gcloud run services add-iam-policy-binding … --member=allUsers
+ * --role=roles/run.invoker`), not a redeploy.
  */
 export const registerFcmToken = onCall({ invoker: 'public' }, async (req) => {
   const ctx = requireAuth(req);
