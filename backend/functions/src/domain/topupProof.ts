@@ -163,6 +163,19 @@ const SOURCE_APPS: ReadonlyArray<{ app: string; markers: string[] }> = [
   { app: 'standardchartered', markers: ['standard chartered'] },
 ];
 
+/** The folding alone, for any length of text — `refKey` adds the length rules. */
+export function foldRef(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/[OQD]/g, '0')
+    .replace(/[IL]/g, '1')
+    .replace(/S/g, '5')
+    .replace(/B/g, '8')
+    .replace(/Z/g, '2')
+    .replace(/G/g, '6');
+}
+
 /**
  * Reduce a reference to a key two OCR reads of the same receipt will agree on.
  *
@@ -180,15 +193,7 @@ const SOURCE_APPS: ReadonlyArray<{ app: string; markers: string[] }> = [
  */
 export function refKey(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const folded = raw
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .replace(/[OQD]/g, '0')
-    .replace(/[IL]/g, '1')
-    .replace(/S/g, '5')
-    .replace(/B/g, '8')
-    .replace(/Z/g, '2')
-    .replace(/G/g, '6');
+  const folded = foldRef(raw);
   // Shorter than this is not a transaction reference, it is a fragment —
   // crediting on a four-character key would collide across unrelated payments.
   return folded.length >= 6 ? folded.slice(0, 40) : null;

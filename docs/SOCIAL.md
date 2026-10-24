@@ -579,6 +579,13 @@ out from the hour as it is then, so moving the posting time moves the month.
 Today's pieces, and anything approved on or after its day, go out at once as
 before. Research is keyed to the day the work happens, never the piece's date.
 
+**Every desk keeps 30 days ahead since 2026-10-24**, the house included
+(`DEFAULT_SETTINGS.makeAheadDays`), because the owner asked for the month to stay
+filled every month. Only a model makes ahead — the local writer's piece would
+just wait for approval. A month the model cannot plan is never left empty:
+`ensureMonthPlan` lays the rotation over it and stores that, so the calendar
+shows every day; "Plan the month" replaces it with the team's own plan.
+
 ## 6b. The sales agent closes
 
 `sales/inbox.ts` reads the mailbox the owner connected for sending (IMAP on the
@@ -620,6 +627,16 @@ human to do by hand:
 
 Both end up in `connectVerifiedAccount`, the same function a pasted token goes
 through, so there is exactly one path that writes a credential.
+
+**Connect once, stay connected.** A failed publish, comment read or reply marks
+the account broken only when its own credential then fails the profile read
+(`flagIfDead`). Meta answers "…missing permissions, or does not support this
+operation" about one story or deleted post too; on 2026-10-24 that reply about
+a story flagged a healthy 157k Instagram account and every post after it
+skipped Instagram. Stories are no longer asked for comments at all, and the
+hourly `healAccounts()` re-checks every account in `error` with its stored token
+and puts it back to connected when it answers. The **Check** button works on an
+account in error too.
 
 Setup is once, in the Meta console: add **Facebook Login** to the app that owns
 the Page, whitelist `https://velocityrides.app/connect/instagram` as a valid
@@ -738,7 +755,10 @@ each account afterwards.
 | 4 | **Local** | nothing | search, read a change request, or audit the profile |
 
 Whichever comes first answers *everything* that day — the desk is deliberately
-not split by task. A deployment where Claude writes and Gemini searches would
+not split by task. One exception, since 2026-10-24: an engine whose account
+refuses for money or quota (402, 429, "credits", "quota", "billing" —
+`outOfCredit()`) sits out for an hour and the next one answers the same request.
+Gemini's "prepayment credits are depleted" had stopped the whole desk that day. A deployment where Claude writes and Gemini searches would
 save a few cents a month and would cost the one property that file exists to
 keep: one engine, named in one place, answered every stage of a piece.
 

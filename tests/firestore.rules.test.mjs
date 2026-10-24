@@ -1039,4 +1039,18 @@ test('Velocity Studio: a customer reads only their own workspace, never its secr
   // A rider with no workspace sees none; an admin sees all.
   await assertFails(getDoc(doc(passenger, 'workspaces/wsA')));
   await assertSucceeds(getDoc(doc(admin, 'workspaces/wsA/socialPosts/p1')));
+
+  // The sign-up list is the admin's alone; the code and the receipt claims are nobody's.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'studioUsers/ownerA'), { email: 'a@test', emailVerified: true });
+    await setDoc(doc(db, 'studioEmailCodes/ownerA'), { hash: 'h' });
+    await setDoc(doc(db, 'studioReceiptHashes/sha1'), { paymentId: 'payA' });
+  });
+  await assertSucceeds(getDoc(doc(admin, 'studioUsers/ownerA')));
+  await assertFails(getDoc(doc(ownerA, 'studioUsers/ownerA')));
+  await assertFails(setDoc(doc(ownerA, 'studioUsers/ownerA'), { emailVerified: true }));
+  await assertFails(getDoc(doc(ownerA, 'studioEmailCodes/ownerA')));
+  await assertFails(getDoc(doc(admin, 'studioEmailCodes/ownerA')));
+  await assertFails(getDoc(doc(admin, 'studioReceiptHashes/sha1')));
 });

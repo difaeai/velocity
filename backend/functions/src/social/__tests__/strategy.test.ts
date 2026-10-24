@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { daysOf, localMonthPlan, normalisePlan } from '../strategy';
+import { clearFirestore, db } from '../../travelMate/__tests__/helpers';
+import { daysOf, ensureMonthPlan, localMonthPlan, normalisePlan } from '../strategy';
 import { DEFAULT_SETTINGS } from '../types';
 
 describe('daysOf', () => {
@@ -65,6 +66,26 @@ describe('localMonthPlan', () => {
       expect(slots.length).toBeGreaterThan(0);
       expect(slots.length).toBeLessThanOrEqual(2);
       expect(new Set(slots.map((s) => s.format)).size).toBe(slots.length);
+    }
+  });
+});
+
+describe('ensureMonthPlan', () => {
+  // The model is "ready" but nobody on the team can plan, so planMonth throws:
+  // the same path a 402 from the model takes. October 2026 had no plan at all.
+  it('lays the rotation over the month when the team cannot plan it, so the calendar is never empty', async () => {
+    const saved = process.env.FREE_MODEL_KEY;
+    process.env.FREE_MODEL_KEY = 'test-key';
+    try {
+      await clearFirestore();
+      await ensureMonthPlan('2026-11');
+      const plan = (await db().doc('socialPlans/2026-11').get()).data()!;
+      expect(plan.by).toBe('The rotation');
+      expect(Object.keys(plan.days)).toHaveLength(30);
+      expect(plan.days['2026-11-30'].length).toBeGreaterThan(0);
+    } finally {
+      if (saved === undefined) delete process.env.FREE_MODEL_KEY;
+      else process.env.FREE_MODEL_KEY = saved;
     }
   });
 });

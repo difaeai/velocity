@@ -6,8 +6,9 @@
  * Where a customer sees what they are on and until when, and pays. There is no
  * card gateway yet: they send the money to the receiving accounts on file
  * (the same `config/settlementAccounts` the driver top-ups use), then tell us
- * with a screenshot or the transaction ID. An admin checks it arrived and
- * approves; the month starts then.
+ * with the receipt screenshot and the transaction ID — both. Our AI reads the
+ * receipt the moment it arrives; an admin checks the money arrived and
+ * approves, and the month starts then.
  */
 
 import { useEffect, useState } from 'react';
@@ -19,6 +20,7 @@ import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { studioApi, type StudioPaymentDoc } from '@/lib/api';
 import {
+  PKR_PER_USD,
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
@@ -27,9 +29,6 @@ import {
   type StudioPlanId,
 } from '@/lib/studio';
 import { Button, Card } from '@/components/ui';
-
-// shortcut: a fixed rate for showing a PKR figure next to the USD price; read it from config when it matters.
-const PKR_PER_USD = 280;
 
 interface ReceivingAccounts {
   easypaisaNumber?: string;
@@ -91,13 +90,11 @@ export default function BillingPage() {
     setError(null);
     setNotice(null);
     try {
-      let screenshotPath: string | undefined;
-      if (file) {
-        if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
-        screenshotPath = `workspaces/${wid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
-        await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
-      }
-      await studioApi.submitPayment({ plan: chosen, billing, txnId: txnId.trim() || undefined, screenshotPath });
+      if (!file) throw new Error('Attach the receipt screenshot.');
+      if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
+      const screenshotPath = `workspaces/${wid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
+      await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
+      await studioApi.submitPayment({ plan: chosen, billing, txnId: txnId.trim(), screenshotPath });
       setTxnId('');
       setFile(null);
       setNotice('Thank you — we will check the payment and switch your plan on, usually within a few hours.');
@@ -223,6 +220,10 @@ export default function BillingPage() {
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
             <label style={label}>
+              Receipt screenshot
+              <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </label>
+            <label style={label}>
               Transaction ID
               <input
                 value={txnId}
@@ -231,13 +232,9 @@ export default function BillingPage() {
                 style={input}
               />
             </label>
-            <label style={label}>
-              …and/or the receipt screenshot
-              <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
             <div>
-              <Button onClick={send} disabled={busy || (!file && txnId.trim().length < 6)}>
-                {busy ? 'Sending…' : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
+              <Button onClick={send} disabled={busy || !file || txnId.trim().length < 6}>
+                {busy ? 'Sending — our AI is reading the receipt…' : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
               </Button>
             </div>
           </div>

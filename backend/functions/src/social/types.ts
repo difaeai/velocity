@@ -793,7 +793,8 @@ export interface SocialSettings {
    * How many days ahead the calendar is kept made: the month plan's pieces for
    * the next N days are written and drawn in advance, one an hour, so the owner
    * can read (and change) the month before it goes out. 0 makes each day on the
-   * day, which is how the house desk has always run.
+   * day. 30 everywhere since 2026-10-24: the owner asked for the month to stay
+   * filled, every month.
    */
   makeAheadDays: number;
   /**
@@ -945,7 +946,7 @@ export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
   runHour: 10,
   postsPerDay: 1,
-  makeAheadDays: 0,
+  makeAheadDays: 30,
   dailyStory: true,
   platforms: ['facebook', 'instagram'],
 

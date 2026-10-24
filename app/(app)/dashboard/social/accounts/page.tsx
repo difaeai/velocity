@@ -125,6 +125,8 @@ function AccountCard({
 
   const status = account?.status ?? 'disconnected';
   const connected = status === 'connected';
+  // An account in error still has its token stored: Check can bring it straight back.
+  const stored = connected || status === 'error';
 
   async function run(kind: 'connect' | 'verify' | 'disconnect') {
     setBusy(kind);
@@ -187,7 +189,7 @@ function AccountCard({
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {connected ? (
+          {stored ? (
             <>
               <Button variant="ghost" onClick={() => run('verify')} disabled={busy !== null}>
                 {busy === 'verify' ? 'Checking…' : 'Check'}
@@ -197,8 +199,8 @@ function AccountCard({
               </Button>
             </>
           ) : null}
-          <Button variant={connected ? 'ghost' : 'primary'} onClick={onToggle} disabled={disabled}>
-            {open ? 'Cancel' : connected ? 'Replace token' : 'Connect'}
+          <Button variant={stored ? 'ghost' : 'primary'} onClick={onToggle} disabled={disabled}>
+            {open ? 'Cancel' : stored ? 'Replace token' : 'Connect'}
           </Button>
         </div>
       </div>

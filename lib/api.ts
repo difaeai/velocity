@@ -1761,6 +1761,17 @@ export interface StudioPaymentDoc {
   createdAtMs: number;
   decidedAtMs: number | null;
   note: string | null;
+  /** What the AI check read off the receipt. Null while it runs; absent on payments sent before it existed. */
+  analysis?: StudioPaymentAnalysis | null;
+}
+
+/** Mirrors `PaymentAnalysis` in backend/functions/src/studio/paymentCheck.ts. */
+export interface StudioPaymentAnalysis {
+  verdict: 'match' | 'check' | 'mismatch';
+  summary: string;
+  checks: { key: string; ok: boolean | null; label: string }[];
+  read: { amount: number | null; transactionRef: string | null; sourceApp: string | null; ocrConfidence: number | null };
+  atMs: number;
 }
 
 export type SalesLeadStatus = 'new' | 'drafted' | 'approved' | 'sent' | 'replied' | 'won' | 'lost' | 'skipped' | 'failed';
@@ -1862,12 +1873,31 @@ export const studioApi = {
     { ok: boolean; workspaceId: string; trialEndsAtMs: number }
   >('studioCreateWorkspace'),
   submitPayment: callable<
-    { plan: StudioPlanId; billing?: StudioBilling; txnId?: string; screenshotPath?: string },
+    { plan: StudioPlanId; billing?: StudioBilling; txnId: string; screenshotPath: string },
     { ok: boolean; paymentId: string }
   >('studioSubmitPayment'),
   decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
     'adminDecideStudioPayment',
   ),
+  /** The sign-up page saying hello, so an unfinished sign-up is on the admin's list. */
+  touch: callable<Record<string, never>, { ok: boolean }>('studioTouch'),
+  sendEmailCode: callable<Record<string, never>, { ok: boolean; sentTo?: string; alreadyVerified?: boolean }>(
+    'studioSendEmailCode',
+  ),
+  verifyEmailCode: callable<{ code: string }, { ok: boolean }>('studioVerifyEmailCode'),
+  manageCustomer: callable<
+    { wid: string } & (
+      | { action: 'extendTrial' | 'giveDays'; days: number }
+      | { action: 'setPlan'; plan: StudioPlanId }
+      | { action: 'suspend' | 'resume' }
+      | { action: 'note'; note: string }
+    ),
+    { ok: boolean }
+  >('adminManageStudioCustomer'),
+  setMailer: callable<
+    { host: string; port: number; user: string; pass?: string; from: string; fromName: string; testTo: string },
+    { ok: boolean }
+  >('adminSetStudioMailer'),
 };
 
 export const socialApi = {

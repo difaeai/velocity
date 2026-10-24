@@ -574,7 +574,15 @@ export {
 } from './social';
 
 // Velocity Studio — the desk sold to other businesses: sign-up, manual payments, approvals
-export { studioCreateWorkspace, studioSubmitPayment, adminDecideStudioPayment } from './studio';
+export {
+  studioCreateWorkspace,
+  studioSubmitPayment,
+  adminDecideStudioPayment,
+  adminManageStudioCustomer,
+} from './studio';
+// Velocity Studio sign-up: the emailed code and the mailbox it comes from.
+export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
+export { adminSetStudioMailer } from './studio/mailer';
 
 // The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply
 export {

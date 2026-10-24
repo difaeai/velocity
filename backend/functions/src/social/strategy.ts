@@ -200,13 +200,29 @@ export async function plannedSlots(date: string): Promise<PlannedSlot[]> {
   return plan?.days?.[date] ?? [];
 }
 
-/** The first run of a month makes its plan. Never fatal: a missing plan is the rotation. */
+/**
+ * The first run of a month makes its plan. Never fatal, and never empty: when
+ * the model cannot plan it, the rotation is laid out over the month and stored,
+ * so the calendar shows every day and the make-ahead has slots to fill. A month
+ * left without a plan is what froze the calendar in October 2026. "Plan the
+ * month" on the calendar replaces it with the team's own plan at any time.
+ */
 export async function ensureMonthPlan(month: string): Promise<void> {
   if ((await planRef(month).get()).exists) return;
   try {
     await planMonth(month, await planningResearch());
   } catch (e) {
-    logger.warn('social: could not plan the month; the rotation carries on', { month, message: (e as Error).message });
+    logger.warn('social: could not plan the month; laying the rotation out instead', {
+      month,
+      message: (e as Error).message,
+    });
+    const plan: MonthPlan = {
+      ...localMonthPlan(month, await getSocialSettings()),
+      atMs: Date.now(),
+      by: 'The rotation',
+      engine: 'local',
+    };
+    await planRef(month).set(plan);
   }
 }
 

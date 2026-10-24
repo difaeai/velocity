@@ -69,6 +69,9 @@ export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling): numb
 
 export const STUDIO_TRIAL_HOURS = 24;
 
+// shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in backend studio/plans.ts. Read it from config when the rupee moves.
+export const PKR_PER_USD = 280;
+
 /** `workspaces/{id}` as the console reads it. */
 export interface StudioWorkspace {
   name: string;
@@ -88,13 +91,31 @@ export interface StudioWorkspace {
     differences: string;
     website: string;
   };
+  /** Paused by a Velocity admin. */
+  suspended?: boolean;
+  /** The admin's own note; customers never see it. */
+  adminNote?: string;
+}
+
+/** `studioUsers/{uid}`: everyone who started a Studio sign-up, finished or not. Admin-only. */
+export interface StudioUserDoc {
+  uid: string;
+  email: string | null;
+  name: string | null;
+  method: 'google' | 'email';
+  emailVerified: boolean;
+  createdAtMs: number;
+  lastSeenAtMs: number;
+  verifiedAtMs?: number;
+  workspaceId?: string;
 }
 
 export function studioCanUse(
-  ws: Pick<StudioWorkspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs'>,
+  ws: Pick<StudioWorkspace, 'plan' | 'trialEndsAtMs' | 'paidUntilMs' | 'suspended'>,
   need: StudioNeed,
   nowMs: number,
 ): boolean {
+  if (ws.suspended) return false;
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) return false;
   return need === 'any' || STUDIO_PLANS[ws.plan].can.includes(need);
 }
