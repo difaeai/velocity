@@ -44,6 +44,8 @@ import { z } from 'zod';
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
+import { isWarmPing, warmUp } from '../lib/warmup';
+import { faceEngineReady } from '../lib/localVision';
 import { readFaceScan } from '../lib/driverVerificationLocal';
 import { enqueueDriverVerification, getVerificationConfig } from './verification';
 import {
@@ -94,6 +96,8 @@ const startSchema = z.object({
  */
 export const startFaceScan = onCall(async (req) => {
   const { uid } = requireAuth(req);
+  // Sent as the intro screen opens, so the driver tapping Start meets a warm instance.
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = startSchema.safeParse(req.data ?? {});
   if (!parsed.success) invalid('Unknown face scan type.');
   const purpose: FaceScanPurpose = parsed.data.purpose ?? 'onboarding';
@@ -177,6 +181,12 @@ const submitSchema = z.object({
 // not read any text, so it never loads the language model.
 export const submitFaceScan = onCall({ timeoutSeconds: 120, memory: '1GiB' }, async (req) => {
   const { uid } = requireAuth(req);
+  // Sent as the camera opens: the face models load while the driver is still
+  // turning their head, instead of after the last frame.
+  if (isWarmPing(req.data)) {
+    await faceEngineReady();
+    return warmUp();
+  }
   const parsed = submitSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide the scan id and the captured frames.');
   const { scanId, framePaths } = parsed.data;

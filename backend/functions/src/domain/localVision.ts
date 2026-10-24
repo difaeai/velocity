@@ -701,8 +701,17 @@ export const TURN_DIRECTION_IS_NOT_CHECKED = true;
  *
  * The server always asks for `look_straight` first (pickChallenges guarantees
  * it), which is what makes a per-applicant baseline available at all.
+ *
+ * TURN_DELTA was 0.12 and had never met a real turned face: not one scan was
+ * scored in production before 2026-10-24. By face geometry (nose tip 2–4.5 cm
+ * proud of the outer eye corners) 0.12 is a 15–30° turn — more than "slightly",
+ * which is what drivers are asked for. The phone now captures a turn only after
+ * measuring 18° itself (apps/mobile/src/domain/faceLiveness.ts), so this only
+ * has to confirm the frame moved: 0.06 is an 18° turn even on the flattest
+ * face, and still several times what one photograph varies between frames
+ * (LIVENESS_MIN_VARIATION).
  */
-export const TURN_DELTA = 0.12;
+export const TURN_DELTA = 0.06;
 export const TILT_DELTA = 0.18;
 /** Absolute band for the first frame, which has no baseline of its own yet. */
 export const STRAIGHT_YAW_LIMIT = 0.22;
@@ -792,6 +801,10 @@ export const CATEGORY_OF_CHALLENGE: Record<FaceChallenge, PoseCategory> = {
  * a turn and a tilt are decided by how far the face has moved from its own
  * first frame. A frame that moved in no measurable way is straight, which is a
  * real answer and not a failure to classify.
+ *
+ * Except that the pose that was ASKED is judged on its own measure first: a
+ * driver who smiles at the camera, or nods a little while turning, has still
+ * done what they were told — and was marked wrong for it until 2026-10-24.
  */
 export function categorisePose(params: {
   geometry: FaceGeometry;
@@ -799,8 +812,16 @@ export function categorisePose(params: {
   baseline?: FaceGeometry | null;
   /** The expression model's probability that this face is smiling. */
   smileProbability: number;
+  asked?: FaceChallenge;
 }): PoseCategory {
-  const { geometry, baseline, smileProbability } = params;
+  const { geometry, baseline, smileProbability, asked } = params;
+
+  if (asked === 'look_straight' && !baseline && Math.abs(geometry.yaw) <= STRAIGHT_YAW_LIMIT) {
+    return 'straight';
+  }
+  if (asked && CATEGORY_OF_CHALLENGE[asked] === 'turned' && baseline) {
+    if (Math.abs(geometry.yaw - baseline.yaw) >= TURN_DELTA) return 'turned';
+  }
 
   const openedFurther = baseline ? geometry.mouthOpen - baseline.mouthOpen >= MOUTH_OPEN_DELTA : false;
   if (geometry.mouthOpen >= MOUTH_OPEN_RATIO || openedFurther) return 'mouth_open';

@@ -513,6 +513,7 @@ export async function readFaceScan(params: {
       geometry,
       baseline: position === 0 ? null : baseline,
       smileProbability: read.smileProbability,
+      asked,
     });
 
     // The only recapture this engine claims: the identical image handed in for

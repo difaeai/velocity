@@ -1,0 +1,22 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.velocityface'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.velocityface"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  // The bundled model, not the Play-services one: that downloads on first use,
+  // and a face scan that cannot see anything until a download finishes is the
+  // bug this module exists to fix. Costs about 6 MB of download.
+  implementation "com.google.mlkit:face-detection:16.1.7"
+}

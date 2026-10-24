@@ -470,6 +470,29 @@ describe('categorisePose', () => {
     // spread over yaw 0.069–0.129 all looking at the camera.
     expect(Math.abs(straight.yaw)).toBeLessThan(0.22);
   });
+
+  it('counts a turn the driver was asked for even with a smile or a nod in it', () => {
+    // Asked to turn, people smile at the camera and their chin moves too.
+    // Unasked, this frame reads as a smile — and the turn used to be marked wrong.
+    const turnedNodding = geometryOf({ noseX: 132, chinY: 300 });
+    const frame = { geometry: turnedNodding, baseline: straight, smileProbability: 0.99 };
+    expect(categorisePose(frame)).toBe('smiling');
+    expect(categorisePose({ ...frame, asked: 'turn_left' })).toBe('turned');
+  });
+
+  it('counts a smiling straight-on first frame as straight when that is what was asked', () => {
+    expect(categorisePose({ geometry: straight, baseline: null, smileProbability: 0.99 })).toBe('smiling');
+    expect(
+      categorisePose({ geometry: straight, baseline: null, smileProbability: 0.99, asked: 'look_straight' }),
+    ).toBe('straight');
+  });
+
+  it('still refuses a turn that did not happen', () => {
+    // Being asked is not evidence: an unmoved face is straight whatever the prompt said.
+    expect(
+      categorisePose({ geometry: straight, baseline: straight, smileProbability: 0.05, asked: 'turn_right' }),
+    ).toBe('straight');
+  });
 });
 
 describe('observedPose', () => {
