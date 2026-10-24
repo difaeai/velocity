@@ -21,9 +21,9 @@ import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers'
 import { poolPerSeatFare } from '../../domain/fares';
 import { createTrip } from '../index';
 import { getPoolRiders } from '../enRoute';
-import { dropOffRider } from '../dropOff';
+import { boardPoolRider, dropOffRider } from '../dropOff';
 import { joinPoolTrip } from '../poolShare';
-import { rosterForTrip } from '../poolRoster';
+import { isBoarded, rosterForTrip } from '../poolRoster';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 
 const HOST = 'roster-host';
@@ -186,7 +186,7 @@ describe('dropOffRider on a destination pool', () => {
     const tripId = await runningPool();
     const perSeat = poolPerSeatFare(400, 2);
 
-    const first = await dropOffRider.run(asDriver({ tripId, riderUid: HOST }));
+    const first = await dropOffRider.run(asDriver({ tripId, riderUid: HOST })) as { name: string; fare: number; remaining: number };
     expect(first.name).toBe('Usman');
     expect(first.fare).toBe(perSeat);
     // The ride is still running — this is the whole point.
@@ -203,7 +203,7 @@ describe('dropOffRider on a destination pool', () => {
     const left = await getPoolRiders.run(makeReq({ tripId }, DRIVER));
     expect(left.riders.filter((r: { droppedOff: boolean }) => !r.droppedOff)).toHaveLength(1);
 
-    const last = await dropOffRider.run(asDriver({ tripId, riderUid: RIDER }));
+    const last = await dropOffRider.run(asDriver({ tripId, riderUid: RIDER })) as { remaining: number };
     expect(last.remaining).toBe(0);
   });
 
@@ -218,6 +218,68 @@ describe('dropOffRider on a destination pool', () => {
     const tripId = await runningPool();
     await expect(dropOffRider.run(asDriver({ tripId, riderUid: OUTSIDER })))
       .rejects.toThrow(/not on this ride/);
+  });
+});
+
+describe('starting each rider on their own', () => {
+  /** The same pool, with the car at the pickup and nobody in it yet. */
+  async function poolAtPickup() {
+    const tripId = await runningPool();
+    await db().doc(`trips/${tripId}`).set({ status: 'arrived' }, { merge: true });
+    return tripId;
+  }
+  const boarded = async (tripId: string) =>
+    Object.fromEntries(
+      ((await getPoolRiders.run(makeReq({ tripId }, DRIVER))).riders as { uid: string; boarded: boolean }[])
+        .map((r) => [r.uid, r.boarded]),
+    );
+
+  it('starts the ride with the first rider in, and nobody else', async () => {
+    const tripId = await poolAtPickup();
+    expect(await boarded(tripId)).toEqual({ [HOST]: false, [RIDER]: false });
+
+    const res = await boardPoolRider.run(asDriver({ tripId, riderUid: HOST })) as { status: string };
+    expect(res.status).toBe('in_progress');
+    const trip = await db().doc(`trips/${tripId}`).get();
+    expect(trip.get('status')).toBe('in_progress');
+    expect(trip.get('startedAt')).toBeTruthy();
+    // The second rider is still on the pavement until the driver says otherwise.
+    expect(await boarded(tripId)).toEqual({ [HOST]: true, [RIDER]: false });
+
+    await boardPoolRider.run(asDriver({ tripId, riderUid: RIDER }));
+    expect(await boarded(tripId)).toEqual({ [HOST]: true, [RIDER]: true });
+  });
+
+  it('treats a second tap as done, not as an error', async () => {
+    const tripId = await poolAtPickup();
+    await boardPoolRider.run(asDriver({ tripId, riderUid: HOST }));
+    await expect(boardPoolRider.run(asDriver({ tripId, riderUid: HOST }))).resolves.toMatchObject({ ok: true });
+  });
+
+  it('refuses before the car has reached the pickup', async () => {
+    const tripId = await poolAtPickup();
+    await db().doc(`trips/${tripId}`).set({ status: 'arriving' }, { merge: true });
+    await expect(boardPoolRider.run(asDriver({ tripId, riderUid: HOST }))).rejects.toThrow(/Arrived at pickup/);
+  });
+
+  it('counts everyone at the pickup aboard on a ride started all at once', async () => {
+    // runningPool goes straight to in_progress, as the trip-level Start and
+    // every ride before per-rider starts did — nobody is stamped.
+    const tripId = await runningPool();
+    expect(await boarded(tripId)).toEqual({ [HOST]: true, [RIDER]: true });
+  });
+});
+
+describe('isBoarded', () => {
+  it('never counts an en-route rider aboard without their own start', () => {
+    const riders = [{ kind: 'host' }, { kind: 'enroute' }];
+    expect(isBoarded(riders[0]!, riders, 'in_progress')).toBe(true);
+    expect(isBoarded(riders[1]!, riders, 'in_progress')).toBe(false);
+    expect(isBoarded({ kind: 'enroute', boardedAt: 1 }, riders, 'in_progress')).toBe(true);
+  });
+
+  it('counts nobody aboard before the ride is running', () => {
+    expect(isBoarded({ kind: 'host' }, [{ kind: 'host' }], 'arrived')).toBe(false);
   });
 });
 

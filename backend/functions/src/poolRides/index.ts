@@ -358,6 +358,7 @@ export const completePoolRide = onCall(async (req) => {
       grossFare,
       commissionableCashFare: target.commissionableCashFare,
       rideId,
+      creditEarned: target.creditDelta,
     });
     tx.set(
       driverRef,

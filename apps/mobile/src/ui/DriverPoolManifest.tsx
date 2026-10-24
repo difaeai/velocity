@@ -52,6 +52,7 @@ export function DriverPoolManifest({
   paymentMethod,
   seatsFree,
   refreshKey,
+  requestsOnly,
 }: {
   tripId: string;
   paymentMethod: 'cash' | 'wallet';
@@ -59,6 +60,8 @@ export function DriverPoolManifest({
   seatsFree: number;
   /** Bump to re-read the list — e.g. when a "rider joined" push arrives. */
   refreshKey?: number;
+  /** Only the ask-for-a-seat queue: another list on screen already names everyone. */
+  requestsOnly?: boolean;
 }) {
   const [riders, setRiders] = useState<PoolRiderView[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -154,6 +157,8 @@ export function DriverPoolManifest({
       ))}
     </View>
   ) : null;
+
+  if (requestsOnly) return requestQueue;
 
   if (loading && !riders) {
     return (

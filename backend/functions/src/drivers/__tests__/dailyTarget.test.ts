@@ -368,6 +368,7 @@ describe('recordRideOnDailyTarget', () => {
         grossFare: params.grossFare,
         commissionableCashFare: target.commissionableCashFare,
         rideId: params.rideId ?? 'trip-1',
+        creditEarned: target.creditDelta,
       });
       tx.set(
         driverRef,
@@ -637,6 +638,63 @@ describe('recordRideOnDailyTarget', () => {
     expect(next.cycle.locked).toBe(false);
     expect((await driverDoc()).get('cycleGrossFare')).toBe(300);
     expect((await db().collection('platformLedger').get()).empty).toBe(true);
+  });
+
+  // ── Commission off the bonus, ride by ride ───────────────────────────────
+
+  const giveBonus = (amount: number) =>
+    db().doc(`drivers/${DRIVER}`).set({ commissionCredit: amount }, { merge: true });
+
+  it("takes each ride's commission off the bonus the moment it ends", async () => {
+    await giveBonus(2000);
+    const res = await record({ grossFare: 300, isPoolRide: false });
+    expect(res.cycle.paidFromCredit).toBe(15); // 5% of 300
+
+    const snap = await driverDoc();
+    expect(snap.get('commissionCredit')).toBe(1985);
+    expect(snap.get('commissionCreditUsed')).toBe(15);
+    // Paid, so nothing of it is waiting for midnight.
+    expect(snap.get('cycleCashFare')).toBe(0);
+    expect(snap.get('cycleGrossFare')).toBe(300);
+    expect(commissionDue(snap, settings(), NEXT_DAY)).toBe(0);
+
+    const statement = await db().collection(`drivers/${DRIVER}/commissionCredits`).get();
+    expect(statement.docs.map((d) => [d.get('source'), d.get('amount')])).toEqual([['ride', -15]]);
+    const revenue = await db().collection('platformLedger').where('type', '==', 'ride_commission').get();
+    expect(revenue.docs[0]!.get('amount')).toBe(15);
+  });
+
+  it('leaves a ride the bonus cannot fully cover to the day roll', async () => {
+    await giveBonus(10);
+    const res = await record({ grossFare: 300, isPoolRide: false });
+    expect(res.cycle.paidFromCredit).toBe(0);
+    const snap = await driverDoc();
+    expect(snap.get('commissionCredit')).toBe(10);
+    expect(snap.get('cycleCashFare')).toBe(300);
+    // …where the 10 still pays its share: 15 owed, 5 left to find.
+    expect(commissionDue(snap, settings(), NEXT_DAY)).toBe(5);
+  });
+
+  it('gives back every rupee the bonus paid when the day reaches the target', async () => {
+    await giveBonus(2000);
+    await driveDay(15); // 15 × 15 taken as they went
+    expect((await driverDoc()).get('commissionCredit')).toBe(1775);
+
+    const crossing = await record({ grossFare: 300, riderIds: ['rider-15'], rideId: 'trip-15' });
+    expect(crossing.waiverGranted).toBe(225);
+    expect((await driverDoc()).get('commissionCredit')).toBe(2000);
+    // And the free day owes nothing at midnight either.
+    expect(commissionDue(await driverDoc(), settings(), NEXT_DAY)).toBe(0);
+  });
+
+  it('never spends on a ride the bonus a closed debt already has a claim on', async () => {
+    await driveDay(10); // 150 owed for today, no bonus
+    await giveBonus(150);
+    // Next day: yesterday's 150 takes the whole bonus, nothing left for this ride.
+    const next = await record({ grossFare: 300, riderIds: ['rider-new'], day: NEXT_DAY, rideId: 't-n' });
+    expect(next.cycle.autoCleared).toBe(true);
+    expect(next.cycle.paidFromCredit).toBe(0);
+    expect((await driverDoc()).get('commissionCredit')).toBe(0);
   });
 
   it('files a ride on the day it is told to, not the day the clock says', async () => {

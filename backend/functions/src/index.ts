@@ -392,7 +392,7 @@ export {
 } from './fleet';
 
 // Shared rides stop more than once. Dropping one rider is not ending the trip.
-export { dropOffRider } from './trips/dropOff';
+export { dropOffRider, boardPoolRider } from './trips/dropOff';
 
 // In-ride chat. Sending goes through a callable so the message and the push
 // to the other side are one action — direct writes notified nobody.

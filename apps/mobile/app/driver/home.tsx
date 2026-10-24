@@ -70,10 +70,14 @@ import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 import { documentsExpiringSoon } from '../../src/domain/documentExpiry';
 
-const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to?: 'arriving' | 'arrived' | 'in_progress' }>> = {
-  matched: { label: 'Head to pickup', to: 'arriving' },
-  arriving: { label: 'Arrived at pickup', to: 'arrived' },
-  arrived: { label: 'Start trip', to: 'in_progress' },
+// "Head to pickup" used to be a step of its own between accepting and arriving,
+// so the button under the map read "Head to pickup" when the driver was already
+// at the kerb looking for "Arrived". Going is now the GO TO CUSTOMER'S LOCATION
+// button's side effect, and the server takes matched → arrived directly.
+const NEXT_ACTION: Partial<Record<TripStatus, { label: string; to: 'arrived' | 'in_progress' }>> = {
+  matched: { label: 'ARRIVED AT PICKUP', to: 'arrived' },
+  arriving: { label: 'ARRIVED AT PICKUP', to: 'arrived' },
+  arrived: { label: 'START RIDE', to: 'in_progress' },
   // 'in_progress' deliberately has no entry: ending a ride is DropOffPanel's
   // job, because a shared car ends it once per passenger, not once per trip.
 };
@@ -132,6 +136,7 @@ export default function DriverHome() {
   const expiring = documentsExpiringSoon(profile);
 
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -150,7 +155,19 @@ export default function DriverHome() {
   // which is exactly where a driver sits while the passenger is writing —
   // Android shows nothing, so the button has to carry the news itself.
   const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(activeTrip?.id, uid);
-  useWarmRideLine(!!activeTrip);
+  useWarmRideLine(online || !!activeTrip, 'driver');
+
+  // "Arrived" shows — timer running — the moment it is tapped. The server
+  // takes seconds to answer, and a button that does nothing for that long
+  // reads as a button that does not work.
+  const [arrivedLocally, setArrivedLocally] = useState<{ tripId: string; at: number } | null>(null);
+  const awaitingArrival =
+    !!activeTrip
+    && arrivedLocally?.tripId === activeTrip.id
+    && (activeTrip.status === 'matched' || activeTrip.status === 'arriving');
+  const tripStatus: TripStatus | undefined = awaitingArrival ? 'arrived' : activeTrip?.status;
+  const arrivedAt = activeTrip?.arrivedAt
+    ?? (awaitingArrival ? { seconds: Math.floor(arrivedLocally!.at / 1000), nanoseconds: 0 } : null);
 
   // Before the passenger is aboard the driver is going to the pickup; after,
   // to the drop-off. One button, pointed at whichever is actually next.
@@ -319,18 +336,41 @@ export default function DriverHome() {
    * but is not required.
    */
   async function startTrip(tripId: string) {
-    if (!(await ensureDashcamPermission())) {
-      Alert.alert(
-        'Allow the camera to start the ride',
-        'Every Velocity Rides ride is recorded by the dash cam, for your safety and your passengers’. Allow camera access, then tap Start trip again.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open settings', onPress: () => void Linking.openSettings() },
-        ],
-      );
-      return;
-    }
+    if (!(await canStartRide())) return;
     await api.updateTripStatus({ tripId, to: 'in_progress' });
+  }
+
+  /** The dash cam permission a ride cannot start without — shared with per-rider starts. */
+  async function canStartRide(): Promise<boolean> {
+    if (await ensureDashcamPermission()) return true;
+    Alert.alert(
+      'Allow the camera to start the ride',
+      'Every Velocity Rides ride is recorded by the dash cam, for your safety and your passengers’. Allow camera access, then tap Start ride again.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => void Linking.openSettings() },
+      ],
+    );
+    return false;
+  }
+
+  /** Google Maps, outside the app — the in-app map is not a paid navigation call. */
+  function goToCustomer(trip: Trip, target: NavTarget) {
+    openNavigation(target);
+    // Telling the passenger the car is coming; the drive itself is the point.
+    if (trip.status === 'matched') {
+      api.updateTripStatus({ tripId: trip.id, to: 'arriving' }).catch(() => {});
+    }
+  }
+
+  async function markArrived(trip: Trip) {
+    setArrivedLocally({ tripId: trip.id, at: Date.now() });
+    try {
+      await api.updateTripStatus({ tripId: trip.id, to: 'arrived' });
+    } catch (e) {
+      setArrivedLocally(null);
+      Alert.alert('Could not mark arrival', e instanceof Error ? e.message : 'Please try again.');
+    }
   }
 
   // Location powers the geohash proximity filter, the distance shown on each
@@ -546,23 +586,28 @@ export default function DriverHome() {
       `Cancel this ride? It costs PKR ${fee}`,
       `You accepted this ride at PKR ${fare} and the passenger is waiting for you. Cancelling now `
         + `charges a ${Math.round(cancellation.driverFeeRate * 100)}% fee — PKR ${fee}.\n\n`
-        + 'It comes out of your wallet balance, and anything left over is owed to Velocity Rides before you can accept rides again.',
+        + 'It comes off your wallet credits first, and anything they cannot cover is owed to Velocity Rides before you can accept rides again.',
       [
         { text: 'Keep the ride', style: 'cancel' },
         {
           text: `Cancel & pay PKR ${fee}`,
           style: 'destructive',
-          onPress: () => run(async () => {
-            const res = await api.cancelTrip({ tripId: trip.id });
-            if (res.outstanding > 0) {
-              Alert.alert(
-                'Ride cancelled',
-                `PKR ${res.outstanding} is now outstanding to Velocity Rides. Settle it from your wallet to keep accepting rides.`,
-              );
-            } else if (res.fee > 0) {
-              Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
-            }
-          }),
+          onPress: () => {
+            setCancelling(true);
+            run(async () => {
+              const res = await api.cancelTrip({ tripId: trip.id });
+              if (res.outstanding > 0) {
+                Alert.alert(
+                  'Ride cancelled',
+                  `PKR ${res.outstanding} is now outstanding to Velocity Rides. Settle it to keep accepting rides.`,
+                );
+              } else if ((res.paidFromCredit ?? 0) > 0) {
+                Alert.alert('Ride cancelled', `PKR ${res.fee} was taken from your wallet credits.`);
+              } else if (res.fee > 0) {
+                Alert.alert('Ride cancelled', `PKR ${res.fee} was charged to your wallet.`);
+              }
+            }).finally(() => setCancelling(false));
+          },
         },
       ],
     );
@@ -699,7 +744,9 @@ export default function DriverHome() {
           <DailyTargetTicker
             progress={dailyTarget.progress}
             bonusBalance={commission.bonus}
-            todayCashFare={commission.todayCashFare}
+            // The whole day's cash: rides the bonus already paid for are no
+            // longer in the cycle, but reaching the target refunds them too.
+            todayCashFare={Math.max(commission.todayCashFare, dailyTarget.day.cashFare)}
             rate={commission.rate}
             onPress={() => router.push('/driver/earnings')}
           />
@@ -721,8 +768,8 @@ export default function DriverHome() {
 
           <View style={styles.tripCard}>
             <Text style={styles.tripTitle}>Current trip · {RIDE_TYPE_LABELS[activeTrip.rideType]}</Text>
-            {activeTrip.status === 'arrived' && (
-              <ArrivalCountdown arrivedAt={activeTrip.arrivedAt} role="driver" />
+            {tripStatus === 'arrived' && (
+              <ArrivalCountdown arrivedAt={arrivedAt} role="driver" />
             )}
             <MapPlaceholder
               pickup={activeTrip.pickup?.address}
@@ -731,6 +778,25 @@ export default function DriverHome() {
               pickupCoord={activeTrip.pickup}
               dropoffCoord={activeTrip.dropoff}
             />
+            {/* Turn-by-turn is Google Maps' job, in Google Maps — the app opens
+                it rather than paying for routes of its own. `google.navigation:`
+                opens straight into navigation; the geo: URL is the fallback any
+                map app can answer. Big and right under the map, because it is
+                the first thing a driver needs after accepting and after boarding. */}
+            {navTarget ? (
+              <Pressable
+                style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => goToCustomer(activeTrip, navTarget)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.navBtnText}>
+                  {activeTrip.status === 'in_progress' ? "🏁 CUSTOMER DROP LOCATION" : "📍 GO TO CUSTOMER'S LOCATION"}
+                </Text>
+                <Text style={styles.navBtnSub} numberOfLines={1}>
+                  Opens Google Maps · {navTarget.address ?? 'pinned on the map'}
+                </Text>
+              </Pressable>
+            ) : null}
             <View style={styles.fareRow}>
               {/* On a shared ride the locked fare is what ONE seat was priced
                   at, not what the drive is worth — the manifest below adds up
@@ -746,19 +812,43 @@ export default function DriverHome() {
                 </Text>
               ) : null}
             </View>
-            {/* Turn-by-turn is a solved problem and this app should not pretend
-                otherwise — the in-app map shows WHERE the pickup is; getting
-                there is Google Maps' job. `google.navigation:` opens directly in
-                navigation mode; the geo: URL is the fallback any map app can
-                answer, so a driver without Google Maps still gets somewhere. */}
-            {navTarget ? (
-              <Pressable style={styles.navBtn} onPress={() => openNavigation(navTarget)}>
-                <Text style={styles.navBtnText}>
-                  🧭 {activeTrip.status === 'in_progress' ? 'Navigate to drop-off' : 'Navigate to pickup'}
-                </Text>
-                <Text style={styles.navBtnSub} numberOfLines={1}>{navTarget.address}</Text>
-              </Pressable>
-            ) : null}
+
+            {/* The one next step, right under the map: Arrived → Start ride →
+                End ride. A shared car starts and ends each passenger on their
+                own, so from the pickup on that is DropOffPanel's list. */}
+            {activeTrip.status === 'in_progress' || (activeTrip.pool === true && activeTrip.status === 'arrived') ? (
+              <DropOffPanel
+                tripId={activeTrip.id}
+                tripStatus={activeTrip.status}
+                fallbackFare={activeTrip.fare ?? activeTrip.offeredFare}
+                isPool={activeTrip.pool === true}
+                paymentMethod={(activeTrip.paymentMethod ?? 'cash') as 'cash' | 'wallet'}
+                driverCoords={driverCoords}
+                onCompleted={() => { /* the trip subscription clears the card */ }}
+                canStart={canStartRide}
+                onStartTrip={() => run(() => startTrip(activeTrip.id))}
+                refreshKey={activeTrip.poolMembers?.length ?? 1}
+                busy={busy}
+                setBusy={setBusy}
+              />
+            ) : awaitingArrival ? (
+              // Arrived is shown already; Start waits for the server to agree.
+              <PrimaryButton label="START RIDE" loading onPress={() => {}} />
+            ) : (() => {
+              const next = NEXT_ACTION[activeTrip.status];
+              if (!next) return null;
+              return (
+                <PrimaryButton
+                  label={next.label}
+                  disabled={busy}
+                  onPress={() =>
+                    next.to === 'in_progress'
+                      ? run(() => startTrip(activeTrip.id))
+                      : void markArrived(activeTrip)
+                  }
+                />
+              );
+            })()}
 
             <View style={styles.contactRow}>
               {/* A free in-app call; the number is only the fallback if it cannot connect. */}
@@ -816,37 +906,10 @@ export default function DriverHome() {
                   (activeTrip.maxPoolRiders ?? 4) - (activeTrip.poolMembers?.length ?? 1),
                 )}
                 refreshKey={activeTrip.poolMembers?.length ?? 1}
+                // At the pickup the start list above already names everyone.
+                requestsOnly={activeTrip.status === 'arrived'}
               />
             ) : null}
-
-            {activeTrip.status === 'in_progress' ? (
-              <DropOffPanel
-                tripId={activeTrip.id}
-                fallbackFare={activeTrip.fare ?? activeTrip.offeredFare}
-                isPool={activeTrip.pool === true}
-                paymentMethod={(activeTrip.paymentMethod ?? 'cash') as 'cash' | 'wallet'}
-                driverCoords={driverCoords}
-                onCompleted={() => { /* the trip subscription clears the card */ }}
-                busy={busy}
-                setBusy={setBusy}
-              />
-            ) : (() => {
-              const next = NEXT_ACTION[activeTrip.status];
-              if (!next?.to) return null;
-              return (
-                <PrimaryButton
-                  label={next.label}
-                  disabled={busy}
-                  onPress={() =>
-                    run(() =>
-                      next.to === 'in_progress'
-                        ? startTrip(activeTrip.id)
-                        : api.updateTripStatus({ tripId: activeTrip.id, to: next.to! }),
-                    )
-                  }
-                />
-              );
-            })()}
 
             {/* The dash cam, live — below the map and the drop-off list, so the
                 driver still sees where everybody is going and scrolls down to
@@ -896,6 +959,7 @@ export default function DriverHome() {
                 <PrimaryButton
                   variant="secondary"
                   label="Cancel ride"
+                  loading={cancelling}
                   disabled={busy}
                   onPress={() => confirmCancelTrip(activeTrip)}
                 />
@@ -903,8 +967,8 @@ export default function DriverHome() {
                   The passenger is waiting. Cancelling costs a{' '}
                   {Math.round(cancellation.driverFeeRate * 100)}% fee — PKR{' '}
                   {Math.round((activeTrip.fare ?? activeTrip.offeredFare) * cancellation.driverFeeRate)}
-                  {' '}— and anything your wallet cannot cover is added to what you owe Velocity Rides,
-                  which has to be cleared before you can accept rides again.
+                  {' '}— taken from your wallet credits first. Anything they cannot cover is added to
+                  what you owe Velocity Rides, which has to be cleared before you can accept rides again.
                 </Text>
               </>
             )}
@@ -1309,17 +1373,19 @@ const styles = themed(() => StyleSheet.create({
   },
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   navBtn: {
-    backgroundColor: `${colors.primary}18`,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    minHeight: 68,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 10,
     marginBottom: 10,
-    gap: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
   },
-  navBtnText: { fontSize: 14, fontWeight: '900', color: colors.primary },
-  navBtnSub: { fontSize: 11, fontWeight: '600', color: colors.muted },
+  navBtnText: { fontSize: 18, fontWeight: '900', color: '#0b0d0c', letterSpacing: 0.3 },
+  navBtnSub: { fontSize: 11.5, fontWeight: '700', color: '#0b0d0cb0' },
   contactBtnUnread: {
     borderColor: colors.primary,
     borderWidth: 1.5,

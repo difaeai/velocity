@@ -94,11 +94,14 @@ export default function TripScreen() {
   const [coRiders,     setCoRiders]     = useState<CoRiderTarget[]>([]);
   const [coRiderSheetDismissed, setCoRiderSheetDismissed] = useState(false);
   const [chatOpen,     setChatOpen]     = useState(false);
+  const [cancelling,   setCancelling]   = useState(false);
   // Same reason as the driver side: a push is invisible to an app already in
   // the foreground, and the rider is usually watching this very screen.
   const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(tripId, user?.uid);
+  // From `requested` on: Cancel is pressed while still searching as often as after.
   useWarmRideLine(
-    trip?.status === 'matched' || trip?.status === 'arriving' || trip?.status === 'arrived' || trip?.status === 'in_progress',
+    trip?.status === 'requested' || trip?.status === 'matched' || trip?.status === 'arriving'
+      || trip?.status === 'arrived' || trip?.status === 'in_progress',
   );
   const [reportOpen,   setReportOpen]   = useState(false);
   // The live-tracking token, cached for this screen so sharing twice hands the
@@ -224,7 +227,7 @@ export default function TripScreen() {
           {
             text: 'Cancel request',
             style: 'destructive',
-            onPress: () => run(() => api.cancelTrip({ tripId: trip.id })),
+            onPress: () => cancelNow(),
           },
         ],
       );
@@ -243,8 +246,7 @@ export default function TripScreen() {
         {
           text: `Cancel & pay PKR ${fee}`,
           style: 'destructive',
-          onPress: () => run(async () => {
-            const res = await api.cancelTrip({ tripId: trip.id });
+          onPress: () => cancelNow((res) => {
             if (res.outstanding > 0) {
               Alert.alert(
                 'Ride cancelled',
@@ -257,6 +259,16 @@ export default function TripScreen() {
         },
       ],
     );
+  }
+
+  /** Cancel, with the button visibly working until the server answers. */
+  function cancelNow(after?: (res: Awaited<ReturnType<typeof api.cancelTrip>>) => void) {
+    if (!trip) return;
+    setCancelling(true);
+    void run(async () => {
+      const res = await api.cancelTrip({ tripId: trip.id });
+      after?.(res);
+    }).finally(() => setCancelling(false));
   }
 
   // Pool invite: anyone with the link can join (the backend enforces seats,
@@ -592,7 +604,17 @@ export default function TripScreen() {
                       <Pressable
                         style={({ pressed }) => [styles.acceptBidBtn, pressed && { opacity: 0.85 }]}
                         disabled={busy}
-                        onPress={() => run(() => api.acceptBid({ tripId: trip.id, bidId: b.id }))}
+                        onPress={() =>
+                          run(() =>
+                            api.acceptBid({ tripId: trip.id, bidId: b.id }).catch((e: unknown) => {
+                              // A driver took the ride a moment earlier — this
+                              // screen is already moving on to them, so an
+                              // error here would only read as a cancellation.
+                              if (/no longer (open|available)/i.test((e as Error)?.message ?? '')) return;
+                              throw e;
+                            }),
+                          )
+                        }
                         accessibilityRole="button"
                         accessibilityLabel={`Accept ${b.driverInfo.displayName}'s offer of ${b.fare} rupees`}
                       >
@@ -1066,6 +1088,7 @@ export default function TripScreen() {
                 <PrimaryButton
                   variant="secondary"
                   label="Cancel trip"
+                  loading={cancelling}
                   disabled={busy}
                   onPress={confirmCancel}
                 />

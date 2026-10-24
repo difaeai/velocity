@@ -180,7 +180,7 @@ describe('createTrip (pool)', () => {
   });
 
   it('does not issue share codes for solo trips', async () => {
-    const res = await createTrip.run(makeReq({ ...BASE_TRIP, pool: false }, HOST));
+    const res = await createTrip.run(makeReq({ ...BASE_TRIP, pool: false }, HOST)) as { tripId: string; shareCode: string | null };
     expect(res.shareCode).toBeNull();
     const trip = (await db().doc(`trips/${res.tripId}`).get()).data()!;
     expect(trip.shareCode).toBeUndefined();

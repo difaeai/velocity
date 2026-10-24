@@ -17,7 +17,15 @@
  *    do not owe. If it does not cover it, the debt is left alone: the driver is
  *    locked and will settle it by transfer.
  *
- * 2. **The ride is added**, to the totals and to today's portion of them.
+ * 2. **The ride's own commission comes off the bonus**, when the bonus covers
+ *    all of it. A driver reads the bonus as their wallet, and a wallet that
+ *    only moved at the next midnight looked like commission was never taken.
+ *    A paid ride never enters the cycle, and the day document remembers it
+ *    (`creditPaid` / `creditPaidCash`) so a target day refunds it with the
+ *    rest of the waiver — see recordRideOnDailyTarget. A bonus too small for
+ *    the whole amount is left for the roll, which spends it on the closed day.
+ *
+ * 3. **The ride is added**, to the totals and to today's portion of them.
  *
  * WHAT THIS DOES NOT WRITE. It never writes the driver document. It returns the
  * fields and lets the caller fold them into the single `tx.set` it already makes
@@ -43,6 +51,7 @@ import {
 } from '../domain/commission';
 import type { DayKey } from '../domain/dailyTarget';
 import { ledgerCreditSpend } from './commissionCredit';
+import { dailyTargetRef } from './dailyTarget';
 
 export interface CycleUpdate {
   /** Merge into the single `tx.set(drivers/{uid}, …)` the caller already makes. */
@@ -57,6 +66,8 @@ export interface CycleUpdate {
   locked: boolean;
   /** The closed days were fully covered and have been cleared here. */
   autoCleared: boolean;
+  /** This ride's own commission, taken from the bonus at once. 0 = left to the roll. */
+  paidFromCredit: number;
 }
 
 export function applyRideToCycle(params: {
@@ -73,6 +84,8 @@ export function applyRideToCycle(params: {
   commissionableCashFare: number;
   /** The ride this settlement belongs to, for the ledger rows. */
   rideId: string;
+  /** Credit THIS ride added (the target's `creditDelta`): today's, so it may pay today's ride. */
+  creditEarned?: number;
 }): CycleUpdate {
   const { tx, driverId, driverSnap, settings, today, grossFare, commissionableCashFare, rideId } =
     params;
@@ -128,6 +141,45 @@ export function applyRideToCycle(params: {
     }
   }
 
+  // This ride's commission, off the bonus now. `creditApplied` stays reserved
+  // for the closed days even when they were not cleared: that debt has first
+  // claim on the bonus, and settling it spends exactly that much.
+  const rideCommission = Math.round(commissionableCashFare * settings.rate);
+  const creditLeft = credit - creditApplied + Math.max(0, params.creditEarned ?? 0);
+  const paidFromCredit = rideCommission > 0 && creditLeft >= rideCommission ? rideCommission : 0;
+  if (paidFromCredit > 0) {
+    ledgerCreditSpend({
+      tx,
+      driverId,
+      source: 'ride',
+      ref: rideId,
+      grossDue: paidFromCredit,
+      creditApplied: paidFromCredit,
+      due: 0,
+      reason: `${Math.round(settings.rate * 100)}% commission on this ride`,
+    });
+    tx.set(db.collection('platformLedger').doc(), {
+      type: 'ride_commission',
+      source: 'ride_credit',
+      driverId,
+      tripId: rideId,
+      amount: paidFromCredit,
+      paidFromCredit,
+      cycleCashFare: commissionableCashFare,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      dailyTargetRef(driverId, today),
+      {
+        creditPaid: FieldValue.increment(paidFromCredit),
+        creditPaidCash: FieldValue.increment(commissionableCashFare),
+      },
+      { merge: true },
+    );
+  }
+  // A paid ride owes nothing more, so its cash never enters the cycle.
+  const cashIn = paidFromCredit > 0 ? 0 : commissionableCashFare;
+
   // Everything the cycle carries forward. A cleared cycle keeps only the open
   // day; an unpaid one keeps the debt as well, so the lock survives the ride.
   const baseGross = autoCleared ? open.gross : cycle.gross;
@@ -136,15 +188,16 @@ export function applyRideToCycle(params: {
   return {
     fields: {
       cycleGrossFare: baseGross + grossFare,
-      cycleCashFare: baseCash + commissionableCashFare,
+      cycleCashFare: baseCash + cashIn,
       cycleDay: today,
       cycleGrossToday: open.gross + grossFare,
-      cycleCashToday: open.cash + commissionableCashFare,
+      cycleCashToday: open.cash + cashIn,
     },
     due,
     grossDue,
     creditApplied,
     locked: due > 0,
     autoCleared,
+    paidFromCredit,
   };
 }

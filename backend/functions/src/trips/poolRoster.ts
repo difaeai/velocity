@@ -93,6 +93,28 @@ export interface PoolRosterEntry {
   joinedAt: Timestamp;
   /** Set once the driver has let them out. Absent while they are still aboard. */
   droppedAt?: Timestamp | null;
+  /** Set when the driver starts THIS rider's ride (boardPoolRider). */
+  boardedAt?: Timestamp | null;
+}
+
+/**
+ * Is this rider in the car?
+ *
+ * Each rider's ride is started on its own (boardPoolRider stamps `boardedAt`).
+ * A trip started all at once — the trip-level Start ride, or any trip from
+ * before per-rider starts existed — stamped nobody, and there everyone who got
+ * in at the trip's own pickup is aboard once it is running. An en-route rider
+ * gets in somewhere along the road, so only their own stamp says they did.
+ */
+export function isBoarded(
+  rider: { kind?: string; boardedAt?: unknown },
+  riders: { kind?: string; boardedAt?: unknown }[],
+  status: unknown,
+): boolean {
+  if (rider.boardedAt) return true;
+  if (rider.kind === 'enroute') return false;
+  const startedPerRider = riders.some((r) => r.kind !== 'enroute' && r.boardedAt);
+  return status === 'in_progress' && !startedPerRider;
 }
 
 /** First name, for a document co-riders can read. Never the full name. */

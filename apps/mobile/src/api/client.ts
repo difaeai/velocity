@@ -544,6 +544,11 @@ export interface PoolRiderView {
   fare: number | null;
   /** Already let out — the driver's remaining-stops list is what is left. */
   droppedOff?: boolean;
+  /** Their own ride has started. Absent from an older backend: read as aboard. */
+  boarded?: boolean;
+  /** Where to collect them. Driver only. */
+  pickupLat?: number | null;
+  pickupLng?: number | null;
 }
 
 /** One chat attachment — a photo or a document uploaded to Velocity storage. */
@@ -1121,6 +1126,11 @@ export const api = {
     { tripId: string; riderUid: string },
     { ok: boolean; remaining: number; fare: number; name: string }
   >('dropOffRider'),
+  /** Start one rider's ride on a shared car. The first one in starts the trip. */
+  boardPoolRider: callable<
+    { tripId: string; riderUid: string },
+    { ok: boolean; status: string }
+  >('boardPoolRider'),
 
   /**
    * `matched`: the driver took the passenger's own fare, so the ride is theirs
@@ -1144,9 +1154,19 @@ export const api = {
    * other side actually gets a push — a direct write notified nobody.
    */
   sendTripMessage: callable<{ tripId: string; text: string }, { ok: boolean }>('sendTripMessage'),
-  /** Wake the ride's call or chat function before it is needed. Same scheme as `warmSignIn`. */
-  warmRide: (name: 'startCall' | 'sendTripMessage') =>
-    callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
+  /** Wake a ride function before it is needed. Same scheme as `warmSignIn`. */
+  warmRide: (
+    name:
+      | 'startCall'
+      | 'sendTripMessage'
+      | 'createTrip'
+      | 'placeBid'
+      | 'updateTripStatus'
+      | 'cancelTrip'
+      | 'completeTrip'
+      | 'dropOffRider'
+      | 'boardPoolRider',
+  ) => callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
   /** Turn down one driver's price. Every other offer stands and the trip stays open. */
   declineBid: callable<{ tripId: string; bidId: string }, { ok: boolean }>('declineBid'),
   updateTripStatus: callable<
@@ -1156,8 +1176,9 @@ export const api = {
   cancelTrip: callable<
     { tripId: string; reason?: string },
     // `fee` is 0 when the trip was still searching for a driver. Otherwise it is
-    // split into what the wallet balance covered and what is now owed.
-    { ok: boolean; fee: number; paidFromWallet: number; outstanding: number }
+    // split into what a driver's credits covered, what the wallet balance
+    // covered, and what is now owed.
+    { ok: boolean; fee: number; paidFromWallet: number; paidFromCredit?: number; outstanding: number }
   >('cancelTrip'),
   completeTrip: callable<{ tripId: string }, { ok: boolean }>('completeTrip'),
   /**

@@ -38,6 +38,7 @@ import {
   todayKey,
 } from '../drivers/dailyTarget';
 import { applyRideToCycle } from '../drivers/cycle';
+import { ledgerCreditSpend } from '../drivers/commissionCredit';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import {
@@ -57,6 +58,7 @@ import { claimGateFor, waitMessage } from '../pricing/claimGate';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { getFeatureFlags } from '../domain/featureFlags';
+import { isWarmPing, warmUp } from '../lib/warmup';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -70,6 +72,8 @@ export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
 const DRIVER_TRANSITIONS: ReadonlySet<string> = new Set([
   'matched->arriving',
   'arriving->arrived',
+  // A driver who reached the kerb without tapping "Go to customer" first.
+  'matched->arrived',
   'arrived->in_progress',
 ]);
 
@@ -209,7 +213,7 @@ export async function assertRiderCanBook(
 /** Passenger creates a ride request. Rejects a second concurrent active trip. */
 export const createTrip = onCall(async (req) => {
   const ctx = requireAuth(req);
-  await rateLimit(ctx.uid, 'createTrip', 5, 60);
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = createTripSchema.safeParse(req.data);
   if (!parsed.success) {
     invalid(parsed.error.issues[0]?.message ?? 'Invalid trip request.');
@@ -263,8 +267,12 @@ export const createTrip = onCall(async (req) => {
    * builds and only downward, and it disappears as people update.
    */
   const clientShowsFixedFare = data.sharedFareFixed === true;
-  const quote = isPool ? await sharedRideFare(data.rideType, data.pickup, data.dropoff) : null;
-  const [{ min: fareMin, max: fareMax }, cancellationSettings, flags] = await Promise.all([
+  // All independent, so all at once: each is a round trip to Firestore in the
+  // US, and taken one after another they kept the rider on a spinner for ten
+  // seconds before the request even reached a driver.
+  const [, quote, { min: fareMin, max: fareMax }, cancellationSettings, flags] = await Promise.all([
+    rateLimit(ctx.uid, 'createTrip', 5, 60),
+    isPool ? sharedRideFare(data.rideType, data.pickup, data.dropoff) : null,
     offeredFareBounds(data.rideType, data.pickup, data.dropoff),
     getCancellationSettings(),
     getFeatureFlags(),
@@ -363,27 +371,32 @@ export const createTrip = onCall(async (req) => {
 
   logger.info('Trip created', { tripId: tripRef.id, passenger: ctx.uid });
 
-  // Broadcast to nearby online drivers — best-effort, does not block the response.
-  broadcastTripToNearbyDrivers(
-    tripRef.id,
-    data.pickup,
-    data.pool ?? false,
-    data.rideType,
-    { fare: finalFare },
-  ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err }));
-
-  // Public pools go out to riders whose saved daily route matches this one on
-  // both ends, so they can choose to hop in — best-effort, never blocks.
-  if (isPool && poolVisibility === 'public') {
-    notifyDailyRouteMatches({
-      tripId:  tripRef.id,
-      hostUid: ctx.uid,
-      shareCode,
-      pickup:  { lat: data.pickup.lat, lng: data.pickup.lng },
-      dropoff: { lat: data.dropoff.lat, lng: data.dropoff.lng },
-      rideType: data.rideType,
-    }).catch((err) => logger.error('Daily-route alerts failed', { tripId: tripRef.id, err }));
-  }
+  // Awaited, both. Work left running after a callable returns gets almost no
+  // CPU on Cloud Run, and the driver push used to land ~50 s late — after a
+  // driver had already taken the ride from the feed, so it read as the same
+  // request coming back. Failures are logged and never fail the booking.
+  await Promise.all([
+    // Nearby online drivers.
+    broadcastTripToNearbyDrivers(
+      tripRef.id,
+      data.pickup,
+      data.pool ?? false,
+      data.rideType,
+      { fare: finalFare },
+    ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err })),
+    // Public pools go out to riders whose saved daily route matches this one
+    // on both ends, so they can choose to hop in.
+    isPool && poolVisibility === 'public'
+      ? notifyDailyRouteMatches({
+        tripId:  tripRef.id,
+        hostUid: ctx.uid,
+        shareCode,
+        pickup:  { lat: data.pickup.lat, lng: data.pickup.lng },
+        dropoff: { lat: data.dropoff.lat, lng: data.dropoff.lng },
+        rideType: data.rideType,
+      }).catch((err) => logger.error('Daily-route alerts failed', { tripId: tripRef.id, err }))
+      : null,
+  ]);
 
   return { ok: true, tripId: tripRef.id, shareCode };
 });
@@ -455,17 +468,24 @@ const placeBidSchema = z.object({
 /** An approved, online driver bids on an open request. */
 export const placeBid = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
-  await rateLimit(ctx.uid, 'placeBid', 30, 60);
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = placeBidSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId and fare.');
   const { tripId, fare } = parsed.data;
 
-  const [driverSnap, driverWalletSnap, commissionSettings, cancellationSettings] = await Promise.all([
-    db.doc(`drivers/${ctx.uid}`).get(),
-    db.doc(`wallets/${ctx.uid}`).get(),
-    getCommissionSettings(),
-    getCancellationSettings(),
-  ]);
+  // None of these depend on each other, and every Firestore read crosses from
+  // Mumbai to the US (nam5) — taken one at a time they held the driver's
+  // Accept button for over ten seconds.
+  const [, driverSnap, driverWalletSnap, commissionSettings, cancellationSettings, tripSnap, userSnap] =
+    await Promise.all([
+      rateLimit(ctx.uid, 'placeBid', 30, 60),
+      db.doc(`drivers/${ctx.uid}`).get(),
+      db.doc(`wallets/${ctx.uid}`).get(),
+      getCommissionSettings(),
+      getCancellationSettings(),
+      db.doc(`trips/${tripId}`).get(),
+      db.doc(`users/${ctx.uid}`).get(),
+    ]);
   if (driverSnap.get('verificationStatus') !== 'approved') {
     throw new HttpsError('permission-denied', 'Driver is not approved.');
   }
@@ -483,7 +503,6 @@ export const placeBid = onCall(async (req) => {
   // …and, once a day, that the person driving is the person on the licence.
   assertFaceCheckedIn(driverSnap);
 
-  const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) invalid('Trip not found.');
   if (tripSnap.get('passengerId') === ctx.uid) {
     throw new HttpsError('failed-precondition', 'You cannot bid on your own trip.');
@@ -498,7 +517,7 @@ export const placeBid = onCall(async (req) => {
    * This is where the FIFO queue is enforced, and it has to be here rather than
    * in the driver app, because the app's copy of the check is only a courtesy
    * to honest builds — a patched one would simply ignore it. A bid IS the claim
-   * on a shared ride (see the comment below), so gating `placeBid` gates the
+   * on a shared ride (see below), so gating `placeBid` gates the
    * thing drivers are actually racing for.
    *
    * `claimGateFor` fails open on every kind of not-knowing — no queue for the
@@ -506,17 +525,7 @@ export const placeBid = onCall(async (req) => {
    * served out of turn is a far smaller harm than a driver who cannot work, so
    * the queue is never allowed to become a precondition for bidding at all.
    * See pricing/claimGate.ts.
-   */
-  const claim = await claimGateFor({
-    driverId: ctx.uid,
-    pickup: tripSnap.get('pickup') as { lat: number; lng: number } | undefined,
-    requestCreatedAtMs: (tripSnap.get('createdAt') as Timestamp | undefined)?.toMillis(),
-  });
-  if (!claim.allowed) {
-    throw new HttpsError('failed-precondition', waitMessage(claim));
-  }
-
-  /**
+   *
    * On a shared ride a bid is not an offer — it is an acceptance.
    *
    * The fare is fixed and the driver's choice is the whole job at that price,
@@ -524,22 +533,28 @@ export const placeBid = onCall(async (req) => {
    * them: "pool fares are fixed"). So whatever number the driver's app sends is
    * replaced with the ride's own fare rather than rejected: a counter-offer is
    * not a thing that can exist here, and failing the call would only strand
-   * driver builds that still send one.
+   * driver builds that still send one. Only a solo bid needs the fare bounds,
+   * and those are read alongside the queue rather than after it.
    */
   const isPoolBid = tripSnap.get('pool') === true;
   const bidFare = isPoolBid ? (tripSnap.get('offeredFare') as number) : fare;
-  if (!isPoolBid) {
-    const bidBounds = await offeredFareBounds(
-      tripSnap.get('rideType'),
-      tripSnap.get('pickup'),
-      tripSnap.get('dropoff'),
-    );
-    if (bidFare < bidBounds.min || bidFare > bidBounds.max) {
-      invalid('Bid fare is outside the allowed range.');
-    }
+  const [claim, bidBounds] = await Promise.all([
+    claimGateFor({
+      driverId: ctx.uid,
+      pickup: tripSnap.get('pickup') as { lat: number; lng: number } | undefined,
+      requestCreatedAtMs: (tripSnap.get('createdAt') as Timestamp | undefined)?.toMillis(),
+    }),
+    isPoolBid
+      ? null
+      : offeredFareBounds(tripSnap.get('rideType'), tripSnap.get('pickup'), tripSnap.get('dropoff')),
+  ]);
+  if (!claim.allowed) {
+    throw new HttpsError('failed-precondition', waitMessage(claim));
+  }
+  if (bidBounds && (bidFare < bidBounds.min || bidFare > bidBounds.max)) {
+    invalid('Bid fare is outside the allowed range.');
   }
 
-  const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const driverInfo: DriverPublicInfo = {
     driverId: ctx.uid,
     displayName: userSnap.get('displayName') ?? 'Driver',
@@ -550,7 +565,7 @@ export const placeBid = onCall(async (req) => {
   };
 
   const bidRef = db.collection(`trips/${tripId}/bids`).doc(ctx.uid);
-  await bidRef.set({
+  const bid = {
     id: bidRef.id,
     tripId,
     driverId: ctx.uid,
@@ -561,7 +576,7 @@ export const placeBid = onCall(async (req) => {
     // offering drivers around them, Uber-style.
     driverLocation: (driverSnap.get('lastLocation') as { lat: number; lng: number } | undefined) ?? null,
     createdAt: FieldValue.serverTimestamp(),
-  });
+  };
 
   /**
    * A driver who takes the passenger's own fare has agreed to the ride the
@@ -570,13 +585,18 @@ export const placeBid = onCall(async (req) => {
    * offer) goes back to the passenger. A shared ride's fare is fixed, so a bid
    * on one always lands here.
    *
-   * If the lock-in fails — another driver got there first, the rider's wallet
-   * cannot cover it — the bid above simply stays pending, which is exactly
-   * what every bid was before this.
+   * The bid is written INSIDE the lock-in, already accepted. Written first as
+   * "pending" it sat on the passenger's screen as an offer with an Accept
+   * button for the seconds the lock-in took, and a passenger who tapped it got
+   * "Trip is no longer open" on a ride that had just been confirmed.
+   *
+   * If the lock-in fails for any other reason — the rider's wallet cannot cover
+   * it, this driver just took another ride — the bid is left pending below,
+   * which is exactly what every bid was before this.
    */
   if (bidFare === tripSnap.get('offeredFare')) {
     try {
-      await lockInBid(tripId, bidRef.id, { by: 'driver', uid: ctx.uid });
+      await lockInBid(tripId, bidRef.id, { by: 'driver', uid: ctx.uid }, bid);
       logger.info('Bid placed', { tripId, driver: ctx.uid, fare: bidFare, pool: isPoolBid, matched: true });
       return { ok: true, bidId: bidRef.id, matched: true, taken: false };
     } catch (e) {
@@ -588,6 +608,7 @@ export const placeBid = onCall(async (req) => {
       logger.warn('Bid lock-in failed, left pending', { tripId, driver: ctx.uid, error: (e as Error).message });
     }
   }
+  await bidRef.set(bid);
 
   // A counter-offer: the passenger accepts or declines it.
   const passengerId = tripSnap.get('passengerId') as string | undefined;
@@ -720,12 +741,17 @@ async function lockInBid(
   tripId: string,
   bidId: string,
   actor: { by: 'passenger' | 'driver'; uid: string },
+  /** A bid that does not exist yet: written here, already accepted (see placeBid). */
+  newBid?: FirebaseFirestore.DocumentData,
 ): Promise<{ fare: number; driverId: string }> {
   const tripRef = db.doc(`trips/${tripId}`);
   const bidRef = db.doc(`trips/${tripId}/bids/${bidId}`);
 
   const result = await db.runTransaction(async (tx) => {
-    const tripSnap = await tx.get(tripRef);
+    const [tripSnap, bidSnap] = await Promise.all([
+      tx.get(tripRef),
+      newBid ? null : tx.get(bidRef),
+    ]);
     if (!tripSnap.exists) invalid('Trip not found.');
     if (actor.by === 'passenger' && tripSnap.get('passengerId') !== actor.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
@@ -733,21 +759,21 @@ async function lockInBid(
     if (tripSnap.get('status') !== 'requested') {
       throw new HttpsError('failed-precondition', 'Trip is no longer open.');
     }
-    const bidSnap = await tx.get(bidRef);
-    if (!bidSnap.exists || bidSnap.get('status') !== 'pending') {
+    if (bidSnap && (!bidSnap.exists || bidSnap.get('status') !== 'pending')) {
       invalid('Bid is no longer available.');
     }
-    if (actor.by === 'driver' && bidSnap.get('driverId') !== actor.uid) {
+    const bid = newBid ?? bidSnap!.data()!;
+    if (actor.by === 'driver' && bid.driverId !== actor.uid) {
       throw new HttpsError('permission-denied', 'Not your bid.');
     }
     // A driver may only lock in the passenger's CURRENT price — one raised a
     // moment ago makes this bid a counter-offer again.
-    if (actor.by === 'driver' && bidSnap.get('fare') !== tripSnap.get('offeredFare')) {
+    if (actor.by === 'driver' && bid.fare !== tripSnap.get('offeredFare')) {
       throw new HttpsError('failed-precondition', 'The passenger changed their fare.');
     }
 
-    const driverInfo = bidSnap.get('driverInfo') as DriverPublicInfo;
-    const fare = bidSnap.get('fare') as number;
+    const driverInfo = bid.driverInfo as DriverPublicInfo;
+    const fare = bid.fare as number;
     const passengerId = tripSnap.get('passengerId') as string;
     const paymentMethod = (tripSnap.get('paymentMethod') as string | undefined) ?? 'cash';
 
@@ -825,17 +851,22 @@ async function lockInBid(
       },
       { merge: true },
     );
-    tx.set(bidRef, { status: 'accepted' }, { merge: true });
+    tx.set(bidRef, { ...(newBid ?? {}), status: 'accepted' }, { merge: true });
     tx.set(db.doc(`drivers/${driverInfo.driverId}`), { activeTripId: tripId }, { merge: true });
     tx.delete(db.doc(`openRequests/${tripId}`)); // no longer open
     return { fare, driverId: driverInfo.driverId, passengerId };
   });
 
-  // The driver took the ride themselves and is already looking at it.
-  if (actor.by === 'passenger') {
-    await sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId });
-  }
-  await sendToUser(result.passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId });
+  // Settled, not all: the ride is locked in by now, and a push that fails must
+  // not reach placeBid's catch — that would tell the driver who just got the
+  // ride that somebody else took it.
+  await Promise.allSettled([
+    // The driver took the ride themselves and is already looking at it.
+    actor.by === 'passenger'
+      ? sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId })
+      : null,
+    sendToUser(result.passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId }),
+  ]);
 
   logger.info('Bid accepted', { tripId, fare: result.fare, driverId: result.driverId, by: actor.by });
   return { fare: result.fare, driverId: result.driverId };
@@ -916,18 +947,22 @@ const statusSchema = z.object({
 /** Assigned driver advances the trip through the pickup → en-route states. */
 export const updateTripStatus = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = statusSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId and target status.');
   const { tripId, to } = parsed.data;
 
   const tripRef = db.doc(`trips/${tripId}`);
-  await db.runTransaction(async (tx) => {
+  const riders = await db.runTransaction(async (tx) => {
     const snap = await tx.get(tripRef);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
     }
     const from = snap.get('status') as TripStatus;
+    // A second tap while the first is still in flight lands here with nothing
+    // left to do — that is a success, not an "illegal transition" error.
+    if (from === to) return null;
     if (!DRIVER_TRANSITIONS.has(`${from}->${to}`)) {
       throw new HttpsError('failed-precondition', `Illegal transition ${from} → ${to}.`);
     }
@@ -947,19 +982,24 @@ export const updateTripStatus = onCall(async (req) => {
       { status: to, updatedAt: FieldValue.serverTimestamp(), ...extra },
       { merge: true },
     );
+    // Everyone waiting for this car — on a shared ride that is every member,
+    // not only whoever booked it.
+    const members = (snap.get('poolMembers') as string[] | undefined) ?? [];
+    return members.length > 0 ? members : [snap.get('passengerId') as string];
   });
 
-  // Push to passenger based on new status
-  const snap2 = await db.doc(`trips/${tripId}`).get();
-  const passengerId2 = snap2.get('passengerId') as string | undefined;
-  if (passengerId2) {
+  if (riders) {
     const msgs: Record<string, [string, string]> = {
       arriving:    ['🚗 Driver is on the way', 'Your driver is heading to your pickup point.'],
       arrived:     ['📍 Driver has arrived!', 'Your driver is waiting at the pickup point.'],
       in_progress: ['🛣️ Trip started!', 'You are on your way to the destination.'],
     };
     const [title, body] = msgs[to] ?? [];
-    if (title) await sendToUser(passengerId2, title, body, { tripId });
+    if (title) {
+      await sendToUsers(riders.filter(Boolean), title, body, { tripId }).catch((err) =>
+        logger.warn('Status push failed', { tripId, to, err }),
+      );
+    }
   }
 
   logger.info('Trip status advanced', { tripId, to, driver: ctx.uid });
@@ -983,6 +1023,7 @@ const cancelSchema = z.object({
  */
 export const cancelTrip = onCall(async (req) => {
   const ctx = requireAuth(req);
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = cancelSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId, reason } = parsed.data;
@@ -1046,34 +1087,54 @@ export const cancelTrip = onCall(async (req) => {
     // hold back above, so that money is available to pay the fee out of.
     let paidFromWallet = 0;
     let addedToOutstanding = 0;
+    let paidFromCredit = 0;
     if (fee > 0) {
+      // A driver's credits are the wallet they actually see (WalletCard), and a
+      // fee charged anywhere else looked like it was never charged. So the fee
+      // comes off them first; the cash wallet and then `outstanding` take the rest.
+      if (cancelledByRole === 'driver' && driverId && driverSnap) {
+        paidFromCredit = Math.min(fee, commissionCredit(driverSnap));
+        ledgerCreditSpend({
+          tx,
+          driverId,
+          source: 'cancellation',
+          ref: tripId,
+          grossDue: paidFromCredit,
+          creditApplied: paidFromCredit,
+          due: 0,
+          reason: 'Fee for cancelling an accepted ride',
+        });
+      }
       const balance = (cancellerWalletSnap.get('balance') as number | undefined) ?? 0;
       const available = balance + (cancelledByRole === 'passenger' ? walletHold : 0);
-      ({ paidFromWallet, addedToOutstanding } = splitFeeAgainstBalance(fee, available));
+      ({ paidFromWallet, addedToOutstanding } = splitFeeAgainstBalance(fee - paidFromCredit, available));
 
-      tx.set(
-        cancellerWalletRef,
-        {
-          ...(paidFromWallet > 0 ? { balance: FieldValue.increment(-paidFromWallet) } : {}),
-          ...(addedToOutstanding > 0 ? { outstanding: FieldValue.increment(addedToOutstanding) } : {}),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-      tx.set(cancellerWalletRef.collection('transactions').doc(), {
-        type: 'cancellation_fee',
-        // Only the part actually taken from the balance moves money here; the
-        // rest is a debt, tracked on `outstanding` and shown separately.
-        amount: -paidFromWallet,
-        fee,
-        outstanding: addedToOutstanding,
-        role: cancelledByRole,
-        tripId,
-        createdAt: FieldValue.serverTimestamp(),
-      });
+      if (fee > paidFromCredit) {
+        tx.set(
+          cancellerWalletRef,
+          {
+            ...(paidFromWallet > 0 ? { balance: FieldValue.increment(-paidFromWallet) } : {}),
+            ...(addedToOutstanding > 0 ? { outstanding: FieldValue.increment(addedToOutstanding) } : {}),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        tx.set(cancellerWalletRef.collection('transactions').doc(), {
+          type: 'cancellation_fee',
+          // Only the part actually taken from the balance moves money here; the
+          // rest is a debt, tracked on `outstanding` and shown separately.
+          amount: -paidFromWallet,
+          fee,
+          paidFromCredit,
+          outstanding: addedToOutstanding,
+          role: cancelledByRole,
+          tripId,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
 
       // Velocity's books: the whole fee is revenue owed to us, but only the part
-      // paid from the wallet is money we already hold.
+      // paid from the wallet or the credits is settled already.
       tx.set(db.collection('platformLedger').doc(), {
         type: 'cancellation_fee',
         tripId,
@@ -1084,7 +1145,8 @@ export const cancelTrip = onCall(async (req) => {
         amount: fee,
         rate,
         fare: lockedFare,
-        collected: paidFromWallet,
+        collected: paidFromWallet + paidFromCredit,
+        paidFromCredit,
         outstanding: addedToOutstanding,
         cancelledAt: status,
         createdAt: FieldValue.serverTimestamp(),
@@ -1093,7 +1155,7 @@ export const cancelTrip = onCall(async (req) => {
         db.doc('system/counters'),
         {
           cancellationFeesCharged: FieldValue.increment(fee),
-          cancellationFeesCollected: FieldValue.increment(paidFromWallet),
+          cancellationFeesCollected: FieldValue.increment(paidFromWallet + paidFromCredit),
           cancellationFeesOutstanding: FieldValue.increment(addedToOutstanding),
           updatedAt: FieldValue.serverTimestamp(),
         },
@@ -1110,7 +1172,7 @@ export const cancelTrip = onCall(async (req) => {
         cancelledFrom: status,
         cancelReason: reason ?? null,
         cancellationFee: fee > 0
-          ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, outstanding: addedToOutstanding }
+          ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding }
           : null,
         walletHold: 0,
         updatedAt: FieldValue.serverTimestamp(),
@@ -1138,42 +1200,50 @@ export const cancelTrip = onCall(async (req) => {
       rate,
       fare: lockedFare,
       paidFromWallet,
+      paidFromCredit,
       addedToOutstanding,
     };
   });
 
-  const { passengerId, driverId, coRiders, cancelledByRole, fee, paidFromWallet, addedToOutstanding } = outcome;
+  const {
+    passengerId, driverId, coRiders, cancelledByRole, fee, paidFromWallet, paidFromCredit, addedToOutstanding,
+  } = outcome;
 
-  // Everybody else who was in this car. They are released above — their
-  // activeTripId is already cleared — but nobody was telling them, so a rider
-  // who joined somebody's shared ride would stand at their pickup waiting for a
-  // car that had been called off. Now that a pool gathers riders before it even
-  // has a driver, that is no longer a rare corner.
-  if (coRiders.length > 0) {
-    await sendToUsers(
-      coRiders,
-      '❌ Your shared ride was cancelled',
-      'The ride you joined is no longer running. Book another — you have not been charged.',
-      { tripId },
-    );
-  }
-
-  // Tell the wronged party what happened, and the canceller what it cost them.
-  if (cancelledByRole === 'driver') {
-    await sendToUser(passengerId, '❌ Driver cancelled', 'Your driver cancelled the trip. Please request another.', { tripId });
-  } else if (driverId) {
-    await sendToUser(driverId, '❌ Trip cancelled', 'The passenger cancelled the trip.', { tripId });
-  }
-  if (fee > 0) {
-    await sendToUser(
-      ctx.uid,
-      '⚠️ Cancellation fee',
-      addedToOutstanding > 0
-        ? `PKR ${fee} was charged for cancelling after the ride was confirmed. PKR ${addedToOutstanding} is now outstanding to Velocity Rides — settle it from your wallet.`
-        : `PKR ${fee} was charged to your wallet for cancelling after the ride was confirmed.`,
-      { tripId },
-    );
-  }
+  // The pushes go out together: one after another they held the canceller's
+  // spinner for several seconds, which read as a Cancel button that did nothing.
+  // Settled, not all: a failed push must not report a done cancellation as failed.
+  await Promise.allSettled([
+    // Everybody else who was in this car. They are released above — their
+    // activeTripId is already cleared — but nobody was telling them, so a rider
+    // who joined somebody's shared ride would stand at their pickup waiting for
+    // a car that had been called off.
+    coRiders.length > 0
+      ? sendToUsers(
+        coRiders,
+        '❌ Your shared ride was cancelled',
+        'The ride you joined is no longer running. Book another — you have not been charged.',
+        { tripId },
+      )
+      : null,
+    // Tell the wronged party what happened, and the canceller what it cost them.
+    cancelledByRole === 'driver'
+      ? sendToUser(passengerId, '❌ Driver cancelled', 'Your driver cancelled the trip. Please request another.', { tripId })
+      : driverId
+        ? sendToUser(driverId, '❌ Trip cancelled', 'The passenger cancelled the trip.', { tripId })
+        : null,
+    fee > 0
+      ? sendToUser(
+        ctx.uid,
+        '⚠️ Cancellation fee',
+        addedToOutstanding > 0
+          ? `PKR ${fee} was charged for cancelling after the ride was confirmed. PKR ${addedToOutstanding} is now outstanding to Velocity Rides — settle it from your wallet.`
+          : paidFromCredit > 0
+            ? `PKR ${fee} was taken from your wallet credits for cancelling after the ride was confirmed.`
+            : `PKR ${fee} was charged to your wallet for cancelling after the ride was confirmed.`,
+        { tripId },
+      )
+      : null,
+  ]);
 
   logger.info('Trip cancelled', {
     tripId,
@@ -1181,9 +1251,10 @@ export const cancelTrip = onCall(async (req) => {
     role: cancelledByRole,
     fee,
     paidFromWallet,
+    paidFromCredit,
     addedToOutstanding,
   });
-  return { ok: true, fee, paidFromWallet, outstanding: addedToOutstanding };
+  return { ok: true, fee, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding };
 });
 
 const completeSchema = z.object({ tripId: docId });
@@ -1194,6 +1265,7 @@ const completeSchema = z.object({ tripId: docId });
  */
 export const completeTrip = onCall(async (req) => {
   const ctx = requireRole(req, 'driver');
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = completeSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId } = parsed.data;
@@ -1472,6 +1544,7 @@ export const completeTrip = onCall(async (req) => {
       grossFare,
       commissionableCashFare: target.commissionableCashFare,
       rideId: tripId,
+      creditEarned: target.creditDelta,
     });
     tx.set(
       driverRef,
@@ -1522,8 +1595,9 @@ export const completeTrip = onCall(async (req) => {
       commissionDue: cycle.due,
       commissionCredit: Math.max(
         0,
-        commissionCredit(driverSnap) + target.creditDelta - cycle.creditApplied,
+        commissionCredit(driverSnap) + target.creditDelta - cycle.creditApplied - cycle.paidFromCredit,
       ),
+      commissionPaidFromCredit: cycle.paidFromCredit,
       dailyTarget: target.progress,
       dailyTargetMet: target.granted,
       dailyTargetBonus: target.bonusGranted,
@@ -1532,44 +1606,49 @@ export const completeTrip = onCall(async (req) => {
     };
   });
 
-  // Notify both parties
-  const completedSnap = await db.doc(`trips/${tripId}`).get();
-  const completedPassengerId = completedSnap.get('passengerId') as string | undefined;
-  const completedFare = completedSnap.get('fare') as number | undefined;
-  if (completedPassengerId) {
-    await sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId });
-  }
-  const completedCoRiders = ((completedSnap.get('poolMembers') as string[] | undefined) ?? [])
+  // Notify both parties — together, and from the snapshot read before the
+  // settlement (who rode and what they owe does not change in it), so the
+  // driver's End ride is not held up by a re-read and a queue of pushes.
+  const completedPassengerId = preTrip.get('passengerId') as string | undefined;
+  const completedFare = preTrip.get('fare') as number | undefined;
+  const completedCoRiders = ((preTrip.get('poolMembers') as string[] | undefined) ?? [])
     .filter((m) => m !== completedPassengerId);
-  if (completedCoRiders.length > 0) {
-    const completedPoolFares = completedSnap.get('poolFares') as Record<string, number> | undefined;
-    if (completedPoolFares) {
-      // Riders who boarded at different points owe different amounts — telling
-      // them all the same average would be telling most of them a wrong number.
-      await Promise.all(
-        completedCoRiders.map((uid) =>
-          sendToUser(
-            uid,
-            '✅ Pool trip complete!',
-            `You've arrived. Your fare: PKR ${completedPoolFares[uid] ?? settlement.passengerShare}.`,
-            { tripId },
-          ),
-        ),
-      );
-    } else {
-      await sendToUsers(completedCoRiders, '✅ Pool trip complete!', `You've arrived. Your share: PKR ${settlement.passengerShare}.`, { tripId });
-    }
-  }
-  await sendToUser(ctx.uid, '💰 Trip complete', `PKR ${settlement.driverPayout} earned. Great driving!`, { tripId });
-  await notifyDailyTarget(ctx.uid, settlement, tripId);
-  if (settlement.commissionLocked) {
-    await sendToUser(
+  // Riders who boarded at different points owe different amounts — telling
+  // them all the same average would be telling most of them a wrong number.
+  const completedPoolFares = preTrip.get('poolFares') as Record<string, number> | undefined;
+  await Promise.allSettled([
+    completedPassengerId
+      ? sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId })
+      : null,
+    ...completedCoRiders.map((uid) =>
+      sendToUser(
+        uid,
+        '✅ Pool trip complete!',
+        completedPoolFares
+          ? `You've arrived. Your fare: PKR ${completedPoolFares[uid] ?? settlement.passengerShare}.`
+          : `You've arrived. Your share: PKR ${settlement.passengerShare}.`,
+        { tripId },
+      ),
+    ),
+    sendToUser(
       ctx.uid,
-      '🔒 Commission due',
-      `Yesterday fell short of the target, so PKR ${settlement.commissionDue} of commission is due. Pay it to Velocity Rides to start taking rides again.`,
+      '💰 Trip complete',
+      `PKR ${settlement.driverPayout} earned. Great driving!`
+        + (settlement.commissionPaidFromCredit > 0
+          ? ` PKR ${settlement.commissionPaidFromCredit} commission was taken from your wallet credits.`
+          : ''),
       { tripId },
-    );
-  }
+    ),
+    notifyDailyTarget(ctx.uid, settlement, tripId),
+    settlement.commissionLocked
+      ? sendToUser(
+        ctx.uid,
+        '🔒 Commission due',
+        `Yesterday fell short of the target, so PKR ${settlement.commissionDue} of commission is due. Pay it to Velocity Rides to start taking rides again.`,
+        { tripId },
+      )
+      : null,
+  ]);
 
   logger.info('Trip completed', { tripId, settlement });
   return { ok: true, settlement };

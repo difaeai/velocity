@@ -80,7 +80,8 @@ export function applyCommissionCredit(params: {
   return breakdown;
 }
 
-export type SettlementSource = 'manual_bank' | 'wallet' | 'auto_clear';
+/** `ride` = one ride's commission at completion; `cancellation` = a driver's cancellation fee. */
+export type SettlementSource = 'manual_bank' | 'wallet' | 'auto_clear' | 'ride' | 'cancellation';
 
 /**
  * The write half of spending credit, taking the figures explicitly.
@@ -102,8 +103,10 @@ export function ledgerCreditSpend(params: {
   creditApplied: number;
   /** The part of it the driver paid. */
   due: number;
+  /** Shown after the date on the driver's statement row — shipped builds already render it. */
+  reason?: string;
 }): void {
-  const { tx, driverId, source, ref, grossDue, creditApplied, due } = params;
+  const { tx, driverId, source, ref, grossDue, creditApplied, due, reason } = params;
   if (creditApplied <= 0) return;
 
   const driverRef = db.doc(`drivers/${driverId}`);
@@ -125,6 +128,7 @@ export function ledgerCreditSpend(params: {
     amount: -breakdown.creditApplied,
     grossDue: breakdown.grossDue,
     paidByDriver: breakdown.due,
+    ...(reason ? { reason } : {}),
     createdAt: FieldValue.serverTimestamp(),
   });
   tx.set(db.collection('platformLedger').doc(), {

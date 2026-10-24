@@ -67,7 +67,7 @@ import {
   validateRoutePolyline,
 } from '../lib/corridor';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
-import { enRouteRosterEntry, firstNameOf, rosterForTrip } from './poolRoster';
+import { enRouteRosterEntry, firstNameOf, isBoarded, rosterForTrip } from './poolRoster';
 import {
   CORRIDOR_REJECTION_MESSAGE,
   CorridorFit,
@@ -1407,6 +1407,7 @@ export const getPoolRiders = onCall(async (req) => {
     kind: string;
     fare: number;
     droppedAt?: unknown;
+    boardedAt?: unknown;
   }
 
   let riders: RiderRow[];
@@ -1428,6 +1429,7 @@ export const getPoolRiders = onCall(async (req) => {
       kind: r.kind,
       fare: poolFares[r.uid] ?? perSeat,
       droppedAt: r.droppedAt ?? undefined,
+      boardedAt: r.boardedAt ?? undefined,
     }));
   }
 
@@ -1457,6 +1459,11 @@ export const getPoolRiders = onCall(async (req) => {
         dropoffAddress: r.dropoff?.address ?? null,
         dropoffLat: isDriver ? (r.dropoff?.lat ?? null) : null,
         dropoffLng: isDriver ? (r.dropoff?.lng ?? null) : null,
+        /** Where to collect them — an en-route rider stands somewhere along the road. Driver only. */
+        pickupLat: isDriver ? (r.pickup?.lat ?? null) : null,
+        pickupLng: isDriver ? (r.pickup?.lng ?? null) : null,
+        /** Their own ride has started (see isBoarded). */
+        boarded: isBoarded(r, riders, trip.status),
         /** So the driver can ring the passenger they cannot find. Driver only. */
         phone: isDriver ? (contact?.phone ?? null) : null,
         kind: r.kind,

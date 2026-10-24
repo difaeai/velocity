@@ -30,6 +30,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useFeatureFlags } from '../../src/hooks/driver';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
+import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { POOL_AUDIENCE_CHIP, poolAudience, poolGenderSummary } from '../../src/lib/genderAccess';
 import { useGenderPref } from '../../src/hooks/genderPref';
 import { usePassengerTrips, useRecentDestinations, type RecentDestination } from '../../src/hooks/passenger';
@@ -248,6 +249,8 @@ export default function Booking() {
     mode?: string;
   }>();
   const { user, role } = useAuth();
+  // Woken while the rider is choosing, so Book does not wait on a cold start.
+  useForegroundInterval(() => { api.warmRide('createTrip').catch(() => {}); }, 5 * 60_000);
   // The ride sheet is absolutely pinned to the screen bottom; edge-to-edge
   // Android draws it behind the system navigation bar unless padded.
   const insets = useSafeAreaInsets();

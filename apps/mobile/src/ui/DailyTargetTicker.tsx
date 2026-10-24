@@ -51,8 +51,12 @@ function phrasesFor(p: DailyTargetProgress, bonusBalance: number, todayCashFare:
     atStake > 0
       ? `finish it and PKR ${atStake.toLocaleString()} of commission is cancelled`
       : 'finish it and today is commission-free',
-    `miss it and ${Math.round(rate * 100)}% of today's cash is due at midnight`,
-    bonusBalance > 0 ? `your PKR ${bonusBalance.toLocaleString()} bonus pays commission first` : null,
+    `miss it and ${Math.round(rate * 100)}% of today's cash is commission`,
+    // The bonus pays each ride's commission as it ends (backend drivers/cycle.ts),
+    // and a target day hands all of it back.
+    bonusBalance > 0
+      ? `commission comes off your PKR ${bonusBalance.toLocaleString()} bonus ride by ride`
+      : `unpaid commission is due at midnight`,
   ].filter((s): s is string => s !== null).map(upperFirst);
 }
 

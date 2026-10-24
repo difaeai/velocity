@@ -184,8 +184,12 @@ export function recordRideOnDailyTarget(input: RecordRideInput): RecordRideResul
       // Earlier rides today are already inside the cycle. Credit what they
       // accrued — but never more than the cycle still holds, or a driver who
       // settled earlier today would be paid for commission they already cleared.
-      const stillOwed = Math.min(before.cashFare, cycleCashFare(driverSnap));
-      waiverGranted = Math.max(0, Math.round(stillOwed * settings.rate));
+      // Rides whose commission the bonus paid at completion never entered the
+      // cycle (drivers/cycle.ts); what they paid comes back exactly.
+      const paid = Math.max(0, Number(daySnap?.get('creditPaid')) || 0);
+      const paidCash = Math.max(0, Number(daySnap?.get('creditPaidCash')) || 0);
+      const stillOwed = Math.min(Math.max(0, before.cashFare - paidCash), cycleCashFare(driverSnap));
+      waiverGranted = Math.max(0, Math.round(stillOwed * settings.rate)) + Math.round(paid);
     }
   }
 
