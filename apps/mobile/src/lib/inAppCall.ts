@@ -13,17 +13,29 @@ import { useForegroundInterval } from '../hooks/useForegroundInterval';
 /** Calls a screen is handling right now, so a tapped notification never opens a second one. */
 export const openCalls = new Set<string>();
 
+type RideFunction = Parameters<typeof api.warmRide>[0];
+
+/** Every button a driver presses on a ride, from Accept to End ride. */
+const DRIVER_LINE: RideFunction[] = [
+  'startCall', 'sendTripMessage', 'placeBid', 'updateTripStatus', 'cancelTrip',
+  'completeTrip', 'dropOffRider', 'boardPoolRider',
+];
+const RIDER_LINE: RideFunction[] = ['startCall', 'sendTripMessage', 'cancelTrip'];
+
 /**
- * Keeps startCall and sendTripMessage awake while a ride is live. Cold, they
- * took 8–12 s (prod logs, Oct 2026): a call rang for ten seconds before the
- * other phone heard anything, and a chat message sat in the box as long.
+ * Keeps a ride's functions awake while they may be needed. Cold, they took
+ * 8–15 s (prod logs, Oct 2026): a call rang for ten seconds before the other
+ * phone heard anything, Accept spun for fifteen, and Cancel looked dead.
+ * `live` is a trip for a rider; for a driver it is simply being online, since
+ * Accept is the first button they press.
  */
-export function useWarmRideLine(live: boolean) {
+export function useWarmRideLine(live: boolean, role: 'driver' | 'passenger' = 'passenger') {
   useForegroundInterval(
     live
       ? () => {
-          api.warmRide('startCall').catch(() => {});
-          api.warmRide('sendTripMessage').catch(() => {});
+          for (const fn of role === 'driver' ? DRIVER_LINE : RIDER_LINE) {
+            api.warmRide(fn).catch(() => {});
+          }
         }
       : null,
     5 * 60_000,

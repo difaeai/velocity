@@ -245,6 +245,11 @@ describe('a driver who takes the passenger’s own fare gets the ride', () => {
     expect(await tripDoc(tripId)).toMatchObject({ status: 'matched', driverId: DRIVER, fare: 400 });
     expect((await db().doc(`openRequests/${tripId}`).get()).exists).toBe(false);
     expect((await db().doc(`drivers/${DRIVER}`).get()).get('activeTripId')).toBe(tripId);
+    // Written by the lock-in itself, already accepted — there is no moment in
+    // which the passenger sees it as an offer to accept.
+    expect((await db().doc(`trips/${tripId}/bids/${DRIVER}`).get()).data()).toMatchObject({
+      status: 'accepted', fare: 400, driverId: DRIVER, driverInfo: { driverId: DRIVER },
+    });
   });
 
   it('leaves a counter-offer for the passenger to decide', async () => {

@@ -109,7 +109,7 @@ describe('cancelTrip — after a driver accepts', () => {
     const res = await cancelTrip.run(makeReq({ tripId }, PASSENGER)) as {
       fee: number; paidFromWallet: number; outstanding: number;
     };
-    expect(res).toEqual({ ok: true, fee: 20, paidFromWallet: 0, outstanding: 20 }); // 5% of 400
+    expect(res).toEqual({ ok: true, fee: 20, paidFromWallet: 0, paidFromCredit: 0, outstanding: 20 }); // 5% of 400
 
     // Empty wallet → the whole fee is a debt, and the balance never goes negative.
     expect(await wallet(PASSENGER)).toEqual({ balance: 0, outstanding: 20 });
@@ -129,7 +129,7 @@ describe('cancelTrip — after a driver accepts', () => {
     const res = await cancelTrip.run(driverReq({ tripId })) as {
       fee: number; paidFromWallet: number; outstanding: number;
     };
-    expect(res).toEqual({ ok: true, fee: 32, paidFromWallet: 0, outstanding: 32 }); // 8% of 400
+    expect(res).toEqual({ ok: true, fee: 32, paidFromWallet: 0, paidFromCredit: 0, outstanding: 32 }); // 8% of 400
 
     expect(await wallet(DRIVER)).toEqual({ balance: 0, outstanding: 32 });
     // The passenger walked away clean — they didn't cancel.
@@ -138,6 +138,31 @@ describe('cancelTrip — after a driver accepts', () => {
     const trip = await db().doc(`trips/${tripId}`).get();
     expect(trip.get('cancelledByRole')).toBe('driver');
     expect(trip.get('cancellationFee')).toMatchObject({ amount: 32, rate: 0.08, role: 'driver' });
+  });
+
+  it("takes a driver's fee off their credits first — the wallet they actually see", async () => {
+    await db().doc(`drivers/${DRIVER}`).set({ commissionCredit: 2000 }, { merge: true });
+    await db().doc(`wallets/${DRIVER}`).set({ balance: 500 });
+    const tripId = await matchedTrip();
+
+    const res = await cancelTrip.run(driverReq({ tripId })) as { paidFromCredit: number; outstanding: number };
+    expect(res).toMatchObject({ fee: 32, paidFromCredit: 32, paidFromWallet: 0, outstanding: 0 });
+    const driver = await db().doc(`drivers/${DRIVER}`).get();
+    expect(driver.get('commissionCredit')).toBe(1968);
+    expect(driver.get('commissionCreditUsed')).toBe(32);
+    // The cash wallet is untouched and nothing is owed.
+    expect(await wallet(DRIVER)).toEqual({ balance: 500, outstanding: 0 });
+    const statement = await db().collection(`drivers/${DRIVER}/commissionCredits`).get();
+    expect(statement.docs.map((d) => [d.get('source'), d.get('amount')])).toEqual([['cancellation', -32]]);
+  });
+
+  it('owes only what the credits could not cover', async () => {
+    await db().doc(`drivers/${DRIVER}`).set({ commissionCredit: 10 }, { merge: true });
+    const tripId = await matchedTrip();
+
+    const res = await cancelTrip.run(driverReq({ tripId })) as { paidFromCredit: number; outstanding: number };
+    expect(res).toMatchObject({ paidFromCredit: 10, outstanding: 22 });
+    expect((await db().doc(`drivers/${DRIVER}`).get()).get('commissionCredit')).toBe(0);
   });
 
   it('takes the fee out of a wallet balance that can cover it, owing nothing', async () => {

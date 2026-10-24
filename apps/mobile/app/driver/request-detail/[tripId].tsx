@@ -10,7 +10,7 @@
  *   • "Offer your fare"   → a counter-offer above it, which the passenger
  *     accepts or declines. Not offered on a shared ride: its fare is fixed.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -26,7 +26,12 @@ import Svg, { Path } from 'react-native-svg';
 
 import { api, type ReportReason } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { useDriverProfile, useOpenRequests, type OpenRequest } from '../../../src/hooks/driver';
+import {
+  useDriverActiveTrip,
+  useDriverProfile,
+  useOpenRequests,
+  type OpenRequest,
+} from '../../../src/hooks/driver';
 import { useCurrentLocation } from '../../../src/hooks/location';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
@@ -55,6 +60,25 @@ export default function RequestDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const requests = useOpenRequests(true, coords?.lat, coords?.lng);
+  /**
+   * This ride is already this driver's — the lock-in landed (the trip snapshot
+   * arrives before placeBid's answer does), or a late "ride request nearby"
+   * push opened a ride they had already taken. Either way the job is on the
+   * trip screen, not here: go there instead of waiting or saying it is gone.
+   */
+  const activeTrip = useDriverActiveTrip(user?.uid);
+  const ownsThisRide = !!tripId && activeTrip?.id === tripId;
+  // Leave once only — the effect and placeBid's answer can both get here.
+  const leftRef = useRef(false);
+  const leave = useCallback(() => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    if (router.canGoBack()) router.back();
+    else router.replace('/driver/home');
+  }, [router]);
+  useEffect(() => {
+    if (ownsThisRide) leave();
+  }, [ownsThisRide, leave]);
   // placeBid deletes the feed doc inside its lock-in, and the listener hears
   // that before the call returns — so the driver who just WON the ride was
   // told it was gone. The copy held from the tap is shown until we leave.
@@ -83,9 +107,8 @@ export default function RequestDetailScreen() {
     try {
       const res = await api.placeBid({ tripId, fare });
       if (res.matched) {
-        // Home shows the live trip card the moment the trip doc says so.
-        if (router.canGoBack()) router.back();
-        else router.replace('/driver/home');
+        // Usually already gone: the effect above leaves as the trip lands.
+        leave();
         return;
       }
       Alert.alert(

@@ -22,20 +22,97 @@ import { z } from 'zod';
 import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireRole } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
+import { isWarmPing, warmUp } from '../lib/warmup';
 import type { PoolRider } from './enRoute';
 import { poolPerSeatFare } from '../domain/fares';
 import { rosterForTrip, type PoolRosterEntry } from './poolRoster';
 
 /** A rider who has been let out. Stored on their entry in `poolRiders`. */
-type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue };
+type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue; boardedAt?: Timestamp };
 
 const dropSchema = z.object({
   tripId: docId,
   riderUid: docId,
 });
 
+/**
+ * Which array holds the riders depends on how the pool was formed: an en-route
+ * pickup writes the priced `poolRiders`, a destination pool writes `poolRoster`
+ * (see trips/poolRoster). Both are lists of people to let in and out one at a
+ * time, and the field that is present is the one we update.
+ */
+function ridersOf(snap: FirebaseFirestore.DocumentSnapshot): {
+  field: 'poolRiders' | 'poolRoster';
+  riders: (DroppedRider | PoolRosterEntry)[];
+} {
+  const enRouteRiders = (snap.get('poolRiders') as DroppedRider[] | undefined) ?? [];
+  return enRouteRiders.length === 0
+    ? { field: 'poolRoster', riders: rosterForTrip(snap.data() ?? {}) }
+    : { field: 'poolRiders', riders: enRouteRiders };
+}
+
+/**
+ * Starting one rider's ride on a shared car.
+ *
+ * A shared car does not start once: riders get in at the pickup one by one,
+ * and an en-route rider gets in halfway along. So each one is started on their
+ * own, and told so. The first rider in moves an arrived trip to in_progress —
+ * the wheels are turning from then on. Money is untouched: what each rider owes
+ * is still decided where it always was, at drop-off and completion.
+ */
+export const boardPoolRider = onCall({ invoker: 'public' }, async (req) => {
+  const ctx = requireRole(req, 'driver');
+  if (isWarmPing(req.data)) return warmUp();
+  const parsed = dropSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid tripId and riderUid.');
+  const { tripId, riderUid } = parsed.data;
+
+  const tripRef = db.doc(`trips/${tripId}`);
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(tripRef);
+    if (!snap.exists) invalid('Trip not found.');
+    if (snap.get('driverId') !== ctx.uid) {
+      throw new HttpsError('permission-denied', 'Not your trip.');
+    }
+    const status = snap.get('status') as string;
+    if (status !== 'arrived' && status !== 'in_progress') {
+      throw new HttpsError('failed-precondition', 'Tap "Arrived at pickup" first.');
+    }
+
+    const { field, riders } = ridersOf(snap);
+    const index = riders.findIndex((r) => r.uid === riderUid);
+    if (index < 0) invalid('That rider is not on this ride.');
+    const rider = riders[index]!;
+    if (rider.droppedAt) invalid('That rider has already been dropped off.');
+    // A double tap, or two phones: already started is done, not an error.
+    if (rider.boardedAt) return { started: false, status };
+
+    const updated = riders.map((r, i) => (i === index ? { ...r, boardedAt: Timestamp.now() } : r));
+    const starting = status === 'arrived';
+    tx.set(
+      tripRef,
+      {
+        [field]: updated,
+        ...(starting ? { status: 'in_progress', startedAt: FieldValue.serverTimestamp() } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    return { started: true, status: 'in_progress' };
+  });
+
+  if (result.started) {
+    await sendToUser(riderUid, '🛣️ Your ride has started', 'You are on your way to the destination.', {
+      tripId,
+    }).catch(() => {});
+  }
+  logger.info('Pool rider boarded', { tripId, riderUid, status: result.status });
+  return { ok: true, status: result.status };
+});
+
 export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
   const ctx = requireRole(req, 'driver');
+  if (isWarmPing(req.data)) return warmUp();
   const parsed = dropSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId and riderUid.');
   const { tripId, riderUid } = parsed.data;
@@ -52,16 +129,11 @@ export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
       throw new HttpsError('failed-precondition', 'The trip is not running.');
     }
 
-    // Which array holds the riders depends on how the pool was formed: an
-    // en-route pickup writes the priced `poolRiders`, a destination pool writes
-    // `poolRoster` (see trips/poolRoster). Both are lists of people to let out
-    // one at a time, and the field that is present is the one we update — a
-    // destination pool used to have neither, which is why its driver had only
-    // "Complete trip" and the first passenger out ended everyone's ride.
-    const enRouteRiders = (snap.get('poolRiders') as DroppedRider[] | undefined) ?? [];
-    const usingRoster = enRouteRiders.length === 0;
-    const field = usingRoster ? 'poolRoster' : 'poolRiders';
-    const riders = usingRoster ? rosterForTrip(snap.data() ?? {}) : enRouteRiders;
+    // A destination pool used to have no rider list at all, which is why its
+    // driver had only "Complete trip" and the first passenger out ended
+    // everyone's ride. See ridersOf.
+    const { field, riders } = ridersOf(snap);
+    const usingRoster = field === 'poolRoster';
 
     const index = riders.findIndex((r) => r.uid === riderUid);
     if (index < 0) invalid('That rider is not on this ride.');
