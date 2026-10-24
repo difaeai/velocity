@@ -55,11 +55,11 @@ const SHEET_INITIAL_INDEX = 1;
 
 /** What the live ride is doing, in the rider's words rather than the schema's. */
 const ACTIVE_TRIP_LABEL: Record<string, string> = {
-  requested:   'Finding you a driver',
-  matched:     'Driver assigned',
-  arriving:    'Driver is on the way',
+  requested:   'Still finding you a driver',
+  matched:     'Your driver is on the way',
+  arriving:    'Your driver is on the way',
   arrived:     'Your driver has arrived',
-  in_progress: 'On your way',
+  in_progress: 'You are already in a ride',
 };
 
 export default function PassengerHome() {
@@ -279,6 +279,38 @@ export default function PassengerHome() {
             booking controls or hide anything in the sheet. */}
         <NewsTicker onPress={() => router.push('/passenger/earn')} />
 
+        {/* ── The ride already in progress, if there is one.
+             Pinned over the map, not in the sheet: the first thing a rider
+             sees when they come back to the app — after Back, after a call,
+             after the app was killed — must be the ride they lost. It sat
+             inside the sheet once and riders reopening the app thought their
+             ride had ended. Booking is blocked while it is live anyway (the
+             backend refuses a second active trip). ── */}
+        {activeTrip ? (
+          <Pressable
+            style={({ pressed }) => [styles.activeTripCard, pressed && { opacity: 0.9 }]}
+            onPress={() => router.push(`/passenger/trip/${activeTrip.id}` as Parameters<typeof router.push>[0])}
+            accessibilityRole="button"
+            accessibilityLabel="Return to your ride in progress"
+          >
+            <View style={styles.activeTripPulse} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeTripLabel}>
+                {ACTIVE_TRIP_LABEL[activeTrip.status] ?? 'You are already in a ride'}
+              </Text>
+              <Text style={styles.activeTripDest} numberOfLines={1}>
+                Tap here to open your ride
+              </Text>
+              <Text style={styles.activeTripMeta} numberOfLines={1}>
+                {activeTrip.pool ? 'Shared ride' : 'Solo ride'}
+                {activeTrip.fare != null ? ` · PKR ${activeTrip.fare}` : ''}
+                {activeTrip.dropoffAddress ? ` · to ${activeTrip.dropoffAddress}` : ''}
+              </Text>
+            </View>
+            <Text style={styles.activeTripGo}>→</Text>
+          </Pressable>
+        ) : null}
+
         {/* Names the two marks on the map and gives the real totals behind them.
             Only after a poll has landed — an empty chip would read as "no cars"
             when it actually means "still looking". */}
@@ -325,36 +357,6 @@ export default function PassengerHome() {
              the AI verdict — exactly as the driver home screen uses it. ── */}
         {outstanding.blocked ? (
           <OutstandingFees status={outstanding} uid={user?.uid} role="passenger" />
-        ) : null}
-
-        {/* ── The ride already in progress, if there is one.
-             Above "Where to?" because it outranks it: a rider with a driver on
-             the way is not looking to book, they are looking for the ride they
-             lost. Booking is blocked while this is live anyway (the backend
-             refuses a second active trip), so this is also the only honest
-             thing to show them. ── */}
-        {activeTrip ? (
-          <Pressable
-            style={({ pressed }) => [styles.activeTripCard, pressed && { opacity: 0.9 }]}
-            onPress={() => router.push(`/passenger/trip/${activeTrip.id}` as Parameters<typeof router.push>[0])}
-            accessibilityRole="button"
-            accessibilityLabel="Return to your ride in progress"
-          >
-            <View style={styles.activeTripPulse} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.activeTripLabel}>
-                {ACTIVE_TRIP_LABEL[activeTrip.status] ?? 'Ride in progress'}
-              </Text>
-              <Text style={styles.activeTripDest} numberOfLines={1}>
-                {activeTrip.dropoffAddress ?? 'Your ride is still running'}
-              </Text>
-              <Text style={styles.activeTripMeta} numberOfLines={1}>
-                {activeTrip.pool ? 'Shared ride' : 'Solo'}
-                {activeTrip.fare != null ? ` · PKR ${activeTrip.fare}` : ''} · tap to track
-              </Text>
-            </View>
-            <Text style={styles.activeTripGo}>→</Text>
-          </Pressable>
         ) : null}
 
         {/* ── Start a ride ─────────────────────────────────────────────────
@@ -795,48 +797,53 @@ const styles = themed(() => StyleSheet.create({
     marginLeft: 6,
     fontWeight: '800',
   },
-  /* ── Live-ride banner: outranks everything else on the sheet ── */
+  /* ── Live-ride banner: pinned over the map, outranks everything ──
+     Solid brand fill with dark ink in both themes — it sits on a map, where a
+     glass card disappears into the streets underneath. */
   activeTripCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: colors.glassLime,
+    // The dark-theme lime in both themes: light's olive `primary` would sink the dark ink.
+    backgroundColor: '#ccff00',
     borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
     paddingHorizontal: 14,
-    paddingVertical: 13,
-    marginBottom: 12,
+    paddingVertical: 12,
+    marginHorizontal: 12,
+    marginTop: 8,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   activeTripPulse: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.primary,
+    backgroundColor: '#0b1a00',
   },
   activeTripLabel: {
-    fontSize: 10.5,
+    fontSize: 15,
     fontWeight: '900',
-    color: colors.primary,
-    letterSpacing: 0.9,
-    textTransform: 'uppercase',
+    color: '#0b1a00',
   },
   activeTripDest: {
-    fontSize: 14.5,
-    fontWeight: '900',
-    color: colors.text,
-    marginTop: 2,
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0b1a00',
+    marginTop: 1,
   },
   activeTripMeta: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.muted,
+    color: 'rgba(11,26,0,0.72)',
     marginTop: 1,
   },
   activeTripGo: {
-    fontSize: 19,
+    fontSize: 22,
     fontWeight: '900',
-    color: colors.primary,
+    color: '#0b1a00',
   },
 
   /* ── "Where to?" + "Bol kar book karein", one row ──

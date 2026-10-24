@@ -216,6 +216,9 @@ describe('no door is left open', () => {
 
     const bid = (await db().doc(`trips/${tripId}/bids/${bidId}`).get()).data()!;
     expect(bid.fare).toBe(fixed);
+    // …and an acceptance needs no second yes from the host: the ride is matched.
+    expect(bid.status).toBe('accepted');
+    expect(await tripDoc(tripId)).toMatchObject({ status: 'matched', driverId: DRIVER, fare: fixed });
   });
 
   it('still takes a driver’s real bid on a solo ride', async () => {
@@ -226,5 +229,52 @@ describe('no door is left open', () => {
 
     const { bidId } = await placeBid.run(driverReq({ tripId, fare: 450 })) as { bidId: string };
     expect((await db().doc(`trips/${tripId}/bids/${bidId}`).get()).get('fare')).toBe(450);
+  });
+});
+
+describe('a driver who takes the passenger’s own fare gets the ride', () => {
+  const solo = () =>
+    createTrip.run(makeReq({ ...BASE, pool: false, offeredFare: 400 }, HOST)) as Promise<{ tripId: string }>;
+
+  it('matches the ride at once — the passenger is never asked to confirm', async () => {
+    await seedDriver();
+    const { tripId } = await solo();
+
+    const res = await placeBid.run(driverReq({ tripId, fare: 400 }));
+    expect(res).toMatchObject({ matched: true, taken: false });
+    expect(await tripDoc(tripId)).toMatchObject({ status: 'matched', driverId: DRIVER, fare: 400 });
+    expect((await db().doc(`openRequests/${tripId}`).get()).exists).toBe(false);
+    expect((await db().doc(`drivers/${DRIVER}`).get()).get('activeTripId')).toBe(tripId);
+  });
+
+  it('leaves a counter-offer for the passenger to decide', async () => {
+    await seedDriver();
+    const { tripId } = await solo();
+
+    expect(await placeBid.run(driverReq({ tripId, fare: 450 }))).toMatchObject({ matched: false });
+    expect((await tripDoc(tripId)).status).toBe('requested');
+    expect((await db().doc(`trips/${tripId}/bids/${DRIVER}`).get()).get('status')).toBe('pending');
+  });
+
+  it('tells the second driver the ride is gone instead of leaving them waiting', async () => {
+    await seedDriver();
+    await seedDriver('fare-driver-2');
+    await db().doc('users/fare-driver-2').set({ displayName: 'Kamran' });
+    const { tripId } = await solo();
+
+    await placeBid.run(driverReq({ tripId, fare: 400 }));
+    // The trip is no longer open, so the second bid is refused outright.
+    await expect(placeBid.run(driverReq({ tripId, fare: 400 }, 'fare-driver-2'))).rejects.toThrow(/no longer open/);
+    expect((await tripDoc(tripId)).driverId).toBe(DRIVER);
+  });
+
+  it('does not lock in a fare the passenger has since raised', async () => {
+    await seedDriver();
+    const { tripId } = await solo();
+    await raiseTripFare.run(makeReq({ tripId, fare: 500 }, HOST));
+
+    // The driver's screen still said 400 — now a lower counter-offer.
+    expect(await placeBid.run(driverReq({ tripId, fare: 400 }))).toMatchObject({ matched: false });
+    expect((await tripDoc(tripId)).status).toBe('requested');
   });
 });

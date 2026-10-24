@@ -149,30 +149,34 @@ export function RequestCard({
     ? r.paymentMethods
     : [r.paymentMethod === 'wallet' ? 'wallet' : 'cash'];
 
-  // Pool vs solo is the single most important thing about a request for the
-  // driver — a pool means several pickups and several drop-offs on one fare —
-  // so it is called out on a banner above the card, not buried in the chips.
+  // Shared vs solo is the single most important thing about a request for the
+  // driver, so the whole card is coloured by it — a blue box is a shared ride,
+  // a pink box a solo one — with the kind spelled out across the top. One list
+  // carries both now; the colour is how a driver tells them apart at a glance.
   const isPool = r.pool === true;
   const poolRiders = r.poolRiders ?? 1;
   const poolCap = r.maxPoolRiders ?? 4;
 
   return (
-    <Animated.View style={[styles.card, { transform: [{ translateX: dx }] }]} {...pan.panHandlers}>
-      {isPool ? (
-        <View style={styles.poolBanner}>
-          <Text style={styles.poolBannerTag}>POOL</Text>
-          <Text style={styles.poolBannerTxt} numberOfLines={1}>
-            {poolRiders} rider{poolRiders === 1 ? '' : 's'} now, up to {poolCap} · several pickups &amp; drop-offs
+    <Animated.View
+      style={[styles.card, isPool ? styles.cardShared : styles.cardSolo, { transform: [{ translateX: dx }] }]}
+      {...pan.panHandlers}
+    >
+      <View style={[styles.kindBanner, isPool ? styles.kindBannerShared : styles.kindBannerSolo]}>
+        <Text style={[styles.kindTag, isPool ? styles.kindTagShared : styles.kindTagSolo]}>
+          {isPool ? 'SHARED' : 'SOLO'}
+        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.kindTitle} numberOfLines={1}>
+            {isPool ? 'Shared ride with other passengers' : 'Solo ride'}
+          </Text>
+          <Text style={styles.kindSub} numberOfLines={1}>
+            {isPool
+              ? `${poolRiders} passenger${poolRiders === 1 ? '' : 's'} now, up to ${poolCap} in the car`
+              : 'Booked by one passenger — one pickup, one drop-off'}
           </Text>
         </View>
-      ) : (
-        <View style={styles.soloBanner}>
-          <Text style={styles.soloBannerTag}>SOLO</Text>
-          <Text style={styles.soloBannerTxt} numberOfLines={1}>
-            One pickup, one drop-off
-          </Text>
-        </View>
-      )}
+      </View>
       {/* Not this driver's turn yet. The row is shown rather than hidden: a
           feed that silently drops work looks broken, and the countdown is what
           makes the queue legible. Tapping is refused here AND server-side in
@@ -257,64 +261,42 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '800',
     color: colors.secondary,
   },
+  // A box per ride, coloured by kind: blue shared, pink solo.
   card: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.background,
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    overflow: 'hidden',
   },
+  cardShared: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)' },
+  cardSolo:   { borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,0.12)' },
   cardInner: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 12, gap: 10 },
 
-  // ── Pool / solo banner ──
-  poolBanner: {
+  // ── Shared / solo banner, across the top of the box ──
+  kindBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 2,
+    paddingVertical: 8,
   },
-  poolBannerTag: {
+  kindBannerShared: { backgroundColor: 'rgba(59,130,246,0.18)' },
+  kindBannerSolo:   { backgroundColor: 'rgba(236,72,153,0.18)' },
+  kindTag: {
     fontSize: 11,
     fontWeight: '900',
-    color: '#000',
-    backgroundColor: colors.primary,
+    color: '#fff',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 2,
     letterSpacing: 0.6,
     overflow: 'hidden',
   },
-  poolBannerTxt: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  soloBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 2,
-  },
-  soloBannerTag: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: colors.text,
-    backgroundColor: colors.glassStrong,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    letterSpacing: 0.6,
-    overflow: 'hidden',
-  },
-  soloBannerTxt: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.muted,
-  },
+  kindTagShared: { backgroundColor: '#3b82f6' },
+  kindTagSolo:   { backgroundColor: '#ec4899' },
+  kindTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
+  kindSub:   { fontSize: 11.5, fontWeight: '600', color: colors.muted, marginTop: 1 },
 
   // ── Passenger column ──
   who:    { width: 62, alignItems: 'center', gap: 2 },
@@ -356,8 +338,9 @@ const styles = themed(() => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.glassStrong,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderRadius: 16,
     paddingVertical: 22,
     paddingHorizontal: 8,
     gap: 4,
