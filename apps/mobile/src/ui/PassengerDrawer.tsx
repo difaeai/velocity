@@ -105,26 +105,16 @@ interface Row {
 interface Section {
   title: string;
   rows: Row[];
-  /**
-   * Draw this section's heading as the signed-in rider — avatar, name, email
-   * — instead of the grey all-caps word.
-   *
-   * There used to be a profile card pinned at the top of the drawer AND a
-   * "YOUR ACCOUNT" heading further down, which is the same thing said twice:
-   * the first is who you are, the second is the word for who you are. The
-   * card is now the heading, which puts your face directly above the rows
-   * that are about you and gives the rides and people sections the top of the
-   * drawer, where they are actually used.
-   */
-  profile?: boolean;
 }
 
 export interface PassengerDrawerProps {
   visible: boolean;
   onClose: () => void;
-  name: string;
-  email?: string | null;
-  /** The rider's own picture for the account heading; falls back to a mark. */
+  /** The rider's own name; null until it is known, which shows "Your account". */
+  name: string | null;
+  /** The line under the name — @username, else the phone number. */
+  handle?: string | null;
+  /** The rider's own picture; falls back to their initials, then to a mark. */
   photoURL?: string | null;
   isDriver: boolean;
   walletHidden: boolean;
@@ -142,7 +132,7 @@ export function PassengerDrawer({
   visible,
   onClose,
   name,
-  email,
+  handle,
   photoURL,
   isDriver,
   walletHidden,
@@ -343,7 +333,7 @@ export function PassengerDrawer({
     return [
       { title: 'Rides', rows: rides },
       { title: 'People & earning', rows: community },
-      { title: 'Your account', rows: account, profile: true },
+      { title: 'Your account', rows: account },
     ];
   }, [
     walletHidden, walletLabel, messagesUnread, supportUnread,
@@ -353,6 +343,13 @@ export function PassengerDrawer({
   // One running index across all sections, so the cascade carries through the
   // section headings instead of restarting at each one.
   let order = 0;
+
+  const initials = (name ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => ([...w][0] ?? '').toUpperCase())
+    .join('');
 
   return (
     <Modal
@@ -369,32 +366,47 @@ export function PassengerDrawer({
               contentContainerStyle={styles.scroll}
               showsVerticalScrollIndicator={false}
             >
+              {/* Who is signed in, first. It spent a release as the heading of
+                  "Your account" at the foot of the list — below the fold on
+                  most phones, so the drawer opened on a menu with nobody's name
+                  on it. A rider opening the menu checks it is THEIR account
+                  before anything else; the card answers that and is the way
+                  into the profile. */}
+              <Cascade progress={rowProgress(stagger, order++)}>
+                <Pressable
+                  style={({ pressed }) => [styles.profileCard, pressed && { opacity: 0.88 }]}
+                  onPress={onProfile}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${name ?? 'Your account'}. View and edit your profile`}
+                >
+                  <View style={styles.avatarRing}>
+                    <View style={styles.avatar}>
+                      {photoURL ? (
+                        <Image source={{ uri: photoURL }} style={styles.avatarPhoto} alt={name ?? ''} />
+                      ) : initials ? (
+                        <Text style={styles.avatarInitials}>{initials}</Text>
+                      ) : (
+                        <ProfileIcon size={30} color="#ffffff" accent={LIME} />
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.profileInfo}>
+                    <Text style={styles.profileName} numberOfLines={1}>{name ?? 'Your account'}</Text>
+                    {handle ? (
+                      <Text style={styles.profileHandle} numberOfLines={1}>{handle}</Text>
+                    ) : null}
+                    <View style={styles.profileChip}>
+                      <Text style={styles.profileChipTxt}>View profile</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.profileChevron}>›</Text>
+                </Pressable>
+              </Cascade>
+
               {sections.map((section) => (
                 <View key={section.title}>
                   <Cascade progress={rowProgress(stagger, order++)}>
-                    {section.profile ? (
-                      <Pressable
-                        style={({ pressed }) => [styles.profileHeader, pressed && { opacity: 0.85 }]}
-                        onPress={onProfile}
-                      >
-                        <View style={styles.avatarCircle}>
-                          {photoURL ? (
-                            <Image source={{ uri: photoURL }} style={styles.avatarPhoto} alt={name} />
-                          ) : (
-                            <ProfileIcon size={26} color="#ffffff" accent={LIME} />
-                          )}
-                        </View>
-                        <View style={styles.profileInfo}>
-                          <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
-                          {email ? (
-                            <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
-                          ) : null}
-                          <Text style={styles.profileLink}>View and edit your profile →</Text>
-                        </View>
-                      </Pressable>
-                    ) : (
-                      <Text style={styles.sectionTitle}>{section.title}</Text>
-                    )}
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
                   </Cascade>
                   {section.rows.map((row) => {
                     // The row and its icon share one slice, so the icon's own
@@ -589,36 +601,52 @@ const styles = themed(() => StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingBottom: 16 },
 
-  /* The account section's heading. It used to sit at the top of the drawer
-     with a rule under it; as a heading it takes the rule ABOVE, so it reads
-     as the start of its section rather than the end of the one before. */
-  profileHeader: {
+  /* The signed-in rider, at the top: a lime-edged card so it reads as YOU
+     rather than as one more menu row, with the face in a lime ring. */
+  profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 18,
-    paddingTop: 20,
-    paddingBottom: 12,
+    gap: 13,
+    marginHorizontal: 12,
     marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  avatarCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(204,255,0,0.10)',
+    marginBottom: 2,
+    padding: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(204,255,0,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(204,255,0,0.30)',
+    borderColor: 'rgba(204,255,0,0.24)',
+  },
+  avatarRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: LIME,
+    padding: 3,
+  },
+  avatar: {
+    flex: 1,
+    borderRadius: 27,
+    backgroundColor: 'rgba(204,255,0,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarPhoto: { width: '100%', height: '100%' },
+  avatarInitials: { fontSize: 21, fontWeight: '900', color: LIME, letterSpacing: 0.5 },
   profileInfo: { flex: 1 },
-  profileName: { fontSize: 16.5, fontWeight: '900', color: '#ffffff' },
-  profileEmail: { fontSize: 11.5, color: '#8a918f', marginTop: 1 },
-  profileLink: { fontSize: 10.5, fontWeight: '800', color: LIME, marginTop: 4 },
+  profileName: { fontSize: 18, fontWeight: '900', color: '#ffffff', letterSpacing: -0.2 },
+  profileHandle: { fontSize: 12, fontWeight: '700', color: '#9aa2a0', marginTop: 2 },
+  profileChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: LIME,
+  },
+  profileChipTxt: { fontSize: 10.5, fontWeight: '900', color: '#0b0d0c', letterSpacing: 0.3 },
+  profileChevron: { fontSize: 22, fontWeight: '900', color: 'rgba(255,255,255,0.35)' },
 
   sectionTitle: {
     fontSize: 10,

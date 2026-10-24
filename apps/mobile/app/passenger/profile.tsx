@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useWalletComingSoon } from '../../src/hooks/driver';
+import { useMyProfile } from '../../src/hooks/passenger';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { Card, comingSoon } from '../../src/ui/components';
@@ -20,6 +21,8 @@ import { Card, comingSoon } from '../../src/ui/components';
 export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  // Same source as the menu card: Auth has no name for a phone sign-in.
+  const me = useMyProfile(user?.uid);
   const driverEntry = useDriverEntry();
   const walletComingSoon = useWalletComingSoon();
 
@@ -41,10 +44,14 @@ export default function ProfileScreen() {
         </Pressable>
         <Pressable style={styles.profileSummary} onPress={openSettings}>
           <View style={styles.nameRow}>
-            <Text style={styles.userName}>{user?.displayName ?? 'Your account'}</Text>
+            <Text style={styles.userName}>{me?.name ?? user?.displayName ?? 'Your account'}</Text>
             <Text style={styles.arrowIcon}>➔</Text>
           </View>
-          <Text style={styles.userPhone}>{user?.email ?? user?.phoneNumber ?? 'Tap to manage account'}</Text>
+          <Text style={styles.userPhone}>
+            {me?.username
+              ? `@${me.username}`
+              : me?.phone ?? user?.email ?? user?.phoneNumber ?? 'Tap to manage account'}
+          </Text>
         </Pressable>
       </View>
 

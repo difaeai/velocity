@@ -25,6 +25,7 @@ import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { useMessagesUnreadTotal } from '../../src/hooks/messages';
 import { useSupportUnread } from '../../src/hooks/support';
+import { useDailyRoutes, useMyProfile } from '../../src/hooks/passenger';
 import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/suggestedRides';
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
@@ -38,6 +39,7 @@ import {
   ShareGenderSheet,
   useNeedsShareGender,
 } from '../../src/ui/ShareGenderSelector';
+import { RouteTimePill, RouteTimeSheet } from '../../src/ui/RouteTimeSelector';
 import { PassengerDrawer } from '../../src/ui/PassengerDrawer';
 import { CommuteMatchCard } from '../../src/ui/CommuteMatchCard';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
@@ -77,6 +79,15 @@ export default function PassengerHome() {
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
   const driverEntry = useDriverEntry();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The name and picture the rider gave at onboarding — Auth has neither for a
+  // phone sign-in. Feeds the card at the top of the menu.
+  const me = useMyProfile(user?.uid);
+
+  // The rider's regular trips (pickup, drop-off, optional time) for the
+  // "Location & time" pill on the map and the sheet it opens. 'add' is the
+  // pill's + button, which opens straight on a new route.
+  const routes = useDailyRoutes(user?.uid);
+  const [routeSheet, setRouteSheet] = useState<'list' | 'add' | null>(null);
 
   // Unread across all three message sections — Travel Partner, drivers and
   // brands. It badges the drawer row, and puts a dot on the hamburger itself:
@@ -279,27 +290,43 @@ export default function PassengerHome() {
             booking controls or hide anything in the sheet. */}
         <NewsTicker onPress={() => router.push('/passenger/earn')} />
 
-        {/* Names the two marks on the map and gives the real totals behind them.
-            Only after a poll has landed — an empty chip would read as "no cars"
-            when it actually means "still looking". */}
-        {activity.loaded ? (
-          <MapActivityChip
-            driverCount={activity.driverCount}
-            bikeCount={activity.bikeCount}
-            carCount={activity.carCount}
-            passengerCount={activity.passengerCount}
-            waitingCount={activity.waitingCount}
-          />
-        ) : null}
+        {/* Under the ticker the map splits in two: the controls a rider TAPS
+            down the left, and the live legend they READ down the right. Both
+            sides are box-none, so the map between them still pans. */}
+        <View style={styles.mapControls} pointerEvents="box-none">
+          <View style={styles.mapControlsLeft} pointerEvents="box-none">
+            {/* Who this rider will share a car with — the question that used to
+                sit in a card at the bottom of the sheet, where it was below the
+                fold on a small handset and cost the ride tiles a block of
+                height. On the map it costs the sheet nothing, it is visible the
+                moment the app opens, and it is where a shared-ride tap is sent
+                when it has not been answered. */}
+            <ShareGenderPill onPress={() => setGenderSheet({ next: null })} />
 
-        {/* Who this rider will share a car with — the question that used to sit
-            in a card at the bottom of the sheet, where it was below the fold on
-            a small handset and cost the ride tiles a block of height. On the map
-            it costs the sheet nothing, it is visible the moment the app opens,
-            and it is where a shared-ride tap is sent when it has not been
-            answered. The activity chip above renders nothing on a quiet map, so
-            on most first opens this pill has the strip to itself. */}
-        <ShareGenderPill onPress={() => setGenderSheet({ next: null })} />
+            {/* Where and when this rider usually travels. Saved routes are what
+                the backend matches every new shared ride against, so this is
+                how a shared ride finds the rider instead of the other way
+                round. See src/ui/RouteTimeSelector.tsx. */}
+            <RouteTimePill
+              routes={routes}
+              onOpen={() => setRouteSheet('list')}
+              onAdd={() => setRouteSheet('add')}
+            />
+          </View>
+
+          {/* Names the two marks on the map and gives the real totals behind
+              them. Only after a poll has landed — an empty legend would read as
+              "no cars" when it actually means "still looking". */}
+          {activity.loaded ? (
+            <MapActivityChip
+              driverCount={activity.driverCount}
+              bikeCount={activity.bikeCount}
+              carCount={activity.carCount}
+              passengerCount={activity.passengerCount}
+              waitingCount={activity.waitingCount}
+            />
+          ) : null}
+        </View>
       </SafeAreaView>
 
       {/* 3. Bottom Booking Sheet — drag the grabber to resize it, or tap the
@@ -531,9 +558,13 @@ export default function PassengerHome() {
       <PassengerDrawer
         visible={drawerOpen}
         onClose={closeDrawer}
-        name={user?.displayName ?? user?.email ?? 'Your account'}
-        email={user?.email ?? null}
-        photoURL={user?.photoURL ?? null}
+        name={me?.name ?? user?.displayName ?? null}
+        handle={
+          me?.username
+            ? `@${me.username}`
+            : me?.phone ?? user?.phoneNumber ?? user?.email ?? null
+        }
+        photoURL={me?.photoURL ?? user?.photoURL ?? null}
         isDriver={role === 'driver'}
         walletHidden={walletHidden}
         walletLabel={walletLabel}
@@ -557,6 +588,17 @@ export default function PassengerHome() {
             ? 'One question before your first shared seat. It decides which shared cars we show you and who can sit beside you — riding solo is never affected.'
             : null
         }
+      />
+
+      {/* "Location & time": the rider's saved routes, or the editor for one.
+          A new route starts from where they are standing. */}
+      <RouteTimeSheet
+        open={routeSheet !== null}
+        startWith={routeSheet ?? 'list'}
+        routes={routes}
+        uid={user?.uid}
+        here={coords && currentAddress ? { lat: coords.lat, lng: coords.lng, address: currentAddress } : null}
+        onClose={() => setRouteSheet(null)}
       />
 
     </View>
@@ -646,6 +688,10 @@ const styles = themed(() => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
+  /* Pills left, live legend right. flex:1 on the left lets a long pill shrink
+     rather than run under the legend on a narrow handset. */
+  mapControls: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  mapControlsLeft: { flex: 1, alignItems: 'flex-start' },
   hamburgerButton: {
     width: 46,
     height: 46,
