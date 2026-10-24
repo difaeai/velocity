@@ -137,6 +137,10 @@ function CallScreen() {
   const mic = useRef<MediaStream | null>(null);
   const done = useRef(false);
   const offered = useRef(false);
+  // `remoteDescription` stays null until the native call resolves, so the effect
+  // re-running on setPhase applied the answer twice; the second one failed in
+  // state "stable" and hung up every call a second after it was picked up.
+  const answered = useRef(false);
 
   const leave = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -225,6 +229,8 @@ function CallScreen() {
   }
 
   async function accept() {
+    if (answered.current) return;
+    answered.current = true;
     InCallManager.stopRingtone();
     setPhase('connecting');
     try {
@@ -340,7 +346,8 @@ function CallScreen() {
         offered.current = true;
         void placeOffer(call, callId);
       }
-      if (call.answer && pc.current && !pc.current.remoteDescription) {
+      if (call.answer && pc.current && !answered.current) {
+        answered.current = true;
         setPhase('connecting');
         pc.current
           .setRemoteDescription(new RTCSessionDescription(call.answer))

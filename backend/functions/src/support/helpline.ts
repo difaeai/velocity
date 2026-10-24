@@ -279,6 +279,8 @@ const logSchema = z.object({
     .object({ category: z.string().max(40), summary: z.string().max(1000) })
     .optional(),
   ended: z.boolean(),
+  /** Why Gemini closed a call that never connected, e.g. "1011 Your prepayment credits are depleted". */
+  error: z.string().max(300).optional(),
 });
 
 type Line = z.infer<typeof lineSchema>;
@@ -360,9 +362,11 @@ export const logHelplineCall = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = logSchema.safeParse(req.data);
   if (!parsed.success) invalid('Bad call record.');
-  const { callId, handover, ended } = parsed.data;
+  const { callId, handover, ended, error } = parsed.data;
 
   await rateLimit(ctx.uid, 'logHelplineCall', 40, 3600);
+  // The phone said "busy" for two days while Google was refusing for billing; this is the line that says which.
+  if (error) logger.error('helpline: Live closed before it connected', { callId, error });
 
   const ref = db.doc(`helplineCalls/${callId}`);
   const snap = await ref.get();

@@ -7,7 +7,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
-import { calleeFor, iceServers, startCall, type RideParties } from '../index';
+import { calleeFor, iceServers, startCall as startCallFn, type RideParties } from '../index';
+
+// The warm-ping branch widens the return type; every call below is a real one.
+const startCall = {
+  run: (r: Parameters<typeof startCallFn.run>[0]) => startCallFn.run(r) as Promise<{ callId: string }>,
+};
 
 describe('calleeFor', () => {
   const solo: RideParties = { driverId: 'd', riders: ['r'], live: true };
@@ -94,6 +99,11 @@ describe('startCall', () => {
   async function seedTrip(id: string, fields: Record<string, unknown>) {
     await db().doc(`trips/${id}`).set({ passengerId: 'call-rider', driverId: 'call-driver', ...fields });
   }
+
+  it('answers a warm ping without placing a call', async () => {
+    await expect(startCallFn.run(makeReq({ warm: true }, 'call-rider'))).resolves.toEqual({ warm: true });
+    expect((await db().collection('calls').get()).size).toBe(0);
+  });
 
   it('rings the driver when a rider calls on a live ride', async () => {
     await seedTrip('t1', { status: 'arriving' });

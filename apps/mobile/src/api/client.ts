@@ -1144,6 +1144,9 @@ export const api = {
    * other side actually gets a push — a direct write notified nobody.
    */
   sendTripMessage: callable<{ tripId: string; text: string }, { ok: boolean }>('sendTripMessage'),
+  /** Wake the ride's call or chat function before it is needed. Same scheme as `warmSignIn`. */
+  warmRide: (name: 'startCall' | 'sendTripMessage') =>
+    callable<{ warm: true }, { warm: true }>(name)({ warm: true }),
   /** Turn down one driver's price. Every other offer stands and the trip stays open. */
   declineBid: callable<{ tripId: string; bidId: string }, { ok: boolean }>('declineBid'),
   updateTripStatus: callable<
@@ -1254,6 +1257,7 @@ export const api = {
       transcript: { who: 'caller' | 'agent'; text: string }[];
       handover?: { category: string; summary: string };
       ended: boolean;
+      error?: string;
     },
     { ok: boolean; ticketId: string | null; message: string }
   >('logHelplineCall'),

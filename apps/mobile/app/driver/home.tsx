@@ -60,7 +60,7 @@ import { ReportRequestModal } from '../../src/ui/ReportRequestModal';
 import { DriverTabBar, DRIVER_TAB_BAR_HEIGHT } from '../../src/ui/DriverTabBar';
 import { useUnreadChat } from '../../src/hooks/useUnreadChat';
 import { hasCoords, openNavigation, type NavTarget } from '../../src/lib/navigate';
-import { callInApp } from '../../src/lib/inAppCall';
+import { callInApp, useWarmRideLine } from '../../src/lib/inAppCall';
 import { DropOffPanel } from '../../src/ui/DropOffPanel';
 import { DashCam } from '../../src/ui/DashCam';
 import { drainDashcamQueue, ensureDashcamPermission } from '../../src/lib/dashcam';
@@ -150,6 +150,7 @@ export default function DriverHome() {
   // which is exactly where a driver sits while the passenger is writing —
   // Android shows nothing, so the button has to carry the news itself.
   const { unread: unreadChat, markRead: markChatRead } = useUnreadChat(activeTrip?.id, uid);
+  useWarmRideLine(!!activeTrip);
 
   // Before the passenger is aboard the driver is going to the pickup; after,
   // to the drop-off. One button, pointed at whichever is actually next.
