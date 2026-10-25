@@ -125,7 +125,8 @@ export default function DriverHome() {
   // document the settlement writes — so the card moves as rides land.
   const dailyTarget = useDailyTarget(uid);
   // Unpaid cancellation fees — past the limit, the backend rejects new bids.
-  const outstanding = useOutstanding(uid);
+  // The bonus pays them first, so only what it cannot cover counts.
+  const outstanding = useOutstanding(uid, commission.bonus - commission.bonusApplied);
   const cancellation = useCancellationSettings();
   // Has this driver photographed the car they are about to drive? The security
   // rules refuse the `online` write without it, so the toggle has to know too —

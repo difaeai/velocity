@@ -43,7 +43,7 @@ import { rateLimit } from '../lib/ratelimit';
 import { sendToUser } from '../lib/fcm';
 import { computeGenderAccess, canJoinPool, genderCounts } from '../lib/genderAccess';
 import { loadFareConfigFor } from '../fare/cityConfig';
-import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { assertCommissionClear, commissionBreakdown, getCommissionSettings } from '../domain/commission';
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertFaceCheckedIn } from '../domain/faceCheckIn';
@@ -612,7 +612,12 @@ export const setDriverRoute = onCall(async (req) => {
   }
   // The same gates that stop a driver bidding also stop them touting a route.
   assertCommissionClear(driverSnap, commission, pktDayKey());
-  assertOutstandingClear(walletSnap, cancellation, 'driver');
+  assertOutstandingClear(
+    walletSnap,
+    cancellation,
+    'driver',
+    commissionBreakdown(driverSnap, commission, pktDayKey()).creditRemaining,
+  );
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
@@ -1007,7 +1012,12 @@ export const acceptEnRouteRider = onCall(async (req) => {
     throw new HttpsError('failed-precondition', 'Go online before picking up riders.');
   }
   assertCommissionClear(driverSnap, commission, pktDayKey());
-  assertOutstandingClear(walletSnap, cancellation, 'driver');
+  assertOutstandingClear(
+    walletSnap,
+    cancellation,
+    'driver',
+    commissionBreakdown(driverSnap, commission, pktDayKey()).creditRemaining,
+  );
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);
