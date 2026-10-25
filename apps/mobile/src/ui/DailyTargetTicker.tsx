@@ -10,6 +10,10 @@
  * It runs RIGHT TO LEFT, like a news ticker (asked for in so many words), so the
  * headline is the first thing to slide in and each short phrase reads in order.
  * With the phone's reduce-motion setting on, the line stands still.
+ *
+ * Its first phrase can be `lead` — the driver's place in this area's queue,
+ * which used to be a two-line strip above the request feed. With the target
+ * switched off the ticker still runs for that phrase alone, without the ring.
  */
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
@@ -65,9 +69,12 @@ export function DailyTargetTicker({
   bonusBalance,
   todayCashFare = 0,
   rate = 0.05,
+  lead,
   onPress,
 }: {
   progress: DailyTargetProgress;
+  /** Slides in first: the driver's place in this area's queue. Shown even with the target off. */
+  lead?: string | null;
   /** Unspent bonus across every day, from the driver document. */
   bonusBalance: number;
   /** Cash taken today, for "what this day is worth" in real rupees. */
@@ -101,39 +108,49 @@ export function DailyTargetTicker({
     return () => loop.stop();
   }, [still, trackW, lineW, x]);
 
-  if (!progress.enabled) return null;
+  if (!progress.enabled && !lead) return null;
 
-  const done = progress.granted || progress.met;
-  const phrases = phrasesFor(progress, bonusBalance, todayCashFare, rate);
+  const done = progress.enabled && (progress.granted || progress.met);
+  const phrases = [
+    ...(lead ? [lead] : []),
+    ...(progress.enabled ? phrasesFor(progress, bonusBalance, todayCashFare, rate) : []),
+  ];
   const share = done ? 1 : Math.min(1, progress.rides / Math.max(1, progress.target));
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.pill, done && styles.pillDone, pressed && onPress && { opacity: 0.85 }]}
+      style={({ pressed }) => [
+        styles.pill,
+        done && styles.pillDone,
+        !progress.enabled && styles.pillNoRing,
+        pressed && onPress && { opacity: 0.85 },
+      ]}
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={phrases.join('. ')}
       accessibilityHint={onPress ? 'Opens your earnings' : undefined}
     >
-      <View style={styles.ring}>
-        <Svg width={RING} height={RING}>
-          <Circle cx={RING / 2} cy={RING / 2} r={RING_R} stroke={colors.border} strokeWidth={3} fill="none" />
-          <Circle
-            cx={RING / 2}
-            cy={RING / 2}
-            r={RING_R}
-            stroke={colors.primary}
-            strokeWidth={3}
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray={`${RING_C} ${RING_C}`}
-            strokeDashoffset={RING_C * (1 - share)}
-            transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
-          />
-        </Svg>
-        <Text style={styles.ringTxt}>{done ? '✓' : progress.ridesToGo}</Text>
-      </View>
+      {progress.enabled ? (
+        <View style={styles.ring}>
+          <Svg width={RING} height={RING}>
+            <Circle cx={RING / 2} cy={RING / 2} r={RING_R} stroke={colors.border} strokeWidth={3} fill="none" />
+            <Circle
+              cx={RING / 2}
+              cy={RING / 2}
+              r={RING_R}
+              stroke={colors.primary}
+              strokeWidth={3}
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={`${RING_C} ${RING_C}`}
+              strokeDashoffset={RING_C * (1 - share)}
+              transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
+            />
+          </Svg>
+          <Text style={styles.ringTxt}>{done ? '✓' : progress.ridesToGo}</Text>
+        </View>
+      ) : null}
 
       <View
         style={styles.track}
@@ -173,6 +190,7 @@ const styles = themed(() =>
       marginBottom: 8,
     },
     pillDone: { borderColor: colors.primary },
+    pillNoRing: { paddingLeft: 14 },
     ring: { width: RING, height: RING, alignItems: 'center', justifyContent: 'center' },
     ringTxt: { position: 'absolute', fontSize: 11, fontWeight: '900', color: colors.primary },
     track: { flex: 1, height: '100%', overflow: 'hidden', justifyContent: 'center' },

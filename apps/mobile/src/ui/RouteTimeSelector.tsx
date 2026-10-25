@@ -39,6 +39,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
+import { api, type TravelAreas } from '../api/client';
 import { db } from '../firebase';
 import { t } from '../i18n';
 import type { DailyRoute, RoutePlace } from '../hooks/passenger';
@@ -49,6 +50,7 @@ import { themed } from '../theme';
 import { DestinationPinIcon, PickupDotIcon } from './RideIcons';
 import { ClockIcon } from './ServiceIcons';
 import { Text, TextInput } from './Text';
+import { GenderTally } from './TravelAreas';
 
 const LIME = '#ccff00';
 
@@ -84,7 +86,7 @@ export function RouteTimePill({
   const label = !first
     ? 'Location & time'
     : routes.length === 1
-      ? `${areaLabel(first.pickup.address)} → ${areaLabel(first.dropoff.address)}`
+      ? `${areaLabel(first.pickup.address)} to ${areaLabel(first.dropoff.address)}`
       : `${routes.length} ${t('routes saved')}`;
   const sub = !first ? 'add your route' : routes.length === 1 ? clockLabel(first.time) ?? 'Any time' : null;
 
@@ -187,6 +189,34 @@ export function RouteTimeSheet({
     draft && field ? (field === 'pickup' ? draft.pickupText : draft.dropoffText) : '',
     tokenRef.current,
   );
+
+  // Who else already travels the route being drafted, once both ends are real
+  // places: the reason to save it, said before the rider has to.
+  const [sameWay, setSameWay] = useState<TravelAreas['sameWay'] | 'loading'>(null);
+  const from = draft?.pickup;
+  const to = draft?.dropoff;
+  useEffect(() => {
+    if (!from || !to) {
+      setSameWay(null);
+      return;
+    }
+    let live = true;
+    setSameWay('loading');
+    api
+      .getTravelAreas({
+        lat: from.lat,
+        lng: from.lng,
+        radiusKm: 1,
+        route: { from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng } },
+      })
+      .then((res) => live && setSameWay(res.sameWay))
+      .catch(() => live && setSameWay(null));
+    return () => {
+      live = false;
+    };
+    // Keyed on coordinates, so picking the same place again does not ask again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from?.lat, from?.lng, to?.lat, to?.lng]);
 
   useEffect(() => {
     Animated.timing(rise, {
@@ -385,6 +415,22 @@ export function RouteTimeSheet({
                       </View>
                     ) : null}
 
+                    {/* Straight under the drop-off: how many people already make
+                        this trip, and who. Counted on the radius shared-ride
+                        alerts use, never including this rider. */}
+                    {sameWay === 'loading' ? (
+                      <Text style={styles.sameWayMuted}>Checking who else goes this way…</Text>
+                    ) : sameWay ? (
+                      <View style={styles.sameWay}>
+                        <Text style={styles.sameWayTxt}>
+                          {sameWay.people === 0
+                            ? 'Nobody else has saved this route yet — you will be the first'
+                            : `${sameWay.people} ${sameWay.people === 1 ? 'person goes' : 'people go'} this way`}
+                        </Text>
+                        {sameWay.people > 0 ? <GenderTally {...sameWay} /> : null}
+                      </View>
+                    ) : null}
+
                     <Text style={styles.fieldLabel}>Time · optional</Text>
                     <View style={styles.timeRow}>
                       <Pressable
@@ -414,6 +460,9 @@ export function RouteTimeSheet({
                       {timeLabel
                         ? `We will alert you to shared rides on this route leaving within an hour of ${timeLabel}.`
                         : 'No time needed. We will alert you to shared rides on this route at any hour.'}
+                    </Text>
+                    <Text style={styles.timeHint}>
+                      Riders and drivers nearby see this route in "Locations people are traveling to" — only its areas and time, never your address or your name.
                     </Text>
 
                     {picking && Platform.OS === 'ios' ? (
@@ -637,6 +686,21 @@ const styles = themed(() => StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.10)',
   },
   predictionMain: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
+
+  sameWay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(204,255,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(204,255,0,0.25)',
+  },
+  sameWayTxt: { flexShrink: 1, color: '#ffffff', fontSize: 12.5, fontWeight: '800' },
+  sameWayMuted: { color: '#7d8482', fontSize: 12, fontWeight: '700', paddingHorizontal: 2 },
   predictionSub: { color: '#8a918f', fontSize: 11, fontWeight: '600', marginTop: 1 },
 
   fieldLabel: {

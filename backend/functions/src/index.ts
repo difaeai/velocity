@@ -373,6 +373,8 @@ export {
   upsertCommuteSchedule, deleteCommuteSchedule, getCommuteDemand, getCommuteMatches,
 } from './commute';
 export { runCommuteRideFormation } from './commute/formRides';
+// Saved daily routes as areas: "Locations people are traveling to".
+export { getTravelAreas } from './dailyRoutes/travelAreas';
 
 // Usernames, and the personal fleet they address. A fleet fills a shared car
 // BEFORE a driver is asked — see fleet/index.ts for why that ordering is the

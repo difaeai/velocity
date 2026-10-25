@@ -1044,6 +1044,17 @@ export const api = {
     { lat: number; lng: number; radiusKm?: number },
     NearbyActivity
   >('getNearbyActivity'),
+  // ── "Locations people are traveling to": saved routes, as areas only ──────
+  // `route` also asks how many other people already travel a route being drafted.
+  getTravelAreas: callable<
+    {
+      lat: number;
+      lng: number;
+      radiusKm?: number;
+      route?: { from: { lat: number; lng: number }; to: { lat: number; lng: number } };
+    },
+    TravelAreas
+  >('getTravelAreas'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
   // `polyline` is a FALLBACK, and optional. When the backend has its own Maps key
   // (GOOGLE_MAPS_SERVER_KEY) it fetches the road itself and never looks at ours.
@@ -2538,6 +2549,25 @@ export interface CommuteDemandSlot {
   destinationAreaName: string;
   count: number;
   genderBreakdown: { male: number; female: number; any: number };
+}
+
+/** One pickup area → drop-off area, from everyone's saved routes. Never an address. */
+export interface TravelArea {
+  from: string;
+  to: string;
+  people: number;
+  male: number;
+  female: number;
+  /** Average departure "HH:MM", rounded to 15 minutes; null = nobody set a time. */
+  time: string | null;
+}
+
+export interface TravelAreas {
+  areas: TravelArea[];
+  /** Everyone counted above, each once. */
+  people: number;
+  /** Only when a `route` was asked about; never includes the caller. */
+  sameWay: { people: number; male: number; female: number } | null;
 }
 
 // ── Fleet types ──────────────────────────────────────────────────────────────
