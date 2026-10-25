@@ -59,7 +59,7 @@ import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { getFeatureFlags } from '../domain/featureFlags';
 import { isWarmPing, warmUp } from '../lib/warmup';
-import { collectFees, readFeesDue, stampFeeDue } from '../payments/nextRideFees';
+import { collectFees, readFeesDue, stampFeeDue, tellFeeAdded } from '../payments/nextRideFees';
 import { ridersOf } from './dropOff';
 import { noShowsOf } from './poolRoster';
 
@@ -956,7 +956,7 @@ export const updateTripStatus = onCall(async (req) => {
   const { tripId, to } = parsed.data;
 
   const tripRef = db.doc(`trips/${tripId}`);
-  const riders = await db.runTransaction(async (tx) => {
+  const moved = await db.runTransaction(async (tx) => {
     const snap = await tx.get(tripRef);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
@@ -992,14 +992,16 @@ export const updateTripStatus = onCall(async (req) => {
       { status: to, updatedAt: FieldValue.serverTimestamp(), ...extra },
       { merge: true },
     );
-    if (passengerWallet) stampFeeDue(tx, tripId, passengerId, passengerWallet);
+    const fee = passengerWallet ? stampFeeDue(tx, tripId, passengerId, passengerWallet) : 0;
     // Everyone waiting for this car — on a shared ride that is every member,
     // not only whoever booked it.
     const members = (snap.get('poolMembers') as string[] | undefined) ?? [];
-    return members.length > 0 ? members : [passengerId];
+    return { riders: members.length > 0 ? members : [passengerId], passengerId, fee };
   });
 
-  if (riders) {
+  if (moved) {
+    const { riders, passengerId, fee } = moved;
+    await tellFeeAdded(tripId, passengerId, ctx.uid, fee);
     const msgs: Record<string, [string, string]> = {
       arriving:    ['🚗 Driver is on the way', 'Your driver is heading to your pickup point.'],
       arrived:     ['📍 Driver has arrived!', 'Your driver is waiting at the pickup point.'],

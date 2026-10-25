@@ -26,7 +26,7 @@ import { isWarmPing, warmUp } from '../lib/warmup';
 import type { PoolRider } from './enRoute';
 import { poolPerSeatFare } from '../domain/fares';
 import { rosterForTrip, type PoolRosterEntry } from './poolRoster';
-import { feeDue, feeRef, stampFeeDue } from '../payments/nextRideFees';
+import { feeDue, feeRef, stampFeeDue, tellFeeAdded } from '../payments/nextRideFees';
 
 /** A rider who has been let out. Stored on their entry in `poolRiders`. */
 type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue; boardedAt?: Timestamp };
@@ -100,16 +100,17 @@ export const boardPoolRider = onCall({ invoker: 'public' }, async (req) => {
       },
       { merge: true },
     );
-    if (((snap.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash') {
-      stampFeeDue(tx, tripId, riderUid, walletSnap);
-    }
-    return { started: true, status: 'in_progress' };
+    const fee = ((snap.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash'
+      ? stampFeeDue(tx, tripId, riderUid, walletSnap)
+      : 0;
+    return { started: true, status: 'in_progress', fee };
   });
 
   if (result.started) {
-    await sendToUser(riderUid, '🛣️ Your ride has started', 'You are on your way to the destination.', {
-      tripId,
-    }).catch(() => {});
+    await Promise.allSettled([
+      sendToUser(riderUid, '🛣️ Your ride has started', 'You are on your way to the destination.', { tripId }),
+      tellFeeAdded(tripId, riderUid, ctx.uid, result.fee ?? 0),
+    ]);
   }
   logger.info('Pool rider boarded', { tripId, riderUid, status: result.status });
   return { ok: true, status: result.status };

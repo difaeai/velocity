@@ -19,6 +19,7 @@ import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 import { db, FieldValue } from '../lib/firebase';
 import { splitFeeAgainstBalance, walletOutstanding } from '../domain/cancellation';
 import { ledgerCreditSpend } from '../drivers/commissionCredit';
+import { sendToUser } from '../lib/fcm';
 
 export const feeRef = (tripId: string, uid: string) => db.doc(`trips/${tripId}/fees/${uid}`);
 
@@ -32,6 +33,29 @@ export function stampFeeDue(tx: Transaction, tripId: string, uid: string, wallet
     tx.set(feeRef(tripId, uid), { amount, stampedAt: FieldValue.serverTimestamp() }, { merge: true });
   }
   return amount;
+}
+
+/**
+ * Say so to both sides the moment a fee is put on a ride. A push reaches every
+ * app build, including driver builds whose screen does not show the fee yet —
+ * the driver is charged it, so they must hear to collect it.
+ */
+export async function tellFeeAdded(tripId: string, riderUid: string, driverId: string, fee: number): Promise<void> {
+  if (fee <= 0) return;
+  await Promise.allSettled([
+    sendToUser(
+      riderUid,
+      `PKR ${fee} added to this ride`,
+      `A cancellation fee from an earlier ride. Please pay it to your driver in cash with the fare.`,
+      { tripId },
+    ),
+    sendToUser(
+      driverId,
+      `💵 Collect PKR ${fee} extra`,
+      `Your passenger owes a PKR ${fee} cancellation fee from an earlier ride. Collect it with the fare — it is charged to your wallet credits.`,
+      { tripId },
+    ),
+  ]);
 }
 
 /** A stamped fee that has not been collected yet, or 0. */
