@@ -116,6 +116,7 @@ export const adminAiOverview = onCall(async (req) => {
         outTok: Number(u.outTok ?? 0),
         grounded: Number(u.grounded ?? 0),
         seconds: Number(u.seconds ?? 0),
+        pieces: Number(u.pieces ?? 0),
         budgetUsd: budgetFor(String(u.wid), b),
         byFeature,
         byService: u.byService ?? {},
