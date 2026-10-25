@@ -108,11 +108,16 @@ question somebody asks a year later and "nobody did" is the honest answer.
 
 **The owner is asked once which it is.** Until `publishModeChosen` is set, the
 overview opens on one question — *ask me before posting, or post directly?* —
-and the answer is `autoPublish`. After that it is a button on the desk card,
-and **"What do you want?"** on the overview carries a per-piece override (a
-piece made there stores its own `autoPublish`, which beats the desk-wide one).
-The same box takes a brief in your own words; it rides the revisions rail, so
-every stage reads it the way it reads a change request.
+and the answer is `autoPublish`. After that it is the Approval box, wired to
+the **Velocity Brain** on the overview. The brain takes a sentence in your own
+words and lights the agent it goes to (`readIntent` in
+`components/social/brain.tsx` — plain word rules, no model, and a tap
+overrules it): the AI team for a piece, the Meta Ad Expert's designer (the Ads
+page opens with the sentence as its first message, `?brief=`), or a new
+campaign made at once. A piece made there carries a per-piece override (it
+stores its own `autoPublish`, which beats the desk-wide one), and its brief
+rides the revisions rail, so every stage reads it the way it reads a change
+request.
 
 Each stage writes its outcome to `socialPosts/{id}` before the next begins, so a
 failure halfway through leaves a piece you can open, read and retry — never a
@@ -314,7 +319,7 @@ itself spawns anything.
 
 ## 3b-2. "Make one like this video"
 
-On the overview, under *What should the team make?*, a person can hand the team
+On the overview, under the brain (AI team picked), a person can hand the team
 a reference video: upload a file, or paste a public YouTube / Shorts link.
 Instagram and TikTok links cannot be read directly — download the video and
 upload it.

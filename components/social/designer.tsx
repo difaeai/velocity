@@ -102,6 +102,21 @@ export function CampaignDesigner({
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: 'smooth' });
   }, [chat.length, thinking]);
 
+  // The overview's brain hands its words over as ?brief= — the first message, sent once.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const handed = params.get('brief');
+      if (!handed) return;
+      params.delete('brief');
+      history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`);
+      document.getElementById('design')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      void send(handed);
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function send(text: string) {
     const said = text.trim();
     if (!said || thinking) return;
