@@ -54,6 +54,17 @@ const RUN_ON: Partial<SocialSettings> = {
   engagementEnabled: true,
 };
 
+/** The backend's defaults for what the Brain and the Approval box read, so they draw before the callable answers. */
+const FIRST_PAINT = {
+  enabled: false,
+  runHour: 10,
+  postsPerDay: 1,
+  makeAheadDays: 30,
+  dailyStory: true,
+  autoPublish: false,
+  publishModeChosen: false,
+} as SocialSettings;
+
 export default function SocialOverview() {
   const { path, house, includes } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
@@ -173,7 +184,8 @@ export default function SocialOverview() {
   }, [path, showSales]);
 
   // Settings come through the callable (it also reports which keys exist), but
-  // the doc itself is watched so `lastRunStatus` updates without a refresh.
+  // the doc itself is watched so `lastRunStatus` updates without a refresh — and
+  // so the Brain draws from it at once instead of waiting out a cold start.
   useEffect(() => {
     socialApi
       .getSettings({})
@@ -185,7 +197,8 @@ export default function SocialOverview() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the automation settings.'));
 
     return onSnapshot(doc(db, path('system/socialAutomation')), (snap) => {
-      if (snap.exists()) setSettings((prev) => (prev ? { ...prev, ...(snap.data() as Partial<SocialSettings>) } : prev));
+      const stored = (snap.data() ?? {}) as Partial<SocialSettings>;
+      setSettings((prev) => ({ ...(prev ?? FIRST_PAINT), ...stored }));
     });
   }, [path]);
 
