@@ -41,6 +41,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
+import { recordPiece } from '../ai/usage';
 import { db, FieldValue, storage } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { deskCall, forEachWorkspace, sdb, wsPath } from './workspace';
@@ -969,6 +970,8 @@ async function createPost(opts: {
     targets,
     standup: true,
   });
+  // Only pieces a model made: the meter divides the month's content spend by these.
+  if (modelReady()) void recordPiece();
   return id;
 }
 

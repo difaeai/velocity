@@ -113,6 +113,17 @@ export interface UsageEntry {
   service?: string;
 }
 
+/** One finished piece of content (post, reel, story…), so the page can show what a piece costs. Never throws. */
+export async function recordPiece(wid: string = currentWorkspace()): Promise<void> {
+  try {
+    await db
+      .doc(`aiUsage/${usageId(wid)}`)
+      .set({ month: monthKey(), wid, pieces: FieldValue.increment(1), updatedAtMs: Date.now() }, { merge: true });
+  } catch (err) {
+    logger.warn('ai: could not count a piece', { wid, message: (err as Error).message });
+  }
+}
+
 /** Add one call to the month. Never throws, never blocks the caller for long. */
 export async function recordAi(e: UsageEntry): Promise<void> {
   const wid = e.wid ?? currentWorkspace();

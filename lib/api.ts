@@ -1936,6 +1936,8 @@ export interface AiUsageRow {
   outTok: number;
   grounded: number;
   seconds: number;
+  /** Pieces of content a model made this month. */
+  pieces: number;
   budgetUsd: number;
   byFeature: Record<string, { usd: number; calls: number }>;
   byService: Record<string, { usd?: number; calls?: number }>;

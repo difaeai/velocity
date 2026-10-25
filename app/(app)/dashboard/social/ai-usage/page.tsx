@@ -49,6 +49,9 @@ const FEATURE: Record<string, string> = {
   other: 'Other',
 };
 
+/** When the meter began: spend before it is only on Google's own pages. */
+const METER_SINCE = '26 Oct 2026, 02:50 Pakistan time';
+
 const usd = (n: number) => (n === 0 ? '$0' : n >= 100 ? `$${n.toFixed(0)}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(3)}`);
 const ago = (ms: number) => {
   const m = Math.round((Date.now() - ms) / 60_000);
@@ -209,8 +212,11 @@ export default function AiUsagePage() {
 
   const rows = useMemo(() => data?.workspaces ?? [], [data]);
   const total = rows.reduce((s, r) => s + r.usd, 0);
-  const calls = rows.reduce((s, r) => s + r.calls, 0);
   const byFeature = useMemo(() => sumBy(rows, (r) => r.byFeature), [rows]);
+  // What one piece of content costs: the content desk's spend over the pieces it made.
+  const pieces = rows.reduce((s, r) => s + (r.pieces ?? 0), 0);
+  const contentUsd = byFeature.find(([k]) => k === 'content')?.[1].usd ?? 0;
+  const perPiece = pieces ? contentUsd / pieces : 0;
   const byWhat = useMemo(() => sumBy(rows, (r) => r.byWhat).slice(0, 8), [rows]);
   const byModel = useMemo(() => sumBy(rows, (r) => r.byModel), [rows]);
 
@@ -251,6 +257,10 @@ export default function AiUsagePage() {
           Every Gemini call is priced here as it happens: what it was for, whose workspace it served, and which key paid. The key
           runs on prepaid credit, so nothing on this page is free.
         </p>
+        <p style={{ color: colors.muted, margin: '6px 0 0', maxWidth: 760, fontSize: 13 }}>
+          Counting since {METER_SINCE}. Anything spent before that shows only in Google AI Studio → Spend — and the credit there is
+          shared by every project on that billing account, not only Velocity.
+        </p>
       </div>
 
       {error ? <p style={{ color: colors.danger, margin: 0 }}>{error}</p> : null}
@@ -265,7 +275,7 @@ export default function AiUsagePage() {
               { label: `Spent in ${data.month}`, value: total, money: true },
               { label: 'At this rate, the month', value: projected, money: true },
               { label: 'Last month', value: data.lastMonthUsd, money: true },
-              { label: 'Calls this month', value: calls, money: false },
+              { label: pieces ? `One piece of content (${pieces} made)` : 'One piece of content', value: perPiece, money: true },
             ].map((k) => (
               <Card key={k.label} style={{ padding: 16 }}>
                 <div style={{ color: colors.muted, fontSize: 13, fontWeight: 700 }}>{k.label}</div>
@@ -285,6 +295,17 @@ export default function AiUsagePage() {
             </div>
             {daily.length >= 2 ? <AreaSpark values={daily} color={colors.primary} height={90} /> : <p style={{ color: colors.muted }}>One day so far.</p>}
           </Card>
+
+          {perPiece > 0 ? (
+            <Card style={{ padding: 16 }}>
+              <strong>A month of content at today’s cost</strong>
+              <p style={{ margin: '6px 0 0', fontSize: 14 }}>
+                A piece (post, reel, carousel or story, with its voice-over) costs about <strong>{usd(perPiece)}</strong>. A post and a story
+                every day for 30 days is 60 pieces ≈ <strong>{usd(perPiece * 60)}</strong>; two posts and a story is 90 ≈{' '}
+                <strong>{usd(perPiece * 90)}</strong>. Asking for changes or remaking a piece costs about the same again.
+              </p>
+            </Card>
+          ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
             <Card style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
@@ -359,6 +380,7 @@ export default function AiUsagePage() {
                       <th style={{ padding: '6px 8px' }}>Spent</th>
                       <th style={{ padding: '6px 8px' }}>Of budget</th>
                       <th style={{ padding: '6px 8px' }}>Calls</th>
+                      <th style={{ padding: '6px 8px' }}>Pieces</th>
                       <th style={{ padding: '6px 8px' }}>Own budget ($)</th>
                     </tr>
                   </thead>
@@ -390,6 +412,7 @@ export default function AiUsagePage() {
                             )}
                           </td>
                           <td style={{ padding: '8px' }}>{r.calls.toLocaleString('en-PK')}</td>
+                          <td style={{ padding: '8px' }}>{r.pieces ?? 0}</td>
                           <td style={{ padding: '8px' }}>
                             {r.wid === 'velocity' ? (
                               <span style={{ color: colors.muted }}>above</span>
@@ -415,7 +438,7 @@ export default function AiUsagePage() {
                     })}
                     {!rows.length ? (
                       <tr>
-                        <td colSpan={5} style={{ padding: 8, color: colors.muted }}>
+                        <td colSpan={6} style={{ padding: 8, color: colors.muted }}>
                           No AI calls recorded this month yet.
                         </td>
                       </tr>
