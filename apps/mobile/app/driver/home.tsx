@@ -618,10 +618,11 @@ export default function DriverHome() {
       {/* ── Wallet ── The very first thing, above Offline/Online: the credits
           given for a mobile holder, and what they do. Hidden mid-trip, like the
           banners below — the trip owns the screen until drop-off. */}
-      {!activeTrip && (commission.bonus > 0 || (profile?.commissionCreditEarned ?? 0) > 0) ? (
+      {!activeTrip && (commission.bonus > 0 || (profile?.commissionCreditEarned ?? 0) > 0 || outstanding.amount > 0) ? (
         <WalletCard
           credits={commission.bonus}
           used={Math.max(0, Math.round(profile?.commissionCreditUsed ?? 0))}
+          owed={outstanding.amount}
           onPress={() => router.push('/driver/earnings')}
         />
       ) : null}

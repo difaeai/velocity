@@ -151,6 +151,8 @@ export interface PoolRider {
   billableKm: number;
   /** 'host' booked it · 'share' joined by link · 'enroute' picked up on the way. */
   kind: 'host' | 'share' | 'enroute';
+  boardedAt?: { seconds: number } | null;
+  droppedAt?: { seconds: number } | null;
 }
 
 /** One rider on a destination pool, as recorded on the trip document. */
@@ -172,6 +174,8 @@ export interface PoolRosterEntry {
   pickupAddress: string | null;
   dropoffAddress: string | null;
   joinedAt?: { seconds: number } | null;
+  /** Set when the driver starts THIS rider's ride (boardPoolRider). */
+  boardedAt?: { seconds: number } | null;
   /** Set once the driver has let them out. Absent while they are still aboard. */
   droppedAt?: { seconds: number } | null;
 }
@@ -260,8 +264,12 @@ export interface Trip {
   passengerRated?: boolean;
   driverRated?: boolean;
   arrivedAt?: { seconds: number; nanoseconds: number } | null;
+  /** When the wheels started turning (updateTripStatus / the first boardPoolRider). */
+  startedAt?: { seconds: number } | null;
   /** Stamped by completeTrip. The dash cam video is kept for a day from this. */
   completedAt?: { seconds: number } | null;
+  /** Riders the driver never picked up, written by completeTrip. */
+  poolNoShows?: string[];
   /**
    * Summary of the in-ride chat, written by sendTripMessage alongside the
    * message itself.

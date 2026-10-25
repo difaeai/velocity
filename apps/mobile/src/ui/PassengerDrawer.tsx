@@ -269,14 +269,14 @@ export function PassengerDrawer({
       },
     ];
 
-    /* My routes sits under your name, not under Rides: it is a thing you keep,
-       not a thing you book. */
+    /* Ride History sits under your name, not under Rides: it is a thing you
+       keep, not a thing you book. */
     const account: Row[] = [
       {
         key: 'routes',
         Icon: RouteMapIcon,
-        label: 'My routes',
-        blurb: 'The trips you take every day, saved',
+        label: 'Ride History',
+        blurb: 'Your rides, dash cam records and saved routes',
         tint: 'rgba(251,146,60,0.16)',
         onPress: () => onNavigate('/passenger/daily-routes'),
       },

@@ -72,16 +72,15 @@ export default function ProfileScreen() {
             <Text style={styles.actionLabel}>Support</Text>
           </Pressable>
 
-          {/* My routes came out of the drawer and landed here: your daily
-              runs and your saved addresses are two tabs of one screen, and
-              both are things you keep rather than things you book. The tile
-              this replaced was a "coming soon" alert over a screen that had
-              already shipped. */}
+          {/* Ride History (was "My routes", renamed 2026-10-25 on request):
+              your rides, their dash cam Records for 24 hours, your daily runs
+              and your saved addresses — tabs of one screen, all things you
+              keep rather than things you book. */}
           <Pressable style={styles.quickActionItem} onPress={() => router.push('/passenger/daily-routes')}>
             <View style={styles.circleIcon}>
-              <Text style={styles.actionEmoji}>📍</Text>
+              <Text style={styles.actionEmoji}>🧾</Text>
             </View>
-            <Text style={styles.actionLabel}>My routes</Text>
+            <Text style={styles.actionLabel}>Ride History</Text>
           </Pressable>
 
           <Pressable style={styles.quickActionItem} onPress={openSettings}>

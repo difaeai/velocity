@@ -2,8 +2,13 @@
  * The dash cam's rules: which clips a person may watch, and when they go.
  * Pure — no emulator, bucket or clock needed.
  */
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { proofFilter } from '../dashcam';
 import {
   CLIP_SPAN_MS,
   DASHCAM_KEEP_MS,
@@ -91,6 +96,55 @@ describe('viewerWindow', () => {
 
   it('reads a zero join time as unknown, not as 1970', () => {
     expect(viewerWindow(shared, 'host')).toEqual({ from: null, to: null });
+  });
+
+  const startedEach: DashcamParties = {
+    driverId: 'driver',
+    passengerId: 'host',
+    poolMembers: ['host', 'waiting'],
+    seats: [
+      { uid: 'host', kind: 'host', joinedAtMs: T - 30 * MIN, boardedAtMs: T, droppedAtMs: T + 20 * MIN },
+      { uid: 'waiting', kind: 'share', joinedAtMs: T - 25 * MIN, droppedAtMs: null },
+    ],
+  };
+
+  it('runs from the rider own start, not from when they booked', () => {
+    expect(viewerWindow(startedEach, 'host')).toEqual({
+      from: T - WINDOW_GRACE_MS,
+      to: T + 20 * MIN + WINDOW_GRACE_MS,
+    });
+  });
+
+  it('shows nothing to a rider not picked up yet, nor to a no-show', () => {
+    expect(viewerWindow(startedEach, 'waiting')).toBeNull();
+    expect(viewerWindow({ ...shared, noShows: ['late'] }, 'late')).toBeNull();
+  });
+});
+
+describe('the travel-proof watermark', () => {
+  const bin = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require('ffmpeg-static') as string;
+    } catch {
+      return '';
+    }
+  })();
+
+  it.skipIf(!bin || !existsSync(bin))('burns into a clip with the bundled ffmpeg and fonts', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'proof-test-'));
+    try {
+      const texts = { tile: path.join(dir, 't.txt'), heading: path.join(dir, 'h.txt'), sub: path.join(dir, 's.txt') };
+      writeFileSync(texts.tile, 'VELOCITY RIDES TRAVEL PROOF');
+      writeFileSync(texts.heading, 'VELOCITY RIDES · TRAVEL PROOF');
+      writeFileSync(texts.sub, '25 Oct 2026, 10:42 pm PKT');
+      const out = path.join(dir, 'out.mp4');
+      execFileSync(bin, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=480x854:r=12:d=1',
+        '-filter_complex', proofFilter(texts), '-map', '[out]', '-c:v', 'libx264', '-preset', 'ultrafast', out]);
+      expect(statSync(out).size).toBeGreaterThan(1000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

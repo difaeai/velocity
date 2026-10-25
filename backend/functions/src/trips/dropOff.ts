@@ -26,6 +26,7 @@ import { isWarmPing, warmUp } from '../lib/warmup';
 import type { PoolRider } from './enRoute';
 import { poolPerSeatFare } from '../domain/fares';
 import { rosterForTrip, type PoolRosterEntry } from './poolRoster';
+import { feeDue, feeRef, stampFeeDue } from '../payments/nextRideFees';
 
 /** A rider who has been let out. Stored on their entry in `poolRiders`. */
 type DroppedRider = PoolRider & { droppedAt?: Timestamp | FieldValue; boardedAt?: Timestamp };
@@ -41,7 +42,7 @@ const dropSchema = z.object({
  * (see trips/poolRoster). Both are lists of people to let in and out one at a
  * time, and the field that is present is the one we update.
  */
-function ridersOf(snap: FirebaseFirestore.DocumentSnapshot): {
+export function ridersOf(snap: FirebaseFirestore.DocumentSnapshot): {
   field: 'poolRiders' | 'poolRoster';
   riders: (DroppedRider | PoolRosterEntry)[];
 } {
@@ -69,7 +70,8 @@ export const boardPoolRider = onCall({ invoker: 'public' }, async (req) => {
 
   const tripRef = db.doc(`trips/${tripId}`);
   const result = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(tripRef);
+    // Their wallet too: an unpaid fee is added to the ride they are starting.
+    const [snap, walletSnap] = await Promise.all([tx.get(tripRef), tx.get(db.doc(`wallets/${riderUid}`))]);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
@@ -98,6 +100,9 @@ export const boardPoolRider = onCall({ invoker: 'public' }, async (req) => {
       },
       { merge: true },
     );
+    if (((snap.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash') {
+      stampFeeDue(tx, tripId, riderUid, walletSnap);
+    }
     return { started: true, status: 'in_progress' };
   });
 
@@ -120,7 +125,7 @@ export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
   const tripRef = db.doc(`trips/${tripId}`);
 
   const result = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(tripRef);
+    const [snap, feeSnap] = await Promise.all([tx.get(tripRef), tx.get(feeRef(tripId, riderUid))]);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
       throw new HttpsError('permission-denied', 'Not your trip.');
@@ -170,6 +175,8 @@ export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
       remaining,
       fare,
       name,
+      // Collected with the rest of the money in completeTrip; only told here.
+      fee: feeDue(feeSnap),
       paymentMethod: (snap.get('paymentMethod') as string | undefined) ?? 'cash',
     };
   });
@@ -180,7 +187,9 @@ export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
     riderUid,
     '📍 You have arrived',
     result.paymentMethod === 'cash'
-      ? `Please pay PKR ${result.fare} in cash to your driver.`
+      ? result.fee > 0
+        ? `Please pay PKR ${result.fare + result.fee} in cash to your driver: the PKR ${result.fare} fare and the PKR ${result.fee} cancellation fee from an earlier ride.`
+        : `Please pay PKR ${result.fare} in cash to your driver.`
       : `PKR ${result.fare} will be settled from your wallet.`,
     { tripId, kind: 'dropped_off' },
   );
@@ -190,6 +199,7 @@ export const dropOffRider = onCall({ invoker: 'public' }, async (req) => {
     ok: true,
     remaining: result.remaining,
     fare: result.fare,
+    fee: result.fee,
     name: result.name,
   };
 });

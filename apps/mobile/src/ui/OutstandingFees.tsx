@@ -208,7 +208,32 @@ export function OutstandingFees({
   );
 }
 
+/**
+ * A rider's fee below the block limit, on passenger home. Riders have no
+ * wallet to pay it from, so it rides on their next ride: the driver collects
+ * it in cash with the fare (backend payments/nextRideFees).
+ */
+export function FeeOnNextRide({ amount }: { amount: number }) {
+  return (
+    <View
+      style={[styles.card, styles.compact]}
+      accessibilityLabel={`Wallet: ${amount} rupees cancellation fee, added to your next ride. Pay it in cash with the fare.`}
+    >
+      <View style={styles.headerRow}>
+        <Text style={styles.walletLabel}>WALLET</Text>
+        <Text style={styles.compactAmount}>PKR {amount.toLocaleString()} fee</Text>
+      </View>
+      <Text style={styles.body} numberOfLines={2}>
+        A cancellation fee, added to your next ride. Pay it in cash with that fare.
+      </Text>
+    </View>
+  );
+}
+
 const styles = themed(() => StyleSheet.create({
+  compact: { paddingVertical: 10, paddingHorizontal: 14, gap: 4 },
+  walletLabel: { fontSize: 10.5, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  compactAmount: { fontSize: 15, fontWeight: '900', color: colors.danger },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,

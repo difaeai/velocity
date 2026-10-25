@@ -77,6 +77,9 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'trips/poolTrip2/joinRequests/asker1'), {
     riderId: 'asker1', riderName: 'Asker', status: 'pending', farePerSeat: 240,
   });
+  // An earlier cancellation fee the host carries on this ride.
+  await setDoc(doc(db, 'trips/poolTrip2/fees/passenger1'), { amount: 31 });
+  await setDoc(doc(db, 'trips/poolTrip1/fees/passenger1'), { amount: 31 });
   await setDoc(doc(db, 'poolRideRequests/poolReq1'), {
     leaderId: 'passenger1', driverId: 'driver1', status: 'active',
     passengers: ['passenger1'],
@@ -193,6 +196,17 @@ test('pool members who joined via a share link can read the trip; outsiders cann
   await assertFails(getDoc(doc(outsider, 'trips/poolTrip1')));
   // Membership grants read only — writes stay server-authoritative.
   await assertFails(updateDoc(doc(joiner, 'trips/poolTrip1'), { poolMembers: ['joiner1'] }));
+});
+
+test('a carried cancellation fee: the driver and that rider read it, a co-rider does not', async () => {
+  await assertSucceeds(getDoc(doc(driver, 'trips/poolTrip2/fees/passenger1')));
+  await assertSucceeds(getDocs(collection(driver, 'trips/poolTrip2/fees')));
+  await assertSucceeds(getDoc(doc(passenger, 'trips/poolTrip2/fees/passenger1')));
+  // joiner1 shares poolTrip1 with passenger1 and may read that trip, but not this.
+  const coRider = testEnv.authenticatedContext('joiner1', { role: 'passenger' }).firestore();
+  await assertSucceeds(getDoc(doc(coRider, 'trips/poolTrip1')));
+  await assertFails(getDoc(doc(coRider, 'trips/poolTrip1/fees/passenger1')));
+  await assertFails(setDoc(doc(passenger, 'trips/poolTrip2/fees/passenger1'), { amount: 0 }));
 });
 
 test('driver may toggle presence but not self-verify', async () => {

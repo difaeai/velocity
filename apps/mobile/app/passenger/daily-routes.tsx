@@ -19,14 +19,59 @@ import {
 import { db } from '../../src/firebase';
 import { useAuth } from '../../src/auth/AuthContext';
 import { geocodeAddress } from '../../src/hooks/places';
-import { usePassengerTrips } from '../../src/hooks/passenger';
+import { usePassengerTrips, usePoolMemberTrips } from '../../src/hooks/passenger';
+import { clockTime } from '../../src/lib/rideSearch';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
-import { RIDE_TYPE_LABELS, type TripStatus } from '../../src/domain/types';
+import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 
 const RADIUS_OPTIONS = [2, 3, 5] as const;
 type PlaceCategory = 'home' | 'work' | 'other';
-type Tab = 'routes' | 'history' | 'places';
+type Tab = 'history' | 'records' | 'routes' | 'places';
+
+const TABS: [Tab, string][] = [
+  ['history', 'History'],
+  ['records', 'Records'],
+  ['routes', 'Routes'],
+  ['places', 'Places'],
+];
+
+/** How long a ride's dash cam video is kept after it ends — backend domain/dashcam DASHCAM_KEEP_MS. */
+const RECORD_KEEP_MS = 24 * 60 * 60 * 1000;
+
+interface TravelRecord {
+  trip: Trip;
+  live: boolean;
+  /** This rider's own ride, not the car's: their start and their drop-off where those exist. */
+  fromMs: number | null;
+  toMs: number | null;
+  expiresMs: number | null;
+}
+
+/**
+ * The rides of the last 24 hours that still have video — the rider's travel
+ * record, there to look back at (or keep a marked copy of) after an emergency.
+ */
+function travelRecords(trips: Trip[], uid: string | undefined, now: number): TravelRecord[] {
+  const ms = (t?: { seconds: number } | null) => (t?.seconds ? t.seconds * 1000 : null);
+  return trips
+    .filter((t) => !uid || !t.poolNoShows?.includes(uid))
+    .map((t) => {
+      const seats: { uid: string; boardedAt?: { seconds: number } | null; droppedAt?: { seconds: number } | null }[] =
+        t.poolRiders?.length ? t.poolRiders : t.poolRoster ?? [];
+      const seat = seats.find((s) => s.uid === uid);
+      const completedMs = ms(t.completedAt);
+      return {
+        trip: t,
+        live: t.status === 'in_progress',
+        fromMs: ms(seat?.boardedAt) ?? ms(t.startedAt),
+        toMs: ms(seat?.droppedAt) ?? completedMs,
+        expiresMs: completedMs ? completedMs + RECORD_KEEP_MS : null,
+      };
+    })
+    .filter((r) => r.live || (r.trip.status === 'completed' && r.expiresMs !== null && r.expiresMs > now))
+    .sort((a, b) => (b.toMs ?? Infinity) - (a.toMs ?? Infinity));
+}
 
 interface GeoPoint { lat: number; lng: number; address: string; }
 interface DailyRoute {
@@ -79,8 +124,16 @@ export default function DailyRoutesScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { trips, loading: tripsLoading } = usePassengerTrips(user?.uid);
+  // Somebody else's shared ride they rode in is part of their travel record too.
+  const memberTrips = usePoolMemberTrips(user?.uid);
+  const records = travelRecords(
+    [...trips, ...memberTrips.filter((m) => !trips.some((t) => t.id === m.id))],
+    user?.uid,
+    Date.now(),
+  );
 
-  const [tab, setTab] = useState<Tab>('routes');
+  // The screen is "Ride History" now, so it opens on the rides.
+  const [tab, setTab] = useState<Tab>('history');
   const [routes, setRoutes] = useState<DailyRoute[]>([]);
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -300,7 +353,7 @@ export default function DailyRoutesScreen() {
     );
   }
 
-  const isLoading = tab === 'history' ? tripsLoading : loading;
+  const isLoading = tab === 'history' || tab === 'records' ? tripsLoading : loading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -312,7 +365,7 @@ export default function DailyRoutesScreen() {
         >
           <Text style={styles.backTxt}>←</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>My routes</Text>
+        <Text style={styles.headerTitle}>Ride History</Text>
         {tab === 'routes' && (
           <Pressable style={styles.addBtn} onPress={openAdd} hitSlop={8}>
             <Text style={styles.addBtnTxt}>+ Add</Text>
@@ -323,29 +376,16 @@ export default function DailyRoutesScreen() {
             <Text style={styles.addBtnTxt}>+ Add</Text>
           </Pressable>
         )}
-        {tab === 'history' && <View style={{ width: 40 }} />}
+        {(tab === 'history' || tab === 'records') && <View style={{ width: 40 }} />}
       </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabBar}>
-        <Pressable
-          style={[styles.tab, tab === 'routes' && styles.tabActive]}
-          onPress={() => setTab('routes')}
-        >
-          <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>Routes</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, tab === 'history' && styles.tabActive]}
-          onPress={() => setTab('history')}
-        >
-          <Text style={[styles.tabText, tab === 'history' && styles.tabTextActive]}>History</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, tab === 'places' && styles.tabActive]}
-          onPress={() => setTab('places')}
-        >
-          <Text style={[styles.tabText, tab === 'places' && styles.tabTextActive]}>Saved places</Text>
-        </Pressable>
+        {TABS.map(([key, label]) => (
+          <Pressable key={key} style={[styles.tab, tab === key && styles.tabActive]} onPress={() => setTab(key)}>
+            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
       </View>
 
       {isLoading ? (
@@ -457,6 +497,62 @@ export default function DailyRoutesScreen() {
                       </Pressable>
                     );
                   })}
+                </View>
+              )}
+            </>
+          )}
+
+          {tab === 'records' && (
+            <>
+              <Text style={styles.intro}>
+                The dash cam video of your own time in the car, from when your ride started to when it
+                ended. Each ride&apos;s video is kept for 24 hours — watch it, or download a copy marked
+                &quot;Velocity Rides Travel Proof&quot; to keep in case you ever need it.
+              </Text>
+
+              {records.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>🎥</Text>
+                  <Text style={styles.emptyTitle}>No records right now</Text>
+                  <Text style={styles.emptyDesc}>
+                    A ride&apos;s dash cam video shows here while it runs and for 24 hours after it ends.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.tripsList}>
+                  {records.map((r) => (
+                    <Pressable
+                      key={r.trip.id}
+                      style={styles.tripCard}
+                      onPress={() => router.push(`/dashcam/${r.trip.id}`)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Dash cam record of your ${RIDE_TYPE_LABELS[r.trip.rideType]}. Watch or download.`}
+                    >
+                      <View style={styles.tripTop}>
+                        <Text style={styles.rideType}>{RIDE_TYPE_LABELS[r.trip.rideType]}</Text>
+                        <View style={[styles.statusPill, { borderColor: r.live ? colors.danger : colors.primary }]}>
+                          <Text style={[styles.statusText, { color: r.live ? colors.danger : colors.primary }]}>
+                            {r.live ? '● Recording' : `Kept until ${clockTime(r.expiresMs ?? 0)}`}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.recordSpan}>
+                        {r.fromMs ? clockTime(r.fromMs) : 'Start'} → {r.live ? 'now' : r.toMs ? clockTime(r.toMs) : 'end'}
+                        {r.fromMs ? ` · ${new Date(r.fromMs).toDateString()}` : ''}
+                      </Text>
+                      <View style={styles.routeRow}>
+                        <Text style={styles.routeDot}>👤</Text>
+                        <Text style={styles.routeText} numberOfLines={1}>{r.trip.pickup?.address ?? 'Pickup'}</Text>
+                      </View>
+                      <View style={styles.routeRow}>
+                        <Text style={styles.routeDot}>🏁</Text>
+                        <Text style={styles.routeText} numberOfLines={1}>{r.trip.dropoff?.address ?? 'Drop-off'}</Text>
+                      </View>
+                      <View style={styles.tripBottom}>
+                        <Text style={styles.fare}>Watch & download ›</Text>
+                      </View>
+                    </Pressable>
+                  ))}
                 </View>
               )}
             </>
@@ -854,6 +950,7 @@ const styles = themed(() => StyleSheet.create({
     marginTop: 4,
   },
   fare: { fontSize: 16, fontWeight: '900', color: colors.primary },
+  recordSpan: { fontSize: 13, fontWeight: '700', color: colors.text },
 
   // Saved Places styles
   placeCard: {

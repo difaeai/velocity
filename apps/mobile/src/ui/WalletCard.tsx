@@ -28,21 +28,30 @@ import { themed } from '../theme';
 export function WalletCard({
   credits,
   used,
+  owed = 0,
   onPress,
 }: {
   /** Unspent credits, PKR. */
   credits: number;
   /** Credits already spent on commission, PKR. */
   used: number;
+  /** Cancellation fees still owed (wallets/{uid}.outstanding) — paid from credits when a ride ends. */
+  owed?: number;
   onPress?: () => void;
 }) {
+  const line =
+    owed > 0
+      ? `PKR ${owed.toLocaleString()} fee due · ${credits > 0 ? 'off your credits when a ride ends' : 'pay it to keep driving'}`
+      : credits > 0
+        ? 'Mobile-holder credits · pay your commission'
+        : 'Credits used up · commission paid as usual';
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && onPress ? { opacity: 0.9 } : null]}
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`Wallet: ${credits.toLocaleString()} rupees in credits, given for a mobile holder. Commission comes off them first. ${used > 0 ? `${used.toLocaleString()} rupees used so far. ` : ''}They cannot be withdrawn as cash.`}
+      accessibilityLabel={`Wallet: ${credits.toLocaleString()} rupees in credits, given for a mobile holder. Commission and cancellation fees come off them first. ${used > 0 ? `${used.toLocaleString()} rupees used so far. ` : ''}${owed > 0 ? `${owed.toLocaleString()} rupees in cancellation fees still due. ` : ''}They cannot be withdrawn as cash.`}
     >
       <View style={styles.icon}>
         <Svg width={18} height={18} viewBox="0 0 24 24">
@@ -59,8 +68,8 @@ export function WalletCard({
           <Text style={styles.notCash}>Not cash</Text>
         </View>
         {/* Short enough for one line on a 360-wide phone. */}
-        <Text style={styles.what} numberOfLines={1}>
-          {credits > 0 ? 'Mobile-holder credits · pay your commission' : 'Credits used up · commission paid as usual'}
+        <Text style={[styles.what, owed > 0 && styles.owed]} numberOfLines={1}>
+          {line}
         </Text>
       </View>
       {onPress ? <Text style={styles.chevron}>›</Text> : null}
@@ -98,6 +107,7 @@ const styles = themed(() =>
     amount: { fontSize: 15, fontWeight: '900', color: colors.primary },
     notCash: { marginLeft: 'auto', fontSize: 10.5, fontWeight: '800', color: colors.muted },
     what: { fontSize: 11.5, color: colors.muted, marginTop: 1 },
+    owed: { color: colors.danger, fontWeight: '800' },
     chevron: { fontSize: 20, color: colors.muted, marginLeft: 2 },
   }),
 );

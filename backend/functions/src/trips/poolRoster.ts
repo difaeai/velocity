@@ -117,6 +117,22 @@ export function isBoarded(
   return status === 'in_progress' && !startedPerRider;
 }
 
+/**
+ * Who never got in, as the ride ends: neither started nor dropped off.
+ *
+ * Only a car whose riders were started one by one can say. A trip started all
+ * at once stamped nobody, and there nobody is a no-show — the old behaviour,
+ * so an older driver build is never told a rider it carried was absent.
+ */
+export function noShowsOf(
+  riders: { uid: string; kind?: string; boardedAt?: unknown; droppedAt?: unknown }[],
+): string[] {
+  if (!riders.some((r) => r.boardedAt)) return [];
+  return riders
+    .filter((r) => !r.droppedAt && !isBoarded(r, riders, 'in_progress'))
+    .map((r) => r.uid);
+}
+
 /** First name, for a document co-riders can read. Never the full name. */
 export function firstNameOf(full: unknown, fallback = 'Rider'): string {
   const s = typeof full === 'string' ? full.trim() : '';

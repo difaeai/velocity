@@ -22,6 +22,7 @@ import { Text } from './Text';
 import { callInApp } from '../lib/inAppCall';
 
 import { api, type PoolRiderView } from '../api/client';
+import { useTripFees } from '../hooks/driver';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { distanceMeters, formatDistance } from '../lib/geo';
@@ -73,6 +74,13 @@ export function DropOffPanel({
   // A stop the driver has said "keep going" to, so the prompt does not reappear
   // every second while they are still parked next to it.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // An earlier ride's cancellation fee, collected with this fare (backend payments/nextRideFees).
+  const fees = useTripFees(tripId);
+  const feeOf = (uid: string) => fees[uid] ?? 0;
+  const dueFrom = (r: PoolRiderView) => (r.fare ?? fallbackFare) + feeOf(r.uid);
+  const feeNote = (fee: number) => (fee > 0 ? ` (incl. PKR ${fee} old cancellation fee)` : '');
+  // A solo ride has one rider, so whatever is stamped is theirs.
+  const soloFee = Object.values(fees).reduce((sum, f) => sum + f, 0);
 
   useEffect(() => {
     // Solo rides have nothing to fetch. Returning early rather than calling
@@ -143,7 +151,7 @@ export function DropOffPanel({
       );
       Alert.alert(
         `${rider.name}'s ride ended`,
-        `${paymentMethod === 'cash' ? `Collect PKR ${rider.fare ?? fallbackFare} in cash. ` : ''}`
+        `${paymentMethod === 'cash' ? `Collect PKR ${dueFrom(rider)} in cash${feeNote(feeOf(rider.uid))}. ` : ''}`
           + `${res.remaining} passenger${res.remaining === 1 ? '' : 's'} still to go.`,
       );
     } catch (e) {
@@ -201,12 +209,12 @@ export function DropOffPanel({
         disabled={busy}
         onPress={() =>
           confirmComplete(
-            `This ends the ride and settles the fare.${paymentMethod === 'cash' ? ` Collect PKR ${fallbackFare} in cash.` : ''}`,
+            `This ends the ride and settles the fare.${paymentMethod === 'cash' ? ` Collect PKR ${fallbackFare + soloFee} in cash${feeNote(soloFee)}.` : ''}`,
           )
         }
       >
         <Text style={styles.completeBtnText}>
-          END RIDE{paymentMethod === 'cash' ? ` · collect PKR ${fallbackFare}` : ''}
+          END RIDE{paymentMethod === 'cash' ? ` · collect PKR ${fallbackFare + soloFee}` : ''}
         </Text>
       </Pressable>
     );
@@ -236,7 +244,7 @@ export function DropOffPanel({
               onPress={() => dropRider(atStop)}
             >
               <Text style={styles.dropBtnText}>
-                End ride{paymentMethod === 'cash' ? ` · PKR ${atStop.fare ?? fallbackFare}` : ''}
+                End ride{paymentMethod === 'cash' ? ` · PKR ${dueFrom(atStop)}` : ''}
               </Text>
             </Pressable>
           </View>
@@ -296,7 +304,7 @@ export function DropOffPanel({
           </Text>
           {paymentMethod === 'cash' ? (
             <Text style={styles.summaryTotal}>
-              PKR {aboard.reduce((sum, r) => sum + (r.fare ?? fallbackFare), 0)} still to collect
+              PKR {aboard.reduce((sum, r) => sum + dueFrom(r), 0)} still to collect
             </Text>
           ) : null}
         </View>
@@ -308,7 +316,7 @@ export function DropOffPanel({
           disabled={busy}
           onPress={() =>
             confirmComplete(
-              `${waiting.map((r) => r.name).join(', ')} never got in. Ending the ride settles it as it stands.`,
+              `${waiting.map((r) => r.name).join(', ')} never got in. They are not charged, and you owe no commission on them.`,
             )
           }
         >
@@ -332,7 +340,7 @@ export function DropOffPanel({
                 {r.dropoffAddress ?? 'Drop-off point'}
               </Text>
               <Text style={styles.riderMeta}>
-                {paymentMethod === 'cash' ? `Collect PKR ${r.fare ?? fallbackFare}` : `PKR ${r.fare ?? fallbackFare} from wallet`}
+                {paymentMethod === 'cash' ? `Collect PKR ${dueFrom(r)}${feeNote(feeOf(r.uid))}` : `PKR ${r.fare ?? fallbackFare} from wallet`}
                 {away ? ` · ${away} away` : ''}
               </Text>
             </View>
@@ -379,7 +387,7 @@ export function DropOffPanel({
   function confirmCompleteLast(rider: PoolRiderView) {
     Alert.alert(
       'End the ride here?',
-      `${rider.name} is the last passenger.${paymentMethod === 'cash' ? ` Collect PKR ${rider.fare ?? fallbackFare} in cash.` : ''} This ends the ride.`,
+      `${rider.name} is the last passenger.${paymentMethod === 'cash' ? ` Collect PKR ${dueFrom(rider)} in cash${feeNote(feeOf(rider.uid))}.` : ''} This ends the ride.`,
       [
         { text: 'Keep going', style: 'cancel' },
         { text: 'End ride', style: 'destructive', onPress: () => dropRider(rider) },

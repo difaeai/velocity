@@ -1162,6 +1162,38 @@ export function useOutstanding(uid?: string): OutstandingStatus {
   };
 }
 
+/**
+ * Earlier cancellation fees this ride carries, by rider (backend
+ * payments/nextRideFees) — what the driver collects on top of each fare. Only
+ * the ones not collected yet. Pass `uid` for one rider's own, which is the only
+ * one a rider may read.
+ */
+export function useTripFees(tripId?: string, uid?: string): Record<string, number> {
+  const [fees, setFees] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!tripId) { setFees({}); return; }
+    const owed = (d: { amount?: unknown; collectedAt?: unknown } | undefined): number =>
+      typeof d?.amount === 'number' && d.amount > 0 && !d.collectedAt ? Math.round(d.amount) : 0;
+    if (uid) {
+      return onSnapshot(
+        doc(db, 'trips', tripId, 'fees', uid),
+        (s) => { const a = owed(s.data()); setFees(a ? { [uid]: a } : {}); },
+        () => setFees({}),
+      );
+    }
+    return onSnapshot(
+      collection(db, 'trips', tripId, 'fees'),
+      (snap) => {
+        const next: Record<string, number> = {};
+        snap.forEach((d) => { const a = owed(d.data()); if (a) next[d.id] = a; });
+        setFees(next);
+      },
+      () => setFees({}),
+    );
+  }, [tripId, uid]);
+  return fees;
+}
+
 /** The user's most recent cancellation-fee settlement attempt (for status UI). */
 export function useLatestFeeSettlement(uid?: string): CommissionSettlement | null {
   const [row, setRow] = useState<CommissionSettlement | null>(null);

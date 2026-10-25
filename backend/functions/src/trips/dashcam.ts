@@ -28,7 +28,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -42,6 +42,7 @@ import { db, storage } from '../lib/firebase';
 import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { countFaces } from '../lib/localVision';
+import { escapeArg, fontDir } from '../social/reel';
 import {
   clipInWindow,
   clipStartedAt,
@@ -58,7 +59,7 @@ const execFileAsync = promisify(execFile);
 /** Who may watch, read off the trip document. */
 function partiesOf(trip: FirebaseFirestore.DocumentSnapshot): DashcamParties {
   type Stamp = { toMillis?: () => number } | null | undefined;
-  type Seat = { uid?: unknown; joinedAt?: Stamp; droppedAt?: Stamp };
+  type Seat = { uid?: unknown; kind?: unknown; joinedAt?: Stamp; boardedAt?: Stamp; droppedAt?: Stamp };
   const millis = (t: Stamp) => (typeof t?.toMillis === 'function' ? t.toMillis() : null);
   // `poolRiders` first: when a car has both, that is the array a drop-off is
   // written to (see trips/dropOff).
@@ -72,7 +73,14 @@ function partiesOf(trip: FirebaseFirestore.DocumentSnapshot): DashcamParties {
     poolMembers: (trip.get('poolMembers') as string[] | undefined) ?? [],
     seats: seats
       .filter((s): s is Seat & { uid: string } => typeof s.uid === 'string')
-      .map((s) => ({ uid: s.uid, joinedAtMs: millis(s.joinedAt), droppedAtMs: millis(s.droppedAt) })),
+      .map((s) => ({
+        uid: s.uid,
+        kind: typeof s.kind === 'string' ? s.kind : undefined,
+        joinedAtMs: millis(s.joinedAt),
+        boardedAtMs: millis(s.boardedAt),
+        droppedAtMs: millis(s.droppedAt),
+      })),
+    noShows: (trip.get('poolNoShows') as string[] | undefined) ?? [],
   };
 }
 
@@ -226,6 +234,120 @@ export const checkDashcamCabin = onCall({ timeoutSeconds: 120, memory: '1GiB' },
   const faces = await facesInClip(`dashcam/${ctx.uid}/${tripId}/${clip}`);
   logger.info('Dash cam cabin check', { tripId, faces });
   return { ok: true, faces };
+});
+
+/** "25 Oct 2026, 10:42 pm" in Pakistan time — what a police station reads. */
+function pktStamp(ms: number): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Karachi',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(ms);
+}
+
+/**
+ * The ffmpeg filter that stamps a clip as Velocity's: a heading across the top,
+ * and the words tiled small and see-through on a diagonal over the whole frame,
+ * so the picture stays clear but no crop of it comes away unmarked.
+ */
+export function proofFilter(paths: { tile: string; heading: string; sub: string }): string {
+  const bold = escapeArg(path.join(fontDir(), 'Outfit-Black.ttf'));
+  const body = escapeArg(path.join(fontDir(), 'WorkSans-SemiBold.ttf'));
+  return (
+    // A transparent sheet larger than any frame, tiled with the words, turned.
+    'color=c=black@0:s=2000x2000:r=2,format=rgba,' +
+    `drawtext=fontfile='${bold}':textfile='${escapeArg(paths.tile)}':fontsize=22:fontcolor=white@0.28:` +
+    'borderw=1:bordercolor=black@0.14:line_spacing=62:x=0:y=0,' +
+    // Negative is anticlockwise in ffmpeg: the words rise left to right.
+    'rotate=a=-0.45:c=none:ow=iw:oh=ih[wm];' +
+    '[0:v][wm]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1,' +
+    'drawbox=x=0:y=0:w=iw:h=54:color=black@0.5:t=fill,' +
+    `drawtext=fontfile='${bold}':textfile='${escapeArg(paths.heading)}':fontsize=20:fontcolor=white:x=(w-text_w)/2:y=9,` +
+    `drawtext=fontfile='${body}':textfile='${escapeArg(paths.sub)}':fontsize=13:fontcolor=white@0.85:x=(w-text_w)/2:y=34[out]`
+  );
+}
+
+/** The tiled words; odd rows offset so the pattern reads as brickwork, not stripes. */
+const PROOF_TILE = Array.from({ length: 26 }, (_, i) =>
+  (i % 2 ? ' '.repeat(16) : '') + 'VELOCITY RIDES TRAVEL PROOF      '.repeat(8),
+).join('\n');
+
+/** Burn the watermark into one clip and store the copy next to it. */
+async function burnProof(source: ClipFile, dest: ClipFile, startedAt: number, tripId: string): Promise<void> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-proof-'));
+  try {
+    const input = path.join(dir, 'clip.mp4');
+    const output = path.join(dir, 'proof.mp4');
+    const texts = { tile: path.join(dir, 'tile.txt'), heading: path.join(dir, 'heading.txt'), sub: path.join(dir, 'sub.txt') };
+    // Text files, not inline text: a clock's colons would need escaping twice over.
+    await Promise.all([
+      source.download({ destination: input }),
+      writeFile(texts.tile, PROOF_TILE),
+      writeFile(texts.heading, 'VELOCITY RIDES · TRAVEL PROOF'),
+      writeFile(texts.sub, `${pktStamp(startedAt)} PKT · Ride ${tripId.slice(0, 8).toUpperCase()}`),
+    ]);
+    await execFileAsync(
+      ffmpegPath(),
+      ['-v', 'error', '-i', input, '-filter_complex', proofFilter(texts), '-map', '[out]', '-map', '0:a?',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-c:a', 'copy', '-movflags', '+faststart', output],
+      { timeout: 240_000 },
+    );
+    await dest.save(await readFile(output), {
+      contentType: 'video/mp4',
+      metadata: {
+        // A download, not a page: the browser saves the file as proof.
+        contentDisposition: `attachment; filename="velocity-travel-proof-${startedAt}.mp4"`,
+        metadata: { firebaseStorageDownloadTokens: randomUUID() },
+      },
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * A clip to keep, with Velocity's watermark burned in — the copy a rider saves
+ * as proof. Made once per clip and kept beside it (`{startedAt}-proof.mp4`, a
+ * name getDashcamClips does not list), so it goes with the ride at 24 hours.
+ * Who may have it is exactly who may watch the clip.
+ */
+export const getDashcamProof = onCall({ timeoutSeconds: 300, memory: '2GiB', cpu: 2 }, async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = cabinSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Provide a valid tripId and clip.');
+  const { tripId, clip } = parsed.data;
+
+  await rateLimit(ctx.uid, 'getDashcamProof', 30, 3600);
+
+  const trip = await db.doc(`trips/${tripId}`).get();
+  const nothing = new HttpsError('not-found', 'There is no dash cam video for you on this ride.');
+  if (!trip.exists) throw nothing;
+  const parties = partiesOf(trip);
+  const window = viewerWindow(parties, ctx.uid);
+  const startedAt = clipStartedAt(clip);
+  if (!window || !parties.driverId || startedAt === null || !clipInWindow(startedAt, window)) throw nothing;
+  const expiresAt = dashcamExpiresAt(completedAtOf(trip), startedAt);
+  if (trip.get('status') !== 'in_progress' && expiresAt !== null && Date.now() >= expiresAt) {
+    throw new HttpsError('not-found', 'This ride\'s video was deleted 24 hours after the ride ended.');
+  }
+
+  const bucket = storage.bucket();
+  const folder = `dashcam/${parties.driverId}/${tripId}`;
+  const source = bucket.file(`${folder}/${clip}`);
+  const proof = bucket.file(`${folder}/${startedAt}-proof.mp4`);
+  const [made] = await proof.exists();
+  if (!made) {
+    const [recorded] = await source.exists();
+    if (!recorded) throw nothing;
+    await burnProof(source, proof, startedAt, tripId);
+  }
+  await proof.getMetadata();
+  logger.info('Dash cam proof handed out', { tripId, clip, freshlyBurned: !made });
+  return { ok: true, url: await playableUrl(bucket, proof) };
 });
 
 /** Rides looked at per run. Each costs one trip read; the rest wait an hour. */
