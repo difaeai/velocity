@@ -18,7 +18,7 @@ import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
-import { studioApi, type StudioPaymentDoc } from '@/lib/api';
+import { agentPrice, agentsApi, studioApi, type AgentPackage, type AgentState, type StudioPaymentDoc } from '@/lib/api';
 import {
   PKR_PER_USD,
   STUDIO_PLAN_IDS,
@@ -49,6 +49,25 @@ export default function BillingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // An AI agents package chosen on the Sales page arrives as ?agents=1&numbers=1&calls=20&min=2&wa=300.
+  const [agentPkg, setAgentPkg] = useState<AgentPackage | null>(null);
+  const [agentCard, setAgentCard] = useState<Pick<AgentState, 'price' | 'usdToPkr'> | null>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (!q.get('agents')) return;
+    const n = (k: string, d: number) => Math.max(0, Number(q.get(k)) || d);
+    const t = setTimeout(
+      () =>
+        setAgentPkg({ agents: n('agents', 1), numbers: n('numbers', 1), callsPerDay: n('calls', 10), avgCallMin: n('min', 2), waMessagesPerMonth: n('wa', 0) }),
+      0,
+    );
+    agentsApi
+      .state({})
+      .then((s) => setAgentCard({ price: s.price, usdToPkr: s.usdToPkr }))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the agent prices.'));
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     getDoc(doc(db, 'config', 'settlementAccounts'))
@@ -79,7 +98,9 @@ export default function BillingPage() {
   }
 
   const chosen = plan ?? ws.plan;
-  const amount = studioPriceUsd(chosen, billing);
+  const agentQuote = agentPkg && agentCard ? agentPrice(agentPkg, agentCard.price, agentCard.usdToPkr) : null;
+  const amount = agentPkg ? (agentQuote?.usd ?? 0) : studioPriceUsd(chosen, billing);
+  const amountPkr = agentPkg ? (agentQuote?.pkr ?? 0) : amount * PKR_PER_USD;
   const pending = payments.find((p) => p.status === 'pending');
   const until = Math.max(ws.trialEndsAtMs, ws.paidUntilMs);
   const live = nowMs > 0 && until > nowMs;
@@ -94,7 +115,9 @@ export default function BillingPage() {
       if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
       const screenshotPath = `workspaces/${wid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
       await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
-      await studioApi.submitPayment({ plan: chosen, billing, txnId: txnId.trim(), screenshotPath });
+      await studioApi.submitPayment(
+        agentPkg ? { agents: agentPkg, txnId: txnId.trim(), screenshotPath } : { plan: chosen, billing, txnId: txnId.trim(), screenshotPath },
+      );
       setTxnId('');
       setFile(null);
       setNotice('Thank you — we will check the payment and switch your plan on, usually within a few hours.');
@@ -124,6 +147,23 @@ export default function BillingPage() {
       {error ? <p style={{ color: colors.danger, margin: 0 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, margin: 0 }}>{notice}</p> : null}
 
+      {agentPkg ? (
+        <Card>
+          <h2 style={h2}>1. Your AI agents package</h2>
+          <p style={{ margin: '0 0 8px', fontSize: 14 }}>
+            {agentPkg.agents} AI agent{agentPkg.agents === 1 ? '' : 's'} · {agentPkg.numbers} phone number{agentPkg.numbers === 1 ? '' : 's'} ·{' '}
+            {agentPkg.callsPerDay} calls a day (about {agentQuote?.minutes.toLocaleString('en-PK') ?? '…'} minutes a month) ·{' '}
+            {agentPkg.waMessagesPerMonth} WhatsApp messages — for 30 days.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAgentPkg(null)}
+            style={{ border: 'none', background: 'none', padding: 0, color: colors.secondary, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Pay for my Studio plan instead
+          </button>
+        </Card>
+      ) : (
       <Card>
         <h2 style={h2}>1. Choose the plan to pay for</h2>
         <div role="radiogroup" aria-label="Pay for" style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -186,11 +226,12 @@ export default function BillingPage() {
           })}
         </div>
       </Card>
+      )}
 
       <Card>
         <h2 style={h2}>
-          2. Send ${amount} (about Rs {(amount * PKR_PER_USD).toLocaleString('en-PK')})
-          {billing === 'year' ? ` for a year — you save $${STUDIO_PLANS[chosen].usd * 12 - amount}` : ''}
+          2. Send ${amount} (about Rs {amountPkr.toLocaleString('en-PK')})
+          {!agentPkg && billing === 'year' ? ` for a year — you save $${STUDIO_PLANS[chosen].usd * 12 - amount}` : ''}
         </h2>
         {accounts === null ? (
           <p style={{ color: colors.muted, margin: 0 }}>Loading where to pay…</p>
@@ -213,9 +254,9 @@ export default function BillingPage() {
         <h2 style={h2}>3. Tell us you paid</h2>
         {pending ? (
           <p style={{ margin: 0, fontSize: 14 }}>
-            We have your payment for {pending.billing === 'year' ? 'a year of ' : ''}the{' '}
-            <strong>{STUDIO_PLANS[pending.plan].name}</strong> plan, sent {when(pending.createdAtMs)}.
-            It is being checked — the plan switches on as soon as it is approved.
+            We have your payment for {pending.kind === 'agents' ? 'the ' : pending.billing === 'year' ? 'a year of the ' : 'the '}
+            <strong>{pending.kind === 'agents' ? 'AI agents package' : `${STUDIO_PLANS[pending.plan].name} plan`}</strong>, sent{' '}
+            {when(pending.createdAtMs)}. It is being checked — it switches on as soon as it is approved.
           </p>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -233,8 +274,12 @@ export default function BillingPage() {
               />
             </label>
             <div>
-              <Button onClick={send} disabled={busy || !file || txnId.trim().length < 6}>
-                {busy ? 'Sending — our AI is reading the receipt…' : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
+              <Button onClick={send} disabled={busy || !file || txnId.trim().length < 6 || (agentPkg !== null && !agentQuote)}>
+                {busy
+                  ? 'Sending — our AI is reading the receipt…'
+                  : agentPkg
+                    ? 'I paid for the AI agents package'
+                    : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
               </Button>
             </div>
           </div>
@@ -249,7 +294,7 @@ export default function BillingPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 120 }}>{when(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {STUDIO_PLANS[p.plan].name}
+                  {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
                   {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>

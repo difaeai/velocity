@@ -140,7 +140,7 @@ export async function checkStudioPayment(paymentId: string): Promise<void> {
   const ref = db.doc(`studioPayments/${paymentId}`);
   try {
     const pay = (await ref.get()).data() as
-      | { wid: string; plan: PlanId; billing?: Billing; txnId: string | null; screenshotPath: string | null }
+      | { wid: string; plan: PlanId; billing?: Billing; txnId: string | null; screenshotPath: string | null; amountPkr?: number }
       | undefined;
     if (!pay) return;
 
@@ -165,7 +165,8 @@ export async function checkStudioPayment(paymentId: string): Promise<void> {
       text: read?.text ?? '',
       ocrConfidence: read?.ocrConfidence ?? null,
       typedTxn: pay.txnId ?? '',
-      expectedPkr: pricePkr(pay.plan, pay.billing ?? 'month'),
+      // An agent package carries its own price; a plan is priced from the plan.
+      expectedPkr: pay.amountPkr ?? pricePkr(pay.plan, pay.billing ?? 'month'),
       accountsKnown: Boolean(accounts.easypaisaNumber || accounts.jazzcashNumber || accounts.bankIban),
       imageReused,
     });

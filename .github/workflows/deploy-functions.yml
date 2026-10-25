@@ -18,6 +18,7 @@ on:
       # unrelated backend push happens to come next.
       - '.github/workflows/deploy-functions.yml'
       - 'backend/functions/**'
+      - 'backend/voice-bridge/**'
       - 'firestore.rules'
       - 'firestore.indexes.json'
       - 'storage.rules'
@@ -86,6 +87,34 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
+      # The voice bridge (backend/voice-bridge): AI calling agents need a
+      # WebSocket server, which a Cloud Function cannot be, so it is its own
+      # Cloud Run service, built from source. It holds no keys — the functions
+      # hand it a one-use Gemini Live token per call — and its URL becomes
+      # VOICE_BRIDGE_URL below. Redeployed only when its folder changed (the
+      # tree hash rides on the service as a label). Allowed to fail: without a
+      # bridge AI calls stay off, and that must never block the functions.
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy the voice bridge (Cloud Run)
+        id: bridge
+        continue-on-error: true
+        run: |
+          tree=$(git rev-parse HEAD:backend/voice-bridge)
+          have=$(gcloud run services describe voice-bridge --project velocity-fe379 --region asia-south1 \
+            --format='value(metadata.labels.bridge-tree)' 2>/dev/null || true)
+          if [ "$tree" != "$have" ]; then
+            gcloud run deploy voice-bridge --project velocity-fe379 --region asia-south1 \
+              --source backend/voice-bridge --allow-unauthenticated \
+              --timeout 900 --concurrency 20 --min-instances 0 --max-instances 5 --memory 512Mi \
+              --set-env-vars "FUNCTIONS_URL=https://asia-south1-velocity-fe379.cloudfunctions.net" \
+              --labels "bridge-tree=$tree" --quiet
+          else
+            echo "· voice bridge unchanged"
+          fi
+          url=$(gcloud run services describe voice-bridge --project velocity-fe379 --region asia-south1 --format='value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "· voice bridge at $url"
+
       # Backend runtime config, assembled into the .env file the Firebase CLI
       # deploys as function environment variables.
       #
@@ -113,8 +142,16 @@ jobs:
           WHATSAPP_ENV: ${{ secrets.WHATSAPP_ENV }}
           WHATSAPP_OTP_ENV: ${{ secrets.WHATSAPP_OTP_ENV }}
           COST_SOURCES_ENV: ${{ secrets.COST_SOURCES_ENV }}
+          VOICE_BRIDGE_URL: ${{ steps.bridge.outputs.url }}
         run: |
           : > .env.velocity-fe379
+          # Where AI calling agents stream a call's audio (the step above).
+          if [ -n "$VOICE_BRIDGE_URL" ]; then
+            printf 'VOICE_BRIDGE_URL=%s\n' "$VOICE_BRIDGE_URL" >> .env.velocity-fe379
+            echo "· agents: AI calls READY (voice bridge at $VOICE_BRIDGE_URL)"
+          else
+            echo "· agents: no voice bridge — AI calls stay off; scripts still work"
+          fi
           if [ -n "$PAYMENTS_GATEWAY_ENV" ]; then
             printf '%s\n' "$PAYMENTS_GATEWAY_ENV" >> .env.velocity-fe379
           else

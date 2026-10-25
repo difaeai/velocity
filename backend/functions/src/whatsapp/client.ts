@@ -47,7 +47,7 @@
 import { logger } from 'firebase-functions';
 
 /** Graph API version. Pinned: Meta ships breaking changes across versions. */
-const GRAPH_VERSION = 'v21.0';
+export const GRAPH_VERSION = 'v21.0';
 
 export interface WhatsAppConfig {
   /** Permanent System User access token for the WhatsApp Business Account. */
@@ -306,7 +306,7 @@ export async function sendTemplate(
  * codes carry the same meaning about the same number, whichever template
  * provoked them. Only the components differ, and those are built by the callers.
  */
-async function postMessage(
+export async function postMessage(
   cfg: { token: string; phoneNumberId: string },
   payload: Record<string, unknown>,
 ): Promise<SendResult> {

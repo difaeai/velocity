@@ -409,7 +409,7 @@ function Manage({ ws, payments }: { ws: Workspace; payments: StudioPaymentDoc[] 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <strong>{day(p.createdAtMs)}</strong>
                   <span>
-                    {STUDIO_PLANS[p.plan].name}
+                    {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
                     {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   </span>
                   <Badge

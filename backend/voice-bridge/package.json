@@ -1,0 +1,16 @@
+{
+  "name": "velocity-voice-bridge",
+  "private": true,
+  "description": "Joins a Twilio call's audio to Gemini Live so an AI agent can talk on the phone.",
+  "type": "module",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

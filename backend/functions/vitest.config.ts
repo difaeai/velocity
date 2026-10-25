@@ -52,6 +52,9 @@ export default defineConfig({
       // In-app calls (who may ring whom) and the AI phone helpline.
       'src/calls/__tests__/**/*.test.ts',
       'src/support/__tests__/**/*.test.ts',
+      // The AI meter, keys and budgets; the AI agents' calls, WhatsApp and billing.
+      'src/ai/__tests__/**/*.test.ts',
+      'src/agents/__tests__/**/*.test.ts',
     ],
     // All test files share one Firestore emulator — run them sequentially.
     // vitest 4: poolOptions is gone; forks.*  and fileParallelism are top-level.

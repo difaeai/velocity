@@ -75,7 +75,7 @@ export default function StudioPaymentsPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 110, color: colors.muted }}>{day(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {p.business} · {STUDIO_PLANS[p.plan].name}
+                  {p.business} · {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
                   {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
@@ -115,7 +115,7 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
   }
 
   const a = p.analysis;
-  const asked = p.amountUsd * PKR_PER_USD;
+  const asked = p.amountPkr ?? p.amountUsd * PKR_PER_USD;
   return (
     <div
       style={{
@@ -140,7 +140,10 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
           <VerdictBadge analysis={a} />
         </div>
         <div>
-          {STUDIO_PLANS[p.plan].name} plan · <strong>{p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
+          {p.kind === 'agents' && p.agents
+            ? `AI agents package (${p.agents.callsPerDay} calls a day, ${p.agents.numbers} number${p.agents.numbers === 1 ? '' : 's'})`
+            : `${STUDIO_PLANS[p.plan].name} plan`}{' '}
+          · <strong>{p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
           <strong>${p.amountUsd}</strong> (Rs {asked.toLocaleString('en-PK')}) · sent {day(p.createdAtMs)}
         </div>
         <div>

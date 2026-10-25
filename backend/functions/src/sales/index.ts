@@ -54,6 +54,9 @@ const SUPPRESS = 'salesSuppress';
 /** Per pass of the sweep: a few at a time reads as a person, not a blast. */
 const PER_PASS = 5;
 
+export const SALES_SETTINGS = SETTINGS;
+export const SALES_LEADS = LEADS;
+
 export type LeadStatus = 'new' | 'drafted' | 'approved' | 'sent' | 'replied' | 'won' | 'lost' | 'skipped' | 'failed';
 
 interface SalesSettings {
@@ -86,7 +89,7 @@ interface SalesSettings {
 }
 
 /** One calling agent as set up on the Sales page. */
-interface CallAgent extends Caller {
+export interface CallAgent extends Caller {
   id: string;
   voice: 'female' | 'male';
   /** Pakistan hours it is fine to ring a business, from–to. */
@@ -94,6 +97,12 @@ interface CallAgent extends Caller {
   hoursTo: number;
   dailyCap: number;
   active: boolean;
+  /** "script": writes what a person says. "ai": dials and talks itself (agents/calls.ts). Absent = script. */
+  mode?: 'script' | 'ai';
+  /** Prices, packages, FAQs — the only facts the AI may state on a call or on WhatsApp. */
+  knowledge?: string;
+  /** Rings new leads with a phone number on its own, inside its hours and caps. */
+  autoCall?: boolean;
 }
 
 const DEFAULTS: SalesSettings = {
@@ -121,7 +130,7 @@ const DEFAULTS: SalesSettings = {
 };
 
 /** A lead as stored, with the close: the thread we started and what came back. */
-interface LeadDoc {
+export interface LeadDoc {
   name: string;
   website: string | null;
   email: string | null;
@@ -140,9 +149,15 @@ interface LeadDoc {
   reply?: { atMs: number; text: string; messageId: string; intent: string } | null;
   replyDraft?: Draft | null;
   answeredAtMs?: number | null;
+  phone?: string | null;
+  /** Asked on a call or on WhatsApp never to be contacted again. */
+  doNotContact?: boolean;
+  lastCall?: { atMs: number; outcome: string } | null;
+  /** AI calls placed to this lead. */
+  aiCalls?: number;
 }
 
-async function getSales(): Promise<SalesSettings> {
+export async function getSales(): Promise<SalesSettings> {
   const stored = ((await sdb.doc(SETTINGS).get()).data() ?? {}) as Partial<SalesSettings>;
   const brand = workspaceBrand();
   return {
@@ -172,7 +187,7 @@ export function leadId(b: Pick<FoundBusiness, 'name' | 'website' | 'email'>): st
 
 const emailKey = (email: string) => createHash('sha1').update(email.trim().toLowerCase()).digest('hex');
 
-function seller(s: SalesSettings): Seller {
+export function seller(s: SalesSettings): Seller {
   return {
     product: s.product,
     offer: s.offer,
@@ -525,6 +540,9 @@ const settingsSchema = z.object({
         hoursTo: z.number().int().min(1).max(24),
         dailyCap: z.number().int().min(1).max(200),
         active: z.boolean(),
+        mode: z.enum(['script', 'ai']).optional(),
+        knowledge: z.string().trim().max(3000).optional(),
+        autoCall: z.boolean().optional(),
       }),
     )
     .max(5)

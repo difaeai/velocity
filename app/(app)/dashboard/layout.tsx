@@ -132,13 +132,15 @@ const SOCIAL_NAV: NavGroup[] = [
   },
 ];
 
-/** Admins only: everyone on Velocity Studio, the payments our AI has read, and the sign-up mailbox. */
+/** Admins only: everyone on Velocity Studio, the payments our AI has read, the sign-up mailbox, agent billing and AI spend. */
 const STUDIO_ADMIN_NAV: NavGroup = {
   title: 'Velocity AI Studio',
   items: [
     { href: '/dashboard/social/studio-customers', label: '👥 Users' },
     { href: '/dashboard/social/studio-payments', label: '🧾 Payments · AI checked' },
     { href: '/dashboard/social/studio-email', label: '✉️ Sign-up email' },
+    { href: '/dashboard/social/agents-billing', label: '📞 AI agents & billing' },
+    { href: '/dashboard/social/ai-usage', label: '🔑 AI keys & usage' },
   ],
 };
 

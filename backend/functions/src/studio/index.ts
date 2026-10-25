@@ -31,6 +31,9 @@ import { EMPTY_BRIEF } from '../social/types';
 import { inWorkspace, sdb, workspaceRef } from '../social/workspace';
 import { signInMethod, touchStudioUser } from './emailCode';
 import { checkStudioPayment } from './paymentCheck';
+import { quote, type AgentPackage, type AgentPlan } from '../agents/billing';
+import { packageSchema, planFrom } from '../agents';
+import { rateCard } from '../agents/store';
 import {
   PERIOD_MS,
   PLAN_IDS,
@@ -153,14 +156,17 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   if (typeof wid !== 'string') throw new HttpsError('failed-precondition', 'Sign up for Velocity Studio first.');
   const parsed = z
     .object({
-      plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
+      plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]).optional(),
       billing: z.enum(['month', 'year']).optional().default('month'),
+      /** A month of AI calling and WhatsApp instead of a plan, priced from the rate card. */
+      agents: packageSchema.optional(),
       txnId: text(60).optional().default(''),
       screenshotPath: text(300).optional().default(''),
     })
+    .refine((d) => Boolean(d.plan) !== Boolean(d.agents))
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
-  const { plan, billing, txnId, screenshotPath } = parsed.data;
+  const { billing, agents, txnId, screenshotPath } = parsed.data;
   const key = txnKey(txnId);
   // Both, always: the ID is what can be claimed once, the screenshot what the check reads.
   if (!screenshotPath || key.length < 6) {
@@ -172,6 +178,9 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
 
   const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
   if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
+  // An agent package keeps the plan the workspace already has; its price comes from the rate card, never the client.
+  const plan = parsed.data.plan ?? ws.plan;
+  const agentQuote = agents ? quote(agents, await rateCard()) : null;
 
   const paymentRef = db.collection('studioPayments').doc();
   await db.runTransaction(async (tx) => {
@@ -186,8 +195,9 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
       business: ws.name,
       email: ws.ownerEmail,
       plan,
-      billing,
-      amountUsd: priceUsd(plan, billing),
+      billing: agents ? 'month' : billing,
+      amountUsd: agentQuote ? agentQuote.priceUsd : priceUsd(plan, billing),
+      ...(agents && agentQuote ? { kind: 'agents', agents, amountPkr: agentQuote.pricePkr } : {}),
       txnId,
       txnKey: key,
       screenshotPath,
@@ -211,11 +221,22 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
   const { paymentId, approve, note } = parsed.data;
+  const card = await rateCard();
 
   return db.runTransaction(async (tx) => {
     const payRef = db.doc(`studioPayments/${paymentId}`);
     const pay = (await tx.get(payRef)).data() as
-      | { wid: string; plan: PlanId; billing?: Billing; status: string; txnKey: string | null; imageSha?: string | null }
+      | {
+          wid: string;
+          plan: PlanId;
+          billing?: Billing;
+          status: string;
+          txnKey: string | null;
+          imageSha?: string | null;
+          kind?: 'agents';
+          agents?: AgentPackage;
+          amountUsd?: number;
+        }
       | undefined;
     if (!pay) throw new HttpsError('not-found', 'No such payment.');
     if (pay.status !== 'pending') throw new HttpsError('failed-precondition', `Already ${pay.status}.`);
@@ -230,8 +251,15 @@ export const adminDecideStudioPayment = onCall(async (req) => {
     }
 
     const wsRef = workspaceRef(pay.wid);
-    const ws = (await tx.get(wsRef)).data() as Workspace | undefined;
+    const ws = (await tx.get(wsRef)).data() as (Workspace & { agentPlan?: AgentPlan }) | undefined;
     if (!ws) throw new HttpsError('not-found', 'That workspace no longer exists.');
+    // A month of AI agents: the package they paid for, from the end of what is already paid.
+    if (pay.kind === 'agents' && pay.agents) {
+      const until = extendPaid(ws.agentPlan?.paidUntilMs ?? 0, now, PERIOD_MS);
+      tx.update(payRef, decided);
+      tx.update(wsRef, { agentPlan: planFrom(pay.agents, card, until, ctx.uid, now, pay.amountUsd) });
+      return { ok: true, status: 'approved', paidUntilMs: until };
+    }
     // Payments sent before yearly billing existed have no `billing`: they were monthly.
     const paidUntilMs = extendPaid(ws.paidUntilMs, now, pay.billing === 'year' ? YEAR_MS : PERIOD_MS);
     tx.update(payRef, decided);
