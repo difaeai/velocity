@@ -562,6 +562,7 @@ export {
   adminSyncAds,
   adminSetAdsSettings,
   adminCreateAd,
+  adminDesignAd,
   adminAdAction,
   socialEngagement,
   adminSyncSocialComments,
@@ -584,7 +585,8 @@ export {
 export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
 export { adminSetStudioMailer } from './studio/mailer';
 
-// The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply
+// The sales agent — find businesses, write to each, follow up twice, and draft an answer to every reply;
+// its calling agents write a call script per business for the person who dials
 export {
   salesGetSettings,
   salesSaveSettings,
@@ -592,6 +594,7 @@ export {
   salesAddLeads,
   salesWriteEmails,
   salesLeadAction,
+  salesCallScript,
   salesSweep,
 } from './sales';
 

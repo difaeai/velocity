@@ -53,7 +53,7 @@ export {
 } from './pipeline';
 
 /** The paid side: Meta campaigns planned, made, measured and steered here. */
-export { socialAdsSync, adminSyncAds, adminSetAdsSettings, adminCreateAd, adminAdAction } from './ads';
+export { socialAdsSync, adminSyncAds, adminSetAdsSettings, adminCreateAd, adminDesignAd, adminAdAction } from './ads';
 
 export {
   socialPageRead,

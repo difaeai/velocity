@@ -7,7 +7,30 @@ import { describe, expect, it } from 'vitest';
 import { leadId } from '../index';
 import { fromOsm, osmQuery } from '../find';
 import { assertPublicUrl, privateAddress, readSite } from '../site';
-import { emailProblems, withFooter } from '../write';
+import { callScriptFallback, emailProblems, withFooter } from '../write';
+
+describe('callScriptFallback — the call script with no model', () => {
+  const seller = { product: 'Reels that bring customers in', offer: 'a free first reel', senderCompany: 'Velocity Studio' };
+  const caller = { name: 'Sana', language: 'mixed' as const, goal: 'a 10-minute meeting this week', opener: '', points: 'We post daily\n\nNo contract' };
+
+  it('builds an opener, a pitch from the setup, and the ask', () => {
+    const s = callScriptFallback(caller, seller, { name: 'Bake House' });
+    expect(s.opener).toContain('Sana from Velocity Studio');
+    expect(s.opener).toContain('Bake House');
+    expect(s.pitch).toEqual([
+      'We help businesses like Bake House: Reels that bring customers in',
+      'We post daily',
+      'No contract',
+      'For a new customer: a free first reel',
+    ]);
+    expect(s.close).toBe('Ask for: a 10-minute meeting this week');
+  });
+
+  it("keeps the owner's own opener, and greets in English when the caller speaks English", () => {
+    expect(callScriptFallback({ ...caller, opener: 'Hi, quick one!' }, seller, { name: 'X' }).opener).toBe('Hi, quick one!');
+    expect(callScriptFallback({ ...caller, language: 'english' }, seller, { name: 'X' }).opener).toMatch(/^Hello, Sana/);
+  });
+});
 
 describe('privateAddress — the SSRF guard', () => {
   it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '::1', 'fd00::1', '::ffff:10.0.0.1'])(

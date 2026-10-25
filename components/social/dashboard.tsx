@@ -1,34 +1,35 @@
 'use client';
 
 /**
- * The overview's sections: the numbers, the pieces as boxes, the team as cards,
- * what is travelling this week and what worked.
+ * The overview's sections: the hero with the team, the approval choice, the
+ * numbers, how the ads are running and how the sales agents are doing — plus
+ * the viral finds, which live on the content page now.
  *
- * Everything is read from documents the overview already watches. `readDesk`
- * is pure and does all the deciding, so the drawing below only draws.
+ * Everything is read from documents the pages already watch. `readDesk` is
+ * pure and does all the deciding, so the drawing below only draws.
  */
 
-import { useState } from 'react';
 import Link from 'next/link';
 
 import { colors } from '@/lib/config';
-import {
-  postAssets,
-  socialApi,
-  type SocialEmployee,
-  type SocialPageRead,
-  type SocialPostDoc,
-  type SocialResearch,
-  type SocialRole,
-  type SocialStage,
+import type {
+  AdCampaignDoc,
+  AdsConfigDoc,
+  SalesLeadDoc,
+  SalesSettingsDoc,
+  SocialEmployee,
+  SocialPostDoc,
+  SocialResearch,
+  SocialSettings,
+  SocialStage,
 } from '@/lib/api';
-import { compact } from '@/components/charts';
-import { FormatChip, Mascot, ROLE_META, STAGE_META, StatusPill, longDate, postSummary } from './shared';
+import { Mascot, ROLE_META, longDate } from './shared';
+import { GRADE_META, adMoney, tone } from './ads';
+import { localHourLabel } from './launch';
+import { AreaSpark, CountUp, Ring } from './fx';
 
 const WAITING = ['awaiting_approval', 'partial', 'failed'];
-/** Needs you, then being made, then the rest — the order a box is worth looking at. */
-const NEEDS_YOU = ['awaiting_approval', 'changes_requested', 'failed', 'partial'];
-const MAKING = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering', 'publishing'];
+const DAY_MS = 86_400_000;
 
 /** Pakistan's calendar day for a moment — post ids and `date` are PKT days. */
 export const pktDay = (ms: number) => new Date(ms + 5 * 3600_000).toISOString().slice(0, 10);
@@ -44,7 +45,7 @@ export interface Doing {
 /** Everything the overview shows, decided once from the posts it watches. */
 export function readDesk(posts: SocialPostDoc[], nowMs: number) {
   const today = pktDay(nowMs);
-  const day = (back: number) => pktDay(nowMs - back * 86_400_000);
+  const day = (back: number) => pktDay(nowMs - back * DAY_MS);
   const posted = posts.filter((p) => p.status === 'published' || p.status === 'partial');
 
   const doing = new Map<string, Doing>();
@@ -61,479 +62,680 @@ export function readDesk(posts: SocialPostDoc[], nowMs: number) {
     }
   }
 
-  const rank = (p: SocialPostDoc) => (NEEDS_YOU.includes(p.status) ? 0 : MAKING.includes(p.status) ? 1 : 2);
   return {
     today,
     postedThisWeek: posted.filter((p) => p.date > day(7)).length,
     postedLastWeek: posted.filter((p) => p.date > day(14) && p.date <= day(7)).length,
+    /** Posted per day, the last fourteen days, oldest first — the sparkline. */
+    perDay: Array.from({ length: 14 }, (_, i) => day(13 - i)).map((d) => posted.filter((p) => p.date === d).length),
     waiting: posts.filter((p) => WAITING.includes(p.status)),
     doing,
-    /** The boxes, most urgent first; posts arrive newest first and sort is stable. */
-    boxes: [...posts].sort((a, b) => rank(a) - rank(b)).slice(0, 8),
   };
 }
 
 export type DeskRead = ReturnType<typeof readDesk>;
 
-export function ago(ms: number, nowMs: number): string {
-  const s = Math.max(0, (nowMs - ms) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86_400)}d ago`;
+const vars = (i: number) => ({ ['--i' as string]: i }) as React.CSSProperties;
+
+// ── the hero ────────────────────────────────────────────────────────────────
+
+export function Hero({
+  greeting,
+  name,
+  today,
+  summary,
+  running,
+  waiting,
+  staff,
+  desk,
+}: {
+  greeting: string;
+  name: string | null;
+  today: string | null;
+  summary: string;
+  running: boolean;
+  waiting: number;
+  staff: SocialEmployee[];
+  desk: DeskRead;
+}) {
+  const team = staff.filter((e) => e.status === 'active');
+  const working = team.filter((e) => desk.doing.get(e.id)?.now).length;
+  return (
+    <section className="fx-hero fx-rise" style={vars(0)}>
+      <span className="fx-orb a" />
+      <span className="fx-orb b" />
+      <span className="fx-orb c" />
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="fx-eyebrow">Manage social · your AI team</div>
+          <h1>
+            {greeting}
+            {name ? `, ${name}` : ''} <span className="fx-wave">👋</span>
+          </h1>
+          <p>{summary}</p>
+          {team.length ? (
+            <div className="fx-team" aria-label="Your AI team">
+              {team.map((e, i) => {
+                const busy = desk.doing.get(e.id)?.now;
+                return (
+                  <Link
+                    key={e.id}
+                    href="/dashboard/social/employees"
+                    className="fx-mate fx-bob"
+                    style={vars(i)}
+                    title={`${e.name} — ${ROLE_META[e.role].label}${busy ? ', working now' : ''}`}
+                    aria-label={`${e.name}, ${ROLE_META[e.role].label}${busy ? ', working now' : ''}`}
+                  >
+                    <Mascot role={e.role} size={32} />
+                    {busy ? <span className="busy" /> : null}
+                  </Link>
+                );
+              })}
+              <Link href="/dashboard/social/employees" className="fx-hero-chip" style={{ marginLeft: 4 }}>
+                {working ? `${working} working now` : `${team.length} on duty`} →
+              </Link>
+            </div>
+          ) : null}
+        </div>
+        <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
+          {today ? <span className="fx-hero-chip">📅 {longDate(today)}</span> : null}
+          <span className="fx-hero-chip">
+            <span className={running ? 'fx-live lime' : 'fx-live off'} /> {running ? 'Posting every day' : 'Daily run paused'}
+          </span>
+          {waiting ? (
+            <Link href="/dashboard/social/queue" className="fx-hero-chip warn">
+              <span className="fx-wiggle">🔔</span> {waiting} waiting for you →
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
 }
 
-// ── the numbers across the top ──────────────────────────────────────────────
+// ── the approval choice ─────────────────────────────────────────────────────
 
-export function Kpi({
+const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
+
+/**
+ * The one question that decides how the desk behaves: ask before every post,
+ * or post on its own every day. Choosing the second also starts the daily run;
+ * the switch underneath starts or pauses that run for either answer.
+ */
+export function ApprovalBox({
+  settings,
+  waiting,
+  busy,
+  noTeam,
+  networks,
+  nextRun,
+  coverage,
+  onChoose,
+  onRunning,
+}: {
+  settings: SocialSettings;
+  waiting: number;
+  busy: boolean;
+  noTeam: boolean;
+  networks: string;
+  nextRun: string | null;
+  coverage: string | null;
+  onChoose: (direct: boolean) => void;
+  onRunning: (on: boolean) => void;
+}) {
+  const chosen = Boolean(settings.publishModeChosen);
+  const ask = chosen && !settings.autoPublish;
+  const direct = chosen && settings.autoPublish;
+  const running = Boolean(settings.enabled);
+  return (
+    <section className="fx-card fx-rise" style={vars(2)} aria-labelledby="approval-h">
+      <div className="fx-head">
+        <span className="fx-ico" style={{ background: '#eef8d2' }} aria-hidden>
+          ✅
+        </span>
+        <div>
+          <h2 id="approval-h" className="fx-h2">
+            Approval
+          </h2>
+          <p className="fx-sub">How should the team post?</p>
+        </div>
+        {!chosen ? (
+          <span className="fx-pill" style={{ marginLeft: 'auto', background: 'var(--lime)', color: 'var(--ink)' }}>
+            <span className="fx-live" /> Choose one
+          </span>
+        ) : null}
+      </div>
+
+      <div role="radiogroup" aria-label="How the team posts" style={{ display: 'grid', gap: 10 }}>
+        <button type="button" role="radio" aria-checked={ask} className="fx-opt" disabled={busy} onClick={() => onChoose(false)}>
+          <span className="ico" aria-hidden>
+            🛡️
+          </span>
+          <span>
+            <strong style={{ display: 'block', fontSize: 14.5 }}>Ask me before every post</strong>
+            <span className="fx-muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              Each piece waits for your Approve, then goes out at once.
+            </span>
+          </span>
+          <span className="tick" aria-hidden>
+            {ask ? '✓' : ''}
+          </span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={direct}
+          className="fx-opt"
+          disabled={busy || noTeam}
+          onClick={() => onChoose(true)}
+        >
+          <span className="ico" aria-hidden>
+            ⚡
+          </span>
+          <span>
+            <strong style={{ display: 'block', fontSize: 14.5 }}>Post on its own, every day</strong>
+            <span className="fx-muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              Makes {pieces(settings.postsPerDay)}
+              {settings.dailyStory ? ' and a story' : ''} every day at {localHourLabel(settings.runHour)} and posts them
+              straight to {networks}.
+            </span>
+          </span>
+          <span className="tick" aria-hidden>
+            {direct ? '✓' : ''}
+          </span>
+        </button>
+      </div>
+
+      {waiting ? (
+        <Link href="/dashboard/social/queue" className="fx-waiting">
+          <span className="fx-wiggle" aria-hidden>
+            🔔
+          </span>
+          <span style={{ flex: 1 }}>
+            {waiting} piece{waiting === 1 ? '' : 's'} waiting for your Approve
+          </span>
+          <span>Review →</span>
+        </Link>
+      ) : null}
+
+      <div className="fx-runrow">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={running}
+          aria-label="Daily run"
+          className="fx-switch"
+          disabled={busy || noTeam}
+          onClick={() => onRunning(!running)}
+        />
+        <span style={{ fontSize: 13, lineHeight: 1.4, minWidth: 0 }}>
+          <strong>Daily run {running ? 'on' : 'off'}</strong>
+          <span className="fx-muted" style={{ display: 'block', fontSize: 12 }}>
+            {noTeam
+              ? 'Hire the AI team first.'
+              : running
+                ? `Next: ${nextRun ?? localHourLabel(settings.runHour)}`
+                : 'Nothing is made unless you ask for it.'}
+          </span>
+        </span>
+        <Link href="/dashboard/social/automation" className="fx-link">
+          Settings
+        </Link>
+      </div>
+      {coverage ? <p style={{ fontSize: 12, color: colors.warn, margin: '8px 0 0', lineHeight: 1.5 }}>{coverage}</p> : null}
+    </section>
+  );
+}
+
+// ── the numbers ─────────────────────────────────────────────────────────────
+
+export function KpiTile({
+  i,
   icon,
   tint,
   label,
   value,
+  format,
   delta,
   hint,
+  href,
+  children,
 }: {
+  i: number;
   icon: string;
   tint: string;
   label: string;
-  value: string;
+  value: number | null;
+  format?: (n: number) => string;
   delta?: number | null;
   hint: string;
+  href?: string;
+  children?: React.ReactNode;
 }) {
-  return (
-    <div className="sd-card sd-lift" style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-      <span
-        aria-hidden
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 14,
-          flex: 'none',
-          display: 'grid',
-          placeItems: 'center',
-          fontSize: 22,
-          background: tint,
-        }}
-      >
-        {icon}
+  const body = (
+    <>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span className="fx-ico" style={{ background: tint }} aria-hidden>
+          {icon}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>{label}</span>
+        {delta ? (
+          <span className={`fx-delta ${delta > 0 ? 'up' : 'down'}`} style={{ marginLeft: 'auto' }}>
+            {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}
+          </span>
+        ) : null}
       </span>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: colors.muted }}>{label}</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{value}</span>
-          {delta != null && delta !== 0 ? (
-            <span style={{ fontSize: 12, fontWeight: 800, color: delta > 0 ? colors.success : colors.danger }}>
-              {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}
-            </span>
-          ) : null}
-        </div>
-        <div style={{ fontSize: 12, color: colors.muted }}>{hint}</div>
-      </div>
+      <span className="fx-num">{value == null ? '—' : <CountUp value={value} format={format} />}</span>
+      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{hint}</span>
+      {children}
+    </>
+  );
+  const style = { ...vars(i), display: 'grid', gap: 8, alignContent: 'start', color: 'inherit' };
+  return href ? (
+    <Link href={href} className="fx-card fx-lift fx-rise" style={style}>
+      {body}
+    </Link>
+  ) : (
+    <div className="fx-card fx-lift fx-rise" style={style}>
+      {body}
     </div>
   );
 }
 
-// ── the pieces, as boxes ───────────────────────────────────────────────────
+// ── how the ads are running ─────────────────────────────────────────────────
 
-/**
- * What the team made, one box each, most urgent first. A box waiting for you
- * can be approved right here; everything else opens in the queue.
- */
-export function PostBoxes({ posts, direct }: { posts: SocialPostDoc[]; direct: boolean }) {
+/** Our light-card colours, readable on the dark ads card. */
+const onDark = (c: string) =>
+  c === colors.success ? '#86efac' : c === colors.danger ? '#fca5a5' : c === colors.secondary ? '#93c5fd' : c === colors.warn ? '#fcd34d' : '#ffffff';
+
+/** Running first, then waiting for an Approve, then paused, then the rest. */
+const campaignRank = (c: AdCampaignDoc, nowMs: number) =>
+  c.status === 'ACTIVE' && !(c.endMs && nowMs && c.endMs < nowMs) ? 0 : c.approval === 'pending' ? 1 : c.status === 'PAUSED' ? 2 : 3;
+
+export function AdsSection({
+  ads,
+  campaigns,
+  nowMs,
+  house,
+  i,
+}: {
+  ads: AdsConfigDoc | null;
+  campaigns: AdCampaignDoc[];
+  nowMs: number;
+  house: boolean;
+  i: number;
+}) {
+  const connected = Boolean(ads?.adAccountId);
+  const acc = ads?.account;
+  const cur = ads?.currency ?? 'PKR';
+  const live = campaigns.filter((c) => campaignRank(c, nowMs) === 0);
+  const shown = [...campaigns].sort((a, b) => campaignRank(a, nowMs) - campaignRank(b, nowMs)).slice(0, 4);
+  const w = acc?.week;
+  const b = acc?.bench ?? undefined;
+  const roas = house ? (acc?.blended?.roas ?? null) : (w?.roas ?? null);
+
   return (
-    <div className="sd-card">
-      <SectionHead
-        title="What the team made"
-        href="/dashboard/social/queue"
-        link="All posts"
-        sub={
-          direct
-            ? 'Finished pieces post themselves. Anything that could not go out waits here.'
-            : 'Check a piece and press Approve — it goes live within five minutes.'
-        }
-      />
-      {posts.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
-          Nothing yet. Ask for something above and it shows up here.
+    <section className="fx-card fx-dark fx-rise" style={vars(i)} aria-labelledby="ads-h">
+      <div className="fx-head">
+        <span className="fx-ico" style={{ background: 'rgba(204,255,0,.14)' }} aria-hidden>
+          📣
+        </span>
+        <div>
+          <h2 id="ads-h" className="fx-h2">
+            Meta Ad Expert
+          </h2>
+          <p className="fx-sub">How your ads are running</p>
+        </div>
+        <span className="fx-pill" style={{ marginLeft: 'auto', background: 'rgba(255,255,255,.08)', color: '#eaf5ee' }}>
+          <span className={live.length ? 'fx-live lime' : 'fx-live off'} />
+          {connected ? (live.length ? `${live.length} running` : 'Nothing running') : 'Not connected'}
+        </span>
+      </div>
+
+      {!connected ? (
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', padding: '6px 0 4px' }}>
+          <div className="fx-radar" aria-hidden>
+            <span />
+            <span />
+            <span />
+            <b>📣</b>
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <strong style={{ fontSize: 16 }}>See what every rupee buys</strong>
+            <p className="fx-muted" style={{ fontSize: 13, lineHeight: 1.55, margin: '4px 0 12px' }}>
+              Connect the Meta ad account once. Then this card shows the spend, the clicks, what each click costs and
+              which campaign is winning — read every three hours.
+            </p>
+            <Link href="/dashboard/social/ads" className="fx-btn lime small">
+              Connect the ad account
+            </Link>
+          </div>
+        </div>
+      ) : !acc || !w ? (
+        <p className="fx-muted" style={{ fontSize: 13, margin: '0 0 6px' }}>
+          Connected to {ads?.accountName}. The first numbers arrive with the next reading — or press Refresh on the Ads page.
         </p>
       ) : (
-        <div className="sd-boxes">
-          {posts.map((p) => (
-            <PostBox key={p.id} post={p} />
-          ))}
-        </div>
+        <>
+          <div className="fx-stats">
+            <Cell label="Spent · 7 days" value={w.spend} format={(n) => adMoney(n, cur)} hint={`limit ${adMoney(ads!.dailyCap, cur)}/day`} />
+            <Cell label="Link clicks" value={w.linkClicks} format={(n) => Math.round(n).toLocaleString('en-PK')} />
+            <Cell
+              label="Per click · CPC"
+              value={w.cpc}
+              format={(n) => (n ? adMoney(n, cur) : '—')}
+              colour={onDark(tone(w.cpc, b?.cpc))}
+              hint={b ? `normal ${adMoney(b.cpc.low, cur)}–${adMoney(b.cpc.high, cur)}` : undefined}
+            />
+            <Cell
+              label="Click rate · CTR"
+              value={w.ctr}
+              format={(n) => (w.impressions ? `${n.toFixed(2)}%` : '—')}
+              colour={onDark(tone(w.ctr, b?.ctr, true))}
+            />
+            <Cell
+              label="Return · ROAS"
+              value={roas ?? 0}
+              format={(n) => (roas == null ? '—' : `${n.toFixed(2)}×`)}
+              colour={roas == null ? '#fff' : roas >= 1 ? '#86efac' : '#fca5a5'}
+              hint={house ? 'commission ÷ spend' : 'worth ÷ spend'}
+            />
+          </div>
+
+          {acc.daily.length >= 2 ? (
+            <div className="fx-chart">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 800 }} className="fx-muted">
+                <span>Spend per day</span>
+                <span>
+                  {adMoney(Math.max(...acc.daily.map((d) => d.spend)), cur)} best day
+                </span>
+              </div>
+              <AreaSpark values={acc.daily.map((d) => d.spend)} color="#ccff00" height={84} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="fx-muted">
+                <span>{acc.daily[0].date.slice(5)}</span>
+                <span>{acc.daily[acc.daily.length - 1].date.slice(5)}</span>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
+
+      {connected && shown.length ? (
+        <div style={{ marginTop: 2 }}>
+          {shown.map((c) => {
+            const grade = c.verdict ? GRADE_META[c.verdict.grade] : null;
+            const running = campaignRank(c, nowMs) === 0;
+            const span = c.endMs && c.createdAtMs ? c.endMs - c.createdAtMs : 0;
+            const done = span ? Math.min(1, Math.max(0, (nowMs - c.createdAtMs!) / span)) : 0;
+            const m = c.week && c.week.impressions ? c.week : c.lifetime;
+            return (
+              <div key={c.id} className="fx-camp">
+                <span className={running ? 'fx-live lime' : 'fx-live off'} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+                    <strong style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</strong>
+                    {grade && c.verdict?.grade !== 'idle' ? (
+                      <span className="fx-pill" style={{ background: `${onDark(grade.colour)}22`, color: onDark(grade.colour) }}>
+                        {grade.label}
+                      </span>
+                    ) : c.approval === 'pending' && c.status !== 'ACTIVE' ? (
+                      <span className="fx-pill" style={{ background: '#fcd34d22', color: '#fcd34d' }}>
+                        Waiting for Approve
+                      </span>
+                    ) : null}
+                  </span>
+                  {span ? (
+                    <span className="fx-bar" style={{ display: 'block', height: 5, marginTop: 7 }} title={`${Math.round(done * 100)}% of its days`}>
+                      <i style={{ width: `${done * 100}%`, background: 'linear-gradient(90deg,#19c37d,#ccff00)' }} />
+                    </span>
+                  ) : null}
+                </span>
+                <span style={{ textAlign: 'right', fontSize: 12 }}>
+                  <strong style={{ display: 'block', fontSize: 13 }}>{c.dailyBudget ? `${adMoney(c.dailyBudget, cur)}/day` : '—'}</strong>
+                  <span className="fx-muted">{m?.results ? `${m.results.toLocaleString('en-PK')} results` : c.status.toLowerCase()}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {connected && ads?.review?.summary ? (
+        <div className="fx-note">
+          <span aria-hidden style={{ fontSize: 18 }}>
+            💡
+          </span>
+          <span className="fx-clip3">{ads.review.summary}</span>
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+        <Link href="/dashboard/social/ads#design" className="fx-btn lime small">
+          ✨ Design a campaign
+        </Link>
+        <Link href="/dashboard/social/ads" className="fx-btn ghost small">
+          All campaigns →
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function Cell({
+  label,
+  value,
+  format,
+  hint,
+  colour = '#fff',
+}: {
+  label: string;
+  value: number;
+  format: (n: number) => string;
+  hint?: string;
+  colour?: string;
+}) {
+  return (
+    <div className="fx-stat">
+      <div className="k">{label}</div>
+      <div className="v" style={{ color: colour }}>
+        <CountUp value={value} format={format} />
+      </div>
+      {hint ? <div className="h">{hint}</div> : null}
     </div>
   );
 }
 
-function PostBox({ post }: { post: SocialPostDoc }) {
-  const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState<string | null>(null);
-  const assets = postAssets(post);
-  const image = assets.find((a) => a.kind === 'image' && a.url);
-  const video = assets.find((a) => a.kind === 'video' && a.url);
-  const open = `/dashboard/social/queue?open=${post.id}`;
-  // The queue refuses an approve with nothing to post; so does the box.
-  const canApprove = post.status === 'awaiting_approval' && assets.length > 0;
+// ── how the sales agents are doing ──────────────────────────────────────────
 
-  async function approve() {
-    setBusy(true);
-    setSaid(null);
-    try {
-      const res = await socialApi.review({
-        postId: post.id,
-        approve: true,
-        caption: post.caption,
-        targets: post.targets,
-        publishNow: true,
-      });
-      setSaid(
-        res.status === 'scheduled' && res.dueAtMs
-          ? `Goes out ${new Date(res.dueAtMs).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
-          : res.failed
-            ? `${res.failed} network(s) failed — open it`
-            : 'Posted',
-      );
-    } catch (e) {
-      setSaid(e instanceof Error ? e.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-    }
-  }
+export function SalesSection({
+  sales,
+  leads,
+  nowMs,
+  i,
+}: {
+  sales: SalesSettingsDoc | null;
+  leads: SalesLeadDoc[];
+  nowMs: number;
+  i: number;
+}) {
+  const setUp = Boolean(sales?.product && sales?.senderCompany);
+  const found = leads.length;
+  const steps = [
+    { label: 'Businesses found', n: found, colour: 'linear-gradient(90deg,#60a5fa,#93c5fd)' },
+    { label: 'Emails written', n: leads.filter((l) => l.draft).length, colour: 'linear-gradient(90deg,#34d399,#86efac)' },
+    { label: 'Sent', n: leads.filter((l) => l.sentAtMs).length, colour: 'linear-gradient(90deg,#19c37d,#4ade80)' },
+    {
+      label: 'Replied',
+      n: leads.filter((l) => l.reply || l.status === 'replied' || l.status === 'won').length,
+      colour: 'linear-gradient(90deg,#f59e0b,#fcd34d)',
+    },
+    { label: 'Won', n: leads.filter((l) => l.status === 'won').length, colour: 'linear-gradient(90deg,#84cc16,#ccff00)' },
+  ];
+  const agents = sales?.callAgents ?? [];
+  const weekAgo = nowMs - 7 * DAY_MS;
+  const calls = leads.flatMap((l) => l.calls ?? []).filter((c) => c.atMs > weekAgo);
+  const interested = calls.filter((c) => c.outcome === 'interested').length;
+  const today = nowMs ? pktDay(nowMs) : '';
+  const mailbox = sales?.mode === 'mailbox' && Boolean(sales.smtp);
+  const sentToday = sales && sales.sentDay === today ? sales.sentCount : 0;
 
   return (
-    <div className="sd-box sd-lift">
-      <Link href={open} className="sd-box-media" aria-label={`Open ${postSummary(post)}`}>
-        {video ? (
-          <video
-            src={video.url ?? undefined}
-            muted
-            playsInline
-            preload="metadata"
-            onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})}
-            onMouseLeave={(e) => e.currentTarget.pause()}
-          />
-        ) : image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={image.url ?? ''} alt={image.alt ?? ''} />
-        ) : (
-          <span>{MAKING.includes(post.status) ? 'Being made…' : 'No picture yet'}</span>
-        )}
-        {video ? <span className="sd-box-play">▶</span> : null}
-      </Link>
-      <div style={{ display: 'grid', gap: 7, padding: 11 }}>
-        <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FormatChip format={post.format} />
-          <StatusPill status={post.status} />
+    <section className="fx-card fx-rise" style={vars(i)} aria-labelledby="sales-h">
+      <div className="fx-head">
+        <span className="fx-ico" style={{ background: '#e6eefc' }} aria-hidden>
+          🤝
         </span>
-        <span className="sd-clip2" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35, minHeight: 35 }}>
-          {postSummary(post)}
-        </span>
-        <span style={{ fontSize: 11.5, color: colors.muted }}>{longDate(post.date)}</span>
-        {said ? <span style={{ fontSize: 12, fontWeight: 700, color: colors.success }}>{said}</span> : null}
-        {canApprove && !said ? (
-          <button type="button" className="sd-box-go" onClick={approve} disabled={busy}>
-            {busy ? 'Posting…' : 'Approve & post'}
-          </button>
-        ) : (
-          <Link href={open} className="sd-box-open">
-            {NEEDS_YOU.includes(post.status) ? 'Open & fix →' : 'Open →'}
-          </Link>
-        )}
+        <div>
+          <h2 id="sales-h" className="fx-h2">
+            Sales agents
+          </h2>
+          <p className="fx-sub">How they are doing</p>
+        </div>
+        <Link href="/dashboard/social/sales" className="fx-link">
+          Open →
+        </Link>
       </div>
-    </div>
+
+      {!setUp ? (
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="fx-radar light" aria-hidden>
+            <span />
+            <span />
+            <span />
+            <b>🤝</b>
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <strong style={{ fontSize: 15 }}>Your sales team, on autopilot</strong>
+            <p className="fx-muted" style={{ fontSize: 13, lineHeight: 1.55, margin: '4px 0 12px' }}>
+              Say what you sell and who buys it. The agent finds businesses, writes to each one, follows up — and its calling
+              agents write what to say on the phone.
+            </p>
+            <Link href="/dashboard/social/sales" className="fx-btn small">
+              Set up the sales agent
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="fx-funnel">
+            {steps.map((s, k) => (
+              <div key={s.label} className="fx-funnel-row">
+                <span className="fx-muted">{s.label}</span>
+                <span className="fx-bar">
+                  <i style={{ width: `${found ? Math.max(s.n ? 4 : 0, (s.n / found) * 100) : 0}%`, background: s.colour, ...vars(k) }} />
+                </span>
+                <span className="n">
+                  <CountUp value={s.n} />
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {mailbox ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+              <Ring value={sales!.dailyCap ? sentToday / sales!.dailyCap : 0} size={52} stroke={6} color="#19c37d">
+                <span style={{ fontSize: 12, fontWeight: 900 }}>{sentToday}</span>
+              </Ring>
+              <span style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                <strong>
+                  {sentToday} of {sales!.dailyCap} emails today
+                </strong>
+                <span className="fx-muted" style={{ display: 'block' }}>
+                  From {sales!.smtp!.from}
+                  {sales!.followUps ? ' · follows up twice' : ''}
+                </span>
+              </span>
+            </div>
+          ) : null}
+
+          <Link href="/dashboard/social/sales#calling" className="fx-agents" style={{ color: 'inherit' }}>
+            <span style={{ display: 'flex' }} aria-hidden>
+              {agents.length ? (
+                agents.slice(0, 4).map((a) => (
+                  <span key={a.id} className="fx-avatar" style={{ background: a.voice === 'female' ? '#fce7f3' : '#dbeafe' }}>
+                    {a.voice === 'female' ? '👩🏻‍💼' : '👨🏻‍💼'}
+                  </span>
+                ))
+              ) : (
+                <span className="fx-avatar" style={{ background: '#fff' }}>
+                  📞
+                </span>
+              )}
+            </span>
+            <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.45, minWidth: 0 }}>
+              <strong style={{ display: 'block' }}>
+                {agents.length ? `${agents.length} calling agent${agents.length === 1 ? '' : 's'}` : 'Calling agents'}
+              </strong>
+              <span className="fx-muted">
+                {agents.length
+                  ? `${calls.length} call${calls.length === 1 ? '' : 's'} this week · ${interested} interested`
+                  : 'Set one up: it writes the call for every business'}
+              </span>
+            </span>
+            <span style={{ fontWeight: 900, color: colors.secondary }}>→</span>
+          </Link>
+          {sales?.lastStatus ? (
+            <p className="fx-muted fx-clip2" style={{ fontSize: 11.5, margin: '10px 0 0' }}>
+              Last run: {sales.lastStatus}
+            </p>
+          ) : null}
+        </>
+      )}
+    </section>
   );
 }
 
-// ── travelling this week ────────────────────────────────────────────────────
+// ── travelling this week (the content page) ─────────────────────────────────
 
 /** A YouTube link is the one kind of address the team can watch for "make one like this". */
 export const isYouTube = (url: string) => /^https:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//.test(url);
 
 /**
  * Real posts the morning search found travelling this week, and why. A YouTube
- * one can go straight into the box above as "make one like this".
+ * one opens the overview's box filled in as "make one like this".
  */
-export function ViralFinds({
-  research,
-  onLike,
-}: {
-  research: SocialResearch | null;
-  onLike: (url: string, title: string) => void;
-}) {
+export function ViralFinds({ research }: { research: SocialResearch | null }) {
   const finds = research?.viral ?? [];
   return (
-    <div className="sd-card">
-      <SectionHead
-        title="Viral this week"
-        sub="Found by the research agent this morning. Open one, or have the team make one like it."
-      />
+    <section className="fx-card">
+      <div className="fx-head">
+        <span className="fx-ico" style={{ background: '#fde8ea' }} aria-hidden>
+          🔥
+        </span>
+        <div>
+          <h2 className="fx-h2">Viral this week</h2>
+          <p className="fx-sub">Found by the research agent this morning — ideas for the next piece.</p>
+        </div>
+      </div>
       {finds.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: colors.muted, lineHeight: 1.5 }}>
-          {research?.error
-            ? `No list today: ${research.error}`
-            : 'The research agent lists what is travelling after its next morning search.'}
+        <p className="fx-muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
+          {research?.error ? `No list today: ${research.error}` : 'The research agent lists what is travelling after its next morning search.'}
         </p>
       ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
           {finds.map((f) => (
-            <div key={f.url} className="sd-top">
-              <a href={f.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: 'inherit' }}>
+            <div key={f.url} className="fx-card fx-lift" style={{ padding: 12, display: 'grid', gap: 6, borderRadius: 14 }}>
+              <a href={f.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 800 }}>
                 {f.title} ↗
               </a>
-              {f.why ? <span style={{ fontSize: 12, color: colors.muted, lineHeight: 1.45 }}>{f.why}</span> : null}
+              {f.why ? (
+                <span className="fx-muted fx-clip3" style={{ fontSize: 12, lineHeight: 1.45 }}>
+                  {f.why}
+                </span>
+              ) : null}
               {isYouTube(f.url) ? (
-                <button
-                  type="button"
-                  className="sd-box-open"
+                <Link
+                  href={`/dashboard/social?like=${encodeURIComponent(f.url)}&title=${encodeURIComponent(f.title)}#make`}
+                  className="fx-btn ghost small"
                   style={{ justifySelf: 'start' }}
-                  onClick={() => onLike(f.url, f.title)}
                 >
                   🎬 Make one like this
-                </button>
+                </Link>
               ) : null}
             </div>
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
-
-// ── the team ────────────────────────────────────────────────────────────────
-
-/** What you can tell each role — the answer to "what do I say to them?". */
-const TELL: Record<SocialRole, string> = {
-  'research-assistant': 'Which topics, cities or rival pages to watch.',
-  'content-writer': 'What to make next, the tone, words never to use.',
-  'seo-expert': 'The searches you want to be found for.',
-  'google-seo-expert': 'What your YouTube titles should aim at.',
-  designer: 'Colours, faces and the look of every picture.',
-  'video-editor': 'Pace, length and the mood of the reels.',
-  'youtube-ads-expert': 'Budget range and who the ads should reach.',
-  'social-manager': 'Where to post and how to answer comments.',
-};
-
-export function AgentGrid({
-  staff,
-  desk,
-  nowMs,
-}: {
-  staff: SocialEmployee[];
-  desk: DeskRead;
-  nowMs: number;
-}) {
-  const [open, setOpen] = useState<string | null>(null);
-  const active = staff.filter((e) => e.status === 'active').length;
-
-  return (
-    <div className="sd-card">
-      <SectionHead
-        title="AI agents"
-        badge={`${active} on duty`}
-        href="/dashboard/social/employees"
-        link="Manage the team"
-        sub="Each one has one job. Click a card to see what they are doing and what you can tell them."
-      />
-      {staff.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
-          Nobody is hired yet.{' '}
-          <Link href="/dashboard/social/employees" style={{ color: colors.secondary, fontWeight: 700 }}>
-            Hire the team
-          </Link>{' '}
-          — it takes one click.
-        </p>
-      ) : (
-        <div className="sd-agents">
-          {staff.map((e) => {
-            const meta = ROLE_META[e.role];
-            const d = desk.doing.get(e.id);
-            const on = e.status === 'active';
-            const expanded = open === e.id;
-            return (
-              <button
-                key={e.id}
-                type="button"
-                className="sd-agent sd-lift"
-                aria-expanded={expanded}
-                onClick={() => setOpen(expanded ? null : e.id)}
-                style={{ opacity: on ? 1 : 0.62 }}
-              >
-                <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span className="sd-avatar" style={{ background: `${meta.colour}33` }}>
-                    <Mascot role={e.role} size={34} />
-                  </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <strong style={{ display: 'block', fontSize: 13.5 }}>{e.name}</strong>
-                    <span style={{ fontSize: 11.5, color: colors.muted }}>{meta.label}</span>
-                  </span>
-                </span>
-
-                <span className="sd-clip2" style={{ fontSize: 12, color: colors.text, lineHeight: 1.45, minHeight: 35 }}>
-                  {!on
-                    ? 'Off duty — not working on anything.'
-                    : d?.now
-                      ? `Now: ${STAGE_META[d.stage].label.toLowerCase()} for “${postSummary(d.post)}”`
-                      : d
-                        ? `Last: ${d.note ?? STAGE_META[d.stage].label} · ${ago(d.atMs, nowMs)}`
-                        : 'Waiting for the first job.'}
-                </span>
-
-                {expanded ? (
-                  <span style={{ display: 'grid', gap: 6, fontSize: 12, lineHeight: 1.5, color: colors.muted }}>
-                    <span>{meta.does}</span>
-                    <span>
-                      <strong style={{ color: colors.text }}>You can tell them: </strong>
-                      {TELL[e.role]}
-                    </span>
-                    {e.instructions ? (
-                      <span>
-                        <strong style={{ color: colors.text }}>Your instructions: </strong>
-                        {e.instructions}
-                      </span>
-                    ) : null}
-                    <span>{e.piecesWorked} pieces worked on.</span>
-                    <Link
-                      href="/dashboard/social/employees"
-                      onClick={(ev) => ev.stopPropagation()}
-                      style={{ color: colors.secondary, fontWeight: 800 }}
-                    >
-                      Give {e.name} instructions →
-                    </Link>
-                  </span>
-                ) : null}
-
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800 }}>
-                  <span
-                    className={d?.now && on ? 'sd-dot sd-pulse' : 'sd-dot'}
-                    style={{ background: !on ? '#9aa5a0' : d?.now ? '#0ca30c' : '#7fd17f' }}
-                  />
-                  <span style={{ color: on ? colors.success : colors.muted }}>
-                    {!on ? 'Off duty' : d?.now ? 'Working now' : 'On duty'}
-                  </span>
-                  <span style={{ marginLeft: 'auto', color: colors.muted }}>{expanded ? '▴' : '▾'}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── the right column ────────────────────────────────────────────────────────
-
-export function TopContent({ read }: { read: SocialPageRead | null }) {
-  const best = read?.best.slice(0, 3) ?? [];
-  return (
-    <div className="sd-card">
-      <SectionHead title="Top performing" href="/dashboard/social/performance" link="View all" />
-      {best.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: colors.muted, lineHeight: 1.5 }}>
-          Numbers show here a day after the first posts go live.
-        </p>
-      ) : (
-        <div style={{ display: 'grid', gap: 12 }}>
-          {best.map((p) => (
-            <a key={p.mediaId} href={p.permalink ?? undefined} target="_blank" rel="noreferrer" className="sd-top">
-              <span className="sd-clip2" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
-                {p.hook || 'Untitled post'}
-              </span>
-              <span style={{ display: 'flex', gap: 10, fontSize: 11.5, color: colors.muted, flexWrap: 'wrap' }}>
-                <span>👁 {compact(p.reach)}</span>
-                <span>🔖 {compact(p.saves)}</span>
-                <span>📤 {compact(p.sends)}</span>
-                <span>💬 {compact(p.comments)}</span>
-                <span style={{ marginLeft: 'auto', fontWeight: 800, color: colors.success }}>
-                  {p.multiple.toFixed(1)}× usual
-                </span>
-              </span>
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function SectionHead({
-  title,
-  sub,
-  badge,
-  href,
-  link,
-}: {
-  title: string;
-  sub?: string;
-  badge?: string;
-  href?: string;
-  link?: string;
-}) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>{title}</h2>
-        {badge ? <span className="sd-badge-pill">{badge}</span> : null}
-        {href && link ? (
-          <Link href={href} style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
-            {link} →
-          </Link>
-        ) : null}
-      </div>
-      {sub ? <p style={{ margin: '4px 0 0', fontSize: 12.5, color: colors.muted }}>{sub}</p> : null}
-    </div>
-  );
-}
-
-export const DASH_CSS = `
-.sd-card { background: ${colors.surface}; border: 1px solid ${colors.border}; border-radius: 16px; padding: 18px; min-width: 0; }
-.sd-lift { transition: box-shadow .18s ease, transform .18s ease; }
-.sd-lift:hover { box-shadow: 0 10px 28px rgba(0, 57, 36, .10); transform: translateY(-2px); }
-.sd-stack { display: grid; gap: 18px; margin-bottom: 18px; }
-.sd-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.sd-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
-.sd-col { display: grid; gap: 18px; min-width: 0; }
-.sd-clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sd-clip2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-.sd-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-.sd-box { display: grid; grid-template-rows: auto 1fr; border: 1px solid ${colors.border}; border-radius: 14px;
-  overflow: hidden; background: ${colors.surface}; min-width: 0; }
-.sd-box-media { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: #1a1c1c;
-  color: #ccff00; font-size: 12.5px; font-weight: 700; overflow: hidden; }
-.sd-box-media img, .sd-box-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.sd-box-play { position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%;
-  background: rgba(0, 0, 0, .55); color: #fff; display: grid; place-items: center; font-size: 11px; pointer-events: none; }
-.sd-box-go { border: 0; border-radius: 9px; padding: 8px 10px; background: ${colors.primary}; color: #fff;
-  font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; }
-.sd-box-go:disabled { opacity: .6; cursor: wait; }
-.sd-box-open { border: 1px solid ${colors.border}; border-radius: 9px; padding: 7px 10px; background: ${colors.surface};
-  color: ${colors.primary}; font: inherit; font-size: 12.5px; font-weight: 800; text-align: center; cursor: pointer; }
-
-.sd-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 12px; align-items: start; }
-.sd-agent { display: grid; gap: 10px; align-content: start; text-align: left; font: inherit; color: inherit;
-  background: ${colors.surface}; border: 1px solid ${colors.border}; border-radius: 14px; padding: 13px; cursor: pointer; }
-.sd-avatar { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; }
-.sd-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.sd-badge-pill { font-size: 11.5px; font-weight: 800; color: ${colors.success}; background: ${colors.success}14;
-  border-radius: 999px; padding: 2px 9px; }
-.sd-top { display: grid; gap: 5px; padding: 10px; border-radius: 12px; border: 1px solid ${colors.border}; color: inherit;
-  transition: border-color .15s ease; }
-.sd-top:hover { border-color: ${colors.primary}; }
-
-.sd-pulse { animation: sd-pulse 1.6s ease-out infinite; }
-@keyframes sd-pulse { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, .55); } 75%, 100% { box-shadow: 0 0 0 7px rgba(12, 163, 12, 0); } }
-
-@media (max-width: 1240px) { .sd-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 900px) { .sd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 520px) {
-  .sd-kpis { grid-template-columns: minmax(0, 1fr); }
-  .sd-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sd-pulse { animation: none; }
-  .sd-lift:hover { transform: none; }
-}
-`;

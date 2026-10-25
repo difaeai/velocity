@@ -40,9 +40,11 @@ import { deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, wsPath } from
 import {
   AD_OBJECTIVES,
   META_OBJECTIVE,
+  applyAnswer,
   blended,
   clampBudget,
   diagnose,
+  explainPlan,
   forecast,
   fromMinor,
   learningBudget,
@@ -51,6 +53,7 @@ import {
   MAX_REFRESHES,
   metricsFrom,
   minDailyFor,
+  missingAnswers,
   money,
   normalisePlan,
   ownBenchmarks,
@@ -451,6 +454,52 @@ async function planAd(params: {
   if (!modelReady()) return { plan: fallback, engine: 'local' };
 
   const settings = await getSocialSettings();
+  const prompt = [
+    `THE BRIEF, in the team lead's words:\n${params.brief}`,
+    params.requestedBudget ? `They asked for ${money(params.requestedBudget, cfg.currency)} a day.` : '',
+    params.requestedDays ? `They asked for ${params.requestedDays} days.` : '',
+    params.source.kind === 'boost'
+      ? 'The creative is an Instagram post that is already live — write the plan around boosting it; lines are unused.'
+      : params.source.kind === 'post'
+        ? 'The creative is a piece the desk already made — write the copy to go with it.'
+        : 'The desk will draw the creative from your lines: lines[0] is the big hook on the picture, 2–8 words; up to three more short lines follow (or become the beats of a 20-second text reel if format is "video").',
+    await planContext(cfg, bench),
+    `Decide the campaign and answer with ONE JSON object:\n${planShape(cfg.currency)}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  try {
+    const { data } = await generateJson<Record<string, unknown>>({
+      model: settings.textModel,
+      system: adsSystem(await adsPerson(), settings),
+      prompt,
+      what: 'The ad plan',
+    });
+    return { plan: normalisePlan(data, fallback, cfg.maxDays), engine: activeEngine() };
+  } catch (e) {
+    logger.warn('ads: the model plan failed, using the local one', { message: (e as Error).message });
+    return { plan: fallback, engine: 'local' };
+  }
+}
+
+/** The plan as JSON, the one shape both planning and designing answer in. */
+const planShape = (currency: string) => `{
+  "name": "short campaign name",
+  "objective": "traffic" | "awareness" | "engagement",
+  "audience": { "cities": ["Lahore", ...] (empty for the whole market), "ageMin": 18, "ageMax": 45, "genders": "all" | "men" | "women", "interests": ["only if clearly needed", ...] },
+  "dailyBudget": number in ${currency} — enough to leave learning, inside the limit,
+  "days": number,
+  "format": "image" | "video",
+  "primaryText": "the ad text, the first line carries it",
+  "headline": "40 characters or fewer",
+  "cta": "LEARN_MORE" | "DOWNLOAD" | "SIGN_UP" | "APPLY_NOW" | "BOOK_TRAVEL" | "GET_OFFER",
+  "lines": ["hook", "line", "line"],
+  "why": "3–5 sentences: why this objective, this audience, this budget, and the CPC/CTR it should hit"
+}`;
+
+/** What the planner weighs besides the brief: the money, the yardstick, our own history and the market. */
+async function planContext(cfg: AdsConfig, bench: Benchmarks | null): Promise<string> {
   const past = (await sdb.collection('socialAds').limit(30).get()).docs
     .map((d) => d.data() as { name?: string; objectiveKind?: string; lifetime?: AdMetrics; verdict?: Verdict })
     .filter((c) => c.lifetime && c.lifetime.spend > 0)
@@ -473,15 +522,7 @@ async function planAd(params: {
       '.'
     : 'No cost yardstick for this currency.';
 
-  const prompt = [
-    `THE BRIEF, in the team lead's words:\n${params.brief}`,
-    params.requestedBudget ? `They asked for ${money(params.requestedBudget, cfg.currency)} a day.` : '',
-    params.requestedDays ? `They asked for ${params.requestedDays} days.` : '',
-    params.source.kind === 'boost'
-      ? 'The creative is an Instagram post that is already live — write the plan around boosting it; lines are unused.'
-      : params.source.kind === 'post'
-        ? 'The creative is a piece the desk already made — write the copy to go with it.'
-        : 'The desk will draw the creative from your lines: lines[0] is the big hook on the picture, 2–8 words; up to three more short lines follow (or become the beats of a 20-second text reel if format is "video").',
+  return [
     `MONEY: account currency ${cfg.currency}. The owner's daily limit for all campaigns together is ${money(cfg.dailyCap, cfg.currency)}; ` +
       `${money(committed, cfg.currency)} of it is already running. Minimum ${money(minDailyFor(cfg.currency), cfg.currency)} a day. ` +
       `At most ${cfg.maxDays} days. Ads send people to ${cfg.link}.`,
@@ -489,35 +530,76 @@ async function planAd(params: {
     past.length ? `HOW OUR OWN CAMPAIGNS DID — evidence, weigh it above the yardstick:\n${past.join('\n')}` : '',
     // The market and the competition, so the angle is one nobody else is already running.
     researchBlock(await planningResearch()),
-    `Decide the campaign and answer with ONE JSON object:
-{
-  "name": "short campaign name",
-  "objective": "traffic" | "awareness" | "engagement",
-  "audience": { "cities": ["Lahore", ...] (empty for the whole market), "ageMin": 18, "ageMax": 45, "genders": "all" | "men" | "women", "interests": ["only if clearly needed", ...] },
-  "dailyBudget": number in ${cfg.currency} — enough to leave learning, inside the limit,
-  "days": number,
-  "format": "image" | "video",
-  "primaryText": "the ad text, the first line carries it",
-  "headline": "40 characters or fewer",
-  "cta": "LEARN_MORE" | "DOWNLOAD" | "SIGN_UP" | "APPLY_NOW" | "BOOK_TRAVEL" | "GET_OFFER",
-  "lines": ["hook", "line", "line"],
-  "why": "3–5 sentences: why this objective, this audience, this budget, and the CPC/CTR it should hit"
-}`,
   ]
     .filter(Boolean)
     .join('\n\n');
+}
 
+/**
+ * "Design it with me": the expert reads the conversation and the plan so far,
+ * says in plain words what it would run and why, asks what would sharpen it,
+ * and hands back the updated plan. Nothing reaches Meta and nothing is spent —
+ * creating it is a separate call that still holds the budget to the limit.
+ */
+async function designAd(params: {
+  chat: { from: 'you' | 'expert'; text: string }[];
+  draft: Record<string, unknown> | null;
+  cfg: AdsConfig;
+  bench: Benchmarks | null;
+}): Promise<{ reply: string; questions: string[]; plan: AdPlanSpec; engine: string; note: string | null }> {
+  const { cfg, bench, chat } = params;
+  const asked = chat
+    .filter((m) => m.from === 'you')
+    .map((m) => m.text)
+    .join('\n');
+  const committed = await committedDaily();
+  // The money as it would actually run — held to the limit and Meta's minimum — before anything is said about it.
+  const fit = (p: AdPlanSpec): { plan: AdPlanSpec; note: string | null } => {
+    const f = clampBudget({ requested: p.dailyBudget, cap: cfg.dailyCap, committed, minDaily: minDailyFor(cfg.currency), currency: cfg.currency });
+    return { plan: f.budget ? { ...p, dailyBudget: f.budget } : p, note: f.note };
+  };
+  const base = localPlan({ brief: asked, bench, maxDays: cfg.maxDays });
+  const latest = chat[chat.length - 1].text;
+  const draft = fit(applyAnswer(params.draft ? normalisePlan(params.draft, base, cfg.maxDays) : base, latest, cfg.maxDays));
+  const local = () => ({
+    reply: explainPlan(draft.plan, cfg.currency),
+    questions: missingAnswers(draft.plan, asked),
+    plan: draft.plan,
+    note: draft.note,
+    engine: 'local',
+  });
+  if (!modelReady()) return local();
+
+  const settings = await getSocialSettings();
   try {
-    const { data } = await generateJson<Record<string, unknown>>({
+    const { data } = await generateJson<{ reply?: unknown; questions?: unknown; plan?: Record<string, unknown> }>({
       model: settings.textModel,
       system: adsSystem(await adsPerson(), settings),
-      prompt,
-      what: 'The ad plan',
+      what: 'The campaign design',
+      prompt: [
+        `THE CONVERSATION SO FAR, oldest first:\n${chat.map((m) => `${m.from === 'you' ? 'OWNER' : 'YOU'}: ${m.text}`).join('\n')}`,
+        params.draft ? `THE PLAN SO FAR:\n${JSON.stringify(draft.plan)}` : '',
+        await planContext(cfg, bench),
+        `You are designing this campaign WITH the owner, who is not an ads expert. Answer with ONE JSON object:
+{
+  "reply": "4–7 plain sentences with no jargon (explain any number you use — CPC is what one tap costs): what you understood they want, the campaign you recommend and why — the goal, who sees it, the money and what it should buy. If their latest message asks a question, answer it first.",
+  "questions": ["at most 3 short questions whose answers would change the plan; none when nothing important is missing"],
+  "plan": ${planShape(cfg.currency)}
+}
+Change only what their latest message asks for or what your answer requires; keep the rest of the plan as it was.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     });
-    return { plan: normalisePlan(data, fallback, cfg.maxDays), engine: activeEngine() };
+    const { plan, note } = fit(normalisePlan(data.plan ?? {}, draft.plan, cfg.maxDays));
+    const reply = typeof data.reply === 'string' ? data.reply.trim().slice(0, 1600) : '';
+    const questions = Array.isArray(data.questions)
+      ? data.questions.filter((q): q is string => typeof q === 'string' && q.trim().length > 0).slice(0, 3).map((q) => q.trim().slice(0, 200))
+      : [];
+    return { reply: reply || explainPlan(plan, cfg.currency), questions, plan, note, engine: activeEngine() };
   } catch (e) {
-    logger.warn('ads: the model plan failed, using the local one', { message: (e as Error).message });
-    return { plan: fallback, engine: 'local' };
+    logger.warn('ads: the campaign design failed, using the local one', { message: (e as Error).message });
+    return local();
   }
 }
 
@@ -1067,10 +1149,43 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
       days: z.number().int().min(1).max(30).optional(),
       source: sourceSchema.optional(),
       launch: z.boolean().optional(),
+      /** The plan the owner designed with the expert; every field is clamped again here. */
+      plan: z.record(z.unknown()).optional(),
     })
     .safeParse(req.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Say what the ad should do.');
   return { ok: true, ...(await launchCampaign({ ...parsed.data, by: ctx.uid })) };
+});
+
+/**
+ * "Design a campaign with me": one turn of the conversation on the Ads page.
+ * Works before the ad account is connected — understanding a campaign costs
+ * nothing — and never touches Meta. The budget it shows is already held to the
+ * owner's limit, the same way the create call will hold it.
+ */
+export const adminDesignAd = deskCall('ads', { timeoutSeconds: 120 }, async (req) => {
+  requireAuth(req);
+  const parsed = z
+    .object({
+      chat: z
+        .array(z.object({ from: z.enum(['you', 'expert']), text: z.string().trim().min(1).max(2000) }))
+        .min(1)
+        .max(24),
+      draft: z.record(z.unknown()).optional(),
+    })
+    .safeParse(req.data);
+  if (!parsed.success || parsed.data.chat[parsed.data.chat.length - 1].from !== 'you') {
+    throw new HttpsError('invalid-argument', 'Say what you want from the campaign.');
+  }
+  const cfg = await adsConfig();
+  const bench = await benchmarksNow(cfg);
+  const res = await designAd({ chat: parsed.data.chat, draft: parsed.data.draft ?? null, cfg, bench });
+  return {
+    ok: true,
+    ...res,
+    currency: cfg.currency,
+    forecast: bench ? forecast({ objective: res.plan.objective, dailyBudget: res.plan.dailyBudget, days: res.plan.days, bench }) : null,
+  };
 });
 
 /** Whether the ads desk may make a campaign right now: an account, a page, a limit and an answer to "ask or launch". */
@@ -1094,6 +1209,8 @@ export async function launchCampaign(params: {
   days?: number;
   source?: CreativeSource;
   launch?: boolean;
+  /** Designed with the owner: used as it is (clamped), not planned again. */
+  plan?: Record<string, unknown>;
 }) {
   const { cfg, token } = await ready();
   if (!cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Reconnect on the Ads page.');
@@ -1101,14 +1218,19 @@ export async function launchCampaign(params: {
   const source: CreativeSource = params.source ?? { kind: 'make' };
   const bench = await benchmarksNow(cfg);
 
-  const { plan, engine } = await planAd({
-    brief: params.brief,
-    cfg,
-    bench,
-    requestedBudget: params.dailyBudget,
-    requestedDays: params.days,
-    source,
-  });
+  const { plan, engine } = params.plan
+    ? {
+        plan: normalisePlan(params.plan, localPlan({ brief: params.brief, bench, maxDays: cfg.maxDays }), cfg.maxDays),
+        engine: 'designed with the owner',
+      }
+    : await planAd({
+        brief: params.brief,
+        cfg,
+        bench,
+        requestedBudget: params.dailyBudget,
+        requestedDays: params.days,
+        source,
+      });
 
   // The person's own number wins over the model's, and the limit wins over both.
   const requested = params.dailyBudget ?? plan.dailyBudget;

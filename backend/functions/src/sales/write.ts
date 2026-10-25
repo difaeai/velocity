@@ -220,3 +220,112 @@ export async function answerReply(params: {
   const closed = intent === 'not_interested' || intent === 'unsubscribe';
   return { intent, body: closed ? '' : String(data.body ?? '').trim().slice(0, 2000) };
 }
+
+/** Who a calling agent is and what the call is for — set up on the Sales page. */
+export interface Caller {
+  name: string;
+  language: 'urdu' | 'english' | 'mixed';
+  goal: string;
+  opener: string;
+  points: string;
+}
+
+/** What to say on one call, in the order it is said. */
+export interface CallScript {
+  opener: string;
+  pitch: string[];
+  questions: string[];
+  objections: { they: string; you: string }[];
+  close: string;
+}
+
+const LANGUAGE: Record<Caller['language'], string> = {
+  urdu: 'Urdu, written in Roman Urdu (Latin letters) so it can be read aloud from a screen',
+  english: 'English',
+  mixed: 'the everyday mix of Urdu and English people in Pakistan actually speak, written in Roman Urdu',
+};
+
+/** A plain script from the setup alone — what the caller says when no model answers. Pure. */
+export function callScriptFallback(caller: Caller, seller: Pick<Seller, 'product' | 'offer' | 'senderCompany'>, lead: Pick<LeadFacts, 'name'>): CallScript {
+  return {
+    opener:
+      caller.opener.trim() ||
+      `${caller.language === 'english' ? 'Hello' : 'Assalam o alaikum'}, ${caller.name} from ${seller.senderCompany} here. ` +
+        `Am I speaking with someone at ${lead.name}?`,
+    pitch: [
+      `We help businesses like ${lead.name}: ${seller.product}`.slice(0, 300),
+      ...caller.points
+        .split('\n')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .slice(0, 3),
+      ...(seller.offer ? [`For a new customer: ${seller.offer}`] : []),
+    ],
+    questions: ['How do you handle this today?', 'Who decides on this at your business?'],
+    objections: [
+      { they: 'We are not interested.', you: 'No problem at all — may I send a short message on WhatsApp in case it is useful later?' },
+      { they: 'Send me the details.', you: 'Of course. Which WhatsApp number or email should I send them to?' },
+    ],
+    close: caller.goal.trim() ? `Ask for: ${caller.goal.trim()}` : 'Ask for a short meeting or a WhatsApp number to send details.',
+  };
+}
+
+/**
+ * A call script for one business: an opener about them, the pitch in three
+ * short beats, two questions, the likely objections with an answer each, and
+ * the ask. Read from the screen by the person dialling, so it is written to be
+ * spoken — short sentences, no lists of features.
+ */
+export async function writeCallScript(params: {
+  model: string;
+  seller: Seller;
+  caller: Caller;
+  lead: LeadFacts;
+}): Promise<CallScript> {
+  const { seller, caller, lead } = params;
+  const fallback = callScriptFallback(caller, seller, lead);
+  try {
+    const { data } = await generateJson<Partial<CallScript>>({
+      model: params.model,
+      what: 'The call script',
+      system: [
+        `You write sales call scripts for ${caller.name}, who phones businesses for ${seller.senderCompany}.`,
+        `What ${seller.senderCompany} sells: ${seller.product}`,
+        seller.offer ? `What we can offer a new customer: ${seller.offer}` : '',
+        `What the call is for: ${caller.goal || 'a short meeting or a WhatsApp number to send details to'}.`,
+        caller.points ? `Points the owner wants made:\n${caller.points}` : '',
+        `Write in ${LANGUAGE[caller.language]}. It is read aloud: short spoken sentences, polite, never pushy, no numbers or promises you were not given.`,
+        'Reply with one JSON object and nothing else: {"opener": "first 2 sentences, about THEM", "pitch": ["3 short beats"], "questions": ["2 easy questions"], "objections": [{"they": "what they may say", "you": "a calm answer"}], "close": "the one thing to ask for"}',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      prompt: [
+        `The business: ${lead.name}${lead.website ? ` (${lead.website})` : ''}.`,
+        lead.title ? `Their site's title: ${lead.title}` : '',
+        lead.description ? `How they describe themselves: ${lead.description}` : '',
+        lead.signals.length ? `What we saw: ${lead.signals.join('; ')}.` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+    const line = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+    const lines = (v: unknown, n: number) =>
+      Array.isArray(v) ? v.map((x) => line(x, 300)).filter(Boolean).slice(0, n) : [];
+    const objections = Array.isArray(data.objections)
+      ? data.objections
+          .map((o) => ({ they: line(o?.they, 200), you: line(o?.you, 300) }))
+          .filter((o) => o.they && o.you)
+          .slice(0, 4)
+      : [];
+    return {
+      opener: line(data.opener, 400) || fallback.opener,
+      pitch: lines(data.pitch, 4).length ? lines(data.pitch, 4) : fallback.pitch,
+      questions: lines(data.questions, 3).length ? lines(data.questions, 3) : fallback.questions,
+      objections: objections.length ? objections : fallback.objections,
+      close: line(data.close, 300) || fallback.close,
+    };
+  } catch {
+    // No model, or one that answered in a shape we cannot read: the plain script still works on a call.
+    return fallback;
+  }
+}

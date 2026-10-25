@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Manage social → Content calendar.
+ * Manage social → Content & calendar → Calendar.
  *
  * The month as the team plans it and as it actually went: the strategy on top
  * (goal, pillars, a theme per week, the paid campaigns and sales moves), and in
@@ -37,6 +37,7 @@ import {
 import { Button, Card } from '@/components/ui';
 import { FORMAT_META, FormatChip, StatusPill, longDate, postSummary } from '@/components/social/shared';
 import { PostingTime, localHourLabel } from '@/components/social/launch';
+import { ContentTabs } from '@/components/social/contentTabs';
 
 /** Pakistan's today, as `YYYY-MM-DD`. PKT is UTC+5, no daylight saving. */
 function todayPkt(): string {
@@ -177,13 +178,7 @@ export default function CalendarPage() {
 
   return (
     <div>
-      <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Content calendar</h1>
-          <p style={{ color: colors.muted, margin: 0 }}>
-            The month the team planned, and what it actually made. The daily run follows the plan.
-          </p>
-        </div>
+      <ContentTabs active="calendar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Button variant="ghost" onClick={() => shiftMonth(-1)} aria-label="Previous month">
             ←
@@ -193,7 +188,7 @@ export default function CalendarPage() {
             →
           </Button>
         </div>
-      </header>
+      </ContentTabs>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}

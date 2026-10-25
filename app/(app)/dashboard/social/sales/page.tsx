@@ -21,6 +21,8 @@ import { useWorkspace } from '@/lib/workspace';
 import { colors } from '@/lib/config';
 import { salesApi, type SalesLeadDoc, type SalesLeadStatus, type SalesSettingsDoc } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
+import { CallingAgents } from '@/components/social/calling';
+import { FX_CSS } from '@/components/social/fx';
 
 type Shelf = 'review' | 'ready' | 'new' | 'sent' | 'done' | 'all';
 const SHELVES: { key: Shelf; label: string; states: SalesLeadStatus[] | null }[] = [
@@ -102,17 +104,31 @@ export default function SalesPage() {
   const sentToday = settings.sentDay === today ? settings.sentCount : 0;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="fx" style={{ display: 'grid', gap: 16 }}>
+      <style>{FX_CSS}</style>
+      <section className="fx-hero fx-rise" style={{ padding: '22px 26px', marginBottom: 0 }}>
+        <span className="fx-orb a" />
+        <span className="fx-orb b" />
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div className="fx-eyebrow">Find · write · follow up · call</div>
+            <h1 style={{ fontSize: 26 }}>Sales agents</h1>
+            <p style={{ maxWidth: 680 }}>
+              {mailbox
+                ? `Finds businesses, writes to each from ${settings.smtp!.from} — ${sentToday} of ${settings.dailyCap} today — follows up twice and drafts your answer to every reply.`
+                : 'Finds businesses that could buy from you and writes each one a short, personal email. Connect your mailbox in Settings and it sends and follows up too.'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="fx-hero-chip">🏪 {leads.length} businesses</span>
+            <span className="fx-hero-chip">🎉 {counts.done} replied &amp; won</span>
+            <span className="fx-hero-chip">📞 {settings.callAgents?.length ?? 0} calling agents</span>
+          </div>
+        </div>
+      </section>
       <header style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>🤝 Sales agent</h1>
-          <p style={{ color: colors.muted, margin: 0, lineHeight: 1.55 }}>
-            Finds businesses that could buy from you, reads their websites, and writes each one a short, personal email.{' '}
-            {mailbox
-              ? `It sends from ${settings.smtp!.from} — ${sentToday} of ${settings.dailyCap} today — reads the replies, follows up twice when nobody answers, and drafts your answer to everyone who writes back.`
-              : 'You send each one yourself, from your own email. Connect your mailbox in Settings and it also follows up and answers replies.'}
-          </p>
-          {settings.lastStatus ? <p style={{ fontSize: 12.5, color: colors.muted, margin: '6px 0 0' }}>Last run: {settings.lastStatus}</p> : null}
+          {settings.lastStatus ? <p style={{ fontSize: 12.5, color: colors.muted, margin: 0 }}>Last run: {settings.lastStatus}</p> : null}
           {mailbox ? (
             <p style={{ fontSize: 12.5, color: settings.inboxStatus ? colors.danger : colors.muted, margin: '4px 0 0', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               {settings.inboxStatus ??
@@ -183,6 +199,19 @@ export default function SalesPage() {
               return r.written ? `Wrote ${r.written} email${r.written === 1 ? '' : 's'} — they are in To review.` : 'Nothing new to write for.';
             })
           }
+        />
+      ) : null}
+
+      {setUp ? (
+        <CallingAgents
+          settings={settings}
+          leads={leads}
+          onSaved={(s, message) => {
+            setSettings(s);
+            setError(null);
+            setNotice(message);
+          }}
+          onError={setError}
         />
       ) : null}
 
