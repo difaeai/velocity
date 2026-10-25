@@ -692,7 +692,8 @@ export function localPlan(params: {
   const drivers = /\b(driver|captain|earn|kamai|car owner|rickshaw|bike)/.test(lower);
   const cities = PK_CITIES.filter((c) => lower.includes(c.toLowerCase()));
   const first = text.split(/(?<=[.!?])\s+/)[0] ?? text;
-  const headline = first.slice(0, 40).trim() || 'Velocity Rides';
+  // Forty characters, ending on a whole word — "…to sign up th" reads as a mistake.
+  const headline = (first.length > 40 ? first.slice(0, 41).replace(/\s+\S*$/, '') : first).trim() || 'Velocity Rides';
   const learn = params.bench ? learningBudget(objective, params.bench) : 0;
 
   return {
@@ -710,4 +711,64 @@ export function localPlan(params: {
       'Written without a model: broad targeting so Meta can find the cheapest people itself, a budget sized to get ' +
       'out of the learning phase in a week, and your own words as the copy.',
   };
+}
+
+const GOAL_IN_WORDS: Record<AdObjective, string> = {
+  traffic: 'get people to tap through to your link',
+  awareness: 'show it to as many of the right people as possible, as cheaply as possible',
+  engagement: 'get likes, comments, shares and views',
+};
+
+/** A plan said back in plain words — what someone who is not an ads expert needs to say yes to it. Pure. */
+export function explainPlan(plan: AdPlanSpec, currency: string): string {
+  const a = plan.audience;
+  const who = `${a.genders === 'all' ? 'people' : a.genders} aged ${a.ageMin}–${a.ageMax} in ${
+    a.cities.length ? a.cities.join(', ') : 'the whole country'
+  }${a.interests.length ? `, interested in ${a.interests.join(', ')}` : ''}`;
+  return (
+    `I would run "${plan.name}" to ${GOAL_IN_WORDS[plan.objective]}. It is shown to ${who}, ` +
+    `at ${money(plan.dailyBudget, currency)} a day for ${plan.days} days — ${money(plan.dailyBudget * plan.days, currency)} at most. ` +
+    `The ad opens with "${plan.lines[0] ?? plan.headline}".`
+  );
+}
+
+/**
+ * The owner's answer applied to the plan with no model: the money ("Rs 1,500 a
+ * day"), the days, the ages ("22 to 50"), who ("only women"), the cities and
+ * what people should do. Anything it does not recognise leaves the plan as it
+ * was; `normalisePlan` still clamps the result. Pure.
+ */
+export function applyAnswer(plan: AdPlanSpec, said: string, maxDays: number): AdPlanSpec {
+  const t = said.toLowerCase().replace(/(\d),(?=\d{3})/g, '$1');
+  const next = structuredClone(plan);
+  const perDay = t.match(/(?:rs\.?|pkr|\$)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|pkr)?\s*(?:a|per|\/|each)\s*day/) ?? t.match(/(?:rs\.?|pkr)\s*(\d+(?:\.\d+)?)/);
+  if (perDay) next.dailyBudget = Number(perDay[1]);
+  const days = t.match(/(\d+)\s*days?\b/) ?? (/\b(a|one) week\b/.test(t) ? ['', '7'] : /\b(two|2) weeks\b/.test(t) ? ['', '14'] : null);
+  if (days) next.days = Number(days[1]);
+  const ages = t.match(/\b(\d{2})\s*(?:-|–|to)\s*(\d{2})\b/);
+  if (ages) [next.audience.ageMin, next.audience.ageMax] = [Number(ages[1]), Number(ages[2])];
+  const women = /\b(women|woman|female|ladies|girls)\b/.test(t);
+  const men = /\b(men|man|male|boys)\b/.test(t);
+  if (women !== men) next.audience.genders = women ? 'women' : 'men';
+  else if (women || /\b(everyone|all genders)\b/.test(t)) next.audience.genders = 'all';
+  const cities = PK_CITIES.filter((c) => t.includes(c.toLowerCase()));
+  if (cities.length) next.audience.cities = cities;
+  else if (/\b(whole|all of|across) (the )?(country|pakistan)\b/.test(t)) next.audience.cities = [];
+  const cta: AdCta | null = /\b(download|install)/.test(t) ? 'DOWNLOAD' : /\b(sign ?up|register|join)\b/.test(t) ? 'SIGN_UP' : null;
+  if (cta) {
+    next.objective = 'traffic';
+    next.cta = cta;
+  } else if (/\b(awareness|know (us|about)|reach)\b/.test(t)) next.objective = 'awareness';
+  return normalisePlan(next as unknown as Record<string, unknown>, plan, maxDays);
+}
+
+/** What a brief has not said yet that would change the plan, as at most three questions. Pure. */
+export function missingAnswers(plan: AdPlanSpec, asked: string): string[] {
+  const out: string[] = [];
+  if (!plan.audience.cities.length) out.push('Which cities should it run in — or the whole country?');
+  if (!/\d/.test(asked)) out.push('How much can it spend a day, and for how many days?');
+  if (!/\b(download|install|sign ?up|register|join|book|order|buy|call|message|whatsapp|visit|apply)/i.test(asked)) {
+    out.push('What should people do after they see it — download the app, sign up, message you, or buy?');
+  }
+  return out.slice(0, 3);
 }

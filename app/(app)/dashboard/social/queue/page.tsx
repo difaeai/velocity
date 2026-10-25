@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Manage social → Approval queue.
+ * Manage social → Content & calendar → Everything made (the approval queue).
  *
  * The gate between the team and the whole audience. Nothing this desk makes
  * reaches a network without passing through this screen, so everything they
@@ -40,8 +40,12 @@ import {
   type SocialPlatform,
   type SocialPostDoc,
   type SocialPostStatus,
+  type SocialResearch,
   type SocialRevision,
 } from '@/lib/api';
+import { ContentTabs } from '@/components/social/contentTabs';
+import { ViralFinds } from '@/components/social/dashboard';
+import { FX_CSS } from '@/components/social/fx';
 import { Button, Card } from '@/components/ui';
 import {
   FormatChip,
@@ -95,6 +99,17 @@ export default function QueuePage() {
   const [shelf, setShelf] = useState<Shelf>('needs');
   const [openId, setOpenId] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(PAGE);
+  const [research, setResearch] = useState<SocialResearch | null>(null);
+
+  useEffect(
+    () =>
+      onSnapshot(
+        query(collection(db, path('socialResearch')), orderBy('date', 'desc'), limit(1)),
+        (snap) => setResearch(snap.empty ? null : (snap.docs[0].data() as SocialResearch)),
+        () => setResearch(null),
+      ),
+    [path],
+  );
 
   useEffect(
     () =>
@@ -132,13 +147,9 @@ export default function QueuePage() {
   );
 
   return (
-    <div>
-      <header style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Approval queue</h1>
-        <p style={{ color: colors.muted, margin: 0 }}>
-          Everything the team has made, one box each. Open a piece to read it, approve it, or say what to fix.
-        </p>
-      </header>
+    <div className="fx">
+      <style>{FX_CSS}</style>
+      <ContentTabs active="content" />
 
       <div role="tablist" aria-label="Pieces by where they are" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {SHELVES.map((s) => {
@@ -208,6 +219,10 @@ export default function QueuePage() {
           </Button>
         </div>
       ) : null}
+
+      <div style={{ marginTop: 18 }}>
+        <ViralFinds research={research} />
+      </div>
     </div>
   );
 }

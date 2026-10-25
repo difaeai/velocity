@@ -31,7 +31,7 @@ import {
   type AdPlan,
   type AdForecast,
   type AdsConfigDoc,
-  type AdSource,
+  type SocialAccountDoc,
   type SocialEmployee,
   type SocialPostDoc,
 } from '@/lib/api';
@@ -40,6 +40,8 @@ import { ChartCard, Stat, TimeSeries, SERIES } from '@/components/charts';
 import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GRADE_META, adMoney, campaignState, tone } from '@/components/social/ads';
 import { LaunchSequence } from '@/components/social/launch';
+import { CampaignDesigner, DESIGNER_CSS } from '@/components/social/designer';
+import { FX_CSS } from '@/components/social/fx';
 
 const DAY_MS = 86_400_000;
 
@@ -83,6 +85,18 @@ export default function AdsPage() {
         query(collection(db, path('socialPosts')), orderBy('date', 'desc'), limit(30)),
         (snap) => setPosts(snap.docs.map((d) => ({ ...(d.data() as SocialPostDoc), id: d.id }))),
         () => undefined,
+      ),
+    [path],
+  );
+
+  // The Page the desk already posts as: the ads connect picks it again without asking.
+  const [postingPageId, setPostingPageId] = useState<string | null>(null);
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(db, path('socialAccounts/facebook')),
+        (snap) => setPostingPageId((snap.data() as SocialAccountDoc | undefined)?.externalId ?? null),
+        () => setPostingPageId(null),
       ),
     [path],
   );
@@ -140,26 +154,41 @@ export default function AdsPage() {
   }
 
   return (
-    <div>
-      <header style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>Meta Ad Expert</h1>
-          <p style={{ color: colors.muted, margin: 0, maxWidth: 760, lineHeight: 1.55 }}>
-            {manager ? `${manager}, your Meta Ad Expert, runs` : 'Your Meta Ad Expert runs'}{' '}
-            {house ? 'Velocity Rides’' : `${ws?.name ?? 'your'}’s`} Facebook and Instagram ads. Say what an ad should
-            do — it picks the audience and budget, makes it and launches it, then watches the cost, the conversions
-            and the ROAS every day: winners keep running, losers are paused, tired ads get a fresh creative.
-          </p>
+    <div className="fx">
+      <style>{FX_CSS + DESIGNER_CSS}</style>
+      <header className="fx-hero fx-rise" style={{ padding: '22px 26px' }}>
+        <span className="fx-orb a" />
+        <span className="fx-orb b" />
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div className="fx-eyebrow">Facebook + Instagram ads</div>
+            <h1 style={{ fontSize: 26 }}>Meta Ad Expert</h1>
+            <p style={{ maxWidth: 680 }}>
+              {manager ? `${manager} plans` : 'Your expert plans'} {house ? 'Velocity Rides’' : `${ws?.name ?? 'your'}’s`} ads,
+              launches them and watches every rupee: winners keep running, losers are paused.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="fx-hero-chip">
+              <span className={connected && !expired ? 'fx-live lime' : 'fx-live off'} />
+              {connected ? (expired ? 'Sign-in expired' : `Connected · ${cfg?.accountName ?? ''}`) : 'Not connected'}
+            </span>
+            {setUp ? (
+              <span className="fx-hero-chip">
+                {adMoney(cfg!.dailyCap, cfg!.currency)}/day · {cfg!.mode === 'direct' ? 'launches itself' : 'asks first'}
+              </span>
+            ) : null}
+            {connected ? (
+              <button type="button" className="fx-btn lime small" onClick={refresh} disabled={syncing}>
+                {syncing ? 'Reading Meta…' : '↻ Refresh numbers'}
+              </button>
+            ) : null}
+          </div>
         </div>
-        {connected ? (
-          <Button variant="secondary" onClick={refresh} disabled={syncing}>
-            {syncing ? 'Reading Meta…' : 'Refresh numbers'}
-          </Button>
-        ) : null}
       </header>
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
-      {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+      {notice ? <p style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>{notice}</p> : null}
 
       {/* An ads-only workspace lands here, so its launch sequence lives here too. */}
       {!house && !includes('content') ? <LaunchSequence settings={null} /> : null}
@@ -174,17 +203,36 @@ export default function AdsPage() {
                 : `The Facebook sign-in for ads runs out in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Reconnect now.`}
             </p>
           ) : null}
-          <InstagramConnect ads={{ connectedName: expired ? null : (cfg?.accountName ?? null) }} />
+          <InstagramConnect
+            ads={{
+              connectedName: expired ? null : (cfg?.accountName ?? null),
+              adAccountId: cfg?.adAccountId ?? null,
+              pageId: cfg?.pageId ?? postingPageId,
+            }}
+          />
         </>
       ) : null}
 
       {/* 2 — the two answers before it spends anything */}
       {connected && !setUp ? <Limits cfg={cfg!} first onSaved={setNotice} onError={setError} /> : null}
 
-      {/* 3 — the brief */}
-      {setUp ? (
-        <Composer cfg={cfg!} posts={posts} onDone={setNotice} onError={setError} />
-      ) : null}
+      {/* 3 — the campaign, designed in conversation; works before connecting, creates only once set up */}
+      <CampaignDesigner
+        cfg={cfg}
+        ready={setUp}
+        blocked={
+          !connected
+            ? 'Connect the ad account above to create it.'
+            : !setUp
+              ? 'Answer the two questions above — the daily limit and ask-or-launch — to create it.'
+              : null
+        }
+        posts={posts}
+        manager={manager}
+        house={house}
+        onDone={setNotice}
+        onError={setError}
+      />
 
       {/* 4 — the account at a glance, and what each of its numbers means */}
       {connected && cfg?.account ? <Account cfg={cfg} /> : null}
@@ -338,154 +386,6 @@ function Limits({
           </span>
         </div>
       )}
-    </Card>
-  );
-}
-
-/** "What should the ad do?" — the brief, and where the creative comes from. */
-function Composer({
-  cfg,
-  posts,
-  onDone,
-  onError,
-}: {
-  cfg: AdsConfigDoc;
-  posts: SocialPostDoc[];
-  onDone: (m: string) => void;
-  onError: (m: string) => void;
-}) {
-  const [brief, setBrief] = useState('');
-  const [budget, setBudget] = useState('');
-  const [days, setDays] = useState('');
-  const [kind, setKind] = useState<AdSource['kind']>('make');
-  const [pick, setPick] = useState('');
-  const [launch, setLaunch] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState<{ plan: AdPlan; forecast: AdForecast | null; launched: boolean; note: string | null } | null>(
-    null,
-  );
-
-  /** Pieces with a picture or a reel the ad can reuse. */
-  const reusable = posts.filter((p) => (p.media ?? []).some((m) => m.url));
-  /** Pieces already live on Instagram — the cheapest thing to boost is a proven post. */
-  const live = posts.filter((p) => p.results?.instagram?.ok && p.results.instagram.id);
-  const goLive = launch ?? cfg.mode === 'direct';
-
-  async function go() {
-    setBusy(true);
-    setMade(null);
-    try {
-      const source: AdSource =
-        kind === 'post' && pick
-          ? { kind: 'post', postId: pick }
-          : kind === 'boost' && pick
-            ? { kind: 'boost', mediaId: pick }
-            : { kind: 'make' };
-      if (kind !== 'make' && !pick) throw new Error('Pick the post to use.');
-      const res = await adsApi.create({
-        brief: brief.trim(),
-        dailyBudget: Number(budget) > 0 ? Number(budget) : undefined,
-        days: Number(days) > 0 ? Math.round(Number(days)) : undefined,
-        source,
-        launch: goLive,
-      });
-      setMade({ plan: res.plan, forecast: res.forecast, launched: res.launched, note: res.note });
-      onDone(res.launched ? `"${res.plan.name}" is live.` : `"${res.plan.name}" is made and waiting for your Approve below.`);
-      setBrief('');
-    } catch (e) {
-      onError(e instanceof Error ? e.message : 'The ad could not be made.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card style={{ marginBottom: 16 }}>
-      <h2 style={h2}>What should the ad do?</h2>
-      <textarea
-        value={brief}
-        onChange={(e) => setBrief(e.target.value)}
-        rows={3}
-        aria-label="What the ad should do"
-        placeholder="e.g. get car owners in Lahore and Islamabad to sign up as drivers this week — cash every day, no surge games"
-        style={{
-          width: '100%',
-          padding: 12,
-          fontSize: 14,
-          lineHeight: 1.5,
-          fontFamily: 'inherit',
-          border: `1px solid ${colors.border}`,
-          borderRadius: 10,
-          resize: 'vertical',
-          marginBottom: 10,
-        }}
-      />
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
-        <label style={label}>
-          Per day ({cfg.currency})
-          <input
-            inputMode="numeric"
-            value={budget}
-            onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
-            placeholder="the expert decides"
-            style={input}
-          />
-        </label>
-        <label style={label}>
-          Days
-          <input
-            inputMode="numeric"
-            value={days}
-            onChange={(e) => setDays(e.target.value.replace(/\D/g, ''))}
-            placeholder={`up to ${cfg.maxDays}`}
-            style={input}
-          />
-        </label>
-        <label style={label}>
-          The picture
-          <select value={kind} onChange={(e) => { setKind(e.target.value as AdSource['kind']); setPick(''); }} style={input}>
-            <option value="make">The desk makes it</option>
-            <option value="post" disabled={!reusable.length}>
-              Use a piece the desk made
-            </option>
-            <option value="boost" disabled={!live.length}>
-              Boost a live Instagram post
-            </option>
-          </select>
-        </label>
-        {kind !== 'make' ? (
-          <label style={{ ...label, flex: 1, minWidth: 220 }}>
-            Which one
-            <select value={pick} onChange={(e) => setPick(e.target.value)} style={{ ...input, width: '100%' }}>
-              <option value="">Choose…</option>
-              {(kind === 'post' ? reusable : live).map((p) => (
-                <option key={p.id} value={kind === 'post' ? p.id : (p.results.instagram?.id ?? '')}>
-                  {p.date} · {p.format} · {(p.script?.hook ?? p.caption).slice(0, 60)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, marginBottom: 12 }}>
-        <input type="checkbox" checked={goLive} onChange={(e) => setLaunch(e.target.checked)} />
-        Launch it straight away (within your {adMoney(cfg.dailyCap, cfg.currency)} daily limit)
-      </label>
-
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Button onClick={go} disabled={busy || brief.trim().length < 5}>
-          {busy ? 'The expert is building it…' : 'Plan and make the ad'}
-        </Button>
-        {busy ? (
-          <span style={{ fontSize: 12.5, color: colors.muted }}>
-            Planning, drawing, and setting it up at Meta — a minute or three. You can leave this page.
-          </span>
-        ) : null}
-      </div>
-
-      {made ? <PlanCard plan={made.plan} forecast={made.forecast} currency={cfg.currency} note={made.note} /> : null}
     </Card>
   );
 }

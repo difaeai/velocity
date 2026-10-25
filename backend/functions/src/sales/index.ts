@@ -34,7 +34,16 @@ import { deskCall, forEachWorkspace, sdb, workspaceBrand } from '../social/works
 import { findBySearch, findOnMap, type FoundBusiness } from './find';
 import { followUpDue, imapHostFor, readReplies, type LeadRef } from './inbox';
 import { fetchPage, readSite } from './site';
-import { answerReply, draftEmail, draftFollowUp, withFooter, type Draft, type Seller } from './write';
+import {
+  answerReply,
+  draftEmail,
+  draftFollowUp,
+  withFooter,
+  writeCallScript,
+  type Caller,
+  type Draft,
+  type Seller,
+} from './write';
 
 const REGION = 'asia-south1';
 const SETTINGS = 'system/sales';
@@ -72,6 +81,19 @@ interface SalesSettings {
   sentCount: number;
   lastAutoDay: string;
   lastStatus: string | null;
+  /** Calling agents: each writes the script for a call a person makes. At most five. */
+  callAgents: CallAgent[];
+}
+
+/** One calling agent as set up on the Sales page. */
+interface CallAgent extends Caller {
+  id: string;
+  voice: 'female' | 'male';
+  /** Pakistan hours it is fine to ring a business, from–to. */
+  hoursFrom: number;
+  hoursTo: number;
+  dailyCap: number;
+  active: boolean;
 }
 
 const DEFAULTS: SalesSettings = {
@@ -95,6 +117,7 @@ const DEFAULTS: SalesSettings = {
   sentCount: 0,
   lastAutoDay: '',
   lastStatus: null,
+  callAgents: [],
 };
 
 /** A lead as stored, with the close: the thread we started and what came back. */
@@ -488,6 +511,24 @@ const settingsSchema = z.object({
       pass: z.string().min(4).max(200).optional(),
     })
     .optional(),
+  callAgents: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9-]{3,40}$/),
+        name: z.string().trim().min(1).max(40),
+        voice: z.enum(['female', 'male']),
+        language: z.enum(['urdu', 'english', 'mixed']),
+        goal: z.string().trim().max(300),
+        opener: z.string().trim().max(400),
+        points: z.string().trim().max(1200),
+        hoursFrom: z.number().int().min(0).max(23),
+        hoursTo: z.number().int().min(1).max(24),
+        dailyCap: z.number().int().min(1).max(200),
+        active: z.boolean(),
+      }),
+    )
+    .max(5)
+    .optional(),
 });
 
 export const salesGetSettings = deskCall('sales', async () => {
@@ -570,9 +611,12 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
   const parsed = z
     .object({
       leadId: z.string().regex(/^[a-f0-9]{20}$/),
-      action: z.enum(['approve', 'send', 'sent', 'skip', 'replied', 'won', 'lost', 'optout', 'edit', 'editReply', 'sendReply']),
+      action: z.enum(['approve', 'send', 'sent', 'skip', 'replied', 'won', 'lost', 'optout', 'edit', 'editReply', 'sendReply', 'call']),
       subject: z.string().trim().min(1).max(120).optional(),
       body: z.string().trim().min(10).max(2000).optional(),
+      /** How a call went, for `call`. */
+      outcome: z.enum(['interested', 'callback', 'not_interested', 'no_answer', 'wrong_number']).optional(),
+      note: z.string().trim().max(300).optional(),
     })
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
@@ -580,6 +624,21 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
   const ref = sdb.doc(`${LEADS}/${id}`);
   const lead = (await ref.get()).data() as LeadDoc | undefined;
   if (!lead) throw new HttpsError('not-found', 'No such lead.');
+
+  // A call someone made from the calling agent's script: logged, and it moves the lead like a reply would.
+  if (action === 'call') {
+    const outcome = parsed.data.outcome;
+    if (!outcome) throw new HttpsError('invalid-argument', 'Say how the call went.');
+    const call = { atMs: Date.now(), outcome, note: parsed.data.note ?? '', by: requireAuth(req).uid };
+    const moved: LeadStatus | null =
+      outcome === 'interested' ? 'replied' : outcome === 'not_interested' || outcome === 'wrong_number' ? 'lost' : null;
+    await ref.update({
+      calls: FieldValue.arrayUnion(call),
+      lastCall: { atMs: call.atMs, outcome },
+      ...(moved && !['won', 'lost'].includes(lead.status) ? { status: moved } : {}),
+    });
+    return { ok: true };
+  }
 
   if (action === 'edit' || action === 'editReply') {
     if (!subject || !body) throw new HttpsError('invalid-argument', 'A subject and a body are both needed.');
@@ -623,6 +682,27 @@ export const salesLeadAction = deskCall('sales', { timeoutSeconds: 120 }, async 
   const next: Record<string, LeadStatus> = { sent: 'sent', skip: 'skipped', replied: 'replied', won: 'won', lost: 'lost' };
   await ref.update({ status: next[action], ...(action === 'sent' ? { sentAtMs: Date.now() } : {}) });
   return { ok: true };
+});
+
+/**
+ * A calling agent writes what to say to one business — read from the screen by
+ * whoever dials. It never places a call itself: that needs a phone line, and
+ * none is connected.
+ */
+export const salesCallScript = deskCall('sales', { timeoutSeconds: 120 }, async (req) => {
+  const parsed = z
+    .object({ leadId: z.string().regex(/^[a-f0-9]{20}$/), agentId: z.string().regex(/^[a-z0-9-]{3,40}$/) })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
+  const s = await getSales();
+  const agent = s.callAgents.find((a) => a.id === parsed.data.agentId);
+  if (!agent) throw new HttpsError('not-found', 'Set up that calling agent first.');
+  const ref = sdb.doc(`${LEADS}/${parsed.data.leadId}`);
+  const lead = (await ref.get()).data() as LeadDoc | undefined;
+  if (!lead) throw new HttpsError('not-found', 'No such lead.');
+  const script = await writeCallScript({ model: (await getSocialSettings()).textModel, seller: seller(s), caller: agent, lead });
+  await ref.update({ callScript: { ...script, agentId: agent.id, atMs: Date.now() } });
+  return { ok: true, script };
 });
 
 /**

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { colors } from '@/lib/config';
 import {
   META_HANDOFF_KEY,
+  META_RETURN_KEY,
   socialApi,
   type MetaAdAccountChoice,
   type MetaConnectState,
@@ -37,20 +38,42 @@ import { PlatformBadge } from './shared';
 type Step = 'idle' | 'waiting' | 'exchanging' | 'choosing' | 'saving' | 'done';
 
 /**
+ * The Page and ad account to use without asking: the ones connected now, else
+ * the only one there is. Never a guess between several — the Page chosen here
+ * also becomes the one the desk posts as.
+ */
+export function autoPick(
+  pages: MetaPageChoice[],
+  adAccounts: MetaAdAccountChoice[],
+  prefer: { pageId?: string | null; instagramId?: string | null; adAccountId?: string | null },
+): { pageId: string | null; adAccountId: string | null } {
+  const page =
+    pages.find((p) => p.pageId === prefer.pageId) ??
+    pages.find((p) => prefer.instagramId && p.instagramId === prefer.instagramId) ??
+    (pages.length === 1 ? pages[0] : undefined);
+  const active = adAccounts.filter((a) => a.active);
+  const ad = adAccounts.find((a) => a.id === prefer.adAccountId) ?? (active.length === 1 ? active[0] : undefined);
+  return { pageId: page?.pageId ?? null, adAccountId: ad?.id ?? null };
+}
+
+/**
  * `ads` turns the same sign-in into the ad-account connect for the Ads page:
  * the dialog also asks for the ads permissions, and the admin picks an ad
  * account alongside the Page. The Instagram connect itself never asks for them.
+ * Its `adAccountId`/`pageId` are what is connected now, so a reconnect picks
+ * them again without asking.
  */
 export function InstagramConnect({
   account,
   ads,
 }: {
   account?: SocialAccountDoc;
-  ads?: { connectedName: string | null };
+  ads?: { connectedName: string | null; adAccountId?: string | null; pageId?: string | null };
 }) {
   const [state, setState] = useState<MetaConnectState | null>(null);
   const [step, setStep] = useState<Step>('idle');
   const [pages, setPages] = useState<MetaPageChoice[]>([]);
+  const [pageId, setPageId] = useState<string>('');
   const [adAccounts, setAdAccounts] = useState<MetaAdAccountChoice[]>([]);
   const [adAccountId, setAdAccountId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -60,8 +83,11 @@ export function InstagramConnect({
   /** The `state` string of the handshake in flight, matched on the way back. */
   const pending = useRef<string | null>(null);
   const popup = useRef<Window | null>(null);
-  /** A primitive, so the exchange callback below keeps its identity across renders. */
+  /** Primitives, so the callbacks below keep their identity across renders. */
   const isAds = Boolean(ads);
+  const preferPage = ads?.pageId ?? null;
+  const preferAd = ads?.adAccountId ?? null;
+  const preferIg = ads ? null : (account?.externalId ?? null);
 
   const refresh = useCallback(() => {
     socialApi
@@ -72,45 +98,81 @@ export function InstagramConnect({
 
   useEffect(refresh, [refresh]);
 
-  /** Spend the code. Shared by both ways it can arrive. */
-  const exchange = useCallback(async (handoff: MetaHandoff) => {
-    if (handoff.error) {
-      setStep('idle');
-      setError(handoff.error);
-      return;
-    }
-    if (!handoff.code || !handoff.state) return;
-    if (pending.current && handoff.state !== pending.current) return;
+  /** Keep the Page (and ad account) — the last call; until it returns, nothing is connected. */
+  const save = useCallback(
+    async (page: string, ad: string) => {
+      if (!pending.current) return;
+      setStep('saving');
+      setError(null);
+      try {
+        const res = await socialApi.chooseMetaPage({
+          state: pending.current,
+          pageId: page,
+          ...(isAds && ad ? { adAccountId: ad } : {}),
+        });
+        setStep('done');
+        setNote(res.note);
+        pending.current = null;
+        setPages([]);
+      } catch (e) {
+        setStep('choosing');
+        setError(e instanceof Error ? e.message : 'That Page could not be stored.');
+      }
+    },
+    [isAds],
+  );
 
-    setStep('exchanging');
-    setError(null);
-    try {
-      const res = await socialApi.finishMetaConnect({ code: handoff.code, state: handoff.state });
-      pending.current = handoff.state;
-      setPages(res.pages);
-      setAdAccounts(res.adAccounts ?? []);
-      setAdAccountId((res.adAccounts ?? []).find((a) => a.active)?.id ?? res.adAccounts?.[0]?.id ?? '');
-      setStep('choosing');
-      if (isAds && !(res.adAccounts ?? []).length) {
-        setError(
-          'That sign-in reached no ad account. Check that this Facebook account is an admin of the ad account ' +
-            '(Business settings → Ad accounts) and that the ads permissions were allowed, then press Connect again.',
-        );
+  /** Spend the code. Shared by every way it can arrive. */
+  const exchange = useCallback(
+    async (handoff: MetaHandoff) => {
+      if (handoff.error) {
         setStep('idle');
+        setError(handoff.error);
         return;
       }
-      if (res.pages.length === 0) {
-        setError(
-          'That account does not administer any Facebook Page. Instagram can only be connected through ' +
-            'the Page its Business account is linked to.',
-        );
+      if (!handoff.code || !handoff.state) return;
+      if (pending.current && handoff.state !== pending.current) return;
+
+      setStep('exchanging');
+      setError(null);
+      try {
+        const res = await socialApi.finishMetaConnect({ code: handoff.code, state: handoff.state });
+        pending.current = handoff.state;
+        const accounts = res.adAccounts ?? [];
+        if (isAds && !accounts.length) {
+          setError(
+            'That sign-in reached no ad account. Check that this Facebook account is an admin of the ad account ' +
+              '(Business settings → Ad accounts) and that the ads permissions were allowed, then press Connect again.',
+          );
+          setStep('idle');
+          return;
+        }
+        if (res.pages.length === 0) {
+          setError(
+            'That account does not administer any Facebook Page. Instagram can only be connected through ' +
+              'the Page its Business account is linked to.',
+          );
+          setStep('idle');
+          return;
+        }
+        const pick = autoPick(res.pages, accounts, { pageId: preferPage, instagramId: preferIg, adAccountId: preferAd });
+        setPages(res.pages);
+        setAdAccounts(accounts);
+        setPageId(pick.pageId ?? res.pages[0].pageId);
+        setAdAccountId(pick.adAccountId ?? accounts.find((a) => a.active)?.id ?? accounts[0]?.id ?? '');
+        // Nothing to choose: finish now. Signing in and walking away used to leave nothing connected.
+        if (pick.pageId && (!isAds || pick.adAccountId)) {
+          await save(pick.pageId, pick.adAccountId ?? '');
+          return;
+        }
+        setStep('choosing');
+      } catch (e) {
         setStep('idle');
+        setError(e instanceof Error ? e.message : 'Facebook would not complete the connection.');
       }
-    } catch (e) {
-      setStep('idle');
-      setError(e instanceof Error ? e.message : 'Facebook would not complete the connection.');
-    }
-  }, [isAds]);
+    },
+    [isAds, preferPage, preferAd, preferIg, save],
+  );
 
   // The popup's way home.
   useEffect(() => {
@@ -122,6 +184,24 @@ export function InstagramConnect({
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
+  }, [exchange]);
+
+  // A popup whose opener Facebook severed hands back through storage: only the
+  // tab that started this connect takes it, and the popup then closes itself.
+  useEffect(() => {
+    function onStorage(ev: StorageEvent) {
+      if (ev.key !== META_HANDOFF_KEY || !ev.newValue || !pending.current) return;
+      let handoff: MetaHandoff;
+      try {
+        handoff = JSON.parse(ev.newValue) as MetaHandoff;
+        window.localStorage.removeItem(META_HANDOFF_KEY);
+      } catch {
+        return;
+      }
+      void exchange(handoff);
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [exchange]);
 
   // The blocked-popup way home: Facebook replaced the tab, the callback page
@@ -158,6 +238,12 @@ export function InstagramConnect({
     try {
       const { url, state: s } = await socialApi.startMetaConnect(ads ? { ads: true } : {});
       pending.current = s;
+      // Where the callback walks back to when it cannot talk to this tab — this page, not always Accounts.
+      try {
+        window.localStorage.setItem(META_RETURN_KEY, window.location.pathname);
+      } catch {
+        // blocked storage: the callback falls back to the accounts page
+      }
       popup.current = window.open(url, 'velocity-meta-connect', 'width=600,height=760,menubar=no,toolbar=no');
       if (!popup.current) {
         // Blocked. Go the whole-tab route rather than telling someone to find
@@ -170,28 +256,9 @@ export function InstagramConnect({
     }
   }
 
-  async function choose(pageId: string) {
-    if (!pending.current) return;
-    setStep('saving');
-    setError(null);
-    try {
-      const res = await socialApi.chooseMetaPage({
-        state: pending.current,
-        pageId,
-        ...(ads && adAccountId ? { adAccountId } : {}),
-      });
-      setStep('done');
-      setNote(res.note);
-      pending.current = null;
-      setPages([]);
-    } catch (e) {
-      setStep('choosing');
-      setError(e instanceof Error ? e.message : 'That Page could not be stored.');
-    }
-  }
-
   const connected = ads ? Boolean(ads.connectedName) : account?.status === 'connected';
   const busy = step === 'waiting' || step === 'exchanging' || step === 'saving';
+  const choosing = step === 'choosing';
 
   return (
     <Card style={{ marginBottom: 16, borderColor: connected ? colors.border : '#d946ef55' }}>
@@ -232,24 +299,27 @@ export function InstagramConnect({
           </p>
         </div>
 
-        {state?.ready ? (
+        {/* Hidden while choosing: a second "Continue with Facebook" there is what got pressed instead of finishing. */}
+        {state?.ready && !choosing ? (
           <Button onClick={start} disabled={busy}>
             {step === 'waiting'
               ? 'Waiting for Facebook…'
               : step === 'exchanging'
                 ? 'Reading your Pages…'
-                : connected
-                  ? 'Reconnect'
-                  : 'Continue with Facebook'}
+                : step === 'saving'
+                  ? 'Connecting…'
+                  : connected
+                    ? 'Reconnect'
+                    : 'Continue with Facebook'}
           </Button>
         ) : null}
       </div>
 
       {/* Live, honest progress: three steps, each lit only once its call returned. */}
-      {busy || step === 'choosing' ? (
+      {busy || choosing ? (
         <Steps
           step={step}
-          labels={['Signing in with Facebook', 'Reading your Pages', 'Storing the connection']}
+          labels={['Signing in with Facebook', ads ? 'Choose the ad account and Page' : 'Choose the Page', 'Connected']}
         />
       ) : null}
 
@@ -266,7 +336,13 @@ export function InstagramConnect({
         </p>
       ) : null}
 
-      {step === 'choosing' && ads && adAccounts.length ? (
+      {choosing ? (
+        <p style={{ fontSize: 14, fontWeight: 800, color: colors.primary, margin: '14px 0 0' }}>
+          Signed in. One more step — nothing is connected until you press <em>Finish connecting</em>.
+        </p>
+      ) : null}
+
+      {choosing && ads && adAccounts.length ? (
         <label style={{ display: 'grid', gap: 6, marginTop: 14, fontSize: 12.5, fontWeight: 800, color: colors.muted }}>
           Which ad account pays for the ads?
           <select
@@ -292,24 +368,26 @@ export function InstagramConnect({
         </label>
       ) : null}
 
-      {step === 'choosing' && pages.length ? (
-        <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+      {choosing && pages.length ? (
+        <div style={{ marginTop: 14, display: 'grid', gap: 8 }} role="radiogroup" aria-label="Facebook Page">
           <span style={{ fontSize: 12.5, fontWeight: 800, color: colors.muted }}>
-            {pages.length === 1 ? 'This is the Page we found — confirm it:' : 'Which Page is Velocity Rides?'}
+            {pages.length === 1 ? 'The Page we found:' : 'Which Page is Velocity Rides?'}
           </span>
           {pages.map((p) => (
             <button
               key={p.pageId}
               type="button"
-              onClick={() => choose(p.pageId)}
+              role="radio"
+              aria-checked={p.pageId === pageId}
+              onClick={() => setPageId(p.pageId)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
                 padding: 12,
                 borderRadius: 12,
-                border: `1px solid ${colors.border}`,
-                background: colors.surface,
+                border: `${p.pageId === pageId ? 2 : 1}px solid ${p.pageId === pageId ? colors.primary : colors.border}`,
+                background: p.pageId === pageId ? `${colors.primary}0d` : colors.surface,
                 cursor: 'pointer',
                 textAlign: 'left',
                 font: 'inherit',
@@ -337,9 +415,27 @@ export function InstagramConnect({
                     : 'No Instagram Business account linked — only the Page would connect'}
                 </span>
               </span>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: colors.secondary }}>Use this →</span>
+              <span aria-hidden style={{ fontSize: 16, fontWeight: 900, color: colors.primary }}>
+                {p.pageId === pageId ? '✓' : ''}
+              </span>
             </button>
           ))}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+            <Button onClick={() => void save(pageId, adAccountId)} disabled={!pageId || (Boolean(ads) && !adAccountId)}>
+              Finish connecting
+            </Button>
+            <button
+              type="button"
+              onClick={() => {
+                pending.current = null;
+                setPages([]);
+                setStep('idle');
+              }}
+              style={{ border: 'none', background: 'none', color: colors.muted, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}
+            >
+              Start over
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -369,8 +465,8 @@ export function InstagramConnect({
 
 /** Three lights. Lit = this call returned; pulsing = it is in flight right now. */
 function Steps({ step, labels }: { step: Step; labels: string[] }) {
-  const reached =
-    step === 'waiting' ? 0 : step === 'exchanging' ? 1 : step === 'choosing' ? 2 : step === 'saving' ? 2 : 3;
+  // Choosing is the person's step, so it stays the live one until they press Finish.
+  const reached = step === 'waiting' ? 0 : step === 'exchanging' || step === 'choosing' ? 1 : step === 'saving' ? 2 : 3;
 
   return (
     <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>

@@ -1704,6 +1704,8 @@ export interface SocialProfileAudit {
  * Both halves of the handshake read it from here so they cannot drift apart.
  */
 export const META_HANDOFF_KEY = 'velocity.social.metaConnect';
+/** The console page a connect started from — where the callback walks back to. */
+export const META_RETURN_KEY = 'velocity.social.metaConnect.return';
 
 /** What the callback page hands back, by postMessage or by localStorage. */
 export interface MetaHandoff {
@@ -1802,6 +1804,35 @@ export interface SalesLeadDoc {
   /** The answer the agent drafted for it — sent only when the owner presses Send. */
   replyDraft?: { subject: string; body: string } | null;
   answeredAtMs?: number | null;
+  /** What a calling agent wrote for a call to them, and every call made. */
+  callScript?: SalesCallScript & { agentId: string; atMs: number };
+  calls?: { atMs: number; outcome: SalesCallOutcome; note: string; by: string }[];
+  lastCall?: { atMs: number; outcome: SalesCallOutcome };
+}
+
+export type SalesCallOutcome = 'interested' | 'callback' | 'not_interested' | 'no_answer' | 'wrong_number';
+
+export interface SalesCallScript {
+  opener: string;
+  pitch: string[];
+  questions: string[];
+  objections: { they: string; you: string }[];
+  close: string;
+}
+
+/** A calling agent: who rings, in what voice and language, to say what, and when. */
+export interface SalesCallAgent {
+  id: string;
+  name: string;
+  voice: 'female' | 'male';
+  language: 'urdu' | 'english' | 'mixed';
+  goal: string;
+  opener: string;
+  points: string;
+  hoursFrom: number;
+  hoursTo: number;
+  dailyCap: number;
+  active: boolean;
 }
 
 export interface SalesSettingsDoc {
@@ -1826,6 +1857,7 @@ export interface SalesSettingsDoc {
   sentDay: string;
   sentCount: number;
   lastStatus: string | null;
+  callAgents: SalesCallAgent[];
 }
 
 /** The sales agent: settings, finding, writing, and what happens to each lead. */
@@ -1849,12 +1881,18 @@ export const salesApi = {
   leadAction: callable<
     {
       leadId: string;
-      action: 'approve' | 'send' | 'sent' | 'skip' | 'replied' | 'won' | 'lost' | 'optout' | 'edit' | 'editReply' | 'sendReply';
+      action: 'approve' | 'send' | 'sent' | 'skip' | 'replied' | 'won' | 'lost' | 'optout' | 'edit' | 'editReply' | 'sendReply' | 'call';
       subject?: string;
       body?: string;
+      outcome?: SalesCallOutcome;
+      note?: string;
     },
     { ok: boolean; sent?: number }
   >('salesLeadAction'),
+  callScript: callable<{ leadId: string; agentId: string }, { ok: boolean; script: SalesCallScript }>(
+    'salesCallScript',
+    LONG_CALL_MS,
+  ),
 };
 
 /** Velocity Studio: sign-up, paying, and the admin's decision on a payment. */
@@ -2178,16 +2216,35 @@ export interface AdCampaignDoc {
 
 export type AdSource = { kind: 'make' } | { kind: 'post'; postId: string } | { kind: 'boost'; mediaId: string };
 
+export interface AdChatTurn {
+  from: 'you' | 'expert';
+  text: string;
+}
+
 export const adsApi = {
   settings: callable<
     { mode?: 'ask' | 'direct'; dailyCap?: number; maxDays?: number; link?: string; valuePerConversion?: number },
     { ok: boolean; config: AdsConfigDoc }
   >('adminSetAdsSettings'),
-  /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. */
+  /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. `plan`: the one designed together. */
   create: callable<
-    { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean },
+    { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean; plan?: AdPlan },
     { ok: boolean; campaignId: string; launched: boolean; budget: number; note: string | null; plan: AdPlan; forecast: AdForecast | null }
   >('adminCreateAd', 10 * 60_000),
+  /** One turn of "design a campaign with me": the expert's answer, its questions and the plan so far. Spends nothing. */
+  design: callable<
+    { chat: AdChatTurn[]; draft?: AdPlan },
+    {
+      ok: boolean;
+      reply: string;
+      questions: string[];
+      plan: AdPlan;
+      engine: string;
+      note: string | null;
+      currency: string;
+      forecast: AdForecast | null;
+    }
+  >('adminDesignAd', 3 * 60_000),
   // Ten minutes: "apply" on a worn-out campaign draws its fresh creative.
   action: callable<
     { campaignId: string; action: 'launch' | 'pause' | 'resume' | 'budget' | 'apply' | 'end'; dailyBudget?: number },

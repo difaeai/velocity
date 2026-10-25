@@ -24,7 +24,7 @@ import { Suspense, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import { colors } from '@/lib/config';
-import { META_HANDOFF_KEY, type MetaHandoff } from '@/lib/api';
+import { META_HANDOFF_KEY, META_RETURN_KEY, type MetaHandoff } from '@/lib/api';
 
 export default function InstagramConnectCallback() {
   return (
@@ -51,11 +51,12 @@ function Handoff() {
     [params],
   );
 
+  // Not "Connected": only the sign-in is done here. The console still has to keep the Page.
   const message = result.error
     ? result.error
     : !result.code
       ? 'Facebook sent us back without an authorization code.'
-      : 'Connected. Returning to the console…';
+      : 'Signed in with Facebook. Finishing the connection in the console…';
 
   // The effect only talks to other windows and to storage — the two external
   // systems this page exists to reach. The clock is read here rather than in
@@ -70,14 +71,26 @@ function Handoff() {
       return () => clearTimeout(t);
     }
 
+    let back = '/dashboard/social/accounts';
     try {
+      const from = window.localStorage.getItem(META_RETURN_KEY);
+      if (from && /^\/dashboard\/social(\/[\w-]+)*$/.test(from)) back = from;
       window.localStorage.setItem(META_HANDOFF_KEY, JSON.stringify(handoff));
     } catch {
       // Private window, blocked storage. The redirect below still happens and
-      // the accounts page simply shows its normal "press Connect" state.
+      // the page simply shows its normal "press Connect" state.
     }
     const t = setTimeout(() => {
-      window.location.replace('/dashboard/social/accounts');
+      // A popup whose opener Facebook cut off: the console tab took the result
+      // through storage, so this window only has to get out of the way.
+      let taken = false;
+      try {
+        taken = window.localStorage.getItem(META_HANDOFF_KEY) === null;
+      } catch {
+        // unreadable storage: walk back below
+      }
+      if (taken) window.close();
+      window.location.replace(back);
     }, 900);
     return () => clearTimeout(t);
   }, [result]);
@@ -111,7 +124,7 @@ function Shell({ message }: { message: string }) {
             animation: 'velocity-spin 900ms linear infinite',
           }}
         />
-        <h1 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 6px' }}>Instagram</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 6px' }}>Facebook</h1>
         <p style={{ fontSize: 14, color: colors.muted, margin: 0, lineHeight: 1.5 }}>{message}</p>
         <style>{'@keyframes velocity-spin { to { transform: rotate(360deg) } }'}</style>
       </div>

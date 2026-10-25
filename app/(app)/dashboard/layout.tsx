@@ -31,7 +31,11 @@ import { VelocityIcon } from '@/components/BrandMark';
 interface NavItem {
   href: string;
   label: string;
+  /** Other pages that light this item: halves of one page that keep their own routes. */
+  also?: string[];
 }
+
+const isActive = (item: NavItem, pathname: string) => pathname === item.href || Boolean(item.also?.includes(pathname));
 interface NavGroup {
   title: string;
   items: NavItem[];
@@ -111,9 +115,8 @@ const SOCIAL_NAV: NavGroup[] = [
   {
     title: 'Every day',
     items: [
-      { href: '/dashboard/social/queue', label: '✅ Posts & approval' },
+      { href: '/dashboard/social/queue', label: '🎬 Content & calendar', also: ['/dashboard/social/calendar'] },
       { href: '/dashboard/social/ads', label: '💸 Meta Ad Expert' },
-      { href: '/dashboard/social/calendar', label: '🗓️ Content calendar' },
       { href: '/dashboard/social/inbox', label: '💬 Comments' },
       { href: '/dashboard/social/performance', label: '📈 Analytics' },
       { href: '/dashboard/social/sales', label: '🤝 Sales agent' },
@@ -253,7 +256,7 @@ function AdminShell({ email, signOut, children }: ShellProps) {
             <div key={group.title || 'root'} style={{ display: 'grid', gap: 2 }}>
               {group.title ? <div style={groupTitleStyle}>{group.title}</div> : null}
               {group.items.map((item) => {
-                const active = pathname === item.href;
+                const active = isActive(item, pathname);
                 return (
                   <Link
                     key={item.href}
@@ -347,7 +350,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
             <div key={group.title || 'root'} style={{ display: 'grid', gap: 2 }}>
               {group.title ? <div style={groupTitleStyle}>{group.title}</div> : null}
               {group.items.map((item) => {
-                const active = pathname === item.href;
+                const active = isActive(item, pathname);
                 return (
                   <Link
                     key={item.href}

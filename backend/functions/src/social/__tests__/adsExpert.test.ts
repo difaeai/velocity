@@ -10,16 +10,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyAnswer,
   blended,
   clampBudget,
   conversionsFrom,
   diagnose,
+  explainPlan,
   forecast,
   fromMinor,
   learningBudget,
   localPlan,
   marketBenchmarks,
   metricsFrom,
+  missingAnswers,
   normalisePlan,
   ownBenchmarks,
   SCALE_EVERY_MS,
@@ -288,6 +291,12 @@ describe('plans', () => {
     expect(fallback.objective).toBe('traffic');
   });
 
+  it('ends a long headline on a whole word', () => {
+    const plan = localPlan({ brief: 'Get more drivers in Lahore to sign up this week', bench, maxDays: 14 });
+    expect(plan.headline).toBe('Get more drivers in Lahore to sign up');
+    expect(localPlan({ brief: 'Ride cheaper today', bench, maxDays: 14 }).headline).toBe('Ride cheaper today');
+  });
+
   it('clamps whatever the model sends', () => {
     const plan = normalisePlan(
       {
@@ -307,5 +316,35 @@ describe('plans', () => {
     expect(plan.cta).toBe(fallback.cta);
     expect(plan.lines).toEqual(fallback.lines);
     expect(plan.dailyBudget).toBe(fallback.dailyBudget);
+  });
+});
+
+describe('designing a campaign with the owner', () => {
+  const plan = localPlan({ brief: 'Drivers in Lahore', bench, maxDays: 14, requestedBudget: 1000, requestedDays: 7 });
+
+  it('says the plan back in plain words, with the most it can spend', () => {
+    const said = explainPlan(plan, 'PKR');
+    expect(said).toContain('tap through');
+    expect(said).toContain('aged 21–55 in Lahore');
+    expect(said).toContain('Rs 1,000 a day for 7 days — Rs 7,000 at most');
+  });
+
+  it('applies a plain answer to the plan with no model', () => {
+    const next = applyAnswer(plan, 'Rs 1,500 a day for 10 days, only women 22 to 50 in Karachi, they should download the app', 14);
+    expect(next).toMatchObject({ dailyBudget: 1500, days: 10, objective: 'traffic', cta: 'DOWNLOAD' });
+    expect(next.audience).toMatchObject({ ageMin: 22, ageMax: 50, genders: 'women', cities: ['Karachi'] });
+    expect(applyAnswer(plan, 'men and women, for a week', 14).audience.genders).toBe('all');
+    expect(applyAnswer(plan, 'make it 90 days', 14).days).toBe(14);
+    expect(applyAnswer(plan, 'sounds good', 14)).toEqual(plan);
+  });
+
+  it('asks only what the brief has not said', () => {
+    expect(missingAnswers(plan, 'Drivers in Lahore')).toEqual([
+      'How much can it spend a day, and for how many days?',
+      'What should people do after they see it — download the app, sign up, message you, or buy?',
+    ]);
+    expect(missingAnswers(plan, 'Drivers in Lahore should download the app, Rs 1000 a day')).toEqual([]);
+    const everywhere = localPlan({ brief: 'more riders', bench, maxDays: 14 });
+    expect(missingAnswers(everywhere, 'more riders')[0]).toBe('Which cities should it run in — or the whole country?');
   });
 });

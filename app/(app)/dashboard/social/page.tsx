@@ -3,18 +3,20 @@
 /**
  * Manage social → Dashboard.
  *
- * In the order a person uses it: say what to make, see what the team made (as
- * boxes, approvable in place), then the numbers, the team, what is travelling
- * this week and the desk's switches.
+ * A glance, not a read: say what to make and how it should go out (the two
+ * boxes at the top), then the numbers, how the ads are running and how the
+ * sales agents are doing. Everything the team made lives on the content page
+ * with the calendar; each section here links to its own page for the detail.
  *
  * Kept from the page before it, because each is load-bearing:
- *  - **asked once**: should the desk ask before posting? (`autoPublish`)
+ *  - **asked once**: should the desk ask before posting? (`autoPublish`) — now
+ *    the Approval box, which says "Choose one" until it is answered
  *  - **one box** for everything the desk makes, posts and ads alike
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { collection, doc, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
@@ -24,30 +26,24 @@ import { colors } from '@/lib/config';
 import {
   adsApi,
   socialApi,
+  type AdCampaignDoc,
   type AdsConfigDoc,
+  type SalesLeadDoc,
+  type SalesSettingsDoc,
   type SocialAccountDoc,
   type SocialEmployee,
   type SocialFormat,
   type SocialPageRead,
   type SocialPostDoc,
   type SocialReadiness,
-  type SocialResearch,
   type SocialSettings,
 } from '@/lib/api';
-import { Button, Card } from '@/components/ui';
-import { FORMAT_META, PlatformBadge, PLATFORM_META, StatusPill, longDate } from '@/components/social/shared';
+import { FORMAT_META, PLATFORM_META, longDate } from '@/components/social/shared';
 import { Blockers, readBlockers } from '@/components/social/blockers';
 import { adMoney } from '@/components/social/ads';
 import { LaunchSequence, localHourLabel } from '@/components/social/launch';
-import {
-  AgentGrid,
-  DASH_CSS,
-  Kpi,
-  PostBoxes,
-  TopContent,
-  ViralFinds,
-  readDesk,
-} from '@/components/social/dashboard';
+import { AdsSection, ApprovalBox, Hero, KpiTile, SalesSection, readDesk } from '@/components/social/dashboard';
+import { AreaSpark, FX_CSS } from '@/components/social/fx';
 import { compact } from '@/components/charts';
 
 type Want = SocialFormat | 'ad';
@@ -62,8 +58,17 @@ const PLACEHOLDER: Record<Want, string> = {
   ad: 'e.g. get new drivers in Lahore and Karachi to download the app this week',
 };
 
+/** Every switch the daily run needs; pausing touches `enabled` and nothing else — a stop, not a reset. */
+const RUN_ON: Partial<SocialSettings> = {
+  enabled: true,
+  dailyStory: true,
+  autoRenderVideo: true,
+  learnFromOwnPage: true,
+  engagementEnabled: true,
+};
+
 export default function SocialOverview() {
-  const { path, house } = useWorkspace();
+  const { path, house, includes } = useWorkspace();
   const [accounts, setAccounts] = useState<SocialAccountDoc[]>([]);
   const [posts, setPosts] = useState<SocialPostDoc[]>([]);
   const [settings, setSettings] = useState<SocialSettings | null>(null);
@@ -71,16 +76,20 @@ export default function SocialOverview() {
   const [staff, setStaff] = useState<SocialEmployee[]>([]);
   const [coverage, setCoverage] = useState<string[]>([]);
   const [ads, setAds] = useState<AdsConfigDoc | null>(null);
-  const [research, setResearch] = useState<SocialResearch | null>(null);
+  const [campaigns, setCampaigns] = useState<AdCampaignDoc[]>([]);
+  const [sales, setSales] = useState<SalesSettingsDoc | null>(null);
+  const [leads, setLeads] = useState<SalesLeadDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [pageRead, setPageRead] = useState<SocialPageRead | null>(null);
   const [want, setWant] = useState<Want>('reel');
-  // Held here so "Make one like this" on a viral find can fill the box at the top.
+  // Held here so "Make one like this" on the content page can fill the box.
   const [brief, setBrief] = useState('');
   const [refLink, setRefLink] = useState('');
   const { user } = useAuth();
+  const showAds = includes('ads');
+  const showSales = includes('sales');
 
   useEffect(
     () =>
@@ -128,16 +137,6 @@ export default function SocialOverview() {
   useEffect(
     () =>
       onSnapshot(
-        query(collection(db, path('socialResearch')), orderBy('date', 'desc'), limit(1)),
-        (snap) => setResearch(snap.empty ? null : (snap.docs[0].data() as SocialResearch)),
-        () => setResearch(null),
-      ),
-    [path],
-  );
-
-  useEffect(
-    () =>
-      onSnapshot(
         doc(db, path('socialInsights/latest')),
         (snap) => setPageRead(snap.exists() ? (snap.data() as SocialPageRead) : null),
         () => setPageRead(null),
@@ -155,6 +154,37 @@ export default function SocialOverview() {
     [path],
   );
 
+  useEffect(() => {
+    if (!showAds) return;
+    return onSnapshot(
+      query(collection(db, path('socialAds')), limit(50)),
+      (snap) => setCampaigns(snap.docs.map((d) => ({ ...(d.data() as AdCampaignDoc), id: d.id }))),
+      () => setCampaigns([]),
+    );
+  }, [path, showAds]);
+
+  useEffect(() => {
+    if (!showSales) return;
+    const stopSettings = onSnapshot(
+      doc(db, path('system/sales')),
+      (snap) => {
+        const s = snap.data() as SalesSettingsDoc | undefined;
+        // Saved before calling agents existed: no `callAgents` field at all.
+        setSales(s ? { ...s, callAgents: s.callAgents ?? [] } : null);
+      },
+      () => setSales(null),
+    );
+    const stopLeads = onSnapshot(
+      query(collection(db, path('salesLeads')), orderBy('createdAtMs', 'desc'), limit(300)),
+      (snap) => setLeads(snap.docs.map((d) => ({ ...(d.data() as SalesLeadDoc), id: d.id }))),
+      () => setLeads([]),
+    );
+    return () => {
+      stopSettings();
+      stopLeads();
+    };
+  }, [path, showSales]);
+
   // Settings come through the callable (it also reports which keys exist), but
   // the doc itself is watched so `lastRunStatus` updates without a refresh.
   useEffect(() => {
@@ -171,6 +201,20 @@ export default function SocialOverview() {
       if (snap.exists()) setSettings((prev) => (prev ? { ...prev, ...(snap.data() as Partial<SocialSettings>) } : prev));
     });
   }, [path]);
+
+  // "Make one like this" from the content page arrives as ?like=<url>&title=<title>.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const like = params.get('like');
+    if (!like) return;
+    const t = setTimeout(() => {
+      setWant('reel');
+      setRefLink(like);
+      setBrief((b) => b || `Our own version of: ${params.get('title') ?? 'this video'}`);
+      document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const onShift = staff.filter((e) => e.status === 'active');
   const connected = accounts.filter((a) => a.status === 'connected');
@@ -203,7 +247,7 @@ export default function SocialOverview() {
     at.setUTCHours(settings.runHour);
     const today = at > nowPkt;
     if (!today) at.setUTCDate(at.getUTCDate() + 1);
-    return { at, today };
+    return `${today ? 'today' : longDate(at.toISOString().slice(0, 10))}, ${localHourLabel(settings.runHour)}`;
   }, [settings, nowMs]);
 
   /** Save one or more settings, and say so. */
@@ -222,38 +266,22 @@ export default function SocialOverview() {
     }
   }
 
+  /** The Approval box. Posting on its own every day also starts the daily run. */
   const chooseMode = (direct: boolean) =>
-    save({ autoPublish: direct, publishModeChosen: true }, () =>
+    save(direct ? { ...RUN_ON, autoPublish: true, publishModeChosen: true } : { autoPublish: false, publishModeChosen: true }, (s) =>
       direct
-        ? 'Done — finished pieces go straight out. Change it any time on this page.'
+        ? `Done — every day at ${localHourLabel(s.runHour)} the team makes the pieces and posts them straight away.`
         : 'Done — every piece waits for your Approve, and goes out the moment you press it.',
     );
 
-  /**
-   * Start or pause the whole desk in one call. Starting writes every switch the
-   * daily run needs; pausing touches `enabled` and nothing else — a stop, not a
-   * reset.
-   */
   const setRunning = (on: boolean) =>
-    save(
+    save(on ? RUN_ON : { enabled: false }, (s) =>
       on
-        ? { enabled: true, dailyStory: true, autoRenderVideo: true, learnFromOwnPage: true, engagementEnabled: true }
-        : { enabled: false },
-      (s) =>
-        on
-          ? `The desk is on. It works every day at ${localHourLabel(s.runHour)} your time${
-              s.autoPublish ? ' and posts what it makes directly.' : ', and everything it makes waits for your Approve.'
-            }`
-          : 'The desk is paused. Nothing will be made until you start it again, or ask for something above.',
+        ? `The daily run is on: every day at ${localHourLabel(s.runHour)}${
+            s.autoPublish ? ', posted directly.' : ', and everything waits for your Approve.'
+          }`
+        : 'The daily run is paused. Nothing will be made until you start it again, or ask for something above.',
     );
-
-  /** "Make one like this" on a viral find: a reel, with that video as the reference. */
-  const makeLike = (url: string, title: string) => {
-    setWant('reel');
-    setRefLink(url);
-    setBrief((b) => b || `Our own version of: ${title}`);
-    document.getElementById('make')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   const running = Boolean(settings?.enabled);
   const desk = useMemo(() => readDesk(posts, nowMs), [posts, nowMs]);
@@ -261,53 +289,39 @@ export default function SocialOverview() {
   const pktHour = nowMs ? new Date(nowMs + 5 * 3600_000).getUTCHours() : null;
   const greeting =
     pktHour === null ? 'Welcome back' : pktHour < 12 ? 'Good morning' : pktHour < 17 ? 'Good afternoon' : 'Good evening';
-  const firstName = user?.displayName?.split(' ')[0];
+  const networks = connected.length
+    ? connected.map((a) => PLATFORM_META[a.platform].label.replace(' Page', '')).join(' and ')
+    : 'your accounts';
+  const summary = [
+    desk.postedThisWeek
+      ? `The team posted ${desk.postedThisWeek} piece${desk.postedThisWeek === 1 ? '' : 's'} this week`
+      : 'Tell the team what to make — or let it post on its own every day',
+    desk.waiting.length ? `${desk.waiting.length} waiting for your Approve` : running ? 'nothing waiting on you' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <div>
-      <style>{DASH_CSS}</style>
+    <div className="fx">
+      <style>{FX_CSS}</style>
 
-      <header style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 900, margin: '0 0 4px' }}>
-            {greeting}
-            {firstName ? `, ${firstName}` : ''} 👋
-          </h1>
-          <p style={{ color: colors.muted, margin: 0 }}>Tell the team what to make. Everything they made is right below.</p>
-        </div>
-        {desk.waiting.length ? (
-          <Link
-            href="/dashboard/social/queue"
-            style={{
-              fontSize: 13,
-              fontWeight: 800,
-              color: '#8a6100',
-              background: '#fab2192e',
-              borderRadius: 999,
-              padding: '7px 13px',
-            }}
-          >
-            🔔 {desk.waiting.length} waiting for you
-          </Link>
-        ) : null}
-        {nowMs ? (
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              border: `1px solid ${colors.border}`,
-              background: colors.surface,
-              borderRadius: 10,
-              padding: '7px 12px',
-            }}
-          >
-            📅 {longDate(desk.today)}
-          </span>
-        ) : null}
-      </header>
+      <Hero
+        greeting={greeting}
+        name={user?.displayName?.split(' ')[0] ?? null}
+        today={nowMs ? desk.today : null}
+        summary={`${summary}.`}
+        running={running}
+        waiting={desk.waiting.length}
+        staff={staff}
+        desk={desk}
+      />
 
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
-      {notice ? <p style={{ color: colors.success, marginBottom: 14 }}>{notice}</p> : null}
+      {notice ? (
+        <p className="fx-rise" style={{ color: colors.success, fontWeight: 700, marginBottom: 14 }}>
+          {notice}
+        </p>
+      ) : null}
 
       {/* a Studio workspace's first days: market read → content → posting → funnel → close */}
       {!house ? <LaunchSequence settings={settings} /> : null}
@@ -315,33 +329,9 @@ export default function SocialOverview() {
       {/* what is actually stopping it, if anything */}
       {readiness ? <Blockers blockers={blockers} /> : null}
 
-      {/* asked once: ask first, or post directly? */}
-      {settings && !settings.publishModeChosen ? (
-        <Card style={{ marginBottom: 16, borderColor: `${colors.primary}66` }}>
-          <h2 style={h2}>Before anything goes out: should the desk ask you first?</h2>
-          <p style={{ fontSize: 13.5, color: colors.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
-            Asked once. Either way you can change it later from the desk card.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-            <Choice
-              title="Ask me before posting"
-              detail="Everything waits in the queue. Press Approve & post and it goes out straight away."
-              onClick={() => chooseMode(false)}
-              disabled={switching}
-            />
-            <Choice
-              title="Post directly — don't ask me"
-              detail="A finished piece goes straight to Instagram and Facebook. You can still delete it afterwards."
-              onClick={() => chooseMode(true)}
-              disabled={switching}
-            />
-          </div>
-        </Card>
-      ) : null}
-
-      <div className="sd-stack">
-        {settings ? (
-          <div id="make" style={{ scrollMarginTop: 16 }}>
+      {settings ? (
+        <div className="fx-grid-make">
+          <div id="make" style={{ scrollMarginTop: 16, minWidth: 0 }}>
             <Composer
               settings={settings}
               ads={ads}
@@ -362,177 +352,93 @@ export default function SocialOverview() {
               }}
             />
           </div>
-        ) : null}
+          <ApprovalBox
+            settings={settings}
+            waiting={desk.waiting.length}
+            busy={switching}
+            noTeam={onShift.length === 0}
+            networks={networks}
+            nextRun={nextRun}
+            coverage={coverage[0] ?? null}
+            onChoose={chooseMode}
+            onRunning={setRunning}
+          />
+        </div>
+      ) : (
+        <div className="fx-grid-make">
+          <div className="fx-skel" style={{ height: 260 }} />
+          <div className="fx-skel" style={{ height: 260 }} />
+        </div>
+      )}
 
-        <PostBoxes posts={desk.boxes} direct={Boolean(settings?.autoPublish)} />
-      </div>
-
-      <div className="sd-kpis">
-        <Kpi
+      <div className="fx-grid-kpi">
+        <KpiTile
+          i={3}
           icon="📤"
           tint="#e3f4ea"
           label="Posted this week"
-          value={String(desk.postedThisWeek)}
-          delta={desk.postedThisWeek - desk.postedLastWeek}
+          value={desk.postedThisWeek}
+          delta={nowMs ? desk.postedThisWeek - desk.postedLastWeek : null}
           hint="vs last week"
-        />
-        <Kpi
+          href="/dashboard/social/queue"
+        >
+          <AreaSpark values={desk.perDay} height={34} />
+        </KpiTile>
+        <KpiTile
+          i={4}
           icon="👥"
           tint="#e6eefc"
           label="Followers"
-          value={followers ? compact(followers) : '—'}
+          value={followers || null}
+          format={(n) => compact(Math.round(n))}
           hint={
             connected.length
               ? connected.map((a) => PLATFORM_META[a.platform].label.split(' ')[0]).join(' + ')
               : 'No account connected'
           }
+          href="/dashboard/social/accounts"
         />
-        <Kpi
+        <KpiTile
+          i={5}
           icon="👁"
           tint="#fde8ea"
           label="Usual reach per post"
-          value={pageRead?.medianReach ? compact(pageRead.medianReach) : '—'}
+          value={pageRead?.medianReach || null}
+          format={(n) => compact(Math.round(n))}
           hint={pageRead?.medianReach ? 'From your own page' : 'Shows after the first posts'}
+          href="/dashboard/social/performance"
         />
-        <Kpi
-          icon="🤖"
-          tint="#eafbd0"
-          label="AI agents on duty"
-          value={`${onShift.length} / ${staff.length}`}
-          hint={running ? 'Working every day' : 'Paused'}
+        <KpiTile
+          i={6}
+          icon="🔔"
+          tint={desk.waiting.length ? '#fff1c7' : '#eef2ef'}
+          label="Waiting for you"
+          value={desk.waiting.length}
+          hint={desk.waiting.length ? 'Open them and press Approve' : 'All clear'}
+          href="/dashboard/social/queue"
         />
       </div>
 
-      <div className="sd-grid">
-        <div className="sd-col">
-          <AgentGrid staff={staff} desk={desk} nowMs={nowMs} />
-          <ViralFinds research={research} onLike={makeLike} />
+      {showAds || showSales ? (
+        <div className={`fx-grid-split${showAds && showSales ? '' : ' one'}`}>
+          {showAds ? <AdsSection ads={ads} campaigns={campaigns} nowMs={nowMs} house={house} i={7} /> : null}
+          {showSales ? <SalesSection sales={sales} leads={leads} nowMs={nowMs} i={8} /> : null}
         </div>
+      ) : null}
 
-        <div className="sd-col">
-          {settings ? (
-            <div className="sd-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                <h2 style={{ ...h2, marginBottom: 0 }}>The desk</h2>
-                <span
-                  style={{
-                    fontSize: 11.5,
-                    fontWeight: 900,
-                    letterSpacing: 0.4,
-                    textTransform: 'uppercase',
-                    padding: '3px 9px',
-                    borderRadius: 999,
-                    color: running ? colors.success : colors.muted,
-                    background: running ? `${colors.success}14` : colors.border,
-                  }}
-                >
-                  {running ? 'Running' : 'Paused'}
-                </span>
-                <Link
-                  href="/dashboard/social/automation"
-                  style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-                >
-                  Settings →
-                </Link>
-              </div>
-
-              <p style={{ fontSize: 13, color: colors.text, margin: '0 0 12px', lineHeight: 1.55 }}>
-                {running
-                  ? `Every day at ${localHourLabel(settings.runHour)} your time it makes ${pieces(settings.postsPerDay)}${
-                      settings.dailyStory ? ' and a story' : ''
-                    }, makes the pictures and videos, answers comments and measures the page.`
-                  : `Start it and from ${nextRunWhenStarted(settings.runHour, nowMs)} it makes ${pieces(
-                      settings.postsPerDay,
-                    )} and a story every day on its own — on top of anything you ask for.`}
-              </p>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <Button
-                  onClick={() => setRunning(!running)}
-                  variant={running ? 'ghost' : 'primary'}
-                  disabled={switching || onShift.length === 0}
-                >
-                  {switching ? 'Saving…' : running ? 'Pause the desk' : 'Start the desk'}
-                </Button>
-                <Button variant="ghost" onClick={() => chooseMode(!settings.autoPublish)} disabled={switching}>
-                  {settings.autoPublish ? 'Ask me before posting' : 'Post directly'}
-                </Button>
-              </div>
-
-              <div style={{ display: 'grid', gap: 7, fontSize: 12.5 }}>
-                <Row
-                  label="Posting"
-                  value={settings.autoPublish ? 'Directly, as soon as it is made' : 'After your Approve'}
-                />
-                {nextRun ? (
-                  <Row
-                    label="Next run"
-                    value={`${nextRun.today ? 'Today' : longDate(nextRun.at.toISOString().slice(0, 10))}, ${localHourLabel(settings.runHour)}`}
-                  />
-                ) : null}
-                <Row
-                  label="Last run"
-                  value={
-                    settings.lastRunAtMs
-                      ? `${new Date(settings.lastRunAtMs).toLocaleString('en-PK')} — ${settings.lastRunStatus ?? ''}`
-                      : 'Never'
-                  }
-                />
-                {coverage.length ? (
-                  <p style={{ fontSize: 12, color: colors.warn, margin: '4px 0 0', lineHeight: 1.5 }}>{coverage[0]}</p>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="sd-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Where it posts</h2>
-              <Link
-                href="/dashboard/social/accounts"
-                style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}
-              >
-                Manage →
-              </Link>
-            </div>
-            {accounts.length === 0 ? (
-              <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
-                Nothing connected yet.{' '}
-                <Link href="/dashboard/social/accounts" style={{ color: colors.secondary, fontWeight: 700 }}>
-                  Connect Instagram
-                </Link>{' '}
-                — it is one sign-in, with no token to paste.
-              </p>
-            ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {accounts.map((a) => (
-                  <div key={a.platform} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <PlatformBadge platform={a.platform} size={30} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="sd-clip" style={{ fontSize: 13, fontWeight: 700 }}>
-                        {a.displayName ?? PLATFORM_META[a.platform].label}
-                      </div>
-                      <div style={{ fontSize: 12, color: colors.muted }}>
-                        {typeof a.followers === 'number' ? `${compact(a.followers)} followers` : (a.handle ?? '')}
-                      </div>
-                    </div>
-                    <StatusPill status={a.status} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <AdsSnapshot ads={ads} />
-          <TopContent read={pageRead} />
-        </div>
-      </div>
+      <p className="fx-muted" style={{ fontSize: 12.5, textAlign: 'center', margin: '4px 0 0' }}>
+        Everything the team made, and the month ahead, is on{' '}
+        <Link href="/dashboard/social/queue" style={{ color: colors.secondary, fontWeight: 800 }}>
+          Content &amp; calendar
+        </Link>
+        .
+      </p>
     </div>
   );
 }
 
 /**
- * "What do you want?" — one box for everything the desk makes.
+ * "What should the team make?" — one box for everything the desk makes.
  *
  * A post, reel, story or carousel goes to the team with your words as the
  * brief, and is posted or queued by the switch beside the button (which starts
@@ -615,8 +521,8 @@ function Composer({
         setRefAsked(false);
         onDone(
           postDirect
-            ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — it is in the boxes below.`
-            : `The team made the ${FORMAT_META[res.format].label.toLowerCase()}. Approve it in the boxes below.`,
+            ? `The team made the ${FORMAT_META[res.format].label.toLowerCase()} and is posting it — see it on Content & calendar.`
+            : `The team made the ${FORMAT_META[res.format].label.toLowerCase()}. Approve it on Content & calendar.`,
         );
       }
       onBrief('');
@@ -628,62 +534,42 @@ function Composer({
   }
 
   return (
-    <Card>
-      <h2 style={{ ...h2, marginBottom: 4 }}>What should the team make?</h2>
-      <p style={{ fontSize: 12.5, color: colors.muted, margin: '0 0 12px' }}>
-        Pick a kind, say what it is about, press Make it. Leave it empty and the team picks the topic.
-      </p>
+    <section className="fx-card fx-focus fx-rise" style={{ ['--i' as string]: 1 } as React.CSSProperties} aria-labelledby="make-h">
+      <div className="fx-head" style={{ marginBottom: 12 }}>
+        <span className="fx-ico" style={{ background: '#e3f4ea' }} aria-hidden>
+          🎬
+        </span>
+        <div>
+          <h2 id="make-h" className="fx-h2">
+            What should the team make?
+          </h2>
+          <p className="fx-sub">Pick a kind, say what it is about, press Make it. Leave it empty and the team picks the topic.</p>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }} role="radiogroup" aria-label="What to make">
-        {WANTS.map((w) => {
-          const on = w === want;
-          return (
-            <button
-              key={w}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onWant(w)}
-              style={{
-                border: `1px solid ${on ? colors.primary : colors.border}`,
-                background: on ? `${colors.primary}14` : colors.surface,
-                color: on ? colors.primary : colors.text,
-                fontWeight: 800,
-                fontSize: 13,
-                padding: '7px 14px',
-                borderRadius: 999,
-                cursor: 'pointer',
-              }}
-            >
-              {w === 'ad' ? 'Paid ad' : FORMAT_META[w].label}
-            </button>
-          );
-        })}
+      <div className="fx-seg" role="radiogroup" aria-label="What to make" style={{ marginBottom: 12 }}>
+        {WANTS.map((w) => (
+          <button key={w} type="button" role="radio" aria-checked={w === want} onClick={() => onWant(w)}>
+            <span aria-hidden>{w === 'ad' ? '💸' : FORMAT_META[w].glyph}</span>
+            {w === 'ad' ? 'Paid ad' : FORMAT_META[w].label}
+          </button>
+        ))}
       </div>
 
       <textarea
         value={brief}
         onChange={(e) => onBrief(e.target.value)}
         id="make-brief"
-        rows={3}
+        rows={4}
         aria-label="What it should be about"
         placeholder={PLACEHOLDER[want]}
-        style={{
-          width: '100%',
-          padding: 12,
-          fontSize: 14,
-          lineHeight: 1.5,
-          fontFamily: 'inherit',
-          border: `1px solid ${colors.border}`,
-          borderRadius: 10,
-          resize: 'vertical',
-          marginBottom: 10,
-        }}
+        className="fx-input"
+        style={{ marginBottom: 10 }}
       />
 
       {want !== 'ad' && !showRef ? (
         <button type="button" onClick={() => setRefAsked(true)} style={refToggle}>
-          🎬 + Make it like a video I like (optional)
+          🎞️ + Make it like a video I like (optional)
         </button>
       ) : null}
 
@@ -760,7 +646,12 @@ function Composer({
             The ads desk needs the ad account connected and a daily limit first.{' '}
             <Link href="/dashboard/social/ads" style={{ color: colors.secondary, fontWeight: 700 }}>
               Set it up
-            </Link>
+            </Link>{' '}
+            — or{' '}
+            <Link href="/dashboard/social/ads#design" style={{ color: colors.secondary, fontWeight: 700 }}>
+              design the campaign with the expert
+            </Link>{' '}
+            first.
           </p>
         )
       ) : (
@@ -771,10 +662,13 @@ function Composer({
       )}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Button
+        <button
+          type="button"
+          className="fx-btn"
           onClick={go}
           disabled={busy || disabled || (want === 'ad' && (!adsReady || brief.trim().length < 5))}
         >
+          {busy ? <span className="fx-typing" aria-hidden><span /><span /><span /></span> : <span aria-hidden>✨</span>}
           {busy
             ? want === 'ad'
               ? 'The expert is building it…'
@@ -784,123 +678,15 @@ function Composer({
             : want === 'ad'
               ? 'Plan and make the ad'
               : 'Make it'}
-        </Button>
+        </button>
         {busy ? (
-          <span style={{ fontSize: 12.5, color: colors.muted }}>
-            Takes a few minutes. You can leave this page — it carries on.
-          </span>
+          <span style={{ fontSize: 12.5, color: colors.muted }}>Takes a few minutes. You can leave this page — it carries on.</span>
         ) : null}
       </div>
-    </Card>
+    </section>
   );
 }
 
-/** This week on the paid side, against what things should cost here. */
-function AdsSnapshot({ ads }: { ads: AdsConfigDoc | null }) {
-  const week = ads?.account?.week;
-  const bench = ads?.account?.bench;
-  return (
-    <div className="sd-card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <h2 style={{ ...h2, marginBottom: 0, flex: 1 }}>Ads this week</h2>
-        <Link href="/dashboard/social/ads" style={{ fontSize: 12.5, fontWeight: 700, color: colors.secondary }}>
-          Open Ads →
-        </Link>
-      </div>
-      {!ads?.adAccountId ? (
-        <p style={{ color: colors.muted, fontSize: 13, margin: 0, lineHeight: 1.55 }}>
-          Run Meta ads from here: say what the ad should do and the desk plans it, makes it, launches it and watches
-          what each click costs.{' '}
-          <Link href="/dashboard/social/ads" style={{ color: colors.secondary, fontWeight: 700 }}>
-            Connect the ad account
-          </Link>
-        </p>
-      ) : !week ? (
-        <p style={{ color: colors.muted, fontSize: 13, margin: 0 }}>No numbers read yet — open Ads and press Refresh.</p>
-      ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            <Mini label="Spent" value={adMoney(week.spend, ads.currency)} />
-            <Mini label="Link clicks" value={week.linkClicks.toLocaleString('en-PK')} />
-            <Mini
-              label="Per click"
-              value={week.cpc ? adMoney(week.cpc, ads.currency) : '—'}
-              hint={bench ? `normal ${adMoney(bench.cpc.low, ads.currency)}–${adMoney(bench.cpc.high, ads.currency)}` : undefined}
-            />
-          </div>
-          {ads.review?.summary ? (
-            <p style={{ fontSize: 12.5, color: colors.muted, margin: 0, lineHeight: 1.55 }}>{ads.review.summary}</p>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Mini({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div style={{ background: colors.bg, borderRadius: 10, padding: '8px 10px' }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: colors.muted }}>{label.toUpperCase()}</div>
-      <div style={{ fontSize: 16, fontWeight: 900 }}>{value}</div>
-      {hint ? <div style={{ fontSize: 11, color: colors.muted }}>{hint}</div> : null}
-    </div>
-  );
-}
-
-function Choice({
-  title,
-  detail,
-  onClick,
-  disabled,
-}: {
-  title: string;
-  detail: string;
-  onClick: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        textAlign: 'left',
-        padding: 14,
-        borderRadius: 12,
-        border: `1px solid ${colors.border}`,
-        background: colors.surface,
-        cursor: disabled ? 'wait' : 'pointer',
-        font: 'inherit',
-      }}
-    >
-      <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800, marginBottom: 4 }}>{title}</span>
-      <span style={{ display: 'block', fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>{detail}</span>
-    </button>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 10 }}>
-      <span style={{ color: colors.muted, minWidth: 88 }}>{label}</span>
-      <span style={{ flex: 1, fontWeight: 600 }}>{value}</span>
-    </div>
-  );
-}
-
-const pieces = (n: number) => `${n} piece${n === 1 ? '' : 's'}`;
-
-/**
- * When the first run would land if it were started this second — "today" while
- * the hour is still ahead, "tomorrow" once it has passed.
- */
-function nextRunWhenStarted(runHour: number, nowMs: number): string {
-  if (nowMs === 0) return localHourLabel(runHour);
-  const nowPkt = new Date(nowMs + 5 * 3600_000);
-  return `${nowPkt.getUTCHours() < runHour ? 'today' : 'tomorrow'} at ${localHourLabel(runHour)}`;
-}
-
-const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: 0, marginBottom: 12 };
 const smallLabel: React.CSSProperties = {
   display: 'grid',
   gap: 4,
@@ -913,10 +699,10 @@ const refToggle: React.CSSProperties = {
   background: 'none',
   padding: 0,
   color: colors.secondary,
+  fontFamily: 'inherit',
   fontWeight: 800,
   fontSize: 13,
   cursor: 'pointer',
-  font: 'inherit',
 };
 const refBox: React.CSSProperties = {
   border: `1px dashed ${colors.border}`,
