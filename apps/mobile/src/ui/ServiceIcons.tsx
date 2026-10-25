@@ -137,6 +137,18 @@ export function MicIcon({ size = 22, color = '#0b0d0c' }: { size?: number; color
   );
 }
 
+/**
+ * A drawn "go" arrow. The text arrow "→" came out as "ʼn" on a TECNO handset's
+ * bold system font, so tiles and cards draw theirs instead of typing it.
+ */
+export function ArrowIcon({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 12h13M13 6.5 18.5 12 13 17.5" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 /** Clock face for the recent-destination rows. */
 export function ClockIcon({ size = 16, color = colors.muted }: { size?: number; color?: string }) {
   return (

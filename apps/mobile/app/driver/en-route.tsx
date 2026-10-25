@@ -45,6 +45,7 @@ import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '.
 import { PrimaryButton } from '../../src/ui/components';
 import { LiveMap } from '../../src/ui/LiveMap';
 import { TrafficStrip } from '../../src/ui/TrafficStrip';
+import { TravelAreasList } from '../../src/ui/TravelAreas';
 import { useTrafficAlerts } from '../../src/hooks/trafficAlerts';
 import type { GeoPoint } from '../../src/domain/types';
 
@@ -554,6 +555,16 @@ function RouteSetter({
             </Pressable>
           ))}
 
+        {/* Where the passengers around here travel, busiest first: the routes
+            riders saved, as pickup and drop-off areas with their usual time and
+            their men and women. Picking a destination toward the top of this is
+            picking the road with riders on it. */}
+        <View style={styles.areasPanel}>
+          <Text style={styles.areasTitle}>Where passengers are going</Text>
+          <Text style={styles.areasSub}>Pickup and drop-off areas riders near you saved. Busiest first.</Text>
+          <TravelAreasList coords={coords} />
+        </View>
+
         <View style={styles.rules}>
           <Text style={styles.rulesTitle}>How it works</Text>
           <Text style={styles.rule}>· Only riders within {distanceLabel(radii.corridorM)} of your road are shown.</Text>
@@ -578,6 +589,10 @@ const styles = themed(() => StyleSheet.create({
   back: { color: colors.primary, fontSize: 16, fontWeight: '600', width: 44 },
   title: { color: colors.text, fontSize: 17, fontWeight: '700' },
 
+  // Dark in both themes: the list inside is light-on-dark (it is the home map's too).
+  areasPanel: { backgroundColor: '#151917', borderRadius: 18, padding: 14, gap: 10, marginTop: 8 },
+  areasTitle: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
+  areasSub: { color: '#9aa2a0', fontSize: 12, fontWeight: '600', marginTop: -6 },
   routeBar: { paddingHorizontal: 16, paddingBottom: 10 },
   routeLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },
   trafficSlot: { paddingHorizontal: 16, paddingBottom: 10 },

@@ -110,6 +110,9 @@ export default function DriverHome() {
   // the longest-waiting request comes first within what they may take. Both are
   // advisory here — `placeBid` enforces the same rule server-side.
   const queue = useDriverQueue(online && !activeTrip, driverCoords?.lat, driverCoords?.lng);
+  // The hook keeps its last answer after going offline, so only trust it while it is polling.
+  const queueText = online && !activeTrip ? queueBanner(queue) : null;
+  const queueLine = queueText && `${queueText} — staying online keeps your place`;
   const liveRequests = useOpenRequests(
     online && !activeTrip,
     driverCoords?.lat,
@@ -739,10 +742,13 @@ export default function DriverHome() {
           waiting on the radar, or scrolling a full feed, because it is what
           they are deciding against. Hidden mid-trip (nothing to decide) and
           while a settle screen owns the view. One line, so the requests below
-          it start near the top of the screen; the full card is on Earnings. */}
-      {!activeTrip && !commissionLocked && !outstanding.blocked && dailyTarget.progress.enabled ? (
+          it start near the top of the screen; the full card is on Earnings.
+          Its first phrase is the driver's place in the queue here — that was
+          a strip of its own above the feed. */}
+      {!activeTrip && !commissionLocked && !outstanding.blocked && (dailyTarget.progress.enabled || queueLine) ? (
         <View style={styles.targetWrap}>
           <DailyTargetTicker
+            lead={queueLine}
             progress={dailyTarget.progress}
             bonusBalance={commission.bonus}
             // The whole day's cash: rides the bonus already paid for are no
@@ -1018,23 +1024,15 @@ export default function DriverHome() {
             }
             ListHeaderComponent={
               <>
-                {/* Where this driver stands. Shown above the feed because it is
-                    the explanation for the order the feed is in — without it,
-                    "opens to you in 8s" on a card reads as a fault. */}
-                {queueBanner(queue) !== null && (
-                  <View style={styles.queueStrip}>
-                    <Text style={styles.queueStripTxt}>{queueBanner(queue)}</Text>
-                    <Text style={styles.queueStripHint}>
-                      First come, first served. Staying online keeps your place.
-                    </Text>
-                  </View>
-                )}
-                {/* Not carrying anyone, but going somewhere anyway. Say where, and
-                    pool riders standing on that road show up here. */}
+                {/* Not carrying anyone, but going somewhere anyway. The screen
+                    behind it opens on where passengers around here travel —
+                    their pickup and drop-off areas — and then finds riders
+                    standing on the driver's own route. (Where this driver is in
+                    the queue moved into the ticker above.) */}
                 <Pressable style={styles.routeCta} onPress={() => router.push('/driver/en-route')}>
-                  <Text style={styles.routeCtaTitle}>🏠 Heading somewhere? Earn on the way</Text>
+                  <Text style={styles.routeCtaTitle}>📍 Heading somewhere? See where passengers are</Text>
                   <Text style={styles.routeCtaBody}>
-                    Set your route and we'll show you pool riders standing on it.
+                    Tap to see which areas have the most passengers, and pick up riders on your way.
                   </Text>
                 </Pressable>
                 {/* Shared-ride pools passengers posted themselves — a separate
@@ -1329,18 +1327,6 @@ const styles = themed(() => StyleSheet.create({
   },
   enRouteCtaTitle: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   enRouteCtaBody: { color: colors.muted, fontSize: 12, marginTop: 3 },
-  queueStrip: {
-    backgroundColor: colors.glassLime,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginHorizontal: 16,
-    marginTop: 12,
-  },
-  queueStripTxt: { color: colors.primary, fontSize: 13, fontWeight: '800' },
-  queueStripHint: { color: colors.muted, fontSize: 11, marginTop: 2 },
   routeCta: {
     backgroundColor: colors.surface,
     borderWidth: 1,

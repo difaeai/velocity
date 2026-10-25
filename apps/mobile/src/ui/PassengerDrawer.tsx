@@ -14,10 +14,14 @@
  *  · Nothing moved, so nothing led the eye. A list that arrives all at once is
  *    read as a block of text and scrolled past.
  *
- * So: colourful little illustrations instead of marks (DrawerIcons), a
- * plain-English line under every label saying what the feature is for, and the
+ * So: colourful little illustrations instead of marks (DrawerIcons), and the
  * rows arriving in sequence so the eye is walked down the list instead of
  * being handed it.
+ *
+ * Every row also carried a grey plain-English line under its label. That made
+ * the menu read as a page of text (the owner's words, 2026-10-25), so rows are
+ * one line now: illustration and name. The line is kept as each row's screen
+ * reader hint, where it still explains the feature without being read by eye.
  *
  * The icons went through two rounds. Drawn outlines fixed the duplicate faces
  * but not the readability: sixteen hairline marks in one grey are still
@@ -92,7 +96,7 @@ interface Row {
   key: string;
   Icon: IconComponent;
   label: string;
-  /** The line that turns a name into something a first-time rider understands. */
+  /** What the feature is for. Spoken by the screen reader, not shown. */
   blurb: string;
   /** The icon tile's wash. Groups related features without needing a header. */
   tint: string;
@@ -395,9 +399,6 @@ export function PassengerDrawer({
                     {handle ? (
                       <Text style={styles.profileHandle} numberOfLines={1}>{handle}</Text>
                     ) : null}
-                    <View style={styles.profileChip}>
-                      <Text style={styles.profileChipTxt}>View profile</Text>
-                    </View>
                   </View>
                   <Text style={styles.profileChevron}>›</Text>
                 </Pressable>
@@ -431,9 +432,6 @@ export function PassengerDrawer({
                   {isDriver ? 'Driver mode' : 'Become a driver'}
                 </Text>
               </Pressable>
-              {!isDriver ? (
-                <Text style={styles.footerNote}>Drive your own car and earn on your own hours</Text>
-              ) : null}
             </View>
           </SafeAreaView>
         </Animated.View>
@@ -540,9 +538,8 @@ function DrawerRow({
       }}
       onPress={row.onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        hasBadge ? `${row.label}, ${row.badge} unread. ${row.blurb}` : `${row.label}. ${row.blurb}`
-      }
+      accessibilityLabel={hasBadge ? `${row.label}, ${row.badge} unread` : row.label}
+      accessibilityHint={row.blurb}
     >
       <Animated.View
         style={[
@@ -557,15 +554,12 @@ function DrawerRow({
         ]}
       >
         <View style={[styles.iconTile, { backgroundColor: row.tint }]}>
-          <row.Icon size={26} color={body} accent={row.danger ? colors.danger : LIME} motion={motion} />
+          <row.Icon size={23} color={body} accent={row.danger ? colors.danger : LIME} motion={motion} />
         </View>
 
-        <View style={styles.rowText}>
-          <Text style={[styles.rowLabel, row.danger && { color: colors.danger }]} numberOfLines={1}>
-            {row.label}
-          </Text>
-          <Text style={styles.rowBlurb} numberOfLines={1}>{row.blurb}</Text>
-        </View>
+        <Text style={[styles.rowLabel, row.danger && { color: colors.danger }]} numberOfLines={1}>
+          {row.label}
+        </Text>
 
         {hasBadge ? (
           <Animated.View
@@ -610,42 +604,33 @@ const styles = themed(() => StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 12,
     marginBottom: 2,
-    padding: 14,
+    padding: 12,
     borderRadius: 20,
     backgroundColor: 'rgba(204,255,0,0.07)',
     borderWidth: 1,
     borderColor: 'rgba(204,255,0,0.24)',
   },
   avatarRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 2,
     borderColor: LIME,
     padding: 3,
   },
   avatar: {
     flex: 1,
-    borderRadius: 27,
+    borderRadius: 21,
     backgroundColor: 'rgba(204,255,0,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarPhoto: { width: '100%', height: '100%' },
-  avatarInitials: { fontSize: 21, fontWeight: '900', color: LIME, letterSpacing: 0.5 },
+  avatarInitials: { fontSize: 18, fontWeight: '900', color: LIME, letterSpacing: 0.5 },
   profileInfo: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: '900', color: '#ffffff', letterSpacing: -0.2 },
+  profileName: { fontSize: 17, fontWeight: '900', color: '#ffffff', letterSpacing: -0.2 },
   profileHandle: { fontSize: 12, fontWeight: '700', color: '#9aa2a0', marginTop: 2 },
-  profileChip: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: LIME,
-  },
-  profileChipTxt: { fontSize: 10.5, fontWeight: '900', color: '#0b0d0c', letterSpacing: 0.3 },
   profileChevron: { fontSize: 22, fontWeight: '900', color: 'rgba(255,255,255,0.35)' },
 
   sectionTitle: {
@@ -655,32 +640,30 @@ const styles = themed(() => StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 6,
+    paddingTop: 14,
+    paddingBottom: 4,
   },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 13,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     marginHorizontal: 8,
     borderRadius: 14,
   },
   rowActive: { backgroundColor: 'rgba(204,255,0,0.08)' },
-  /* 42px tile, 26px illustration: shading needs pixels to read as shading, and
-     this is still small enough that two lines of text fit beside it. */
+  /* 36px tile, 23px illustration: still enough pixels for the shading to read
+     as shading, and one line of text beside it needs no more. */
   iconTile: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowText: { flex: 1 },
-  rowLabel: { fontSize: 14.5, fontWeight: '800', color: '#ffffff' },
-  rowBlurb: { fontSize: 11, fontWeight: '600', color: '#808784', marginTop: 1.5 },
+  rowLabel: { flex: 1, fontSize: 15, fontWeight: '800', color: '#ffffff' },
   rowChevron: { fontSize: 18, fontWeight: '900', color: '#4e5553' },
 
   badge: {
@@ -710,5 +693,4 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'center',
   },
   driverButtonText: { color: '#0b0d0c', fontSize: 15.5, fontWeight: '900' },
-  footerNote: { color: '#6b7270', fontSize: 10.5, fontWeight: '600', textAlign: 'center' },
 }));
