@@ -3,6 +3,7 @@ import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { colors } from '../config';
 import { themed } from '../theme';
+import { ArrowIcon } from './ServiceIcons';
 
 /**
  * The headline number: what a partner running both fleets at the top of the
@@ -176,7 +177,10 @@ export function EarnCard({ onPress }: { onPress: () => void }) {
         </View>
       </View>
 
-      <Animated.Text style={[styles.arrow, { transform: [{ translateX: arrow }] }]}>→</Animated.Text>
+      {/* Drawn, not typed: the text arrow renders as "ʼn" on some handsets. */}
+      <Animated.View style={{ transform: [{ translateX: arrow }] }}>
+        <ArrowIcon size={22} color={colors.primary} />
+      </Animated.View>
     </Pressable>
   );
 }
@@ -283,5 +287,4 @@ const styles = themed(() => StyleSheet.create({
   chipSolid: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipSolidText: { fontSize: 10, fontWeight: '900', color: '#0b0d0c' },
 
-  arrow: { fontSize: 20, color: colors.primary, fontWeight: '900' },
 }));
