@@ -664,14 +664,15 @@ describe('recordRideOnDailyTarget', () => {
     expect(revenue.docs[0]!.get('amount')).toBe(15);
   });
 
-  it('leaves a ride the bonus cannot fully cover to the day roll', async () => {
+  it('spends a bonus too small for the whole ride, and leaves only the rest to the roll', async () => {
     await giveBonus(10);
     const res = await record({ grossFare: 300, isPoolRide: false });
-    expect(res.cycle.paidFromCredit).toBe(0);
+    expect(res.cycle.paidFromCredit).toBe(10);
     const snap = await driverDoc();
-    expect(snap.get('commissionCredit')).toBe(10);
-    expect(snap.get('cycleCashFare')).toBe(300);
-    // …where the 10 still pays its share: 15 owed, 5 left to find.
+    // The bonus is at zero now, so only now is anything owed out of pocket.
+    expect(snap.get('commissionCredit')).toBe(0);
+    expect(snap.get('cycleCashFare')).toBe(100); // the 200 the 10 paid for is gone
+    // 15 owed, 10 paid at once, 5 left to find at midnight.
     expect(commissionDue(snap, settings(), NEXT_DAY)).toBe(5);
   });
 

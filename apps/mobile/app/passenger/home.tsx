@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -42,15 +43,10 @@ import {
 import { RouteTimePill, RouteTimeSheet } from '../../src/ui/RouteTimeSelector';
 import { TravelAreasPill, TravelAreasSheet } from '../../src/ui/TravelAreas';
 import { PassengerDrawer } from '../../src/ui/PassengerDrawer';
-import { MONTHLY_CEILING, grouped } from '../../src/ui/EarnCard';
+import { TravelMateCard } from '../../src/ui/TravelMateCard';
+import { EarnCard } from '../../src/ui/EarnCard';
 import { ArrowIcon, MicIcon, SearchIcon } from '../../src/ui/ServiceIcons';
-import {
-  CityCarIcon,
-  EarnIcon,
-  PartnerIcon,
-  SharedRideIcon,
-  type DrawerIconProps,
-} from '../../src/ui/DrawerIcons';
+import { PoolIcon, SoloIcon } from '../../src/ui/RideIcons';
 import { isRecognitionAvailable } from '../../src/voice/speech';
 
 /**
@@ -96,13 +92,19 @@ export default function PassengerHome() {
   // "Locations people are traveling to": everyone's saved routes, as areas.
   const [areasOpen, setAreasOpen] = useState(false);
 
-  // One entrance for the four ride tiles: their illustrations arrive on it
-  // (the wheels roll in, the coin lands), the same way the menu's rows do.
-  const tilesIn = useRef(new Animated.Value(0)).current;
-  const tilesMotion = useMemo(() => tilesIn.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }), [tilesIn]);
+  // One entrance for everything under "Where to?": the ride tiles, Travel
+  // Partner and Earn rise into place one after another (see Rise). "Where to?"
+  // itself never waits on it — it is the primary action.
+  const sheetIn = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(tilesIn, { toValue: 1, duration: 760, delay: 250, useNativeDriver: true }).start();
-  }, [tilesIn]);
+    Animated.timing(sheetIn, {
+      toValue: 1,
+      duration: 1000,
+      delay: 150,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [sheetIn]);
 
   // Unread across all three message sections — Travel Partner, drivers and
   // brands. It badges the drawer row, and puts a dot on the hamburger itself:
@@ -462,79 +464,95 @@ export default function PassengerHome() {
 
              Who you will share WITH is asked on the map now, not under these
              tiles — see ShareGenderPill. ── */}
-        <Text style={styles.sectionLabel}>How will you ride?</Text>
+        <Rise progress={sheetIn} index={0}>
+          <Text style={styles.sectionLabel}>How will you ride?</Text>
+        </Rise>
 
-        {/* Four tiles, two rows, one short line each. They used to be two
-            tiles and three full-width cards, each with a paragraph — the sheet
-            read as a wall of text. "Who goes my way every day" is no longer a
-            card here: it is the map's "Locations people are traveling to". */}
-        <View style={styles.rideTiles}>
-          {/* Shared cars near this rider that still have a seat, whichever way
-              they were created — a shared ride somebody booked, riders clubbing
-              together, or a driver selling seats on a route they are already
-              driving. Full cars never appear (the server drops them), so the
-              count is seats that can actually be taken.
+        {/* The sheet as riders knew it before the 2x2 grid (owner's ask,
+            2026-10-25): the two ride tiles with their full lines, then Travel
+            Partner and Earn as big animated cards. "Travel the same way every
+            day?" stays off — the map's Location & time pill does that job. */}
+        <Rise progress={sheetIn} index={1}>
+          <View style={styles.rideTiles}>
+            {/* Shared cars near this rider that still have a seat, whichever
+                way they were created — a shared ride somebody booked, riders
+                clubbing together, or a driver selling seats on a route they are
+                already driving. Full cars never appear (the server drops them),
+                so the count is seats that can actually be taken.
 
-              Tapping it with the sharing preference unanswered opens the
-              chooser first and comes back here — see goSharing. */}
-          <HomeTile
-            Icon={SharedRideIcon}
-            motion={tilesMotion}
-            lime
-            title="Shared rides"
-            sub={
-              !suggested.loaded
-                ? 'Looking for seats…'
-                : suggested.count === 0
-                  ? `None within ${HOME_SUGGESTED_RADIUS_KM} km yet`
-                  : suggested.nearestDestination
-                    ? `To ${suggested.nearestDestination}`
-                    : 'Seats free near you'
-            }
-            // Who is in those cars — the women's, the men's, the mixed ones —
-            // or failing a tally the cheapest seat. A rider's first question
-            // about a shared seat is who else is in it.
-            accent={suggestedAccent ?? (suggested.loaded && suggested.count === 0 ? 'Tap to search wider' : null)}
-            count={suggested.count}
-            onPress={() => goSharing('/passenger/suggested-rides')}
-            a11y="Shared rides — cars near you with a seat free"
-          />
+                Tapping it with the sharing preference unanswered opens the
+                chooser first and comes back here — see goSharing. */}
+            <Pressable
+              style={({ pressed }) => [styles.rideTile, styles.rideTileLime, pressed && { opacity: 0.85 }]}
+              onPress={() => goSharing('/passenger/suggested-rides')}
+              accessibilityRole="button"
+              accessibilityLabel="Shared rides — cars near you with a seat free"
+            >
+              <View style={styles.rideTileTop}>
+                <View style={styles.rideTileIconLime}>
+                  <PoolIcon size={19} color="#ccff00" accent="#ccff00" />
+                </View>
+                {suggested.count > 0 ? (
+                  <View style={styles.suggestedCount}>
+                    <Text style={styles.suggestedCountTxt}>{suggested.count}</Text>
+                  </View>
+                ) : (
+                  <ArrowIcon size={18} color="#7d8482" />
+                )}
+              </View>
+              <Text style={styles.rideTileTitle} numberOfLines={1}>Shared rides</Text>
+              <Text style={styles.rideTileSub} numberOfLines={2}>
+                {!suggested.loaded
+                  ? 'Looking for seats near you…'
+                  : suggested.count === 0
+                    ? `None within ${HOME_SUGGESTED_RADIUS_KM} km — tap to search wider`
+                    : suggested.nearestDestination
+                      ? `${suggested.count} going your way · ${suggested.nearestDestination}`
+                      : `${suggested.count} seat${suggested.count === 1 ? '' : 's'} free near you`}
+              </Text>
+              {/* Which of those cars are the women's, the men's and the mixed
+                  ones — or, failing a tally, the cheapest seat. A rider's first
+                  question about a shared seat is who else is in it. */}
+              {suggestedAccent ? (
+                <Text style={styles.rideTileAccent} numberOfLines={1}>{suggestedAccent}</Text>
+              ) : null}
+            </Pressable>
 
-          {/* The whole car, to yourself. Straight into the booking flow with
-              Solo already chosen (`mode=solo`), because a rider who tapped
-              "Ride Solo" has already answered the only question the ride sheet
-              would have asked them about sharing. No lime: that edge means
-              "shared, near you, right now". */}
-          <HomeTile
-            Icon={CityCarIcon}
-            motion={tilesMotion}
-            title="Ride Solo"
-            sub="The whole car to yourself"
-            accent="Name your own fare"
-            onPress={() => router.push('/passenger/booking?mode=solo')}
-            a11y="Ride Solo — the whole car to yourself"
-          />
-        </View>
+            {/* The whole car, to yourself. Straight into the booking flow with
+                Solo already chosen (`mode=solo`), because a rider who tapped
+                "Ride Solo" has already answered the only question the ride
+                sheet would have asked them about sharing. No lime: that edge
+                means "shared, near you, right now". */}
+            <Pressable
+              style={({ pressed }) => [styles.rideTile, pressed && { opacity: 0.85 }]}
+              onPress={() => router.push('/passenger/booking?mode=solo')}
+              accessibilityRole="button"
+              accessibilityLabel="Ride Solo — the whole car to yourself"
+            >
+              <View style={styles.rideTileTop}>
+                <View style={styles.rideTileIcon}>
+                  <SoloIcon size={19} color="#ffffff" />
+                </View>
+                <ArrowIcon size={18} color="#7d8482" />
+              </View>
+              <Text style={styles.rideTileTitle} numberOfLines={1}>Ride Solo</Text>
+              <Text style={styles.rideTileSub} numberOfLines={2}>
+                The whole car to yourself — nobody else joins
+              </Text>
+              <Text style={styles.rideTileAccentMuted} numberOfLines={1}>
+                Name your own fare
+              </Text>
+            </Pressable>
+          </View>
+        </Rise>
 
-        <View style={styles.rideTiles}>
-          <HomeTile
-            Icon={PartnerIcon}
-            motion={tilesMotion}
-            title="Travel Partner"
-            sub="Swipe, match, ride together"
-            onPress={() => router.push('/passenger/travel-mate')}
-            a11y="Travel Partner — people near you heading your way"
-          />
-          {/* The partner programme's ceiling, said as a ceiling: "up to". */}
-          <HomeTile
-            Icon={EarnIcon}
-            motion={tilesMotion}
-            title="Earn with us"
-            sub={`Up to PKR ${grouped(MONTHLY_CEILING)} a month`}
-            onPress={() => router.push('/passenger/earn')}
-            a11y="Earn with Velocity Rides — run your own fleet"
-          />
-        </View>
+        <Rise progress={sheetIn} index={2}>
+          <TravelMateCard onPress={() => router.push('/passenger/travel-mate')} />
+        </Rise>
+
+        <Rise progress={sheetIn} index={3}>
+          <EarnCard onPress={() => router.push('/passenger/earn')} />
+        </Rise>
 
         <View style={{ height: 20 }} />
         </ScrollView>
@@ -609,59 +627,37 @@ export default function PassengerHome() {
 }
 
 /**
- * One of the four ride tiles: a drawn illustration, a title, one short line,
- * and an accent line only when there is something worth saying. A number in
- * the corner when there is one, otherwise an arrow. Lime edge = shared, near
- * you, right now.
+ * One block of the sheet rising into place: its own slice of the shared
+ * entrance, later blocks starting later, all on one native-driven value.
  */
-function HomeTile({
-  Icon,
-  motion,
-  title,
-  sub,
-  accent,
-  count = 0,
-  lime = false,
-  onPress,
-  a11y,
+function Rise({
+  progress,
+  index,
+  children,
 }: {
-  Icon: (props: DrawerIconProps) => React.JSX.Element;
-  motion: DrawerIconProps['motion'];
-  title: string;
-  sub: string;
-  accent?: string | null;
-  count?: number;
-  lime?: boolean;
-  onPress: () => void;
-  a11y: string;
+  progress: Animated.Value;
+  index: number;
+  children: React.ReactNode;
 }) {
+  const start = index * 0.15;
+  const p = progress.interpolate({
+    inputRange: [start, start + 0.55],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
   return (
-    <Pressable
-      style={({ pressed }) => [styles.rideTile, lime && styles.rideTileLime, pressed && { opacity: 0.85 }]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={a11y}
+    <Animated.View
+      style={{
+        opacity: p,
+        transform: [
+          { translateY: p.interpolate({ inputRange: [0, 1], outputRange: [22, 0] }) },
+          // A touch of overshoot: reads as weight landing, not as a bounce.
+          { scale: p.interpolate({ inputRange: [0, 0.75, 1], outputRange: [0.96, 1.01, 1] }) },
+        ],
+      }}
     >
-      <View style={styles.rideTileTop}>
-        <View style={[styles.rideTileIcon, lime && styles.rideTileIconLime]}>
-          <Icon size={28} accent="#ccff00" motion={motion} />
-        </View>
-        {count > 0 ? (
-          <View style={styles.suggestedCount}>
-            <Text style={styles.suggestedCountTxt}>{count}</Text>
-          </View>
-        ) : (
-          <ArrowIcon size={16} color={lime ? '#ccff00' : '#7d8482'} />
-        )}
-      </View>
-      <Text style={styles.rideTileTitle} numberOfLines={1}>{title}</Text>
-      <Text style={styles.rideTileSub} numberOfLines={1}>{sub}</Text>
-      {accent ? (
-        <Text style={lime ? styles.rideTileAccent : styles.rideTileAccentMuted} numberOfLines={1}>
-          {accent}
-        </Text>
-      ) : null}
-    </Pressable>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -1048,13 +1044,13 @@ const styles = themed(() => StyleSheet.create({
     marginTop: 2,
     marginBottom: -2,
   },
-  /* ── The ride tiles, two to a row ──
+  /* ── The two ride tiles, one row ──
      Lime as a literal, not colors.primary: this sheet is dark in BOTH themes,
      and in light mode colors.primary darkens to olive — which on a dark sheet
      is a dim smudge where the brand accent should be.
-     `stretch` (the row default) is doing real work: a tile with an accent line
-     is a line taller than one without, and without equal heights the pair
-     would sit on a ragged baseline. flex:1 each rather than a computed
+     `stretch` (the row default) is doing real work: the shared-rides tile
+     carries up to three lines of live text and Solo two, and without equal
+     heights the pair would sit on a ragged baseline. flex:1 each rather than a computed
      half-width, so the gutter is exact on every handset. */
   rideTiles: {
     flexDirection: 'row',
@@ -1066,9 +1062,9 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 18,
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 11,
     gap: 2,
   },
   /* Lime means "near you, right now" — which is exactly what the shared-rides
@@ -1086,19 +1082,24 @@ const styles = themed(() => StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 7,
   },
-  /* 42px tile for a 28px illustration — the menu's proportions, so the same
-     drawings read the same in both places. */
   rideTileIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  rideTileIconLime: { backgroundColor: 'rgba(204,255,0,0.12)' },
-  rideTileTitle: { color: '#ffffff', fontSize: 14.5, fontWeight: '900' },
-  rideTileSub: { color: '#9aa2a0', fontSize: 11.5, fontWeight: '600', lineHeight: 15 },
+  rideTileIconLime: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(204,255,0,0.12)',
+  },
+  rideTileTitle: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
+  rideTileSub: { color: '#9aa2a0', fontSize: 11, fontWeight: '600', lineHeight: 14.5 },
   /* The gender breakdown (or the cheapest seat), one line under the summary.
      Lime rather than grey: it answers a different question from the line above
      it and should not read as a continuation of it. */

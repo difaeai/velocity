@@ -17,13 +17,13 @@
  *    do not owe. If it does not cover it, the debt is left alone: the driver is
  *    locked and will settle it by transfer.
  *
- * 2. **The ride's own commission comes off the bonus**, when the bonus covers
- *    all of it. A driver reads the bonus as their wallet, and a wallet that
+ * 2. **The ride's own commission comes off the bonus**, as much of it as the
+ *    bonus can pay. A driver reads the bonus as their wallet, and a wallet that
  *    only moved at the next midnight looked like commission was never taken.
- *    A paid ride never enters the cycle, and the day document remembers it
+ *    The paid part never enters the cycle, and the day document remembers it
  *    (`creditPaid` / `creditPaidCash`) so a target day refunds it with the
- *    rest of the waiver — see recordRideOnDailyTarget. A bonus too small for
- *    the whole amount is left for the roll, which spends it on the closed day.
+ *    rest of the waiver — see recordRideOnDailyTarget. Only what a bonus too
+ *    small could not pay is left for the roll.
  *
  * 3. **The ride is added**, to the totals and to today's portion of them.
  *
@@ -144,9 +144,17 @@ export function applyRideToCycle(params: {
   // This ride's commission, off the bonus now. `creditApplied` stays reserved
   // for the closed days even when they were not cleared: that debt has first
   // claim on the bonus, and settling it spends exactly that much.
+  // Whatever bonus there is pays, even when it is less than the whole amount:
+  // the driver owes nothing out of pocket until the bonus is at zero (owner's
+  // rule, 2026-10-26). Only the uncovered part of the ride's cash waits for
+  // midnight.
   const rideCommission = Math.round(commissionableCashFare * settings.rate);
   const creditLeft = credit - creditApplied + Math.max(0, params.creditEarned ?? 0);
-  const paidFromCredit = rideCommission > 0 && creditLeft >= rideCommission ? rideCommission : 0;
+  const paidFromCredit = Math.max(0, Math.min(rideCommission, creditLeft));
+  const paidCash =
+    paidFromCredit >= rideCommission
+      ? commissionableCashFare
+      : Math.min(commissionableCashFare, paidFromCredit / settings.rate);
   if (paidFromCredit > 0) {
     ledgerCreditSpend({
       tx,
@@ -165,20 +173,20 @@ export function applyRideToCycle(params: {
       tripId: rideId,
       amount: paidFromCredit,
       paidFromCredit,
-      cycleCashFare: commissionableCashFare,
+      cycleCashFare: paidCash,
       createdAt: FieldValue.serverTimestamp(),
     });
     tx.set(
       dailyTargetRef(driverId, today),
       {
         creditPaid: FieldValue.increment(paidFromCredit),
-        creditPaidCash: FieldValue.increment(commissionableCashFare),
+        creditPaidCash: FieldValue.increment(paidCash),
       },
       { merge: true },
     );
   }
-  // A paid ride owes nothing more, so its cash never enters the cycle.
-  const cashIn = paidFromCredit > 0 ? 0 : commissionableCashFare;
+  // The paid part owes nothing more, so only the rest of the cash enters the cycle.
+  const cashIn = paidFromCredit > 0 ? commissionableCashFare - paidCash : commissionableCashFare;
 
   // Everything the cycle carries forward. A cleared cycle keeps only the open
   // day; an unpaid one keeps the debt as well, so the lock survives the ride.

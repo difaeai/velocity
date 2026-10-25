@@ -115,13 +115,18 @@ export function isOutstandingBlocked(outstanding: number, settings: Cancellation
 /**
  * Guard for taking new work / booking a new ride. Throws when unpaid
  * cancellation fees have reached the block threshold.
+ *
+ * `credit` is a driver's spare bonus (after the closed days' commission takes
+ * its share). It pays the fees first — at their next End ride, collectFees —
+ * so a driver is never told to settle while the bonus still covers it.
  */
 export function assertOutstandingClear(
   walletSnap: DocumentSnapshot | undefined,
   settings: CancellationSettings,
   role: 'passenger' | 'driver',
+  credit = 0,
 ): void {
-  const outstanding = walletOutstanding(walletSnap);
+  const outstanding = Math.max(0, walletOutstanding(walletSnap) - Math.max(0, Math.floor(credit)));
   if (!isOutstandingBlocked(outstanding, settings)) return;
 
   throw new HttpsError(

@@ -28,6 +28,7 @@ import {
 } from '../domain/fares';
 import {
   assertCommissionClear,
+  commissionBreakdown,
   commissionCredit,
   getCommissionSettings,
 } from '../domain/commission';
@@ -499,7 +500,13 @@ export const placeBid = onCall(async (req) => {
   // be cleared before the driver can take new work.
   assertCommissionClear(driverSnap, commissionSettings, todayKey());
   // As must drivers who racked up unpaid cancellation fees.
-  assertOutstandingClear(driverWalletSnap, cancellationSettings, 'driver');
+  // …net of the bonus, which pays them first.
+  assertOutstandingClear(
+    driverWalletSnap,
+    cancellationSettings,
+    'driver',
+    commissionBreakdown(driverSnap, commissionSettings, todayKey()).creditRemaining,
+  );
   // …and drivers who have not photographed the car they are driving: the
   // plate on the passenger's screen has to mean something.
   assertVehicleConfirmed(driverSnap);

@@ -1140,8 +1140,14 @@ export interface OutstandingStatus {
   limit: number;
 }
 
-/** What this user owes Velocity in cancellation fees, and whether it blocks them. */
-export function useOutstanding(uid?: string): OutstandingStatus {
+/**
+ * What this user owes Velocity in cancellation fees, and whether it blocks them.
+ *
+ * `credit` is a driver's spare bonus: it pays the fees first (at their next End
+ * ride), so only what it cannot cover blocks them — the backend's
+ * assertOutstandingClear nets it the same way.
+ */
+export function useOutstanding(uid?: string, credit = 0): OutstandingStatus {
   const { outstandingLimit } = useCancellationSettings();
   const [amount, setAmount] = useState(0);
   useEffect(() => {
@@ -1157,7 +1163,7 @@ export function useOutstanding(uid?: string): OutstandingStatus {
   }, [uid]);
   return {
     amount,
-    blocked: outstandingLimit > 0 && amount >= outstandingLimit,
+    blocked: outstandingLimit > 0 && amount - Math.max(0, Math.floor(credit)) >= outstandingLimit,
     limit: outstandingLimit,
   };
 }
