@@ -389,6 +389,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // A rider's unpaid cancellation fee, carried by this ride (written by
+      // payments/nextRideFees). The driver collects it, so the driver reads it;
+      // the rider reads their own. Co-riders do not — that is why it is not a
+      // field on the trip document they can all read.
+      match /fees/{riderUid} {
+        allow read: if isAdmin()
+                    || (isSignedIn() && riderUid == uid())
+                    || (isSignedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.driverId == uid());
+        allow write: if false;
+      }
+
       // In-ride chat between everyone sharing the car.
       //
       // Pool riders are readers too. sendTripMessage has always delivered the

@@ -59,6 +59,9 @@ import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
 import { getFeatureFlags } from '../domain/featureFlags';
 import { isWarmPing, warmUp } from '../lib/warmup';
+import { collectFees, readFeesDue, stampFeeDue, tellFeeAdded } from '../payments/nextRideFees';
+import { ridersOf } from './dropOff';
+import { noShowsOf } from './poolRoster';
 
 export const ACTIVE_STATUSES: ReadonlySet<TripStatus> = new Set<TripStatus>([
   'requested',
@@ -953,7 +956,7 @@ export const updateTripStatus = onCall(async (req) => {
   const { tripId, to } = parsed.data;
 
   const tripRef = db.doc(`trips/${tripId}`);
-  const riders = await db.runTransaction(async (tx) => {
+  const moved = await db.runTransaction(async (tx) => {
     const snap = await tx.get(tripRef);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
@@ -977,18 +980,28 @@ export const updateTripStatus = onCall(async (req) => {
     };
     const stamp = stamps[to];
     const extra = stamp ? { [stamp]: FieldValue.serverTimestamp() } : {};
+    // A solo cash ride carries the rider's unpaid cancellation fee from here
+    // (payments/nextRideFees). A shared car's riders start one by one, so
+    // boardPoolRider stamps theirs; a shared car started all at once carries none.
+    const passengerId = snap.get('passengerId') as string;
+    const carriesFee = to === 'in_progress' && snap.get('pool') !== true
+      && ((snap.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash';
+    const passengerWallet = carriesFee ? await tx.get(db.doc(`wallets/${passengerId}`)) : null;
     tx.set(
       tripRef,
       { status: to, updatedAt: FieldValue.serverTimestamp(), ...extra },
       { merge: true },
     );
+    const fee = passengerWallet ? stampFeeDue(tx, tripId, passengerId, passengerWallet) : 0;
     // Everyone waiting for this car — on a shared ride that is every member,
     // not only whoever booked it.
     const members = (snap.get('poolMembers') as string[] | undefined) ?? [];
-    return members.length > 0 ? members : [snap.get('passengerId') as string];
+    return { riders: members.length > 0 ? members : [passengerId], passengerId, fee };
   });
 
-  if (riders) {
+  if (moved) {
+    const { riders, passengerId, fee } = moved;
+    await tellFeeAdded(tripId, passengerId, ctx.uid, fee);
     const msgs: Record<string, [string, string]> = {
       arriving:    ['🚗 Driver is on the way', 'Your driver is heading to your pickup point.'],
       arrived:     ['📍 Driver has arrived!', 'Your driver is waiting at the pickup point.'],
@@ -1294,11 +1307,13 @@ export const completeTrip = onCall(async (req) => {
   // different partner behind them. Wallet pools settle solo (only the host's
   // fare is held), so co-riders are only credited on cash pools.
   const prePassengerId = preTrip.get('passengerId') as string;
+  // A rider the driver never picked up paid nothing, so earns their partner nothing.
+  const preNoShows = preTrip.get('pool') === true ? noShowsOf(ridersOf(preTrip).riders) : [];
   const coRiderIds =
     preTrip.get('pool') === true &&
     ((preTrip.get('paymentMethod') as string | undefined) ?? 'cash') === 'cash'
       ? ((preTrip.get('poolMembers') as string[] | undefined) ?? []).filter(
-          (uid) => uid !== prePassengerId,
+          (uid) => uid !== prePassengerId && !preNoShows.includes(uid),
         )
       : [];
   const partnerPlan = await preparePartnerCredit({
@@ -1314,10 +1329,11 @@ export const completeTrip = onCall(async (req) => {
   });
 
   const settlement = await db.runTransaction(async (tx) => {
-    const [snap, driverSnap, daySnap] = await Promise.all([
+    const [snap, driverSnap, daySnap, driverWalletSnap] = await Promise.all([
       tx.get(tripRef),
       tx.get(driverRef),
       tx.get(dayRef),
+      tx.get(db.doc(`wallets/${ctx.uid}`)),
     ]);
     if (!snap.exists) invalid('Trip not found.');
     if (snap.get('driverId') !== ctx.uid) {
@@ -1351,17 +1367,31 @@ export const completeTrip = onCall(async (req) => {
     const isPool      = snap.get('pool') === true;
     const poolFares   = (snap.get('poolFares') as Record<string, number> | undefined) ?? null;
     const poolDriverGross = snap.get('poolDriverGross') as number | undefined;
+    // Riders the driver never started or dropped. They did not ride, so they
+    // owe nothing and the driver owes no commission on them.
+    const roster      = isPool ? ridersOf(snap).riders : [];
+    const noShows     = noShowsOf(roster);
+    const rode        = poolMembers.filter((uid) => !noShows.includes(uid));
     let grossFare = lockedFare;
     let seats     = (snap.get('seats') as number) ?? 1;
     if (isPool && paymentMethod === 'cash') {
       if (typeof poolDriverGross === 'number' && poolDriverGross > 0) {
-        seats     = Math.max(1, poolMembers.length);
-        grossFare = poolDriverGross;
+        seats     = Math.max(1, rode.length);
+        const missed = noShows.reduce(
+          (sum, uid) => sum + (poolFares?.[uid] ?? (roster.find((r) => r.uid === uid) as { fare?: number } | undefined)?.fare ?? 0),
+          0,
+        );
+        grossFare = Math.max(0, poolDriverGross - missed);
       } else if (poolMembers.length > 1) {
-        seats     = poolMembers.length;
-        grossFare = poolPerSeatFare(lockedFare, seats) * seats;
+        seats     = Math.max(1, rode.length);
+        // Priced at the size of car they booked — the fare each was told at their stop.
+        grossFare = poolPerSeatFare(lockedFare, poolMembers.length) * seats;
       }
     }
+    // Read now: every read in a transaction comes before its first write.
+    const feeReads = paymentMethod === 'cash'
+      ? await readFeesDue(tx, tripId, poolMembers.length > 0 ? rode : [passengerId])
+      : [];
     const s = computeSettlement(grossFare, seats, commissionRate);
 
     // The franchise's own rate (5% unless its document says otherwise) of the
@@ -1390,7 +1420,7 @@ export const completeTrip = onCall(async (req) => {
       platformCommission: s.commission,
       franchiseCut,
       paymentMethod,
-      passengerFare: fareFor(passengerId),
+      passengerFare: noShows.includes(passengerId) ? 0 : fareFor(passengerId),
       coRiderFares: Object.fromEntries(coRiderIds.map((uid) => [uid, fareFor(uid)])),
     });
     const velocityNet = partnerCredit.velocityNet;
@@ -1422,6 +1452,7 @@ export const completeTrip = onCall(async (req) => {
         // driver — the passenger really was carried. What it does not do is pay
         // a partner. The verdict is recorded on the trip so support can see why.
         partnerRideStatus: partnerCredit.rideStatus,
+        ...(noShows.length > 0 ? { poolNoShows: noShows } : {}),
         walletHold: 0,
         walletSettled: paymentMethod === 'wallet',
         completedAt: FieldValue.serverTimestamp(),
@@ -1522,7 +1553,7 @@ export const completeTrip = onCall(async (req) => {
       cashFare: paymentMethod === 'wallet' ? 0 : grossFare,
       // A full car is one ride but several distinct passengers, which is what
       // the anti-farming check on the day actually cares about.
-      riderIds: poolMembers.length > 0 ? poolMembers : [passengerId],
+      riderIds: poolMembers.length > 0 ? rode : [passengerId],
       // `pool` covers both kinds the booking side can produce: a pool the rider
       // booked, and a solo trip the driver turned into one by picking somebody
       // up en route (trips/enRoute.ts sets the flag when it seals a rider in).
@@ -1586,6 +1617,19 @@ export const completeTrip = onCall(async (req) => {
       );
     }
 
+    // Cancellation fees: the riders' that came in with this fare, and the
+    // driver's own unpaid ones, all off whatever credit the ride left them.
+    const creditLeft =
+      commissionCredit(driverSnap) + target.creditDelta - cycle.creditApplied - cycle.paidFromCredit;
+    const fees = collectFees({
+      tx,
+      tripId,
+      driverId: ctx.uid,
+      fees: feeReads,
+      driverWallet: driverWalletSnap,
+      creditLeft,
+    });
+
     return {
       ...s,
       franchiseCut,
@@ -1593,11 +1637,12 @@ export const completeTrip = onCall(async (req) => {
       // Net of the bonus, like everywhere else the driver is shown a "due".
       commissionLocked: cycle.locked,
       commissionDue: cycle.due,
-      commissionCredit: Math.max(
-        0,
-        commissionCredit(driverSnap) + target.creditDelta - cycle.creditApplied - cycle.paidFromCredit,
-      ),
+      commissionCredit: Math.max(0, creditLeft - fees.paidFromCredit),
       commissionPaidFromCredit: cycle.paidFromCredit,
+      feesByRider: fees.byRider,
+      feesPaidFromCredit: fees.paidFromCredit,
+      feesOutstanding: fees.driverOutstanding,
+      noShows,
       dailyTarget: target.progress,
       dailyTargetMet: target.granted,
       dailyTargetBonus: target.bonusGranted,
@@ -1616,26 +1661,40 @@ export const completeTrip = onCall(async (req) => {
   // Riders who boarded at different points owe different amounts — telling
   // them all the same average would be telling most of them a wrong number.
   const completedPoolFares = preTrip.get('poolFares') as Record<string, number> | undefined;
+  const { noShows, feesByRider } = settlement;
+  const feeLine = (uid: string) =>
+    feesByRider[uid] ? ` Plus PKR ${feesByRider[uid]} cancellation fee from an earlier ride, paid with it.` : '';
   await Promise.allSettled([
-    completedPassengerId
-      ? sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}. Please rate your driver.`, { tripId })
+    completedPassengerId && !noShows.includes(completedPassengerId)
+      ? sendToUser(completedPassengerId, '✅ Trip complete!', `You've arrived. Fare: PKR ${completedFare ?? settlement.grossFare}.${feeLine(completedPassengerId)} Please rate your driver.`, { tripId })
       : null,
-    ...completedCoRiders.map((uid) =>
+    ...completedCoRiders.filter((uid) => !noShows.includes(uid)).map((uid) =>
       sendToUser(
         uid,
         '✅ Pool trip complete!',
-        completedPoolFares
+        (completedPoolFares
           ? `You've arrived. Your fare: PKR ${completedPoolFares[uid] ?? settlement.passengerShare}.`
-          : `You've arrived. Your share: PKR ${settlement.passengerShare}.`,
+          : `You've arrived. Your share: PKR ${settlement.passengerShare}.`) + feeLine(uid),
         { tripId },
       ),
     ),
+    noShows.length > 0
+      ? sendToUsers(
+        noShows,
+        'Shared ride ended without you',
+        'Your driver ended this ride without picking you up. You have not been charged.',
+        { tripId },
+      )
+      : null,
     sendToUser(
       ctx.uid,
       '💰 Trip complete',
       `PKR ${settlement.driverPayout} earned. Great driving!`
         + (settlement.commissionPaidFromCredit > 0
           ? ` PKR ${settlement.commissionPaidFromCredit} commission was taken from your wallet credits.`
+          : '')
+        + (settlement.feesPaidFromCredit > 0
+          ? ` PKR ${settlement.feesPaidFromCredit} in cancellation fees came off your wallet credits.`
           : ''),
       { tripId },
     ),

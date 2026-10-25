@@ -80,8 +80,8 @@ export interface DashcamClipView {
   sizeBytes: number;
 }
 
-function callable<Req, Res>(name: string): (data: Req) => Promise<Res> {
-  const fn = httpsCallable<Req, Res>(functions, name);
+function callable<Req, Res>(name: string, timeoutMs?: number): (data: Req) => Promise<Res> {
+  const fn = httpsCallable<Req, Res>(functions, name, timeoutMs ? { timeout: timeoutMs } : undefined);
   // Watched here rather than at the call sites. Every callable that carries a
   // promise to a user is timed and classified against what its feature was
   // built to do (src/lib/featureCheck.ts); a call belonging to no feature
@@ -1124,7 +1124,8 @@ export const api = {
    */
   dropOffRider: callable<
     { tripId: string; riderUid: string },
-    { ok: boolean; remaining: number; fare: number; name: string }
+    /** `fee`: an earlier ride's cancellation fee this rider pays with the fare (absent on older backends). */
+    { ok: boolean; remaining: number; fare: number; fee?: number; name: string }
   >('dropOffRider'),
   /** Start one rider's ride on a shared car. The first one in starts the trip. */
   boardPoolRider: callable<
@@ -1221,6 +1222,15 @@ export const api = {
     { tripId: string },
     { ok: boolean; live: boolean; expired: boolean; expiresAt: number | null; clips: DashcamClipView[] }
   >('getDashcamClips'),
+  /**
+   * A copy of one clip to keep, with the travel-proof watermark burned in. The
+   * first ask makes it (ffmpeg on the server), so it gets longer than the
+   * default 70 s.
+   */
+  getDashcamProof: callable<{ tripId: string; clip: string }, { ok: boolean; url: string }>(
+    'getDashcamProof',
+    180_000,
+  ),
   /**
    * Can the dash cam see anybody in the car? Asked about an uploaded clip.
    * `faces` is null when the clip could not be read — which must never be

@@ -172,7 +172,7 @@ Admins can also fully CRUD accounts from the console:
 - **Notifications** bell → `app/passenger/notifications.tsx`.
 - **Update gate** — `UpdateGate` / `src/lib/appUpdate.ts` prompts when a newer
   build is published (see [§21.4](#214-appversion)).
-- **Side drawer**: Wallet · Business · Special Rides · My routes · Nearby
+- **Side drawer**: Wallet · Business · Special Rides · Ride History (rides, 24 h dash cam Records, routes, places) · Nearby
   sharing rides · Travel Partner · Earn with Velocity · Matches & Groups ·
   Safety · Payment methods · Profile · Settings · Support chat.
 

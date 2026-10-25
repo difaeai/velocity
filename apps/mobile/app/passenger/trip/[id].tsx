@@ -25,7 +25,7 @@ import { db } from '../../../src/firebase';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
-import { useCancellationSettings } from '../../../src/hooks/driver';
+import { useCancellationSettings, useTripFees } from '../../../src/hooks/driver';
 import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
 import { DraggableSheet } from '../../../src/ui/DraggableSheet';
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -84,6 +84,8 @@ export default function TripScreen() {
   const { user } = useAuth();
   const { trip, bids, loading } = useTrip(tripId);
   const cancellation = useCancellationSettings();
+  // An earlier ride's cancellation fee, paid in cash with this fare.
+  const myFee = useTripFees(tripId, user?.uid)[user?.uid ?? ''] ?? 0;
   const [busy,         setBusy]        = useState(false);
   const [timeLeft,     setTimeLeft]     = useState(54);
   const [nowMs,        setNowMs]        = useState(() => Date.now());
@@ -415,6 +417,15 @@ export default function TripScreen() {
   const goHome = () => router.replace('/passenger/home');
   const pendingBids = bids.filter((b) => b.status === 'pending');
 
+  // The car is running but THIS rider is not in it yet — the backend's
+  // isBoarded (trips/poolRoster): where riders are started one by one, only
+  // their own start puts them aboard, and until then they pay nothing.
+  const seats: { uid: string; kind?: string; boardedAt?: unknown; droppedAt?: unknown }[] =
+    trip.poolRiders?.length ? trip.poolRiders : trip.poolRoster ?? [];
+  const mySeat = seats.find((s) => s.uid === user?.uid);
+  const awaitingPickup = trip.status === 'in_progress' && !!mySeat && !mySeat.boardedAt && !mySeat.droppedAt
+    && (mySeat.kind === 'enroute' || seats.some((s) => s.kind !== 'enroute' && s.boardedAt));
+
   /**
    * "4 min away · 1.2 km" — or nothing at all.
    *
@@ -430,14 +441,14 @@ export default function TripScreen() {
     if (!trip?.driverId) return null;
     const loc = trip.driverLocation;
     if (!loc) return null;
-    const heading = trip.status === 'in_progress' ? trip.dropoff : trip.pickup;
+    const heading = trip.status === 'in_progress' && !awaitingPickup ? trip.dropoff : trip.pickup;
     if (!heading || heading.lat == null || heading.lng == null) return null;
 
     const metres = distanceMeters(loc.lat, loc.lng, heading.lat, heading.lng);
     // 18 km/h — a deliberately pessimistic city average that accounts for
     // traffic and the fact that this is a straight line, not a road.
     const minutes = Math.max(1, Math.round((metres / 1000) / 18 * 60));
-    const arriving = trip.status === 'in_progress';
+    const arriving = trip.status === 'in_progress' && !awaitingPickup;
 
     // A fix that stopped updating is not an ETA any more; say so rather than
     // counting down from a position the car left ten minutes ago.
@@ -455,7 +466,7 @@ export default function TripScreen() {
       headline: arriving
         ? `About ${minutes} min to your destination`
         : `Your driver is about ${minutes} min away`,
-      detail: `${formatDistance(metres)} away${arriving ? '' : ' · they are coming to you now'}`,
+      detail: `${formatDistance(metres)} away${arriving ? '' : awaitingPickup ? ' · your ride starts when you get in' : ' · they are coming to you now'}`,
     };
   })();
   // Pool joiners ride along but only the host picks the driver, raises the
@@ -818,7 +829,9 @@ export default function TripScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
-          <Text style={styles.status}>{STATUS_LABEL[trip.status]}</Text>
+          <Text style={styles.status}>
+            {awaitingPickup ? 'Your pickup is next — the driver is coming to you' : STATUS_LABEL[trip.status]}
+          </Text>
           <Badge label={RIDE_TYPE_LABELS[trip.rideType]} />
         </View>
 
@@ -850,6 +863,15 @@ export default function TripScreen() {
           <View style={styles.etaCard}>
             <Text style={styles.etaBig}>{etaLine.headline}</Text>
             <Text style={styles.etaSub}>{etaLine.detail}</Text>
+          </View>
+        ) : null}
+
+        {myFee > 0 ? (
+          <View style={styles.sharedBanner}>
+            <Text style={styles.sharedBannerTitle}>+ PKR {myFee} cancellation fee</Text>
+            <Text style={styles.sharedBannerBody}>
+              From a ride you cancelled earlier. Pay it in cash with this fare.
+            </Text>
           </View>
         ) : null}
 

@@ -214,7 +214,7 @@ export { createTripWatchLink, getTripWatch, revokeTripWatchLink } from './trips/
 export { sweepTripWatchLinks } from './trips/sweepWatchLinks';
 // The ride dash cam: who may watch which clips, "I can't see any passenger",
 // and the 24-hour deletion.
-export { getDashcamClips, checkDashcamCabin, sweepDashcamClips } from './trips/dashcam';
+export { getDashcamClips, getDashcamProof, checkDashcamCabin, sweepDashcamClips } from './trips/dashcam';
 
 // Velocity Rapid Response System — the complaint desk. AI answers first and
 // hands to a person the moment it is out of its depth or is asked to.

@@ -49,7 +49,11 @@ export function dashcamExpiresAt(completedAtMs: number | null, newestClipMs: num
 /** One rider's time in a shared car, from the roster on the trip document. */
 export interface DashcamSeat {
   uid: string;
+  /** 'enroute' riders get in along the road, so only their own start says they did. */
+  kind?: string;
   joinedAtMs: number | null;
+  /** When the driver started THIS rider's ride (boardPoolRider). */
+  boardedAtMs?: number | null;
   droppedAtMs: number | null;
 }
 
@@ -59,6 +63,8 @@ export interface DashcamParties {
   passengerId: string | null;
   poolMembers: string[];
   seats: DashcamSeat[];
+  /** Riders the driver never picked up, written when the ride ended. */
+  noShows?: string[];
 }
 
 /** The stretch of a ride one person may watch. A null end means "from the start" / "to the end". */
@@ -75,14 +81,24 @@ export interface ViewWindow {
  * it; in a shared car it runs from when they joined to when they were let out.
  * They shared the car with the others for that stretch and no other, and the
  * woman who got in after they left is not theirs to watch.
+ *
+ * Where each rider's ride is started on its own, "aboard" runs from that start,
+ * and a rider not started yet — or never, a no-show — has not been in the car
+ * and sees nothing, the same rule as trips/poolRoster isBoarded.
  */
 export function viewerWindow(trip: DashcamParties, uid: string): ViewWindow | null {
   if (trip.driverId && uid === trip.driverId) return { from: null, to: null };
   if (uid !== trip.passengerId && !trip.poolMembers.includes(uid)) return null;
+  if (trip.noShows?.includes(uid)) return null;
   const seat = trip.seats.find((s) => s.uid === uid);
+  const startedOneByOne = trip.seats.some((s) => s.kind !== 'enroute' && s.boardedAtMs);
+  if (seat && !seat.boardedAtMs && !seat.droppedAtMs && (seat.kind === 'enroute' || startedOneByOne)) {
+    return null;
+  }
+  // A zero is the roster's "joined before anybody recorded when", not 1970.
+  const from = seat?.boardedAtMs || seat?.joinedAtMs || null;
   return {
-    // A zero is the roster's "joined before anybody recorded when", not 1970.
-    from: seat?.joinedAtMs ? seat.joinedAtMs - WINDOW_GRACE_MS : null,
+    from: from ? from - WINDOW_GRACE_MS : null,
     to: seat?.droppedAtMs ? seat.droppedAtMs + WINDOW_GRACE_MS : null,
   };
 }

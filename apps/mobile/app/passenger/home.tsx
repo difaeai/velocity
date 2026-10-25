@@ -20,7 +20,7 @@ import { usePresenceBeacon } from '../../src/hooks/presence';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useOutstanding, useWalletComingSoon, useWalletLabel } from '../../src/hooks/driver';
-import { OutstandingFees } from '../../src/ui/OutstandingFees';
+import { FeeOnNextRide, OutstandingFees } from '../../src/ui/OutstandingFees';
 import { claimStashedReferral } from '../../src/hooks/partner';
 import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { useMessagesUnreadTotal } from '../../src/hooks/messages';
@@ -385,6 +385,8 @@ export default function PassengerHome() {
              the AI verdict — exactly as the driver home screen uses it. ── */}
         {outstanding.blocked ? (
           <OutstandingFees status={outstanding} uid={user?.uid} role="passenger" />
+        ) : outstanding.amount > 0 ? (
+          <FeeOnNextRide amount={outstanding.amount} />
         ) : null}
 
         {/* ── Start a ride ─────────────────────────────────────────────────
