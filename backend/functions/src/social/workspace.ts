@@ -16,29 +16,17 @@
  * Shared on purpose, never scoped: the Meta app (`system/socialMetaApp`), the
  * OAuth hand-off states, the Pixabay search cache and the starter music.
  */
-import { AsyncLocalStorage } from 'node:async_hooks';
-
 import { onCall, HttpsError, type CallableOptions, type CallableRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 
+import { overBudget, warmAi } from '../ai/config';
 import { db } from '../lib/firebase';
 import { isDocId, requireAuth } from '../lib/guards';
-import { canUse, refusal, type Brand, type Need, type Workspace } from '../studio/plans';
+import { canUse, refusal, type Need, type Workspace } from '../studio/plans';
 import { modelReady } from './engine';
+import { HOUSE, currentWorkspace, scope } from './scope';
 
-export const HOUSE = 'velocity';
-
-interface Scope {
-  wid: string;
-  brand: Brand | null;
-}
-
-const scope = new AsyncLocalStorage<Scope>();
-
-export const currentWorkspace = (): string => scope.getStore()?.wid ?? HOUSE;
-export const isHouse = (): boolean => currentWorkspace() === HOUSE;
-/** The customer's brand; null in the house, whose brand is written into the prompts. */
-export const workspaceBrand = (): Brand | null => scope.getStore()?.brand ?? null;
+export { HOUSE, currentWorkspace, isHouse, workspaceBrand } from './scope';
 
 /** A desk path for the current workspace: unchanged in the house, under `workspaces/{id}/` otherwise. */
 export function wsPath(path: string): string {
@@ -56,6 +44,8 @@ export const workspaceRef = (wid: string) => db.doc(`workspaces/${wid}`);
 
 /** Run `fn` as workspace `wid`. */
 export async function inWorkspace<T>(wid: string, fn: () => Promise<T>): Promise<T> {
+  // Its keys and this month's AI spend, so the engine's sync checks see them.
+  await warmAi(wid);
   if (wid === HOUSE) return scope.run({ wid, brand: null }, fn);
   const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
   if (!ws) throw new HttpsError('not-found', 'That Velocity Studio workspace no longer exists.');
@@ -81,7 +71,15 @@ export async function deskWorkspace(req: CallableRequest, need: Need): Promise<s
   const no = refusal(ws, need, Date.now());
   if (no) throw new HttpsError('failed-precondition', no);
   // The key-free local engine only knows Velocity; a customer's desk needs a model.
-  if (!modelReady()) throw new HttpsError('unavailable', 'The AI team is offline for a moment. Try again shortly.');
+  await warmAi(wid);
+  if (!modelReady(wid)) {
+    throw new HttpsError(
+      'unavailable',
+      overBudget(wid)
+        ? 'This month’s AI allowance for your workspace is used up. It starts again on the 1st — or ask Velocity for more.'
+        : 'The AI team is offline for a moment. Try again shortly.',
+    );
+  }
   return wid;
 }
 
@@ -110,10 +108,12 @@ export async function liveWorkspaces(need: Need, nowMs = Date.now()): Promise<st
  */
 // shortcut: workspaces run one after another inside one invocation; past ~20 live customers per job, fan out through a job queue.
 export async function forEachWorkspace(need: Need, fn: () => Promise<void>): Promise<void> {
-  const others = modelReady() ? await liveWorkspaces(need).catch(() => []) : [];
+  const others = await liveWorkspaces(need).catch(() => []);
   for (const wid of [HOUSE, ...others]) {
     try {
-      await inWorkspace(wid, fn);
+      // The key-free local engine only knows Velocity: a customer with no model
+      // left (none configured, or this month's allowance spent) waits.
+      await inWorkspace(wid, async () => (wid === HOUSE || modelReady() ? fn() : undefined));
     } catch (e) {
       logger.error('studio: a workspace job failed', { wid, message: (e as Error).message });
     }

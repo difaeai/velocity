@@ -33,6 +33,8 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
+import { geminiKey, loadAi } from '../ai/config';
+import { LIVE_USD_PER_MIN, recordAi } from '../ai/usage';
 import { db, FieldValue } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
@@ -223,10 +225,11 @@ export const startHelplineCall = onCall(async (req) => {
   const ctx = requireAuth(req);
   await rateLimit(ctx.uid, 'startHelplineCall', 6, 3600);
 
-  // A dedicated key when one is set (a billed key keeps call audio out of
-  // Google's training data and lifts the free tier's limit on simultaneous
-  // calls); the social desk's free key otherwise.
-  const key = (process.env.GEMINI_LIVE_KEY || process.env.GEMINI_KEY_RESEARCH || '').trim();
+  // The voice slot on AI keys & usage, else GEMINI_LIVE_KEY (a billed key keeps
+  // call audio out of Google's training data and lifts the free tier's limit
+  // on simultaneous calls), else the desk's key.
+  await loadAi();
+  const key = geminiKey('voice');
   if (!key) {
     logger.warn('helpline: no Gemini key — calls fall back to written support');
     return { available: false as const };
@@ -394,6 +397,11 @@ export const logHelplineCall = onCall(async (req) => {
   }
 
   const startedAt = (snap.get('startedAt') as { toMillis(): number } | undefined)?.toMillis();
+  // Live is billed by the minute; the first `ended` puts the call on the AI meter, capped at the call limit.
+  if (ended && startedAt && snap.get('status') !== 'ended') {
+    const seconds = Math.min(Math.round((Date.now() - startedAt) / 1000), HELPLINE_MAX_SEC);
+    void recordAi({ model: HELPLINE_MODEL, usd: (seconds / 60) * LIVE_USD_PER_MIN, seconds, what: 'Helpline call' });
+  }
   await ref.set(
     {
       transcript,

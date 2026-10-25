@@ -12,7 +12,9 @@
  * The secret is `GEMINI_KEY_RESEARCH`. The name says research because that is
  * the hole it was added to fill, but this is a whole engine rather than one
  * stage: when it is the one that answers, it also plans, writes, briefs,
- * optimises and replies.
+ * optimises and replies. A key typed on Manage social → AI keys & usage beats
+ * it (`ai/config.ts`), and every answered call is priced onto the meter
+ * (`ai/usage.ts`): the key runs on prepaid credit, so none of this is free.
  *
  * Six things are worth knowing before changing anything:
  *
@@ -49,6 +51,8 @@
  */
 import { logger } from 'firebase-functions';
 
+import { geminiKey, noteKeyError, textSlot, type KeySlot } from '../ai/config';
+import { costUsd, readUsage, recordAi } from '../ai/usage';
 import { DEFAULT_GEMINI_MODEL, GROUNDED_GEMINI_MODEL } from './types';
 // Type-only, and deliberately so: engine.ts imports this file at runtime, and
 // a value import back would be a cycle. Types are erased.
@@ -72,10 +76,9 @@ export class GeminiError extends Error {
   }
 }
 
-/** True when this deployment has Gemini's key. */
+/** True when this workspace has a Gemini key: typed in the console, or the deploy secret. */
 export function geminiReady(): boolean {
-  const key = process.env.GEMINI_KEY_RESEARCH;
-  return typeof key === 'string' && key.trim() !== '';
+  return geminiKey() !== '';
 }
 
 let saidSo = false;
@@ -162,11 +165,16 @@ interface Interaction {
   model_output?: { content?: Block[] };
   errors?: { message?: string }[];
   error?: { message?: string; status?: string };
+  /** Tokens in, out and thought, and how many searches — what the meter prices. */
+  usage?: unknown;
 }
 
+/** A refusal a person has to fix on the key itself: no credit, billing off, revoked. */
+const KEY_TROUBLE = /credit|billing|prepay|API key|PERMISSION_DENIED|quota/i;
+
 /** One call, with the free tier's rate limit survived rather than hit. */
-async function post(body: Record<string, unknown>): Promise<Interaction> {
-  const key = (process.env.GEMINI_KEY_RESEARCH ?? '').trim();
+async function post(body: Record<string, unknown>, slot: KeySlot = textSlot()): Promise<Interaction> {
+  const key = geminiKey(slot);
   let sent = body;
 
   for (let attempt = 0; ; attempt++) {
@@ -221,8 +229,17 @@ async function post(body: Record<string, unknown>): Promise<Interaction> {
       continue;
     }
 
+    if ([401, 402, 403].includes(res.status) || (res.status === 429 && isDailyQuota(message)) || KEY_TROUBLE.test(message)) {
+      noteKeyError(slot, `${res.status}: ${message}`);
+    }
     throw new GeminiError(`${res.status}: ${message}`);
   }
+}
+
+/** Put one answered call on the meter. */
+function meter(model: string, data: Interaction, what?: string): void {
+  const u = readUsage(data.usage);
+  void recordAi({ model, usd: costUsd(model, u), inTok: u.inTok, outTok: u.outTok, grounded: u.grounded, what });
 }
 
 function collect(blocks: Block[] | undefined, chunks: string[], sources: GroundedSource[]): void {
@@ -277,8 +294,9 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
     throw new GeminiError('GEMINI_KEY_RESEARCH is not configured.');
   }
 
+  const model = resolveGeminiModel(req.model, req.grounded);
   const data = await post({
-    model: resolveGeminiModel(req.model, req.grounded),
+    model,
     system_instruction: req.system,
     // A video goes first and the words after it, which is the order Google's
     // own examples use for one video and a question about it.
@@ -298,6 +316,8 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
       ? { response_format: { type: 'text', mime_type: 'application/json' } }
       : {}),
   });
+
+  meter(model, data, req.what);
 
   if (data.status === 'failed' || data.status === 'cancelled') {
     const said = data.errors?.find((e) => e.message)?.message;
@@ -338,6 +358,7 @@ export async function geminiSpeech(text: string, style: string, voice = 'Puck'):
     generation_config: { speech_config: [{ voice }] },
     store: false,
   });
+  meter(SPEECH_MODEL, data, 'Voice-over');
   const audio = (data.steps ?? [])
     .filter((s) => s.type === 'model_output')
     .flatMap((s) => s.content ?? [])

@@ -758,6 +758,41 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ----- aiUsage/{month_wid}, agentUsage/{month_wid} ----------------------
+    // The AI meter (Gemini spend) and the AI agents' month (calls, minutes,
+    // WhatsApp), one row per workspace per month. Written only by the backend;
+    // an admin reads every row, a customer only their own.
+    match /aiUsage/{rowId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.wid == request.auth.token.ws);
+      allow write: if false;
+    }
+    match /agentUsage/{rowId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.wid == request.auth.token.ws);
+      allow write: if false;
+    }
+
+    // ----- agentCalls/{id}, agentThreads/{waId} — the house's AI agents -----
+    // Velocity's own calls and WhatsApp chats (a customer's sit under their
+    // workspace, below). Backend-written.
+    match /agentCalls/{callId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /agentThreads/{waId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ----- agentCallKeys/{callId}, agentWaLines/{phoneNumberId} -------------
+    // A call's one-time bridge key and which workspace owns a WhatsApp number.
+    // Nobody reads either: they exist for the webhooks.
+    match /agentCallKeys/{callId} {
+      allow read, write: if false;
+    }
+    match /agentWaLines/{lineId} {
+      allow read, write: if false;
+    }
+
     // ----- workspaces/{wid} — Velocity Studio customers ---------------------
     // A customer's whole desk lives under its workspace, in the same shapes as
     // Velocity's own desk at the root. The owner's token carries `ws` (set only

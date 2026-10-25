@@ -22,6 +22,7 @@ import { colors } from '@/lib/config';
 import { salesApi, type SalesLeadDoc, type SalesLeadStatus, type SalesSettingsDoc } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { CallingAgents } from '@/components/social/calling';
+import { AgentPackageCard, AiCallLog, WhatsAppChats, WhatsAppLine, useAgentDesk } from '@/components/social/agentsDesk';
 import { FX_CSS } from '@/components/social/fx';
 
 type Shelf = 'review' | 'ready' | 'new' | 'sent' | 'done' | 'all';
@@ -44,6 +45,7 @@ export default function SalesPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
+  const desk = useAgentDesk(path, setError);
 
   useEffect(() => {
     salesApi
@@ -203,16 +205,33 @@ export default function SalesPage() {
       ) : null}
 
       {setUp ? (
-        <CallingAgents
-          settings={settings}
-          leads={leads}
-          onSaved={(s, message) => {
-            setSettings(s);
-            setError(null);
-            setNotice(message);
-          }}
-          onError={setError}
-        />
+        <>
+          <AgentPackageCard key={`pkg-${desk.state?.plan?.setAtMs ?? 0}`} state={desk.state} />
+          <CallingAgents
+            settings={settings}
+            leads={leads}
+            desk={desk.state}
+            onSaved={(s, message) => {
+              setSettings(s);
+              setError(null);
+              setNotice(message);
+            }}
+            onError={setError}
+          />
+          <AiCallLog calls={desk.calls} />
+          <WhatsAppLine
+            key={`wa-${desk.state?.whatsapp?.connectedAtMs ?? 0}`}
+            state={desk.state}
+            agents={settings.callAgents ?? []}
+            onSaved={(message) => {
+              setError(null);
+              setNotice(message);
+              void desk.reload();
+            }}
+            onError={setError}
+          />
+          <WhatsAppChats threads={desk.threads} onError={setError} />
+        </>
       ) : null}
 
       {setUp ? (

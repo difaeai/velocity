@@ -643,3 +643,28 @@ export {
 // written when a feature is fine — see src/qa/log.ts for why.
 export { runQaAgent, qaRunChecksNow, sweepQaLogs } from './qa/agent';
 export { reportFeatureCheck } from './qa/report';
+
+// Manage social → AI keys & usage: Gemini keys per slot (house / customers /
+// voice), monthly budgets per workspace, and the meter every call writes to.
+export { adminAiOverview, adminAiSetKey, adminAiRemoveKey, adminAiTestKey, adminAiSetBudgets } from './ai/admin';
+
+// AI agents that phone leads (Twilio → voice bridge → Gemini Live) and answer
+// WhatsApp, with the admin's rate card, numbers and each customer's package.
+export {
+  agentSweep,
+  agentState,
+  agentStartCall,
+  agentVoiceAnswer,
+  agentVoiceSession,
+  agentVoiceResult,
+  agentVoiceStatus,
+  agentWhatsappWebhook,
+  agentSaveWhatsApp,
+  agentDisconnectWhatsApp,
+  agentThreadAction,
+  adminAgentsOverview,
+  adminAgentsConnectTwilio,
+  adminAgentsNumbers,
+  adminAgentsSetRateCard,
+  adminAgentsSetPlan,
+} from './agents';

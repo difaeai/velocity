@@ -1068,3 +1068,39 @@ test('Velocity Studio: a customer reads only their own workspace, never its secr
   await assertFails(getDoc(doc(admin, 'studioEmailCodes/ownerA')));
   await assertFails(getDoc(doc(admin, 'studioReceiptHashes/sha1')));
 });
+
+test('AI usage and agent records: admins see all, a customer their own, the call keys nobody', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'aiUsage/2026-10_wsA'), { wid: 'wsA', usd: 1.2 });
+    await setDoc(doc(db, 'aiUsage/2026-10_velocity'), { wid: 'velocity', usd: 9 });
+    await setDoc(doc(db, 'agentUsage/2026-10_wsA'), { wid: 'wsA', calls: 3 });
+    await setDoc(doc(db, 'agentUsage/2026-10_wsB'), { wid: 'wsB', calls: 9 });
+    await setDoc(doc(db, 'agentCallKeys/c1'), { wid: 'wsA', key: 'k' });
+    await setDoc(doc(db, 'agentWaLines/123456'), { wid: 'wsA', verifyToken: 't' });
+    await setDoc(doc(db, 'agentCalls/h1'), { wid: 'velocity', state: 'ended' });
+    await setDoc(doc(db, 'workspaces/wsA/agentCalls/c1'), { wid: 'wsA', state: 'ended' });
+    await setDoc(doc(db, 'workspaces/wsA/system/agentWhatsApp'), { phoneNumberId: '123456' });
+    await setDoc(doc(db, 'workspaces/wsA/system/agentWhatsApp/secret/credentials'), { token: 'sealed' });
+    await setDoc(doc(db, 'system/aiKeys/secret/credentials'), { house: 'sealed' });
+  });
+  const ownerA = testEnv.authenticatedContext('ownerA', { ws: 'wsA' }).firestore();
+
+  await assertSucceeds(getDoc(doc(ownerA, 'aiUsage/2026-10_wsA')));
+  await assertFails(getDoc(doc(ownerA, 'aiUsage/2026-10_velocity')));
+  await assertSucceeds(getDoc(doc(admin, 'aiUsage/2026-10_velocity')));
+  await assertSucceeds(getDoc(doc(ownerA, 'agentUsage/2026-10_wsA')));
+  await assertFails(getDoc(doc(ownerA, 'agentUsage/2026-10_wsB')));
+  await assertFails(setDoc(doc(ownerA, 'agentUsage/2026-10_wsA'), { wid: 'wsA', calls: 0 }));
+
+  await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA/agentCalls/c1')));
+  await assertSucceeds(getDoc(doc(ownerA, 'workspaces/wsA/system/agentWhatsApp')));
+  await assertFails(getDoc(doc(ownerA, 'workspaces/wsA/system/agentWhatsApp/secret/credentials')));
+  await assertFails(getDoc(doc(ownerA, 'agentCalls/h1')));
+  await assertSucceeds(getDoc(doc(admin, 'agentCalls/h1')));
+
+  for (const path of ['agentCallKeys/c1', 'agentWaLines/123456', 'system/aiKeys/secret/credentials']) {
+    await assertFails(getDoc(doc(admin, path)));
+    await assertFails(getDoc(doc(ownerA, path)));
+  }
+});

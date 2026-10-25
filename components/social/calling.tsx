@@ -4,21 +4,24 @@
  * Sales agent → Calling agents.
  *
  * A calling agent is set up once — a name, a voice, a language, what the call
- * is for and the hours it is polite to ring — and then writes the call for
- * every business on the list that has a phone number: an opener about them,
- * the pitch in three beats, two questions, the likely objections, the ask.
- * Whoever dials reads it from the screen and logs how the call went; an
- * interested business moves to "Replied & won" like an email reply would.
- *
- * It does not dial by itself: that needs a phone line connected (a calling
- * provider), and none is. The page says so instead of pretending.
+ * is for, what it knows and the hours it is polite to ring — and then works
+ * one of two ways:
+ *  - "A person dials": it writes the call for every business with a phone
+ *    number (opener, pitch, questions, objections, the ask); whoever dials
+ *    reads it and logs how it went.
+ *  - "The AI dials": it rings the business itself from its own number and
+ *    talks (Twilio → voice bridge → Gemini Live), records how the call ended,
+ *    and sends the details on WhatsApp to anyone who said yes. It can ring new
+ *    leads on its own, inside its hours and caps.
  */
 
 import { useMemo, useState } from 'react';
 
 import { colors } from '@/lib/config';
 import {
+  agentsApi,
   salesApi,
+  type AgentState,
   type SalesCallAgent,
   type SalesCallOutcome,
   type SalesLeadDoc,
@@ -55,16 +58,22 @@ const BLANK: Omit<SalesCallAgent, 'id'> = {
   hoursTo: 18,
   dailyCap: 30,
   active: true,
+  mode: 'script',
+  knowledge: '',
+  autoCall: false,
 };
 
 export function CallingAgents({
   settings,
   leads,
+  desk,
   onSaved,
   onError,
 }: {
   settings: SalesSettingsDoc;
   leads: SalesLeadDoc[];
+  /** The package, the phone line and the numbers; null while loading. */
+  desk: AgentState | null;
   onSaved: (s: SalesSettingsDoc, message: string) => void;
   onError: (m: string) => void;
 }) {
@@ -107,7 +116,7 @@ export function CallingAgents({
             Calling agents
           </h2>
           <p className="fx-sub">
-            Each one writes the call for every business with a phone number. You dial, read it, and log how it went.
+            Each one either rings businesses itself and talks (AI dials), or writes the call for you to read (a person dials).
           </p>
         </div>
         {agents.length < 5 && !editing ? (
@@ -135,6 +144,11 @@ export function CallingAgents({
                   <span className={a.active ? 'fx-live' : 'fx-live off'} />
                   {a.active ? 'On' : 'Off'}
                 </span>
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: a.mode === 'ai' ? colors.primary : colors.muted }}>
+                {a.mode === 'ai'
+                  ? `🤖 AI dials${numberOf(desk, a.id) ? ` · from ${numberOf(desk, a.id)}` : ' · no number yet'}${a.autoCall ? ' · on its own' : ''}`
+                  : '✍️ A person dials'}
               </span>
               {a.goal ? (
                 <span className="fx-muted fx-clip2" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
@@ -226,7 +240,7 @@ export function CallingAgents({
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
               {callList.map((l) => (
-                <CallRow key={l.id} lead={l} caller={caller} onError={onError} />
+                <CallRow key={l.id} lead={l} caller={caller} aiBlocked={aiBlocked(desk, caller)} onError={onError} />
               ))}
             </div>
           )}
@@ -234,8 +248,8 @@ export function CallingAgents({
       ) : null}
 
       <p className="fx-muted" style={{ fontSize: 11.5, margin: '14px 0 0', lineHeight: 1.5 }}>
-        The agents do not dial by themselves yet — that needs a phone line from a calling provider, and none is connected.
-        Until then you press Call and read the script; everything else (who to call, what to say, how it went) is done here.
+        An AI agent says it is an AI assistant calling for you, states only what you wrote in its knowledge box, and stops at
+        once for anyone who says not to call again. Calls go out from its own number, inside its hours and your package.
       </p>
     </section>
   );
@@ -254,13 +268,28 @@ function AgentForm({
   onSave: (a: SalesCallAgent) => void;
   onDelete?: () => void;
 }) {
-  const [a, setA] = useState(initial);
+  const [a, setA] = useState<SalesCallAgent>({ mode: 'script', knowledge: '', autoCall: false, ...initial });
   const set = <K extends keyof SalesCallAgent>(k: K, v: SalesCallAgent[K]) => setA((x) => ({ ...x, [k]: v }));
   const valid = a.name.trim().length > 0 && a.hoursTo > a.hoursFrom;
 
   return (
     <div className="fx-rise" style={{ display: 'grid', gap: 10, padding: 14, borderRadius: 16, background: '#f6faf7', border: '1px solid var(--line)', marginBottom: 14 }}>
       <strong>{initial.id ? `Edit ${initial.name}` : 'A new calling agent'}</strong>
+      <div style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 800, color: colors.muted }}>
+        Who dials
+        <span className="fx-seg" role="radiogroup" aria-label="Who dials">
+          {(
+            [
+              ['ai', '🤖 The AI dials and talks'],
+              ['script', '✍️ A person dials, the AI writes the call'],
+            ] as const
+          ).map(([m, label]) => (
+            <button key={m} type="button" role="radio" aria-checked={a.mode === m} onClick={() => set('mode', m)}>
+              {label}
+            </button>
+          ))}
+        </span>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
         <Field label="Name (what they say on the phone)">
           <input value={a.name} onChange={(e) => set('name', e.target.value.slice(0, 40))} className="fx-mini" style={{ width: '100%' }} placeholder="e.g. Sana" />
@@ -296,6 +325,15 @@ function AgentForm({
       </Field>
       <Field label="First line (optional — it writes one per business if empty)">
         <input value={a.opener} onChange={(e) => set('opener', e.target.value.slice(0, 400))} className="fx-mini" style={{ width: '100%' }} />
+      </Field>
+      <Field label="What it knows — prices, packages, delivery, questions people ask (the only facts it may say)">
+        <textarea
+          value={a.knowledge ?? ''}
+          onChange={(e) => set('knowledge', e.target.value.slice(0, 3000))}
+          rows={4}
+          className="fx-input"
+          placeholder={'e.g. Basic plan Rs 5,000 a month, Pro Rs 9,000\nDelivery in Lahore and Islamabad, 2 days\nFree trial: 7 days'}
+        />
       </Field>
       <Field label="Points to make (one per line)">
         <textarea
@@ -335,6 +373,12 @@ function AgentForm({
           />
         </Field>
       </div>
+      {a.mode === 'ai' ? (
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
+          <input type="checkbox" checked={Boolean(a.autoCall)} onChange={(e) => set('autoCall', e.target.checked)} />
+          Ring new businesses with a phone number on its own, inside these hours (a missed call is tried once more)
+        </label>
+      ) : null}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button type="button" className="fx-btn small" disabled={busy || !valid} onClick={() => onSave({ ...a, name: a.name.trim() })}>
           {busy ? 'Saving…' : 'Save'}
@@ -353,7 +397,18 @@ function AgentForm({
   );
 }
 
-function CallRow({ lead, caller, onError }: { lead: SalesLeadDoc; caller: SalesCallAgent | null; onError: (m: string) => void }) {
+function CallRow({
+  lead,
+  caller,
+  aiBlocked,
+  onError,
+}: {
+  lead: SalesLeadDoc;
+  caller: SalesCallAgent | null;
+  /** Why the AI cannot ring right now, or null when it can. */
+  aiBlocked: string | null;
+  onError: (m: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const script = lead.callScript;
@@ -367,6 +422,18 @@ function CallRow({ lead, caller, onError }: { lead: SalesLeadDoc; caller: SalesC
       setOpen(true);
     } catch (e) {
       onError(e instanceof Error ? e.message : 'The call could not be written.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function ringWithAi() {
+    if (!caller) return;
+    setBusy('ai');
+    try {
+      await agentsApi.startCall({ leadId: lead.id, agentId: caller.id });
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'The AI could not ring them.');
     } finally {
       setBusy(null);
     }
@@ -407,8 +474,23 @@ function CallRow({ lead, caller, onError }: { lead: SalesLeadDoc; caller: SalesC
             {busy === 'write' ? 'Writing…' : '✍️ Write the call'}
           </button>
         )}
-        <a href={`tel:${lead.phone!.replace(/[^\d+]/g, '')}`} className="fx-btn small" aria-label={`Call ${lead.name}`}>
-          📞 Call
+        {caller?.mode === 'ai' ? (
+          <button
+            type="button"
+            className="fx-btn small"
+            onClick={() => void ringWithAi()}
+            disabled={busy !== null || aiBlocked !== null}
+            title={aiBlocked ?? `${caller.name} rings ${lead.name} now`}
+          >
+            {busy === 'ai' ? 'Ringing…' : `🤖 ${caller.name} calls`}
+          </button>
+        ) : null}
+        <a
+          href={`tel:${lead.phone!.replace(/[^\d+]/g, '')}`}
+          className={caller?.mode === 'ai' ? 'fx-btn ghost small' : 'fx-btn small'}
+          aria-label={`Call ${lead.name} yourself`}
+        >
+          📞 {caller?.mode === 'ai' ? 'Call yourself' : 'Call'}
         </a>
       </div>
 
@@ -472,6 +554,22 @@ function CallRow({ lead, caller, onError }: { lead: SalesLeadDoc; caller: SalesC
       </div>
     </div>
   );
+}
+
+/** The number an agent calls from, if one is given to it. */
+function numberOf(desk: AgentState | null, agentId: string): string | null {
+  return desk?.numbers.find((n) => n.agentId === agentId)?.phone ?? null;
+}
+
+/** Why the AI cannot ring for this agent right now, in words; null when it can. */
+function aiBlocked(desk: AgentState | null, caller: SalesCallAgent | null): string | null {
+  if (!caller || caller.mode !== 'ai') return null;
+  if (!desk) return 'Loading…';
+  if (!desk.bridge) return 'AI calling is not switched on yet.';
+  if (!desk.phoneLine) return 'No phone line is connected yet.';
+  if (!numberOf(desk, caller.id)) return `${caller.name} has no phone number yet — Velocity gives it one.`;
+  if (!desk.house && !desk.planLive) return 'Choose and pay for an AI calling package first.';
+  return null;
 }
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {

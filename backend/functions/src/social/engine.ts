@@ -41,9 +41,11 @@
  */
 import { logger } from 'firebase-functions';
 
+import { overBudget, warmAi } from '../ai/config';
 import { claudeReady, claudeText } from './claude';
 import { geminiReady, geminiText } from './gemini';
 import { freeModelReady, freeModelText } from './freeModel';
+import { currentWorkspace } from './scope';
 
 export type Engine = 'claude' | 'gemini' | 'free' | 'local';
 
@@ -73,6 +75,8 @@ export interface TextRequest {
    * this calls `geminiText` directly rather than going through the router.
    */
   video?: { data: string; mimeType: string } | { uri: string };
+  /** What is being asked for, for the AI meter ("The market read"). `generateJson` fills it. */
+  what?: string;
 }
 
 export class ModelError extends Error {
@@ -100,10 +104,14 @@ export function outOfCredit(message: string): boolean {
   return /^(402|429)\b|credit|quota|billing|RESOURCE_EXHAUSTED/i.test(message);
 }
 
-/** Which engine a call made right now would go to. */
-export function activeEngine(): Engine {
+/**
+ * Which engine a call made right now would go to. Gemini also sits out for a
+ * workspace that has spent this month's AI budget (`ai/config.ts`), so the
+ * desk carries on, on the free model or the local writer, instead of the bill.
+ */
+export function activeEngine(wid: string = currentWorkspace()): Engine {
   if (claudeReady() && !benched('claude')) return 'claude';
-  if (geminiReady() && !benched('gemini')) return 'gemini';
+  if (geminiReady() && !benched('gemini') && !overBudget(wid)) return 'gemini';
   if (freeModelReady() && !benched('free')) return 'free';
   return 'local';
 }
@@ -113,8 +121,8 @@ export function activeEngine(): Engine {
  * `claudeReady` any more: the question every stage is actually asking is
  * "will something think about this, or should I compose it myself?"
  */
-export function modelReady(): boolean {
-  return activeEngine() !== 'local';
+export function modelReady(wid?: string): boolean {
+  return activeEngine(wid) !== 'local';
 }
 
 /**
@@ -123,6 +131,7 @@ export function modelReady(): boolean {
  * free model rather than stopping because one account ran dry.
  */
 export async function generateText(req: TextRequest): Promise<TextResult> {
+  await warmAi();
   for (;;) {
     const engine = activeEngine();
     try {

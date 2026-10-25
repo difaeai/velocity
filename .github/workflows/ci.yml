@@ -29,6 +29,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      # The voice bridge (Cloud Run): its own one-dependency package; the tests run a whole fake call.
+      - name: Voice bridge tests
+        working-directory: backend/voice-bridge
+        run: npm ci && npm test
 
   rules-tests:
     name: Firestore security rules

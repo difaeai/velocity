@@ -1765,6 +1765,11 @@ export interface StudioPaymentDoc {
   note: string | null;
   /** What the AI check read off the receipt. Null while it runs; absent on payments sent before it existed. */
   analysis?: StudioPaymentAnalysis | null;
+  /** A month of AI agents rather than a plan; `plan` is then the plan the workspace already had. */
+  kind?: 'agents';
+  agents?: AgentPackage;
+  /** What was asked in rupees, when it was not the plan price (an agent package). */
+  amountPkr?: number;
 }
 
 /** Mirrors `PaymentAnalysis` in backend/functions/src/studio/paymentCheck.ts. */
@@ -1833,6 +1838,12 @@ export interface SalesCallAgent {
   hoursTo: number;
   dailyCap: number;
   active: boolean;
+  /** "script": writes what a person says. "ai": dials and talks itself. Absent = script. */
+  mode?: 'script' | 'ai';
+  /** Prices, packages, FAQs — the only facts the AI may state. */
+  knowledge?: string;
+  /** Rings new leads with a phone number on its own, inside its hours and caps. */
+  autoCall?: boolean;
 }
 
 export interface SalesSettingsDoc {
@@ -1895,6 +1906,242 @@ export const salesApi = {
   ),
 };
 
+// ── AI keys & usage (admins) ────────────────────────────────────────────────
+
+export type AiKeySlot = 'house' | 'customers' | 'voice';
+
+export interface AiKeyStatus {
+  slot: AiKeySlot;
+  /** console = typed on the page; deploy = the GitHub secret; house = borrowing the house key. */
+  source: 'console' | 'deploy' | 'house' | 'missing';
+  last4: string;
+  setAtMs: number | null;
+  testedAtMs: number | null;
+  lastError: string | null;
+  lastErrorAtMs: number | null;
+}
+
+export interface AiBudgets {
+  houseUsd: number;
+  customerUsd: number;
+  perWorkspace: Record<string, number>;
+}
+
+export interface AiUsageRow {
+  wid: string;
+  name: string;
+  usd: number;
+  calls: number;
+  inTok: number;
+  outTok: number;
+  grounded: number;
+  seconds: number;
+  budgetUsd: number;
+  byFeature: Record<string, { usd: number; calls: number }>;
+  byService: Record<string, { usd?: number; calls?: number }>;
+  byWhat: Record<string, { usd?: number; calls?: number }>;
+  byModel: Record<string, { usd?: number; calls?: number }>;
+  byDay: Record<string, number>;
+}
+
+export interface AiOverview {
+  month: string;
+  slots: AiKeyStatus[];
+  budgets: AiBudgets;
+  vaultReady: boolean;
+  workspaces: AiUsageRow[];
+  lastMonthUsd: number;
+}
+
+export const aiApi = {
+  overview: callable<{ month?: string }, AiOverview>('adminAiOverview'),
+  setKey: callable<{ slot: AiKeySlot; key: string }, { ok: boolean; last4: string }>('adminAiSetKey'),
+  removeKey: callable<{ slot: AiKeySlot }, { ok: boolean }>('adminAiRemoveKey'),
+  testKey: callable<{ slot: AiKeySlot }, { ok: boolean; error: string | null }>('adminAiTestKey'),
+  setBudgets: callable<AiBudgets, { ok: boolean; budgets: AiBudgets }>('adminAiSetBudgets'),
+};
+
+// ── AI agents: calls, WhatsApp, billing ─────────────────────────────────────
+
+export interface AgentRateCard {
+  cost: { callPerMin: number; aiVoicePerMin: number; numberPerMonth: number; waTemplate: number; waMessage: number; aiReply: number };
+  price: { perAgentMonth: number; perNumberMonth: number; perMin: number; perWaMessage: number };
+  usdToPkr: number;
+}
+
+export interface AgentPackage {
+  agents: number;
+  numbers: number;
+  callsPerDay: number;
+  avgCallMin: number;
+  waMessagesPerMonth: number;
+}
+
+export interface AgentPlan extends AgentPackage {
+  minutesPerMonth: number;
+  priceUsd: number;
+  paidUntilMs: number;
+  setAtMs: number;
+  setBy: string;
+}
+
+export interface AgentUsage {
+  calls: number;
+  answered: number;
+  seconds: number;
+  lineMin: number;
+  waTemplates: number;
+  waOut: number;
+  waIn: number;
+  aiReplies: number;
+  costUsd: number;
+}
+
+export interface AgentNumber {
+  sid: string;
+  phone: string;
+  name: string;
+  kind: 'twilio' | 'verified';
+  wid: string | null;
+  agentId: string | null;
+}
+
+export interface AgentWaLine {
+  phoneNumberId: string;
+  displayNumber: string;
+  verifiedName: string;
+  templateName: string;
+  templateLang: string;
+  templateHasName: boolean;
+  autoReply: boolean;
+  agentId: string | null;
+  verifyToken: string;
+  connectedAtMs: number;
+}
+
+/** One AI call, at `agentCalls/{id}` in the workspace. */
+export interface AgentCallDoc {
+  id: string;
+  leadId: string;
+  leadName: string;
+  agentId: string;
+  agentName: string;
+  to: string;
+  from: string;
+  state: 'dialing' | 'live' | 'ended' | 'no-answer' | 'busy' | 'failed';
+  by: string;
+  createdAtMs: number;
+  answeredAtMs: number | null;
+  endedAtMs: number | null;
+  seconds: number;
+  costUsd: number;
+  outcome: { result: string; summary: string; whatsappOk: boolean; callbackWhen: string; deal: string } | null;
+  transcript: { who: 'them' | 'agent'; text: string }[];
+  followUp: 'none' | 'pending' | 'sent' | 'failed';
+  error: string | null;
+}
+
+/** One WhatsApp conversation, at `agentThreads/{waId}` in the workspace. */
+export interface AgentThreadDoc {
+  waId: string;
+  name?: string;
+  leadId?: string | null;
+  mode: 'ai' | 'human';
+  optedOut?: boolean;
+  needsOwner?: boolean;
+  unread?: number;
+  intent?: string;
+  deal?: string;
+  note?: string;
+  lastInAtMs?: number;
+  lastOutAtMs?: number;
+  updatedAtMs: number;
+  messages: { from: 'them' | 'us'; text: string; atMs: number; by: 'them' | 'ai' | 'owner' | 'template' }[];
+}
+
+export interface AgentState {
+  house: boolean;
+  plan: AgentPlan | null;
+  planLive: boolean;
+  usage: AgentUsage;
+  callsToday: number;
+  price: AgentRateCard['price'];
+  usdToPkr: number;
+  numbers: { phone: string; kind: 'twilio' | 'verified'; agentId: string | null }[];
+  phoneLine: boolean;
+  bridge: boolean;
+  whatsapp: AgentWaLine | null;
+  webhookUrl: string;
+}
+
+export interface AgentClientRow {
+  id: string;
+  name: string;
+  plan: AgentPlan | null;
+  planLive: boolean;
+  studioPlan: string;
+  agents: { id: string; name: string; mode: 'script' | 'ai'; active: boolean }[];
+  usage: AgentUsage;
+  numbers: number;
+  costUsd: number;
+  billUsd: number;
+  marginUsd: number;
+}
+
+export interface AgentsOverview {
+  month: string;
+  twilio: { accountSid: string; friendlyName: string; connectedAtMs: number; ok: boolean } | null;
+  vaultReady: boolean;
+  bridge: string;
+  numbers: AgentNumber[];
+  card: AgentRateCard;
+  defaults: AgentRateCard;
+  clients: AgentClientRow[];
+}
+
+/** What a package costs a customer: the price half of the backend's quote (costs never leave the server). */
+export function agentPrice(pkg: AgentPackage, price: AgentRateCard['price'], usdToPkr: number) {
+  const minutes = Math.ceil(pkg.callsPerDay * 30 * pkg.avgCallMin);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const usd = r2(
+    r2(pkg.agents * price.perAgentMonth) +
+      r2(pkg.numbers * price.perNumberMonth) +
+      r2(minutes * price.perMin) +
+      r2(pkg.waMessagesPerMonth * price.perWaMessage),
+  );
+  return { minutes, usd, pkr: Math.round(usd * usdToPkr) };
+}
+
+export const agentsApi = {
+  state: callable<Record<string, never>, AgentState>('agentState'),
+  startCall: callable<{ leadId: string; agentId: string }, { ok: boolean; callId: string }>('agentStartCall'),
+  saveWhatsApp: callable<
+    Omit<AgentWaLine, 'displayNumber' | 'verifiedName' | 'verifyToken' | 'connectedAtMs'> & { token?: string; appSecret?: string },
+    { ok: boolean; line: AgentWaLine; webhookUrl: string }
+  >('agentSaveWhatsApp'),
+  disconnectWhatsApp: callable<Record<string, never>, { ok: boolean }>('agentDisconnectWhatsApp'),
+  threadAction: callable<{ waId: string; action: 'send' | 'takeover' | 'handback' | 'read'; text?: string }, { ok: boolean }>(
+    'agentThreadAction',
+  ),
+  // Admins
+  overview: callable<Record<string, never>, AgentsOverview>('adminAgentsOverview'),
+  connectTwilio: callable<{ accountSid: string; authToken: string }, { ok: boolean; friendlyName: string; numbers: AgentNumber[] }>(
+    'adminAgentsConnectTwilio',
+  ),
+  numbers: callable<
+    | { action: 'refresh' }
+    | { action: 'search'; country: string }
+    | { action: 'buy'; phone: string }
+    | { action: 'release'; sid: string }
+    | { action: 'assign'; sid: string; wid: string | null; agentId: string | null },
+    { ok: boolean; numbers?: AgentNumber[]; available?: { phone: string; place: string }[] }
+  >('adminAgentsNumbers'),
+  setRateCard: callable<AgentRateCard, { ok: boolean; card: AgentRateCard }>('adminAgentsSetRateCard'),
+  setPlan: callable<{ wid: string; package: AgentPackage | null; months: number; priceUsd?: number }, { ok: boolean }>(
+    'adminAgentsSetPlan',
+  ),
+};
+
 /** Velocity Studio: sign-up, paying, and the admin's decision on a payment. */
 export const studioApi = {
   createWorkspace: callable<
@@ -1911,7 +2158,8 @@ export const studioApi = {
     { ok: boolean; workspaceId: string; trialEndsAtMs: number }
   >('studioCreateWorkspace'),
   submitPayment: callable<
-    { plan: StudioPlanId; billing?: StudioBilling; txnId: string; screenshotPath: string },
+    // A plan, or a month of AI agents (`agents`) — never both.
+    { plan?: StudioPlanId; billing?: StudioBilling; agents?: AgentPackage; txnId: string; screenshotPath: string },
     { ok: boolean; paymentId: string }
   >('studioSubmitPayment'),
   decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
