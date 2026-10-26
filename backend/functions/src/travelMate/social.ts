@@ -21,29 +21,13 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
-import { sendToUser } from '../lib/fcm';
-
-import { assertNotBlocked } from './community';
+import { assertInboxOpen, assertNotBlocked, pushTo } from './community';
 import { fileTravelMateReport, REPORT_CATEGORIES } from './chatModeration';
 import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGION = 'asia-south1';
-
-/** Best-effort push, over whichever transport this user's token needs. */
-async function pushTo(uid: string, title: string, body: string, data: Record<string, string>) {
-  // Routed through lib/fcm, NOT the Admin SDK directly. The app registers with
-  // expo-notifications, which hands back an Expo token on some installs and a
-  // native FCM token on others — and the Admin SDK cannot deliver to an Expo
-  // token. Sending them all through sendEachForMulticast failed per token and
-  // logged a warning nobody read, so every Travel Partner notification was
-  // quietly going nowhere on those installs while the feature itself worked.
-  // sendToUser picks the transport per token by its shape.
-  await sendToUser(uid, title, body, data).catch((e) => {
-    console.error('pushTo failed', uid, e);
-  });
-}
 
 function otherUser(users: string[], me: string): string {
   return users.find((u) => u !== me)!;
@@ -131,6 +115,7 @@ export const sendTravelMateMessage = onCall({ region: REGION }, async (req: Call
   // A block in either direction silently closes the channel. Done outside the
   // transaction: it reads a different collection and never changes mid-send.
   await assertNotBlocked(uid, otherUser(preMatch.users, uid));
+  await assertInboxOpen(otherUser(preMatch.users, uid));
 
   const trimmed = (text ?? '').trim();
   const msgRef = matchRef.collection('messages').doc();

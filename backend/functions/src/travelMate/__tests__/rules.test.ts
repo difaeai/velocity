@@ -185,9 +185,34 @@ describe('travelMateProfiles rules', () => {
       { merge: true },
     ));
   });
+
+  it('owner can switch the Open / Mute / Close bar, and only to those three', async () => {
+    const ref = testEnv.authenticatedContext('alice').firestore().doc('travelMateProfiles/alice');
+    await assertSucceeds(ref.set({ inboxMode: 'closed' }, { merge: true }));
+    await assertSucceeds(ref.set({ inboxMode: 'mute' }, { merge: true }));
+    await assertFails(ref.set({ inboxMode: 'everyone' }, { merge: true }));
+  });
 });
 
 describe('travelMateSwipes rules', () => {
+  it('nobody can like a person whose inbox is Closed; a pass still records', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('travelMateProfiles/carol').set({ uid: 'carol', inboxMode: 'closed' });
+      await ctx.firestore().doc('travelMateProfiles/dave').set({ uid: 'dave', inboxMode: 'mute' });
+    });
+    const alice = testEnv.authenticatedContext('alice').firestore();
+    await assertFails(alice.doc('travelMateSwipes/alice_carol').set({
+      swiperId: 'alice', swipedId: 'carol', direction: 'like', createdAt: Timestamp.now(),
+    }));
+    await assertSucceeds(alice.doc('travelMateSwipes/alice_carol').set({
+      swiperId: 'alice', swipedId: 'carol', direction: 'pass', createdAt: Timestamp.now(),
+    }));
+    // Mute only silences the phone — the like still lands.
+    await assertSucceeds(alice.doc('travelMateSwipes/alice_dave').set({
+      swiperId: 'alice', swipedId: 'dave', direction: 'like', createdAt: Timestamp.now(),
+    }));
+  });
+
   it('user can record their own swipe under the {swiper}_{swiped} doc ID', async () => {
     const alice = testEnv.authenticatedContext('alice');
     await assertSucceeds(alice.firestore().doc('travelMateSwipes/alice_carol').set({

@@ -45,3 +45,11 @@ export function birthDateFromParts(p: BirthDateParts): Date | null {
   if (p.day === null || p.month === null || p.year === null) return null;
   return new Date(p.year, p.month, p.day, 12);
 }
+
+/** Whole years old on `today`; NaN for an invalid date. */
+export function ageFromDob(dob: Date, today: Date = new Date()): number {
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}

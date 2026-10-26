@@ -54,6 +54,7 @@ import { api, type TMCommunity, type TMPost } from '../../../src/api/client';
 import { useBlockedSet, useFollowingSet, useMyTMProfile } from '../../../src/hooks/travelMateCommunity';
 import { timeAgo } from '../../../src/lib/timeAgo';
 import { readCachedValue, writeCachedValue } from '../../../src/lib/cachedResource';
+import { InboxModeBar } from '../../../src/ui/InboxModeBar';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
@@ -508,6 +509,7 @@ export default function TravelMateFeed() {
           </Pressable>
         </View>
       </View>
+      <InboxModeBar />
 
       {/* Filter chips */}
       <View style={s.chipsRow}>

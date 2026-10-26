@@ -22,9 +22,7 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
-import { sendToUser } from '../lib/fcm';
-
-import { assertNotBlocked, isBlockedEitherWay } from './community';
+import { assertInboxOpen, assertNotBlocked, isBlockedEitherWay, pushTo } from './community';
 import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
@@ -32,20 +30,6 @@ const db = admin.firestore();
 const REGION = 'asia-south1';
 
 function pairId(a: string, b: string): string { return [a, b].sort().join('_'); }
-
-/** Best-effort push, over whichever transport this user's token needs. */
-async function pushTo(uid: string, title: string, body: string, data: Record<string, string>) {
-  // Routed through lib/fcm, NOT the Admin SDK directly. The app registers with
-  // expo-notifications, which hands back an Expo token on some installs and a
-  // native FCM token on others — and the Admin SDK cannot deliver to an Expo
-  // token. Sending them all through sendEachForMulticast failed per token and
-  // logged a warning nobody read, so every Travel Partner notification was
-  // quietly going nowhere on those installs while the feature itself worked.
-  // sendToUser picks the transport per token by its shape.
-  await sendToUser(uid, title, body, data).catch((e) => {
-    console.error('pushTo failed', uid, e);
-  });
-}
 
 // ---------------------------------------------------------------------------
 const GroupMsgInput = z.object({
@@ -113,6 +97,7 @@ export const openTravelMateDirectChat = onCall({ region: REGION }, async (req: C
   // Sharing a group is not a way around a block. Checked here as well as on
   // send, because opening the thread is what puts a row in both inboxes.
   await assertNotBlocked(uid, targetUid);
+  await assertInboxOpen(targetUid);
 
   const matchRef = db.doc(`travelMateMatches/${pairId(uid, targetUid)}`);
   const matchSnap = await matchRef.get();

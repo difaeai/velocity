@@ -394,10 +394,10 @@ export default function TripScreen() {
       if (e instanceof FirebaseError && reason === 'no_profile') {
         Alert.alert(
           'Travel Partners only',
-          'Ride links are a Travel Partner feature. Set up your Travel Partner profile to share rides with travel partners.',
+          'Ride links are a Travel Partner feature. Open Travel Partner once — it uses your existing profile — then share again.',
           [
             { text: 'Not now', style: 'cancel' },
-            { text: 'Set up', onPress: () => router.push('/passenger/travel-mate/setup' as Parameters<typeof router.push>[0]) },
+            { text: 'Open Travel Partner', onPress: () => router.push('/passenger/travel-mate' as Parameters<typeof router.push>[0]) },
           ],
         );
       } else {

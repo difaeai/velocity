@@ -997,19 +997,22 @@ service cloud.firestore {
       // Owner writes own profile directly from the setup screen — but only the
       // fields that screen edits. Rating / moderation fields stay server-only.
       // displayNameLower powers people search; createdAt is the "joined" date.
+      // inboxMode is the Open / Mute / Close bar (see travelMate/community.ts).
       allow create: if isOwner(userId)
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'displayName', 'displayNameLower', 'age', 'gender',
                           'genderPref', 'bio',
                           'interests', 'photoURL', 'active', 'lastActive', 'createdAt',
                           'location', 'searchRadiusKm',
-                          'travelPrefs', 'travelPrefsUpdatedAt']);
+                          'travelPrefs', 'travelPrefsUpdatedAt', 'inboxMode'])
+                    && request.resource.data.get('inboxMode', 'open') in ['open', 'mute', 'closed'];
       allow update: if isOwner(userId)
                     && onlyChanges(['displayName', 'displayNameLower', 'age', 'gender',
                                     'genderPref', 'bio',
                                     'interests', 'photoURL', 'active', 'lastActive', 'createdAt',
                                     'location', 'searchRadiusKm',
-                                    'travelPrefs', 'travelPrefsUpdatedAt'])
+                                    'travelPrefs', 'travelPrefsUpdatedAt', 'inboxMode'])
+                    && request.resource.data.get('inboxMode', 'open') in ['open', 'mute', 'closed']
                     && genderUnchangedOrFirstAnswer();
       allow delete: if false;
     }
@@ -1086,7 +1089,11 @@ service cloud.firestore {
                     && request.resource.data.swipedId is string
                     && request.resource.data.swipedId != uid()
                     && swipeId == uid() + '_' + request.resource.data.swipedId
-                    && request.resource.data.direction in ['like', 'pass'];
+                    && request.resource.data.direction in ['like', 'pass']
+                    // Nobody may like someone whose Travel Partner inbox is Closed.
+                    && (request.resource.data.direction == 'pass'
+                        || !exists(/databases/$(database)/documents/travelMateProfiles/$(request.resource.data.swipedId))
+                        || get(/databases/$(database)/documents/travelMateProfiles/$(request.resource.data.swipedId)).data.get('inboxMode', 'open') != 'closed');
       allow update, delete: if false;
     }
 

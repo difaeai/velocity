@@ -38,6 +38,7 @@ import { themed } from '../src/theme';
 import { LogoMark } from '../src/ui/LogoMark';
 import { BirthDatePicker, birthDateFromParts, type BirthDateParts } from '../src/ui/BirthDatePicker';
 import { USERNAME_MAX, USERNAME_MIN, checkUsername, usernameDoneKey } from '../src/lib/username';
+import { ageFromDob } from '../src/lib/birthDate';
 
 const GENDERS = ['Male', 'Female', 'Other'] as const;
 type Gender = typeof GENDERS[number];
@@ -51,14 +52,6 @@ type Availability =
 
 /** Long enough that a fast typist spends one read, short enough to feel live. */
 const DEBOUNCE_MS = 350;
-
-function ageFromDob(dob: Date): number {
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-  return age;
-}
 
 // Nobody under 13 signs up (checked on save), nobody over 100 is offered.
 const MAX_YEAR = new Date().getFullYear() - 13;

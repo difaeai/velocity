@@ -88,38 +88,6 @@ export function FeedIcon({ color, focused, size }: IconProps) {
   );
 }
 
-export function MatchesIcon({ color, focused, size }: IconProps) {
-  return (
-    <DuoIcon
-      size={size}
-      color={color}
-      focused={focused}
-      shapes={[
-        {
-          d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z',
-          duo: true,
-        },
-      ]}
-    />
-  );
-}
-
-export function ChatsIcon({ color, focused, size }: IconProps) {
-  return (
-    <DuoIcon
-      size={size}
-      color={color}
-      focused={focused}
-      shapes={[
-        {
-          d: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8Z',
-          duo: true,
-        },
-      ]}
-    />
-  );
-}
-
 export function ProfileIcon({ color, focused, size }: IconProps) {
   return (
     <DuoIcon
@@ -132,6 +100,23 @@ export function ProfileIcon({ color, focused, size }: IconProps) {
           d: 'M4.5 20.6v-.3c0-2.9 2.4-5.3 5.3-5.3h4.4c2.9 0 5.3 2.4 5.3 5.3v.3Z',
           duo: true,
         },
+      ]}
+    />
+  );
+}
+
+/** Two people — the commute Groups tab. */
+export function GroupsIcon({ color, focused, size }: IconProps) {
+  return (
+    <DuoIcon
+      size={size}
+      color={color}
+      focused={focused}
+      shapes={[
+        { d: 'M9 11.4a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z', duo: true },
+        { d: 'M2.8 19.8v-.4c0-2.6 2.1-4.7 4.7-4.7h3c2.6 0 4.7 2.1 4.7 4.7v.4Z', duo: true },
+        { d: 'M15.5 5.3a3 3 0 0 1 0 5.8' },
+        { d: 'M17.6 14.8c2 .4 3.6 2.2 3.6 4.4v.6' },
       ]}
     />
   );
