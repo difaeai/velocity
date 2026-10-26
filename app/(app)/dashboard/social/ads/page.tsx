@@ -9,10 +9,11 @@
  * doing against what a click should cost in Pakistan — pausing what wastes
  * money and putting more behind what works, if you let it.
  *
- * Read top to bottom the first time, it walks the setup in order: connect the
- * ad account, set the daily limit and whether it may spend without asking, then
- * ask for an ad. After that the page is the account: this week's numbers, the
- * expert's note, and every campaign with the buttons that steer it.
+ * The ad account is connected on Connected accounts, and this page sends you
+ * there until it is. Then it walks the rest in order: set the daily limit and
+ * whether it may spend without asking, then ask for an ad. After that the page
+ * is the account: this week's numbers, the expert's note, and every campaign
+ * with the buttons that steer it.
  *
  * Every number on this page comes from Meta through the backend
  * (backend/functions/src/social/ads.ts); every judgement comes from
@@ -20,6 +21,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
@@ -31,13 +34,11 @@ import {
   type AdPlan,
   type AdForecast,
   type AdsConfigDoc,
-  type SocialAccountDoc,
   type SocialEmployee,
   type SocialPostDoc,
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 import { ChartCard, Stat, TimeSeries, SERIES } from '@/components/charts';
-import { InstagramConnect } from '@/components/social/instagramConnect';
 import { GRADE_META, adMoney, campaignState, tone } from '@/components/social/ads';
 import { LaunchSequence } from '@/components/social/launch';
 import { CampaignDesigner, DESIGNER_CSS } from '@/components/social/designer';
@@ -89,17 +90,11 @@ export default function AdsPage() {
     [path],
   );
 
-  // The Page the desk already posts as: the ads connect picks it again without asking.
-  const [postingPageId, setPostingPageId] = useState<string | null>(null);
-  useEffect(
-    () =>
-      onSnapshot(
-        doc(db, path('socialAccounts/facebook')),
-        (snap) => setPostingPageId((snap.data() as SocialAccountDoc | undefined)?.externalId ?? null),
-        () => setPostingPageId(null),
-      ),
-    [path],
-  );
+  // The ad account is connected on Connected accounts; with none, that is where this page sends you.
+  const router = useRouter();
+  useEffect(() => {
+    if (loaded && !cfg?.adAccountId) router.replace('/dashboard/social/accounts#meta-ads');
+  }, [loaded, cfg, router]);
 
   useEffect(
     () =>
@@ -193,24 +188,16 @@ export default function AdsPage() {
       {/* An ads-only workspace lands here, so its launch sequence lives here too. */}
       {!house && !includes('content') ? <LaunchSequence settings={null} /> : null}
 
-      {/* 1 — the ad account */}
-      {loaded && (!connected || expired || (daysLeft !== null && daysLeft <= 7)) ? (
-        <>
-          {connected ? (
-            <p style={{ color: colors.warn, fontSize: 13.5, margin: '0 0 8px', fontWeight: 700 }}>
-              {expired
-                ? 'The Facebook sign-in for ads has expired — reconnect to keep the numbers and the steering running.'
-                : `The Facebook sign-in for ads runs out in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Reconnect now.`}
-            </p>
-          ) : null}
-          <InstagramConnect
-            ads={{
-              connectedName: expired ? null : (cfg?.accountName ?? null),
-              adAccountId: cfg?.adAccountId ?? null,
-              pageId: cfg?.pageId ?? postingPageId,
-            }}
-          />
-        </>
+      {/* 1 — the ad account lives on Connected accounts; only a sign-in running out is said here */}
+      {connected && !cfg?.permanent && (expired || (daysLeft !== null && daysLeft <= 7)) ? (
+        <p style={{ color: colors.warn, fontSize: 13.5, margin: '0 0 14px', fontWeight: 700 }}>
+          {expired
+            ? 'The Facebook sign-in for ads has expired.'
+            : `The Facebook sign-in for ads runs out in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`}{' '}
+          <Link href="/dashboard/social/accounts#meta-ads" style={{ color: colors.secondary }}>
+            Renew it, or paste a token that never expires, on Connected accounts →
+          </Link>
+        </p>
       ) : null}
 
       {/* 2 — the two answers before it spends anything */}
@@ -222,7 +209,7 @@ export default function AdsPage() {
         ready={setUp}
         blocked={
           !connected
-            ? 'Connect the ad account above to create it.'
+            ? 'Connect the ad account on Connected accounts to create it.'
             : !setUp
               ? 'Answer the two questions above — the daily limit and ask-or-launch — to create it.'
               : null

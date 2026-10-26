@@ -147,9 +147,10 @@ const STUDIO_ADMIN_NAV: NavGroup = {
 /**
  * Every page a customer may open, and the plan part it belongs to; a customer
  * sees only what theirs includes. A page missing here (Velocity's own admin
- * pages, anything new) is not theirs at all. The accounts, the AI agents and
- * the settings are the content team's tools — the Meta Ad Expert connects on
- * its own page.
+ * pages, anything new) is not theirs at all. The AI agents and the settings
+ * are the content team's tools. Connected accounts holds both the posting
+ * networks and the Meta Ad Expert's ad account, so every plan opens it and the
+ * page shows each plan only its own cards.
  */
 const NEED_OF: Record<string, StudioNeed> = {
   '/dashboard/social': 'content',
@@ -157,7 +158,7 @@ const NEED_OF: Record<string, StudioNeed> = {
   '/dashboard/social/calendar': 'content',
   '/dashboard/social/inbox': 'content',
   '/dashboard/social/performance': 'content',
-  '/dashboard/social/accounts': 'content',
+  '/dashboard/social/accounts': 'any',
   '/dashboard/social/employees': 'content',
   '/dashboard/social/crew': 'content',
   '/dashboard/social/automation': 'content',

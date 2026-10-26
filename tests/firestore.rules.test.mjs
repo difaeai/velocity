@@ -127,6 +127,15 @@ test('privilege escalation via profile write is blocked', async () => {
   await assertFails(updateDoc(doc(passenger, 'users/passenger1'), { role: 'admin' }));
 });
 
+test('a new account with no role claim is a passenger, nothing more', async () => {
+  // onUserCreate writes no claims, so every new account starts like this.
+  const fresh = testEnv.authenticatedContext('fresh1').firestore();
+  await testEnv.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'users/fresh1'), { uid: 'fresh1', role: 'passenger' }));
+  await assertSucceeds(getDoc(doc(fresh, 'users/fresh1')));
+  await assertSucceeds(updateDoc(doc(fresh, 'users/fresh1'), { displayName: 'New' }));
+  await assertFails(getDoc(doc(fresh, 'system/counters')));
+});
+
 test('a rider can record who they will share a car with', async () => {
   // The home-screen selector writes both fields in one update: mixedRideOk is
   // what every gender gate in the app reads, and sharedRideGenderPref is the

@@ -22,6 +22,7 @@ export {
   adminStartMetaConnect,
   adminFinishMetaConnect,
   adminChooseMetaPage,
+  adminConnectAdsToken,
 } from './meta';
 
 export {
