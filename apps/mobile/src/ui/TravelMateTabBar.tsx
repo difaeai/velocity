@@ -52,8 +52,10 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
           visibility rule for free: the early return above already hides both on
           chat, post and every other push-navigated full-screen, which is
           exactly where a banner would be most intrusive. Full-bleed, above the
-          floating pill, so it never crowds the tab targets. */}
-      <AdBanner />
+          floating pill, so it never crowds the tab targets. Not on Home: the
+          deck carries its own native card, and a banner under it would leave
+          that screen more ad than content. */}
+      {focusedRoute.name !== 'index' && <AdBanner />}
       <View style={[s.wrap, { paddingBottom: bottomInset }]}>
         <View style={s.bar}>
         {state.routes.map((route) => {

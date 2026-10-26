@@ -1,8 +1,8 @@
 /**
  * AdMob ad unit IDs.
  *
- * Two units total (one banner, one interstitial), each reused across every
- * placement. Ad UNIT ids are runtime values, unlike the APP id, which the native
+ * Three units total (banner, interstitial, native video), each reused across
+ * every placement. Ad UNIT ids are runtime values, unlike the APP id, which the native
  * SDK reads from the manifest at process start (see app.config.ts).
  *
  * Neither of these is a secret — an ad unit id is visible in any ad request and
@@ -57,7 +57,15 @@ export const INTERSTITIAL_UNIT_ID = resolve(
   'EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID',
 );
 
+/** The native ("Native advanced") unit — the in-deck video card in Travel Partner. */
+export const NATIVE_UNIT_ID = resolve(
+  process.env.EXPO_PUBLIC_ADMOB_NATIVE_ID,
+  TestIds.NATIVE_VIDEO,
+  'EXPO_PUBLIC_ADMOB_NATIVE_ID',
+);
+
 /** True when we are serving Google's test inventory rather than the real account. */
 export const USING_TEST_ADS =
   BANNER_UNIT_ID !== process.env.EXPO_PUBLIC_ADMOB_BANNER_ID?.trim() ||
-  INTERSTITIAL_UNIT_ID !== process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID?.trim();
+  INTERSTITIAL_UNIT_ID !== process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID?.trim() ||
+  NATIVE_UNIT_ID !== process.env.EXPO_PUBLIC_ADMOB_NATIVE_ID?.trim();
