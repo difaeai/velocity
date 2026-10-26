@@ -178,5 +178,9 @@ export const adminUpdateSocialSettings = deskCall('any', async (req) => {
     { ...parsed.data, updatedAt: FieldValue.serverTimestamp(), updatedBy: ctx.uid },
     { merge: true },
   );
-  return { ok: true, settings: await getSocialSettings() };
+  const settings = await getSocialSettings();
+  // Choosing "Post on its own" puts what is already waiting on the calendar too.
+  // Imported here, not at the top: pipeline imports this module.
+  const scheduled = parsed.data.autoPublish === true ? await (await import('./pipeline')).scheduleWaiting(settings) : 0;
+  return { ok: true, settings, scheduled };
 });
