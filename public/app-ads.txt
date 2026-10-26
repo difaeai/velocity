@@ -11,4 +11,8 @@
 #
 # Served at <developer-website-root>/app-ads.txt because Next.js publishes
 # everything under public/ at the domain root.
+#
+# The current AdMob account (added 2026-10-26).
+google.com, pub-7627374718071924, DIRECT, f08c47fec0942fa0
+# The previous account, closed 2026-08-30 and under appeal; harmless while listed.
 google.com, pub-7505727874471807, DIRECT, f08c47fec0942fa0
