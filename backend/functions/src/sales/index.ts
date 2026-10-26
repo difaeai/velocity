@@ -33,7 +33,7 @@ import { open, seal, tokenVaultReady, type SealedSecret } from '../social/secret
 import { deskCall, forEachWorkspace, sdb, workspaceBrand } from '../social/workspace';
 import { findBySearch, findOnMap, type FoundBusiness } from './find';
 import { followUpDue, imapHostFor, readReplies, type LeadRef } from './inbox';
-import { fetchPage, readSite } from './site';
+import { readBusiness } from './site';
 import {
   answerReply,
   draftEmail,
@@ -233,8 +233,7 @@ async function profile(id: string): Promise<void> {
   const lead = (await ref.get()).data() as { website: string | null; email: string | null; phone: string | null } | undefined;
   if (!lead?.website) return;
   try {
-    const page = await fetchPage(lead.website);
-    const site = readSite(page.html, page.url);
+    const { site } = await readBusiness(lead.website);
     await ref.update({
       title: site.title,
       description: site.description,

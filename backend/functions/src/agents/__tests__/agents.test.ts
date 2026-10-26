@@ -10,7 +10,7 @@ import { endState, inHours, leadAfterCall } from '../calls';
 import { dueForCall, planFrom } from '../index';
 import { callInstruction, whatsappInstruction, type AgentSetup } from '../prompt';
 import { dialable, pkMobileE164, twilioSignature, validTwilioRequest, xmlAttr } from '../twilio';
-import { leadAfterChat, waIdOf } from '../whatsapp';
+import { leadAfterChat, mayOpenChat, waIdOf } from '../whatsapp';
 
 const card = DEFAULT_RATE_CARD;
 
@@ -185,5 +185,12 @@ describe('whatsapp', () => {
   it('turns a dialled number into a WhatsApp id', () => {
     expect(waIdOf('+923001234567')).toBe('923001234567');
     expect(waIdOf('03001234567')).toBe('923001234567');
+  });
+
+  it('opens no new chat once Meta marks the number down', () => {
+    expect(mayOpenChat('GREEN')).toBe(true);
+    expect(mayOpenChat(undefined)).toBe(true);
+    expect(mayOpenChat('YELLOW')).toBe(false);
+    expect(mayOpenChat('RED')).toBe(false);
   });
 });

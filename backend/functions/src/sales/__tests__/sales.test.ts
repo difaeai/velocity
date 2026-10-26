@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { leadId } from '../index';
 import { fromOsm, osmQuery } from '../find';
-import { assertPublicUrl, privateAddress, readSite } from '../site';
+import { assertPublicUrl, contactLink, privateAddress, readSite } from '../site';
 import { callScriptFallback, emailProblems, withFooter } from '../write';
 
 describe('callScriptFallback — the call script with no model', () => {
@@ -74,6 +74,19 @@ describe('readSite', () => {
     expect(read.signals).toContain('links to an Instagram account');
     expect(read.signals).toContain('takes orders or questions on WhatsApp');
     expect(read.signals).toContain('no way to book or order online on the home page');
+  });
+
+  it('takes the WhatsApp number when a shop gives no other', () => {
+    const wa = readSite('<a href="https://api.whatsapp.com/send?phone=923331112222&text=hi">Order</a>', 'https://shop.pk/');
+    expect(wa.phones).toEqual(['+923331112222']);
+  });
+});
+
+describe('contactLink', () => {
+  it('finds the site’s own contact page and ignores other sites', () => {
+    const html = '<a href="https://facebook.com/contact">FB</a> <a href="/pages/contact-us">Contact us</a>';
+    expect(contactLink(html, 'https://www.bakehouse.pk/')).toBe('https://www.bakehouse.pk/pages/contact-us');
+    expect(contactLink('<a href="/menu">Menu</a>', 'https://www.bakehouse.pk/')).toBeNull();
   });
 });
 

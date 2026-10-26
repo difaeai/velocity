@@ -124,10 +124,12 @@ export function readSite(html: string, pageUrl: string): SiteRead {
     .sort((a, b) => Number(b.endsWith(host)) - Number(a.endsWith(host)))
     .slice(0, 5);
 
+  // tel: links, and the WhatsApp number in a wa.me / click-to-chat link — the number most Pakistani shops answer.
   const phones = [
-    ...new Set(
-      [...html.matchAll(/tel:([+\d][\d\s-]{6,18}\d)/gi)].map((m) => m[1].replace(/[\s-]/g, '')),
-    ),
+    ...new Set([
+      ...[...html.matchAll(/tel:([+\d][\d\s-]{6,18}\d)/gi)].map((m) => m[1].replace(/[\s-]/g, '')),
+      ...[...html.matchAll(/(?:wa\.me\/|api\.whatsapp\.com\/send\/?\?phone=)\+?(\d{10,15})/gi)].map((m) => `+${m[1]}`),
+    ]),
   ].slice(0, 3);
 
   const has = (re: RegExp) => re.test(html);
@@ -147,4 +149,44 @@ export function readSite(html: string, pageUrl: string): SiteRead {
     phones,
     signals,
   };
+}
+
+/** The same-site link a page labels as its contact page, or null. Pure. */
+export function contactLink(html: string, pageUrl: string): string | null {
+  const host = new URL(pageUrl).hostname;
+  for (const m of html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,120}?)<\/a>/gi)) {
+    if (!/contact|get in touch|reach us/i.test(`${m[1]} ${m[2]}`)) continue;
+    try {
+      const u = new URL(m[1], pageUrl);
+      if (u.hostname === host && /^https?:$/.test(u.protocol)) return u.href;
+    } catch {
+      /* not a link */
+    }
+  }
+  return null;
+}
+
+/**
+ * A business as its own site describes it: the home page, then — only when the
+ * home page gives no address or no number — its contact page, where most small
+ * businesses put them. Two extra pages at most, each through fetchPage's guard.
+ */
+export async function readBusiness(website: string): Promise<{ url: string; site: SiteRead }> {
+  const home = await fetchPage(website);
+  const site = readSite(home.html, home.url);
+  const tries = [contactLink(home.html, home.url), new URL('/contact', home.url).href].filter(
+    (u, i, all): u is string => Boolean(u) && u !== home.url && all.indexOf(u) === i,
+  );
+  for (const next of tries) {
+    if (site.emails.length && site.phones.length) break;
+    try {
+      const page = await fetchPage(next);
+      const more = readSite(page.html, page.url);
+      site.emails = [...new Set([...site.emails, ...more.emails])].slice(0, 5);
+      site.phones = [...new Set([...site.phones, ...more.phones])].slice(0, 3);
+    } catch {
+      /* no contact page is normal */
+    }
+  }
+  return { url: home.url, site };
 }
