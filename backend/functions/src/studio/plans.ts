@@ -1,24 +1,27 @@
 /**
  * Velocity Studio's plans, and what each one lets a workspace do.
  *
- * A customer gets exactly what they pay for and nothing else: the content desk,
- * the Meta Ad Expert, or both plus the sales agent. Every check that matters runs on
- * the server (`social/workspace.ts`); the console only hides what a plan does
- * not include. Pure, so the rules are tested without a database.
+ * A customer gets exactly what they pay for and nothing else: the sales agents,
+ * the content desk, or the whole team — the Meta Ad Expert with everything. Every
+ * check that matters runs on the server (`social/workspace.ts`); the console only
+ * hides what a plan does not include. Pure, so the rules are tested without a database.
  *
  * Mirrored for the web in `lib/studio.ts` — change one, change the other.
  */
 
-export type PlanId = 'content' | 'ads' | 'all';
+export type PlanId = 'sales' | 'content' | 'ads' | 'all';
 export type Need = 'content' | 'ads' | 'sales' | 'any';
 
 export const PLANS: Record<PlanId, { name: string; usd: number; can: Exclude<Need, 'any'>[] }> = {
-  content: { name: 'Content', usd: 19, can: ['content'] },
-  ads: { name: 'Meta Ad Expert', usd: 24, can: ['ads'] },
-  all: { name: 'Everything', usd: 32, can: ['content', 'ads', 'sales'] },
+  sales: { name: 'Sales agents', usd: 17, can: ['sales'] },
+  content: { name: 'Content', usd: 24, can: ['content'] },
+  // No longer sold: kept so a workspace already on it keeps working.
+  ads: { name: 'Meta Ad Expert (ads only)', usd: 24, can: ['ads'] },
+  all: { name: 'Meta Ad Expert + Everything', usd: 32, can: ['content', 'ads', 'sales'] },
 };
 
-export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
+/** The plans on sale, left to right as the pricing page shows them. */
+export const PLAN_IDS: PlanId[] = ['sales', 'content', 'all'];
 
 /** Paid a month at a time, or a year up front for less. */
 export type Billing = 'month' | 'year';

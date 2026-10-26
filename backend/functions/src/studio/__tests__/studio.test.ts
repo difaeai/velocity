@@ -236,15 +236,15 @@ describe('paying', () => {
   it('a yearly payment is priced 13% off and adds a year when approved', async () => {
     const wid = await signUp('content');
     const res = (await studioSubmitPayment.run(
-      asUser(paid(wid, 'ads', 'EP-445566', { billing: 'year' }), OWNER, { ws: wid }),
+      asUser(paid(wid, 'sales', 'EP-445566', { billing: 'year' }), OWNER, { ws: wid }),
     )) as { paymentId: string };
     const pay = (await db().doc(`studioPayments/${res.paymentId}`).get()).data()!;
-    expect(pay).toMatchObject({ billing: 'year', amountUsd: 250 });
+    expect(pay).toMatchObject({ billing: 'year', amountUsd: 177 });
 
     const before = Date.now();
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
-    expect(ws.plan).toBe('ads');
+    expect(ws.plan).toBe('sales');
     expect(ws.paidUntilMs).toBeGreaterThanOrEqual(before + YEAR_MS);
   });
 
@@ -297,10 +297,10 @@ describe('paying', () => {
     await adminDecideStudioPayment.run(asUser({ paymentId: res.paymentId, approve: true }, ADMIN, { role: 'admin' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
     expect(ws.plan).toBe('all');
-    // 300 days of $19 are worth ~178 days of $32, plus the month just paid — not 330 days of Everything.
+    // 300 days of $24 are worth ~225 days of $32, plus the month just paid — not 330 days of the whole team.
     const days = (ws.paidUntilMs - before) / 86_400_000;
-    expect(days).toBeGreaterThan(207);
-    expect(days).toBeLessThan(209);
+    expect(days).toBeGreaterThan(254);
+    expect(days).toBeLessThan(256);
   });
 
   it('sells an AI agents package only on the plan that can use it', async () => {
@@ -311,7 +311,8 @@ describe('paying', () => {
         asUser({ agents: pkg, txnId: 'EP-343434', screenshotPath: `workspaces/${wid}/payments/a.jpg` }, OWNER, { ws: wid }),
       );
     await expect(send()).rejects.toThrow(/Everything plan/);
-    await db().doc(`workspaces/${wid}`).update({ plan: 'all' });
+    // The Sales agents plan works from the Sales page too, so it can buy the package.
+    await db().doc(`workspaces/${wid}`).update({ plan: 'sales' });
     await expect(send()).resolves.toMatchObject({ ok: true });
   });
 
@@ -366,10 +367,10 @@ describe('managing a customer', () => {
   it('changes the plan, keeps a note the customer cannot read, and logs who did it', async () => {
     const wid = await signUp('content');
     const admin1 = (data: Record<string, unknown>) => asUser({ wid, ...data }, ADMIN, { role: 'admin' });
-    await adminManageStudioCustomer.run(admin1({ action: 'setPlan', plan: 'ads' }));
+    await adminManageStudioCustomer.run(admin1({ action: 'setPlan', plan: 'sales' }));
     await adminManageStudioCustomer.run(admin1({ action: 'note', note: 'Called them, paying Friday.' }));
     const ws = (await db().doc(`workspaces/${wid}`).get()).data()!;
-    expect(ws.plan).toBe('ads');
+    expect(ws.plan).toBe('sales');
     // The workspace doc is the customer's to read (firestore.rules); the note lives on the admin-only row.
     expect(ws.adminNote).toBeUndefined();
     expect((await db().doc(`studioUsers/${OWNER}`).get()).get('adminNote')).toBe('Called them, paying Friday.');

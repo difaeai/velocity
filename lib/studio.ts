@@ -7,16 +7,29 @@
  * it. Change one, change the other.
  */
 
-export type StudioPlanId = 'content' | 'ads' | 'all';
+export type StudioPlanId = 'sales' | 'content' | 'ads' | 'all';
 export type StudioNeed = 'content' | 'ads' | 'sales' | 'any';
 
 export const STUDIO_PLANS: Record<
   StudioPlanId,
   { name: string; usd: number; can: Exclude<StudioNeed, 'any'>[]; tagline: string; includes: string[] }
 > = {
+  sales: {
+    name: 'Sales agents',
+    usd: 17,
+    can: ['sales'],
+    tagline: 'Sales agents that research your market and bring you customers.',
+    includes: [
+      'Market research on day one: your buyers, your competitors and an audience test',
+      'Finds businesses that could buy from you, with their email and WhatsApp',
+      'Writes each one a short, personal cold email from your own mailbox',
+      'Follows up twice, and drafts your answer to every reply',
+      'A sales funnel built from the research',
+    ],
+  },
   content: {
     name: 'Content',
-    usd: 19,
+    usd: 24,
     can: ['content'],
     tagline: 'Your social media team, posting every day.',
     includes: [
@@ -27,8 +40,9 @@ export const STUDIO_PLANS: Record<
       'Learns from your own best posts',
     ],
   },
+  // No longer sold: kept so a workspace already on it keeps working.
   ads: {
-    name: 'Meta Ad Expert',
+    name: 'Meta Ad Expert (ads only)',
     usd: 24,
     can: ['ads'],
     tagline: 'A Meta ads specialist that runs and improves your ads every day.',
@@ -41,21 +55,25 @@ export const STUDIO_PLANS: Record<
     ],
   },
   all: {
-    name: 'Everything',
+    name: 'Meta Ad Expert + Everything',
     usd: 32,
     can: ['content', 'ads', 'sales'],
-    tagline: 'Content, the Meta Ad Expert and a sales agent — the whole team.',
+    tagline: 'The Meta Ad Expert with the whole team: content, ads and sales.',
     includes: [
-      'Everything in Content',
-      'Meta Ad Expert: runs and improves your ads every day',
-      'A sales funnel built from your market analysis',
-      'Sales agent: finds leads, emails them, follows up twice',
-      'Every reply answered with a draft you send in one tap',
+      'Everything in Sales agents and Content',
+      'Meta Ad Expert: plans, writes and launches Facebook & Instagram ads',
+      'Watches cost, conversions and ROAS every day — keeps winners, pauses losers',
+      'Refreshes tired ads on its own, inside your daily budget limit',
+      'Reads the market and your competitors before every move',
     ],
   },
 };
 
-export const STUDIO_PLAN_IDS = Object.keys(STUDIO_PLANS) as StudioPlanId[];
+/** The plans on sale, left to right as the pricing page shows them. */
+export const STUDIO_PLAN_IDS: StudioPlanId[] = ['sales', 'content', 'all'];
+
+/** The "From $… a month" the pages quote: the cheapest plan on sale. */
+export const STUDIO_FROM_USD = Math.min(...STUDIO_PLAN_IDS.map((id) => STUDIO_PLANS[id].usd));
 
 /** Paid a month at a time, or a year up front for less. */
 export type StudioBilling = 'month' | 'year';

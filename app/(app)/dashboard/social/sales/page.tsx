@@ -24,6 +24,7 @@ import { Button, Card } from '@/components/ui';
 import { CallingAgents } from '@/components/social/calling';
 import { AgentPackageCard, AiCallLog, WhatsAppChats, WhatsAppLine, useAgentDesk } from '@/components/social/agentsDesk';
 import { FX_CSS } from '@/components/social/fx';
+import { LaunchSequence } from '@/components/social/launch';
 
 type Shelf = 'review' | 'ready' | 'new' | 'sent' | 'done' | 'all';
 const SHELVES: { key: Shelf; label: string; states: SalesLeadStatus[] | null }[] = [
@@ -36,7 +37,7 @@ const SHELVES: { key: Shelf; label: string; states: SalesLeadStatus[] | null }[]
 ];
 
 export default function SalesPage() {
-  const { path } = useWorkspace();
+  const { path, house, includes } = useWorkspace();
   const [settings, setSettings] = useState<SalesSettingsDoc | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
   const [leads, setLeads] = useState<SalesLeadDoc[]>([]);
@@ -128,6 +129,8 @@ export default function SalesPage() {
           </div>
         </div>
       </section>
+      {/* A Sales agents workspace lands here, so its market research and launch steps live here too. */}
+      {!house && !includes('content') && !includes('ads') ? <LaunchSequence settings={null} /> : null}
       <header style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>
           {settings.lastStatus ? <p style={{ fontSize: 12.5, color: colors.muted, margin: 0 }}>Last run: {settings.lastStatus}</p> : null}

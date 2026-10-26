@@ -329,15 +329,19 @@ async function planCan(): Promise<string[]> {
  */
 export function notInPlan(id: StepId, can: readonly string[]): Outcome | null {
   if (id === 'content' || id === 'execute') {
-    return can.includes('content') ? null : { status: 'skipped', note: 'The content team comes with the Content and Everything plans.' };
+    return can.includes('content')
+      ? null
+      : { status: 'skipped', note: 'The content team comes with the Content and Meta Ad Expert + Everything plans.' };
   }
   if (id === 'funnel') {
     return can.includes('ads') || can.includes('sales')
       ? null
-      : { status: 'skipped', note: 'The Meta Ad Expert and the sales agent come with the Meta Ad Expert and Everything plans.' };
+      : { status: 'skipped', note: 'The sales funnel comes with the Sales agents and Meta Ad Expert + Everything plans.' };
   }
   if (id === 'close') {
-    return can.includes('sales') ? null : { status: 'skipped', note: 'The sales agent comes with the Everything plan.' };
+    return can.includes('sales')
+      ? null
+      : { status: 'skipped', note: 'The sales agent comes with the Sales agents and Meta Ad Expert + Everything plans.' };
   }
   return null;
 }

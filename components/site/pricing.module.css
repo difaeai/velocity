@@ -76,6 +76,17 @@
   align-items: stretch;
 }
 
+/* The fixed place a card sits in. Hover is read here, not on the card, because the card moves away from the mouse. */
+.slot {
+  display: flex;
+  min-width: 0;
+}
+
+.slot > .card {
+  flex: 1;
+  min-width: 0;
+}
+
 .card {
   position: relative;
   display: flex;
@@ -422,7 +433,7 @@
 
   .card {
     transition:
-      transform 420ms var(--ease-out),
+      transform 520ms var(--ease-out),
       box-shadow 420ms var(--ease-out),
       border-color 420ms var(--ease),
       opacity 420ms var(--ease);
@@ -488,29 +499,63 @@
 
 }
 
-/* Hover pulls the card toward the reader, tilted a little to the mouse, and sets
-   the other two back. Mouse only: a tap on a phone would leave it stuck zoomed. */
-@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
-  .card:hover {
+/* Hover brings the card to the middle and grows it; the middle card steps into
+   its place and the rest sit back. Leaving puts every card back. The slots never
+   move, and the cards that stepped aside ignore the mouse, so whatever ends up
+   under the pointer cannot steal the hover and send the cards back and forth.
+   Three columns and a mouse only: a tap on a phone would leave a card stuck. */
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) and (min-width: 941px) {
+  /* Slots touch (the gutter is their padding), so the pointer is never between two. */
+  .plans {
+    gap: 0;
+    margin-inline: -11px;
+  }
+
+  .slot {
+    padding-inline: 11px;
+  }
+
+  .slot:hover .card {
     z-index: 3;
-    transform: perspective(1200px) rotateX(var(--ry, 0deg)) rotateY(var(--rx, 0deg)) translateY(-14px) scale(1.06);
     box-shadow: 0 50px 100px -40px rgba(4, 18, 12, 0.55);
   }
 
-  .card:not(.best):hover {
+  .slot:hover .card:not(.best) {
     border-color: #9fc7ae;
   }
 
-  .best:hover {
+  .slot:hover .best {
     box-shadow: 0 50px 110px -36px rgba(140, 190, 0, 0.75);
   }
 
-  .plans:has(.card:hover) .card:not(:hover) {
-    transform: scale(0.96);
-    opacity: 0.7;
+  /* One slot is the card's own width plus the 22px gutter. */
+  .slot:nth-child(1):hover .card {
+    transform: translateX(calc(100% + 22px)) scale(1.08);
   }
 
-  .card:hover .list svg {
+  .slot:nth-child(2):hover .card {
+    transform: translateY(-12px) scale(1.08);
+  }
+
+  .slot:nth-child(3):hover .card {
+    transform: translateX(calc(-100% - 22px)) scale(1.08);
+  }
+
+  .plans:has(.slot:hover) .slot:not(:hover) .card {
+    transform: scale(0.92);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .plans:has(.slot:nth-child(1):hover) .slot:nth-child(2) .card {
+    transform: translateX(calc(-100% - 22px)) scale(0.92);
+  }
+
+  .plans:has(.slot:nth-child(3):hover) .slot:nth-child(2) .card {
+    transform: translateX(calc(100% + 22px)) scale(0.92);
+  }
+
+  .slot:hover .list svg {
     animation: hop 520ms var(--ease-out);
     animation-delay: calc(var(--j) * 60ms);
   }
