@@ -585,6 +585,8 @@ export {
   adminDecideStudioPayment,
   adminManageStudioCustomer,
 } from './studio';
+// Velocity Studio credits: a day of the team's work at a time, spent only when it would otherwise stop.
+export { studioCreditSweep, studioUsage } from './studio/credits';
 // Velocity Studio sign-up: the emailed code and the mailbox it comes from.
 export { studioTouch, studioSendEmailCode, studioVerifyEmailCode } from './studio/emailCode';
 export { adminSetStudioMailer } from './studio/mailer';

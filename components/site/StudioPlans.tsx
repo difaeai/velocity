@@ -200,7 +200,7 @@ export function StudioPlans() {
                     ))}
                   </ul>
                   <Link
-                    href={`/studio/start?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
+                    href={`/studio/signup?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
                     className={`${site.btn} ${best ? site.btnLime : site.btnGhost} ${styles.cta}`}
                   >
                     Start free <ArrowRight />

@@ -5,8 +5,7 @@ import { VelocityMark } from '@/components/BrandMark';
 import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
-import { StudioHow, type StudioStep } from '@/components/site/StudioHow';
-import { StudioScrub } from '@/components/site/StudioScrub';
+import { StudioStory } from '@/components/site/StudioStory';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { AppleMark, ArrowRight, Check, GooglePlay, Sparkle } from '@/components/site/Icons';
 import styles from '@/components/site/site.module.css';
@@ -28,9 +27,10 @@ import {
  * The homepage: Velocity Studio, with the Velocity Rides app sharing its hero.
  *
  * The hero is two films — the ride app and the studio — and everything under it
- * is the studio: how it works (five films that play as you scroll, the same five
- * steps a new workspace runs), then the prices, then the questions. The ride
- * app's own long page lives at /rides, linked from its slide.
+ * is the studio: how it works (one story in five numbered steps, acted out in a
+ * mock of the console and read by a narrator on request), then the prices, then
+ * the questions. The ride app's own long page lives at /rides, linked from its
+ * slide.
  *
  * The canonical lives here rather than in the root layout: a canonical declared
  * in the layout is inherited by the console and the fleet portal, which would
@@ -49,7 +49,8 @@ const LINKS = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '#pricing', label: 'Pricing' },
   { href: '/rides', label: 'Velocity Rides' },
-  { href: '/studio/start', label: 'Start free' },
+  { href: '/studio/login', label: 'Log in' },
+  { href: '/studio/signup', label: 'Start free' },
 ];
 
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
@@ -143,7 +144,7 @@ const SLIDES: HeroSlide[] = [
           your leads — while you run the shop.
         </p>
         <div className={styles.heroActions}>
-          <Link href="/studio/start" className={`${styles.btn} ${styles.btnLime}`}>
+          <Link href="/studio/signup" className={`${styles.btn} ${styles.btnLime}`}>
             Start free for {STUDIO_TRIAL_HOURS} hours <ArrowRight />
           </Link>
           <a href="#how-it-works" className={`${styles.btn} ${styles.btnGhost}`}>
@@ -156,70 +157,6 @@ const SLIDES: HeroSlide[] = [
         </p>
       </>
     ),
-  },
-];
-
-/** The five steps every new workspace runs, in the order it runs them. */
-const STEPS: StudioStep[] = [
-  {
-    key: 'market',
-    kicker: 'Step 1 · Market analysis',
-    title: 'It reads your market — and listens to you first',
-    body: 'Type what you know about your business and add links: your website, your Instagram, a competitor. The team reads them, searches your market live, and runs a pre-launch audience test — a simulated panel of customers reacts to your offer before you spend a rupee.',
-    points: ['Who buys, and what each kind of buyer wants', 'Who they choose instead, and how you stand out', 'What to change before you launch'],
-    chipLabel: 'Market read',
-    chip: 'Buyers, competitors and an audience test',
-    film: '/site/step1.mp4',
-    poster: '/site/step1.jpg',
-    alt: 'The owner types at her laptop at night while maps, charts and shop photos float around it.',
-  },
-  {
-    key: 'content',
-    kicker: 'Step 2 · Content setup',
-    title: 'A month of content, planned and made ahead',
-    body: 'From that read the team plans 30 days — a goal, the stories it will tell, a theme for every week — and makes the reels, posts and stories ahead of time. Open the calendar any day to read what is coming, change a day, or send a piece back with your notes.',
-    points: ['Reels with voice-over and music', 'Posts, stories and carousels in your look', 'Every day editable before it goes out'],
-    chipLabel: 'Calendar',
-    chip: '30 days filled, one by one',
-    film: '/site/step2.mp4',
-    poster: '/site/step2.jpg',
-    alt: 'A wooden wall calendar fills, square by square, with colourful cards of pastries.',
-  },
-  {
-    key: 'execute',
-    kicker: 'Step 3 · Execute',
-    title: 'Posted every day, at your time',
-    body: 'Pick the hour in your own time zone. The team posts to Instagram and Facebook on its own — or waits for your Approve, if you would rather. It answers comments and learns from what your own audience liked.',
-    points: ['Instagram and Facebook from one sign-in', 'Ask me first, or post directly — your choice', 'Learns from your own best posts'],
-    chipLabel: 'Posting',
-    chip: 'Out at your time, every day',
-    film: '/site/step3.mp4',
-    poster: '/site/step3.jpg',
-    alt: 'A phone on a tripod films honey poured over a croissant, and small hearts float up from its screen.',
-  },
-  {
-    key: 'funnel',
-    kicker: 'Step 4 · Sales funnel',
-    title: 'A funnel, and a Meta Ad Expert that improves it daily',
-    body: 'The team designs the path from a stranger to a sale, and the Meta Ad Expert launches your first campaign inside the daily limit you set. Then it reads the cost, the conversions and the ROAS every day: winners keep running, losers stop, tired ads get a fresh creative.',
-    points: ['Your daily budget limit, enforced in code', 'Judged on sales and leads, not just clicks', 'Reads the market and competitors before every move'],
-    chipLabel: 'Meta Ad Expert',
-    chip: 'Winners kept, losers paused',
-    film: '/site/step4.mp4',
-    poster: '/site/step4.jpg',
-    alt: 'Golden particles stream across a city sky into a glass funnel, which turns them into a row of pink boxes.',
-  },
-  {
-    key: 'close',
-    kicker: 'Step 5 · Lead close',
-    title: 'Leads followed up, replies answered, deals closed',
-    body: 'The sales agent finds businesses that could buy from you, writes each one a short personal email, and follows up twice if nobody answers. When someone writes back, your answer is already drafted — you press send.',
-    points: ['Sent from your own mailbox', 'Two follow-ups, never a third', 'A “no” closes the lead for good'],
-    chipLabel: 'Sales agent',
-    chip: 'Reply in — answer drafted',
-    film: '/site/step5.mp4',
-    poster: '/site/step5.jpg',
-    alt: 'The owner delivers a tall stack of pink boxes to an office manager, who shakes her hand.',
   },
 ];
 
@@ -288,27 +225,7 @@ export default function Home() {
       <main>
         <HeroSlider slides={SLIDES} />
 
-        <StudioScrub />
-
-        {/* ── how it works: five films, played as you scroll to them ─────── */}
-        <section id="how-it-works" className={`${styles.section} ${styles.deep} ${home.how}`}>
-          <div className={styles.wrap}>
-            <Reveal className={styles.sectionHead}>
-              <span className={styles.eyebrow}>
-                <Sparkle />
-                How Velocity Studio works
-              </span>
-              <h2 className={styles.h2}>
-                Five steps. Your team runs them <span className={styles.accent}>on its own.</span>
-              </h2>
-              <p className={styles.lead}>
-                Sign up, connect Instagram and Facebook, and watch: each step starts the moment the one before it is
-                done. You can step in anywhere — or just watch it work.
-              </p>
-            </Reveal>
-            <StudioHow steps={STEPS} />
-          </div>
-        </section>
+        <StudioStory />
 
         <StudioPricing heading="One team. Three ways to hire it." />
         <StudioFaq />
@@ -324,7 +241,7 @@ export default function Home() {
                 <h3>Connect your account. Watch your team work.</h3>
                 <p>The first {STUDIO_TRIAL_HOURS} hours are on us — the market analysis starts the minute you sign up.</p>
                 <div className={home.duoActions}>
-                  <Link href="/studio/start" className={`${styles.btn} ${styles.btnLime}`}>
+                  <Link href="/studio/signup" className={`${styles.btn} ${styles.btnLime}`}>
                     Start free <ArrowRight />
                   </Link>
                   <Link href="/studio" className={`${styles.btn} ${styles.btnGhost}`}>
@@ -366,8 +283,8 @@ export default function Home() {
               <h3>Studio</h3>
               <a href="#how-it-works">How it works</a>
               <a href="#pricing">Pricing</a>
-              <Link href="/studio/start">Start free</Link>
-              <Link href="/login">Sign in</Link>
+              <Link href="/studio/signup">Start free</Link>
+              <Link href="/studio/login">Log in</Link>
             </div>
 
             <div className={styles.footerCol}>

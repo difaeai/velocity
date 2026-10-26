@@ -415,12 +415,17 @@ export default function AiUsagePage() {
                   today’s share, so the content lasts the whole month. Pieces you ask for yourself are never held back. A budget
                   used up stops Gemini until the 1st and the team carries on more plainly. 0 means no cap.
                 </p>
+                <p style={{ color: colors.muted, fontSize: 13, margin: '6px 0 0' }}>
+                  A Studio customer’s month comes from their plan — Sales agents and Content $3, Meta Ad Expert + Everything $5 —
+                  and each credit day they use adds $0.20 on top (they are shown $1 a day). The customer figure below is only the
+                  fallback while a plan cannot be read; a workspace’s own figure beats both.
+                </p>
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 {(
                   [
                     ['houseUsd', 'Velocity’s own desk'],
-                    ['customerUsd', 'Each Studio customer'],
+                    ['customerUsd', 'A customer, plan unknown'],
                   ] as const
                 ).map(([k, label]) => (
                   <label key={k} style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: colors.muted }}>
@@ -451,7 +456,8 @@ export default function AiUsagePage() {
                   </thead>
                   <tbody>
                     {rows.map((r) => {
-                      const cap = r.wid === 'velocity' ? budgets.houseUsd : (budgets.perWorkspace[r.wid] ?? budgets.customerUsd);
+                      // The server's figure carries the plan and the credit days; an unsaved edit here shows at once.
+                      const cap = r.wid === 'velocity' ? budgets.houseUsd : (budgets.perWorkspace[r.wid] ?? r.budgetUsd);
                       const pct = cap > 0 ? Math.min(1, r.usd / cap) : 0;
                       return (
                         <tr key={r.wid} style={{ borderTop: `1px solid ${colors.border}` }}>

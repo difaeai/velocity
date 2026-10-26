@@ -20,7 +20,7 @@ import { getDownloadURL, ref } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
-import { studioApi, type StudioPaymentDoc } from '@/lib/api';
+import { studioApi, studioPaymentLabel, type StudioPaymentDoc } from '@/lib/api';
 import { PKR_PER_USD, STUDIO_PLANS } from '@/lib/studio';
 import { Button, Card } from '@/components/ui';
 import { VerdictBadge, VerdictChecks } from '@/components/social/studioVerdict';
@@ -75,7 +75,7 @@ export default function StudioPaymentsPage() {
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ minWidth: 110, color: colors.muted }}>{day(p.createdAtMs)}</span>
                 <span style={{ flex: 1 }}>
-                  {p.business} · {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
+                  {p.business} · {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
                   {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
                 </span>
@@ -142,8 +142,10 @@ function PendingRow({ payment: p }: { payment: StudioPaymentDoc }) {
         <div>
           {p.kind === 'agents' && p.agents
             ? `AI agents package (${p.agents.callsPerDay} calls a day, ${p.agents.numbers} number${p.agents.numbers === 1 ? '' : 's'})`
-            : `${STUDIO_PLANS[p.plan].name} plan`}{' '}
-          · <strong>{p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
+            : p.kind === 'credits'
+              ? `Credits — ${p.credits} days of the team's work`
+              : `${STUDIO_PLANS[p.plan].name} plan`}{' '}
+          · <strong>{p.kind === 'credits' ? '$1 a day' : p.billing === 'year' ? 'a year' : 'a month'}</strong> ·{' '}
           <strong>${p.amountUsd}</strong> (Rs {asked.toLocaleString('en-PK')}) · sent {day(p.createdAtMs)}
         </div>
         <div>

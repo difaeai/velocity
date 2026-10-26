@@ -1765,11 +1765,20 @@ export interface StudioPaymentDoc {
   note: string | null;
   /** What the AI check read off the receipt. Null while it runs; absent on payments sent before it existed. */
   analysis?: StudioPaymentAnalysis | null;
-  /** A month of AI agents rather than a plan; `plan` is then the plan the workspace already had. */
-  kind?: 'agents';
+  /** A month of AI agents, or credit days, rather than a plan; `plan` is then the plan the workspace already had. */
+  kind?: 'agents' | 'credits';
   agents?: AgentPackage;
-  /** What was asked in rupees, when it was not the plan price (an agent package). */
+  /** Credit days bought, a dollar each. */
+  credits?: number;
+  /** What was asked in rupees, when it was not the plan price (an agent package, credits). */
   amountPkr?: number;
+}
+
+/** What a Studio payment bought, in words. */
+export function studioPaymentLabel(p: Pick<StudioPaymentDoc, 'kind' | 'credits' | 'plan'>, planName: string): string {
+  if (p.kind === 'agents') return 'AI agents package';
+  if (p.kind === 'credits') return `Credits · ${p.credits} day${p.credits === 1 ? '' : 's'}`;
+  return planName;
 }
 
 /** Mirrors `PaymentAnalysis` in backend/functions/src/studio/paymentCheck.ts. */
@@ -2162,10 +2171,19 @@ export const studioApi = {
     { ok: boolean; workspaceId: string; trialEndsAtMs: number }
   >('studioCreateWorkspace'),
   submitPayment: callable<
-    // A plan, or a month of AI agents (`agents`) — never both.
-    { plan?: StudioPlanId; billing?: StudioBilling; agents?: AgentPackage; txnId: string; screenshotPath: string },
+    // A plan, a month of AI agents (`agents`) or credit days (`credits`) — exactly one.
+    {
+      plan?: StudioPlanId;
+      billing?: StudioBilling;
+      agents?: AgentPackage;
+      credits?: number;
+      txnId: string;
+      screenshotPath: string;
+    },
     { ok: boolean; paymentId: string }
   >('studioSubmitPayment'),
+  /** This month's AI work as a share of the allowance — never a dollar of real cost. */
+  usage: callable<Record<string, never>, { month: string; usedPct: number; creditDaysThisMonth: number }>('studioUsage'),
   decidePayment: callable<{ paymentId: string; approve: boolean; note?: string }, { ok: boolean; status: string }>(
     'adminDecideStudioPayment',
   ),

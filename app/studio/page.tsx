@@ -12,7 +12,7 @@ import s from './studio.module.css';
 /**
  * Velocity Studio's sales page. Static and Firebase-free on purpose: it lives
  * outside the (app) route group, and its prices come from lib/studio.ts, which
- * imports nothing. Sign-up is /studio/start, inside the console.
+ * imports nothing. Sign-up is /studio/signup, inside the console.
  *
  * No invented numbers anywhere: no customer counts, ratings or "x% more reach".
  * Every claim here is something the product does.
@@ -70,7 +70,7 @@ export default function StudioPage() {
             <a href="#pricing" className={s.topHide}>
               Pricing
             </a>
-            <Link href="/login">Sign in</Link>
+            <Link href="/studio/login">Log in</Link>
           </nav>
         </div>
       </header>
@@ -90,7 +90,7 @@ export default function StudioPage() {
               your Meta ads and finds you new customers. Connect your account — and watch.
             </p>
             <div className={s.heroActions}>
-              <Link href="/studio/start" className={`${site.btn} ${site.btnLime}`}>
+              <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
                 Start free for {STUDIO_TRIAL_HOURS} hours <ArrowRight />
               </Link>
               <a href="#pricing" className={`${site.btn} ${site.btnGhost}`}>
@@ -206,7 +206,7 @@ export default function StudioPage() {
           <h2 className={site.h2}>Connect your account. Watch the magic.</h2>
           <p className={`${site.lead} ${site.center}`}>The first {STUDIO_TRIAL_HOURS} hours are on us.</p>
           <div className={s.heroActions} style={{ justifyContent: 'center' }}>
-            <Link href="/studio/start" className={`${site.btn} ${site.btnLime}`}>
+            <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
               Start free <ArrowRight />
             </Link>
           </div>

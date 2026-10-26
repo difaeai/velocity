@@ -16,7 +16,8 @@
  *    (`paymentCheck.ts`) so the admin sees what it says before opening it.
  * 3. **Approving.** An admin checks the money arrived and approves: the plan is
  *    set to what was paid for and a month (or a year) is added; days still paid
- *    on another plan carry over at their worth (`paidAfter`). Rejecting frees the
+ *    on another plan carry over at their worth (`paidAfter`). Credits add days
+ *    to the balance `credits.ts` spends from. Rejecting frees the
  *    transaction ID and the screenshot so an honest mistake can be sent again.
  * 4. **Managing.** Admins extend a trial, give days, change a plan, pause or
  *    resume a workspace and keep a note on it (`adminManageStudioCustomer`). The
@@ -37,8 +38,12 @@ import { checkStudioPayment } from './paymentCheck';
 import { quote, type AgentPackage, type AgentPlan } from '../agents/billing';
 import { packageSchema, planFrom } from '../agents';
 import { rateCard } from '../agents/store';
+import { pktDay } from './credits';
 import {
+  CREDIT_DAY_USD,
+  CREDIT_PACKS,
   PERIOD_MS,
+  PKR_PER_USD,
   PLAN_IDS,
   PLANS,
   TRIAL_MS,
@@ -134,6 +139,9 @@ export const studioCreateWorkspace = onCall(async (req) => {
       angles: STUDIO_ANGLES,
       competitors: [],
       brief: { ...EMPTY_BRIEF, about: aboutFrom(s) },
+      // Studio sells comment replies as fully automatic; safety comments still wait for a person.
+      engagementEnabled: true,
+      autoReply: true,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: ctx.uid,
     });
@@ -165,13 +173,19 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
       billing: z.enum(['month', 'year']).optional().default('month'),
       /** A month of AI calling and WhatsApp instead of a plan, priced from the rate card. */
       agents: packageSchema.optional(),
+      /** Credit days instead of a plan: one of the packs, a dollar a day. */
+      credits: z
+        .number()
+        .int()
+        .refine((n) => (CREDIT_PACKS as readonly number[]).includes(n))
+        .optional(),
       txnId: text(60).optional().default(''),
       screenshotPath: text(300).optional().default(''),
     })
-    .refine((d) => Boolean(d.plan) !== Boolean(d.agents))
+    .refine((d) => [d.plan, d.agents, d.credits].filter(Boolean).length === 1)
     .safeParse(req.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Choose a plan.');
-  const { billing, agents, txnId, screenshotPath } = parsed.data;
+  const { billing, agents, credits, txnId, screenshotPath } = parsed.data;
   const key = txnKey(txnId);
   // Both, always: the ID is what can be claimed once, the screenshot what the check reads.
   if (!screenshotPath || key.length < 6) {
@@ -207,9 +221,10 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
       business: ws.name,
       email: ws.ownerEmail,
       plan,
-      billing: agents ? 'month' : billing,
-      amountUsd: agentQuote ? agentQuote.priceUsd : priceUsd(plan, billing),
+      billing: agents || credits ? 'month' : billing,
+      amountUsd: agentQuote ? agentQuote.priceUsd : credits ? credits * CREDIT_DAY_USD : priceUsd(plan, billing),
       ...(agents && agentQuote ? { kind: 'agents', agents, amountPkr: agentQuote.pricePkr } : {}),
+      ...(credits ? { kind: 'credits', credits, amountPkr: credits * CREDIT_DAY_USD * PKR_PER_USD } : {}),
       txnId,
       txnKey: key,
       screenshotPath,
@@ -245,8 +260,9 @@ export const adminDecideStudioPayment = onCall(async (req) => {
           status: string;
           txnKey: string | null;
           imageSha?: string | null;
-          kind?: 'agents';
+          kind?: 'agents' | 'credits';
           agents?: AgentPackage;
+          credits?: number;
           amountUsd?: number;
         }
       | undefined;
@@ -271,6 +287,20 @@ export const adminDecideStudioPayment = onCall(async (req) => {
       tx.update(payRef, decided);
       tx.update(wsRef, { agentPlan: planFrom(pay.agents, card, until, ctx.uid, now, pay.amountUsd) });
       return { ok: true, status: 'approved', paidUntilMs: until };
+    }
+    // Credit days: added to the balance; `studio/credits.ts` spends them when the team would stop.
+    if (pay.kind === 'credits' && pay.credits) {
+      tx.update(payRef, decided);
+      tx.update(wsRef, { creditDays: FieldValue.increment(pay.credits) });
+      tx.set(wsRef.collection('creditLog').doc(), {
+        atMs: now,
+        day: pktDay(now),
+        days: pay.credits,
+        usd: pay.credits * CREDIT_DAY_USD,
+        why: 'bought',
+        paymentId,
+      });
+      return { ok: true, status: 'approved', creditDays: (ws.creditDays ?? 0) + pay.credits };
     }
     // Payments sent before yearly billing existed have no `billing`: they were monthly.
     const paidUntilMs = paidAfter(ws, pay.plan, now, pay.billing === 'year' ? YEAR_MS : PERIOD_MS);

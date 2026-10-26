@@ -23,6 +23,7 @@ import { overBudget, warmAi } from '../ai/config';
 import { db } from '../lib/firebase';
 import { isDocId, requireAuth } from '../lib/guards';
 import { canUse, refusal, type Need, type Workspace } from '../studio/plans';
+import { creditDue, spendCreditDay } from '../studio/credits';
 import { modelReady } from './engine';
 import { HOUSE, currentWorkspace, scope } from './scope';
 
@@ -66,17 +67,21 @@ export async function deskWorkspace(req: CallableRequest, need: Need): Promise<s
   if (typeof wid !== 'string' || !isDocId(wid) || wid === HOUSE) {
     throw new HttpsError('permission-denied', 'This account has no Velocity Studio workspace. Sign up at /studio.');
   }
-  const ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
+  let ws = (await workspaceRef(wid).get()).data() as Workspace | undefined;
   if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
+  await warmAi(wid);
+  // A plan run out, or a month's AI used up, with credits left: today goes on credit now, not at the next sweep.
+  if (creditDue(ws, Date.now(), overBudget(wid)) && (await spendCreditDay(wid))) {
+    ws = (await workspaceRef(wid).get()).data() as Workspace;
+  }
   const no = refusal(ws, need, Date.now());
   if (no) throw new HttpsError('failed-precondition', no);
   // The key-free local engine only knows Velocity; a customer's desk needs a model.
-  await warmAi(wid);
   if (!modelReady(wid)) {
     throw new HttpsError(
       'unavailable',
       overBudget(wid)
-        ? 'This month’s AI allowance for your workspace is used up. It starts again on the 1st — or ask Velocity for more.'
+        ? 'This month’s AI work for your workspace is used up. Buy credits on the Billing page to carry on today — or it starts again on the 1st.'
         : 'The AI team is offline for a moment. Try again shortly.',
     );
   }

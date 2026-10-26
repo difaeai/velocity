@@ -12,13 +12,30 @@
 export type PlanId = 'sales' | 'content' | 'ads' | 'all';
 export type Need = 'content' | 'ads' | 'sales' | 'any';
 
-export const PLANS: Record<PlanId, { name: string; usd: number; can: Exclude<Need, 'any'>[] }> = {
-  sales: { name: 'Sales agents', usd: 17, can: ['sales'] },
-  content: { name: 'Content', usd: 24, can: ['content'] },
+/**
+ * `aiUsd` is the Gemini a plan may spend in a month, in real dollars — the
+ * allowance `ai/config.ts` caps and paces. Server-only: the customer never sees
+ * it. Content's 30 days of reels, posts, carousels and comment replies fit in
+ * $3; the Meta Ad Expert's daily reads of every campaign take it to $5.
+ */
+export const PLANS: Record<PlanId, { name: string; usd: number; aiUsd: number; can: Exclude<Need, 'any'>[] }> = {
+  sales: { name: 'Sales agents', usd: 17, aiUsd: 3, can: ['sales'] },
+  content: { name: 'Content', usd: 24, aiUsd: 3, can: ['content'] },
   // No longer sold: kept so a workspace already on it keeps working.
-  ads: { name: 'Meta Ad Expert (ads only)', usd: 24, can: ['ads'] },
-  all: { name: 'Meta Ad Expert + Everything', usd: 32, can: ['content', 'ads', 'sales'] },
+  ads: { name: 'Meta Ad Expert (ads only)', usd: 24, aiUsd: 5, can: ['ads'] },
+  all: { name: 'Meta Ad Expert + Everything', usd: 32, aiUsd: 5, can: ['content', 'ads', 'sales'] },
 };
+
+/**
+ * Credits: the team's work bought a day at a time, on top of a plan. $5 buys
+ * five days; each day the team works on credit, the customer sees $1 spent.
+ * Mirrored in lib/studio.ts.
+ */
+export const CREDIT_DAY_USD = 1;
+/** What one credit day may spend on Gemini. The rest of the dollar is the margin; never shown to a customer. */
+export const CREDIT_DAY_AI_USD = 0.2;
+/** The packs on sale, in days (one day = one dollar). Mirrored in lib/studio.ts. */
+export const CREDIT_PACKS = [5, 10, 20] as const;
 
 /** The plans on sale, left to right as the pricing page shows them. */
 export const PLAN_IDS: PlanId[] = ['sales', 'content', 'all'];
@@ -73,6 +90,10 @@ export interface Workspace {
   brand: Brand;
   /** Paused by a Velocity admin: no desk, no schedules, whatever is paid. */
   suspended?: boolean;
+  /** Credit days bought and not yet used (`studio/credits.ts`). */
+  creditDays?: number;
+  /** The Pakistan day (`YYYY-MM-DD`) the last credit day was spent: one a day at most. */
+  creditDayOn?: string;
 }
 
 /** Whether this workspace may do this, now. */
@@ -96,8 +117,8 @@ export function refusal(
   if (ws.suspended) return 'Velocity has paused this workspace. Email business@velocityrides.app to sort it out.';
   if (Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs) {
     return ws.paidUntilMs
-      ? 'Your Velocity Studio plan has run out. Pay for the next month on the Billing page to carry on.'
-      : 'Your free day is over. Choose a plan and pay on the Billing page to carry on.';
+      ? 'Your Velocity Studio plan has run out. Pay for the next month — or buy credits, $1 a day — on the Billing page to carry on.'
+      : 'Your free day is over. Choose a plan — or buy credits, $1 a day — on the Billing page to carry on.';
   }
   const what = need === 'ads' ? 'the Meta Ad Expert' : need === 'sales' ? 'the sales agent' : 'the content team';
   return `Your ${PLANS[ws.plan].name} plan does not include ${what}. Upgrade on the Billing page.`;

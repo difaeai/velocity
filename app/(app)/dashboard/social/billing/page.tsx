@@ -1,26 +1,38 @@
 'use client';
 
 /**
- * Velocity Studio → Plan & billing.
+ * Velocity Studio → Checkout. What is being bought comes in the URL from the
+ * Plans page — `?plan=content&billing=year`, `?credits=5`, or an AI agents
+ * package from the Sales page (`?agents=1&numbers=1&calls=20&min=2&wa=300`).
  *
- * Where a customer sees what they are on and until when, and pays. There is no
- * card gateway yet: they send the money to the receiving accounts on file
- * (the same `config/settlementAccounts` the driver top-ups use), then tell us
- * with the receipt screenshot and the transaction ID — both. Our AI reads the
- * receipt the moment it arrives; an admin checks the money arrived and
- * approves, and the month starts then.
+ * There is no card gateway yet: the customer sends the money to the receiving
+ * accounts on file (the same `config/settlementAccounts` the driver top-ups
+ * use), then tells us with the receipt screenshot and the transaction ID —
+ * both. Our AI reads the receipt the moment it arrives; an admin checks the
+ * money arrived and approves, and the plan (or the credits) starts then.
  */
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
-import { colors } from '@/lib/config';
-import { agentPrice, agentsApi, studioApi, type AgentPackage, type AgentState, type StudioPaymentDoc } from '@/lib/api';
+import {
+  agentPrice,
+  agentsApi,
+  studioApi,
+  studioPaymentLabel,
+  type AgentPackage,
+  type AgentState,
+  type StudioPaymentDoc,
+} from '@/lib/api';
 import {
   PKR_PER_USD,
+  STUDIO_CREDIT_DAY_USD,
+  STUDIO_CREDIT_PACKS,
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
@@ -30,7 +42,7 @@ import {
   type StudioBilling,
   type StudioPlanId,
 } from '@/lib/studio';
-import { Button, Card } from '@/components/ui';
+import a from '../account.module.css';
 
 interface ReceivingAccounts {
   easypaisaNumber?: string;
@@ -40,36 +52,52 @@ interface ReceivingAccounts {
   accountTitle?: string;
 }
 
-export default function BillingPage() {
+type Method = { key: string; label: string; value: string };
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={null}>
+      <Checkout />
+    </Suspense>
+  );
+}
+
+function Checkout() {
   const { wid, ws } = useWorkspace();
-  const [plan, setPlan] = useState<StudioPlanId | null>(null);
-  const [billing, setBilling] = useState<StudioBilling>('month');
+  const params = useSearchParams();
+  const askedPlan = params.get('plan') as StudioPlanId | null;
+  const askedCredits = Number(params.get('credits'));
+  const [plan, setPlan] = useState<StudioPlanId | null>(askedPlan && STUDIO_PLAN_IDS.includes(askedPlan) ? askedPlan : null);
+  const [billing, setBilling] = useState<StudioBilling>(params.get('billing') === 'year' ? 'year' : 'month');
+  const [credits, setCredits] = useState<number | null>(
+    (STUDIO_CREDIT_PACKS as readonly number[]).includes(askedCredits) ? askedCredits : null,
+  );
   const [accounts, setAccounts] = useState<ReceivingAccounts | null>(null);
+  const [method, setMethod] = useState<string | null>(null);
   const [payments, setPayments] = useState<StudioPaymentDoc[]>([]);
   const [txnId, setTxnId] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  // An AI agents package chosen on the Sales page arrives as ?agents=1&numbers=1&calls=20&min=2&wa=300.
-  const [askedPkg, setAgentPkg] = useState<AgentPackage | null>(null);
   const [agentCard, setAgentCard] = useState<Pick<AgentState, 'price' | 'usdToPkr'> | null>(null);
 
+  // An AI agents package chosen on the Sales page.
+  const n = (k: string, d: number) => Math.max(0, Number(params.get(k)) || d);
+  const askedPkg: AgentPackage | null = params.get('agents')
+    ? { agents: n('agents', 1), numbers: n('numbers', 1), callsPerDay: n('calls', 10), avgCallMin: n('min', 2), waMessagesPerMonth: n('wa', 0) }
+    : null;
+  const wantsAgents = Boolean(askedPkg);
+
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    if (!q.get('agents')) return;
-    const n = (k: string, d: number) => Math.max(0, Number(q.get(k)) || d);
-    const t = setTimeout(
-      () =>
-        setAgentPkg({ agents: n('agents', 1), numbers: n('numbers', 1), callsPerDay: n('calls', 10), avgCallMin: n('min', 2), waMessagesPerMonth: n('wa', 0) }),
-      0,
-    );
+    if (!wantsAgents) return;
     agentsApi
       .state({})
       .then((s) => setAgentCard({ price: s.price, usdToPkr: s.usdToPkr }))
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not read the agent prices.'));
-    return () => clearTimeout(t);
-  }, []);
+  }, [wantsAgents]);
 
   useEffect(() => {
     getDoc(doc(db, 'config', 'settlementAccounts'))
@@ -80,12 +108,13 @@ export default function BillingPage() {
   useEffect(() => {
     if (!wid) return;
     // Filtered by workspace only, sorted here: no composite index for a list this short.
-    return onSnapshot(query(collection(db, 'studioPayments'), where('wid', '==', wid)), (snap) =>
-      setPayments(
-        snap.docs
-          .map((d) => ({ ...(d.data() as StudioPaymentDoc), id: d.id }))
-          .sort((a, b) => b.createdAtMs - a.createdAtMs),
-      ),
+    return onSnapshot(
+      query(collection(db, 'studioPayments'), where('wid', '==', wid)),
+      (snap) =>
+        setPayments(
+          snap.docs.map((d) => ({ ...(d.data() as StudioPaymentDoc), id: d.id })).sort((x, y) => y.createdAtMs - x.createdAtMs),
+        ),
+      () => setPayments([]),
     );
   }, [wid]);
 
@@ -95,24 +124,35 @@ export default function BillingPage() {
     return () => clearTimeout(t);
   }, []);
 
-  if (!wid || !ws) {
-    return <p style={{ color: colors.muted }}>Billing is for Velocity Studio workspaces.</p>;
-  }
+  if (!wid || !ws) return <p className={a.muted}>Checkout is for Velocity Studio workspaces.</p>;
 
-  const chosen = plan ?? ws.plan;
-  // The agents work from the Sales page, so only the plan with it can buy a package (the server says the same).
-  const agentsOk = planIncludes(ws.plan, 'sales');
-  const agentPkg = agentsOk ? askedPkg : null;
+  // The agents work from the Sales page, so only a plan with it can buy a package (the server says the same).
+  const agentPkg = askedPkg && planIncludes(ws.plan, 'sales') ? askedPkg : null;
   const agentQuote = agentPkg && agentCard ? agentPrice(agentPkg, agentCard.price, agentCard.usdToPkr) : null;
-  const amount = agentPkg ? (agentQuote?.usd ?? 0) : studioPriceUsd(chosen, billing);
-  const amountPkr = agentPkg ? (agentQuote?.pkr ?? 0) : amount * PKR_PER_USD;
+  const kind: 'agents' | 'credits' | 'plan' = agentPkg ? 'agents' : credits ? 'credits' : 'plan';
+  // A workspace on a plan no longer sold (ads only) is offered the whole team.
+  const chosen = plan ?? (STUDIO_PLAN_IDS.includes(ws.plan) ? ws.plan : 'all');
+  const P = STUDIO_PLANS[chosen];
+  const amount = kind === 'agents' ? (agentQuote?.usd ?? 0) : kind === 'credits' ? (credits ?? 0) * STUDIO_CREDIT_DAY_USD : studioPriceUsd(chosen, billing);
+  const amountPkr = kind === 'agents' ? (agentQuote?.pkr ?? 0) : amount * PKR_PER_USD;
   const pending = payments.find((p) => p.status === 'pending');
-  const until = Math.max(ws.trialEndsAtMs, ws.paidUntilMs);
-  const live = nowMs > 0 && until > nowMs;
-  const onTrial = ws.paidUntilMs <= nowMs && ws.trialEndsAtMs > nowMs;
+  const paidNow = nowMs > 0 && ws.paidUntilMs > nowMs;
+  const onTrial = nowMs > 0 && !paidNow && ws.trialEndsAtMs > nowMs;
   // Switching plans while days are still paid: say what those days become before anyone pays.
   const daysLeft = nowMs > 0 ? Math.floor((ws.paidUntilMs - nowMs) / 86_400_000) : 0;
-  const switchUntil = !agentPkg && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
+  const switchUntil = kind === 'plan' && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
+
+  const methods: Method[] = accounts
+    ? [
+        accounts.easypaisaNumber ? { key: 'ep', label: 'EasyPaisa', value: accounts.easypaisaNumber } : null,
+        accounts.jazzcashNumber ? { key: 'jc', label: 'JazzCash', value: accounts.jazzcashNumber } : null,
+        accounts.bankIban ? { key: 'bank', label: accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer', value: accounts.bankIban } : null,
+      ].filter((m): m is Method => m !== null)
+    : [];
+  const picked = methods.find((m) => m.key === method) ?? methods[0];
+
+  const title =
+    kind === 'agents' ? 'Your AI agents package' : kind === 'credits' ? 'Add credits' : chosen === ws.plan && paidNow ? `Renew ${P.name}` : `Upgrade to ${P.name}`;
 
   async function send() {
     setBusy(true);
@@ -121,14 +161,20 @@ export default function BillingPage() {
     try {
       if (!file) throw new Error('Attach the receipt screenshot.');
       if (file.size > 10 * 1024 * 1024) throw new Error('That picture is over 10 MB.');
-      const screenshotPath = `workspaces/${wid}/payments/${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
+      const screenshotPath = receiptPath(wid as string, file.name);
       await uploadBytes(ref(storage, screenshotPath), file, { contentType: file.type || 'image/jpeg' });
+      const proof = { txnId: txnId.trim(), screenshotPath };
       await studioApi.submitPayment(
-        agentPkg ? { agents: agentPkg, txnId: txnId.trim(), screenshotPath } : { plan: chosen, billing, txnId: txnId.trim(), screenshotPath },
+        kind === 'agents' && agentPkg
+          ? { agents: agentPkg, ...proof }
+          : kind === 'credits'
+            ? { credits: credits ?? 0, ...proof }
+            : { plan: chosen, billing, ...proof },
       );
       setTxnId('');
       setFile(null);
-      setNotice('Thank you — we will check the payment and switch your plan on, usually within a few hours.');
+      setAgreed(false);
+      setNotice('Thank you — we are checking the payment. It switches on as soon as it is approved, usually within a few hours.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
     } finally {
@@ -136,230 +182,235 @@ export default function BillingPage() {
     }
   }
 
+  function copy(m: Method) {
+    void navigator.clipboard?.writeText(m.value).then(() => {
+      setCopied(m.key);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  }
+
+  const ready = Boolean(file) && txnId.trim().length >= 6 && agreed && amount > 0 && methods.length > 0;
+
   return (
-    <div style={{ display: 'grid', gap: 16, maxWidth: 860 }}>
-      <header>
-        <h1 style={{ fontSize: 24, fontWeight: 900, margin: '0 0 4px' }}>Plan &amp; billing</h1>
-        <p style={{ color: colors.muted, margin: 0 }}>
-          {ws.name} is on the <strong style={{ color: colors.text }}>{STUDIO_PLANS[ws.plan].name}</strong> plan —{' '}
-          {nowMs === 0
-            ? '…'
-            : !live
-              ? 'paused: nothing is paid for right now.'
-              : onTrial
-                ? `free trial until ${when(ws.trialEndsAtMs)}.`
-                : `paid until ${when(ws.paidUntilMs)}.`}
-        </p>
-      </header>
-
-      {error ? <p style={{ color: colors.danger, margin: 0 }}>{error}</p> : null}
-      {notice ? <p style={{ color: colors.success, margin: 0 }}>{notice}</p> : null}
-      {askedPkg && !agentsOk ? (
-        <p style={{ color: colors.warn, margin: 0 }}>
-          AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Pay for one of them below first,
-          then add the package from the Sales page.
-        </p>
-      ) : null}
-
-      {agentPkg ? (
-        <Card>
-          <h2 style={h2}>1. Your AI agents package</h2>
-          <p style={{ margin: '0 0 8px', fontSize: 14 }}>
-            {agentPkg.agents} AI agent{agentPkg.agents === 1 ? '' : 's'} · {agentPkg.numbers} phone number{agentPkg.numbers === 1 ? '' : 's'} ·{' '}
-            {agentPkg.callsPerDay} calls a day (about {agentQuote?.minutes.toLocaleString('en-PK') ?? '…'} minutes a month) ·{' '}
-            {agentPkg.waMessagesPerMonth} WhatsApp messages — for 30 days.
-          </p>
-          <button
-            type="button"
-            onClick={() => setAgentPkg(null)}
-            style={{ border: 'none', background: 'none', padding: 0, color: colors.secondary, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            Pay for my Studio plan instead
-          </button>
-        </Card>
-      ) : (
-      <Card>
-        <h2 style={h2}>1. Choose the plan to pay for</h2>
-        <div role="radiogroup" aria-label="Pay for" style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          {(['month', 'year'] as const).map((b) => (
-            <button
-              key={b}
-              type="button"
-              role="radio"
-              aria-checked={billing === b}
-              onClick={() => setBilling(b)}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 999,
-                border: `${billing === b ? 2 : 1}px solid ${billing === b ? colors.primary : colors.border}`,
-                background: colors.surface,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontWeight: 800,
-                color: colors.text,
-              }}
-            >
-              {b === 'month' ? 'A month' : `A year — save ${STUDIO_YEAR_DISCOUNT_PCT}%`}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }} role="radiogroup">
-          {STUDIO_PLAN_IDS.map((id) => {
-            const p = STUDIO_PLANS[id];
-            const on = id === chosen;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setPlan(id)}
-                style={{
-                  textAlign: 'left',
-                  padding: 14,
-                  borderRadius: 14,
-                  border: `${on ? 2 : 1}px solid ${on ? colors.primary : colors.border}`,
-                  background: colors.surface,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  color: colors.text,
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
-                  <strong>{p.name}</strong>
-                  <span style={{ marginLeft: 'auto', fontWeight: 900, fontSize: 18 }}>${studioPriceUsd(id, billing)}</span>
-                  <span style={{ fontSize: 12, color: colors.muted }}>/{billing}</span>
-                </span>
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>
-                  {p.includes.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </button>
-            );
-          })}
-        </div>
-        {switchUntil ? (
-          <p style={{ margin: '12px 0 0', fontSize: 13.5, color: colors.muted, lineHeight: 1.5 }}>
-            Your {daysLeft} day{daysLeft === 1 ? '' : 's'} left on {STUDIO_PLANS[ws.plan].name} carry over at what they are worth,
-            on top of the {billing === 'year' ? 'year' : 'month'} you pay for now:{' '}
-            <strong style={{ color: colors.text }}>
-              {STUDIO_PLANS[chosen].name} until {when(switchUntil)}
-            </strong>
-            .
-          </p>
-        ) : null}
-      </Card>
-      )}
-
-      <Card>
-        <h2 style={h2}>
-          2. Send ${amount} (about Rs {amountPkr.toLocaleString('en-PK')})
-          {!agentPkg && billing === 'year' ? ` for a year — you save $${STUDIO_PLANS[chosen].usd * 12 - amount}` : ''}
-        </h2>
-        {accounts === null ? (
-          <p style={{ color: colors.muted, margin: 0 }}>Loading where to pay…</p>
-        ) : !accounts.easypaisaNumber && !accounts.jazzcashNumber && !accounts.bankIban ? (
-          <p style={{ color: colors.warn, margin: 0 }}>
-            Payment details are being set up. Email business@velocityrides.app and we will send them.
-          </p>
-        ) : (
-          <div style={{ display: 'grid', gap: 8, fontSize: 14 }}>
-            {accounts.easypaisaNumber ? <Pay label="EasyPaisa" value={accounts.easypaisaNumber} title={accounts.accountTitle} /> : null}
-            {accounts.jazzcashNumber ? <Pay label="JazzCash" value={accounts.jazzcashNumber} title={accounts.accountTitle} /> : null}
-            {accounts.bankIban ? (
-              <Pay label={accounts.bankName ? `Bank — ${accounts.bankName}` : 'Bank transfer'} value={accounts.bankIban} title={accounts.accountTitle} />
-            ) : null}
+    <div className={a.wrap}>
+      <div className={a.checkout}>
+        <section>
+          <div className={a.colHead}>
+            <Link href="/dashboard/social/upgrade" className={a.back}>
+              ← All plans
+            </Link>
+            <h1 className={a.h1}>{title}</h1>
+            <p className={a.lead}>
+              {kind === 'credits'
+                ? `$${STUDIO_CREDIT_DAY_USD} buys a day of your team's work. Days are used one at a time, only when your plan has run out or this month's AI work is used up.`
+                : kind === 'agents'
+                  ? 'AI calling and WhatsApp for 30 days, on top of your plan.'
+                  : P.tagline}
+            </p>
           </div>
-        )}
-      </Card>
 
-      <Card>
-        <h2 style={h2}>3. Tell us you paid</h2>
-        {pending ? (
-          <p style={{ margin: 0, fontSize: 14 }}>
-            We have your payment for {pending.kind === 'agents' ? 'the ' : pending.billing === 'year' ? 'a year of the ' : 'the '}
-            <strong>{pending.kind === 'agents' ? 'AI agents package' : `${STUDIO_PLANS[pending.plan].name} plan`}</strong>, sent{' '}
-            {when(pending.createdAtMs)}. It is being checked — it switches on as soon as it is approved.
-          </p>
-        ) : (
-          <div style={{ display: 'grid', gap: 10 }}>
-            <label style={label}>
-              Receipt screenshot
-              <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            <label style={label}>
-              Transaction ID
-              <input
-                value={txnId}
-                onChange={(e) => setTxnId(e.target.value)}
-                placeholder="from the receipt, e.g. 0123456789"
-                style={input}
-              />
-            </label>
-            <div>
-              <Button onClick={send} disabled={busy || !file || txnId.trim().length < 6 || (agentPkg !== null && !agentQuote)}>
-                {busy
-                  ? 'Sending — our AI is reading the receipt…'
-                  : agentPkg
-                    ? 'I paid for the AI agents package'
-                    : `I paid for ${billing === 'year' ? 'a year of ' : ''}${STUDIO_PLANS[chosen].name}`}
-              </Button>
+          {askedPkg && !agentPkg ? (
+            <p className={a.error}>
+              AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Pay for one of them first, then add the
+              package from the Sales page.
+            </p>
+          ) : null}
+
+          <h2 className={a.label}>{kind === 'credits' ? 'How many days' : kind === 'agents' ? 'Package' : 'Plan details'}</h2>
+          {kind === 'plan' ? (
+            <>
+              <div className={a.options} role="radiogroup" aria-label="Billing">
+                {(['month', 'year'] as const).map((b) => (
+                  <button key={b} type="button" role="radio" aria-checked={billing === b} className={a.option} onClick={() => setBilling(b)}>
+                    {b === 'year' ? <em>Save {STUDIO_YEAR_DISCOUNT_PCT}%</em> : null}
+                    <b>{b === 'month' ? 'Monthly' : 'Yearly'}</b>
+                    <span>
+                      ${studioPriceUsd(chosen, b)} · billed {b === 'month' ? 'every 30 days' : 'once for 365 days'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className={a.options} role="radiogroup" aria-label="Plan" style={{ marginTop: 12 }}>
+                {STUDIO_PLAN_IDS.map((id) => (
+                  <button key={id} type="button" role="radio" aria-checked={id === chosen} className={a.option} onClick={() => setPlan(id)}>
+                    <b>{STUDIO_PLANS[id].name}</b>
+                    <span>${studioPriceUsd(id, billing)} / {billing}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : kind === 'credits' ? (
+            <div className={a.options} role="radiogroup" aria-label="Credits">
+              {STUDIO_CREDIT_PACKS.map((d) => (
+                <button key={d} type="button" role="radio" aria-checked={credits === d} className={a.option} onClick={() => setCredits(d)}>
+                  <b>{d} days</b>
+                  <span>${d * STUDIO_CREDIT_DAY_USD} · ${STUDIO_CREDIT_DAY_USD} a day</span>
+                </button>
+              ))}
+            </div>
+          ) : agentPkg ? (
+            <div className={a.box}>
+              <p style={{ fontSize: 14, lineHeight: 1.55 }}>
+                {agentPkg.agents} AI agent{agentPkg.agents === 1 ? '' : 's'} · {agentPkg.numbers} phone number
+                {agentPkg.numbers === 1 ? '' : 's'} · {agentPkg.callsPerDay} calls a day (about{' '}
+                {agentQuote?.minutes.toLocaleString('en-PK') ?? '…'} minutes a month) · {agentPkg.waMessagesPerMonth} WhatsApp
+                messages — for 30 days.
+              </p>
+            </div>
+          ) : null}
+
+          <h2 className={a.label}>Payment method</h2>
+          {accounts === null ? (
+            <p className={a.muted}>Loading where to pay…</p>
+          ) : !methods.length ? (
+            <p className={a.error}>Payment details are being set up. Email business@velocityrides.app and we will send them.</p>
+          ) : (
+            <div className={a.box}>
+              <div className={a.methods} role="radiogroup" aria-label="Pay with">
+                {methods.map((m) => (
+                  <button key={m.key} type="button" role="radio" aria-checked={picked?.key === m.key} className={a.method} onClick={() => setMethod(m.key)}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {picked ? (
+                <div className={a.account}>
+                  <span>
+                    <small>Send Rs {amountPkr.toLocaleString('en-PK')} to</small>
+                    <code>{picked.value}</code>
+                    {accounts.accountTitle ? <small>{accounts.accountTitle}</small> : null}
+                  </span>
+                  <button type="button" className={a.copy} onClick={() => copy(picked)}>
+                    {copied === picked.key ? 'Copied ✓' : 'Copy'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <h2 className={a.label}>Proof of payment</h2>
+          {pending ? (
+            <div className={a.box}>
+              <p style={{ fontSize: 14, lineHeight: 1.55 }}>
+                We have your payment for <strong>{studioPaymentLabel(pending, `the ${STUDIO_PLANS[pending.plan].name} plan`)}</strong>,
+                sent {when(pending.createdAtMs)}. It is being checked — it switches on as soon as it is approved.
+              </p>
+            </div>
+          ) : (
+            <div className={a.box}>
+              <label className={`${a.drop} ${file ? a.dropDone : ''}`} style={{ position: 'relative' }}>
+                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <b>{file ? `✓ ${file.name}` : 'Add the receipt screenshot'}</b>
+                <span>{file ? 'Tap to choose a different picture' : 'A photo or screenshot of the transfer, up to 10 MB'}</span>
+              </label>
+              <label className={a.field}>
+                Transaction ID
+                <input className={a.input} value={txnId} onChange={(e) => setTxnId(e.target.value)} placeholder="From the receipt, e.g. 0123456789" />
+              </label>
+            </div>
+          )}
+        </section>
+
+        <aside className={a.order} aria-label="Order">
+          <h2 className={a.orderTitle}>
+            {kind === 'credits' ? `${credits} days of work` : kind === 'agents' ? 'AI agents' : `${P.name} plan`}
+          </h2>
+          <div className={a.lines}>
+            <h3>Order details</h3>
+            <div className={a.line}>
+              <span>
+                {kind === 'credits' ? 'Credits' : kind === 'agents' ? 'AI agents package' : P.name}
+                <small>
+                  {kind === 'credits'
+                    ? `${credits} days × $${STUDIO_CREDIT_DAY_USD}`
+                    : kind === 'agents'
+                      ? '30 days'
+                      : billing === 'year'
+                        ? `365 days · you save $${P.usd * 12 - amount}`
+                        : '30 days'}
+                </small>
+              </span>
+              <span>${amount}</span>
+            </div>
+            {switchUntil ? (
+              <div className={a.line}>
+                <span>
+                  Days you already paid for
+                  <small>
+                    {daysLeft} day{daysLeft === 1 ? '' : 's'} of {STUDIO_PLANS[ws.plan].name} carry over — {P.name} until {when(switchUntil)}
+                  </small>
+                </span>
+                <span>$0</span>
+              </div>
+            ) : null}
+            <div className={`${a.line} ${a.total}`}>
+              <span>Total due today</span>
+              <span>
+                ${amount} · Rs {amountPkr.toLocaleString('en-PK')}
+              </span>
             </div>
           </div>
-        )}
-      </Card>
+
+          <p className={a.info}>
+            {kind === 'credits'
+              ? 'Each day your team works on credit shows as $1 on your Usage page. Unused days stay on your balance.'
+              : kind === 'agents'
+                ? 'The package starts when the payment is approved and runs for 30 days.'
+                : onTrial
+                  ? 'Your free trial keeps running until the payment is approved. Then your paid time starts — nothing stops in between.'
+                  : 'Paying early never loses a day: the new time is added to the end of what you already have.'}
+          </p>
+
+          {error ? <p className={a.error}>{error}</p> : null}
+          {notice ? <p className={a.notice}>{notice}</p> : null}
+
+          {pending ? null : (
+            <>
+              <label className={a.agree}>
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                <span>
+                  I sent Rs {amountPkr.toLocaleString('en-PK')} to the account shown, and the receipt and transaction ID above are
+                  from that transfer.
+                </span>
+              </label>
+              <button type="button" className={a.btn} onClick={send} disabled={busy || !ready}>
+                {busy ? <span className={a.spinner} aria-hidden /> : null}
+                {busy ? 'Sending — our AI is reading the receipt…' : 'Submit payment'}
+              </button>
+            </>
+          )}
+        </aside>
+      </div>
 
       {payments.length ? (
-        <Card>
-          <h2 style={h2}>Payments</h2>
-          <div style={{ display: 'grid', gap: 8, fontSize: 13.5 }}>
+        <section className={a.card}>
+          <h2 className={a.cardTitle}>Payments</h2>
+          <ul className={a.history}>
             {payments.map((p) => (
-              <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ minWidth: 120 }}>{when(p.createdAtMs)}</span>
+              <li key={p.id}>
+                <time>{when(p.createdAtMs)}</time>
                 <span style={{ flex: 1 }}>
-                  {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
+                  {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
                   {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   {p.txnId ? ` · ${p.txnId}` : ''}
+                  {p.note ? <span className={a.muted} style={{ display: 'block' }}>{p.note}</span> : null}
                 </span>
                 <span
-                  style={{
-                    fontWeight: 800,
-                    color: p.status === 'approved' ? colors.success : p.status === 'rejected' ? colors.danger : colors.warn,
-                  }}
+                  className={a.status}
+                  style={{ color: p.status === 'approved' ? '#047857' : p.status === 'rejected' ? '#ba1a1a' : '#b45309' }}
                 >
                   {p.status === 'pending' ? 'Being checked' : p.status === 'approved' ? 'Approved' : 'Not received'}
                 </span>
-                {p.note ? <span style={{ width: '100%', color: colors.muted, fontSize: 12.5 }}>{p.note}</span> : null}
-              </div>
+              </li>
             ))}
-          </div>
-        </Card>
+          </ul>
+        </section>
       ) : null}
     </div>
   );
 }
 
-function Pay({ label, value, title }: { label: string; value: string; title?: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'baseline', padding: '8px 10px', borderRadius: 10, background: colors.bg }}>
-      <span style={{ minWidth: 160, color: colors.muted, fontWeight: 700 }}>{label}</span>
-      <code style={{ fontSize: 15, fontWeight: 800 }}>{value}</code>
-      {title ? <span style={{ color: colors.muted }}>({title})</span> : null}
-    </div>
-  );
-}
+/** Where a receipt is uploaded: under the workspace, where the server checks it came from. */
+const receiptPath = (wid: string, name: string) => `workspaces/${wid}/payments/${Date.now()}-${name.replace(/[^\w.-]/g, '')}`;
 
 const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, margin: '0 0 12px' };
-const label: React.CSSProperties = { display: 'grid', gap: 5, fontSize: 12.5, fontWeight: 800, color: colors.muted };
-const input: React.CSSProperties = {
-  width: '100%',
-  maxWidth: 360,
-  padding: '9px 12px',
-  fontSize: 14,
-  fontFamily: 'inherit',
-  border: `1px solid ${colors.border}`,
-  borderRadius: 10,
-};

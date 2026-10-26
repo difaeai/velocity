@@ -14,6 +14,7 @@ import { seal, tokenVaultReady } from '../social/secrets';
 import { HOUSE } from '../social/scope';
 import { countPlanned, type MonthPlan } from '../social/strategy';
 import { DEFAULT_SETTINGS, type SocialSettings } from '../social/types';
+import type { PlanId } from '../studio/plans';
 import {
   AI_CONFIG,
   AI_SECRET,
@@ -94,9 +95,13 @@ export const adminAiOverview = onCall(async (req) => {
 
   const wids = [...new Set(rows.docs.map((d) => String(d.get('wid'))))].filter((w) => w !== HOUSE);
   const names = new Map<string, string>([[HOUSE, 'Velocity Rides (house)']]);
+  const plans = new Map<string, PlanId>();
   if (wids.length) {
     const snaps = await db.getAll(...wids.map((w) => db.doc(`workspaces/${w}`)));
-    for (const s of snaps) names.set(s.id, (s.get('name') as string | undefined) ?? s.id);
+    for (const s of snaps) {
+      names.set(s.id, (s.get('name') as string | undefined) ?? s.id);
+      if (s.get('plan')) plans.set(s.id, s.get('plan') as PlanId);
+    }
   }
 
   const b = budgets();
@@ -119,7 +124,9 @@ export const adminAiOverview = onCall(async (req) => {
         grounded: Number(u.grounded ?? 0),
         seconds: Number(u.seconds ?? 0),
         pieces: Number(u.pieces ?? 0),
-        budgetUsd: budgetFor(String(u.wid), b),
+        budgetUsd: budgetFor(String(u.wid), b, plans.get(String(u.wid)), Number(u.extraUsd ?? 0) || 0),
+        /** Credit days spent this month: the customer saw $1 each; `budgetUsd` holds what each really added. */
+        creditDays: Number(u.creditDays ?? 0),
         byFeature,
         byService: u.byService ?? {},
         byWhat: u.byWhat ?? {},
