@@ -4,8 +4,12 @@
 import { colors } from '@/lib/config';
 import type { AdCampaignDoc, AdVerdict } from '@/lib/api';
 
-/** Money the way the backend says it (adsExpert.ts `money`), so the two read the same. */
-export function adMoney(amount: number, currency: string): string {
+/**
+ * Money the way the backend says it (adsExpert.ts `money`), so the two read the same.
+ * A missing amount reads "—": a first connect stores no dailyCap, and drawing it blanked the console.
+ */
+export function adMoney(amount: number | null | undefined, currency: string): string {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—';
   const small = Math.abs(amount) < 100;
   if (currency === 'USD') return `$${amount.toLocaleString('en-US', { maximumFractionDigits: small ? 3 : 0 })}`;
   const n = amount.toLocaleString('en-PK', { maximumFractionDigits: small ? 2 : 0 });

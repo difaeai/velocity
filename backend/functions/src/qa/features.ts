@@ -600,6 +600,25 @@ export const FEATURE_CONTRACTS: readonly FeatureContract[] = [
 
   // ── Platform ───────────────────────────────────────────────────────────────
   {
+    // Reported by the console's own error boundary (app/(app)/dashboard/error.tsx).
+    id: 'console.page',
+    area: 'Platform',
+    title: 'Console pages',
+    designedTo:
+      'Open every console page — Manage app, Manage social, a Studio customer’s desk — and draw it, whatever the stored data looks like.',
+    criticality: 'normal',
+    budgetMs: 10_000,
+    code: ['app/(app)/dashboard/error.tsx', 'components/social'],
+    knownCauses: [
+      {
+        signal: /tolocalestring|tofixed|of undefined|of null/,
+        because:
+          'A page drew a field the stored document does not have yet. A connect or a first sync writes only some fields; the backend fills the rest from its defaults when it reads, but a console page reading the document directly does not.',
+        fix: 'Find the field in the stack, then make the formatter take a missing value (as adMoney does) or merge the backend defaults where the page reads the document.',
+      },
+    ],
+  },
+  {
     id: 'platform.push',
     area: 'Platform',
     title: 'Push notifications',
