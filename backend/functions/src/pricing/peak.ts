@@ -35,8 +35,8 @@ import type { PeakDecision, PeakSettings, ZoneSample } from './types';
 /**
  * The factor the bands alone would give this ratio.
  *
- * Bands are ascending and the last one should be Infinity; a ratio past the
- * final band gets that band's multiplier rather than falling through to 1.0,
+ * Bands are ascending; a ratio past the final band gets that band's
+ * multiplier rather than falling through to 1.0,
  * because "busier than our busiest band" is not a reason to stop charging for
  * it.
  */
