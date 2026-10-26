@@ -141,6 +141,29 @@ export function overBudget(wid: string = currentWorkspace()): boolean {
   return cap > 0 && have?.month === monthKey() && have.usd >= cap;
 }
 
+/** The Pakistan day of the month, and how many days that month has. */
+export function monthDays(ms = Date.now()): { day: number; days: number } {
+  const pkt = new Date(ms + 5 * 3600_000);
+  return { day: pkt.getUTCDate(), days: new Date(Date.UTC(pkt.getUTCFullYear(), pkt.getUTCMonth() + 1, 0)).getUTCDate() };
+}
+
+/**
+ * A month's budget spread evenly: by day d of D, at most budget × d / D may be
+ * spent, so the content lasts the whole month instead of running out in week
+ * three. Unused days carry forward. No budget, no pacing. Pure.
+ */
+export function withinPace(spentUsd: number, capUsd: number, nowMs: number): boolean {
+  if (capUsd <= 0) return true;
+  const { day, days } = monthDays(nowMs);
+  return spentUsd < (capUsd * day) / days;
+}
+
+/** Whether the desk may make an automatic piece now, on this instance's cached spend. */
+export function paceAllows(wid: string = currentWorkspace(), nowMs = Date.now()): boolean {
+  const have = spent.get(wid);
+  return withinPace(have?.month === monthKey(nowMs) ? have.usd : 0, budgetFor(wid), nowMs);
+}
+
 /** The slot a text call made now draws on. */
 export function textSlot(): KeySlot {
   return currentWorkspace() === HOUSE ? 'house' : 'customers';

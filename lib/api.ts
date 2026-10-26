@@ -1938,6 +1938,8 @@ export interface AiUsageRow {
   seconds: number;
   /** Pieces of content a model made this month. */
   pieces: number;
+  /** What this desk's month plan asks it to make (backend `countPlanned`). */
+  planned?: { pieces: number; byFormat: Record<string, number> };
   budgetUsd: number;
   byFeature: Record<string, { usd: number; calls: number }>;
   byService: Record<string, { usd?: number; calls?: number }>;
