@@ -53,8 +53,30 @@ const REGION = 'asia-south1';
 
 function pairId(a: string, b: string): string { return [a, b].sort().join('_'); }
 
-/** Best-effort push, over whichever transport this user's token needs. */
-async function pushTo(uid: string, title: string, body: string, data: Record<string, string>) {
+/**
+ * The person's Open | Mute | Close switch (travelMateProfiles.inboxMode, set
+ * from the bar at the top of every Travel Partner tab). Absent means open.
+ *   open   — anyone may like or message them, and their phone is notified.
+ *   mute   — still reachable, but nothing buzzes.
+ *   closed — nobody may like or message them (rules refuse the like, the
+ *            callables refuse the message) and nothing buzzes.
+ */
+export async function inboxModeOf(uid: string): Promise<'open' | 'mute' | 'closed'> {
+  const mode = (await db.doc(`travelMateProfiles/${uid}`).get()).data()?.inboxMode;
+  return mode === 'mute' || mode === 'closed' ? mode : 'open';
+}
+
+/** Throws when the recipient has closed their inbox. */
+export async function assertInboxOpen(uid: string): Promise<void> {
+  if ((await inboxModeOf(uid)) === 'closed') {
+    throw new HttpsError('failed-precondition', 'This person is not taking messages right now.');
+  }
+}
+
+/** Best-effort push, over whichever transport this user's token needs — and
+ *  only to someone whose inbox is Open; Mute and Close stay silent. */
+export async function pushTo(uid: string, title: string, body: string, data: Record<string, string>) {
+  if ((await inboxModeOf(uid)) !== 'open') return;
   // Routed through lib/fcm, NOT the Admin SDK directly. The app registers with
   // expo-notifications, which hands back an Expo token on some installs and a
   // native FCM token on others — and the Admin SDK cannot deliver to an Expo
@@ -484,6 +506,7 @@ export const openTravelMateFeedChat = onCall({ region: REGION }, async (req: Cal
   if (targetUid === uid) throw new HttpsError('invalid-argument', 'You cannot chat with yourself.');
 
   await assertNotBlocked(uid, targetUid);
+  await assertInboxOpen(targetUid);
 
   const matchRef = db.doc(`travelMateMatches/${pairId(uid, targetUid)}`);
   const matchSnap = await matchRef.get();

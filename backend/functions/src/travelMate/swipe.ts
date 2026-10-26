@@ -15,7 +15,7 @@ import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 
-import { sendToUser } from '../lib/fcm';
+import { pushTo } from './community';
 import { docId } from '../lib/guards';
 
 if (!admin.apps.length) admin.initializeApp();
@@ -73,12 +73,12 @@ async function notifyMatch(uidA: string, uidB: string, matchId: string,
     { uid: uidB, otherName: nameA },
   ];
   await Promise.all(targets.map(({ uid, otherName }) =>
-    sendToUser(
+    pushTo(
       uid,
       "It's a match! 🎉",
       `You and ${otherName} both want to travel together. Say hi!`,
       { type: 'travelMate.match', matchId },
-    ).catch((e) => console.error(`notifyMatch failed for ${uid}`, e)),
+    ),
   ));
 }
 
@@ -132,7 +132,8 @@ export const travelMateSwipe = onCall({ region: REGION }, async (req: CallableRe
     const [quotaSnap, reverseSnap, targetSnap] = await Promise.all([
       tx.get(quotaRef), tx.get(reverseSwipeRef), tx.get(targetProfRef),
     ]);
-    if (!targetSnap.exists || targetSnap.data()!.active === false) {
+    if (!targetSnap.exists || targetSnap.data()!.active === false
+        || targetSnap.data()!.inboxMode === 'closed') {
       throw new HttpsError('failed-precondition', 'This profile is no longer available.');
     }
 

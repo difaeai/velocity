@@ -12,10 +12,12 @@ import { Text } from '../../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { appLink } from '../../../src/share/links';
-import { collection, doc, getCountFromServer, getDoc, query, where } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 
 import { db } from '../../../src/firebase';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
+import { InboxModeBar } from '../../../src/ui/InboxModeBar';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
@@ -30,6 +32,7 @@ interface TMProfile {
   photoURL?: string | null;
   active?: boolean;
   activeMode?: 'today' | 'week';
+  travelPrefs?: { homeLocations?: unknown[]; travelToLocations?: unknown[] };
 }
 
 const GENDER_LABEL: Record<string, string> = { male: 'Male', female: 'Female' };
@@ -41,6 +44,7 @@ export default function TravelMateProfile() {
   const [profile, setProfile] = useState<TMProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{ followers: number; following: number; posts: number } | null>(null);
+  const { matches, requests } = useTravelMateThreads();
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -87,6 +91,36 @@ export default function TravelMateProfile() {
     }).catch(() => {});
   }
 
+  // An active ride jumps straight to its trip screen (where the share button
+  // lives); otherwise explain where ride links come from.
+  async function openShareRide() {
+    if (!user) return;
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'trips'),
+        where('passengerId', '==', user.uid),
+        where('status', 'in', ['requested', 'accepted', 'arriving', 'arrived', 'in_progress']),
+        limit(1),
+      ));
+      const active = snap.docs[0];
+      if (active) {
+        router.push(`/passenger/trip/${active.id}` as Parameters<typeof router.push>[0]);
+        return;
+      }
+    } catch { /* query unavailable — fall through to the explainer */ }
+    Alert.alert(
+      'Share a ride link',
+      'Ride links come from a booked ride:\n\n1. Book a ride as usual.\n2. On the trip screen, tap "🤝 Share ride link with Travel Partners".\n3. Matched partners open your link, join the same ride, and you split the fare.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Book a ride', onPress: () => router.push('/passenger/booking') },
+      ],
+    );
+  }
+
+  const locationCount =
+    (profile?.travelPrefs?.homeLocations?.length ?? 0) + (profile?.travelPrefs?.travelToLocations?.length ?? 0);
+
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
@@ -126,6 +160,7 @@ export default function TravelMateProfile() {
           <Text style={s.editBtnSmallText}>Edit</Text>
         </Pressable>
       </View>
+      <InboxModeBar />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Photo + basic info */}
@@ -166,6 +201,38 @@ export default function TravelMateProfile() {
             <Text style={s.statLabel}>Posts</Text>
           </View>
         </Pressable>
+
+        {/* Everything that used to crowd the Home hub lives here now. */}
+        <View style={s.menu}>
+          <MenuRow
+            emoji="❤️"
+            title="Matches"
+            sub={matches.length ? `${matches.length} match${matches.length === 1 ? '' : 'es'}` : 'You both swiped right'}
+            onPress={() => router.push('/passenger/travel-mate/matches')}
+          />
+          <MenuRow
+            emoji="💬"
+            title="Chats"
+            sub={requests.length
+              ? `${requests.length} message request${requests.length === 1 ? '' : 's'}`
+              : 'Your conversations'}
+            onPress={() => router.push('/passenger/travel-mate/chats')}
+          />
+          <MenuRow
+            emoji="🚗"
+            title="Share a ride link"
+            sub="Partners join your ride and split the fare"
+            onPress={openShareRide}
+          />
+          <MenuRow
+            emoji="🗺️"
+            title="My travel locations"
+            sub={locationCount
+              ? 'Where you usually start rides from and travel to'
+              : 'Not set — add where you usually travel'}
+            onPress={() => router.push('/passenger/travel-mate/travel-locations' as Parameters<typeof router.push>[0])}
+          />
+        </View>
 
         {profile.bio ? (
           <View style={s.card}>
@@ -226,6 +293,21 @@ export default function TravelMateProfile() {
   );
 }
 
+function MenuRow({
+  emoji, title, sub, onPress,
+}: { emoji: string; title: string; sub: string; onPress: () => void }) {
+  return (
+    <Pressable style={s.menuRow} onPress={onPress} accessibilityRole="button" accessibilityLabel={title}>
+      <Text style={{ fontSize: 20 }}>{emoji}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={s.menuTitle}>{title}</Text>
+        <Text style={s.menuSub} numberOfLines={1}>{sub}</Text>
+      </View>
+      <Text style={s.chevron}>›</Text>
+    </Pressable>
+  );
+}
+
 function TopBar({ router }: { router: ReturnType<typeof useRouter> }) {
   return (
     <View style={s.topBar}>
@@ -271,6 +353,12 @@ const s = themed(() => StyleSheet.create({
   statNum:     { fontSize: 18, fontWeight: '900', color: colors.text },
   statLabel:   { fontSize: 11, color: colors.muted, fontWeight: '700' },
   statDividerV:{ width: 1, backgroundColor: colors.border },
+
+  menu:      { width: '100%', gap: 10 },
+  menuRow:   { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  menuTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  menuSub:   { fontSize: 12, color: colors.muted, marginTop: 2 },
+  chevron:   { fontSize: 22, color: colors.muted },
 
   card:      { width: '100%', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 4 },
   cardLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.6 },

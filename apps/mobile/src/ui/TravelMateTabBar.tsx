@@ -6,7 +6,7 @@
  * carries a lime-glass capsule behind its icon (Material-3 style) so focus
  * reads at a glance without shouting.
  *
- * Only the five real tabs are rendered — every push-navigated full-screen
+ * Only the four real tabs are rendered — every push-navigated full-screen
  * (chat, post, message-requests, …) is excluded here, and while one of those
  * screens is focused the bar hides entirely.
  */
@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../config';
 import { themed } from '../theme';
 import { AdBanner } from '../ads';
-import { ChatsIcon, FeedIcon, HomeIcon, MatchesIcon, ProfileIcon } from './TabBarIcons';
+import { FeedIcon, GroupsIcon, HomeIcon, ProfileIcon } from './TabBarIcons';
 
 type TabIconComponent = (props: {
   color: ColorValue;
@@ -30,8 +30,7 @@ type TabIconComponent = (props: {
 const TABS: Record<string, { label: string; Icon: TabIconComponent }> = {
   index: { label: 'Home', Icon: HomeIcon },
   feed: { label: 'Feed', Icon: FeedIcon },
-  matches: { label: 'Matches', Icon: MatchesIcon },
-  chats: { label: 'Chats', Icon: ChatsIcon },
+  groups: { label: 'Groups', Icon: GroupsIcon },
   profile: { label: 'Profile', Icon: ProfileIcon },
 };
 
@@ -49,7 +48,7 @@ export function TravelMateTabBar({ state, navigation }: BottomTabBarProps) {
   return (
     <View>
       {/* The section's single banner. Living here rather than in each of the
-          five tab screens means one integration, and it inherits the bar's own
+          four tab screens means one integration, and it inherits the bar's own
           visibility rule for free: the early return above already hides both on
           chat, post and every other push-navigated full-screen, which is
           exactly where a banner would be most intrusive. Full-bleed, above the

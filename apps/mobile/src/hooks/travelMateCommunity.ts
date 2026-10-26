@@ -9,14 +9,20 @@
  *                   Follow/Following button state and the Following feed).
  * useMyTMProfile  — live Travel Partner profile of the signed-in user (null =
  *                   no profile yet, undefined = still loading).
+ * useEnsureTMProfile — builds that profile from the sign-up profile the first
+ *                   time someone opens Travel Partner.
+ * useInboxMode    — the Open / Mute / Close switch at the top of every tab.
  * useTravelMateThreads — one listener over travelMateMatches, split into the
  *                   three surfaces: matches, chats and message requests.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where,
+} from 'firebase/firestore';
 
 import { db } from '../firebase';
 import { useAuth } from '../auth/AuthContext';
+import { ageFromDob } from '../lib/birthDate';
 
 export function useBlockedSet(): Set<string> {
   const { user } = useAuth();
@@ -56,6 +62,7 @@ export interface MyTMProfile {
   photoURL?: string | null;
   bio?: string;
   active?: boolean;
+  inboxMode?: InboxMode;
 }
 
 export function useMyTMProfile(): MyTMProfile | null | undefined {
@@ -72,6 +79,74 @@ export function useMyTMProfile(): MyTMProfile | null | undefined {
   }, [user?.uid]);
 
   return profile;
+}
+
+/**
+ * ONE profile: Travel Partner never asks anyone to build a second one. The
+ * first time someone opens it, travelMateProfiles/{uid} is written from the
+ * account profile filled in at sign-up (name, gender, birth date, photo);
+ * Edit profile (setup.tsx) changes it later and syncs back to users/{uid}.
+ *
+ *   'ready'   — the profile exists
+ *   'under18' — sign-up allows 13+, but matching and DMs are adults only
+ *   'missing' — the account has no name / gender / age to build from (old
+ *               sign-ups) or the read failed; the setup form asks once
+ */
+export function useEnsureTMProfile(): 'loading' | 'ready' | 'under18' | 'missing' {
+  const { user } = useAuth();
+  const profile = useMyTMProfile();
+  const [fallback, setFallback] = useState<'under18' | 'missing' | null>(null);
+  const none = profile === null;
+
+  useEffect(() => {
+    if (!user || !none) return;
+    getDoc(doc(db, 'users', user.uid))
+      .then(async snap => {
+        const u = snap.data() ?? {};
+        const name = String(u.name || u.displayName || '').trim();
+        // dob over the stored age: age is frozen at sign-up, dob keeps counting.
+        const age = typeof u.dob === 'string' ? ageFromDob(new Date(u.dob)) : u.age;
+        if (!name || (u.gender !== 'male' && u.gender !== 'female') || !(typeof age === 'number' && age > 0)) {
+          setFallback('missing');
+          return;
+        }
+        if (age < 18) { setFallback('under18'); return; }
+        // The snapshot in useMyTMProfile picks this up and flips the gate to ready.
+        await setDoc(doc(db, 'travelMateProfiles', user.uid), {
+          uid: user.uid,
+          displayName: name,
+          displayNameLower: name.toLowerCase(),
+          age,
+          gender: u.gender,
+          // The shared-ride answer they already gave on the home map.
+          genderPref: u.sharedRideGenderPref === 'same_gender' ? u.gender : 'any',
+          bio: '',
+          interests: [],
+          photoURL: typeof u.photoURL === 'string' && u.photoURL ? u.photoURL : null,
+          active: true,
+          location: null,
+          searchRadiusKm: null,
+          lastActive: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        });
+      })
+      .catch(() => setFallback('missing'));
+  }, [user?.uid, none]);
+
+  return profile ? 'ready' : fallback ?? 'loading';
+}
+
+export type InboxMode = 'open' | 'mute' | 'closed';
+
+/** Live Open / Mute / Close switch (travelMateProfiles.inboxMode, absent = open)
+ *  and its setter. The server and rules enforce it — see travelMate/community.ts. */
+export function useInboxMode(): [InboxMode, (mode: InboxMode) => void] {
+  const { user } = useAuth();
+  const mode = useMyTMProfile()?.inboxMode ?? 'open';
+  const set = (next: InboxMode) => {
+    if (user) setDoc(doc(db, 'travelMateProfiles', user.uid), { inboxMode: next }, { merge: true }).catch(() => {});
+  };
+  return [mode, set];
 }
 
 // ── Threads: matches, chats and message requests ────────────────────────────
@@ -197,6 +272,7 @@ export interface TravelGroup {
   members: string[];
   memberInfo?: Record<string, { displayName: string; photoURL: string | null }>;
   destinationName?: string;
+  maxSize?: number;
   lastMessage?: string | null;
   lastMessageAt?: { seconds: number } | null;
   lastMessageFrom?: string | null;

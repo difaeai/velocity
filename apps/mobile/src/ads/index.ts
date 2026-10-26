@@ -3,10 +3,10 @@
  *
  * Placements (all gated on useAdsEnabled, so paying users see none of them):
  *
- *   Banner        Travel Partner  → above the tab bar, all 5 tabs
+ *   Banner        Travel Partner  → above the tab bar, all 4 tabs
  *                 Earn            → pinned bottom, excluding apply/withdraw
  *                 "Where to?"     → below the destination results list
- *   Interstitial  travel-partner-discover → entering the swipe deck
+ *   Interstitial  travel-partner-discover → refreshing the swipe deck once it runs dry
  *                 partner-apply-free      → after a free-tier application submits
  *
  * Everything reads its unit IDs from EXPO_PUBLIC_ADMOB_* and falls back to

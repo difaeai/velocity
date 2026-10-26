@@ -43,7 +43,7 @@ export default function TravelMateMatches() {
     <SafeAreaView style={s.safe}>
       <View style={s.topBar}>
         <Pressable onPress={() => router.back()} style={s.backBtn}>
-          <Text style={s.backBtnText}>← Book Ride</Text>
+          <Text style={s.backBtnText}>← Back</Text>
         </Pressable>
         <Text style={s.title}>Matches</Text>
         <View style={{ width: 80 }} />

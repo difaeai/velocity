@@ -221,7 +221,7 @@ export default function TravelMateVisitorProfile() {
               </Text>
               <PrimaryButton
                 label="Find them in Discover"
-                onPress={() => router.replace('/passenger/travel-mate/discover' as Parameters<typeof router.replace>[0])}
+                onPress={() => router.replace('/passenger/travel-mate' as Parameters<typeof router.replace>[0])}
               />
             </View>
           )}

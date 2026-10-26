@@ -47,6 +47,18 @@ describe('sendTravelMateMessage', () => {
     ).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
+  it('a Closed inbox refuses messages; Mute still accepts them', async () => {
+    const matchId = await seedMatch(ALICE, BOB);
+    await db().doc(`travelMateProfiles/${BOB}`).set({ inboxMode: 'closed' }, { merge: true });
+    await expect(
+      sendTravelMateMessage.run(makeReq({ matchId, text: 'Hi' }, ALICE)),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+
+    await db().doc(`travelMateProfiles/${BOB}`).set({ inboxMode: 'mute' }, { merge: true });
+    const res = await sendTravelMateMessage.run(makeReq({ matchId, text: 'Hi' }, ALICE));
+    expect(res.messageId).toBeTruthy();
+  });
+
   it('bumps lastMessageAt on the match doc', async () => {
     const matchId = await seedMatch(ALICE, BOB);
     const beforeSnap = await db().doc(`travelMateMatches/${matchId}`).get();

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { birthDateFromParts, daysInMonth, withPart, type BirthDateParts } from '../birthDate';
+import { ageFromDob, birthDateFromParts, daysInMonth, withPart, type BirthDateParts } from '../birthDate';
+
+describe('ageFromDob', () => {
+  // Travel Partner's 18+ gate reads this, so the day before a birthday matters.
+  const dob = new Date(2008, 9, 27, 12);
+  it('turns 18 on the birthday, not the day before', () => {
+    expect(ageFromDob(dob, new Date(2026, 9, 26, 23))).toBe(17);
+    expect(ageFromDob(dob, new Date(2026, 9, 27, 0))).toBe(18);
+  });
+
+  it('is NaN for a date that does not parse, so the gate refuses it', () => {
+    expect(ageFromDob(new Date('not a date'))).toBeNaN();
+  });
+});
 
 const EMPTY: BirthDateParts = { day: null, month: null, year: null };
 
