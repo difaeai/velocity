@@ -530,8 +530,8 @@ function FunnelPanel({ funnel }: { funnel: FunnelPlanDoc | null }) {
           />
         ) : null}
       </div>
-      <Link href="/dashboard/social/ads" className="ln-cta">
-        {funnel.campaignId ? 'See the campaign on the Ads page →' : 'Connect the ad account on the Ads page →'}
+      <Link href={funnel.campaignId ? '/dashboard/social/ads' : '/dashboard/social/accounts#meta-ads'} className="ln-cta">
+        {funnel.campaignId ? 'See the campaign on the Ads page →' : 'Connect the ad account on Connected accounts →'}
       </Link>
     </div>
   );

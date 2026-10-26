@@ -540,6 +540,7 @@ export {
   adminStartMetaConnect,
   adminFinishMetaConnect,
   adminChooseMetaPage,
+  adminConnectAdsToken,
   adminGetSocialRoles,
   adminHireSocialEmployee,
   adminUpdateSocialEmployee,

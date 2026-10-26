@@ -145,7 +145,7 @@ async function adsToken(): Promise<string> {
   const snap = await sdb.doc(SECRET_PATH).get();
   const sealed = snap.data()?.token as SealedSecret | undefined;
   if (!sealed) {
-    throw new HttpsError('failed-precondition', 'No ad account is connected yet. Connect one on the Ads page.');
+    throw new HttpsError('failed-precondition', 'No ad account is connected yet. Connect one on Connected accounts.');
   }
   return open(sealed);
 }
@@ -154,7 +154,7 @@ async function adsToken(): Promise<string> {
 async function ready(): Promise<{ cfg: AdsConfig; token: string }> {
   const cfg = await adsConfig();
   if (!cfg.adAccountId) {
-    throw new HttpsError('failed-precondition', 'No ad account is connected yet. Connect one on the Ads page.');
+    throw new HttpsError('failed-precondition', 'No ad account is connected yet. Connect one on Connected accounts.');
   }
   return { cfg, token: await adsToken() };
 }
@@ -1084,7 +1084,7 @@ async function syncAndRecord(): Promise<string> {
   } catch (e) {
     const message =
       e instanceof AdsError && e.expired
-        ? 'The Facebook sign-in for ads has expired. Press Reconnect on the Ads page.'
+        ? 'The Facebook sign-in for ads has expired. Sign in again on Connected accounts — or paste a never-expiring System User token there.'
         : (e as Error).message;
     await sdb.doc(CONFIG_PATH).set({ lastSyncAtMs: Date.now(), lastSyncStatus: `Failed: ${message}`.slice(0, 600) }, { merge: true });
     throw e;
@@ -1213,7 +1213,7 @@ export async function launchCampaign(params: {
   plan?: Record<string, unknown>;
 }) {
   const { cfg, token } = await ready();
-  if (!cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Reconnect on the Ads page.');
+  if (!cfg.pageId) throw new HttpsError('failed-precondition', 'The ad account has no Facebook Page attached. Connect the Page on Connected accounts.');
   if (!cfg.link) throw new HttpsError('failed-precondition', 'Say where the ads should send people — your website or WhatsApp link — on the Ads page.');
   const source: CreativeSource = params.source ?? { kind: 'make' };
   const bench = await benchmarksNow(cfg);

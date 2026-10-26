@@ -2407,6 +2407,8 @@ export interface AdsConfigDoc {
   pageId: string | null;
   instagramId: string | null;
   tokenExpiresAtMs: number | null;
+  /** Connected with a System User token Meta confirmed never expires. */
+  permanent?: boolean;
   mode: 'ask' | 'direct' | null;
   dailyCap: number;
   maxDays: number;
@@ -2501,6 +2503,12 @@ export const adsApi = {
     { ok: boolean; message: string }
   >('adminAdAction', 10 * 60_000),
   sync: callable<Record<string, never>, { ok: boolean; status: string }>('adminSyncAds', 6 * 60_000),
+  /** Connect the ad account with a System User token from Business Settings — the one that never expires. */
+  connectToken: callable<
+    { token: string; adAccountId?: string },
+    | { ok: true; accountName: string; permanent: boolean; pageId: string | null }
+    | { ok: false; choose: { id: string; name: string; active: boolean }[] }
+  >('adminConnectAdsToken'),
 };
 
 /**

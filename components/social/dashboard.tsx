@@ -406,7 +406,7 @@ export function AdsSection({
               Connect the Meta ad account once. Then this card shows the spend, the clicks, what each click costs and
               which campaign is winning — read every three hours.
             </p>
-            <Link href="/dashboard/social/ads" className="fx-btn lime small">
+            <Link href="/dashboard/social/accounts#meta-ads" className="fx-btn lime small">
               Connect the ad account
             </Link>
           </div>

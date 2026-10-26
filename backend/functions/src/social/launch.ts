@@ -464,7 +464,7 @@ async function stepFunnel(): Promise<Outcome> {
   if (!(await adsReady())) {
     return {
       status: 'needs_you',
-      note: 'Funnel ready. Connect your ad account and set a daily limit on the Ads page — the Meta Ad Expert launches the first campaign the moment you do.',
+      note: 'Funnel ready. Connect your ad account on Connected accounts and set a daily limit on the Ads page — the Meta Ad Expert launches the first campaign the moment you do.',
     };
   }
   const made = await launchCampaign({ brief: funnel.adBrief, by: 'launch' });

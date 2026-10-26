@@ -440,8 +440,10 @@ export const adminChooseMetaPage = deskCall('any', async (req) => {
   }
 
   // The ad account, for the Ads desk — only one this sign-in actually listed.
+  // A permanent (System User) token is never swapped for this ~60-day one: once connected, it stays connected.
   const adAccountId = parsed.data.adAccountId;
-  if (adAccountId) {
+  const permanent = Boolean(adAccountId) && (await sdb.doc('system/socialAds').get()).get('permanent') === true;
+  if (adAccountId && !permanent) {
     if (!(data.adAccounts as string[] | undefined)?.includes(adAccountId) || !data.userToken) {
       throw new HttpsError('permission-denied', 'That ad account was not part of this sign-in.');
     }
@@ -470,6 +472,7 @@ export const adminChooseMetaPage = deskCall('any', async (req) => {
           pageId: page.id,
           instagramId: igId,
           tokenExpiresAtMs: (data.userTokenExpiresAtMs as number | undefined) ?? null,
+          permanent: false,
           connectedBy: ctx.uid,
           connectedAtMs: Date.now(),
           lastSyncStatus: null,
@@ -495,4 +498,102 @@ export const adminChooseMetaPage = deskCall('any', async (req) => {
       : `"${page.name}" has no Instagram Business account linked to it. Link one in the Instagram app ` +
         '(Settings → Account type and tools → Switch to professional account, then connect the Page) and press Connect again.',
   };
+});
+
+/** When a token stops working, from Meta's debug_token answer: null when it never does. Pure. */
+export function tokenExpiryMs(data: { expires_at?: number } | null | undefined): number | null {
+  const at = data?.expires_at ?? 0;
+  return at > 0 ? at * 1000 : null;
+}
+
+interface AdAccountRow {
+  id: string;
+  name?: string;
+  currency?: string;
+  account_status?: number;
+  timezone_name?: string;
+}
+
+/**
+ * The ad account on a token that never runs out: a System User token from the
+ * owner's Business Settings. A Facebook sign-in token lasts about 60 days and
+ * Meta offers no way to renew one from a server, so this is the only way the
+ * Meta Ad Expert stays connected for good. Proved against Meta before it is
+ * kept, and once kept the sign-in above never replaces it.
+ */
+export const adminConnectAdsToken = deskCall('ads', { timeoutSeconds: 60 }, async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = z
+    .object({ token: z.string().trim().min(20).max(1000), adAccountId: z.string().regex(/^act_\d{3,30}$/).optional() })
+    .safeParse(req.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Paste the whole token.');
+  if (!tokenVaultReady()) throw new HttpsError('failed-precondition', 'SOCIAL_TOKEN_KEY is not configured.');
+  const token = parsed.data.token;
+  const call = <T>(path: string) => graph<T>(`${GRAPH}/${path}&access_token=${encodeURIComponent(token)}`);
+
+  let accounts: AdAccountRow[];
+  try {
+    accounts = (await call<{ data?: AdAccountRow[] }>('me/adaccounts?fields=id,name,currency,account_status,timezone_name&limit=50')).data ?? [];
+  } catch (e) {
+    // Meta's message can quote the token back; a secret is never echoed.
+    throw new HttpsError('invalid-argument', `Meta refused that token: ${(e as Error).message.split(token).join('…')}`);
+  }
+  if (!accounts.length) {
+    throw new HttpsError('failed-precondition', 'That token sees no ad account. Give the system user the ad account (Add assets → Ad accounts → Manage) and paste it again.');
+  }
+  const active = accounts.filter((a) => a.account_status === 1);
+  const want = parsed.data.adAccountId;
+  const account = want ? accounts.find((a) => a.id === want) : active.length === 1 ? active[0] : accounts.length === 1 ? accounts[0] : undefined;
+  if (!account) {
+    return { ok: false, choose: accounts.map((a) => ({ id: a.id, name: a.name ?? a.id, active: a.account_status === 1 })) };
+  }
+
+  // How long it lasts, from Meta itself: a System User token set to "Never" answers 0.
+  const app = await metaApp();
+  const debug = app
+    ? await graph<{ data?: { expires_at?: number; scopes?: string[] } }>(
+        `${GRAPH}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${app.appId}|${app.appSecret}`)}`,
+      ).catch(() => null)
+    : null;
+  if (debug?.data?.scopes && !debug.data.scopes.includes('ads_management')) {
+    throw new HttpsError('failed-precondition', 'That token cannot run ads. Generate it again with ads_management and ads_read ticked.');
+  }
+  const expiresAtMs = tokenExpiryMs(debug?.data);
+
+  // Ads run as a Page: the one already on the ads desk, else the one the desk posts as, else the system user's only Page.
+  const [cfg, fb, ig] = await Promise.all([
+    sdb.doc('system/socialAds').get(),
+    sdb.doc('socialAccounts/facebook').get(),
+    sdb.doc('socialAccounts/instagram').get(),
+  ]);
+  let pageId = (cfg.get('pageId') as string | null | undefined) ?? (fb.get('externalId') as string | undefined) ?? null;
+  if (!pageId) {
+    const pages = (await call<{ data?: { id: string }[] }>('me/accounts?fields=id&limit=10').catch(() => ({ data: [] }))).data ?? [];
+    if (pages.length === 1) pageId = pages[0].id;
+  }
+
+  await db
+    .batch()
+    .set(
+      sdb.doc('system/socialAds'),
+      {
+        adAccountId: account.id,
+        accountName: account.name ?? account.id,
+        currency: account.currency ?? 'PKR',
+        timezone: account.timezone_name ?? null,
+        accountStatus: account.account_status ?? null,
+        pageId,
+        instagramId: (cfg.get('instagramId') as string | null | undefined) ?? (ig.get('externalId') as string | undefined) ?? null,
+        tokenExpiresAtMs: expiresAtMs,
+        // Only what Meta confirmed never expires counts as permanent.
+        permanent: Boolean(debug) && expiresAtMs === null,
+        connectedBy: ctx.uid,
+        connectedAtMs: Date.now(),
+        lastSyncStatus: null,
+      },
+      { merge: true },
+    )
+    .set(sdb.doc('system/socialAds/secret/credentials'), { token: seal(token), updatedAt: FieldValue.serverTimestamp() })
+    .commit();
+  return { ok: true, accountName: account.name ?? account.id, permanent: Boolean(debug) && expiresAtMs === null, pageId };
 });
