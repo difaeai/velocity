@@ -435,6 +435,12 @@ export const FEATURE_CONTRACTS: readonly FeatureContract[] = [
     code: ['apps/mobile/app/driver/home.tsx', 'backend/functions/src/drivers/geohashSweeper.ts'],
     knownCauses: [
       {
+        signal: /drivers\.role\.claim/,
+        because:
+          'The driver role is a custom claim, and a claims write elsewhere replaced it after approval — the old onUserCreate overwrote every account it created with passenger, and setCustomUserClaims replaces the whole set.',
+        fix: 'Grant the role again on the listed drivers (merged with their other claims), then grep setCustomUserClaims for the write that dropped it.',
+      },
+      {
         signal: /permission-denied/,
         because:
           'The rules gate going online on a live car photo (carPhotoIsLive). A driver whose photo has aged out is refused by design.',

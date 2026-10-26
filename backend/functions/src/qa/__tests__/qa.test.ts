@@ -20,6 +20,7 @@ import type { CallableRequest } from 'firebase-functions/v2/https';
 import type * as admin from 'firebase-admin';
 
 import { clearFirestore, db, makeReq } from '../../travelMate/__tests__/helpers';
+import { auth } from '../../lib/firebase';
 import { pktDayKey } from '../../domain/dailyTarget';
 import {
   FEATURE_CONTRACTS,
@@ -393,6 +394,18 @@ describe('the agent', () => {
     for (const check of QA_CHECKS) {
       expect(featureContract(check.featureId), check.id).not.toBeNull();
     }
+  });
+
+  it('catches an approved driver who signs in as a passenger', async () => {
+    for (const [uid, role] of [['qa-drv-ok', 'driver'], ['qa-drv-lost', 'passenger']] as const) {
+      await auth.deleteUser(uid).catch(() => undefined);
+      await auth.createUser({ uid });
+      await auth.setCustomUserClaims(uid, { role });
+      await db().doc(`drivers/${uid}`).set({ verificationStatus: 'approved' });
+    }
+    const check = QA_CHECKS.find((c) => c.id === 'drivers.role.claim')!;
+    const found = await check.run(new Date());
+    expect(found?.evidence.samples).toEqual(['drivers/qa-drv-lost']);
   });
 
   it('catches a booked ride that no driver can see', async () => {

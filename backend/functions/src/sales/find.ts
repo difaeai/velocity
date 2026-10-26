@@ -11,7 +11,7 @@
 import { logger } from 'firebase-functions';
 
 import { generateJson, modelReady } from '../social/engine';
-import { fetchPage, readSite } from './site';
+import { readBusiness } from './site';
 
 export interface FoundBusiness {
   name: string;
@@ -118,9 +118,8 @@ export async function findBySearch(kind: string, city: string, model: string): P
     const name = (b.name ?? '').trim().slice(0, 120);
     if (!name || !b.website) continue;
     try {
-      const page = await fetchPage(b.website);
-      const site = readSite(page.html, page.url);
-      out.push({ name, website: page.url, email: site.emails[0] ?? null, phone: site.phones[0] ?? null, source: 'search' });
+      const { url, site } = await readBusiness(b.website);
+      out.push({ name, website: url, email: site.emails[0] ?? null, phone: site.phones[0] ?? null, source: 'search' });
     } catch (e) {
       logger.info('sales: a searched site did not answer; dropped', { website: b.website, message: (e as Error).message });
     }

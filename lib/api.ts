@@ -2430,6 +2430,16 @@ export interface AdsConfigDoc {
   };
 }
 
+/** What a simulated panel made of an ad before Meta saw it. Mirrors backend `AdPretest`. */
+export interface AdPretest {
+  verdict: 'go' | 'adjust' | 'not_yet';
+  /** Share of the panel that would act, maybes counted half; 0–1. */
+  score: number;
+  objections: string[];
+  firstScore: number | null;
+  rewritten: boolean;
+}
+
 /** socialAds/{campaignId} — one campaign, as the desk last read and judged it. */
 export interface AdCampaignDoc {
   id: string;
@@ -2455,6 +2465,8 @@ export interface AdCampaignDoc {
   targets?: { costPerResult: number; ctr: number; cpc: number; cpm: number } | null;
   targeting?: { cities: string[]; interests: string[] };
   budgetNote?: string | null;
+  /** The simulated audience it met before Meta (backend `pretestAd`). */
+  pretest?: AdPretest | null;
   engine?: string;
   plannedBy?: string;
   /** Fresh creatives the expert has made for it, and when it last did. */
@@ -2483,7 +2495,16 @@ export const adsApi = {
   /** The brief in, a campaign at Meta out — launched or waiting, by the owner's choice. `plan`: the one designed together. */
   create: callable<
     { brief: string; dailyBudget?: number; days?: number; source?: AdSource; launch?: boolean; plan?: AdPlan },
-    { ok: boolean; campaignId: string; launched: boolean; budget: number; note: string | null; plan: AdPlan; forecast: AdForecast | null }
+    {
+      ok: boolean;
+      campaignId: string;
+      launched: boolean;
+      budget: number;
+      note: string | null;
+      plan: AdPlan;
+      forecast: AdForecast | null;
+      pretest: AdPretest | null;
+    }
   >('adminCreateAd', 10 * 60_000),
   /** One turn of "design a campaign with me": the expert's answer, its questions and the plan so far. Spends nothing. */
   design: callable<

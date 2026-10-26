@@ -73,7 +73,7 @@ import { downloadAsset, refreshAssetUrls, storeFile } from './assets';
 import { brandBlock, brandName, briefBlock, hardRules, marketName, researchBlock, standingInstructions, wordmark } from './crew';
 import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
-import { planningResearch } from './market';
+import { personas, planningResearch, topObjections, verdictFor, type AudienceTest, type Persona } from './market';
 import { AD_NUMBERS } from './playbook';
 import { planReel, renderReel } from './reel';
 import { getSocialSettings } from './settings';
@@ -481,6 +481,78 @@ async function planAd(params: {
     logger.warn('ads: the model plan failed, using the local one', { message: (e as Error).message });
     return { plan: fallback, engine: 'local' };
   }
+}
+
+// ── the test audience ───────────────────────────────────────────────────────
+
+/** What a simulated panel made of an ad, before Meta saw it. */
+export interface AdPretest {
+  verdict: AudienceTest['verdict'];
+  /** Share of the panel that would act, maybes counted half; 0–1. */
+  score: number;
+  objections: string[];
+  /** The score before the one rewrite, when the rewrite won. */
+  firstScore: number | null;
+  rewritten: boolean;
+}
+
+const AD_TEST_TASK = `Test this ad on a panel before it spends anything. Build 10 realistic people from its audience (the cities, ages, genders and interests below), at least three of them sceptics, because most people scroll past most ads. Show each one the ad exactly as it would appear in their feed — the words on the picture, the text above it, the headline and the button — and let them react honestly, in character: would they stop, would they tap and do what it asks, what is in the way. A reaction may be in English, Urdu or Roman Urdu, as that person would think it.
+
+Reply with ONE JSON object and nothing else:
+{ "panel": [{ "name": "a first name", "who": "age, place, situation", "reaction": "one or two sentences in their own voice", "wouldBuy": "yes" | "maybe" | "no", "objection": "the one thing in the way, or empty", "wouldShare": true | false }], "rewrite": { "lines": ["the hook on the picture, 2-8 words"], "primaryText": "...", "headline": "..." } }
+The rewrite answers the panel's biggest objection and promises nothing the ad did not.`;
+
+const cut = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+/** One panel run on an ad. Null with no model: the local engine cannot play people. */
+async function panelOn(plan: AdPlanSpec): Promise<{ panel: Persona[]; rewrite: Partial<AdPlanSpec> } | null> {
+  if (!modelReady()) return null;
+  const settings = await getSocialSettings();
+  const a = plan.audience;
+  const { data } = await generateJson<Record<string, unknown>>({
+    model: settings.textModel,
+    what: 'The ad test audience',
+    system: [`You test ${brandName()}'s ads on a simulated audience before a rupee is spent.`, brandBlock(), AD_TEST_TASK].join('\n\n'),
+    prompt: [
+      `AUDIENCE: ${a.cities.join(', ') || marketName()}; ages ${a.ageMin}-${a.ageMax}; ${a.genders}; interests: ${a.interests.join(', ') || 'broad'}.`,
+      `THE AD — on the picture: ${plan.lines.join(' / ') || '(a piece the desk already made)'}\nText above it: ${plan.primaryText}\nHeadline: ${plan.headline}\nButton: ${plan.cta}`,
+    ].join('\n\n'),
+  });
+  const r = (data.rewrite ?? {}) as Record<string, unknown>;
+  const lines = Array.isArray(r.lines) ? r.lines.map((l) => cut(l, 60)).filter(Boolean).slice(0, 4) : [];
+  return {
+    panel: personas(data.panel),
+    rewrite: {
+      ...(lines.length ? { lines } : {}),
+      ...(cut(r.primaryText, 500) ? { primaryText: cut(r.primaryText, 500) } : {}),
+      ...(cut(r.headline, 60) ? { headline: cut(r.headline, 60) } : {}),
+    },
+  };
+}
+
+/**
+ * The ad meets a test audience before Meta does — free of ad spend, a model
+ * playing ten people from its own audience — and a weak result gets one rewrite
+ * against its main objection and a retest; the better version is the one that
+ * goes to Meta. A simulation, so it advises: only an unconvinced panel holds an
+ * automatic launch for the owner's Approve. The verdict is code's, not the model's.
+ */
+export async function pretestAd(plan: AdPlanSpec): Promise<AdPretest | null> {
+  const first = await panelOn(plan).catch(() => null);
+  if (!first?.panel.length) return null;
+  const a = verdictFor(first.panel);
+  const firstResult: AdPretest = { ...a, objections: topObjections(first.panel), firstScore: null, rewritten: false };
+  if (a.verdict === 'go' || !Object.keys(first.rewrite).length) return firstResult;
+
+  const was = { lines: plan.lines, primaryText: plan.primaryText, headline: plan.headline };
+  Object.assign(plan, first.rewrite);
+  const second = await panelOn(plan).catch(() => null);
+  const b = second?.panel.length ? verdictFor(second.panel) : null;
+  if (!b || b.score <= a.score) {
+    Object.assign(plan, was);
+    return firstResult;
+  }
+  return { ...b, objections: topObjections(second!.panel), firstScore: a.score, rewritten: true };
 }
 
 /** The plan as JSON, the one shape both planning and designing answer in. */
@@ -1245,7 +1317,10 @@ export async function launchCampaign(params: {
   plan.dailyBudget = budget;
   if (params.days) plan.days = Math.min(params.days, cfg.maxDays);
 
-  const launch = params.launch ?? cfg.mode === 'direct';
+  // Before Meta sees it: the test audience, and one rewrite if it is weak. A boost keeps the live post's own words.
+  const pretest = source.kind === 'boost' ? null : await pretestAd(plan);
+  // The owner's own Launch stands; an automatic one waits for an Approve when the panel was not convinced.
+  const launch = params.launch ?? (cfg.mode === 'direct' && pretest?.verdict !== 'not_yet');
   const stamp = `${Date.now()}`;
   let made: Awaited<ReturnType<typeof createAtMeta>>;
   try {
@@ -1281,6 +1356,7 @@ export async function launchCampaign(params: {
       ? { costPerResult: resultBand(plan.objective, bench).typical, ctr: bench.ctr.typical, cpc: bench.cpc.typical, cpm: bench.cpm.typical }
       : null,
     budgetNote: note,
+    pretest,
     engine,
     plannedBy: person?.name ?? 'The desk',
     createdBy: params.by,
@@ -1290,7 +1366,7 @@ export async function launchCampaign(params: {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  return { campaignId: made.campaignId, launched: launch, budget, note, plan, forecast: expected };
+  return { campaignId: made.campaignId, launched: launch, budget, note, plan, forecast: expected, pretest };
 }
 
 /**

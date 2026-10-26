@@ -61,6 +61,8 @@ async function seed({ drivers, presence, trips, pools }) {
       online: true, verificationStatus: 'approved', gender: i % 2 ? 'male' : 'female',
       lastLocation: { lat: p.lat, lng: p.lng }, displayName: 'D' + i,
       vehicleLabel: 'Car', vehicleType: i % 5 === 0 ? 'bike' : 'car',
+      // What drivers/geohashSweeper.ts stamps (geofire precision 10).
+      geohash: geofire.geohashForLocation([p.lat, p.lng]),
       lastSeenAt: admin.firestore.Timestamp.now(),
     }]);
   }
@@ -96,27 +98,32 @@ async function seed({ drivers, presence, trips, pools }) {
 
 // ───────────────────────── hot paths, copied from backend ─────────────────────
 
-/** getNearbyActivity — backend/functions/src/trips/nearbyActivity.ts:191-211 */
+/** queryNearbyDriverDocs — backend/functions/src/lib/nearbyDrivers.ts: geohash bounds + 1.5 km pad, 200 a range. */
+async function nearbyDrivers(lat, lng, radiusM) {
+  const bounds = geofire.geohashQueryBounds([lat, lng], radiusM + 1500);
+  const snaps = await Promise.all(bounds.map((b) =>
+    db.collection('drivers').where('online', '==', true).where('verificationStatus', '==', 'approved')
+      .where('geohash', '>=', b[0]).where('geohash', '<=', b[1]).limit(200).get()));
+  // Every document a range returns is billed, duplicates included.
+  return snaps.reduce((n, s) => n + s.size, 0);
+}
+
+/** getNearbyActivity — backend/functions/src/trips/nearbyActivity.ts (bounded since October 2026) */
 async function nearbyActivity(lat, lng, radiusKm = 6) {
-  let reads = 0;
   const cells = neighbors(lat, lng, 5);
   const [d, pr, t, p] = await Promise.all([
-    db.collection('drivers').where('online', '==', true).where('verificationStatus', '==', 'approved').get(),
+    nearbyDrivers(lat, lng, radiusKm * 1000),
     db.collection('userPresence').where('geohash', 'in', cells).limit(400).get(),
     db.collection('trips').where('status', '==', 'requested').limit(200).get(),
     db.collection('poolRideRequests').where('status', 'in', ['open', 'active', 'full']).limit(200).get(),
   ]);
-  reads += d.size + pr.size + t.size + p.size;
-  return reads;
+  return d + pr.size + t.size + p.size;
 }
 
-/** broadcastTripToNearbyDrivers — backend/functions/src/trips/index.ts:466-472 */
-async function broadcast() {
-  let reads = 1; // config/rideSettings
+/** broadcastTripToNearbyDrivers — backend/functions/src/trips/index.ts (bounded, config radius 2 km) */
+async function broadcast(lat, lng) {
   await db.doc('config/rideSettings').get();
-  const d = await db.collection('drivers')
-    .where('online', '==', true).where('verificationStatus', '==', 'approved').get();
-  return reads + d.size;
+  return 1 + (await nearbyDrivers(lat, lng, 2000));
 }
 
 /** getSuggestedRides pool scan — backend/functions/src/trips/suggestedRides.ts:261-269 */
@@ -188,7 +195,7 @@ function table(rows, cols) {
       await clear();
       await seed({ drivers: n, presence: n * 3, trips: Math.round(n / 4), pools: Math.round(n / 5) });
       const r = await run('nearby@' + n, () => nearbyActivity(CENTRE.lat, CENTRE.lng), { vus: 4, iterations: 12 });
-      const b = await run('broadcast@' + n, () => broadcast(), { vus: 4, iterations: 12 });
+      const b = await run('broadcast@' + n, () => broadcast(CENTRE.lat, CENTRE.lng), { vus: 4, iterations: 12 });
       rows.push({ onlineDrivers: n, nearbyReads: r.readsPerCall, nearbyP95: r.p95, bcastReads: b.readsPerCall, bcastP95: b.p95 });
     }
     table(rows, ['onlineDrivers', 'nearbyReads', 'nearbyP95', 'bcastReads', 'bcastP95']);

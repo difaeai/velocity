@@ -268,6 +268,11 @@ export const agentWhatsappWebhook = onRequest({ cors: false, invoker: 'public', 
   res.status(200).send('ok');
 });
 
+/** Meta's health mark for a number: only GREEN (or not rated yet) may open a new chat. Pure. */
+export function mayOpenChat(rating: string | undefined): boolean {
+  return !rating || rating === 'GREEN' || rating === 'UNKNOWN' || rating === 'NA';
+}
+
 /**
  * After a call where they said yes to WhatsApp: the one approved template that
  * opens the conversation. Returns false when it could not go.
@@ -277,6 +282,19 @@ export async function sendCallFollowUp(call: { to: string; leadId: string; leadN
   if (!lt) return { ok: false, error: 'No WhatsApp line is connected.' };
   const { line, token } = lt;
   if (!line.templateName) return { ok: false, error: 'No approved template is set on the WhatsApp line.' };
+  // Meta marks a number YELLOW or RED once people report or block it; opening more chats then is how it gets restricted.
+  const health = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${line.phoneNumberId}?fields=quality_rating`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
+  })
+    .then((r) => r.json() as Promise<{ quality_rating?: string }>)
+    .catch(() => ({}) as { quality_rating?: string });
+  if (!mayOpenChat(health.quality_rating)) {
+    return {
+      ok: false,
+      error: `WhatsApp rates this number ${health.quality_rating}: no new chats are opened until it is green again, so it is not restricted.`,
+    };
+  }
   const waId = waIdOf(call.to);
   const first = call.leadName.split(/\s+/)[0] ?? call.leadName;
   const sent = await postMessage(
