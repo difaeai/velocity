@@ -322,10 +322,29 @@ async function planCan(): Promise<string[]> {
   return ws ? PLANS[ws.plan].can : [];
 }
 
-const NO_CONTENT: Outcome = { status: 'skipped', note: 'The content team comes with the Content and Everything plans.' };
+/**
+ * Why a plan leaves a step out, or null when the step is in it. The steps and
+ * the sweep both ask, so an upgrade brings a skipped step back and a downgrade
+ * takes a finished one out again. Pure.
+ */
+export function notInPlan(id: StepId, can: readonly string[]): Outcome | null {
+  if (id === 'content' || id === 'execute') {
+    return can.includes('content') ? null : { status: 'skipped', note: 'The content team comes with the Content and Everything plans.' };
+  }
+  if (id === 'funnel') {
+    return can.includes('ads') || can.includes('sales')
+      ? null
+      : { status: 'skipped', note: 'The Meta Ad Expert and the sales agent come with the Meta Ad Expert and Everything plans.' };
+  }
+  if (id === 'close') {
+    return can.includes('sales') ? null : { status: 'skipped', note: 'The sales agent comes with the Everything plan.' };
+  }
+  return null;
+}
 
 async function stepContent(): Promise<Outcome> {
-  if (!(await planCan()).includes('content')) return NO_CONTENT;
+  const off = notInPlan('content', await planCan());
+  if (off) return off;
   const a = (await marketRef().get()).data() as MarketAnalysis | undefined;
   if (!a) return { status: 'failed', note: 'There is no market analysis to plan from yet.' };
   const settings = await getSocialSettings();
@@ -374,7 +393,8 @@ async function stepContent(): Promise<Outcome> {
 }
 
 async function stepExecute(): Promise<Outcome> {
-  if (!(await planCan()).includes('content')) return NO_CONTENT;
+  const off = notInPlan('execute', await planCan());
+  if (off) return off;
   const [settings, team, accounts] = await Promise.all([
     getSocialSettings(),
     activeTeam(),
@@ -406,11 +426,10 @@ Reply with ONE JSON object and nothing else:
 
 async function stepFunnel(): Promise<Outcome> {
   const can = await planCan();
+  const off = notInPlan('funnel', can);
+  if (off) return off;
   const ads = can.includes('ads');
   const sales = can.includes('sales');
-  if (!ads && !sales) {
-    return { status: 'skipped', note: 'The Meta Ad Expert and the sales agent come with the Meta Ad Expert and Everything plans.' };
-  }
 
   let funnel = (await funnelRef().get()).data() as FunnelPlan | undefined;
   if (!funnel) {
@@ -459,9 +478,8 @@ async function stepFunnel(): Promise<Outcome> {
 }
 
 async function stepClose(): Promise<Outcome> {
-  if (!(await planCan()).includes('sales')) {
-    return { status: 'skipped', note: 'The sales agent comes with the Everything plan.' };
-  }
+  const off = notInPlan('close', await planCan());
+  if (off) return off;
   const s = await salesReadiness();
   if (!s.kinds) {
     return {
@@ -521,17 +539,26 @@ async function settle(id: StepId, out: Outcome): Promise<void> {
  * Move the sequence as far as it can go right now, in order. A step waiting on
  * the owner is checked again (cheaply) every pass and lets the next one go
  * ahead; one being worked on elsewhere, or one that failed within the hour,
- * holds everything after it.
+ * holds everything after it. A step the plan leaves out shows that, also one
+ * done before a downgrade; a step skipped for the plan runs after an upgrade.
  */
 export async function advanceLaunch(): Promise<void> {
   if (!(await stateRef().get()).exists) return;
+  const can = await planCan();
   for (const id of STEPS) {
     const step = ((await stateRef().get()).data() as LaunchState).steps[id];
-    if (step.status === 'done' || step.status === 'skipped') continue;
+    const off = notInPlan(id, can);
+    if (off) {
+      if (step.status !== off.status || step.note !== off.note) await settle(id, off);
+      continue;
+    }
+    if (step.status === 'done') continue;
     const age = Date.now() - (step.atMs ?? 0);
     if (step.status === 'working' && age < STALE_MS) return;
     if (step.status === 'failed' && age < RETRY_MS) return;
-    if (step.status !== 'needs_you' && !(await claim(id))) return;
+    // The sales step's own skip (no businesses to write to) ends when kinds are added: re-checked like needs_you.
+    const recheck = step.status === 'needs_you' || (step.status === 'skipped' && id === 'close');
+    if (!recheck && !(await claim(id))) return;
     const out = await RUN[id]().catch(
       (e: Error): Outcome => ({ status: 'failed', note: `Could not finish: ${e.message}`.slice(0, 400) }),
     );

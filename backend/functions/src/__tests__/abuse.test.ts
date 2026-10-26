@@ -12,6 +12,7 @@
  *   5. Get one driver matched to two riders at once
  *   6. Read where Travel Partner users live
  *   9. Flood someone's phone with fleet requests
+ *  10. Two riders accept the same driver at the same moment
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CallableRequest } from 'firebase-functions/v2/https';
@@ -131,6 +132,32 @@ describe('Attack 5: get one driver matched to two riders at once', () => {
     // offer rider B can still see, and acceptBid refuses it like before.
     expect(await placeBid.run(driverReq({ tripId: b, fare: 400 }, 'drv'))).toMatchObject({ matched: false, taken: false });
     expect((await db().doc(`trips/${b}`).get()).get('status')).toBe('requested');
+  });
+});
+
+describe('Attack 10: two riders accept the same driver at the same moment', () => {
+  const PICKUP = { lat: 33.6844, lng: 73.0479, address: 'F-7 Markaz, Islamabad' };
+  const DROPOFF = { lat: 33.7215, lng: 73.0433, address: 'G-9 Markaz, Islamabad' };
+  const TRIP = { rideType: 'mini' as const, offeredFare: 400, seats: 1, passengerGender: 'unspecified' as const, paymentMethod: 'cash' as const, pickup: PICKUP, dropoff: DROPOFF };
+
+  it('binds the driver to exactly one of the two rides', async () => {
+    await db().doc('drivers/drv').set({
+      verificationStatus: 'approved', online: true, lastLocation: { lat: PICKUP.lat, lng: PICKUP.lng },
+      vehicleLabel: 'Suzuki Alto', plate: 'ABC-123', rating: 5, ...confirmedCar(),
+    });
+    const { tripId: a } = (await createTrip.run(makeReq(TRIP, 'riderA'))) as { tripId: string };
+    const { tripId: b } = (await createTrip.run(makeReq(TRIP, 'riderB'))) as { tripId: string };
+    const { bidId: bidA } = (await placeBid.run(driverReq({ tripId: a, fare: 450 }, 'drv'))) as { bidId: string };
+    const { bidId: bidB } = (await placeBid.run(driverReq({ tripId: b, fare: 450 }, 'drv'))) as { bidId: string };
+
+    // Both taps land together — the transaction, not the order, has to decide.
+    const results = await Promise.allSettled([
+      acceptBid.run(makeReq({ tripId: a, bidId: bidA }, 'riderA')),
+      acceptBid.run(makeReq({ tripId: b, bidId: bidB }, 'riderB')),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const statuses = await Promise.all([a, b].map(async (id) => (await db().doc(`trips/${id}`).get()).get('status')));
+    expect(statuses.filter((s) => s === 'requested')).toHaveLength(1);
   });
 });
 

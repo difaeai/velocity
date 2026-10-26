@@ -144,20 +144,28 @@ const STUDIO_ADMIN_NAV: NavGroup = {
   ],
 };
 
-/** Which plan part each desk page belongs to; a customer sees only what theirs includes. */
+/**
+ * Every page a customer may open, and the plan part it belongs to; a customer
+ * sees only what theirs includes. A page missing here (Velocity's own admin
+ * pages, anything new) is not theirs at all. The accounts, the AI agents and
+ * the settings are the content team's tools — the Meta Ad Expert connects on
+ * its own page.
+ */
 const NEED_OF: Record<string, StudioNeed> = {
   '/dashboard/social': 'content',
   '/dashboard/social/queue': 'content',
   '/dashboard/social/calendar': 'content',
   '/dashboard/social/inbox': 'content',
   '/dashboard/social/performance': 'content',
+  '/dashboard/social/accounts': 'content',
+  '/dashboard/social/employees': 'content',
+  '/dashboard/social/crew': 'content',
+  '/dashboard/social/automation': 'content',
   '/dashboard/social/ads': 'ads',
   '/dashboard/social/sales': 'sales',
-  '/dashboard/social/accounts': 'any',
-  '/dashboard/social/employees': 'any',
-  '/dashboard/social/automation': 'any',
   '/dashboard/social/billing': 'any',
 };
+const BILLING = '/dashboard/social/billing';
 
 const SECTIONS = [
   { key: 'app', label: 'Manage app', home: '/dashboard', nav: APP_NAV },
@@ -294,23 +302,14 @@ function AdminShell({ email, signOut, children }: ShellProps) {
 
 /**
  * A Velocity Studio customer's console: only the social desk, only what their
- * plan includes, and a line at the top while the trial runs or after it ends.
- * The server refuses anything outside the plan; this only keeps it out of sight.
+ * plan includes, only while it is paid for, and a line at the top while the
+ * trial runs or after it ends. The server refuses anything outside the plan;
+ * this keeps it out of sight.
  */
 function StudioShell({ email, signOut, children }: ShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { ws, includes } = useWorkspace();
-  const home = ws && !includes('content') ? '/dashboard/social/ads' : '/dashboard/social';
-
-  // Customers have no business outside the social desk, nor on its admin pages.
-  const misplaced =
-    !pathname.startsWith('/dashboard/social') ||
-    pathname.startsWith('/dashboard/social/studio-') ||
-    (pathname === '/dashboard/social' && home !== pathname);
-  useEffect(() => {
-    if (ws && misplaced) router.replace(home);
-  }, [ws, misplaced, home, router]);
 
   // The wall clock is subscribed to, not read during render.
   const [nowMs, setNowMs] = useState(0);
@@ -324,17 +323,29 @@ function StudioShell({ email, signOut, children }: ShellProps) {
     };
   }, []);
 
+  const over = ws !== null && nowMs > 0 && Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs;
+  // Nothing paid for right now — the free day over, the plan run out, or paused by Velocity: only the way to pay.
+  const locked = Boolean(ws?.suspended) || over;
+  const home = locked ? BILLING : ws && !includes('content') ? '/dashboard/social/ads' : '/dashboard/social';
+
+  // A customer opens only their desk's own pages — never Velocity's admin ones — and only billing while locked.
+  const need = NEED_OF[pathname];
+  const misplaced = !need || (locked && pathname !== BILLING) || (pathname === '/dashboard/social' && home !== pathname);
+  useEffect(() => {
+    if (ws && misplaced) router.replace(home);
+  }, [ws, misplaced, home, router]);
+
   if (!ws) return <Center>Loading your workspace…</Center>;
 
-  const need = NEED_OF[pathname] ?? 'any';
-  const nav = [
-    ...SOCIAL_NAV.map((g) => ({ ...g, items: g.items.filter((i) => includes(NEED_OF[i.href] ?? 'any')) })),
-    { title: 'Account', items: [{ href: '/dashboard/social/billing', label: '💳 Plan & billing' }] },
-  ].filter((g) => g.items.length);
+  const nav = locked
+    ? [{ title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] }]
+    : [
+        ...SOCIAL_NAV.map((g) => ({ ...g, items: g.items.filter((i) => includes(NEED_OF[i.href] ?? 'any')) })),
+        { title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] },
+      ].filter((g) => g.items.length);
 
   const hoursLeft = Math.max(1, Math.ceil((ws.trialEndsAtMs - nowMs) / 3600_000));
   const trial = nowMs > 0 && ws.paidUntilMs <= nowMs && ws.trialEndsAtMs > nowMs;
-  const over = nowMs > 0 && Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs;
   const what = need === 'ads' ? 'The Meta Ad Expert' : need === 'sales' ? 'The sales agent' : 'The content team';
 
   return (
@@ -387,25 +398,31 @@ function StudioShell({ email, signOut, children }: ShellProps) {
           </Banner>
         ) : null}
         {trial && !ws.suspended ? (
-          <Banner tone="info" href="/dashboard/social/billing" cta="Choose a plan">
+          <Banner tone="info" href={BILLING} cta="Choose a plan">
             Free trial — {hoursLeft} hour{hoursLeft === 1 ? '' : 's'} left. Pay before it ends and nothing stops.
           </Banner>
         ) : null}
-        {over && !ws.suspended && pathname !== '/dashboard/social/billing' ? (
-          <Banner tone="stop" href="/dashboard/social/billing" cta="Pay now">
-            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} The team is paused until a payment is
+        {over && !ws.suspended ? (
+          <Banner tone="stop" href={BILLING} cta="Pay now">
+            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} The desk opens again once a payment is
             approved.
           </Banner>
         ) : null}
-        {includes(need) ? (
+        {!need || misplaced ? null : includes(need) ? (
           children
         ) : (
           <div style={{ maxWidth: 520, margin: '60px auto', textAlign: 'center', display: 'grid', gap: 12 }}>
             <strong style={{ fontSize: 18 }}>Not in your {STUDIO_PLANS[ws.plan].name} plan</strong>
             <span style={{ color: colors.muted, fontSize: 14, lineHeight: 1.6 }}>
-              {what} comes with {need === 'ads' ? 'the Meta Ad Expert and Everything plans' : 'the Everything plan'}.
+              {what} comes with{' '}
+              {need === 'ads'
+                ? 'the Meta Ad Expert and Everything plans'
+                : need === 'content'
+                  ? 'the Content and Everything plans'
+                  : 'the Everything plan'}
+              .
             </span>
-            <Link href="/dashboard/social/billing" style={{ color: colors.secondary, fontWeight: 800 }}>
+            <Link href={BILLING} style={{ color: colors.secondary, fontWeight: 800 }}>
               Upgrade on Plan &amp; billing →
             </Link>
           </div>

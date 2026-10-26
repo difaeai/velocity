@@ -70,6 +70,9 @@ export function readIntent(text: string): { agent: Agent; format: SocialFormat |
   return { agent: 'team', format };
 }
 
+/** The suggestions a plan without ads is shown. */
+const TEAM_EXAMPLES = EXAMPLES.filter((e) => readIntent(e).agent === 'team');
+
 // ── the drawing ─────────────────────────────────────────────────────────────
 
 type P = [number, number];
@@ -274,7 +277,12 @@ export function Brain({
   onError: (message: string) => void;
   children: React.ReactNode;
 }) {
-  const { path } = useWorkspace();
+  const { path, includes } = useWorkspace();
+  // A plan without the Meta Ad Expert gets only the team: no ad agents to tap, no ad examples.
+  const adsPaid = includes('ads');
+  const order: Agent[] = adsPaid ? ORDER : ['team'];
+  const ys = adsPaid ? AGENT_Y : [190];
+  const examples = adsPaid ? EXAMPLES : TEAM_EXAMPLES;
   const router = useRouter();
   const [agent, setAgent] = useState<Agent>('team');
   const [refFile, setRefFile] = useState<File | null>(null);
@@ -289,9 +297,9 @@ export function Brain({
   // The empty box keeps suggesting what it can do.
   useEffect(() => {
     if (brief) return;
-    const t = setInterval(() => setExample((i) => (i + 1) % EXAMPLES.length), 3800);
+    const t = setInterval(() => setExample((i) => (i + 1) % examples.length), 3800);
     return () => clearInterval(t);
-  }, [brief]);
+  }, [brief, examples.length]);
 
   const postDirect = direct ?? settings.autoPublish;
   const adsReady = Boolean(ads?.adAccountId) && (ads?.dailyCap ?? 0) > 0 && ads?.mode != null;
@@ -304,7 +312,7 @@ export function Brain({
     const was = readIntent(brief);
     const now = readIntent(text);
     onBrief(text);
-    if (now.agent !== was.agent) setAgent(now.agent);
+    if (now.agent !== was.agent && adsPaid) setAgent(now.agent);
     if (now.format && now.format !== was.format) onWant(now.format);
   }
 
@@ -397,8 +405,8 @@ export function Brain({
       <div className="bn-grid">
         <div className="bn-stage">
           <svg className="bn-wires" viewBox="0 0 760 380" aria-hidden>
-            {ORDER.map((a, i) => {
-              const y = AGENT_Y[i];
+            {order.map((a, i) => {
+              const y = ys[i];
               const from = 190 + (y - 190) * 0.3;
               const into = `M330 ${from} C400 ${from}, 400 ${y}, 466 ${y}`;
               const out = `M698 ${y} C732 ${y}, 728 190, 760 190`;
@@ -421,14 +429,14 @@ export function Brain({
             <BrainArt />
           </div>
           <div className="bn-agents" role="radiogroup" aria-label="Who does it">
-            {ORDER.map((a, i) => (
+            {order.map((a, i) => (
               <button
                 key={a}
                 type="button"
                 role="radio"
                 aria-checked={a === agent}
                 className="bn-agent"
-                style={vars({ '--y': `${(AGENT_Y[i] / 380) * 100}%` })}
+                style={vars({ '--y': `${(ys[i] / 380) * 100}%` })}
                 onClick={() => setAgent(a)}
               >
                 <span className="ico" aria-hidden>
@@ -458,7 +466,7 @@ export function Brain({
           id="make-brief"
           rows={2}
           aria-label="Tell the brain what you want"
-          placeholder={`e.g. ${EXAMPLES[example]}`}
+          placeholder={`e.g. ${examples[example % examples.length]}`}
         />
         <button type="button" className="bn-go" onClick={go} disabled={busy || blocked}>
           {busy ? (

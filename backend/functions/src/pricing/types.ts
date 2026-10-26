@@ -287,7 +287,8 @@ export const DEFAULT_PRICING_CONFIG: PricingEngineConfig = {
       { ratio: 1.0, multiplier: 1.05 },
       { ratio: 1.5, multiplier: 1.1 },
       { ratio: 2.5, multiplier: 1.18 },
-      { ratio: Number.POSITIVE_INFINITY, multiplier: 1.25 },
+      // Finite on purpose: this config goes to the admin page, and a callable cannot send Infinity (it answers INTERNAL).
+      { ratio: 1000, multiplier: 1.25 },
     ],
     minActivity: 4,
     zonePrecision: 5,

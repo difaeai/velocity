@@ -257,4 +257,13 @@ describe('pool batching simulation — F-8 Markaz → Blue Area', () => {
       driverAcceptPoolBatch.run(driverReq({ rideId: RIDE_ID, gender: 'male' }, 'driver-imposter')),
     ).rejects.toThrow(/not your pool ride/i);
   });
+
+  it('never seats more riders than the car has when they all join at the same moment', async () => {
+    await seedRide({ maxSeats: 2 });
+    const results = await Promise.allSettled([AHMED, BILAL, USMAN].map(join));
+    const seated = results.filter((r) => r.status === 'fulfilled' && !(r.value as { queued: boolean }).queued);
+    const snap = await ride();
+    expect(snap.takenSeats).toBeLessThanOrEqual(2);
+    expect(seated).toHaveLength(snap.takenSeats);
+  });
 });

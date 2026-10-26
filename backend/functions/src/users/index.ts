@@ -16,36 +16,40 @@ import { Role } from '../domain/types';
  * profile + wallet and assigns the default 'passenger' role as a custom claim.
  * (gen1 trigger — works on any Firebase project without an Identity Platform
  * upgrade.)
+ *
+ * It fills in only what is missing. The callables that create accounts
+ * (admin-made and franchise drivers, admin-made passengers, Studio sign-up)
+ * set a role and write these docs themselves, often before this trigger runs:
+ * the old blind overwrite turned both admin-made drivers in prod back into
+ * 'passenger' users docs and dropped their phone numbers.
  */
 export const onUserCreate = functionsV1.auth.user().onCreate(async (user) => {
   const { uid, email, phoneNumber, displayName, photoURL } = user;
 
-  await auth.setCustomUserClaims(uid, { role: 'passenger' });
+  // shortcut: read-then-set is not atomic; a role set in the same ~100 ms can still lose. Have the creating callable set it again if that is ever seen.
+  const claims = (await auth.getUser(uid)).customClaims ?? {};
+  if (!claims.role) await auth.setCustomUserClaims(uid, { ...claims, role: 'passenger' });
 
   const now = FieldValue.serverTimestamp();
-  const batch = db.batch();
-
-  batch.set(db.doc(`users/${uid}`), {
-    uid,
-    role: 'passenger',
-    email: email ?? null,
-    phoneNumber: phoneNumber ?? null,
-    displayName: displayName ?? 'New User',
-    photoURL: photoURL ?? null,
-    gender: 'unspecified',
-    createdAt: now,
-    updatedAt: now,
+  const userRef = db.doc(`users/${uid}`);
+  const walletRef = db.doc(`wallets/${uid}`);
+  await db.runTransaction(async (tx) => {
+    const [profile, wallet] = await Promise.all([tx.get(userRef), tx.get(walletRef)]);
+    if (!profile.exists) {
+      tx.set(userRef, {
+        uid,
+        role: 'passenger',
+        email: email ?? null,
+        phoneNumber: phoneNumber ?? null,
+        displayName: displayName ?? 'New User',
+        photoURL: photoURL ?? null,
+        gender: 'unspecified',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    if (!wallet.exists) tx.set(walletRef, { uid, balance: 0, currency: 'PKR', createdAt: now, updatedAt: now });
   });
-
-  batch.set(db.doc(`wallets/${uid}`), {
-    uid,
-    balance: 0,
-    currency: 'PKR',
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await batch.commit();
   logger.info('Provisioned new user', { uid });
 });
 

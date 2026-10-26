@@ -72,6 +72,13 @@ const surgeDocs = async () => {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Record<string, unknown> & { id: string });
 };
 
+describe('the defaults', () => {
+  // adminGetPricingEngine returns them; an Infinity made every call answer INTERNAL.
+  it('survive the trip to the admin page as JSON', () => {
+    expect(JSON.parse(JSON.stringify(DEFAULT_PRICING_CONFIG))).toEqual(DEFAULT_PRICING_CONFIG);
+  });
+});
+
 describe('the pricing tick', () => {
   beforeEach(async () => {
     await clearFirestore();
