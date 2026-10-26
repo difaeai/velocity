@@ -147,9 +147,16 @@ export function CampaignDesigner({
       const source: AdSource =
         kind === 'post' ? { kind: 'post', postId: pick } : kind === 'boost' ? { kind: 'boost', mediaId: pick } : { kind: 'make' };
       const res = await adsApi.create({ brief, plan, source, launch: goLive });
-      const said = res.launched
-        ? `Done — "${res.plan.name}" is live at ${adMoney(res.budget, currency)} a day.`
-        : `Made — "${res.plan.name}" is waiting for your Approve under Campaigns.`;
+      const t = res.pretest;
+      const said =
+        (res.launched
+          ? `Done — "${res.plan.name}" is live at ${adMoney(res.budget, currency)} a day.`
+          : `Made — "${res.plan.name}" is waiting for your Approve under Campaigns.`) +
+        (t
+          ? ` Before Meta it met a test audience: ${Math.round(t.score * 100)}% would act${t.rewritten ? ', after one rewrite' : ''}${
+              t.objections.length ? ` (doubts: ${t.objections.join('; ')})` : ''
+            }.`
+          : '');
       setChat((c) => [...c, { from: 'expert', text: `${said}${res.note ? ` ${res.note}` : ''}` }]);
       onDone(said);
     } catch (e) {

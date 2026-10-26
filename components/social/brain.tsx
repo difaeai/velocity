@@ -329,9 +329,11 @@ export function Brain({
           dailyBudget: Number(budget) > 0 ? Number(budget) : undefined,
           days: Number(days) > 0 ? Math.round(Number(days)) : undefined,
         });
+        const t = res.pretest;
         onDone(
           `${res.launched ? 'Launched' : 'Made and waiting for your Approve on the Ads page'}: "${res.plan.name}", ` +
-            `${adMoney(res.budget, ads?.currency ?? 'PKR')} a day for ${res.plan.days} days.${res.note ? ` ${res.note}` : ''}`,
+            `${adMoney(res.budget, ads?.currency ?? 'PKR')} a day for ${res.plan.days} days.${res.note ? ` ${res.note}` : ''}` +
+            (t ? ` Test audience first: ${Math.round(t.score * 100)}% would act${t.rewritten ? ', after one rewrite' : ''}.` : ''),
         );
       } else {
         // "Make it like this": the file goes to Storage first and the backend reads it from there.

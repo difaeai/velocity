@@ -595,6 +595,16 @@ function CampaignRow({
               ) : null}
             </div>
           ) : null}
+          {c.pretest ? (
+            <div style={{ fontSize: 12.5, marginTop: 4, color: c.pretest.verdict === 'not_yet' ? colors.warn : colors.muted }}>
+              Test audience (simulated, before Meta): {Math.round(c.pretest.score * 100)}% would act
+              {c.pretest.rewritten && c.pretest.firstScore != null
+                ? `, after one rewrite (was ${Math.round(c.pretest.firstScore * 100)}%)`
+                : ''}
+              .{c.pretest.verdict === 'not_yet' ? ' Held for your Approve.' : ''}
+              {c.pretest.objections.length ? ` Doubts: ${c.pretest.objections.join('; ')}.` : ''}
+            </div>
+          ) : null}
           {c.review?.startsWith('Rejected') ? (
             <div style={{ fontSize: 12.5, color: colors.danger, marginTop: 4 }}>{c.review}</div>
           ) : null}
