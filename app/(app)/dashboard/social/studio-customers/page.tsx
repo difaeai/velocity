@@ -18,7 +18,7 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
-import { studioApi, type StudioPaymentDoc } from '@/lib/api';
+import { studioApi, studioPaymentLabel, type StudioPaymentDoc } from '@/lib/api';
 import { STUDIO_PLAN_IDS, STUDIO_PLANS, type StudioPlanId, type StudioUserDoc, type StudioWorkspace } from '@/lib/studio';
 import { Badge, Button, Card, StatCard } from '@/components/ui';
 import { VerdictBadge } from '@/components/social/studioVerdict';
@@ -184,7 +184,7 @@ export default function StudioUsersPage() {
 
         {shown.length === 0 ? (
           <p style={{ color: colors.muted, margin: 0 }}>
-            {rows.length === 0 ? 'Nobody has signed up yet. The sign-up page is /studio/start.' : 'Nobody matches.'}
+            {rows.length === 0 ? 'Nobody has signed up yet. The sign-up page is /studio/signup.' : 'Nobody matches.'}
           </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -409,7 +409,7 @@ function Manage({ ws, savedNote, payments }: { ws: Workspace; savedNote: string;
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <strong>{day(p.createdAtMs)}</strong>
                   <span>
-                    {p.kind === 'agents' ? 'AI agents package' : STUDIO_PLANS[p.plan].name}
+                    {studioPaymentLabel(p, STUDIO_PLANS[p.plan].name)}
                     {p.billing === 'year' ? ' · a year' : ''} · ${p.amountUsd}
                   </span>
                   <Badge

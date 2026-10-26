@@ -28,6 +28,7 @@ import { logger } from 'firebase-functions';
 import { db } from '../lib/firebase';
 import { open, type SealedSecret } from '../social/secrets';
 import { HOUSE, currentWorkspace } from '../social/scope';
+import { PLANS, type PlanId } from '../studio/plans';
 
 export type KeySlot = 'house' | 'customers' | 'voice';
 export const KEY_SLOTS: readonly KeySlot[] = ['house', 'customers', 'voice'];
@@ -47,9 +48,9 @@ export interface AiBudgets {
 }
 
 /**
- * $3 a month covers a customer's 30 days of content several times over (a
- * piece is a few cents on Flash) and is a tenth of what the cheapest plan
- * brings in. The house is uncapped until an admin says otherwise.
+ * A customer's month is their plan's `aiUsd` (Content $3, Meta Ad Expert $5).
+ * `customerUsd` is only what a customer gets while their plan cannot be read.
+ * The house is uncapped until an admin says otherwise.
  */
 export const DEFAULT_BUDGETS: AiBudgets = { houseUsd: 0, customerUsd: 3, perWorkspace: {} };
 
@@ -63,7 +64,8 @@ export const usageId = (wid: string, month = monthKey()): string => `${month}_${
 const TTL_MS = 60_000;
 
 let loaded: { keys: Partial<Record<KeySlot, string>>; budgets: AiBudgets; atMs: number } | null = null;
-const spent = new Map<string, { usd: number; month: string; atMs: number }>();
+/** Per workspace: the month's spend, the credit days' dollars added to it, and the plan. */
+const spent = new Map<string, { usd: number; extraUsd: number; plan?: PlanId; month: string; atMs: number }>();
 
 const env = (name: string): string => (process.env[name] ?? '').trim();
 
@@ -95,14 +97,25 @@ export async function loadAi(force = false): Promise<void> {
   }
 }
 
-/** This month's spend for one workspace, at most a minute old. */
+/** This month's spend for one workspace, and its plan, at most a minute old. */
 async function warmSpend(wid: string): Promise<void> {
   const month = monthKey();
   const have = spent.get(wid);
   if (have && have.month === month && Date.now() - have.atMs < TTL_MS) return;
   try {
-    const usd = Number((await db.doc(`aiUsage/${usageId(wid, month)}`).get()).data()?.usd ?? 0);
-    spent.set(wid, { usd: Number.isFinite(usd) ? usd : 0, month, atMs: Date.now() });
+    const [row, ws] = await Promise.all([
+      db.doc(`aiUsage/${usageId(wid, month)}`).get(),
+      wid === HOUSE ? null : db.doc(`workspaces/${wid}`).get(),
+    ]);
+    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    const plan = ws?.get('plan') as PlanId | undefined;
+    spent.set(wid, {
+      usd: num(row.get('usd') ?? 0),
+      extraUsd: num(row.get('extraUsd') ?? 0),
+      plan: plan && PLANS[plan] ? plan : undefined,
+      month,
+      atMs: Date.now(),
+    });
   } catch (e) {
     logger.warn('ai: could not read this month’s spend', { wid, message: (e as Error).message });
   }
@@ -113,32 +126,52 @@ export async function warmAi(wid: string = currentWorkspace()): Promise<void> {
   await Promise.all([loadAi(), warmSpend(wid)]);
 }
 
+/** This month's cached row for `wid`, or a blank one that keeps the known plan. */
+function thisMonth(wid: string, month = monthKey()) {
+  const have = spent.get(wid);
+  return have && have.month === month ? have : { usd: 0, extraUsd: 0, plan: have?.plan, month, atMs: 0 };
+}
+
 /** Count a call against the cached spend at once, so a cap bites before the next read. */
 export function noteSpend(wid: string, usd: number): void {
-  const month = monthKey();
-  const have = spent.get(wid);
-  spent.set(wid, {
-    usd: (have && have.month === month ? have.usd : 0) + usd,
-    month,
-    atMs: have && have.month === month ? have.atMs : 0,
-  });
+  const have = thisMonth(wid);
+  spent.set(wid, { ...have, usd: have.usd + usd });
+}
+
+/** Count a credit day's AI dollars at once, so the desk resumes before the next read. */
+export function noteExtra(wid: string, usd: number): void {
+  const have = thisMonth(wid);
+  spent.set(wid, { ...have, extraUsd: have.extraUsd + usd });
 }
 
 export function budgets(): AiBudgets {
   return loaded?.budgets ?? DEFAULT_BUDGETS;
 }
 
-/** The monthly cap for one workspace, USD; 0 = none. Pure over its inputs. */
-export function budgetFor(wid: string, b: AiBudgets = budgets()): number {
+/**
+ * One workspace's own month before credits, USD; 0 = none: an admin's figure
+ * for it, else its plan's allowance, else the fallback. Pure over its inputs.
+ */
+export function baseBudget(wid: string, b: AiBudgets = budgets(), plan: PlanId | undefined = thisMonth(wid).plan): number {
   if (wid === HOUSE) return b.houseUsd;
-  return b.perWorkspace[wid] ?? b.customerUsd;
+  return b.perWorkspace[wid] ?? (plan ? PLANS[plan].aiUsd : b.customerUsd);
+}
+
+/** The monthly cap, USD; 0 = none: the base plus the credit days spent this month. Pure over its inputs. */
+export function budgetFor(
+  wid: string,
+  b: AiBudgets = budgets(),
+  plan: PlanId | undefined = thisMonth(wid).plan,
+  extraUsd = wid === HOUSE ? 0 : thisMonth(wid).extraUsd,
+): number {
+  const base = baseBudget(wid, b, plan);
+  return base > 0 ? base + extraUsd : 0;
 }
 
 /** True when this workspace has spent its month. */
 export function overBudget(wid: string = currentWorkspace()): boolean {
   const cap = budgetFor(wid);
-  const have = spent.get(wid);
-  return cap > 0 && have?.month === monthKey() && have.usd >= cap;
+  return cap > 0 && thisMonth(wid).usd >= cap;
 }
 
 /** The Pakistan day of the month, and how many days that month has. */
@@ -150,18 +183,19 @@ export function monthDays(ms = Date.now()): { day: number; days: number } {
 /**
  * A month's budget spread evenly: by day d of D, at most budget × d / D may be
  * spent, so the content lasts the whole month instead of running out in week
- * three. Unused days carry forward. No budget, no pacing. Pure.
+ * three. Unused days carry forward. Credit days' dollars (`extraUsd`) were
+ * bought for today, so they are not spread. No budget, no pacing. Pure.
  */
-export function withinPace(spentUsd: number, capUsd: number, nowMs: number): boolean {
+export function withinPace(spentUsd: number, capUsd: number, nowMs: number, extraUsd = 0): boolean {
   if (capUsd <= 0) return true;
   const { day, days } = monthDays(nowMs);
-  return spentUsd < (capUsd * day) / days;
+  return spentUsd < (capUsd * day) / days + extraUsd;
 }
 
 /** Whether the desk may make an automatic piece now, on this instance's cached spend. */
 export function paceAllows(wid: string = currentWorkspace(), nowMs = Date.now()): boolean {
-  const have = spent.get(wid);
-  return withinPace(have?.month === monthKey(nowMs) ? have.usd : 0, budgetFor(wid), nowMs);
+  const have = thisMonth(wid, monthKey(nowMs));
+  return withinPace(have.usd, baseBudget(wid), nowMs, wid === HOUSE ? 0 : have.extraUsd);
 }
 
 /** The slot a text call made now draws on. */

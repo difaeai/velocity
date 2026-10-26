@@ -85,6 +85,12 @@ export default function Login() {
             <Button onClick={submit} disabled={loading}>
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
+            <p style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>
+              Velocity Studio customer?{' '}
+              <a href="/studio/login" style={{ color: colors.secondary, fontWeight: 700 }}>
+                Log in here
+              </a>
+            </p>
           </div>
         )}
       </Card>

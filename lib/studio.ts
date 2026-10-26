@@ -87,6 +87,11 @@ export const studioPriceUsd = (plan: StudioPlanId, billing: StudioBilling): numb
 
 export const STUDIO_TRIAL_HOURS = 24;
 
+/** Credits: a day of the team's work for $1, used only when a plan runs out or a month's AI work is used up. Mirrors the backend. */
+export const STUDIO_CREDIT_DAY_USD = 1;
+/** The packs on sale, in days (one day = one dollar). */
+export const STUDIO_CREDIT_PACKS = [5, 10, 20] as const;
+
 // shortcut: one fixed rate for the PKR a customer is asked to send; mirrored in backend studio/plans.ts. Read it from config when the rupee moves.
 export const PKR_PER_USD = 280;
 
@@ -111,6 +116,20 @@ export interface StudioWorkspace {
   };
   /** Paused by a Velocity admin. */
   suspended?: boolean;
+  /** Credit days bought and not yet used. */
+  creditDays?: number;
+  /** The Pakistan day the last credit day was spent. */
+  creditDayOn?: string;
+}
+
+/** `workspaces/{id}/creditLog/{id}`: what the customer sees of their credits — never what a day really cost. */
+export interface StudioCreditEntry {
+  atMs: number;
+  day: string;
+  /** +n bought, −1 spent. */
+  days: number;
+  usd: number;
+  why: 'bought' | 'lapsed' | 'allowance';
 }
 
 /** `studioUsers/{uid}`: everyone who started a Studio sign-up, finished or not. Admin-only. */

@@ -5,7 +5,18 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { budgetFor, DEFAULT_BUDGETS, geminiKey, keySource, noteSpend, overBudget, resetAiCache, usageId, withinPace } from '../config';
+import {
+  budgetFor,
+  DEFAULT_BUDGETS,
+  geminiKey,
+  keySource,
+  noteExtra,
+  noteSpend,
+  overBudget,
+  resetAiCache,
+  usageId,
+  withinPace,
+} from '../config';
 import { countPlanned } from '../../social/strategy';
 import { costUsd, featureOf, priceFor, readUsage } from '../usage';
 
@@ -64,6 +75,18 @@ describe('budgets', () => {
     expect(budgetFor('wsA', { ...DEFAULT_BUDGETS, perWorkspace: { wsA: 10 } })).toBe(10);
   });
 
+  it('a plan sets the month: Content $3, the Meta Ad Expert $5; an admin figure still wins', () => {
+    expect(budgetFor('wsA', DEFAULT_BUDGETS, 'content', 0)).toBe(3);
+    expect(budgetFor('wsA', DEFAULT_BUDGETS, 'all', 0)).toBe(5);
+    expect(budgetFor('wsA', { ...DEFAULT_BUDGETS, perWorkspace: { wsA: 8 } }, 'all', 0)).toBe(8);
+  });
+
+  it('credit days add their dollars, but never put a cap on an uncapped workspace', () => {
+    expect(budgetFor('wsA', DEFAULT_BUDGETS, 'content', 0.4)).toBeCloseTo(3.4, 6);
+    expect(budgetFor('wsA', { ...DEFAULT_BUDGETS, perWorkspace: { wsA: 0 } }, 'content', 0.4)).toBe(0);
+    expect(budgetFor('velocity', DEFAULT_BUDGETS, undefined, 0.4)).toBe(0);
+  });
+
   it('a customer who has spent the month is over budget; the uncapped house never is', () => {
     expect(overBudget('wsA')).toBe(false);
     noteSpend('wsA', 2.5);
@@ -73,6 +96,13 @@ describe('budgets', () => {
     expect(overBudget('wsB')).toBe(false);
     noteSpend('velocity', 500);
     expect(overBudget('velocity')).toBe(false);
+  });
+
+  it('a credit day lifts a spent month at once', () => {
+    noteSpend('wsA', 3.1);
+    expect(overBudget('wsA')).toBe(true);
+    noteExtra('wsA', 0.2);
+    expect(overBudget('wsA')).toBe(false);
   });
 });
 
@@ -87,6 +117,10 @@ describe('pacing a month’s budget', () => {
     expect(withinPace(0, 30, Date.UTC(2026, 10, 1, 7))).toBe(true);
     expect(withinPace(29, 30, Date.UTC(2026, 10, 30, 7))).toBe(true);
     expect(withinPace(1_000, 0, NOV_10)).toBe(true);
+  });
+  it('spends a credit day’s dollars at once instead of spreading them', () => {
+    expect(withinPace(10.1, 30, NOV_10)).toBe(false);
+    expect(withinPace(10.1, 30, NOV_10, 0.2)).toBe(true);
   });
 });
 

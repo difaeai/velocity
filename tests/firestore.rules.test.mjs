@@ -1078,7 +1078,7 @@ test('Velocity Studio: a customer reads only their own workspace, never its secr
   await assertFails(getDoc(doc(admin, 'studioReceiptHashes/sha1')));
 });
 
-test('AI usage and agent records: admins see all, a customer their own, the call keys nobody', async () => {
+test('AI usage and agent records: admins see all, a customer their own agent rows only, the call keys nobody', async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'aiUsage/2026-10_wsA'), { wid: 'wsA', usd: 1.2 });
@@ -1095,7 +1095,8 @@ test('AI usage and agent records: admins see all, a customer their own, the call
   });
   const ownerA = testEnv.authenticatedContext('ownerA', { ws: 'wsA' }).firestore();
 
-  await assertSucceeds(getDoc(doc(ownerA, 'aiUsage/2026-10_wsA')));
+  // The real AI cost is never the customer's to read, not even their own row.
+  await assertFails(getDoc(doc(ownerA, 'aiUsage/2026-10_wsA')));
   await assertFails(getDoc(doc(ownerA, 'aiUsage/2026-10_velocity')));
   await assertSucceeds(getDoc(doc(admin, 'aiUsage/2026-10_velocity')));
   await assertSucceeds(getDoc(doc(ownerA, 'agentUsage/2026-10_wsA')));

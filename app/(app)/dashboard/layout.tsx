@@ -16,7 +16,7 @@
  * open and a refresh keeps it.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -165,8 +165,21 @@ const NEED_OF: Record<string, StudioNeed> = {
   '/dashboard/social/ads': 'ads',
   '/dashboard/social/sales': 'sales',
   '/dashboard/social/billing': 'any',
+  '/dashboard/social/upgrade': 'any',
+  '/dashboard/social/usage': 'any',
 };
 const BILLING = '/dashboard/social/billing';
+const UPGRADE = '/dashboard/social/upgrade';
+const USAGE = '/dashboard/social/usage';
+/** What a customer can still open with nothing paid for: the ways to pay. */
+const ACCOUNT_PAGES = [UPGRADE, BILLING, USAGE];
+const ACCOUNT_NAV: NavGroup = {
+  title: 'Account',
+  items: [
+    { href: UPGRADE, label: '⬆️ Plans & upgrade', also: [BILLING] },
+    { href: USAGE, label: '📊 Usage & credits' },
+  ],
+};
 
 const SECTIONS = [
   { key: 'app', label: 'Manage app', home: '/dashboard', nav: APP_NAV },
@@ -176,10 +189,13 @@ const SECTIONS = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { initializing, user, isAdmin, workspaceId, signOut } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
+  // The social desk is where Studio customers live, so a signed-out visit there goes to their own log-in.
+  const loginPage = pathname.startsWith('/dashboard/social') ? '/studio/login' : '/login';
   useEffect(() => {
-    if (!initializing && !user) router.replace('/login');
-  }, [initializing, user, router]);
+    if (!initializing && !user) router.replace(loginPage);
+  }, [initializing, user, router, loginPage]);
 
   if (initializing) return <Center>Loading…</Center>;
   if (!user) return <Center>Redirecting…</Center>;
@@ -192,7 +208,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             This account is not an admin and has no Velocity Studio workspace.
           </span>
           <Link href="/studio/start" style={{ color: colors.secondary, fontWeight: 800 }}>
-            Start Velocity Studio →
+            Finish setting up Velocity Studio →
           </Link>
           <Button variant="secondary" onClick={signOut}>
             Sign out
@@ -204,7 +220,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <WorkspaceProvider>
       {workspaceId ? (
-        <StudioShell email={user.email} signOut={signOut}>
+        <StudioShell email={user.email} name={user.displayName} signOut={signOut}>
           {children}
         </StudioShell>
       ) : (
@@ -218,6 +234,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 interface ShellProps {
   email: string | null;
+  name?: string | null;
   signOut: () => void;
   children: React.ReactNode;
 }
@@ -307,7 +324,7 @@ function AdminShell({ email, signOut, children }: ShellProps) {
  * trial runs or after it ends. The server refuses anything outside the plan;
  * this keeps it out of sight.
  */
-function StudioShell({ email, signOut, children }: ShellProps) {
+function StudioShell({ email, name, signOut, children }: ShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { ws, includes } = useWorkspace();
@@ -325,10 +342,12 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   }, []);
 
   const over = ws !== null && nowMs > 0 && Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs;
-  // Nothing paid for right now — the free day over, the plan run out, or paused by Velocity: only the way to pay.
-  const locked = Boolean(ws?.suspended) || over;
+  const credits = ws?.creditDays ?? 0;
+  // Nothing paid for right now — the free day over, the plan run out with no credits, or paused by Velocity: only
+  // the ways to pay. With credits the desk stays open: its first call puts the day on credit.
+  const locked = Boolean(ws?.suspended) || (over && credits < 1);
   const home = locked
-    ? BILLING
+    ? UPGRADE
     : !ws || includes('content')
       ? '/dashboard/social'
       : includes('ads')
@@ -337,7 +356,8 @@ function StudioShell({ email, signOut, children }: ShellProps) {
 
   // A customer opens only their desk's own pages — never Velocity's admin ones — and only billing while locked.
   const need = NEED_OF[pathname];
-  const misplaced = !need || (locked && pathname !== BILLING) || (pathname === '/dashboard/social' && home !== pathname);
+  const misplaced =
+    !need || (locked && !ACCOUNT_PAGES.includes(pathname)) || (pathname === '/dashboard/social' && home !== pathname);
   useEffect(() => {
     if (ws && misplaced) router.replace(home);
   }, [ws, misplaced, home, router]);
@@ -345,7 +365,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   if (!ws) return <Center>Loading your workspace…</Center>;
 
   const nav = locked
-    ? [{ title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] }]
+    ? [ACCOUNT_NAV]
     : [
         ...SOCIAL_NAV.map((g) => ({
           ...g,
@@ -356,7 +376,7 @@ function StudioShell({ email, signOut, children }: ShellProps) {
               (i.href !== '/dashboard/social/accounts' || includes('content') || includes('ads')),
           ),
         })),
-        { title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] },
+        ACCOUNT_NAV,
       ].filter((g) => g.items.length);
 
   const hoursLeft = Math.max(1, Math.ceil((ws.trialEndsAtMs - nowMs) / 3600_000));
@@ -399,12 +419,12 @@ function StudioShell({ email, signOut, children }: ShellProps) {
             </div>
           ))}
         </nav>
-        <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-          <div style={{ fontSize: 12, color: colors.muted, marginBottom: 8 }}>{email}</div>
-          <Button variant="ghost" onClick={signOut}>
-            Sign out
-          </Button>
-        </div>
+        <AccountMenu
+          name={name || ws.name}
+          email={email}
+          status={`${STUDIO_PLANS[ws.plan].name} · ${ws.suspended ? 'Paused' : trial ? 'Free trial' : over ? (credits ? 'On credit' : 'Run out') : 'Paid'}`}
+          signOut={signOut}
+        />
       </aside>
       <main style={{ flex: 1, padding: 28, overflow: 'auto', minWidth: 0 }}>
         {ws.suspended ? (
@@ -413,14 +433,20 @@ function StudioShell({ email, signOut, children }: ShellProps) {
           </Banner>
         ) : null}
         {trial && !ws.suspended ? (
-          <Banner tone="info" href={BILLING} cta="Choose a plan">
+          <Banner tone="info" href={UPGRADE} cta="Choose a plan">
             Free trial — {hoursLeft} hour{hoursLeft === 1 ? '' : 's'} left. Pay before it ends and nothing stops.
           </Banner>
         ) : null}
-        {over && !ws.suspended ? (
-          <Banner tone="stop" href={BILLING} cta="Pay now">
-            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} The desk opens again once a payment is
-            approved.
+        {over && !ws.suspended && !credits ? (
+          <Banner tone="stop" href={UPGRADE} cta="Pay now">
+            {ws.paidUntilMs ? 'Your plan has run out.' : 'Your free day is over.'} Pay for a plan or add credits ($1 a day)
+            and the desk opens again once the payment is approved.
+          </Banner>
+        ) : null}
+        {over && !ws.suspended && credits ? (
+          <Banner tone="info" href={USAGE} cta="See credits">
+            {ws.paidUntilMs ? 'Your plan has run out' : 'Your free day is over'} — your team carries on with your credits, $1 a
+            day ({credits} day{credits === 1 ? '' : 's'} left).
           </Banner>
         ) : null}
         {!need || misplaced ? null : includes(need) ? (
@@ -437,8 +463,8 @@ function StudioShell({ email, signOut, children }: ShellProps) {
                   : 'the Sales agents and Meta Ad Expert + Everything plans'}
               .
             </span>
-            <Link href={BILLING} style={{ color: colors.secondary, fontWeight: 800 }}>
-              Upgrade on Plan &amp; billing →
+            <Link href={UPGRADE} style={{ color: colors.secondary, fontWeight: 800 }}>
+              See the plans →
             </Link>
           </div>
         )}
@@ -479,6 +505,131 @@ function Banner({
       <Link href={href} style={{ fontWeight: 800, color: c }}>
         {cta} →
       </Link>
+    </div>
+  );
+}
+
+/**
+ * The customer's own corner of the sidebar: who is signed in and on what, and
+ * a menu of the account things — usage, plans, help, log out.
+ */
+function AccountMenu({ name, email, status, signOut }: { name: string; email: string | null; status: string; signOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  const item: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    padding: '9px 10px',
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    color: colors.text,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontFamily: 'inherit',
+  };
+
+  return (
+    <div ref={box} style={{ position: 'relative', marginTop: 'auto', paddingTop: 20 }}>
+      {open ? (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            background: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 14,
+            boxShadow: '0 18px 40px -12px rgba(4,35,26,0.28)',
+            padding: 6,
+            display: 'grid',
+            zIndex: 20,
+          }}
+        >
+          <div style={{ padding: '8px 10px', fontSize: 12.5, color: colors.muted, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</div>
+          {[
+            { href: USAGE, label: '📊 Usage & credits' },
+            { href: UPGRADE, label: '⬆️ Upgrade plan' },
+            { href: `${UPGRADE}#credits`, label: '➕ Add credits' },
+            { href: `mailto:${SUPPORT_EMAIL}`, label: '❓ Get help' },
+          ].map((m) => (
+            <Link key={m.href} href={m.href} role="menuitem" style={item} onClick={() => setOpen(false)}>
+              {m.label}
+            </Link>
+          ))}
+          <div style={{ height: 1, background: colors.border, margin: '4px 6px' }} />
+          <button type="button" role="menuitem" style={item} onClick={signOut}>
+            ↪ Log out
+          </button>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          width: '100%',
+          padding: 8,
+          borderRadius: 12,
+          border: `1px solid ${open ? colors.border : 'transparent'}`,
+          background: open ? colors.bg : 'none',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 34,
+            height: 34,
+            flex: 'none',
+            borderRadius: '50%',
+            display: 'grid',
+            placeItems: 'center',
+            background: colors.primary,
+            color: '#ccff00',
+            fontWeight: 900,
+            fontSize: 14,
+          }}
+        >
+          {(name || email || '?').trim().charAt(0).toUpperCase()}
+        </span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: 'block', fontWeight: 800, fontSize: 13.5, color: colors.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name}
+          </span>
+          <span style={{ display: 'block', fontSize: 12, color: colors.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {status}
+          </span>
+        </span>
+        <span aria-hidden style={{ color: colors.muted, fontSize: 11 }}>
+          ▾
+        </span>
+      </button>
     </div>
   );
 }
