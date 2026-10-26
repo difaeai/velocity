@@ -2523,4 +2523,19 @@ export const qaApi = {
       durationMs: number;
     }
   >('qaRunChecksNow'),
+  /** The same report the phone's watcher sends; the console sends its own crashes this way. */
+  report: callable<
+    {
+      reports: {
+        featureId: string;
+        kind: 'threw';
+        whatHappened: string;
+        errorMessage?: string;
+        screen?: string;
+        detail?: Record<string, string>;
+      }[];
+      platform?: string;
+    },
+    { recorded: number }
+  >('reportFeatureCheck'),
 };

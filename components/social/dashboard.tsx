@@ -418,7 +418,12 @@ export function AdsSection({
       ) : (
         <>
           <div className="fx-stats">
-            <Cell label="Spent · 7 days" value={w.spend} format={(n) => adMoney(n, cur)} hint={`limit ${adMoney(ads!.dailyCap, cur)}/day`} />
+            <Cell
+              label="Spent · 7 days"
+              value={w.spend}
+              format={(n) => adMoney(n, cur)}
+              hint={ads!.dailyCap ? `limit ${adMoney(ads!.dailyCap, cur)}/day` : 'no daily limit set yet'}
+            />
             <Cell label="Link clicks" value={w.linkClicks} format={(n) => Math.round(n).toLocaleString('en-PK')} />
             <Cell
               label="Per click · CPC"
