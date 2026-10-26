@@ -14,6 +14,9 @@ describe('canUse', () => {
     expect(canUse({ ...live, plan: 'content' }, 'content', NOW)).toBe(true);
     expect(canUse({ ...live, plan: 'content' }, 'ads', NOW)).toBe(false);
     expect(canUse({ ...live, plan: 'content' }, 'sales', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'sales' }, 'sales', NOW)).toBe(true);
+    expect(canUse({ ...live, plan: 'sales' }, 'content', NOW)).toBe(false);
+    expect(canUse({ ...live, plan: 'sales' }, 'ads', NOW)).toBe(false);
     expect(canUse({ ...live, plan: 'ads' }, 'ads', NOW)).toBe(true);
     expect(canUse({ ...live, plan: 'ads' }, 'content', NOW)).toBe(false);
     expect(canUse({ ...live, plan: 'all' }, 'sales', NOW)).toBe(true);
@@ -72,11 +75,11 @@ describe('paidAfter', () => {
     expect(paidAfter({ plan: 'ads', paidUntilMs: 0 }, 'all', NOW, YEAR_MS)).toBe(NOW + YEAR_MS);
   });
   it('converts the days left on an upgrade at what they were worth', () => {
-    // 32 days of Content ($19) are worth 19 days of Everything ($32).
-    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 32 * DAY }, 'all', NOW)).toBe(NOW + 19 * DAY + PERIOD_MS);
+    // 32 days of Content ($24) are worth 24 days of the whole team ($32).
+    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 32 * DAY }, 'all', NOW)).toBe(NOW + 24 * DAY + PERIOD_MS);
   });
   it('keeps their worth on a downgrade, so nothing paid is thrown away', () => {
-    expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 19 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
+    expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 24 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
   });
 });
 
@@ -85,7 +88,12 @@ describe('priceUsd', () => {
     expect(priceUsd('content', 'month')).toBe(PLANS.content.usd);
   });
   it('prices a year at the figures the site shows', () => {
-    expect([priceUsd('content', 'year'), priceUsd('ads', 'year'), priceUsd('all', 'year')]).toEqual([198, 250, 334]);
+    expect([priceUsd('sales', 'year'), priceUsd('content', 'year'), priceUsd('all', 'year')]).toEqual([177, 250, 334]);
+  });
+  it('sells Sales agents, Content and the whole team, left to right — not the old ads-only plan', () => {
+    expect(PLAN_IDS).toEqual(['sales', 'content', 'all']);
+    expect([PLANS.sales.usd, PLANS.content.usd, PLANS.all.usd]).toEqual([17, 24, 32]);
+    expect(PLANS.all.name).toMatch(/Meta Ad Expert.*Everything/);
   });
   it('never saves less than 13% on twelve months', () => {
     for (const id of PLAN_IDS) expect(priceUsd(id, 'year')).toBeLessThanOrEqual(PLANS[id].usd * 12 * 0.87);

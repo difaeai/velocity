@@ -55,6 +55,7 @@ describe('notInPlan', () => {
   it('leaves out exactly what each plan does not pay for', () => {
     expect(left(['content'])).toEqual(['funnel', 'close']);
     expect(left(['ads'])).toEqual(['content', 'execute', 'close']);
+    expect(left(['sales'])).toEqual(['content', 'execute']);
     expect(left(['content', 'ads', 'sales'])).toEqual([]);
   });
   it('says it is skipped, so the sweep can bring the step back after an upgrade', () => {

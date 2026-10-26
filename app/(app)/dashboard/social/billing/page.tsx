@@ -156,7 +156,8 @@ export default function BillingPage() {
       {notice ? <p style={{ color: colors.success, margin: 0 }}>{notice}</p> : null}
       {askedPkg && !agentsOk ? (
         <p style={{ color: colors.warn, margin: 0 }}>
-          AI agents come with the Everything plan. Pay for Everything below first, then add the package from the Sales page.
+          AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Pay for one of them below first,
+          then add the package from the Sales page.
         </p>
       ) : null}
 

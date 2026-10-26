@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { VelocityMark } from '@/components/BrandMark';
 import { ArrowRight, Clock, Handshake, Megaphone, Mic, Sparkle, TrendingUp } from '@/components/site/Icons';
 import { StudioFaq, StudioPricing } from '@/components/site/StudioSections';
-import { STUDIO_PLANS, STUDIO_TRIAL_HOURS } from '@/lib/studio';
+import { STUDIO_FROM_USD, STUDIO_TRIAL_HOURS } from '@/lib/studio';
 import site from '@/components/site/site.module.css';
 
 import s from './studio.module.css';
@@ -21,7 +21,7 @@ import s from './studio.module.css';
 export const metadata: Metadata = {
   title: { absolute: 'Velocity Studio — your AI social media team' },
   description:
-    'Connect Instagram and Facebook and an AI team plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $19 a month.',
+    `Connect Instagram and Facebook and an AI team plans your month, makes reels with voice-over and music, posts every day, runs your Meta ads and finds you customers. From $${STUDIO_FROM_USD} a month.`,
   alternates: { canonical: '/studio' },
   openGraph: {
     title: 'Velocity Studio — you don’t need a social media team anymore',
@@ -97,7 +97,7 @@ export default function StudioPage() {
                 See plans
               </a>
             </div>
-            <p className={s.heroNote}>No card. From ${STUDIO_PLANS.content.usd}/month after the free day.</p>
+            <p className={s.heroNote}>No card. From ${STUDIO_FROM_USD}/month after the free day.</p>
           </div>
 
           <div className={s.mock} aria-label="What your dashboard looks like">

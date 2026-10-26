@@ -8,7 +8,8 @@
  * Each card rises in the first time it is seen, and its film plays only while
  * the card is on screen. With reduced motion or Data Saver the films show their
  * posters and download nothing. Flipping the switch runs the figures to their
- * new values; hovering pulls a card forward, tilted toward the mouse.
+ * new values; hovering a card brings it to the middle and grows it (CSS, on the
+ * fixed slot each card sits in), and leaving puts every card back.
  */
 
 import Link from 'next/link';
@@ -27,16 +28,25 @@ import { useReducedMotion, useSaveData } from './useReducedMotion';
 import site from './site.module.css';
 import styles from './pricing.module.css';
 
-const FILMS: Record<StudioPlanId, { chip: string; alt: string }> = {
+/** `src` is the film without its extension: `.mp4` plays, `.jpg` is its poster. */
+const FILMS: Record<StudioPlanId, { src: string; chip: string; alt: string }> = {
+  sales: {
+    src: '/site/step5',
+    chip: 'Closing your leads',
+    alt: 'The owner delivers a tall stack of pink boxes to an office manager, who shakes her hand',
+  },
   content: {
+    src: '/site/plan-content',
     chip: 'Posting for you',
     alt: 'A phone whose feed fills with a bakery’s new posts while likes and comments float up',
   },
   ads: {
+    src: '/site/plan-ads',
     chip: 'Improving your ads',
     alt: 'An ads dashboard whose charts climb while the winning ad glows and a losing one sits paused',
   },
   all: {
+    src: '/site/plan-all',
     chip: 'The whole team at work',
     alt: 'Posts, ad results and sales emails orbiting one glowing core',
   },
@@ -67,21 +77,13 @@ function Count({ to, from = to }: { to: number; from?: number }) {
   return <>{dollars(Number.isInteger(to) ? Math.round(v) : v)}</>;
 }
 
-/** Tilts the hovered card toward the mouse and tells its glow where the mouse is. */
-function tilt(e: React.PointerEvent<HTMLElement>) {
+/** Tells the hovered card's glow where the mouse is. */
+function glow(e: React.PointerEvent<HTMLElement>) {
   if (e.pointerType !== 'mouse') return;
   const card = e.currentTarget;
   const r = card.getBoundingClientRect();
-  const x = e.clientX - r.left;
-  const y = e.clientY - r.top;
-  card.style.setProperty('--rx', `${(x / r.width - 0.5) * 6}deg`);
-  card.style.setProperty('--ry', `${(0.5 - y / r.height) * 4}deg`);
-  card.style.setProperty('--mx', `${x}px`);
-  card.style.setProperty('--my', `${y}px`);
-}
-
-function untilt(e: React.PointerEvent<HTMLElement>) {
-  for (const v of ['--rx', '--ry']) e.currentTarget.style.removeProperty(v);
+  card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  card.style.setProperty('--my', `${e.clientY - r.top}px`);
 }
 
 export function StudioPlans() {
@@ -131,81 +133,81 @@ export function StudioPlans() {
           const year = studioPriceUsd(id, 'year');
           const twelve = p.usd * 12;
           return (
-            <article
-              key={id}
-              ref={(el) => {
-                cards.current[i] = el;
-              }}
-              data-i={i}
-              className={`${styles.card} ${best ? styles.best : ''} ${seen[i] ? styles.seen : ''}`}
-              style={{ ['--i' as string]: i }}
-              onPointerMove={tilt}
-              onPointerLeave={untilt}
-            >
-              {best ? <span className={styles.tag}>The whole team</span> : null}
-              <div className={styles.film}>
-                <video
-                  ref={(el) => {
-                    films.current[i] = el;
-                  }}
-                  muted
-                  playsInline
-                  loop
-                  preload={still ? 'none' : 'metadata'}
-                  poster={`/site/plan-${id}.jpg`}
-                  aria-label={FILMS[id].alt}
-                >
-                  <source src={`/site/plan-${id}.mp4`} type="video/mp4" />
-                </video>
-                <span className={styles.live}>
-                  <i aria-hidden />
-                  {FILMS[id].chip}
-                </span>
-              </div>
-
-              <div className={styles.body}>
-                <h3>{p.name}</h3>
-                <div className={styles.priceBox}>
-                  {/* Keyed on billing so the sweep, the unit and the line under it replay when the switch flips. */}
-                  <span key={`sheen-${billing}`} className={styles.sheen} aria-hidden />
-                  <div className={styles.price}>
-                    <strong>
-                      <Count to={studioPriceUsd(id, billing)} />
-                    </strong>
-                    <small key={billing}>/{billing}</small>
-                  </div>
-                  <p key={`save-${billing}`} className={styles.save}>
-                    {billing === 'year' ? (
-                      <>
-                        <s>${twelve}</s> <Count from={p.usd} to={year / 12} /> a month ·{' '}
-                        <mark>
-                          you save <Count from={0} to={twelve - year} />
-                        </mark>
-                      </>
-                    ) : (
-                      <>
-                        or ${year} a year — save ${twelve - year}
-                      </>
-                    )}
-                  </p>
+            <div key={id} className={styles.slot}>
+              <article
+                ref={(el) => {
+                  cards.current[i] = el;
+                }}
+                data-i={i}
+                className={`${styles.card} ${best ? styles.best : ''} ${seen[i] ? styles.seen : ''}`}
+                style={{ ['--i' as string]: i }}
+                onPointerMove={glow}
+              >
+                {best ? <span className={styles.tag}>The whole team</span> : null}
+                <div className={styles.film}>
+                  <video
+                    ref={(el) => {
+                      films.current[i] = el;
+                    }}
+                    muted
+                    playsInline
+                    loop
+                    preload={still ? 'none' : 'metadata'}
+                    poster={`${FILMS[id].src}.jpg`}
+                    aria-label={FILMS[id].alt}
+                  >
+                    <source src={`${FILMS[id].src}.mp4`} type="video/mp4" />
+                  </video>
+                  <span className={styles.live}>
+                    <i aria-hidden />
+                    {FILMS[id].chip}
+                  </span>
                 </div>
-                <p className={styles.tagline}>{p.tagline}</p>
-                <ul className={styles.list}>
-                  {p.includes.map((line, j) => (
-                    <li key={line} style={{ ['--j' as string]: j }}>
-                      <Check />
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href={`/studio/start?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
-                  className={`${site.btn} ${best ? site.btnLime : site.btnGhost} ${styles.cta}`}
-                >
-                  Start free <ArrowRight />
-                </Link>
-              </div>
-            </article>
+
+                <div className={styles.body}>
+                  <h3>{p.name}</h3>
+                  <div className={styles.priceBox}>
+                    {/* Keyed on billing so the sweep, the unit and the line under it replay when the switch flips. */}
+                    <span key={`sheen-${billing}`} className={styles.sheen} aria-hidden />
+                    <div className={styles.price}>
+                      <strong>
+                        <Count to={studioPriceUsd(id, billing)} />
+                      </strong>
+                      <small key={billing}>/{billing}</small>
+                    </div>
+                    <p key={`save-${billing}`} className={styles.save}>
+                      {billing === 'year' ? (
+                        <>
+                          <s>${twelve}</s> <Count from={p.usd} to={year / 12} /> a month ·{' '}
+                          <mark>
+                            you save <Count from={0} to={twelve - year} />
+                          </mark>
+                        </>
+                      ) : (
+                        <>
+                          or ${year} a year — save ${twelve - year}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <p className={styles.tagline}>{p.tagline}</p>
+                  <ul className={styles.list}>
+                    {p.includes.map((line, j) => (
+                      <li key={line} style={{ ['--j' as string]: j }}>
+                        <Check />
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href={`/studio/start?plan=${id}${billing === 'year' ? '&billing=year' : ''}`}
+                    className={`${site.btn} ${best ? site.btnLime : site.btnGhost} ${styles.cta}`}
+                  >
+                    Start free <ArrowRight />
+                  </Link>
+                </div>
+              </article>
+            </div>
           );
         })}
       </div>

@@ -11,7 +11,7 @@ import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSe
 import { AppleMark, ArrowRight, Check, GooglePlay, Sparkle } from '@/components/site/Icons';
 import styles from '@/components/site/site.module.css';
 import home from '@/components/site/studioHome.module.css';
-import { STUDIO_PLAN_IDS, STUDIO_PLANS, STUDIO_TRIAL_HOURS } from '@/lib/studio';
+import { STUDIO_FROM_USD, STUDIO_PLAN_IDS, STUDIO_PLANS, STUDIO_TRIAL_HOURS } from '@/lib/studio';
 import {
   SITE_URL as SITE,
   PRIVACY_URL,
@@ -152,7 +152,7 @@ const SLIDES: HeroSlide[] = [
         </div>
         <p className={styles.heroNote}>
           <Check />
-          From ${STUDIO_PLANS.content.usd} a month after the free day · no card
+          From ${STUDIO_FROM_USD} a month after the free day · no card
         </p>
       </>
     ),

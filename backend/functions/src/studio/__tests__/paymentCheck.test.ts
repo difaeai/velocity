@@ -46,7 +46,7 @@ describe('judgePayment', () => {
   it('calls out a receipt for less than the plan', () => {
     const r = judge({ fields: { ...FIELDS, amount: 1000 } });
     expect(r.verdict).toBe('mismatch');
-    expect(r.summary).toMatch(/Only Rs 1,000 paid — the plan needs Rs 5,320/);
+    expect(r.summary).toMatch(/Only Rs 1,000 paid — the plan needs Rs 6,720/);
   });
 
   it('allows a few percent under the asked rupees', () => {
@@ -97,7 +97,7 @@ describe('reading a real receipt picture', () => {
   it('reads the amount, the ID and our account off the picture and agrees with what was typed', async () => {
     const png = await receiptPng([
       'Transaction Successful',
-      'Amount Rs. 5,320',
+      'Amount Rs. 6,720',
       'Sent to VELOCITY RIDES',
       'Account 0300 1234567',
       'Transaction ID 41893377201',
@@ -115,7 +115,7 @@ describe('reading a real receipt picture', () => {
       accountsKnown: true,
       imageReused: false,
     });
-    expect(fields.amount).toBe(5320);
+    expect(fields.amount).toBe(6720);
     expect(r.verdict).toBe('match');
   }, 60_000);
 });

@@ -185,7 +185,10 @@ export const studioSubmitPayment = onCall({ timeoutSeconds: 120, memory: '1GiB' 
   if (!ws || ws.ownerUid !== ctx.uid) throw new HttpsError('permission-denied', 'This workspace is not yours.');
   // The agents work from the Sales page, so a package on any other plan would be money for nothing.
   if (agents && !PLANS[ws.plan].can.includes('sales')) {
-    throw new HttpsError('failed-precondition', 'AI agents come with the Everything plan. Upgrade to it first, then add the package.');
+    throw new HttpsError(
+      'failed-precondition',
+      'AI agents come with the Sales agents and Meta Ad Expert + Everything plans. Upgrade first, then add the package.',
+    );
   }
   // An agent package keeps the plan the workspace already has; its price comes from the rate card, never the client.
   const plan = parsed.data.plan ?? ws.plan;

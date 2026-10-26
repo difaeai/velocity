@@ -327,7 +327,13 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   const over = ws !== null && nowMs > 0 && Math.max(ws.trialEndsAtMs, ws.paidUntilMs) <= nowMs;
   // Nothing paid for right now — the free day over, the plan run out, or paused by Velocity: only the way to pay.
   const locked = Boolean(ws?.suspended) || over;
-  const home = locked ? BILLING : ws && !includes('content') ? '/dashboard/social/ads' : '/dashboard/social';
+  const home = locked
+    ? BILLING
+    : !ws || includes('content')
+      ? '/dashboard/social'
+      : includes('ads')
+        ? '/dashboard/social/ads'
+        : '/dashboard/social/sales';
 
   // A customer opens only their desk's own pages — never Velocity's admin ones — and only billing while locked.
   const need = NEED_OF[pathname];
@@ -341,7 +347,15 @@ function StudioShell({ email, signOut, children }: ShellProps) {
   const nav = locked
     ? [{ title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] }]
     : [
-        ...SOCIAL_NAV.map((g) => ({ ...g, items: g.items.filter((i) => includes(NEED_OF[i.href] ?? 'any')) })),
+        ...SOCIAL_NAV.map((g) => ({
+          ...g,
+          // A Sales agents plan has nothing on Connected accounts: its mailbox is set on the Sales page.
+          items: g.items.filter(
+            (i) =>
+              includes(NEED_OF[i.href] ?? 'any') &&
+              (i.href !== '/dashboard/social/accounts' || includes('content') || includes('ads')),
+          ),
+        })),
         { title: 'Account', items: [{ href: BILLING, label: '💳 Plan & billing' }] },
       ].filter((g) => g.items.length);
 
@@ -417,10 +431,10 @@ function StudioShell({ email, signOut, children }: ShellProps) {
             <span style={{ color: colors.muted, fontSize: 14, lineHeight: 1.6 }}>
               {what} comes with{' '}
               {need === 'ads'
-                ? 'the Meta Ad Expert and Everything plans'
+                ? 'the Meta Ad Expert + Everything plan'
                 : need === 'content'
-                  ? 'the Content and Everything plans'
-                  : 'the Everything plan'}
+                  ? 'the Content and Meta Ad Expert + Everything plans'
+                  : 'the Sales agents and Meta Ad Expert + Everything plans'}
               .
             </span>
             <Link href={BILLING} style={{ color: colors.secondary, fontWeight: 800 }}>
