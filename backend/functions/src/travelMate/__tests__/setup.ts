@@ -7,8 +7,9 @@ import * as admin from 'firebase-admin';
 
 // Must be set before firebase-admin initialises (the first `initializeApp()`
 // in any function source file sees these values).
-process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
-process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+// `??=`: an emulators:exec on other ports (a second suite while one holds 8080) must reach its own emulator.
+process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
+process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099';
 process.env.GCLOUD_PROJECT = 'demo-velocity';
 
 beforeAll(() => {

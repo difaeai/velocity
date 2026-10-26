@@ -1281,7 +1281,8 @@ export const api = {
    * Gemini key never reaches the app. `available: false` → write to us instead.
    */
   startHelplineCall: callable<
-    Record<string, never>,
+    /** `actions`: this app runs the agent's tools through helplineAction. */
+    { actions?: boolean },
     | { available: false }
     | {
         available: true;
@@ -1292,17 +1293,28 @@ export const api = {
         role: 'driver' | 'passenger';
       }
   >('startHelplineCall'),
-  /** Reported when the AI hands over (opens a desk ticket) and when the call ends. */
+  /** Reported when the call ends: registers the call's complaint on the desk. */
   logHelplineCall: callable<
     {
       callId: string;
       transcript: { who: 'caller' | 'agent'; text: string }[];
-      handover?: { category: string; summary: string };
       ended: boolean;
       error?: string;
     },
     { ok: boolean; ticketId: string | null; message: string }
   >('logHelplineCall'),
+  /** One of the helpline agent's tools, run by the server against the ride's own record. */
+  helplineAction: callable<
+    {
+      callId: string;
+      name: string;
+      args: Record<string, unknown>;
+      transcript: { who: 'caller' | 'agent'; text: string }[];
+    },
+    { ok: boolean; result: string; ticketId: string | null }
+  >('helplineAction'),
+  /** Wake helplineAction while the call connects, so the first tool is not a cold start. */
+  warmHelpline: () => callable<{ warm: true }, { warm: true }>('helplineAction')({ warm: true }),
   /** Ring the other side of a live ride over the internet — free, no airtime. */
   startCall: callable<
     { rideKind: 'trip' | 'poolRide'; rideId: string; calleeId?: string },
