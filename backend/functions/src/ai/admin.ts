@@ -12,6 +12,8 @@ import { db, FieldValue } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { seal, tokenVaultReady } from '../social/secrets';
 import { HOUSE } from '../social/scope';
+import { countPlanned, type MonthPlan } from '../social/strategy';
+import { DEFAULT_SETTINGS, type SocialSettings } from '../social/types';
 import {
   AI_CONFIG,
   AI_SECRET,
@@ -127,12 +129,25 @@ export const adminAiOverview = onCall(async (req) => {
     })
     .sort((a, z2) => z2.usd - a.usd);
 
+  // What each desk's month plan asks for — the page suggests a budget from it.
+  const planned = await Promise.all(
+    workspaces.map(async (w) => {
+      const pre = w.wid === HOUSE ? '' : `workspaces/${w.wid}/`;
+      const [plan, stored] = await Promise.all([
+        db.doc(`${pre}socialPlans/${month}`).get(),
+        db.doc(`${pre}system/socialAutomation`).get(),
+      ]);
+      const s = { ...DEFAULT_SETTINGS, ...((stored.data() ?? {}) as Partial<SocialSettings>) };
+      return countPlanned(plan.get('days') as MonthPlan['days'] | undefined, month, s.postsPerDay, s.dailyStory);
+    }),
+  );
+
   return {
     month,
     slots,
     budgets: b,
     vaultReady: tokenVaultReady(),
-    workspaces,
+    workspaces: workspaces.map((w, i) => ({ ...w, planned: planned[i] })),
     lastMonthUsd: prevRows.docs.reduce((s, d) => s + Number(d.get('usd') ?? 0), 0),
   };
 });

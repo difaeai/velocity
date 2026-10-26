@@ -13,6 +13,11 @@
  * last refusal Google gave it ("prepayment credits are depleted"). A key typed
  * here is proved with a one-word call before it is kept, and sealed on the
  * server. Monthly budgets stop Gemini for a workspace that has spent its month.
+ *
+ * The suggested budget is this month's content plan (backend `countPlanned`)
+ * at the desk's own measured cost per piece, plus the rest of its work at this
+ * month's daily rate, plus 15% for changes and remakes. A budget that is set is
+ * spread evenly over the month by the desk itself (`withinPace`).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -57,6 +62,29 @@ const ago = (ms: number) => {
   const m = Math.round((Date.now() - ms) / 60_000);
   return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
 };
+
+const FORMAT_WORD: Record<string, string> = {
+  reel: 'reels',
+  post: 'posts',
+  story: 'stories',
+  carousel: 'carousels',
+  video: 'videos',
+  rotation: 'rotation pieces',
+};
+
+/**
+ * What a desk's month should cost, from its plan: pieces × its own cost per
+ * piece (the house-wide figure until it has made three), the rest of its work
+ * at this month's rate, and 15% for changes and remakes, rounded up to 50¢.
+ */
+function suggest(r: AiUsageRow, fallbackPerPiece: number, today: number, daysInMonth: number) {
+  const contentUsd = r.byFeature.content?.usd ?? 0;
+  const per = r.pieces >= 3 ? contentUsd / r.pieces : fallbackPerPiece;
+  if (!r.planned?.pieces || !per || !today) return null;
+  const content = r.planned.pieces * per;
+  const other = Math.max(0, ((r.usd - contentUsd) / today) * daysInMonth);
+  return { per, content, other, usd: Math.ceil((content + other) * 1.15 * 2) / 2 };
+}
 
 /** Sum one map field across every workspace row. */
 function sumBy(rows: AiUsageRow[], pick: (r: AiUsageRow) => Record<string, { usd?: number; calls?: number }>) {
@@ -228,6 +256,8 @@ export default function AiUsagePage() {
     rows.reduce((s, r) => s + (r.byDay[String(i + 1).padStart(2, '0')] ?? 0), 0),
   );
   const projected = today ? (total / today) * daysInMonth : 0;
+  const house = rows.find((r) => r.wid === 'velocity');
+  const houseSuggest = house ? suggest(house, perPiece, today, daysInMonth) : null;
 
   if (!isAdmin) return <p style={{ color: colors.muted }}>Admins only.</p>;
 
@@ -237,7 +267,7 @@ export default function AiUsagePage() {
     setError(null);
     try {
       await aiApi.setBudgets(budgets);
-      setNotice('Budgets saved. A workspace that reaches its budget stops using Gemini until the 1st.');
+      setNotice('Budgets saved. Each one is now spread evenly over the month; one that is used up stops Gemini until the 1st.');
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the budgets.');
@@ -296,14 +326,47 @@ export default function AiUsagePage() {
             {daily.length >= 2 ? <AreaSpark values={daily} color={colors.primary} height={90} /> : <p style={{ color: colors.muted }}>One day so far.</p>}
           </Card>
 
-          {perPiece > 0 ? (
-            <Card style={{ padding: 16 }}>
-              <strong>A month of content at today’s cost</strong>
-              <p style={{ margin: '6px 0 0', fontSize: 14 }}>
-                A piece (post, reel, carousel or story, with its voice-over) costs about <strong>{usd(perPiece)}</strong>. A post and a story
-                every day for 30 days is 60 pieces ≈ <strong>{usd(perPiece * 60)}</strong>; two posts and a story is 90 ≈{' '}
-                <strong>{usd(perPiece * 90)}</strong>. Asking for changes or remaking a piece costs about the same again.
+          {house && houseSuggest && budgets ? (
+            <Card style={{ padding: 16, display: 'grid', gap: 8 }}>
+              <strong style={{ fontSize: 16 }}>
+                Suggested Gemini budget for{' '}
+                {new Date(`${data.month}-15T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric' })}:{' '}
+                {usd(houseSuggest.usd)}
+              </strong>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
+                This month’s content plan is <strong>{house.planned!.pieces} pieces</strong> (
+                {Object.entries(house.planned!.byFormat)
+                  .map(([f, n]) => `${n} ${FORMAT_WORD[f] ?? f}`)
+                  .join(', ')}
+                ) × {usd(houseSuggest.per)} a piece = {usd(houseSuggest.content)}
+                {houseSuggest.other >= 0.01
+                  ? `, plus ${usd(houseSuggest.other)} for the rest of the desk’s work (research, planning, replies)`
+                  : ''}
+                , plus 15% for changes and remakes.
               </p>
+              {budgets.houseUsd > 0 ? (
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
+                  Your budget is <strong>{usd(budgets.houseUsd)}</strong>, spread evenly: by today (day {today} of {daysInMonth}) the desk may
+                  spend {usd((budgets.houseUsd * today) / daysInMonth)} and has spent {usd(house.usd)}.{' '}
+                  {budgets.houseUsd >= houseSuggest.usd
+                    ? 'It covers the whole plan.'
+                    : `That buys about ${Math.max(
+                        0,
+                        Math.min(house.planned!.pieces, Math.floor((budgets.houseUsd - houseSuggest.other) / houseSuggest.per)),
+                      )} of the ${house.planned!.pieces} planned pieces — made evenly through the month, the rest held back.`}
+                </p>
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, color: colors.muted }}>
+                  No budget is set for Velocity’s desk, so nothing is paced. Set one and the desk spreads it over the whole month — reels
+                  keep coming to the last day instead of the money running out in week three.
+                </p>
+              )}
+              <div>
+                <Button variant="ghost" onClick={() => setBudgets({ ...budgets, houseUsd: houseSuggest.usd })}>
+                  Use {usd(houseSuggest.usd)} for Velocity’s desk
+                </Button>{' '}
+                <span style={{ color: colors.muted, fontSize: 12.5 }}>then Save budgets below.</span>
+              </div>
             </Card>
           ) : null}
 
@@ -348,8 +411,9 @@ export default function AiUsagePage() {
               <div>
                 <strong>Monthly budgets</strong>
                 <p style={{ color: colors.muted, fontSize: 13, margin: '4px 0 0' }}>
-                  Dollars a month per workspace. When a workspace reaches its budget, Gemini stops for it until the 1st and the
-                  team carries on more plainly (the free model or the local writer). 0 means no cap.
+                  Dollars a month per workspace, spread evenly: the desk makes its automatic pieces only while spending is inside
+                  today’s share, so the content lasts the whole month. Pieces you ask for yourself are never held back. A budget
+                  used up stops Gemini until the 1st and the team carries on more plainly. 0 means no cap.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -381,6 +445,7 @@ export default function AiUsagePage() {
                       <th style={{ padding: '6px 8px' }}>Of budget</th>
                       <th style={{ padding: '6px 8px' }}>Calls</th>
                       <th style={{ padding: '6px 8px' }}>Pieces</th>
+                      <th style={{ padding: '6px 8px' }}>Suggested</th>
                       <th style={{ padding: '6px 8px' }}>Own budget ($)</th>
                     </tr>
                   </thead>
@@ -412,7 +477,16 @@ export default function AiUsagePage() {
                             )}
                           </td>
                           <td style={{ padding: '8px' }}>{r.calls.toLocaleString('en-PK')}</td>
-                          <td style={{ padding: '8px' }}>{r.pieces ?? 0}</td>
+                          <td style={{ padding: '8px' }}>
+                            {r.pieces ?? 0}
+                            {r.planned ? <span style={{ color: colors.muted }}> of {r.planned.pieces} planned</span> : null}
+                          </td>
+                          <td style={{ padding: '8px' }}>
+                            {(() => {
+                              const s = suggest(r, perPiece, today, daysInMonth);
+                              return s ? usd(s.usd) : <span style={{ color: colors.muted }}>—</span>;
+                            })()}
+                          </td>
                           <td style={{ padding: '8px' }}>
                             {r.wid === 'velocity' ? (
                               <span style={{ color: colors.muted }}>above</span>
@@ -438,7 +512,7 @@ export default function AiUsagePage() {
                     })}
                     {!rows.length ? (
                       <tr>
-                        <td colSpan={6} style={{ padding: 8, color: colors.muted }}>
+                        <td colSpan={7} style={{ padding: 8, color: colors.muted }}>
                           No AI calls recorded this month yet.
                         </td>
                       </tr>

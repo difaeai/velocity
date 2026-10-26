@@ -63,6 +63,29 @@ export function daysOf(month: string): string[] {
   return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
+/**
+ * What a month asks the desk to make, the way the daily run makes it: each
+ * day's planned pieces (at most `postsPerDay`), the rotation on a day with no
+ * plan, and the daily story unless the day already has one. Pure.
+ */
+export function countPlanned(
+  days: Record<string, Pick<PlannedSlot, 'format'>[]> | undefined,
+  month: string,
+  postsPerDay: number,
+  dailyStory: boolean,
+): { pieces: number; byFormat: Record<string, number> } {
+  const byFormat: Record<string, number> = {};
+  const add = (f: string) => void (byFormat[f] = (byFormat[f] ?? 0) + 1);
+  const wanted = Math.max(1, Math.min(postsPerDay, FORMATS.length));
+  for (const date of daysOf(month)) {
+    const slots = (days?.[date] ?? []).slice(0, wanted);
+    for (const s of slots) add(s.format);
+    for (let i = slots.length; i < wanted; i++) add('rotation');
+    if (dailyStory && !slots.some((s) => s.format === 'story')) add('story');
+  }
+  return { pieces: Object.values(byFormat).reduce((a, b) => a + b, 0), byFormat };
+}
+
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const lines = (v: unknown, n: number, max: number) =>
   Array.isArray(v) ? v.map((x) => text(x, max)).filter(Boolean).slice(0, n) : [];

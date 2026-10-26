@@ -41,6 +41,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
+import { paceAllows } from '../ai/config';
 import { recordPiece } from '../ai/usage';
 import { db, FieldValue, storage } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
@@ -1124,11 +1125,16 @@ async function runDaily(date: string): Promise<string> {
   const settings = await getSocialSettings();
   const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
   const made: string[] = [];
+  const paced: string[] = [];
 
-  /** Queue one piece, unless this date already has that format. */
+  /** Queue one piece, unless this date already has that format — or the month's budget is spent ahead of the calendar. */
   const queue = async (format: ContentFormat, slot?: PlannedSlot): Promise<void> => {
     const id = postIdFor(date, format);
     if ((await postRef(id).get()).exists) return;
+    if (!paceAllows()) {
+      paced.push(format);
+      return;
+    }
     try {
       await createPost({ date, format, ...(slot ? fromSlot(slot) : {}) });
       made.push(format);
@@ -1154,7 +1160,8 @@ async function runDaily(date: string): Promise<string> {
   // story this morning, so this never doubles up.
   if (settings.dailyStory) await queue('story');
 
-  return made.length ? `Queued ${made.join(', ')} for ${date}.` : `Nothing new to queue for ${date}.`;
+  const left = paced.length ? ` Held back ${paced.join(', ')}: this month's AI budget is spread evenly and today's share is spent.` : '';
+  return (made.length ? `Queued ${made.join(', ')} for ${date}.` : `Nothing new to queue for ${date}.`) + left;
 }
 
 /**
@@ -1234,7 +1241,8 @@ async function makeAhead(settings: SocialSettings): Promise<void> {
   // Only with a model: a piece the local writer makes a month early is the same
   // piece it makes on the day, held for approval meanwhile. The plan's slots
   // already fill the calendar either way.
-  if (!modelReady() || !(await activeTeam()).length) return;
+  // A set budget is spread over the month: no working ahead past today's share of it.
+  if (!modelReady() || !paceAllows() || !(await activeTeam()).length) return;
   const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
   for (let i = 1; i <= settings.makeAheadDays; i++) {
     const date = dayKey(Date.now() + i * 86_400_000);

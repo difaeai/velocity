@@ -5,7 +5,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { budgetFor, DEFAULT_BUDGETS, geminiKey, keySource, noteSpend, overBudget, resetAiCache, usageId } from '../config';
+import { budgetFor, DEFAULT_BUDGETS, geminiKey, keySource, noteSpend, overBudget, resetAiCache, usageId, withinPace } from '../config';
+import { countPlanned } from '../../social/strategy';
 import { costUsd, featureOf, priceFor, readUsage } from '../usage';
 
 const saved = { research: process.env.GEMINI_KEY_RESEARCH, live: process.env.GEMINI_LIVE_KEY };
@@ -72,6 +73,30 @@ describe('budgets', () => {
     expect(overBudget('wsB')).toBe(false);
     noteSpend('velocity', 500);
     expect(overBudget('velocity')).toBe(false);
+  });
+});
+
+describe('pacing a month’s budget', () => {
+  // 10 Nov 2026, noon PKT: day 10 of 30.
+  const NOV_10 = Date.UTC(2026, 10, 10, 7);
+  it('lets a third of a $30 month go by day 10, and no more', () => {
+    expect(withinPace(9.99, 30, NOV_10)).toBe(true);
+    expect(withinPace(10, 30, NOV_10)).toBe(false);
+  });
+  it('carries unused days forward, and never paces with no budget', () => {
+    expect(withinPace(0, 30, Date.UTC(2026, 10, 1, 7))).toBe(true);
+    expect(withinPace(29, 30, Date.UTC(2026, 10, 30, 7))).toBe(true);
+    expect(withinPace(1_000, 0, NOV_10)).toBe(true);
+  });
+});
+
+describe('what a month plan asks for', () => {
+  it('counts each day’s planned pieces, the rotation on unplanned days, and the daily story', () => {
+    const days = { '2026-11-01': [{ format: 'reel' as const }, { format: 'post' as const }], '2026-11-02': [{ format: 'story' as const }] };
+    const n = countPlanned(days, '2026-11', 1, true);
+    // 1 reel + 1 story on the 1st; the story itself on the 2nd; rotation + story on the other 28 days.
+    expect(n.byFormat).toEqual({ reel: 1, story: 30, rotation: 28 });
+    expect(n.pieces).toBe(59);
   });
 });
 
