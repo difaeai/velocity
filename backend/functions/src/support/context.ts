@@ -61,6 +61,42 @@ function when(ts: { toMillis(): number } | undefined | null): string {
   return new Date(ts.toMillis()).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 }
 
+/** Minutes since a trip timestamp, for the live part of a ride line. */
+function minsAgo(d: FirebaseFirestore.DocumentSnapshot, field: string): number | null {
+  const ms = (d.get(field) as { toMillis(): number } | undefined)?.toMillis();
+  return typeof ms === 'number' ? Math.floor((Date.now() - ms) / 60_000) : null;
+}
+
+/**
+ * One ride, as the agent needs it: its id (for the helpline's tools, never said
+ * aloud), how long a live one has been in its state, and who paid any fee.
+ */
+function rideLine(d: FirebaseFirestore.DocumentSnapshot, uid: string): string {
+  const status = (d.get('status') as string | undefined) ?? 'unknown';
+  const fare = (d.get('fare') as number | undefined) ?? (d.get('offeredFare') as number | undefined);
+  const live: Record<string, [string, string]> = {
+    matched: ['matchedAt', 'driver accepted'],
+    arriving: ['matchedAt', 'driver accepted'],
+    arrived: ['arrivedAt', 'driver arrived at the pickup'],
+    in_progress: ['startedAt', 'ride started'],
+  };
+  const clock = live[status] ? minsAgo(d, live[status][0]) : null;
+  const fee = d.get('cancellationFee') as { amount?: number; waivedAt?: unknown } | null | undefined;
+  const feeText =
+    status === 'cancelled' && fee?.amount
+      ? ` · cancellation fee ${money(fee.amount)} charged to ${d.get('cancelledBy') === uid ? 'this person' : 'the other side'}` +
+        (fee.waivedAt ? ' (since taken off)' : '') +
+        ` · cancelled from "${(d.get('cancelledFrom') as string | undefined) ?? '?'}"`
+      : '';
+  return (
+    `- ${d.id} · ${status}${clock !== null ? ` (${live[status][1]} ${clock} min ago)` : ''} · ` +
+    `${fare ? money(fare) : 'no fare'} · ` +
+    `${(d.get('pickup.address') as string | undefined) ?? '?'} → ` +
+    `${(d.get('dropoff.address') as string | undefined) ?? '?'} · ` +
+    `${when(d.get('createdAt'))}${feeText}`
+  );
+}
+
 /**
  * Read everything the agent is allowed to know about this caller.
  *
@@ -79,6 +115,7 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
     walletSnap,
     daySnap,
     tripsSnap,
+    drivenSnap,
   ] = await Promise.all([
     getCommissionSettings(),
     getCancellationSettings(),
@@ -89,6 +126,13 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
     db
       .collection('trips')
       .where('passengerId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .limit(3)
+      .get()
+      .catch(() => null),
+    db
+      .collection('trips')
+      .where('driverId', '==', uid)
       .orderBy('createdAt', 'desc')
       .limit(3)
       .get()
@@ -131,6 +175,10 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
     lines.push('');
     lines.push('DRIVER ACCOUNT');
     lines.push(`Verification: ${(driverSnap.get('verificationStatus') as string | undefined) ?? 'unknown'}`);
+    const reviewReason = driverSnap.get('reviewReason') as string | null | undefined;
+    const rejected = (driverSnap.get('rejectedSections') as string[] | undefined) ?? [];
+    if (reviewReason) lines.push(`What their application needs: ${reviewReason}`);
+    if (rejected.length > 0) lines.push(`Sections to upload again: ${rejected.join(', ')}`);
     lines.push(`Lifetime rides: ${(driverSnap.get('tripsCount') as number | undefined) ?? 0}`);
     lines.push(
       `Today so far: ${money(open.gross)} of fares, ${money(open.cash)} of it in cash. ` +
@@ -181,16 +229,12 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
   if (tripsSnap && !tripsSnap.empty) {
     lines.push('');
     lines.push('THEIR LAST RIDES AS A PASSENGER');
-    for (const d of tripsSnap.docs) {
-      const status = (d.get('status') as string | undefined) ?? 'unknown';
-      const fare = (d.get('fare') as number | undefined) ?? (d.get('offeredFare') as number | undefined);
-      lines.push(
-        `- ${d.id} · ${status} · ${fare ? money(fare) : 'no fare'} · ` +
-          `${(d.get('pickup.address') as string | undefined) ?? '?'} → ` +
-          `${(d.get('dropoff.address') as string | undefined) ?? '?'} · ` +
-          `${when(d.get('createdAt'))}`,
-      );
-    }
+    for (const d of tripsSnap.docs) lines.push(rideLine(d, uid));
+  }
+  if (isDriver && drivenSnap && !drivenSnap.empty) {
+    lines.push('');
+    lines.push('THEIR LAST RIDES AS THE DRIVER');
+    for (const d of drivenSnap.docs) lines.push(rideLine(d, uid));
   }
   if (activeTripId) {
     lines.push('');

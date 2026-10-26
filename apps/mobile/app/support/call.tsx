@@ -77,7 +77,7 @@ export default function HelplineCall() {
   const [role, setRole] = useState<'driver' | 'passenger' | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [muted, setMuted] = useState(false);
-  const [handedOver, setHandedOver] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [over, setOver] = useState<{ text: string; writeInstead: boolean } | null>(null);
 
   const ws = useRef<WebSocket | null>(null);
@@ -129,21 +129,20 @@ export default function HelplineCall() {
     for (let i = 0; i < pcm.length; i += SLICE_BYTES) queue.current.push(pcm.slice(i, i + SLICE_BYTES));
   }
 
+  // Every tool runs on the server, which checks it against the ride's own record.
   async function runTool(fc: { id: string; name: string; args?: Record<string, unknown> }) {
-    let result = 'The team could not be reached. Ask the caller to write to us under Help & complaints.';
-    if (fc.name === 'hand_to_human' && callId.current) {
+    let result =
+      'That did not go through on our side. Say sorry, and that they can write to us under Help & complaints in the app.';
+    if (callId.current) {
       try {
-        const res = await api.logHelplineCall({
+        const res = await api.helplineAction({
           callId: callId.current,
+          name: fc.name,
+          args: fc.args ?? {},
           transcript: record(),
-          handover: {
-            category: String(fc.args?.category ?? 'other').slice(0, 40),
-            summary: String(fc.args?.summary ?? '').slice(0, 1000),
-          },
-          ended: false,
         });
-        if (res.message) result = res.message;
-        setHandedOver(true);
+        result = res.result;
+        if (fc.name === 'register_complaint') setRegistered(true);
       } catch {
         // `result` already says what to tell the caller.
       }
@@ -188,12 +187,13 @@ export default function HelplineCall() {
         end('Allow the microphone in Settings to call the helpline.');
         return;
       }
-      const res = await api.startHelplineCall({});
+      const res = await api.startHelplineCall({ actions: true });
       if (done.current) return;
       if (!res.available) {
         end('The helpline cannot take calls right now.', true);
         return;
       }
+      api.warmHelpline().catch(() => {});
       callId.current = res.callId;
       setRole(res.role);
       setPhase('connecting');
@@ -278,7 +278,7 @@ export default function HelplineCall() {
         <Text style={styles.headerTitle} accessibilityRole="header">
           Velocity Rides {title}
         </Text>
-        <Text style={styles.headerSub}>AI assistant · ask for a person at any time</Text>
+        <Text style={styles.headerSub}>AI assistant · sorts it out on the call</Text>
       </View>
 
       <View style={styles.middle}>
@@ -290,10 +290,8 @@ export default function HelplineCall() {
         <Text style={styles.status} accessibilityLiveRegion="polite">
           {statusText}
         </Text>
-        {handedOver ? (
-          <Text style={styles.handed}>
-            Our team has your call and will reply under Help & complaints.
-          </Text>
+        {registered ? (
+          <Text style={styles.handed}>Your complaint is registered. See it under Help & complaints.</Text>
         ) : null}
         <View style={styles.transcript}>
           {lines.map((l, i) => (
@@ -316,7 +314,7 @@ export default function HelplineCall() {
               <Text style={styles.wideBtnTxt}>Write to us instead</Text>
             </Pressable>
           ) : null}
-          {handedOver ? (
+          {registered ? (
             <Pressable style={styles.wideBtn} accessibilityRole="button" onPress={() => router.replace('/support')}>
               <Text style={styles.wideBtnTxt}>See my complaints</Text>
             </Pressable>

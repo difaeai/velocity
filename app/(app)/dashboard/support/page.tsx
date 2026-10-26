@@ -52,7 +52,15 @@ interface Ticket {
   tripId: string | null;
   stale: boolean;
   aiContext: Record<string, unknown> | null;
+  channel: string | null;
+  resolvedByAi: boolean;
+  /** What the helpline's AI did, or was refused, on the call. */
+  aiActions: { name: string; done: boolean; detail: string }[];
 }
+
+/** Who raised it: a driver, or anybody else (riders, and the odd admin testing). */
+type Side = 'passenger' | 'driver';
+const sideOf = (t: Ticket): Side => (t.role === 'driver' ? 'driver' : 'passenger');
 
 interface Message {
   id: string;
@@ -98,6 +106,7 @@ export default function SupportDesk() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
+  const [side, setSide] = useState<Side>('passenger');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(
@@ -131,6 +140,9 @@ export default function SupportDesk() {
                 tripId: (v.tripId as string | null) ?? null,
                 stale: v.stale === true,
                 aiContext: (v.aiContext as Record<string, unknown> | null) ?? null,
+                channel: (v.channel as string | null) ?? null,
+                resolvedByAi: v.resolvedBy === 'ai',
+                aiActions: (v.aiActions as Ticket['aiActions'] | undefined) ?? [],
               };
             }),
           ),
@@ -140,7 +152,7 @@ export default function SupportDesk() {
   );
 
   const queue = useMemo(() => {
-    const rows = tickets.filter((t) => showResolved || t.status !== 'resolved');
+    const rows = tickets.filter((t) => sideOf(t) === side && (showResolved || t.status !== 'resolved'));
     return rows.sort((a, b) => {
       if (STATUS_RANK[a.status] !== STATUS_RANK[b.status]) {
         return STATUS_RANK[a.status] - STATUS_RANK[b.status];
@@ -151,23 +163,48 @@ export default function SupportDesk() {
       // Oldest first inside a band: the person who has waited longest is next.
       return (a.lastAt?.seconds ?? 0) - (b.lastAt?.seconds ?? 0);
     });
-  }, [tickets, showResolved]);
+  }, [tickets, showResolved, side]);
 
   const selected = tickets.find((t) => t.id === selectedId) ?? null;
-  const waiting = tickets.filter((t) => t.status === 'waiting_human').length;
-  const urgent = tickets.filter((t) => t.status !== 'resolved' && t.priority === 'urgent').length;
-  const withAi = tickets.filter((t) => t.status === 'ai_handling').length;
-  const resolvedByAi = tickets.filter((t) => t.status === 'resolved' && t.aiReplies > 0).length;
+  const mine = tickets.filter((t) => sideOf(t) === side);
+  const waiting = mine.filter((t) => t.status === 'waiting_human').length;
+  const urgent = mine.filter((t) => t.status !== 'resolved' && t.priority === 'urgent').length;
+  const withAi = mine.filter((t) => t.status === 'ai_handling').length;
+  const resolvedByAi = mine.filter((t) => t.status === 'resolved' && t.resolvedByAi).length;
+  const waitingOn = (s: Side) => tickets.filter((t) => sideOf(t) === s && t.status === 'waiting_human').length;
 
   return (
     <div>
       <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>⚡ Velocity Rapid Response</h1>
       <p style={{ color: colors.muted, marginBottom: 18 }}>
-        The assistant answers first. Everything it hands over lands here — oldest and most
-        urgent at the top.
+        Every complaint, written or phoned in. The assistant answers and fixes what it can first;
+        what it cannot lands here — oldest and most urgent at the top.
       </p>
 
       {error && <div style={{ color: colors.danger, fontWeight: 600, marginBottom: 14 }}>{error}</div>}
+
+      <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {(['passenger', 'driver'] as const).map((s) => (
+          <button
+            key={s}
+            role="tab"
+            aria-selected={side === s}
+            onClick={() => {
+              setSide(s);
+              setSelectedId(null);
+            }}
+            style={{
+              ...sideTab,
+              background: side === s ? colors.primary : '#fff',
+              color: side === s ? '#ffffff' : colors.text,
+              borderColor: side === s ? colors.primary : colors.border,
+            }}
+          >
+            {s === 'passenger' ? '🧍 Passenger side' : '🚗 Driver side'}
+            {waitingOn(s) > 0 && <span style={{ marginLeft: 8, fontWeight: 900 }}>· {waitingOn(s)} waiting</span>}
+          </button>
+        ))}
+      </div>
 
       <div style={statsRow}>
         <Stat label="Waiting for a person" value={String(waiting)} tone={waiting > 0 ? 'danger' : undefined} />
@@ -214,6 +251,7 @@ export default function SupportDesk() {
                     />
                   )}
                   {t.stale && <Badge label="Overdue" color={colors.danger} />}
+                  {t.channel === 'phone' && <Badge label="📞 Call" color={colors.primary} />}
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.muted }}>
                     {ago(t.lastAt?.seconds)}
                   </span>
@@ -363,6 +401,17 @@ function Thread({ ticket }: { ticket: Ticket }) {
         </div>
       )}
 
+      {ticket.aiActions.length > 0 && (
+        <div style={{ ...escalationBox, background: '#f0fdf4', borderColor: '#86efac' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: colors.text }}>What the assistant did on the call</div>
+          {ticket.aiActions.map((a, i) => (
+            <div key={i} style={{ fontSize: 12, color: colors.muted, marginTop: 4, lineHeight: 1.6 }}>
+              {a.done ? '✅' : '⛔'} {a.detail}
+            </div>
+          ))}
+        </div>
+      )}
+
       {ticket.satisfaction && (
         <div
           style={{
@@ -480,6 +529,15 @@ const statBox: React.CSSProperties = {
   border: `1px solid ${colors.border}`,
   borderRadius: 12,
   padding: 14,
+};
+const sideTab: React.CSSProperties = {
+  border: '1px solid',
+  borderRadius: 999,
+  padding: '9px 16px',
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 const queueRow: React.CSSProperties = {
   textAlign: 'left',

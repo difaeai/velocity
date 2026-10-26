@@ -231,6 +231,7 @@ export {
 // The same desk on the phone: an AI voice answers, and a person takes over the
 // moment the caller asks.
 export { startHelplineCall, logHelplineCall } from './support/helpline';
+export { helplineAction } from './support/helplineActions';
 
 // Free in-app voice calls between a rider and their driver — phone to phone over
 // WebRTC, so neither side spends airtime.

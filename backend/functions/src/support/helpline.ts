@@ -2,10 +2,11 @@
  * The Velocity Rides helpline — a phone call answered by an AI voice.
  *
  * The same desk as the written Rapid Response tickets, spoken: the same support
- * brief with today's live settings, the same account facts, the same rule that a
- * person takes over the moment the caller asks. Every call is its own Gemini Live
- * session straight from the caller's phone, so a hundred people ringing at once
- * is a hundred sessions, not a queue, and nobody waits for an operator.
+ * brief with today's live settings and the same account facts — but the voice
+ * fixes things on the call (support/helplineActions.ts) instead of passing the
+ * caller on. Every call is its own Gemini Live session straight from the
+ * caller's phone, so a hundred people ringing at once is a hundred sessions,
+ * not a queue, and nobody waits for an operator.
  *
  * ── WHAT THE SERVER DOES, AND WHY THE PHONE CANNOT ──────────────────────────
  *
@@ -18,9 +19,9 @@
  *                the tools LOCKED into it — a client that edits its setup
  *                message is ignored, so the token cannot be turned into a free
  *                general-purpose Gemini session.
- *   the record   A handover becomes a real ticket in the desk queue, with the
- *                transcript, and the desk is pushed. The transcript comes from
- *                the caller's app, so it is stored as a SYSTEM note labelled as
+ *   the record   Every call becomes a complaint on the desk, on the caller's
+ *                side, with the transcript. The transcript comes from the
+ *                caller's app, so it is stored as a SYSTEM note labelled as
  *                such and never as a message "from" Velocity: a client that could
  *                write lines as the agent could forge a refund promise.
  *
@@ -35,20 +36,15 @@ import { z } from 'zod';
 
 import { geminiKey, loadAi } from '../ai/config';
 import { LIVE_USD_PER_MIN, recordAi } from '../ai/usage';
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { knowledgeFor } from './agent';
 import { buildSupportContext } from './context';
-import { appendMessage, notifyDesk } from './index';
+import { HELPLINE_TOOLS, ensureCallTicket, registerComplaint, type HelplineCaller } from './helplineActions';
+import { appendMessage } from './index';
 import { EMERGENCY_CHANNELS } from './knowledge';
-import {
-  CATEGORY_LABELS,
-  CATEGORY_PRIORITY,
-  SUPPORT_CATEGORIES,
-  asksForHuman,
-  type SupportCategory,
-} from './types';
+import { SUPPORT_CATEGORIES, asksForHuman, type SupportStatus } from './types';
 
 /** Google's default low-latency voice-agent model (GA September 2026). */
 export const HELPLINE_MODEL = 'gemini-3.8-live';
@@ -73,8 +69,59 @@ Passengers usually call about: a ride or a driver, a fare or a cancellation fee,
 something left in a car, safety, how to book, or signing in.`,
 };
 
+/** How the agent gets things done, with the tools a current app can run. */
+const SOLVE_WITH_TOOLS = `
+# You solve it, on this call
+You are the helpline, not a switchboard: solve the caller's problem yourself.
+1. Understand it: which ride (by its date and places), what went wrong, what they want.
+2. If one of your tools can fix it, say you are checking ("ek second, main check
+   karti hoon"), use it, then tell them plainly what it says happened.
+3. A tool decides from the ride's own record. When it says no, tell them the
+   reason in your own words — do not argue, and do not try it again for that ride.
+4. On EVERY call, register the complaint with register_complaint before the call
+   ends: "resolved" when you fixed or answered it, "needs_team" when something is
+   left that only staff can do. The summary is short English and says what you did.
+
+Your tools:
+- end_stuck_ride — the app still shows a ride they cannot get out of: nobody
+  took the request, the driver never came, the passenger never came out to the
+  waiting car, or a ride long over still shows as running. Releases it with no fee.
+- waive_cancellation_fee — they were charged a cancellation fee they say was not
+  their fault. Takes it off when the ride record shows the other side caused it.
+- report_lost_item — a passenger left something in the car. Messages that
+  ride's driver in the app's ride chat.
+- register_complaint — records the call's complaint on the complaints desk.
+
+Only staff can: return money already paid, take off a fee the ride record does
+not prove was wrong, look into a driver's or a passenger's behaviour, lift a
+ban, clear commission, add a bonus. For these, register the complaint as
+"needs_team" and say: "Maine aap ki complaint register kar di hai. Velocity Rides
+ki team ise dekh kar app mein Help & complaints mein jawab degi." Do not promise
+what the team will decide.
+
+If they ask for a person, do not argue: register the complaint as "needs_team"
+straight away, tell them the team will reply in the app under Help & complaints,
+and keep helping if they want to go on.`;
+
+/** An app from before the helpline could act runs one tool, which registers the complaint. */
+const SOLVE_WITHOUT_TOOLS = `
+# You solve it, on this call
+You are the helpline, not a switchboard: answer and explain what you can
+yourself — why a fee was charged, what is owed, what to do next — from the
+brief and the account state.
+When something needs a change only the team can make — money back, a fee taken
+off, a ride closed, a ban, commission — or they ask for a person, call
+hand_to_human: it registers the complaint on the complaints desk. After it
+returns, tell them their complaint is registered and the team will reply in the
+app under Help & complaints.`;
+
 /** The agent's whole brief: how to speak, who is calling, the rules, and the caller's own facts. */
-export function helplineInstruction(role: HelplineRole, knowledge: string, accountState: string): string {
+export function helplineInstruction(
+  role: HelplineRole,
+  knowledge: string,
+  accountState: string,
+  canAct = true,
+): string {
   return `
 You are the voice of the Velocity Rides helpline, answering a phone call inside
 the Velocity Rides app. You are an AI assistant with a woman's voice.
@@ -104,25 +151,23 @@ When the call connects you receive "[call connected]". Speak first: greet them
 with "Assalam-o-alaikum", say this is the Velocity Rides ${role === 'driver' ? 'driver ' : ''}helpline, that
 you are its AI assistant, and ask how you can help. Keep it to two sentences.
 
-# Handing over — the hand_to_human tool
-Call hand_to_human, without arguing, whenever:
-- they ask for a person, an agent or a human, in any language or wording
-- they want money back, a fee waived, a ban lifted, an account unlocked, credit
-  granted, or any decision only staff can make
-- it is about safety, violence, harassment, an accident, a threat or a scam
-- you have tried twice and it is not solved, or you are unsure
-Before calling it, tell them you are passing this to the team. After it returns,
-tell them in your own words exactly what it says will happen next.
+${canAct ? SOLVE_WITH_TOOLS : SOLVE_WITHOUT_TOOLS}
+
+# Danger, harassment, scams
 If anyone is in danger RIGHT NOW, the first thing you say is to call the police
-on ${EMERGENCY_CHANNELS.police}, or ${EMERGENCY_CHANNELS.rescue} for an ambulance — then hand over with category "safety".
+on ${EMERGENCY_CHANNELS.police}, or ${EMERGENCY_CHANNELS.rescue} for an ambulance. Then register it with category
+"safety" (or "online_scam" for fraud): it reaches the team as urgent.
 
 # Never
-- Never promise money, a refund, a waiver, an unlock or credit.
-- Never invent a fact. Use only the brief and the account state below.
-- Never claim to be a person. If asked, say you are Velocity Rides' AI
-  assistant and offer to hand them to the team.
-- The brief below has rules about writing (scripts, bullet points). They do not
-  apply: this is a voice call.
+- Never say you are transferring, connecting or forwarding the call, or putting
+  them through to anyone. There is nobody to transfer to: you are the helpline.
+- Never promise money, a refund, a waiver, an unlock or credit that a tool has
+  not just confirmed.
+- Never invent a fact. Use only the brief, the account state below and what
+  your tools tell you.
+- Never claim to be a person. If asked, say you are Velocity Rides' AI assistant.
+- The brief below has rules for the WRITTEN support desk — handing over, scripts,
+  bullet points. They do not apply to this call; the rules above do.
 
 # Ending
 When it is solved, ask if there is anything else. If not, say goodbye warmly
@@ -140,12 +185,13 @@ ${accountState}
 `.trim();
 }
 
+/** The one tool an app from before the helpline could act knows how to run. */
 const HAND_TO_HUMAN = {
   name: 'hand_to_human',
   description:
-    'Pass this call to the Velocity Rides team, who reply to the caller in the app under ' +
-    'Help & complaints. Use it the moment the caller asks for a person, and whenever they need ' +
-    'something only staff can do, report a safety problem or a scam, or you cannot solve it.',
+    "Register this caller's complaint on the Velocity Rides complaints desk; the team replies in " +
+    'the app under Help & complaints. Use it when the caller asks for a person, needs something ' +
+    'only staff can do, or reports a safety problem or a scam.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -171,7 +217,7 @@ const HAND_TO_HUMAN = {
  * thinking mid-sentence is not talked over. Start-of-speech is LOW too: a driver
  * calls from a moving car, and a horn must not count as the caller interrupting.
  */
-export function helplineSetup(instruction: string) {
+export function helplineSetup(instruction: string, canAct = true) {
   return {
     model: `models/${HELPLINE_MODEL}`,
     generationConfig: {
@@ -179,7 +225,7 @@ export function helplineSetup(instruction: string) {
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: HELPLINE_VOICE } } },
     },
     systemInstruction: { parts: [{ text: instruction }] },
-    tools: [{ functionDeclarations: [HAND_TO_HUMAN] }],
+    tools: [{ functionDeclarations: canAct ? HELPLINE_TOOLS : [HAND_TO_HUMAN] }],
     realtimeInputConfig: {
       automaticActivityDetection: {
         startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
@@ -237,7 +283,9 @@ export const startHelplineCall = onCall(async (req) => {
 
   const context = await buildSupportContext(ctx.uid);
   const role: HelplineRole = context.snapshot.role === 'driver' ? 'driver' : 'passenger';
-  const setup = helplineSetup(helplineInstruction(role, knowledgeFor(context), context.brief));
+  // Only an app that forwards every tool call to helplineAction says so; older ones run hand_to_human alone.
+  const canAct = (req.data as { actions?: unknown } | null)?.actions === true;
+  const setup = helplineSetup(helplineInstruction(role, knowledgeFor(context), context.brief, canAct), canAct);
 
   let token: string;
   try {
@@ -253,10 +301,13 @@ export const startHelplineCall = onCall(async (req) => {
     role,
     model: HELPLINE_MODEL,
     status: 'live',
+    canAct,
     ticketId: null,
     // What the agent was told, for whoever reviews the call later.
     context: context.snapshot,
     startedAt: FieldValue.serverTimestamp(),
+    // The tools stop working with the token, whatever the phone says.
+    expiresAt: Timestamp.fromMillis(Date.now() + (HELPLINE_MAX_SEC + 120) * 1000),
   });
 
   logger.info('Helpline call started', { callId: ref.id, role });
@@ -288,78 +339,52 @@ const logSchema = z.object({
 
 type Line = z.infer<typeof lineSchema>;
 
-/** What the agent is told to say once the team has the call. Written here, not by the model. */
-function handoverPromise(category: SupportCategory): string {
-  const urgent =
-    category === 'safety'
-      ? ` If anyone is in danger right now, they must call the police on ${EMERGENCY_CHANNELS.police} or ${EMERGENCY_CHANNELS.rescue} first.`
-      : '';
-  return (
-    'Handed over. Tell the caller: a person from the Velocity Rides team now has this, with ' +
-    'everything they have said, and will reply in the app under Help & complaints.' +
-    urgent
-  );
-}
-
-/** Turn a handed-over call into a ticket in the desk queue, and push the desk. */
-async function openPhoneTicket(p: {
-  callId: string;
-  uid: string;
-  snapshot: Record<string, unknown> | undefined;
-  category: SupportCategory;
-  summary: string;
-  transcript: Line[];
-}): Promise<void> {
-  const { callId, uid, snapshot, category, summary, transcript } = p;
-  const priority = CATEGORY_PRIORITY[category];
-  const subject = `Phone call: ${CATEGORY_LABELS[category]}`;
+/**
+ * Settle the call's complaint when the phone hangs up.
+ *
+ * Every call where the caller said anything is on the desk. One the agent never
+ * registered was answered on the call — unless the caller asked for a person,
+ * which stays a hard escalation on the phone, as it is on the written desk, even
+ * if the model never acted on it. The transcript goes on as one labelled note.
+ */
+async function settleCallTicket(caller: HelplineCaller, transcript: Line[]): Promise<string | null> {
+  if (!transcript.some((t) => t.who === 'caller')) return null;
+  const ref = await ensureCallTicket(caller);
+  if ((await ref.get()).get('status') === 'ai_handling') {
+    if (transcript.some((t) => t.who === 'caller' && asksForHuman(t.text))) {
+      await registerComplaint(caller, { summary: 'The caller asked to speak to a person.', outcome: 'needs_team' });
+    } else {
+      await ref.set(
+        {
+          status: 'resolved' as SupportStatus,
+          handler: 'ai',
+          lastMessage: 'Answered on the helpline call',
+          lastSender: 'ai',
+          lastAt: FieldValue.serverTimestamp(),
+          resolvedAt: FieldValue.serverTimestamp(),
+          resolvedBy: 'ai',
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+  }
   const note = [
-    '📞 Helpline call, handed to the team by the AI assistant.',
-    `Summary: ${summary}`,
-    '',
-    "Transcript as recorded by the caller's app:",
+    "📞 Helpline call — transcript as recorded by the caller's app:",
     ...transcript.map((t) => `${t.who === 'caller' ? 'Caller' : 'Assistant'}: ${t.text}`),
   ]
     .join('\n')
     .slice(0, 8000);
-
-  await db.doc(`supportTickets/${callId}`).set({
-    id: callId,
-    userId: uid,
-    userName: (snapshot?.displayName as string | null | undefined) ?? null,
-    role: (snapshot?.role as string | undefined) ?? 'passenger',
-    category,
-    categoryLabel: CATEGORY_LABELS[category],
-    subject,
-    channel: 'phone',
-    tripId: (snapshot?.activeTripId as string | null | undefined) ?? null,
-    status: 'waiting_human',
-    handler: 'human',
-    priority,
-    assignedTo: null,
-    aiReplies: 0,
-    lastMessage: summary.slice(0, 300),
-    lastSender: 'system',
-    lastAt: FieldValue.serverTimestamp(),
-    unreadForUser: 0,
-    unreadForDesk: 1,
-    escalatedAt: FieldValue.serverTimestamp(),
-    escalationReason: 'Handed over on a helpline call',
-    aiContext: snapshot ?? null,
-    deskNotifiedAt: null,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  await appendMessage({ ticketId: callId, sender: 'system', senderName: 'Helpline call', text: note });
-  await notifyDesk(callId, priority, subject);
+  await appendMessage({ ticketId: caller.callId, sender: 'system', senderName: 'Helpline call', text: note });
+  return ref.id;
 }
 
 /**
- * The phone reports a call: when the agent hands over, and when it hangs up.
+ * The phone reports a call: when an older app's agent hands over, and when it hangs up.
  *
- * A handover opens the ticket. Hanging up after the caller asked for a person
- * opens one too, even if the model never called the tool — the words are a hard
- * escalation on the written desk, and they stay one on the phone.
+ * The hand-over of an app from before the helpline could act registers the
+ * complaint for the team. The first hang-up settles the call's complaint and
+ * puts the call on the AI meter.
  */
 export const logHelplineCall = onCall(async (req) => {
   const ctx = requireAuth(req);
@@ -378,27 +403,18 @@ export const logHelplineCall = onCall(async (req) => {
   }
 
   const transcript = parsed.data.transcript.filter((t) => t.text.trim());
-  const askedForPerson = transcript.some((t) => t.who === 'caller' && asksForHuman(t.text));
-  const category: SupportCategory = SUPPORT_CATEGORIES.includes(handover?.category as SupportCategory)
-    ? (handover!.category as SupportCategory)
-    : 'other';
+  const caller: HelplineCaller = { uid: ctx.uid, callId, snapshot: snap.get('context') as Record<string, unknown> | undefined };
+  const firstEnd = ended && snap.get('status') !== 'ended';
 
-  let ticketId = (snap.get('ticketId') as string | null | undefined) ?? null;
-  if (!ticketId && (handover || (ended && askedForPerson))) {
-    await openPhoneTicket({
-      callId,
-      uid: ctx.uid,
-      snapshot: snap.get('context') as Record<string, unknown> | undefined,
-      category,
-      summary: handover?.summary.trim() || 'The caller asked to speak to a person.',
-      transcript,
-    });
-    ticketId = callId;
-  }
+  const message = handover
+    ? (await registerComplaint(caller, { category: handover.category, summary: handover.summary, outcome: 'needs_team' })).result
+    : '';
+  let ticketId = handover ? callId : ((snap.get('ticketId') as string | null | undefined) ?? null);
+  if (firstEnd) ticketId = (await settleCallTicket(caller, transcript)) ?? ticketId;
 
   const startedAt = (snap.get('startedAt') as { toMillis(): number } | undefined)?.toMillis();
   // Live is billed by the minute; the first `ended` puts the call on the AI meter, capped at the call limit.
-  if (ended && startedAt && snap.get('status') !== 'ended') {
+  if (firstEnd && startedAt) {
     const seconds = Math.min(Math.round((Date.now() - startedAt) / 1000), HELPLINE_MAX_SEC);
     void recordAi({ model: HELPLINE_MODEL, usd: (seconds / 60) * LIVE_USD_PER_MIN, seconds, what: 'Helpline call' });
   }
@@ -417,5 +433,5 @@ export const logHelplineCall = onCall(async (req) => {
     { merge: true },
   );
 
-  return { ok: true, ticketId, message: ticketId ? handoverPromise(category) : '' };
+  return { ok: true, ticketId, message };
 });

@@ -1195,6 +1195,8 @@ export const cancelTrip = onCall(async (req) => {
           ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding }
           : null,
         walletHold: 0,
+        // How long the canceller had waited decides whether the helpline may take the fee off.
+        cancelledAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },

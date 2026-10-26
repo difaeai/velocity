@@ -42,7 +42,7 @@ function startedMs(trip: FirebaseFirestore.DocumentSnapshot): number | null {
  */
 export async function forceEndTrip(
   tripId: string,
-  by: { uid: string; role: 'admin' } | { uid: 'system'; role: 'system' },
+  by: { uid: string; role: 'admin' } | { uid: 'system' | 'helpline'; role: 'system' },
   reason: string,
   stillStuck: (trip: FirebaseFirestore.DocumentSnapshot) => boolean = () => true,
 ): Promise<boolean> {

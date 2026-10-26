@@ -51,14 +51,7 @@ export const sendTripMessage = onCall(async (req) => {
   ]);
   if (!tripSnap.exists) invalid('Trip not found.');
 
-  const passengerId = tripSnap.get('passengerId') as string | undefined;
-  const driverId = tripSnap.get('driverId') as string | undefined;
-  // Pool riders share the car and the conversation with it.
-  const members = (tripSnap.get('poolMembers') as string[] | undefined) ?? [];
-  const participants = new Set<string>(
-    [passengerId, driverId, ...members].filter((u): u is string => !!u),
-  );
-
+  const participants = tripParticipants(tripSnap);
   if (!participants.has(ctx.uid)) {
     throw new HttpsError('permission-denied', 'Not your ride.');
   }
@@ -68,6 +61,32 @@ export const sendTripMessage = onCall(async (req) => {
     (userSnap.get('name') as string | undefined) ??
     'Rider';
 
+  const recipients = await postTripMessage({ tripId, participants, senderId: ctx.uid, senderName, text });
+  logger.info('Trip message sent', { tripId, recipients });
+  return { ok: true };
+});
+
+/** Everyone in the car: the booker, the driver and — on a pool — every rider who shares it. */
+export function tripParticipants(tripSnap: FirebaseFirestore.DocumentSnapshot): Set<string> {
+  const passengerId = tripSnap.get('passengerId') as string | undefined;
+  const driverId = tripSnap.get('driverId') as string | undefined;
+  const members = (tripSnap.get('poolMembers') as string[] | undefined) ?? [];
+  return new Set<string>([passengerId, driverId, ...members].filter((u): u is string => !!u));
+}
+
+/**
+ * Write a message into a ride's chat and push everyone else on the ride.
+ * Returns how many were pushed. The caller has checked the sender is on it.
+ */
+export async function postTripMessage(p: {
+  tripId: string;
+  participants: Set<string>;
+  senderId: string;
+  senderName: string;
+  text: string;
+}): Promise<number> {
+  const { tripId, participants, senderId, senderName, text } = p;
+
   // The message and the trip's chat summary go up together. The summary is what
   // the rider's Messages inbox lists: without it, showing "you have 3 driver
   // conversations" would mean opening three subcollections to find out, and the
@@ -75,7 +94,7 @@ export const sendTripMessage = onCall(async (req) => {
   const now = FieldValue.serverTimestamp();
   const batch = db.batch();
   batch.set(db.collection(`trips/${tripId}/chat`).doc(), {
-    senderId: ctx.uid,
+    senderId,
     senderName,
     text,
     sentAt: now,
@@ -83,13 +102,13 @@ export const sendTripMessage = onCall(async (req) => {
   batch.update(db.doc(`trips/${tripId}`), {
     chatLastMessage: preview(text),
     chatLastMessageAt: now,
-    chatLastSenderId: ctx.uid,
+    chatLastSenderId: senderId,
     chatLastSenderName: senderName,
   });
   await batch.commit();
 
   // Everyone on the ride except whoever just typed it.
-  const recipients = [...participants].filter((uid) => uid !== ctx.uid);
+  const recipients = [...participants].filter((uid) => uid !== senderId);
   await Promise.all(
     recipients.map((uid) =>
       sendToUser(uid, `💬 ${senderName}`, preview(text), {
@@ -98,7 +117,5 @@ export const sendTripMessage = onCall(async (req) => {
       }),
     ),
   );
-
-  logger.info('Trip message sent', { tripId, recipients: recipients.length });
-  return { ok: true };
-});
+  return recipients.length;
+}
