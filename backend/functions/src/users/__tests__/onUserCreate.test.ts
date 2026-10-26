@@ -1,7 +1,8 @@
 /**
  * The new-account trigger fills in defaults and never overwrites what the
  * creating callable already set — in prod it reset both admin-made drivers'
- * users docs to 'passenger'.
+ * users docs to 'passenger'. It writes no claims at all: a missing role is
+ * passenger, so nothing can race the code that grants one.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as admin from 'firebase-admin';
@@ -30,11 +31,11 @@ describe('onUserCreate', () => {
     expect((await db().doc('wallets/made-driver').get()).get('balance')).toBe(500);
   });
 
-  it('provisions a passenger with an empty wallet when nothing was set', async () => {
+  it('provisions a passenger with an empty wallet when nothing was set, and leaves the claims alone', async () => {
     await admin.auth().createUser({ uid: 'fresh-rider', phoneNumber: '+923009998877' });
     await run('fresh-rider');
 
-    expect((await admin.auth().getUser('fresh-rider')).customClaims).toEqual({ role: 'passenger' });
+    expect((await admin.auth().getUser('fresh-rider')).customClaims ?? {}).toEqual({});
     expect((await db().doc('users/fresh-rider').get()).data()).toMatchObject({ role: 'passenger', phoneNumber: '+923009998877' });
     expect((await db().doc('wallets/fresh-rider').get()).get('balance')).toBe(0);
   });

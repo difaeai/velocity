@@ -685,18 +685,7 @@ export const verifyWhatsAppOtp = onCall(async (req) => {
     throw new HttpsError('permission-denied', 'This account has been disabled. Contact support.');
   }
 
-  if (user.created) {
-    // `onUserCreate` provisions the profile, the wallet and this same claim —
-    // but it is a background trigger, and this flow reaches signInWithCustomToken
-    // in a fraction of the time a cold start takes. Setting the claim here means
-    // the first ID token already carries `role`, so a brand-new passenger is not
-    // bounced by the role guard on the screen they land on. The trigger writes
-    // the identical value, so the two cannot disagree.
-    await auth.setCustomUserClaims(user.uid, { role: 'passenger' }).catch((err) => {
-      logger.warn('WhatsApp OTP: could not pre-set role claim', { uid: user.uid, err });
-    });
-  }
-
+  // No role claim is set for a new account: a missing role means passenger in the app, the guard and the rules.
   logger.info('WhatsApp OTP: signed in', { uid: user.uid, created: user.created });
   const customToken = await auth.createCustomToken(user.uid);
   return { customToken };

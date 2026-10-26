@@ -31,8 +31,9 @@ service cloud.firestore {
       return isSignedIn() && uid() == userId;
     }
 
+    // No role claim means passenger, as in the app and the backend guard; new accounts get none.
     function role() {
-      return isSignedIn() ? request.auth.token.role : '';
+      return isSignedIn() ? request.auth.token.get('role', 'passenger') : '';
     }
 
     function isAdmin() {
