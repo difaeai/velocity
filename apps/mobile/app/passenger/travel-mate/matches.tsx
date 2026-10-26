@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useTravelMateThreads } from '../../../src/hooks/travelMateCommunity';
+import { AdBanner } from '../../../src/ads';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
@@ -93,6 +94,8 @@ export default function TravelMateMatches() {
           }}
         />
       )}
+      {/* Not a tab any more, so the tab bar's banner never reaches here. */}
+      <AdBanner />
     </SafeAreaView>
   );
 }

@@ -34,7 +34,7 @@ import { api } from '../../../src/api/client';
 import { useBlockedSet } from '../../../src/hooks/travelMateCommunity';
 import { areaSummary } from '../../../src/lib/areaLabel';
 import { InboxModeBar } from '../../../src/ui/InboxModeBar';
-import { useInterstitial } from '../../../src/ads';
+import { NativeAdCard, useInterstitial, useNativeAd } from '../../../src/ads';
 import { colors } from '../../../src/config';
 import { themed } from '../../../src/theme';
 
@@ -43,6 +43,8 @@ const CARD_W = width - 40;
 const CARD_H = height * 0.60;
 const SWIPE_THRESHOLD = CARD_W * 0.35;
 const ROTATE_DEG = 12;
+/** Profiles between two native ad cards in the deck. */
+const AD_EVERY = 4;
 
 interface TMProfile {
   uid: string;
@@ -197,6 +199,9 @@ export default function TravelMateHome() {
   // on opening the tab (an ad the instant a screen mounts is what Google warns
   // against). Resolves at once when none is loaded or the session cap is hit.
   const showAd = useInterstitial('travel-partner-discover');
+  // A native video card after every AD_EVERY profiles, if one has loaded.
+  const nativeAd = useNativeAd();
+  const [sinceAd, setSinceAd] = useState(0);
 
   const [myProfile, setMyProfile]   = useState<TMProfile | null>(null);
   const [cards, setCards]           = useState<TMProfile[]>([]);
@@ -335,8 +340,13 @@ export default function TravelMateHome() {
       setCards(prev => prev.slice(1));
     } finally {
       setSwiping(false);
+      setSinceAd(n => n + 1);
     }
   }
+
+  const cardH = deckH ? Math.min(CARD_H, deckH - 16) : CARD_H;
+  const deckAd = sinceAd >= AD_EVERY && !outOfCards ? nativeAd.ad : null;
+  const dismissAd = () => { setSinceAd(0); nativeAd.next(); };
 
   // Message the person on the top card without swiping — opens (or reuses) a
   // direct chat through the same DM infrastructure as the community feed.
@@ -436,6 +446,8 @@ export default function TravelMateHome() {
               <Text style={s.refreshText}>Refresh</Text>
             </Pressable>
           </View>
+        ) : deckAd ? (
+          <NativeAdCard ad={deckAd} width={CARD_W} height={cardH} />
         ) : (
           [...cards].slice(0, 3).reverse().map((card, idx, arr) => (
             <SwipeCard
@@ -444,14 +456,23 @@ export default function TravelMateHome() {
               isTop={idx === arr.length - 1}
               onLike={() => swipe('like')}
               onPass={() => swipe('pass')}
-              cardH={deckH ? Math.min(CARD_H, deckH - 16) : CARD_H}
+              cardH={cardH}
             />
           ))
         )}
       </View>
 
+      {/* The ad card can't be swiped (see NativeAdCard) — this moves past it. */}
+      {deckAd && (
+        <View style={s.actions}>
+          <Pressable style={s.nextBtn} onPress={dismissAd} accessibilityRole="button">
+            <Text style={s.nextBtnText}>Next profile ›</Text>
+          </Pressable>
+        </View>
+      )}
+
       {/* Pass / Message / Like buttons */}
-      {!outOfCards && cards.length > 0 && (
+      {!deckAd && !outOfCards && cards.length > 0 && (
         <View style={s.actions}>
           <Pressable style={s.actionBtn} onPress={() => swipe('pass')} disabled={swiping}>
             <Text style={s.passIcon}>✕</Text>
@@ -546,6 +567,8 @@ const s = themed(() => StyleSheet.create({
   refreshText: { fontSize: 14, fontWeight: '700', color: colors.primary },
   primaryBtn:  { width: '100%', height: 52, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   primaryBtnText: { fontSize: 16, fontWeight: '900', color: '#000' },
+  nextBtn:     { height: 68, paddingHorizontal: 36, borderRadius: 34, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  nextBtnText: { fontSize: 16, fontWeight: '900', color: colors.text },
 
   matchOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   matchBox:       { backgroundColor: colors.surface, borderRadius: 28, padding: 36, alignItems: 'center', gap: 12, width: '100%', borderWidth: 1.5, borderColor: colors.primary },
