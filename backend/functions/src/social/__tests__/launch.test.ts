@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { cleanLinks, freshLaunch, MAX_LINKS, normaliseFunnel, STEPS } from '../launch';
+import { cleanLinks, freshLaunch, MAX_LINKS, normaliseFunnel, notInPlan, STEPS } from '../launch';
 import { dueAtMs, isAhead } from '../pipeline';
 
 describe('cleanLinks', () => {
@@ -47,6 +47,19 @@ describe('a new workspace', () => {
     const state = freshLaunch(1000);
     expect(Object.keys(state.steps)).toEqual([...STEPS]);
     expect(Object.values(state.steps).every((s) => s.status === 'waiting')).toBe(true);
+  });
+});
+
+describe('notInPlan', () => {
+  const left = (can: string[]) => STEPS.filter((id) => notInPlan(id, can));
+  it('leaves out exactly what each plan does not pay for', () => {
+    expect(left(['content'])).toEqual(['funnel', 'close']);
+    expect(left(['ads'])).toEqual(['content', 'execute', 'close']);
+    expect(left(['content', 'ads', 'sales'])).toEqual([]);
+  });
+  it('says it is skipped, so the sweep can bring the step back after an upgrade', () => {
+    expect(notInPlan('close', ['content'])).toMatchObject({ status: 'skipped', note: expect.stringMatching(/Everything plan/) });
+    expect(notInPlan('market', [])).toBeNull();
   });
 });
 

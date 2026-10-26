@@ -278,7 +278,7 @@ function UserRow({
       {open ? (
         <tr style={{ background: colors.bg }}>
           <td colSpan={6} style={{ padding: '4px 8px 16px' }}>
-            {ws ? <Manage ws={ws} payments={payments} /> : <Unfinished user={user!} />}
+            {ws ? <Manage ws={ws} savedNote={user?.adminNote ?? ''} payments={payments} /> : <Unfinished user={user!} />}
           </td>
         </tr>
       ) : null}
@@ -297,10 +297,10 @@ function Unfinished({ user }: { user: StudioUserDoc }) {
   );
 }
 
-function Manage({ ws, payments }: { ws: Workspace; payments: StudioPaymentDoc[] }) {
+function Manage({ ws, savedNote, payments }: { ws: Workspace; savedNote: string; payments: StudioPaymentDoc[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState(ws.adminNote ?? '');
+  const [note, setNote] = useState(savedNote);
   const [plan, setPlan] = useState<StudioPlanId>(ws.plan);
 
   async function act(label: string, change: Parameters<typeof studioApi.manageCustomer>[0]) {
@@ -388,7 +388,7 @@ function Manage({ ws, payments }: { ws: Workspace; payments: StudioPaymentDoc[] 
           <div>
             <Button
               variant="ghost"
-              disabled={busy !== null || note === (ws.adminNote ?? '')}
+              disabled={busy !== null || note === savedNote}
               onClick={() => act('note', { wid: ws.id, action: 'note', note })}
             >
               {busy === 'note' ? 'Saving…' : 'Save note'}

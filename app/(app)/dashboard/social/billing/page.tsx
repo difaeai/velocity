@@ -24,6 +24,8 @@ import {
   STUDIO_PLAN_IDS,
   STUDIO_PLANS,
   STUDIO_YEAR_DISCOUNT_PCT,
+  planIncludes,
+  studioPaidAfter,
   studioPriceUsd,
   type StudioBilling,
   type StudioPlanId,
@@ -50,7 +52,7 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // An AI agents package chosen on the Sales page arrives as ?agents=1&numbers=1&calls=20&min=2&wa=300.
-  const [agentPkg, setAgentPkg] = useState<AgentPackage | null>(null);
+  const [askedPkg, setAgentPkg] = useState<AgentPackage | null>(null);
   const [agentCard, setAgentCard] = useState<Pick<AgentState, 'price' | 'usdToPkr'> | null>(null);
 
   useEffect(() => {
@@ -98,6 +100,9 @@ export default function BillingPage() {
   }
 
   const chosen = plan ?? ws.plan;
+  // The agents work from the Sales page, so only the plan with it can buy a package (the server says the same).
+  const agentsOk = planIncludes(ws.plan, 'sales');
+  const agentPkg = agentsOk ? askedPkg : null;
   const agentQuote = agentPkg && agentCard ? agentPrice(agentPkg, agentCard.price, agentCard.usdToPkr) : null;
   const amount = agentPkg ? (agentQuote?.usd ?? 0) : studioPriceUsd(chosen, billing);
   const amountPkr = agentPkg ? (agentQuote?.pkr ?? 0) : amount * PKR_PER_USD;
@@ -105,6 +110,9 @@ export default function BillingPage() {
   const until = Math.max(ws.trialEndsAtMs, ws.paidUntilMs);
   const live = nowMs > 0 && until > nowMs;
   const onTrial = ws.paidUntilMs <= nowMs && ws.trialEndsAtMs > nowMs;
+  // Switching plans while days are still paid: say what those days become before anyone pays.
+  const daysLeft = nowMs > 0 ? Math.floor((ws.paidUntilMs - nowMs) / 86_400_000) : 0;
+  const switchUntil = !agentPkg && chosen !== ws.plan && daysLeft > 0 ? studioPaidAfter(ws, chosen, billing, nowMs) : null;
 
   async function send() {
     setBusy(true);
@@ -146,6 +154,11 @@ export default function BillingPage() {
 
       {error ? <p style={{ color: colors.danger, margin: 0 }}>{error}</p> : null}
       {notice ? <p style={{ color: colors.success, margin: 0 }}>{notice}</p> : null}
+      {askedPkg && !agentsOk ? (
+        <p style={{ color: colors.warn, margin: 0 }}>
+          AI agents come with the Everything plan. Pay for Everything below first, then add the package from the Sales page.
+        </p>
+      ) : null}
 
       {agentPkg ? (
         <Card>
@@ -225,6 +238,16 @@ export default function BillingPage() {
             );
           })}
         </div>
+        {switchUntil ? (
+          <p style={{ margin: '12px 0 0', fontSize: 13.5, color: colors.muted, lineHeight: 1.5 }}>
+            Your {daysLeft} day{daysLeft === 1 ? '' : 's'} left on {STUDIO_PLANS[ws.plan].name} carry over at what they are worth,
+            on top of the {billing === 'year' ? 'year' : 'month'} you pay for now:{' '}
+            <strong style={{ color: colors.text }}>
+              {STUDIO_PLANS[chosen].name} until {when(switchUntil)}
+            </strong>
+            .
+          </p>
+        ) : null}
       </Card>
       )}
 

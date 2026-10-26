@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PERIOD_MS, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, priceUsd, refusal } from '../plans';
+import { PERIOD_MS, PLAN_IDS, PLANS, YEAR_MS, canUse, extendPaid, paidAfter, priceUsd, refusal } from '../plans';
 
 const NOW = 1_800_000_000_000;
 const live = { trialEndsAtMs: NOW + 1000, paidUntilMs: 0 };
@@ -61,6 +61,22 @@ describe('extendPaid', () => {
   });
   it('adds a year for a yearly payment', () => {
     expect(extendPaid(NOW + 10, NOW, YEAR_MS)).toBe(NOW + 10 + YEAR_MS);
+  });
+});
+
+describe('paidAfter', () => {
+  const DAY = 86_400_000;
+  it('is extendPaid on the same plan, or when nothing paid is left', () => {
+    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 5 * DAY }, 'content', NOW)).toBe(NOW + 5 * DAY + PERIOD_MS);
+    expect(paidAfter({ plan: 'content', paidUntilMs: NOW - DAY }, 'all', NOW)).toBe(NOW + PERIOD_MS);
+    expect(paidAfter({ plan: 'ads', paidUntilMs: 0 }, 'all', NOW, YEAR_MS)).toBe(NOW + YEAR_MS);
+  });
+  it('converts the days left on an upgrade at what they were worth', () => {
+    // 32 days of Content ($19) are worth 19 days of Everything ($32).
+    expect(paidAfter({ plan: 'content', paidUntilMs: NOW + 32 * DAY }, 'all', NOW)).toBe(NOW + 19 * DAY + PERIOD_MS);
+  });
+  it('keeps their worth on a downgrade, so nothing paid is thrown away', () => {
+    expect(paidAfter({ plan: 'all', paidUntilMs: NOW + 19 * DAY }, 'content', NOW)).toBe(NOW + 32 * DAY + PERIOD_MS);
   });
 });
 

@@ -31,12 +31,12 @@ import {
 } from '@/lib/api';
 import { Button, Card } from '@/components/ui';
 
-const STEP_META: Record<LaunchStepId, { n: number; icon: string; title: string; blurb: string }> = {
-  market: { n: 1, icon: '🔎', title: 'Market analysis', blurb: 'Your notes and links, a live market search and an audience test.' },
-  content: { n: 2, icon: '🗓️', title: 'Content setup', blurb: 'A month planned from the analysis, made 30 days ahead.' },
-  execute: { n: 3, icon: '🚀', title: 'Execute', blurb: 'Posts go out every day at your time.' },
-  funnel: { n: 4, icon: '🎯', title: 'Sales funnel', blurb: 'The offer, and the Meta Ad Expert’s first campaign.' },
-  close: { n: 5, icon: '🤝', title: 'Lead close', blurb: 'Emails, two follow-ups, and an answer to every reply.' },
+const STEP_META: Record<LaunchStepId, { icon: string; title: string; blurb: string }> = {
+  market: { icon: '🔎', title: 'Market analysis', blurb: 'Your notes and links, a live market search and an audience test.' },
+  content: { icon: '🗓️', title: 'Content setup', blurb: 'A month planned from the analysis, made 30 days ahead.' },
+  execute: { icon: '🚀', title: 'Execute', blurb: 'Posts go out every day at your time.' },
+  funnel: { icon: '🎯', title: 'Sales funnel', blurb: 'The offer, and the Meta Ad Expert’s first campaign.' },
+  close: { icon: '🤝', title: 'Lead close', blurb: 'Emails, two follow-ups, and an answer to every reply.' },
 };
 
 const STATUS_META: Record<LaunchStepStatus, { label: string; colour: string }> = {
@@ -45,7 +45,7 @@ const STATUS_META: Record<LaunchStepStatus, { label: string; colour: string }> =
   done: { label: 'Done', colour: colors.success },
   needs_you: { label: 'Needs you', colour: colors.warn },
   failed: { label: 'Will retry', colour: colors.danger },
-  skipped: { label: 'Not in your plan', colour: colors.muted },
+  skipped: { label: 'Skipped', colour: colors.muted },
 };
 
 const VERDICT: Record<NonNullable<MarketAnalysisDoc['test']>['verdict'], { label: string; colour: string }> = {
@@ -61,7 +61,17 @@ export function localHourLabel(pktHour: number): string {
 }
 
 export function LaunchSequence({ settings }: { settings: SocialSettings | null }) {
-  const { path } = useWorkspace();
+  const { path, includes } = useWorkspace();
+  // Only the steps this plan pays for — the backend's `notInPlan`, from the console's side.
+  const shownSteps = LAUNCH_STEPS.filter((id) =>
+    id === 'content' || id === 'execute'
+      ? includes('content')
+      : id === 'funnel'
+        ? includes('ads') || includes('sales')
+        : id === 'close'
+          ? includes('sales')
+          : true,
+  );
   const [state, setState] = useState<LaunchStateDoc | null | undefined>(undefined);
   const [market, setMarket] = useState<MarketAnalysisDoc | null>(null);
   const [funnel, setFunnel] = useState<FunnelPlanDoc | null>(null);
@@ -118,13 +128,14 @@ export function LaunchSequence({ settings }: { settings: SocialSettings | null }
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
         <h2 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>Your launch</h2>
         <span style={{ fontSize: 12.5, color: colors.muted }}>
-          Five steps your AI team runs in order, on its own. Tap a box to see it — or to tell it what you know.
+          {shownSteps.length} steps your AI team runs in order, on its own. Tap a box to see it — or to tell it what you
+          know.
         </span>
       </div>
       {error ? <p style={{ color: colors.danger, fontSize: 13, margin: '8px 0 0' }}>{error}</p> : null}
 
       <ol className="ln-row">
-        {LAUNCH_STEPS.map((id) => {
+        {shownSteps.map((id, i) => {
           const meta = STEP_META[id];
           const step = steps?.[id] ?? { status: 'waiting' as const, note: null, atMs: null };
           const status = STATUS_META[step.status];
@@ -141,7 +152,7 @@ export function LaunchSequence({ settings }: { settings: SocialSettings | null }
               >
                 <span className="ln-head">
                   <span className="ln-num" aria-hidden>
-                    {step.status === 'done' ? '✓' : meta.n}
+                    {step.status === 'done' ? '✓' : i + 1}
                   </span>
                   <span className="ln-icon" aria-hidden>
                     {meta.icon}

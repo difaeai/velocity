@@ -93,8 +93,6 @@ export interface StudioWorkspace {
   };
   /** Paused by a Velocity admin. */
   suspended?: boolean;
-  /** The admin's own note; customers never see it. */
-  adminNote?: string;
 }
 
 /** `studioUsers/{uid}`: everyone who started a Studio sign-up, finished or not. Admin-only. */
@@ -108,6 +106,26 @@ export interface StudioUserDoc {
   lastSeenAtMs: number;
   verifiedAtMs?: number;
   workspaceId?: string;
+  /** The admin's own note on this customer — here, because the workspace doc is the customer's to read. */
+  adminNote?: string;
+}
+
+const STUDIO_PERIOD_MS = 30 * 86_400_000;
+
+/**
+ * Paid-until once a payment for `plan` is approved: days still paid on another
+ * plan carry over at what they were worth. Mirrors `paidAfter` in the backend.
+ */
+export function studioPaidAfter(
+  ws: Pick<StudioWorkspace, 'plan' | 'paidUntilMs'>,
+  plan: StudioPlanId,
+  billing: StudioBilling,
+  nowMs: number,
+): number {
+  const period = billing === 'year' ? 365 * 86_400_000 : STUDIO_PERIOD_MS;
+  const left = ws.paidUntilMs - nowMs;
+  if (plan === ws.plan || left <= 0) return Math.max(ws.paidUntilMs, nowMs) + period;
+  return nowMs + Math.floor((left * STUDIO_PLANS[ws.plan].usd) / STUDIO_PLANS[plan].usd) + period;
 }
 
 export function studioCanUse(

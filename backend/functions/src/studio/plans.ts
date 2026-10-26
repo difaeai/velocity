@@ -70,8 +70,6 @@ export interface Workspace {
   brand: Brand;
   /** Paused by a Velocity admin: no desk, no schedules, whatever is paid. */
   suspended?: boolean;
-  /** The admin's own notes on this customer. Never shown to them. */
-  adminNote?: string;
 }
 
 /** Whether this workspace may do this, now. */
@@ -109,4 +107,22 @@ export function refusal(
  */
 export function extendPaid(paidUntilMs: number, nowMs: number, periodMs = PERIOD_MS): number {
   return Math.max(paidUntilMs, nowMs) + periodMs;
+}
+
+/**
+ * The new paid-until after an approved payment for `plan`. Time still paid on
+ * a different plan carries over at what it was worth — 30 days of Content
+ * become about 18 of Everything, 30 of Everything about 50 of Content — so one
+ * dear month never turns a cheap year into a dear one, and a cheaper plan
+ * never throws away days already paid for.
+ */
+export function paidAfter(
+  ws: Pick<Workspace, 'plan' | 'paidUntilMs'>,
+  plan: PlanId,
+  nowMs: number,
+  periodMs = PERIOD_MS,
+): number {
+  const left = ws.paidUntilMs - nowMs;
+  if (plan === ws.plan || left <= 0) return extendPaid(ws.paidUntilMs, nowMs, periodMs);
+  return nowMs + Math.floor((left * PLANS[ws.plan].usd) / PLANS[plan].usd) + periodMs;
 }
