@@ -46,7 +46,7 @@
  * give it a cadence. If it cannot be expressed as "this document should not
  * exist in this state", it probably belongs in a unit test instead.
  */
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { showingNow } from '../traffic/functions';
 import { TRAFFIC_COLLECTION, type TrafficAlert } from '../traffic/types';
 import type { QaFailureKind, QaSeverity } from './features';
@@ -317,6 +317,36 @@ export const QA_CHECKS: readonly QaCheck[] = [
         evidence: {
           detail: { online: String(snap.size), invisible: String(invisible.length) },
           samples: paths('drivers', invisible),
+        },
+      };
+    },
+  },
+
+  // ── A driver the app opens as a passenger ────────────────────────────────
+  {
+    id: 'drivers.role.claim',
+    featureId: 'driver.online',
+    title: 'Every approved driver signs in as a driver',
+    everyMin: 360,
+    async run() {
+      // The role is a custom claim, and a claims write elsewhere can replace it — the old onUserCreate did, in prod.
+      const snap = await db.collection('drivers').where('verificationStatus', '==', 'approved').limit(300).get();
+      const ids = snap.docs.map((d) => d.id);
+      const wrong: string[] = [];
+      for (let i = 0; i < ids.length; i += 100) {
+        const { users } = await auth.getUsers(ids.slice(i, i + 100).map((uid) => ({ uid })));
+        for (const u of users) if (!['driver', 'admin'].includes(u.customClaims?.role as string)) wrong.push(u.uid);
+      }
+      if (!wrong.length) return null;
+
+      return {
+        kind: 'wrong_result',
+        whatHappened: `${wrong.length} approved driver${
+          wrong.length === 1 ? ' does' : 's do'
+        } not carry the driver role, so the app opens the passenger side for them and the rules refuse every driver action.`,
+        evidence: {
+          detail: { approved: String(snap.size), withoutRole: String(wrong.length) },
+          samples: paths('drivers', wrong.slice(0, 10)),
         },
       };
     },
