@@ -251,14 +251,14 @@ export default function SocialOverview() {
   }, [settings, nowMs]);
 
   /** Save one or more settings, and say so. */
-  async function save(patch: Partial<SocialSettings>, said: (s: SocialSettings) => string) {
+  async function save(patch: Partial<SocialSettings>, said: (s: SocialSettings, scheduled: number) => string) {
     setSwitching(true);
     setNotice(null);
     setError(null);
     try {
       const res = await socialApi.updateSettings(patch);
       setSettings(res.settings);
-      setNotice(said(res.settings));
+      setNotice(said(res.settings, res.scheduled ?? 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save that.');
     } finally {
@@ -268,9 +268,10 @@ export default function SocialOverview() {
 
   /** The Approval box. Posting on its own every day also starts the daily run. */
   const chooseMode = (direct: boolean) =>
-    save(direct ? { ...RUN_ON, autoPublish: true, publishModeChosen: true } : { autoPublish: false, publishModeChosen: true }, (s) =>
+    save(direct ? { ...RUN_ON, autoPublish: true, publishModeChosen: true } : { autoPublish: false, publishModeChosen: true }, (s, scheduled) =>
       direct
-        ? `Done — every day at ${localHourLabel(s.runHour)} the team makes the pieces and posts them straight away.`
+        ? `Done — every day at ${localHourLabel(s.runHour)} the team makes the pieces and posts them straight away.` +
+          (scheduled ? ` ${scheduled} waiting piece${scheduled === 1 ? '' : 's'} now go out on their calendar days.` : '')
         : 'Done — every piece waits for your Approve, and goes out the moment you press it.',
     );
 

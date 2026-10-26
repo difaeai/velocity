@@ -2252,7 +2252,8 @@ export const socialApi = {
     Record<string, never>,
     { settings: SocialSettings; readiness: SocialReadiness; coverage: string[]; staffed: number }
   >('adminGetSocialSettings'),
-  updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings }>(
+  /** `scheduled`: waiting pieces "Post on its own" just put on the calendar. */
+  updateSettings: callable<Partial<SocialSettings>, { ok: boolean; settings: SocialSettings; scheduled?: number }>(
     'adminUpdateSocialSettings',
   ),
   /** Have the team (re)write the month's strategy. Read the result from `socialPlans/{month}`. */

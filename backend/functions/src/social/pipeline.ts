@@ -664,6 +664,8 @@ async function runTeam(params: {
     if (publishWhenDone) {
       logger.info('social: holding a locally written piece for approval', { id: params.id });
     }
+    // "Wait for my Approve" while the desk posts on its own: scheduleWaiting must leave it too.
+    if (finished?.autoPublish === false && settings.autoPublish) await patch(params.id, { heldByChoice: true });
     return;
   }
 
@@ -1284,6 +1286,36 @@ async function makeMedia(postId: string, post: SocialPost): Promise<{ made: numb
 }
 
 /**
+ * "Post on its own" covers what was already waiting when it was chosen: each
+ * piece joins the calendar and goes out on its own day at the desk's hour,
+ * exactly as one finished in that mode does. Left for a person: a piece whose
+ * day has passed (a late "today" post reads wrong), one with nothing to post
+ * yet or a reason in red, one written with no model (see shouldAutoPublish),
+ * and one somebody asked to wait for while the desk was already posting on its
+ * own (`heldByChoice`, set where the run ends).
+ */
+export async function scheduleWaiting(settings: SocialSettings): Promise<number> {
+  if (!shouldAutoPublish(settings.autoPublish, modelReady())) return 0;
+  const today = dayKey(Date.now());
+  // shortcut: one equality query, the date filtered here; past ~200 waiting pieces add a (status, date) index.
+  const snap = await sdb.collection('socialPosts').where('status', '==', 'awaiting_approval').limit(200).get();
+  let scheduled = 0;
+  for (const doc of snap.docs) {
+    const post = doc.data() as SocialPost & { heldByChoice?: boolean };
+    if (post.date < today || post.error || post.engine === 'local' || post.heldByChoice) continue;
+    if (needsMedia(post) || !postMedia(post).length) continue;
+    await patch(doc.id, {
+      status: 'ready' as PostStatus,
+      approvedBy: 'auto',
+      publishQueuedAtMs: Date.now(),
+      scheduled: true,
+    });
+    scheduled++;
+  }
+  return scheduled;
+}
+
+/**
  * Every five minutes: post what was approved, and free what got stuck.
  *
  * Approving used to post only while the browser tab waited for it, so a closed
@@ -1316,10 +1348,19 @@ async function sweep(): Promise<void> {
       for (const doc of due) {
         await patch(doc.id, { renderTries: FieldValue.increment(1) });
         const out = await makeMedia(doc.id, doc.data() as SocialPost);
-        if (out.made && doc.get('status') === 'failed') await patch(doc.id, { status: 'awaiting_approval' as PostStatus });
+        // A red note about the missing file is over once it is made, so the piece can join the calendar.
+        if (out.made) {
+          await patch(doc.id, {
+            error: null,
+            ...(doc.get('status') === 'failed' ? { status: 'awaiting_approval' as PostStatus } : {}),
+          });
+        }
         if (out.error) await patch(doc.id, { error: `Could not make the picture or video: ${out.error}` });
       }
     }
+
+    // Before the posting below, so a piece whose day has come goes out in this same pass.
+    await scheduleWaiting(settings);
 
     const MAKING: PostStatus[] = ['planning', 'researching', 'drafting', 'optimising', 'designing', 'rendering'];
     // Room for a month approved ahead (all `ready`, waiting for their days) on
