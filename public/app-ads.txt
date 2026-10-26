@@ -11,4 +11,4 @@
 #
 # Served at <developer-website-root>/app-ads.txt because Next.js publishes
 # everything under public/ at the domain root.
-google.com, pub-7505727874471807, DIRECT, f08c47fec0942fa0
+google.com, pub-7627374718071924, DIRECT, f08c47fec0942fa0
