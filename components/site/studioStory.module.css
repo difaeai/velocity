@@ -795,6 +795,35 @@
   backdrop-filter: blur(6px);
 }
 
+/* shown only while the browser holds sound back, until the first tap anywhere */
+.unmute {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--lime);
+  color: #0b1400;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-lime);
+  animation: nudge 2s ease-in-out infinite;
+}
+@keyframes nudge {
+  50% {
+    box-shadow: 0 0 0 10px rgba(204, 255, 0, 0.14), var(--shadow-lime);
+  }
+}
+
 .caption {
   display: flex;
   gap: 10px;

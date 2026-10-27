@@ -5,6 +5,7 @@ import { VelocityMark } from '@/components/BrandMark';
 import { HeroSlider, type HeroSlide } from '@/components/site/HeroSlider';
 import { Reveal } from '@/components/site/Reveal';
 import { SiteNav } from '@/components/site/SiteNav';
+import { StudioScrub } from '@/components/site/StudioScrub';
 import { StudioStory } from '@/components/site/StudioStory';
 import { STUDIO_FAQ, StudioFaq, StudioPricing } from '@/components/site/StudioSections';
 import { AppleMark, ArrowRight, Check, GooglePlay, Sparkle } from '@/components/site/Icons';
@@ -27,10 +28,10 @@ import {
  * The homepage: Velocity Studio, with the Velocity Rides app sharing its hero.
  *
  * The hero is two films — the ride app and the studio — and everything under it
- * is the studio: how it works (one story in five numbered steps, acted out in a
- * mock of the console and read by a narrator on request), then the prices, then
- * the questions. The ride app's own long page lives at /rides, linked from its
- * slide.
+ * is the studio: the scroll film (the whole team in one camera move), then how
+ * it works (five numbered steps acted out in a mock of the console, each read
+ * aloud as it scrolls in), then the prices, then the questions. The ride app's
+ * own long page lives at /rides, linked from its slide.
  *
  * The canonical lives here rather than in the root layout: a canonical declared
  * in the layout is inherited by the console and the fleet portal, which would
@@ -224,6 +225,8 @@ export default function Home() {
 
       <main>
         <HeroSlider slides={SLIDES} />
+
+        <StudioScrub />
 
         <StudioStory />
 
