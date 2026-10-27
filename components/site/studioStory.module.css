@@ -22,14 +22,6 @@
   margin-inline: auto;
 }
 
-.controls {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: var(--s-4);
-}
-
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
@@ -129,28 +121,6 @@
   content: '✓';
   color: var(--lime);
   font-weight: 800;
-}
-
-.hear {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 8px 14px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line-hi);
-  background: var(--card);
-  color: var(--text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
-}
-.hear:hover {
-  border-color: var(--lime);
-  background: rgba(204, 255, 0, 0.08);
 }
 
 .cta {
@@ -795,33 +765,69 @@
   backdrop-filter: blur(6px);
 }
 
-/* shown only while the browser holds sound back, until the first tap anywhere */
-.unmute {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  z-index: 4;
-  transform: translateX(-50%);
-  display: inline-flex;
+/* the speaker in the corner while the story is on screen: on by default, a tap mutes */
+.fab {
+  position: fixed;
+  right: clamp(16px, 2.4vw, 32px);
+  bottom: clamp(16px, 2.4vw, 32px);
+  z-index: 80;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 10px;
+}
+.fabBtn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   border: none;
-  border-radius: var(--r-pill);
+  display: grid;
+  place-items: center;
   background: var(--lime);
   color: #0b1400;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  white-space: nowrap;
   cursor: pointer;
   box-shadow: var(--shadow-lime);
+  transition: transform 0.2s var(--ease), background 0.2s;
+}
+.fabBtn:hover {
+  transform: scale(1.06);
+}
+.fabBtn svg {
+  width: 24px;
+  height: 24px;
+}
+.fabBtn .bars {
+  height: 20px;
+  margin: 0;
+  gap: 3px;
+}
+.fabBtn .bars i {
+  width: 4px;
+  background: #0b1400;
+}
+.fabOff {
+  background: var(--ink-3);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--line-hi), var(--shadow-sm);
+}
+/* the browser is holding sound back until the first tap */
+.fabWait {
   animation: nudge 2s ease-in-out infinite;
 }
 @keyframes nudge {
   50% {
-    box-shadow: 0 0 0 10px rgba(204, 255, 0, 0.14), var(--shadow-lime);
+    box-shadow: 0 0 0 12px rgba(204, 255, 0, 0.16), var(--shadow-lime);
   }
+}
+.fabHint {
+  padding: 9px 14px;
+  border-radius: var(--r-pill);
+  background: rgba(4, 18, 12, 0.88);
+  border: 1px solid var(--line-hi);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
 }
 
 .caption {

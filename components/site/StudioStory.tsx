@@ -7,9 +7,10 @@
  * — same nav, same green-and-white theme — acts out the step in view, with the
  * matching film from the shop in the corner. Sound is on from the start: a
  * narrator reads each step the moment it scrolls in, with small sounds timed to
- * its animation (drawn live with Web Audio, no files). No browser plays sound
- * before the visitor has touched the page, so until then a hint asks for one
- * tap — any tap, anywhere — and the step in view starts. Sound off is one button.
+ * its animation (drawn live with Web Audio, no files). A speaker icon in the
+ * corner mutes it and turns it back on. No browser plays sound before the
+ * visitor has touched the page, so until then the icon asks for one tap — any
+ * tap, anywhere — and the step in view starts.
  *
  * The narration is `storyVoice.json`, rendered to `public/site/voice/{key}.mp3`
  * by `scripts/render-story-voice.py` — change a line, render it again. A line
@@ -156,9 +157,8 @@ const NAV = [
   '📊 Usage & credits',
 ];
 const LAST = STEPS.length - 1;
-/** Where the layout stacks, and how far below the top the console is pinned there — both as in the CSS. */
+/** Where the layout stacks, as in the CSS. */
 const NARROW = '(max-width: 900px)';
-const NAV_PX = 76;
 const LINES = Object.fromEntries((VOICE as { key: StepKey; text: string }[]).map((v) => [v.key, v.text])) as Record<
   StepKey,
   string
@@ -179,10 +179,14 @@ export function StudioStory() {
   // The browser is holding the voice back until the visitor's first tap, click or key.
   const [blocked, setBlocked] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  // The speaker icon shows only while the story is on screen.
+  const [near, setNear] = useState(false);
+  const section = useRef<HTMLElement>(null);
   const rows = useRef<(HTMLLIElement | null)[]>([]);
-  const stageCol = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const ctx = useRef<AudioContext | null>(null);
+  // When the first touch let sound start: that same tap on the speaker is not a request to mute.
+  const unblockedAt = useRef(-1e9);
 
   // The step crossing the middle of the screen is the one in view — on a phone, the band just under the pinned console.
   useEffect(() => {
@@ -205,16 +209,13 @@ export function StudioStory() {
     return () => io.disconnect();
   }, []);
 
-  const jump = (i: number) => {
-    const row = rows.current[i];
-    if (!row) return;
-    const y = row.getBoundingClientRect().top + window.scrollY;
-    // A phone reads the step right under the console pinned at the top; a wide screen, in the middle.
-    const top = window.matchMedia(NARROW).matches
-      ? y - (stageCol.current?.offsetHeight ?? 0) - NAV_PX
-      : y - window.innerHeight / 2 + row.offsetHeight / 2;
-    window.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
-  };
+  useEffect(() => {
+    const el = section.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   // The narrator: one element, reused, so once the page may play sound every line after it may too.
   const voice = (): HTMLAudioElement => {
@@ -265,7 +266,8 @@ export function StudioStory() {
   // starts the line for the step in view.
   useEffect(() => {
     if (!blocked) return;
-    const go = () => {
+    const go = (e: Event) => {
+      unblockedAt.current = e.timeStamp;
       setBlocked(false);
       wake();
       if (audio.current?.src) void audio.current.play().catch(() => undefined);
@@ -277,17 +279,8 @@ export function StudioStory() {
     };
   }, [blocked]);
 
-  function hear(i: number) {
-    setMuted(false);
-    if (i !== active) jump(i);
-    else {
-      const el = voice();
-      el.currentTime = 0;
-      void el.play().catch(() => undefined);
-    }
-  }
-
-  function toggleMute() {
+  function toggleMute(e: React.MouseEvent) {
+    if (e.timeStamp - unblockedAt.current < 800) return;
     if (!muted) audio.current?.pause();
     setMuted(!muted);
   }
@@ -296,7 +289,12 @@ export function StudioStory() {
   const films = !reduced && !saveData;
 
   return (
-    <section id="how-it-works" className={`${site.section} ${site.deep} ${s.story}`} aria-labelledby="story-heading">
+    <section
+      ref={section}
+      id="how-it-works"
+      className={`${site.section} ${site.deep} ${s.story}`}
+      aria-labelledby="story-heading"
+    >
       <div className={site.wrap}>
         <header className={s.head}>
           <span className={site.eyebrow}>How Velocity Studio works</span>
@@ -306,13 +304,22 @@ export function StudioStory() {
           <p className={site.lead}>
             Keep scrolling — a narrator reads each step as it comes up, in the same dashboard you get.
           </p>
-          <div className={s.controls}>
-            <button type="button" className={`${site.btn} ${site.btnGhost}`} onClick={toggleMute} aria-pressed={!muted}>
-              {muted ? <SoundOff /> : <SoundOn />}
-              {muted ? 'Sound off' : 'Sound on'}
+        </header>
+
+        {near ? (
+          <div className={s.fab}>
+            {blocked && !muted ? <span className={s.fabHint}>Tap anywhere for sound</span> : null}
+            <button
+              type="button"
+              className={`${s.fabBtn} ${muted ? s.fabOff : ''} ${blocked && !muted ? s.fabWait : ''}`}
+              onClick={toggleMute}
+              aria-pressed={!muted}
+              aria-label={muted ? 'Turn the narrator on' : 'Mute the narrator'}
+            >
+              {muted ? <SoundOff /> : speaking ? <Bars /> : <SoundOn />}
             </button>
           </div>
-        </header>
+        ) : null}
 
         <div className={s.grid}>
           <ol className={s.steps}>
@@ -337,10 +344,6 @@ export function StudioStory() {
                     <li key={p}>{p}</li>
                   ))}
                 </ul>
-                <button type="button" className={s.hear} onClick={() => hear(i)}>
-                  {speaking && i === shown ? <Bars /> : <PlayIcon />}
-                  {speaking && i === shown ? 'Playing…' : 'Hear this step'}
-                </button>
                 {i === LAST ? (
                   <div className={s.cta}>
                     <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
@@ -352,7 +355,7 @@ export function StudioStory() {
             ))}
           </ol>
 
-          <div ref={stageCol} className={s.stageCol}>
+          <div className={s.stageCol}>
             <div className={s.stage}>
               <div className={s.frame}>
                 <div className={s.window} aria-hidden>
@@ -410,11 +413,6 @@ export function StudioStory() {
                     />
                     <figcaption>{step.filmLabel}</figcaption>
                   </figure>
-                ) : null}
-                {blocked && !muted ? (
-                  <button type="button" className={s.unmute} onClick={() => setBlocked(false)}>
-                    <SoundOn /> Tap anywhere to hear the narrator
-                  </button>
                 ) : null}
               </div>
 
@@ -659,13 +657,6 @@ function play(ac: AudioContext, cue: Cue) {
   }
 }
 
-function PlayIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
-    </svg>
-  );
-}
 function SoundOn() {
   return (
     <svg
