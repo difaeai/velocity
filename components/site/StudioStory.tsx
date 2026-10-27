@@ -3,9 +3,10 @@
 /**
  * How Velocity Studio works, as one story in five numbered steps.
  *
- * The steps scroll on the left; on the right a mock of the real Studio console
- * — same nav, same green-and-white theme — acts out the step in view, with the
- * matching film from the shop in the corner. A narrator reads each step the
+ * The steps scroll by; beside each a mock of the real Studio console — same
+ * nav, same green-and-white theme — acts out the step in view, with the
+ * matching film from the shop in the corner. On wide screens the steps zig-zag
+ * and the console glides to whichever lane the text is not in. A narrator reads each step the
  * moment it scrolls in, with small sounds timed to its animation (drawn live
  * with Web Audio, no files). The voice, the first-touch rule and the mute are
  * the whole page's, in `siteSound.tsx`.
@@ -237,7 +238,7 @@ export function StudioStory() {
 
   return (
     <section id="how-it-works" className={`${site.section} ${site.deep} ${s.story}`} aria-labelledby="story-heading">
-      <div className={site.wrap}>
+      <div className={`${site.wrap} ${s.wide}`}>
         <header className={s.head}>
           <span className={site.eyebrow}>How Velocity Studio works</span>
           <h2 id="story-heading" className={site.h2}>
@@ -290,7 +291,8 @@ export function StudioStory() {
           </ol>
 
           <div className={s.stageCol}>
-            <div className={s.stage}>
+            {/* On wide screens the steps zig-zag: odd steps' text left and the console right, even steps the other way. */}
+            <div className={`${s.stage} ${shown % 2 ? s.stageLeft : ''}`}>
               <div className={s.frame}>
                 <div className={s.window} aria-hidden>
                   <div className={s.bar}>
