@@ -21,6 +21,8 @@ const eslintConfig = defineConfig([
     // eslint config, the Expo app is typechecked and tested in CI.
     "backend/**",
     "apps/**",
+    // Local git worktrees parked inside the repo; each is a full copy of it.
+    ".worktrees/**",
   ]),
 ]);
 

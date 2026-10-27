@@ -92,3 +92,6 @@ body*.json
 # it is megabytes of generated JSON that conflicts on every parallel branch.
 # Rebuild it instead of pulling it.
 graphify-out/
+
+# Local git worktrees (git worktree add .worktrees/<name>). Never source.
+/.worktrees/
