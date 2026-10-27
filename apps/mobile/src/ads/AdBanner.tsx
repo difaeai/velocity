@@ -70,7 +70,7 @@ export function AdBanner({ style, hideOnKeyboard = false }: Props) {
     });
   }, [adsEnabled]);
 
-  if (!adsEnabled || !ready) return null;
+  if (!adsEnabled || !ready || !BANNER_UNIT_ID) return null;
 
   return (
     // The wrapper stays mounted while the ad loads (BannerAd has to be in the
