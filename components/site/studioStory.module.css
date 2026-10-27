@@ -32,11 +32,52 @@
 /* ── the steps ─────────────────────────────────────────────────────────── */
 
 .steps {
+  position: relative;
   list-style: none;
   border-left: 1px solid var(--line-hi);
   padding-left: clamp(18px, 2.4vw, 32px);
   /* room after the last step, so the console stays pinned while it is read */
   padding-bottom: 14vh;
+}
+/* the rail fills as the reader moves from step to step */
+.steps::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 2px;
+  height: calc(var(--fill, 0) * (100% - 14vh));
+  background: linear-gradient(180deg, var(--lime), var(--brand-hi));
+  transition: height 0.7s var(--ease-out);
+}
+
+/* the way on to the next step, under each one */
+.next {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 9px 14px;
+  border-radius: var(--r-pill);
+  border: 1px dashed rgba(204, 255, 0, 0.45);
+  color: var(--lime);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s, border-color 0.2s;
+}
+.next:hover {
+  background: rgba(204, 255, 0, 0.08);
+  border-style: solid;
+}
+.next svg {
+  flex: none;
+  animation: nextBob 1.6s ease-in-out infinite;
+}
+@keyframes nextBob {
+  50% {
+    transform: translateY(4px);
+  }
 }
 
 .step {
@@ -318,13 +359,109 @@
   align-content: start;
   gap: 8px;
   font-size: 12px;
-  animation: sceneIn 0.45s var(--ease-out) both;
+  animation: sceneIn 0.5s var(--ease-out) var(--lag, 0s) both;
 }
+/* the next step's scene comes in from the right; going back, from the left */
 @keyframes sceneIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(28px);
   }
+}
+.fromLeft {
+  animation-name: sceneBack;
+}
+@keyframes sceneBack {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+/* how far through the five steps, as a line under the address bar */
+.meter {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 4;
+  height: 3px;
+  width: calc(var(--p) * 100%);
+  background: linear-gradient(90deg, var(--c-green), var(--lime));
+  transition: width 0.7s var(--ease-out);
+}
+
+/* The move to another step, announced: a lime card wipes across the console with
+   the step's number and title, then wipes on, and the new scene arrives under it. */
+.wipe {
+  position: absolute;
+  inset: 36px 0 0;
+  z-index: 5;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 6px;
+  padding: 0 9%;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
+    linear-gradient(120deg, #ccff00, #b6ee00);
+  color: #04231a;
+  clip-path: inset(0 100% 0 0);
+  animation: wipe 1.15s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+  pointer-events: none;
+}
+.wipeBack {
+  animation-name: wipeBack;
+}
+@keyframes wipe {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  32%,
+  62% {
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+@keyframes wipeBack {
+  0% {
+    clip-path: inset(0 0 0 100%);
+  }
+  32%,
+  62% {
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+.wipeKicker {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  opacity: 0.75;
+}
+.wipeNum {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(34px, 7cqw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.wipeNum small {
+  font-size: 0.42em;
+  font-weight: 700;
+  opacity: 0.6;
+  letter-spacing: 0;
+}
+.wipeTitle {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(16px, 3cqw, 24px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .card {
@@ -356,7 +493,7 @@
 
 /* every animated piece: in at its own delay */
 .a {
-  animation: rise 0.55s var(--ease-out) var(--d, 0s) both;
+  animation: rise 0.55s var(--ease-out) calc(var(--d, 0s) + var(--lag, 0s)) both;
 }
 @keyframes rise {
   from {
@@ -474,15 +611,15 @@
   color: #e63e62;
   opacity: 0;
   animation: float 2.4s ease-out infinite;
-  animation-delay: calc(var(--d, 0s) + 0.3s);
+  animation-delay: calc(var(--d, 0s) + var(--lag, 0s) + 0.3s);
 }
 .hearts i:nth-child(2) {
   left: 12px;
-  animation-delay: calc(var(--d, 0s) + 1s);
+  animation-delay: calc(var(--d, 0s) + var(--lag, 0s) + 1s);
 }
 .hearts i:nth-child(3) {
   left: 0;
-  animation-delay: calc(var(--d, 0s) + 1.7s);
+  animation-delay: calc(var(--d, 0s) + var(--lag, 0s) + 1.7s);
 }
 @keyframes float {
   0% {
@@ -526,7 +663,7 @@
   stroke-linejoin: round;
   stroke-dasharray: 420;
   stroke-dashoffset: 420;
-  animation: draw 1.3s var(--ease) 0.7s forwards;
+  animation: draw 1.3s var(--ease) calc(0.7s + var(--lag, 0s)) forwards;
 }
 @keyframes draw {
   to {
@@ -658,7 +795,7 @@
   background: var(--c-green);
   color: #fff;
   font-weight: 800;
-  animation: pulse 1.6s ease-in-out 3.3s infinite;
+  animation: pulse 1.6s ease-in-out calc(3.3s + var(--lag, 0s)) infinite;
 }
 @keyframes pulse {
   50% {
@@ -877,6 +1014,9 @@
   .steps {
     border-left: none;
     padding-left: 0;
+  }
+  .steps::before {
+    display: none;
   }
   .step {
     min-height: 58vh;
