@@ -1,5 +1,5 @@
-/* The homepage story: numbered steps on the left, a sticky mock of the Studio
-   console on the right acting each one out. The mock uses the console's own
+/* The homepage story: numbered steps zig-zagging down the page, and a sticky
+   mock of the Studio console in the other lane acting each one out. The mock uses the console's own
    palette (deep green, white, lime) so the page shows the product as it is.
    Phones stack it: the console sticks to the top and the steps scroll under. */
 
@@ -981,6 +981,86 @@
 }
 
 /* ── phones and narrow tablets: console on top, steps scroll under ──────── */
+
+/* ── wide screens: the steps zig-zag ─────────────────────────────────────
+   Step 1's text sits in the left lane with the console on the right; step 2's
+   text on the right with the console on the left; and so on. The console glides
+   to the other lane as each step comes up (with the wipe), so the reader sees
+   the move to the next step. The section is wider and everything in it bigger. */
+@media (min-width: 901px) {
+  .story .wide {
+    width: min(1400px, calc(100% - 56px));
+  }
+  .grid {
+    display: block;
+    position: relative;
+  }
+  .steps {
+    border-left: none;
+    padding-left: 0;
+  }
+  .steps::before,
+  .step::before {
+    display: none;
+  }
+  .step {
+    width: 40%;
+    min-height: 88vh;
+    padding-right: 3.5%;
+    gap: 18px;
+  }
+  .step:nth-child(even) {
+    margin-left: 60%;
+    padding-right: 0;
+    padding-left: 3.5%;
+  }
+  .badge {
+    font-size: 13.5px;
+    padding: 8px 15px;
+  }
+  .stepTitle {
+    font-size: clamp(30px, 3vw, 46px);
+  }
+  .stepBody {
+    font-size: clamp(17px, 1.35vw, 20px);
+  }
+  .points {
+    font-size: 16.5px;
+    gap: 10px;
+  }
+  .next {
+    font-size: 15px;
+    padding: 10px 16px;
+  }
+
+  /* the console: a lane-wide sticky layer over the steps, moved to the side the text is not on */
+  .stageCol {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .stage {
+    width: 60%;
+    /* 40% of the section is 66.7% of the console's own width: the right lane */
+    transform: translateX(66.667%);
+    transition: transform 0.9s cubic-bezier(0.7, 0, 0.3, 1);
+  }
+  .stageLeft {
+    transform: none;
+  }
+  /* the shop's film sits on the corner facing the text */
+  .stageLeft .pip {
+    left: auto;
+    right: clamp(-56px, -3vw, -24px);
+  }
+}
+
+/* a big console shows its screen bigger too */
+@container (min-width: 780px) {
+  .app {
+    zoom: 1.12;
+  }
+}
 
 @media (max-width: 900px) {
   .grid {
