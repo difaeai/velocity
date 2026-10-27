@@ -5,15 +5,13 @@
  *
  * The steps scroll on the left; on the right a mock of the real Studio console
  * — same nav, same green-and-white theme — acts out the step in view, with the
- * matching film from the shop in the corner. Sound is on from the start: a
- * narrator reads each step the moment it scrolls in, with small sounds timed to
- * its animation (drawn live with Web Audio, no files). A speaker icon in the
- * corner mutes it and turns it back on. No browser plays sound before the
- * visitor has touched the page, so until then the icon asks for one tap — any
- * tap, anywhere — and the step in view starts.
+ * matching film from the shop in the corner. A narrator reads each step the
+ * moment it scrolls in, with small sounds timed to its animation (drawn live
+ * with Web Audio, no files). The voice, the first-touch rule and the mute are
+ * the whole page's, in `siteSound.tsx`.
  *
- * The narration is `storyVoice.json`, rendered to `public/site/voice/{key}.mp3`
- * by `scripts/render-story-voice.py` — change a line, render it again. A line
+ * The narration is `siteVoice.json`, rendered to `public/site/voice/{key}.mp3`
+ * by `scripts/render-site-voice.py` — change a line, render it again. A line
  * downloads only when its step scrolls in. Reduced motion shows every scene at rest.
  */
 
@@ -21,10 +19,11 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ArrowRight } from './Icons';
+import { effects, hush, say, useSiteSound } from './siteSound';
 import { useReducedMotion } from './useReducedMotion';
 import site from './site.module.css';
 import s from './studioStory.module.css';
-import VOICE from './storyVoice.json';
+import VOICE from './siteVoice.json';
 import { STUDIO_CREDIT_DAY_USD, STUDIO_TRIAL_HOURS } from '@/lib/studio';
 
 type Cue = 'tick' | 'pop' | 'chime' | 'whoosh' | 'send';
@@ -175,18 +174,10 @@ export function StudioStory() {
   const [active, setActive] = useState(-1);
   // The step on the console: the last one read, so it never jumps back to the first.
   const [shown, setShown] = useState(0);
-  const [muted, setMuted] = useState(false);
-  // The browser is holding the voice back until the visitor's first tap, click or key.
-  const [blocked, setBlocked] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  // The speaker icon shows only while the story is on screen.
-  const [near, setNear] = useState(false);
-  const section = useRef<HTMLElement>(null);
+  // The voice is the page's (siteSound): this only says which line, and when.
+  const sound = useSiteSound();
+  const speaking = sound.speaking && sound.owner === 'story';
   const rows = useRef<(HTMLLIElement | null)[]>([]);
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const ctx = useRef<AudioContext | null>(null);
-  // When the first touch let sound start: that same tap on the speaker is not a request to mute.
-  const unblockedAt = useRef(-1e9);
 
   // The step crossing the middle of the screen is the one in view — on a phone, the band just under the pinned console.
   useEffect(() => {
@@ -209,92 +200,29 @@ export function StudioStory() {
     return () => io.disconnect();
   }, []);
 
-  useEffect(() => {
-    const el = section.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting));
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  // The narrator: one element, reused, so once the page may play sound every line after it may too.
-  const voice = (): HTMLAudioElement => {
-    if (!audio.current) {
-      const el = new Audio();
-      el.preload = 'auto';
-      el.addEventListener('play', () => setSpeaking(true));
-      el.addEventListener('pause', () => setSpeaking(false));
-      el.addEventListener('ended', () => setSpeaking(false));
-      audio.current = el;
-    }
-    return audio.current;
-  };
-
-  /** The sound effects' engine, made (or woken) only once the page is allowed to play sound. */
-  const wake = () => {
-    if (!ctx.current) {
-      const AC =
-        window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      ctx.current = AC ? new AC() : null;
-    }
-    if (ctx.current?.state === 'suspended') void ctx.current.resume().catch(() => undefined);
-  };
-
   // Each step that scrolls in is read aloud at once, with its sounds timed to its animation.
   useEffect(() => {
-    if (active < 0 || muted) return;
-    const el = voice();
-    el.src = `/site/voice/${STEPS[active].key}.mp3`;
-    el.play()
-      .then(() => {
-        setBlocked(false);
-        wake();
-      })
-      .catch((e: Error) => e.name === 'NotAllowedError' && setBlocked(true));
+    if (active < 0) return;
+    say('story', `/site/voice/${STEPS[active].key}.mp3`);
     const timers = reduced
       ? []
       : STEPS[active].cues.map(([at, cue]) =>
-          setTimeout(() => ctx.current?.state === 'running' && play(ctx.current, cue), at * 1000),
+          setTimeout(() => {
+            const ac = effects();
+            if (ac) play(ac, cue);
+          }, at * 1000),
         );
     return () => {
-      el.pause();
+      hush('story');
       timers.forEach(clearTimeout);
     };
-  }, [active, muted, reduced]);
-
-  // No browser plays sound before the visitor has touched the page. Their first tap, click or key — anywhere —
-  // starts the line for the step in view.
-  useEffect(() => {
-    if (!blocked) return;
-    const go = (e: Event) => {
-      unblockedAt.current = e.timeStamp;
-      setBlocked(false);
-      wake();
-      if (audio.current?.src) void audio.current.play().catch(() => undefined);
-    };
-    const opts = { once: true, capture: true } as const;
-    for (const t of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(t, go, opts);
-    return () => {
-      for (const t of ['pointerdown', 'keydown', 'touchend']) window.removeEventListener(t, go, opts);
-    };
-  }, [blocked]);
-
-  function toggleMute(e: React.MouseEvent) {
-    if (e.timeStamp - unblockedAt.current < 800) return;
-    if (!muted) audio.current?.pause();
-    setMuted(!muted);
-  }
+  }, [active, reduced]);
 
   const step = STEPS[shown];
   const films = !reduced && !saveData;
 
   return (
-    <section
-      ref={section}
-      id="how-it-works"
-      className={`${site.section} ${site.deep} ${s.story}`}
-      aria-labelledby="story-heading"
-    >
+    <section id="how-it-works" className={`${site.section} ${site.deep} ${s.story}`} aria-labelledby="story-heading">
       <div className={site.wrap}>
         <header className={s.head}>
           <span className={site.eyebrow}>How Velocity Studio works</span>
@@ -305,21 +233,6 @@ export function StudioStory() {
             Keep scrolling — a narrator reads each step as it comes up, in the same dashboard you get.
           </p>
         </header>
-
-        {near ? (
-          <div className={s.fab}>
-            {blocked && !muted ? <span className={s.fabHint}>Tap anywhere for sound</span> : null}
-            <button
-              type="button"
-              className={`${s.fabBtn} ${muted ? s.fabOff : ''} ${blocked && !muted ? s.fabWait : ''}`}
-              onClick={toggleMute}
-              aria-pressed={!muted}
-              aria-label={muted ? 'Turn the narrator on' : 'Mute the narrator'}
-            >
-              {muted ? <SoundOff /> : speaking ? <Bars /> : <SoundOn />}
-            </button>
-          </div>
-        ) : null}
 
         <div className={s.grid}>
           <ol className={s.steps}>
@@ -657,40 +570,6 @@ function play(ac: AudioContext, cue: Cue) {
   }
 }
 
-function SoundOn() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4z" fill="currentColor" />
-      <path d="M16 8.5a5 5 0 0 1 0 7M18.8 6a8.5 8.5 0 0 1 0 12" />
-    </svg>
-  );
-}
-function SoundOff() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4z" fill="currentColor" />
-      <path d="M16.5 9.5l5 5M21.5 9.5l-5 5" />
-    </svg>
-  );
-}
 function Bars() {
   return (
     <span className={s.bars} aria-hidden>

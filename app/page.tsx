@@ -71,6 +71,7 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
 const SLIDES: HeroSlide[] = [
   {
     key: 'rides',
+    voice: '/site/voice/hero-rides.mp3',
     tab: 'Velocity Rides',
     sub: 'Book, share the ride, pay less',
     film: {
@@ -118,6 +119,7 @@ const SLIDES: HeroSlide[] = [
   },
   {
     key: 'studio',
+    voice: '/site/voice/hero-studio.mp3',
     tab: 'Velocity Studio',
     sub: 'Your business, its own AI team',
     film: {
@@ -222,7 +224,7 @@ export default function Home() {
   return (
     <div className={styles.site} id="top">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
-      <SiteNav links={LINKS} cta={STUDIO_LOGIN} />
+      <SiteNav links={LINKS} cta={STUDIO_LOGIN} sound />
 
       <main>
         <HeroSlider slides={SLIDES} />

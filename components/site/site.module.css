@@ -570,6 +570,42 @@
   }
 }
 
+/* The page's one mute: quiet, in the header, never over the content. */
+.navSound,
+.navSoundMenu {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-hi);
+  background: transparent;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition: color 200ms var(--ease), border-color 200ms var(--ease);
+}
+
+.navSound:hover,
+.navSoundMenu:hover {
+  color: var(--lime);
+  border-color: var(--lime);
+}
+
+.navSound[aria-pressed='false'],
+.navSoundMenu[aria-pressed='false'] {
+  color: var(--text-dim);
+}
+
+.menuSound {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 17px;
+  color: var(--text);
+}
+
 .navCta {
   display: flex;
   align-items: center;
@@ -2748,6 +2784,11 @@
 
   .navApps {
     gap: 6px;
+  }
+
+  /* no room in a phone's header row: the mute is in the menu */
+  .navSound {
+    display: none;
   }
 
   .footerGrid {

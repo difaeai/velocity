@@ -1,5 +1,37 @@
 [
   {
+    "key": "hero-rides",
+    "text": "Velocity Rides. Book a shared ride at a fixed fare. Your verified driver is tracked live, and when a second rider joins, you each pay sixty percent."
+  },
+  {
+    "key": "hero-studio",
+    "text": "Velocity Studio. It reads your market, makes thirty days of content, posts at your time, runs your Meta ads, and follows up every lead."
+  },
+  {
+    "key": "film-intro",
+    "text": "The shop is closed. Your team isn't."
+  },
+  {
+    "key": "film-market",
+    "text": "First, it reads your market, and tests your offer on a simulated audience."
+  },
+  {
+    "key": "film-content",
+    "text": "Then it makes a month of content ahead: reels, posts and stories."
+  },
+  {
+    "key": "film-posts",
+    "text": "It posts at your time, and the Meta Ad Expert keeps your best ads running."
+  },
+  {
+    "key": "film-leads",
+    "text": "The sales agent follows up every lead, and drafts your reply."
+  },
+  {
+    "key": "film-you",
+    "text": "You run the shop. Your team does the rest."
+  },
+  {
     "key": "content",
     "text": "Here is how your AI team works. Step one: your content. Tell the team about your business. It reads your market, plans thirty days of reels, posts and carousels, and posts them at your time, every day."
   },
