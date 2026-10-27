@@ -254,7 +254,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         </div>
       </section>
 
-      <Showcase title={signup ? 'Your business. Its own AI team.' : 'Your team kept working while you were away.'} />
+      <Showcase title={signup ? 'Make your own Digital Marketing Agency.' : 'Your team kept working while you were away.'} />
     </main>
   );
 }
