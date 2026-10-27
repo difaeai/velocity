@@ -1971,6 +1971,11 @@ export default function Booking() {
               ? `${payLabel} · PKR ${fare} if you ride alone, PKR ${poolShareFare} each when full`
               : `${payLabel} · drivers bid on your offer — no surge tricks`}
         </Text>
+        {/* Said before Book, not first in the car: the driver's dash cam records every ride. */}
+        <Text style={styles.bookCaption}>
+          Every ride is recorded by the driver&apos;s dash cam for everyone&apos;s safety. You can
+          watch yours for 24 hours after it ends.
+        </Text>
       </View>
 
       {/* ══ Instant hand-off ══
