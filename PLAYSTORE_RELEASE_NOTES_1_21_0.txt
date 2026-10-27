@@ -1,4 +1,6 @@
-VELOCITY RIDES 1.21.0  ·  Android versionCode 48  ·  iOS build 22
+VELOCITY RIDES 1.21.0  ·  Android versionCode 49  ·  iOS build 23
+(vc48 / build 22 were the first cut, before the iOS + interstitial ad units
+existed; they are superseded and should not be uploaded or submitted.)
 =================================================================
 (Build numbers are EAS's remote auto-increment; the build list is the truth.)
 
@@ -73,10 +75,13 @@ Mobile commits since 1.20.0 (1022e9f / iOS 4727665):
   - 21f269b / ebf3de5  face scan on the phone, turn arrows, compact driver home
   - this release: new AdMob account (pub-7627374718071924)
 
-ADS IN THIS BUILD (Android only — iOS ads stay off, no iOS AdMob app exists):
-  App id ca-app-pub-7627374718071924~7294012484. Banner .../2200186644 and the
-  native video unit .../4878320875 come from EAS env. The INTERSTITIAL is OFF:
-  the new account has no interstitial unit, and the closed account's id still
-  in EAS env is refused in code (another account's unit). Create an
-  interstitial unit and set EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID to turn it on in
-  a later build.
+ADS IN THIS BUILD — AdMob account pub-7627374718071924, units from EAS env:
+  Android  app ~7294012484 · banner /2200186644 · interstitial /6071897321
+           · native video /4878320875
+  iOS      app ~9350551376 · banner /7243262786 · interstitial /4205823873
+           · native video /3515558736 — FIRST build with iOS ads on.
+  iOS runs WITHOUT App Tracking Transparency (no ATT prompt, no
+  NSUserTrackingUsageDescription, so non-personalised ads); SKAdNetworkItems
+  (Google's id) is now in the plist. BEFORE Add for Review, App Privacy in App
+  Store Connect must declare the data the Google Mobile Ads SDK collects (see
+  the release hand-off) as "not used to track you".
