@@ -5,18 +5,19 @@
  *
  * The steps scroll on the left; on the right a mock of the real Studio console
  * — same nav, same green-and-white theme — acts out the step in view, with the
- * matching film from the shop in the corner. Press "Watch with voice" and a
- * narrator reads each step and the page moves itself on when she finishes;
- * with sound on, each step also has small sounds timed to its animation
- * (drawn live with Web Audio, no files). Touching the page hands control back.
+ * matching film from the shop in the corner. Sound is on from the start: a
+ * narrator reads each step the moment it scrolls in, with small sounds timed to
+ * its animation (drawn live with Web Audio, no files). No browser plays sound
+ * before the visitor has touched the page, so until then a hint asks for one
+ * tap — any tap, anywhere — and the step in view starts. Sound off is one button.
  *
  * The narration is `storyVoice.json`, rendered to `public/site/voice/{key}.mp3`
- * by `scripts/render-story-voice.py` — change a line, render it again. Nothing
- * downloads until sound is turned on. Reduced motion shows every scene at rest.
+ * by `scripts/render-story-voice.py` — change a line, render it again. A line
+ * downloads only when its step scrolls in. Reduced motion shows every scene at rest.
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ArrowRight } from './Icons';
 import { useReducedMotion } from './useReducedMotion';
@@ -170,21 +171,18 @@ const savingData = () =>
 export function StudioStory() {
   const reduced = useReducedMotion();
   const saveData = useSyncExternalStore(never, savingData, () => false);
-  const [active, setActive] = useState(0);
-  const [sound, setSound] = useState(false);
-  const [tour, setTour] = useState(false);
+  // The step being read: -1 while none is in the band (above the first step, past the last).
+  const [active, setActive] = useState(-1);
+  // The step on the console: the last one read, so it never jumps back to the first.
+  const [shown, setShown] = useState(0);
+  const [muted, setMuted] = useState(false);
+  // The browser is holding the voice back until the visitor's first tap, click or key.
+  const [blocked, setBlocked] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const section = useRef<HTMLElement>(null);
   const rows = useRef<(HTMLLIElement | null)[]>([]);
   const stageCol = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const ctx = useRef<AudioContext | null>(null);
-  // Read inside the narration's `ended` handler, which outlives the render it was made in.
-  const live = useRef<{
-    active: number;
-    tour: boolean;
-    next: (i: number) => void;
-  }>({ active, tour, next: () => {} });
 
   // The step crossing the middle of the screen is the one in view — on a phone, the band just under the pinned console.
   useEffect(() => {
@@ -198,7 +196,8 @@ export function StudioStory() {
           else inBand.delete(i);
         }
         const top = [...inBand].sort((a, b) => b[1] - a[1])[0];
-        if (top) setActive(top[0]);
+        setActive(top ? top[0] : -1);
+        if (top) setShown(top[0]);
       },
       { rootMargin: window.matchMedia(NARROW).matches ? '-58% 0px -34% 0px' : '-48% 0px -42% 0px' },
     );
@@ -206,153 +205,98 @@ export function StudioStory() {
     return () => io.disconnect();
   }, []);
 
-  const jump = useCallback(
-    (i: number, smooth = true) => {
-      const row = rows.current[i];
-      if (!row) return;
-      const y = row.getBoundingClientRect().top + window.scrollY;
-      // A phone reads the step right under the console pinned at the top; a wide screen, in the middle.
-      const top = window.matchMedia(NARROW).matches
-        ? y - (stageCol.current?.offsetHeight ?? 0) - NAV_PX
-        : y - window.innerHeight / 2 + row.offsetHeight / 2;
-      window.scrollTo({
-        top,
-        behavior: smooth && !reduced ? 'smooth' : 'auto',
-      });
-    },
-    [reduced],
-  );
-  useEffect(() => {
-    live.current = { active, tour, next: jump };
-  }, [active, tour, jump]);
+  const jump = (i: number) => {
+    const row = rows.current[i];
+    if (!row) return;
+    const y = row.getBoundingClientRect().top + window.scrollY;
+    // A phone reads the step right under the console pinned at the top; a wide screen, in the middle.
+    const top = window.matchMedia(NARROW).matches
+      ? y - (stageCol.current?.offsetHeight ?? 0) - NAV_PX
+      : y - window.innerHeight / 2 + row.offsetHeight / 2;
+    window.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+  };
 
-  // The narrator: one element, reused, so the first tap unlocks every line after it.
+  // The narrator: one element, reused, so once the page may play sound every line after it may too.
   const voice = (): HTMLAudioElement => {
     if (!audio.current) {
       const el = new Audio();
       el.preload = 'auto';
       el.addEventListener('play', () => setSpeaking(true));
       el.addEventListener('pause', () => setSpeaking(false));
-      el.addEventListener('ended', () => {
-        setSpeaking(false);
-        const { active: at, tour: touring, next } = live.current;
-        if (!touring) return;
-        if (at < LAST) setTimeout(() => next(at + 1), 700);
-        else setTour(false);
-      });
+      el.addEventListener('ended', () => setSpeaking(false));
       audio.current = el;
     }
     return audio.current;
   };
 
-  /** Read step `i` from the top. */
-  function say(i: number) {
-    const el = voice();
-    el.src = `/site/voice/${STEPS[i].key}.mp3`;
-    void el.play().catch(() => setSpeaking(false));
-  }
-
-  // With sound on, each step in view is read out, and its sounds play with its animation.
-  useEffect(() => {
-    const el = audio.current;
-    if (!sound || !el) return;
-    el.src = `/site/voice/${STEPS[active].key}.mp3`;
-    void el.play().catch(() => setSpeaking(false));
-    const timers = reduced
-      ? []
-      : STEPS[active].cues.map(([at, cue]) => setTimeout(() => ctx.current && play(ctx.current, cue), at * 1000));
-    return () => {
-      el.pause();
-      timers.forEach(clearTimeout);
-    };
-  }, [active, sound, reduced]);
-
-  // Any hand on the page ends the tour; leaving the section silences it.
-  useEffect(() => {
-    if (!tour) return;
-    const stop = (e: Event) => {
-      if (
-        e instanceof KeyboardEvent &&
-        !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End'].includes(e.key)
-      )
-        return;
-      setTour(false);
-    };
-    window.addEventListener('wheel', stop, { passive: true });
-    window.addEventListener('touchstart', stop, { passive: true });
-    window.addEventListener('keydown', stop);
-    return () => {
-      window.removeEventListener('wheel', stop);
-      window.removeEventListener('touchstart', stop);
-      window.removeEventListener('keydown', stop);
-    };
-  }, [tour]);
-
-  useEffect(() => {
-    const el = section.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) return;
-      audio.current?.pause();
-      setTour(false);
-    });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  /** Sound needs a tap before a browser allows it; every control that turns it on is one. */
-  function unlock() {
-    voice();
+  /** The sound effects' engine, made (or woken) only once the page is allowed to play sound. */
+  const wake = () => {
     if (!ctx.current) {
       const AC =
         window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       ctx.current = AC ? new AC() : null;
     }
-    void ctx.current?.resume();
-  }
+    if (ctx.current?.state === 'suspended') void ctx.current.resume().catch(() => undefined);
+  };
 
-  // A new step or sound switching on starts its line through the effect; only a replay of the same step needs `say`.
-  function watch() {
-    unlock();
-    setTour(true);
-    if (active !== 0) jump(0, false);
-    else if (sound) say(0);
-    setSound(true);
-  }
+  // Each step that scrolls in is read aloud at once, with its sounds timed to its animation.
+  useEffect(() => {
+    if (active < 0 || muted) return;
+    const el = voice();
+    el.src = `/site/voice/${STEPS[active].key}.mp3`;
+    el.play()
+      .then(() => {
+        setBlocked(false);
+        wake();
+      })
+      .catch((e: Error) => e.name === 'NotAllowedError' && setBlocked(true));
+    const timers = reduced
+      ? []
+      : STEPS[active].cues.map(([at, cue]) =>
+          setTimeout(() => ctx.current?.state === 'running' && play(ctx.current, cue), at * 1000),
+        );
+    return () => {
+      el.pause();
+      timers.forEach(clearTimeout);
+    };
+  }, [active, muted, reduced]);
 
-  function pause() {
-    setTour(false);
-    audio.current?.pause();
-  }
+  // No browser plays sound before the visitor has touched the page. Their first tap, click or key — anywhere —
+  // starts the line for the step in view.
+  useEffect(() => {
+    if (!blocked) return;
+    const go = () => {
+      setBlocked(false);
+      wake();
+      if (audio.current?.src) void audio.current.play().catch(() => undefined);
+    };
+    const opts = { once: true, capture: true } as const;
+    for (const t of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(t, go, opts);
+    return () => {
+      for (const t of ['pointerdown', 'keydown', 'touchend']) window.removeEventListener(t, go, opts);
+    };
+  }, [blocked]);
 
   function hear(i: number) {
-    unlock();
+    setMuted(false);
     if (i !== active) jump(i);
-    else if (sound) say(i);
-    setSound(true);
-  }
-
-  function toggleSound() {
-    if (sound) {
-      setSound(false);
-      setTour(false);
-      audio.current?.pause();
-    } else {
-      unlock();
-      setSound(true);
+    else {
+      const el = voice();
+      el.currentTime = 0;
+      void el.play().catch(() => undefined);
     }
   }
 
-  const step = STEPS[active];
+  function toggleMute() {
+    if (!muted) audio.current?.pause();
+    setMuted(!muted);
+  }
+
+  const step = STEPS[shown];
   const films = !reduced && !saveData;
 
   return (
-    <section
-      ref={section}
-      id="how-it-works"
-      className={`${site.section} ${site.deep} ${s.story}`}
-      aria-labelledby="story-heading"
-    >
+    <section id="how-it-works" className={`${site.section} ${site.deep} ${s.story}`} aria-labelledby="story-heading">
       <div className={site.wrap}>
         <header className={s.head}>
           <span className={site.eyebrow}>How Velocity Studio works</span>
@@ -360,17 +304,12 @@ export function StudioStory() {
             Five steps. Your team runs them <span className={site.accent}>on its own.</span>
           </h2>
           <p className={site.lead}>
-            Scroll through the story, or press play and let the narrator walk you through it — each step happens in the
-            same dashboard you get.
+            Keep scrolling — a narrator reads each step as it comes up, in the same dashboard you get.
           </p>
           <div className={s.controls}>
-            <button type="button" className={`${site.btn} ${site.btnLime}`} onClick={tour ? pause : watch}>
-              {tour ? <PauseIcon /> : <PlayIcon />}
-              {tour ? 'Pause the story' : 'Watch with voice'}
-            </button>
-            <button type="button" className={`${site.btn} ${site.btnGhost}`} onClick={toggleSound} aria-pressed={sound}>
-              {sound ? <SoundOn /> : <SoundOff />}
-              {sound ? 'Sound on' : 'Sound off'}
+            <button type="button" className={`${site.btn} ${site.btnGhost}`} onClick={toggleMute} aria-pressed={!muted}>
+              {muted ? <SoundOff /> : <SoundOn />}
+              {muted ? 'Sound off' : 'Sound on'}
             </button>
           </div>
         </header>
@@ -384,8 +323,8 @@ export function StudioStory() {
                   rows.current[i] = el;
                 }}
                 data-i={i}
-                className={`${s.step} ${i === active ? s.on : ''}`}
-                aria-current={i === active ? 'step' : undefined}
+                className={`${s.step} ${i === shown ? s.on : ''}`}
+                aria-current={i === shown ? 'step' : undefined}
               >
                 <span className={s.badge}>
                   Step {i + 1}
@@ -399,8 +338,8 @@ export function StudioStory() {
                   ))}
                 </ul>
                 <button type="button" className={s.hear} onClick={() => hear(i)}>
-                  {speaking && i === active ? <Bars /> : <PlayIcon />}
-                  {speaking && i === active ? 'Playing…' : 'Hear this step'}
+                  {speaking && i === shown ? <Bars /> : <PlayIcon />}
+                  {speaking && i === shown ? 'Playing…' : 'Hear this step'}
                 </button>
                 {i === LAST ? (
                   <div className={s.cta}>
@@ -426,7 +365,7 @@ export function StudioStory() {
                     <span className={s.url}>velocityrides.app/dashboard</span>
                     <span className={s.progress}>
                       {STEPS.map((x, i) => (
-                        <i key={x.key} className={i <= active ? s.lit : ''} />
+                        <i key={x.key} className={i <= shown ? s.lit : ''} />
                       ))}
                     </span>
                   </div>
@@ -447,7 +386,7 @@ export function StudioStory() {
                     </nav>
                     <div className={s.main}>
                       <div className={s.pageHead}>
-                        <span className={s.stepTag}>Step {active + 1}</span>
+                        <span className={s.stepTag}>Step {shown + 1}</span>
                         <strong>{step.page}</strong>
                       </div>
                       <div key={step.key} className={`${s.scene} ${reduced ? s.rest : ''}`}>
@@ -471,6 +410,11 @@ export function StudioStory() {
                     />
                     <figcaption>{step.filmLabel}</figcaption>
                   </figure>
+                ) : null}
+                {blocked && !muted ? (
+                  <button type="button" className={s.unmute} onClick={() => setBlocked(false)}>
+                    <SoundOn /> Tap anywhere to hear the narrator
+                  </button>
                 ) : null}
               </div>
 
@@ -719,14 +663,6 @@ function PlayIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
-    </svg>
-  );
-}
-function PauseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <rect x="6" y="5" width="4" height="14" rx="1" />
-      <rect x="14" y="5" width="4" height="14" rx="1" />
     </svg>
   );
 }
