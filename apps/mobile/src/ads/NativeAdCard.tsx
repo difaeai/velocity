@@ -36,7 +36,8 @@ export function useNativeAd(): { ad: NativeAd | null; next: () => void } {
   const [round, setRound] = useState(0);
 
   useEffect(() => {
-    if (!adsEnabled) return;
+    const unitId = NATIVE_UNIT_ID;
+    if (!adsEnabled || !unitId) return;
     let disposed = false;
     let current: NativeAd | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -44,7 +45,7 @@ export function useNativeAd(): { ad: NativeAd | null; next: () => void } {
     const load = async (retried: boolean) => {
       if (!(await ensureAdsReady()) || disposed) return;
       try {
-        const loaded = await NativeAd.createForAdRequest(NATIVE_UNIT_ID, {
+        const loaded = await NativeAd.createForAdRequest(unitId, {
           aspectRatio: NativeMediaAspectRatio.ANY,
           startVideoMuted: true,
         });

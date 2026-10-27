@@ -1,0 +1,82 @@
+VELOCITY RIDES 1.21.0  ·  Android versionCode 48  ·  iOS build 22
+=================================================================
+(Build numbers are EAS's remote auto-increment; the build list is the truth.)
+
+WHY 1.21.0. iOS 1.20.0 (build 21) is READY_FOR_SALE, read from the App Store
+Connect API on 27 Oct before choosing — an approved version string closes its
+train (ITMS-90186), so nothing more can go up as 1.20.0.
+
+VERSION STATE — check the stores, not this file.
+  iOS      Live: 1.20.0 build 21. This release needs a NEW 1.21.0 version
+           record with the What's New below and the new build attached.
+  Android  Play's state cannot be read from this machine (no Play API key).
+           vc48 supersedes vc47; roll it into EVERY track holding an older
+           bundle.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number
+(1.21.0 + 48 for Play; 1.21.0 + the iOS build in the iOS section, only once
+Apple has RELEASED it), or the in-app update prompt tells nobody.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Travel Partner, simpler.
+
+• Opens straight to people going your way, with the profile you already have
+• New Open / Mute / Close switch: choose who can reach you
+• Groups have their own tab; matches and chats live in your profile
+• Rides start faster: drivers accept at once and calls no longer drop
+• See where people are travelling on the home map
+• Driver face check now runs on the phone
+
+
+APP STORE "WHAT'S NEW" (set on a NEW 1.21.0 version record)
+-----------------------------------------------------------
+TRAVEL PARTNER, SIMPLER
+
+Travel Partner now opens straight to people going your way. It uses the profile
+you made when you signed up, so there is nothing new to fill in.
+
+CHOOSE WHO CAN REACH YOU
+
+A new Open / Mute / Close switch sits at the top of Travel Partner. Open: anyone
+can like or message you and you are notified. Mute: they still can, quietly.
+Close: nobody can like or message you until you open again.
+
+GROUPS GET THEIR OWN TAB
+
+Commute groups have their own tab. Your matches, chats and ride links are
+together in your profile.
+
+FASTER RIDES
+
+Drivers accept a ride at your fare at once, picked-up calls no longer hang up,
+and each rider on a shared ride starts and ends their own trip.
+
+ALSO
+
+The home map shows where people are travelling. Cancellation fees and no-shows
+are recorded in Ride History. Drivers' face checks run on the phone and are
+quicker.
+
+
+WHAT THIS CARRIES (for the team; not store copy)
+------------------------------------------------
+Mobile commits since 1.20.0 (1022e9f / iOS 4727665):
+  - e84a81b  Travel Partner: one profile, Open/Mute/Close, deck as Home, Groups tab
+  - 15a8d77  native video ad card every 4 profiles; banner on Matches
+  - 7ed36f4  helpline solves on the call; complaints split by side
+  - 619bc0e  driver commission and fees come off the bonus first
+  - a4c5405 / 7f3998e / 2a79924  home: travel locations, route counts, live legend
+  - 5a1cb43 / 1ed4214 / 2bda0c5 / 9c2dc23  ride flow: instant accept, per-rider
+             start/end, calls stay up, fees through the wallet, no-shows
+  - 21f269b / ebf3de5  face scan on the phone, turn arrows, compact driver home
+  - this release: new AdMob account (pub-7627374718071924)
+
+ADS IN THIS BUILD (Android only — iOS ads stay off, no iOS AdMob app exists):
+  App id ca-app-pub-7627374718071924~7294012484. Banner .../2200186644 and the
+  native video unit .../4878320875 come from EAS env. The INTERSTITIAL is OFF:
+  the new account has no interstitial unit, and the closed account's id still
+  in EAS env is refused in code (another account's unit). Create an
+  interstitial unit and set EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID to turn it on in
+  a later build.

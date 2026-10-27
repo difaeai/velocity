@@ -57,7 +57,8 @@ export function useInterstitial(placement: string) {
   useEffect(() => {
     // A paying user never loads one in the first place — no wasted request, and
     // no chance of a stale preloaded ad firing after they upgrade mid-session.
-    if (!adsEnabled || shownThisSession.has(placement)) return;
+    const unitId = INTERSTITIAL_UNIT_ID;
+    if (!adsEnabled || !unitId || shownThisSession.has(placement)) return;
 
     let disposed = false;
     let retried = false;
@@ -77,7 +78,7 @@ export function useInterstitial(placement: string) {
         return;
       }
 
-      const ad = InterstitialAd.createForAdRequest(INTERSTITIAL_UNIT_ID);
+      const ad = InterstitialAd.createForAdRequest(unitId);
       adRef.current = ad;
 
       cleanups.push(
