@@ -520,6 +520,7 @@
 
 .navLink {
   position: relative;
+  white-space: nowrap;
   padding: 9px 14px;
   border-radius: var(--r-pill);
   font-size: 15px;
@@ -531,6 +532,42 @@
 .navLink:hover {
   color: var(--text);
   background: var(--card-hi);
+}
+
+/* The two stores, right beside the logo; the links take the space after them. */
+.navInner > .brand {
+  margin-right: 0;
+}
+
+.navApps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.navApps .navApp {
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.navApp svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Under 1280px the links need the room: both stores stay, as icons. */
+@media (max-width: 1280px) {
+  .navApps .navApp {
+    width: 40px;
+    padding: 0;
+  }
+
+  .navApp span {
+    display: none;
+  }
 }
 
 .navCta {
@@ -2704,6 +2741,15 @@
 }
 
 @media (max-width: 520px) {
+  /* logo, two store icons and the menu button on one phone-width row */
+  .navInner {
+    gap: var(--s-2);
+  }
+
+  .navApps {
+    gap: 6px;
+  }
+
   .footerGrid {
     grid-template-columns: 1fr;
   }

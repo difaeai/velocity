@@ -50,9 +50,10 @@ const LINKS = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '#pricing', label: 'Pricing' },
   { href: '/rides', label: 'Velocity Rides' },
-  { href: '/studio/login', label: 'Log in' },
   { href: '/studio/signup', label: 'Start free' },
 ];
+// The homepage sells Studio, so its nav button is the way back in; /rides keeps "Get the app".
+const STUDIO_LOGIN = { href: '/studio/login', label: 'Velocity AI Studio login' };
 
 function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   const ios = variant === 'ios';
@@ -221,7 +222,7 @@ export default function Home() {
   return (
     <div className={styles.site} id="top">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
-      <SiteNav links={LINKS} />
+      <SiteNav links={LINKS} cta={STUDIO_LOGIN} />
 
       <main>
         <HeroSlider slides={SLIDES} />

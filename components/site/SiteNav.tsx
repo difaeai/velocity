@@ -2,25 +2,25 @@
 
 import { useEffect, useId, useState } from 'react';
 
-import { Close, Menu } from './Icons';
-import { InstallButton } from './InstallButton';
+import { AppleMark, Close, GooglePlay, Menu, Person } from './Icons';
 import { VelocityMark } from '@/components/BrandMark';
+import { APP_STORE_URL, PLAY_URL } from '@/lib/site';
 import styles from './site.module.css';
 
 export type NavLink = { href: string; label: string };
 
 /**
- * The nav no longer takes a store URL.
+ * The site's header.
  *
- * It used to be handed the Play link, which was correct while Play was the
- * only place to get the app. Now that both stores are live the button has to
- * pick one per visitor, and that decision belongs in InstallButton — passing a
- * URL in would just mean the nav hard-codes the wrong store for iPhone users.
+ * Both stores sit beside the logo, side by side — the user asked for an
+ * Android and an iPhone "Get the app" there rather than one button guessing
+ * the visitor's phone. On a narrow screen they shrink to their store icons.
  *
- * It does take its links: the homepage (Velocity Studio) and the ride app's
- * page each point at their own sections.
+ * It takes its links: the homepage (Velocity Studio) and the ride app's page
+ * each point at their own sections. `cta` is the button on the right — the
+ * homepage's is the Velocity AI Studio log-in.
  */
-export function SiteNav({ links }: { links: NavLink[] }) {
+export function SiteNav({ links, cta }: { links: NavLink[]; cta?: NavLink }) {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [open, setOpen] = useState(false);
@@ -71,6 +71,29 @@ export function SiteNav({ links }: { links: NavLink[] }) {
             <span className={styles.brandName}>Velocity Rides</span>
           </a>
 
+          <div className={styles.navApps}>
+            <a
+              className={`${styles.btn} ${styles.btnLime} ${styles.navApp}`}
+              href={PLAY_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Get the app on Google Play (Android)"
+            >
+              <GooglePlay />
+              <span>Get the app</span>
+            </a>
+            <a
+              className={`${styles.btn} ${styles.btnLime} ${styles.navApp}`}
+              href={APP_STORE_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Get the app on the App Store (iPhone)"
+            >
+              <AppleMark />
+              <span>Get the app</span>
+            </a>
+          </div>
+
           <div className={styles.navLinks}>
             {links.map((l) => (
               <a key={l.href} className={styles.navLink} href={l.href}>
@@ -79,9 +102,13 @@ export function SiteNav({ links }: { links: NavLink[] }) {
             ))}
           </div>
 
-          <div className={styles.navCta}>
-            <InstallButton />
-          </div>
+          {cta ? (
+            <div className={styles.navCta}>
+              <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href}>
+                <Person /> {cta.label}
+              </a>
+            </div>
+          ) : null}
 
           <button
             type="button"
@@ -102,7 +129,11 @@ export function SiteNav({ links }: { links: NavLink[] }) {
                 {l.label}
               </a>
             ))}
-            <InstallButton onClick={() => setOpen(false)} />
+            {cta ? (
+              <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href} onClick={() => setOpen(false)}>
+                <Person /> {cta.label}
+              </a>
+            ) : null}
           </div>
         ) : null}
       </div>
