@@ -121,7 +121,7 @@ const SLIDES: HeroSlide[] = [
     key: 'studio',
     voice: '/site/voice/hero-studio.mp3',
     tab: 'Velocity Studio',
-    sub: 'Your business, its own AI team',
+    sub: 'Your own digital marketing agency',
     film: {
       large: '/site/studio.mp4',
       small: '/site/studio-sm.mp4',
@@ -141,7 +141,9 @@ const SLIDES: HeroSlide[] = [
           <Sparkle /> Velocity Studio
         </span>
         <h2 className={styles.heroTitle}>
-          Your business. <em>Its own AI team.</em>
+          Make your own
+          <br />
+          <em>Digital Marketing Agency.</em>
         </h2>
         <p className={styles.heroLead}>
           It reads your market, plans a month of content, posts every day at your time, runs your Meta ads and closes
