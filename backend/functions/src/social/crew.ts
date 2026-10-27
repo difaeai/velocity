@@ -9,10 +9,11 @@
  * script never mentions, and what makes "tell them all something" one settings
  * field rather than eight.
  */
+import { accountsBlock } from './discovery';
 import { employeeIntro } from './employees';
 import { generateJson, modelReady } from './engine';
 import { localPlan } from './local';
-import { playbookFor, playbookForStandup } from './playbook';
+import { playbookFor, playbookForStandup, STORY_SHAPES } from './playbook';
 import {
   FORMAT_SPECS,
   ROLE_SPECS,
@@ -172,8 +173,13 @@ export function researchBlock(research: ContentResearch | null): string {
     research.opportunities.length ? `Gaps we can take: ${research.opportunities.join(' | ')}` : '',
     research.hookPatterns.length ? `Hook shapes that are working: ${research.hookPatterns.join(' | ')}` : '',
     research.avoid.length ? `Being done to death — avoid: ${research.avoid.join(' | ')}` : '',
+    research.viral?.length
+      ? `Posts travelling right now: ${research.viral.map((v) => `${v.title} — ${v.why}`).join(' | ')}`
+      : '',
   ].filter(Boolean);
-  return lines.length ? `MARKET READ (from this morning):\n${lines.join('\n')}` : '';
+  const accounts = accountsBlock(research.accounts);
+  if (!lines.length && !accounts) return '';
+  return [lines.length ? `MARKET READ (from this morning):\n${lines.join('\n')}` : '', accounts].filter(Boolean).join('\n\n');
 }
 
 /** Feedback the admin has given on this piece, oldest first. */
@@ -215,19 +221,22 @@ export async function planContent(params: {
    * a hint and what ours did is evidence.
    */
   pageRead?: string;
+  /** The structure this piece is built in, chosen by code so the feed does not repeat itself. */
+  shape?: string;
 }): Promise<ContentPlan> {
   // No key, no argument: the local engine decides the concept from the brand
   // material instead. It is a thinner standup — nobody debates anything — but
   // it produces the one thing every stage downstream needs, which is a
   // decision they can inherit rather than re-make.
   if (!modelReady()) {
-    return localPlan({
+    const plan = localPlan({
       angle: params.angle,
       format: params.format,
       facts: params.facts,
       team: params.team,
       recentConcepts: params.recentConcepts,
     });
+    return params.shape ? { ...plan, shape: params.shape } : plan;
   }
 
   const spec = FORMAT_SPECS[params.format];
@@ -246,6 +255,12 @@ IN THE ROOM TODAY:
 ${roster(params.team)}
 
 Your job is to settle ONE concept the team will then execute. Argue it briefly in their voices — use their real names — then commit. A concept is not a topic: "drivers earn well" is a topic, "a driver counts out today's cash on his bonnet while the fare he refused scrolls past" is a concept.
+${
+    params.shape && STORY_SHAPES[params.shape]
+      ? `\nTODAY'S SHAPE, decided before the room sat down — the concept MUST be built in it: ${STORY_SHAPES[params.shape]}\n`
+      : ''
+  }
+The feed is judged as a whole: a concept that could be mistaken for one of the pieces already made recently is a failed standup, however good it is on its own. Change the person, the place, the moment and the emotion, not just the words.
 
 What travels in this market: a specific person in a specific place; a number that surprises; ${
     isHouse()
@@ -314,6 +329,7 @@ Reply with one JSON object and nothing else:
   return {
     atMs: Date.now(),
     concept,
+    ...(params.shape ? { shape: params.shape } : {}),
     audience: str(data.audience, 200),
     why: str(data.why, 300),
     hookDirection: str(data.hookDirection, 300),
@@ -331,6 +347,7 @@ export function planBlock(plan: ContentPlan | null, employee: Employee): string 
   return [
     'THE TEAM AGREED THIS AT STANDUP. Execute it; do not re-decide it.',
     `Concept: ${plan.concept}`,
+    plan.shape && STORY_SHAPES[plan.shape] ? `Shape: ${STORY_SHAPES[plan.shape]}` : '',
     plan.audience ? `Audience: ${plan.audience}` : '',
     plan.hookDirection ? `Hook direction: ${plan.hookDirection}` : '',
     employee.role === 'designer' && plan.visualDirection ? `Visual direction: ${plan.visualDirection}` : '',

@@ -35,11 +35,11 @@
  *    request would either be refused or billed. `GROUNDED_GEMINI_MODEL`
  *    therefore beats the console's model box on a grounded request, whatever
  *    somebody typed in it. The box still chooses the writer.
- * 4. **JSON mode is asked for, and dropped if it is refused** — the same
- *    bargain `freeModel.ts` makes, for the same reason: `extractJson` was
- *    always the real net. It is never asked for on a grounded call, because
- *    structured output alongside a built-in tool is a Gemini 3 preview feature
- *    and the grounded model here is 2.5.
+ * 4. **JSON mode is not asked for.** The Interactions API documents it only
+ *    with a `schema`, and the bare `{ type: 'text', mime_type: 'application/json' }`
+ *    this file used to send cost every fresh instance one refused call (a 400)
+ *    before it fell back — the 400s on the usage page. `extractJson` was always
+ *    the real net, and every prompt here already asks for one JSON object.
  * 5. **Free tiers are rate-limited, so retries are not optional.** One piece
  *    is nine or ten calls in a row. A per-minute refusal is waited out; a
  *    per-day one is reported rather than slept through, because waiting out a
@@ -124,19 +124,7 @@ function isDailyQuota(message: string): boolean {
   return /per ?day|daily|RPD|TPD/i.test(message);
 }
 
-/** A refusal caused by asking for JSON on a model or route that lacks it. */
-function isJsonRefusal(message: string): boolean {
-  return /response_format|response_mime_type|mime_type|json/i.test(message);
-}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Turned off for the life of the instance the first time it is refused.
- * Module state rather than a setting: it is a fact about the endpoint, not a
- * preference, and nobody should have to know it exists.
- */
-let jsonMode = true;
 
 interface Annotation {
   type?: string;
@@ -175,7 +163,7 @@ const KEY_TROUBLE = /credit|billing|prepay|API key|PERMISSION_DENIED|quota/i;
 /** One call, with the free tier's rate limit survived rather than hit. */
 async function post(body: Record<string, unknown>, slot: KeySlot = textSlot()): Promise<Interaction> {
   const key = geminiKey(slot);
-  let sent = body;
+  const sent = body;
 
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -211,16 +199,6 @@ async function post(body: Record<string, unknown>, slot: KeySlot = textSlot()): 
     }
 
     const message = parsed?.error?.message ?? text.slice(0, 300) ?? res.statusText;
-
-    // Asked for JSON and this model or route does not take it. Drop it for
-    // good and go again: the same call, one field lighter.
-    if (res.status === 400 && jsonMode && 'response_format' in sent && isJsonRefusal(message)) {
-      jsonMode = false;
-      logger.info('social: Gemini refused JSON mode, falling back to reading the object out of the reply');
-      const { response_format: _dropped, ...rest } = sent;
-      sent = rest;
-      continue;
-    }
 
     const retryable = res.status === 429 || res.status >= 500;
     if (retryable && attempt < BACKOFF_MS.length && !isDailyQuota(message)) {
@@ -312,9 +290,6 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
     store: false,
     generation_config: { max_output_tokens: MAX_TOKENS },
     ...(req.grounded ? { tools: [{ type: 'google_search' }] } : {}),
-    ...(req.json && !req.grounded && jsonMode
-      ? { response_format: { type: 'text', mime_type: 'application/json' } }
-      : {}),
   });
 
   meter(model, data, req.what);
@@ -336,34 +311,78 @@ export async function geminiText(req: TextRequest): Promise<TextResult> {
   return result;
 }
 
-/** Free on the same key, and the only TTS that follows a style note in plain words. */
+/** The only TTS that follows a style note in plain words. */
 export const SPEECH_MODEL = 'gemini-3.8-flash-tts';
+/** Tried when the first refuses: a reel with no voice was the commonest complaint about the reels. */
+export const SPEECH_FALLBACK_MODEL = 'gemini-3.8-flash-lite-tts';
+
+/** The last block of `type` in the model's own output — never a search result or a thought. */
+function lastBlock(data: Interaction, type: string): Block | undefined {
+  return (data.steps ?? [])
+    .filter((s) => s.type === 'model_output')
+    .flatMap((s) => s.content ?? [])
+    .concat(data.model_output?.content ?? [])
+    .filter((b) => b.type === type && typeof b.data === 'string')
+    .pop();
+}
 
 /**
  * Read a line aloud: a WAV (24 kHz, mono, 16-bit) the reel mixes under its
  * words. Same endpoint and the same rate-limit handling as the text calls; the
- * audio is the last `audio` block of the model's output.
+ * audio is the last `audio` block of the model's output. When the full model
+ * refuses or comes back empty, the lite one reads it instead.
  */
 export async function geminiSpeech(text: string, style: string, voice = 'Puck'): Promise<Buffer> {
   if (!geminiReady()) throw new GeminiError('GEMINI_KEY_RESEARCH is not configured.');
+  let last: unknown = null;
+  for (const model of [SPEECH_MODEL, SPEECH_FALLBACK_MODEL]) {
+    try {
+      const data = await post({
+        model,
+        input: [
+          {
+            type: 'user_input',
+            content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }],
+          },
+        ],
+        response_format: { type: 'audio' },
+        generation_config: { speech_config: [{ voice }] },
+        store: false,
+      });
+      meter(model, data, 'Voice-over');
+      const audio = lastBlock(data, 'audio');
+      if (audio) return Buffer.from(audio.data as string, 'base64');
+      last = new GeminiError('Gemini returned no audio.');
+    } catch (e) {
+      last = e;
+      logger.warn('social: a voice model refused, trying the next', { model, message: (e as Error).message });
+    }
+  }
+  throw last instanceof Error ? last : new GeminiError('Gemini returned no audio.');
+}
+
+/** Pictures for the posts, stories, slides and reel covers. 1K is plenty under a 1080-wide frame. */
+export const IMAGE_MODEL = 'gemini-nano-banana-2.1';
+/** Google's price for one 1K picture on that model (ai.google.dev/gemini-api/docs/pricing, Oct 2026). */
+export const IMAGE_USD = 0.0336;
+
+/**
+ * Draw one picture: JPEG bytes in the aspect asked for. Priced per picture on
+ * the meter, because that is how Google bills it. The words are never drawn by
+ * the model — `still.ts` sets them — so the prompt must already say "no text".
+ */
+export async function geminiImage(prompt: string, aspect: '4:5' | '9:16' | '16:9' | '1:1'): Promise<Buffer> {
+  if (!geminiReady()) throw new GeminiError('GEMINI_KEY_RESEARCH is not configured.');
   const data = await post({
-    model: SPEECH_MODEL,
-    input: [
-      {
-        type: 'user_input',
-        content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }],
-      },
-    ],
-    response_format: { type: 'audio' },
-    generation_config: { speech_config: [{ voice }] },
+    model: IMAGE_MODEL,
+    input: [{ type: 'text', text: prompt }],
+    response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: aspect, image_size: '1K' },
     store: false,
   });
-  meter(SPEECH_MODEL, data, 'Voice-over');
-  const audio = (data.steps ?? [])
-    .filter((s) => s.type === 'model_output')
-    .flatMap((s) => s.content ?? [])
-    .filter((b) => b.type === 'audio' && typeof b.data === 'string')
-    .pop();
-  if (!audio) throw new GeminiError('Gemini returned no audio.');
-  return Buffer.from(audio.data as string, 'base64');
+  const image = lastBlock(data, 'image') ?? (data as { output_image?: Block }).output_image;
+  if (!image || typeof image.data !== 'string') {
+    throw new GeminiError(data.status === 'failed' ? 'The picture was refused.' : 'Gemini returned no picture.');
+  }
+  void recordAi({ model: IMAGE_MODEL, usd: IMAGE_USD, what: 'A picture' });
+  return Buffer.from(image.data, 'base64');
 }

@@ -160,8 +160,12 @@ Reply with one JSON object and nothing else:
   "useLess": ["1-3 to stop doing"]
 }`;
 
-/** Read the page, rank it, and ask what it means. */
-export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
+/**
+ * Read the page, rank it, and ask what it means. `interpret: false` keeps the
+ * reading to arithmetic (`localLessons`): between batches nothing is being
+ * written, so a model call a day to interpret it would only be read by nobody.
+ */
+export async function readOwnPage(settings: SocialSettings, opts: { interpret?: boolean } = {}): Promise<PageRead> {
   const date = dayKey(Date.now());
   const empty = (error: string | null): PageRead => ({
     atMs: Date.now(),
@@ -215,7 +219,7 @@ export async function readOwnPage(settings: SocialSettings): Promise<PageRead> {
   // that is an upgrade — "which format travels" is a mean over a group, and
   // "is the hook panel tracking reach" is two means compared, both of which
   // arithmetic answers exactly and a model was being asked to eyeball.
-  if (!modelReady()) {
+  if (!modelReady() || opts.interpret === false) {
     const read_ = localLessons({ best, worst, medianReach, sampled: ranked.length });
     read.lessons = read_.lessons;
     read.useMore = read_.useMore;
@@ -453,7 +457,8 @@ export const socialPageRead = onSchedule(
       const hour = (settings.runHour + 23) % 24;
       if (nowPkt.getUTCHours() !== hour) return;
 
-      const read = await readOwnPage(settings);
+      // The model reads it only while a batch is being written — the only time anything reads the lesson.
+      const read = await readOwnPage(settings, { interpret: Boolean(settings.batchUntil) });
       await sdb.doc(INSIGHTS_PATH).set(read);
       logger.info('social: read our own page', {
         sampled: read.sampled,

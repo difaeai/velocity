@@ -406,7 +406,8 @@ export const agentVoiceStatus = onRequest({ cors: false, invoker: 'public' }, as
   if (first) {
     await addUsage(ids.wid, { answered: seconds > 0 ? 1 : 0, seconds, lineMin: Math.ceil(seconds / 60), costUsd });
     if (seconds > 0) {
-      void recordAi({ model: CALL_MODEL, usd: (seconds / 60) * LIVE_USD_PER_MIN, seconds, what: 'AI phone call', wid: ids.wid });
+      // `apart`: the agent package pays for calls, so they never use up the content month.
+      void recordAi({ model: CALL_MODEL, usd: (seconds / 60) * LIVE_USD_PER_MIN, seconds, what: 'AI phone call', wid: ids.wid, apart: true });
     } else {
       // Nobody spoke: the bridge never ran, so the lead hears about it here.
       await db

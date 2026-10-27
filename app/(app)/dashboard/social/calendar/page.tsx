@@ -199,9 +199,13 @@ export default function CalendarPage() {
             <PostingTime settings={settings} disabled={busy !== null} onPick={setHour} />
             <span style={{ fontSize: 12.5, color: colors.muted, flex: 1, minWidth: 220 }}>
               {ahead
-                ? `The team keeps the next ${ahead} days made ahead, one piece an hour — ${madeAhead} made so far. ${
-                    settings.autoPublish ? 'Each goes out on its day by itself.' : 'Approve any day below and it goes out on its day.'
-                  }`
+                ? `${
+                    settings.batchUntil
+                      ? `The team is making the next ${ahead} days in one go — ${madeAhead} pieces made so far.`
+                      : settings.calendarUntil
+                        ? `The calendar is made until ${settings.calendarUntil}; until then the team only posts. The next ${ahead} days are made when it runs low.`
+                        : `The team makes ${ahead} days at a time, then only posts until the calendar runs low.`
+                  } ${settings.autoPublish ? 'Each goes out on its day by itself.' : 'Approve any day below and it goes out on its day.'}`
                 : 'Each day is made on its day, at this time.'}
             </span>
           </div>

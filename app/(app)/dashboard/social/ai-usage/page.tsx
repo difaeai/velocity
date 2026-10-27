@@ -458,7 +458,7 @@ export default function AiUsagePage() {
                     {rows.map((r) => {
                       // The server's figure carries the plan and the credit days; an unsaved edit here shows at once.
                       const cap = r.wid === 'velocity' ? budgets.houseUsd : (budgets.perWorkspace[r.wid] ?? r.budgetUsd);
-                      const pct = cap > 0 ? Math.min(1, r.usd / cap) : 0;
+                      const pct = cap > 0 ? Math.min(1, (r.allowanceUsd ?? r.usd) / cap) : 0;
                       return (
                         <tr key={r.wid} style={{ borderTop: `1px solid ${colors.border}` }}>
                           <td style={{ padding: '8px', fontWeight: 700 }}>{r.name}</td>

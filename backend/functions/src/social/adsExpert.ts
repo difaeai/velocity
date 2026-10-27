@@ -607,6 +607,8 @@ export interface AdPlanSpec {
   cta: AdCta;
   /** The words on the picture: the hook first. */
   lines: string[];
+  /** What the photograph behind the words shows. Absent on plans made before 2026-10-27. */
+  picture?: string;
   /** The expert's case for all of the above, in a few sentences. */
   why: string;
 }
@@ -648,6 +650,7 @@ export function normalisePlan(raw: Record<string, unknown>, fallback: AdPlanSpec
     headline: clip(raw.headline, 60) || fallback.headline,
     cta: AD_CTAS.includes(raw.cta as AdCta) ? (raw.cta as AdCta) : fallback.cta,
     lines: lines.length ? lines : fallback.lines,
+    ...(clip(raw.picture, 600) || fallback.picture ? { picture: clip(raw.picture, 600) || fallback.picture } : {}),
     why: clip(raw.why, 1200) || fallback.why,
   };
 }

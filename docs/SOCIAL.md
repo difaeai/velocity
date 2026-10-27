@@ -17,7 +17,7 @@ their role covers — on every run, without being asked again.
 
 | Role | Stage they own | What they actually do |
 |---|---|---|
-| **Research assistant** | market read | Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Reports the pages it read. |
+| **Research assistant** | market read | Searches every morning: what is travelling on Pakistani feeds, what the other apps are posting, which hook shapes keep coming back. Reports the pages it read. Then reads the competitors' and peer creators' Instagram accounts through Business Discovery (`discovery.ts`, free, through our own connected account) and ranks their recent posts against each account's own median — "this did 4x their normal" with the real likes and comments. |
 | **SEO expert** | search brief | Briefs the writer *before* they write: the query this piece should answer, phrases that belong in the copy, hashtags people actually search, real alt text. |
 | **Content writer** | the script | The hook, the shots or slides, the voiceover, the caption. Ruthless about the first three seconds. |
 | **Google SEO expert** | YouTube & Google | Writes the YouTube title, description and tags the video is posted with — used verbatim — and names the query velocityrides.app should try to own. |
@@ -239,13 +239,31 @@ to YouTube. Still formats skip the editing and ads stages entirely.
 
 A post, a story and every carousel slide are drawn by
 [`still.ts`](../backend/functions/src/social/still.ts) right after the designer
-chooses the words — the same ffmpeg, fonts and near-black-and-lime as the reels,
-as a JPEG (the only format Instagram publishes). The designer's on-screen line
-wins, then the writer's frame text, then the hook; the call to action closes a
-post, a story and the last slide. A slide attached by hand is never redrawn;
-one the desk drew is redrawn on a "redraw it" note. Before this, every post and
-story waited for a person to make the picture, so neither could ever go out on
-its own.
+chooses the words, as a JPEG (the only format Instagram publishes): **a
+photograph with the words set on it** — a fade so they read, the headline in
+heavy white type (or highlighted blocks), the ask in a coloured pill. Until
+2026-10-27 every card was type on flat near-black and lime, which the owner
+rightly called "a black screen with green on it".
+
+The picture comes from [`picture.ts`](../backend/functions/src/social/picture.ts),
+best first: **drawn** by Gemini's image model (`gemini-nano-banana-2.1`, 1K,
+about $0.034 a picture, on the AI meter) from the designer's art direction
+(`direction[].picture`); else a **stock photo** from Pixabay (same free key as
+the footage, searched with the frame's `stock` words); else a dark **gradient**.
+The model is told never to draw words — every word on a card is one the writer
+chose, in our type — and to keep people anonymous, so a made-up face is never
+passed off as a real driver or customer. **Stories always use stock** (a story
+lasts a day), and a capped month keeps `PICTURE_FLOOR_USD` ($1) back for the
+writing, drawing from stock below it.
+
+Three layouts (`layoutFor`, seeded by the piece id) so a week of posts does not
+look like one post five times — words at the foot, at the top, or highlighted;
+a story never sets words over its reply box, and a carousel keeps one layout for
+every slide. Accent: lime in the house, one stable colour per customer
+(`accentFor`). The designer's on-screen line wins, then the writer's frame
+text, then the hook; the call to action closes a post, a story and the last
+slide. A slide attached by hand is never redrawn; one the desk drew is redrawn
+on a "redraw it" note.
 
 **The drawing does not depend on a person or a model.** The designer's brief is
 a model call and can fail, and a designer can be off shift; the pictures need
@@ -280,11 +298,24 @@ why the run functions moved from 1GiB to 2GiB — on Cloud Functions the memory
 tier is what buys the CPU.
 
 What it makes is a **kinetic typography reel**: the hook, then one line per
-beat, moving on near-black and lime, cut to the timings `lint.ts` already
-computes from the spoken script. That is not a consolation format — the feed is
-watched muted, and words are what survive that. When slides have been attached
-they become the backdrop with a slow push-in behind a scrim; with none, the
-typography carries it alone.
+beat, cut to the timings `lint.ts` already computes from the spoken script, over
+real footage. When slides have been attached they become the backdrop with a
+slow push-in behind a scrim; with no footage either, the reel's own drawn
+picture does (below), and plain typography is the last resort.
+
+**The first frame is the hook**, fully on screen at t=0 — it used to fade in
+from nothing, so frame one (the thumbnail wherever no cover is set) was a black
+screen. And every reel gets **a cover**: the designer's cover idea drawn as a
+picture, the hook set on it (`reelArt` in pipeline.ts), stored as `post.cover`
+(never in `media`, which would turn it into a backdrop slide) and sent to
+Instagram as `cover_url`; without one, `thumb_offset` points at 1.5s.
+
+**A reel always speaks.** The voice-over is the writer's line, or — when they
+left it empty — the lines on screen (`spokenFrom`). The full speech model is
+tried, then the lite one (`gemini-3.8-flash-lite-tts`); a reel whose voice still
+failed is marked `voiceMissing` and the sweep cuts it again (up to three tries)
+before it posts. A month over its AI budget skips the voice on purpose and is
+not marked.
 
 **Footage and music** ([`footage.ts`](../backend/functions/src/social/footage.ts)).
 The backdrop is real footage, one clip per beat, cut where the line changes:
@@ -546,6 +577,18 @@ creative" button. The plan and the daily note also read `planningResearch()` —
 this morning's market read plus the launch analysis — so a new angle is one
 the competition is not already running.
 
+### It does not wait to be asked
+
+When none of the desk's own campaigns is running or waiting for an Approve, the
+expert proposes one itself — at most once a week (`proposeIfIdle`, from the
+three-hourly sync): it **boosts our best recent Instagram post** (one that
+reached at least 1.5x our normal on its own, from the page read), or with none,
+the month plan's first paid idea. `ask` mode creates it paused for Approve, so
+nothing is spent until a person says so; `direct` launches it inside the daily
+limit. Every rupee still goes through `clampBudget`. A campaign the desk draws
+itself uses the same photo cards as the posts, and a video ad gets footage,
+music and a voice like the organic reels.
+
 ### Before it can run (console, not code)
 
 1. The Meta app needs the **Marketing API** product added, and the person
@@ -576,20 +619,33 @@ step waiting on the owner (`needs_you`) lets the next one go ahead, so a
 customer still waiting on Meta's App Review still gets a funnel. Studio only:
 the house never has a `socialLaunch/state`, so the sweep skips it.
 
-**Made ahead, posted on its day.** With `makeAheadDays > 0`, every hour that is
-not the desk's hour makes the earliest planned piece in the window that does
-not exist yet — one an hour. A piece approved before its own Pakistan day is
-`scheduled`: the publish sweep holds it until `dueAtMs(date, runHour)`, worked
-out from the hour as it is then, so moving the posting time moves the month.
-Today's pieces, and anything approved on or after its day, go out at once as
-before. Research is keyed to the day the work happens, never the piece's date.
+**Made in batches, posted on its day.** With `makeAheadDays > 0` the calendar
+is made **in batches** (`makeAhead` + the pure `batchStep` in `pipeline.ts`):
+the next 30 days — every planned piece *and every day's story* — are made in
+one go, two pieces an hour, and then **nothing is made at all** until the made
+calendar has fewer than `REFILL_DAYS` (3) days left; then the next 30 are made.
+Between batches the desk only posts, replies and steers ads. The state is two
+settings fields: `batchUntil` (a batch in progress, and the day it fills to) and
+`calendarUntil` (the day the finished calendar reaches). This replaced a rolling
+window on 2026-10-27: once the month was full it made one new day every day,
+which kept the AI busy daily for a calendar that was already made — the owner
+saw it on the Gemini usage page and asked for batches instead. A capped
+workspace's batch stops at `BATCH_SHARE` (85%) of its month, keeping the rest for
+comment replies and change requests.
 
-**Every desk keeps 30 days ahead since 2026-10-24**, the house included
-(`DEFAULT_SETTINGS.makeAheadDays`), because the owner asked for the month to stay
-filled every month. Only a model makes ahead — the local writer's piece would
-just wait for approval. A month the model cannot plan is never left empty:
-`ensureMonthPlan` lays the rotation over it and stores that, so the calendar
-shows every day; "Plan the month" replaces it with the team's own plan.
+A piece approved before its own Pakistan day is `scheduled`: the publish sweep
+holds it until `dueAtMs(date, runHour)`, worked out from the hour as it is then,
+so moving the posting time moves the month. Today's pieces, and anything
+approved on or after its day, go out at once. Research is keyed to the day the
+work happens, never the piece's date — so a batch is written in front of the
+market as it was on the day the batch was made.
+
+Only a model makes ahead — the local writer's piece would just wait for
+approval. A month the model cannot plan is never left empty: `ensureMonthPlan`
+lays the rotation over it and stores that, so the calendar shows every day;
+"Plan the month" replaces it with the team's own plan. The plan only uses the
+formats the owner chose (`settings.formats`): the model is told so, and
+`normalisePlan` / `plannedSlots` drop any other.
 
 ## 6b. The sales agent closes
 
@@ -885,21 +941,26 @@ Two things to know before editing `material.ts`:
   checkable in it and "The Velocity Rides check covers the papers" does not.
   Spoken lines are written around that, and the tests enforce it.
 
-### There is no image or video key
+### Pictures, voice and the month's ceiling
 
-There used to be, and `GEMINI_KEY_RESEARCH` is **not** it. The old
-`GEMINI_API_KEY` went with the renderer: this backend draws nothing and renders
-nothing. The new key is text and search only — it writes and it reads the
-market, and asking it for a picture is not wired to anything.
+**Superseded 2026-10-27.** The same `GEMINI_KEY_RESEARCH` now draws pictures
+(`geminiImage`, `gemini-nano-banana-2.1` at 1K, priced per picture on the meter)
+and reads the voice-overs (`geminiSpeech`, with the lite TTS behind it). Video is
+still never generated — reels are cut with ffmpeg over stock footage — because
+Veo was by far the largest line on the old bill.
 
-The designer and the editor write briefs instead, the briefs are stored on
-the piece, and the console shows them with a copy button next to the upload
-control. You make the file however you like and attach it from the queue — it
-then publishes through exactly the same path a rendered one did.
-
-The trade is deliberate: the renders were the entire Google AI line on the bill,
-Veo by far the largest part of it, and a picture nobody looked at before it went
-out was never the point of the desk.
+Everything that reaches Gemini checks the workspace's month first — the engine
+for text, `pictureFor` for pictures, `voiceOver` for the voice, `watchReference`
+for a reference video — and `overBudget` stops `CAP_RESERVE_USD` ($0.10) short of
+the cap, so the call that would cross it is never made (each instance's view of
+the spend can be a minute old). The month's ceiling is the plan's `aiUsd` — $3
+Content and Sales, $5 Meta Ad Expert and Everything — plus credit days bought.
+AI phone calls are recorded with `apart: true`: they stay on the meter's total
+(`usd`) but also land in `apartUsd`, which `allowanceUsd` subtracts, because the
+agent package pays for them and they must never use up the content month.
+Claude is the house's engine only — the meter cannot price it, so it never
+writes for a customer. A free model (if configured) carries a spent customer on
+at no cost.
 
 ### The model id is a setting, not code
 

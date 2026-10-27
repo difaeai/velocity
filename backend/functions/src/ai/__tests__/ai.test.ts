@@ -6,7 +6,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  allowanceUsd,
   budgetFor,
+  CAP_RESERVE_USD,
   DEFAULT_BUDGETS,
   geminiKey,
   keySource,
@@ -99,10 +101,25 @@ describe('budgets', () => {
   });
 
   it('a credit day lifts a spent month at once', () => {
-    noteSpend('wsA', 3.1);
+    // Where a month actually stops: within the reserve of the $3 cap, never past it.
+    noteSpend('wsA', 2.95);
     expect(overBudget('wsA')).toBe(true);
     noteExtra('wsA', 0.2);
     expect(overBudget('wsA')).toBe(false);
+  });
+
+  it('stops a reserve short of the cap, so the call that would cross it is never made', () => {
+    noteSpend('wsA', 3 - CAP_RESERVE_USD - 0.01);
+    expect(overBudget('wsA')).toBe(false);
+    noteSpend('wsA', 0.01);
+    expect(overBudget('wsA')).toBe(true);
+  });
+
+  it('counts the meter total less what is paid apart', () => {
+    expect(allowanceUsd({ usd: 4.5, apartUsd: 4 })).toBeCloseTo(0.5, 6);
+    expect(allowanceUsd({ usd: 2 })).toBe(2);
+    expect(allowanceUsd(undefined)).toBe(0);
+    expect(allowanceUsd({ usd: 'x', apartUsd: 9 })).toBe(0);
   });
 });
 

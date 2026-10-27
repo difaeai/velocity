@@ -19,6 +19,7 @@ import {
   AI_CONFIG,
   AI_SECRET,
   KEY_SLOTS,
+  allowanceUsd,
   budgetFor,
   budgets,
   geminiKey,
@@ -118,6 +119,8 @@ export const adminAiOverview = onCall(async (req) => {
         wid: String(u.wid),
         name: names.get(String(u.wid)) ?? String(u.wid),
         usd: Number(u.usd ?? 0),
+        /** The part that counts against the budget: AI calls are paid for by the agent package. */
+        allowanceUsd: allowanceUsd(u),
         calls: Number(u.calls ?? 0),
         inTok: Number(u.inTok ?? 0),
         outTok: Number(u.outTok ?? 0),

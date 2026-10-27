@@ -45,7 +45,7 @@ import { overBudget, warmAi } from '../ai/config';
 import { claudeReady, claudeText } from './claude';
 import { geminiReady, geminiText } from './gemini';
 import { freeModelReady, freeModelText } from './freeModel';
-import { currentWorkspace } from './scope';
+import { HOUSE, currentWorkspace } from './scope';
 
 export type Engine = 'claude' | 'gemini' | 'free' | 'local';
 
@@ -110,7 +110,9 @@ export function outOfCredit(message: string): boolean {
  * desk carries on, on the free model or the local writer, instead of the bill.
  */
 export function activeEngine(wid: string = currentWorkspace()): Engine {
-  if (claudeReady() && !benched('claude')) return 'claude';
+  // The house only: a customer's month is priced and metered on Gemini, and an
+  // unmetered Claude call would let their plan's allowance run without limit.
+  if (claudeReady() && !benched('claude') && wid === HOUSE) return 'claude';
   if (geminiReady() && !benched('gemini') && !overBudget(wid)) return 'gemini';
   if (freeModelReady() && !benched('free')) return 'free';
   return 'local';

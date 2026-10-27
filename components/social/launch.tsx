@@ -405,7 +405,7 @@ function ContentPanel({ settings }: { settings: SocialSettings | null }) {
         The team planned the month from your market analysis — a goal, the kinds of story it will tell, a theme per week
         and a piece for every day — and{' '}
         {settings?.makeAheadDays
-          ? `keeps the next ${settings.makeAheadDays} days made ahead, one piece an hour, once the desk is on.`
+          ? `makes ${settings.makeAheadDays} days at a time once the desk is on — every post and story — then only posts until the calendar runs low.`
           : 'makes each day on the day.'}
       </p>
       <p style={{ margin: 0 }}>

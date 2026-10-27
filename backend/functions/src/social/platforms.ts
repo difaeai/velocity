@@ -117,6 +117,8 @@ export interface PublishPayload {
    * re-deriving one from the hook here would quietly throw that work away.
    */
   youtube?: { title: string; description: string; tags: string[] } | null;
+  /** A reel's cover image URL — what Instagram's grid and Reels tab show instead of frame one. */
+  cover?: string | null;
 }
 
 export interface RawComment {
@@ -301,6 +303,8 @@ async function publishInstagram(
       video_url: firstVideo(p, 'instagram').url!,
       caption: p.caption,
       share_to_feed: 'true',
+      // Without one, Instagram takes frame one — which is what put a row of dark squares on the grid.
+      ...(p.cover ? { cover_url: p.cover } : { thumb_offset: '1500' }),
     });
   } else if (p.format === 'story') {
     containerId = await instagramContainer(c, {

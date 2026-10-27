@@ -111,15 +111,25 @@ describe('planReel', () => {
     expect(planReel({ script: script(), format: 'video' }).size).toEqual({ width: 1920, height: 1080 });
   });
 
-  it('gives every beat a scene to find footage for', () => {
+  it('gives every beat a stock search, cut down to the words a library matches', () => {
     const plan = planReel({ script: script(), format: 'reel' });
     expect(plan.beats.map((b) => b.scene)).toEqual([
-      'a driver counting cash',
-      'a driver counting cash',
+      'driver counting cash',
+      'driver counting cash',
       'three bids arriving',
-      'the ride starting',
-      'the ride starting',
+      'ride starting',
+      'ride starting',
     ]);
+  });
+
+  it("searches the writer's own stock words when there are some", () => {
+    const base = script();
+    const plan = planReel({
+      script: { ...base, frames: [{ ...base.frames[0], stock: 'rickshaw street night' }, ...base.frames.slice(1)] },
+      format: 'reel',
+    });
+    expect(plan.beats[0].scene).toBe('rickshaw street night');
+    expect(plan.beats[1].scene).toBe('rickshaw street night');
   });
 
   it('copes with a script that is only a hook', () => {
@@ -155,6 +165,18 @@ describe('filterGraph', () => {
       expect(Number(y)).toBeLessThan(1470);
     }
     expect(graph).toContain('x=90');
+  });
+
+  it('has the hook on screen at frame one, still and inside the safe zone', () => {
+    const graph = graphFor();
+    // The first line drawn: no rise, and an alpha that is 1 from t=0 until it leaves.
+    const first = graph.split(';').find((s) => s.includes('drawtext=') && s.includes('textfile='))!;
+    const y = Number(first.match(/:y='(\d+)':/)?.[1]);
+    expect(y).toBeGreaterThanOrEqual(240);
+    expect(y).toBeLessThan(1470);
+    expect(first).toMatch(/alpha='if\(lt\(t,[\d.]+\),1,/);
+    // Its accent rule shows from frame one too.
+    expect(graph).toMatch(/drawbox=[^;]*enable='between\(t,0,/);
   });
 
   it('ends on a single labelled output', () => {

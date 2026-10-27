@@ -21,7 +21,7 @@ import { logger } from 'firebase-functions';
 
 import { db, FieldValue } from '../lib/firebase';
 import { isDocId, requireAuth } from '../lib/guards';
-import { baseBudget, budgets, monthKey, noteExtra, overBudget, usageId, warmAi } from '../ai/config';
+import { allowanceUsd, baseBudget, budgets, monthKey, noteExtra, overBudget, usageId, warmAi } from '../ai/config';
 import { CREDIT_DAY_AI_USD, CREDIT_DAY_USD, type Workspace } from './plans';
 
 export type CreditWhy = 'lapsed' | 'allowance';
@@ -106,7 +106,7 @@ export const studioUsage = onCall(async (req) => {
   const extra = Number(row.get('extraUsd') ?? 0) || 0;
   const base = baseBudget(wid, budgets(), ws.get('plan'));
   const cap = base > 0 ? base + extra : 0;
-  const used = Number(row.get('usd') ?? 0) || 0;
+  const used = allowanceUsd(row.data());
   return {
     month: monthKey(),
     usedPct: cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0,

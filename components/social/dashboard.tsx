@@ -741,6 +741,45 @@ export function ViralFinds({ research }: { research: SocialResearch | null }) {
           ))}
         </div>
       )}
+      <AccountReads accounts={research?.accounts ?? []} />
     </section>
+  );
+}
+
+/** Other accounts the researcher read this morning: the posts that beat that account's own normal. */
+function AccountReads({ accounts }: { accounts: NonNullable<SocialResearch['accounts']> }) {
+  const read = accounts.filter((a) => a.top.length);
+  if (!read.length) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <h3 className="fx-h2" style={{ fontSize: 14, margin: '0 0 8px' }}>
+        Beating their own normal
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+        {read.flatMap((a) =>
+          a.top.map((t, i) => (
+            <div key={`${a.username}-${i}`} className="fx-card" style={{ padding: 12, display: 'grid', gap: 6, borderRadius: 14 }}>
+              <span style={{ fontSize: 13, fontWeight: 800 }}>
+                @{a.username} · {t.multiple}x their normal
+              </span>
+              <span className="fx-muted fx-clip3" style={{ fontSize: 12, lineHeight: 1.45 }}>
+                {t.caption || '(no caption)'}
+              </span>
+              <span className="fx-muted" style={{ fontSize: 11.5 }}>
+                {t.likes.toLocaleString()} likes · {t.comments.toLocaleString()} comments
+                {t.permalink ? (
+                  <>
+                    {' · '}
+                    <a href={t.permalink} target="_blank" rel="noreferrer">
+                      open ↗
+                    </a>
+                  </>
+                ) : null}
+              </span>
+            </div>
+          )),
+        )}
+      </div>
+    </div>
   );
 }

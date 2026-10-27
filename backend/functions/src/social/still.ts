@@ -1,14 +1,22 @@
 /**
- * The still pictures — the post image, the story frame, the carousel slides —
- * made by the desk with the same ffmpeg and the same two fonts that cut the
- * reel.
+ * The still pictures — the post image, the story frame, the carousel slides,
+ * the reel cover — made by the desk with the same ffmpeg and the same two fonts
+ * that cut the reel.
  *
- * Until this existed the designer stopped at a brief, so every post and story
- * reached the queue needing a person to make the picture, and nothing in those
- * formats could ever go out on its own. This draws the words the designer and
- * the writer already chose onto the brand canvas instead: a typographic card,
- * near-black and lime, the same look as the reels. A picture attached by hand
- * still wins — the pipeline only fills the slides nobody attached.
+ * Every card is a photograph with the words set on it: the picture the
+ * designer art-directed (drawn by Gemini's image model, or a stock photograph
+ * when that cannot be had — `picture.ts` decides), a scrim so the words read,
+ * the headline in heavy white type, and the ask in a coloured pill. Only when
+ * no picture could be had at all does a card fall back to a brand gradient —
+ * never the flat near-black card the desk used to post, which read on the grid
+ * as "a black screen with green on it". A picture attached by hand still wins:
+ * the pipeline only fills the slides nobody attached.
+ *
+ * Three layouts, chosen per piece so a week of posts does not look like one
+ * post five times: the words at the foot over a dark fade, at the top over a
+ * fade from above, or as highlighted blocks. A carousel keeps one layout for
+ * every slide, because a set that changes style on each swipe reads as five
+ * unrelated posts.
  *
  * Same split as `reel.ts`: `planStill` and `stillGraph` are pure, so the
  * wrapping and the layout are tested in CI without ffmpeg; only `renderStill`
@@ -18,10 +26,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { escapeArg, ffmpegPath, fit, fontDir, INK, LIME, PAPER, runFfmpeg } from './reel';
+import { escapeArg, ffmpegPath, fit, fontDir, INK, LIME, PAPER, runFfmpeg, stockQuery } from './reel';
 import type { ContentFormat, PostScript } from './types';
 
 export type StillAspect = '4:5' | '9:16';
+export type StillLayout = 'bottom' | 'top' | 'highlight';
 
 const SIZES: Record<StillAspect, { width: number; height: number }> = {
   '4:5': { width: 1080, height: 1350 },
@@ -39,15 +48,47 @@ const BAND: Record<StillAspect, { top: number; bottom: number }> = {
 };
 
 const SIDE = 96;
+/** The padding a highlight box or the ask's pill extends past its words. */
+const PAD = 18;
+
+/**
+ * Accents a customer's desk is drawn in: bright enough that near-black words
+ * read on each. Velocity's own desk is always lime.
+ */
+export const ACCENTS = [LIME, '0xffb020', '0x34d3ff', '0xff6b8b', '0x9d8cff', '0x2ee6a6'] as const;
+
+/** A stable small number from a string — the same piece always gets the same look. */
+export function hashOf(text: string): number {
+  let h = 0;
+  for (const c of text) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+/** The accent for a workspace: lime in the house, one stable colour per customer. */
+export function accentFor(workspaceId: string | null): string {
+  return workspaceId ? ACCENTS[hashOf(workspaceId) % ACCENTS.length] : LIME;
+}
+
+/** The layout for a piece. A story never sets its words at the foot, where the reply box sits. */
+export function layoutFor(postId: string, aspect: StillAspect): StillLayout {
+  const choices: StillLayout[] = aspect === '9:16' ? ['top', 'highlight'] : ['bottom', 'highlight', 'top'];
+  return choices[hashOf(postId) % choices.length];
+}
 
 export interface StillCard {
   aspect: StillAspect;
   width: number;
   height: number;
-  headline: { lines: string[]; size: number; y: number; lime: boolean };
-  body: { lines: string[]; size: number; y: number } | null;
+  layout: StillLayout;
+  headline: { lines: string[]; size: number; y: number; lineHeight: number };
+  /** The ask, set in a pill under the headline. */
+  body: { lines: string[]; size: number; y: number; lineHeight: number } | null;
   /** "2/5" on a carousel slide, so the swipe has a reason. */
   counter: string | null;
+  /** What the picture behind the words shows — the art direction, for the image model. */
+  scene: string;
+  /** A short stock-photo search for the same picture, when the image model cannot draw it. */
+  query: string;
 }
 
 /** Lay one card out. Pure — no clock, no files. */
@@ -55,32 +96,43 @@ export function planStill(params: {
   headline: string;
   body?: string | null;
   aspect: StillAspect;
-  lime?: boolean;
+  layout?: StillLayout;
   counter?: string | null;
+  scene?: string;
+  query?: string;
 }): StillCard {
   const { width, height } = SIZES[params.aspect];
   const band = BAND[params.aspect];
-  const textWidth = width - SIDE * 2;
+  const layout = params.layout ?? 'bottom';
+  const textWidth = width - SIDE * 2 - (layout === 'highlight' ? PAD * 2 : 0);
 
-  const head = fit(params.headline.trim(), { start: 120, min: 60, width: textWidth, maxLines: 5 });
+  const head = fit(params.headline.trim(), { start: layout === 'highlight' ? 96 : 112, min: 58, width: textWidth, maxLines: 5 });
   const bodyText = params.body?.trim() ?? '';
-  const body = bodyText ? fit(bodyText, { start: 54, min: 38, width: textWidth, maxLines: 4 }) : null;
+  const body = bodyText ? fit(bodyText, { start: 46, min: 34, width: textWidth - PAD * 2, maxLines: 3 }) : null;
 
-  const headHeight = Math.round(head.size * 1.14) * head.lines.length;
-  const gap = body ? 48 : 0;
-  const bodyHeight = body ? Math.round(body.size * 1.3) * body.lines.length : 0;
+  // A highlight box carries its padding above and below every line.
+  const headLine = Math.round(head.size * 1.12) + (layout === 'highlight' ? PAD * 2 : 0);
+  const bodyLine = body ? Math.round(body.size * 1.25) + PAD : 0;
+  const headHeight = headLine * head.lines.length;
+  const gap = body ? 44 : 0;
+  const bodyHeight = body ? bodyLine * body.lines.length + PAD : 0;
   const block = headHeight + gap + bodyHeight;
 
-  // A little above centre, which is where the eye lands on a still.
-  const top = band.top + Math.max(0, Math.round((band.bottom - band.top - block) / 2) - 40);
+  // At the top of the band, or ending at its foot: either way clear of the
+  // middle of the frame, which is where the picture's subject is.
+  const top = layout === 'top' ? band.top + 30 : Math.max(band.top, band.bottom - block);
+  const scene = params.scene?.trim() || params.headline.trim();
 
   return {
     aspect: params.aspect,
     width,
     height,
-    headline: { lines: head.lines, size: head.size, y: top, lime: params.lime ?? true },
-    body: body ? { lines: body.lines, size: body.size, y: top + headHeight + gap } : null,
+    layout,
+    headline: { lines: head.lines, size: head.size, y: top, lineHeight: headLine },
+    body: body ? { lines: body.lines, size: body.size, y: top + headHeight + gap, lineHeight: bodyLine } : null,
     counter: params.counter ?? null,
+    scene,
+    query: params.query?.trim() || stockQuery(scene),
   };
 }
 
@@ -90,21 +142,36 @@ export function planStill(params: {
  * The designer's `overlay` is the line they chose to burn into the frame, so it
  * wins; the writer's frame text is next, and the hook carries the first slide
  * when neither said anything. The call to action closes a post, a story, and
- * the last slide of a carousel.
+ * the last slide of a carousel. The picture under each comes from the
+ * designer's art direction for that frame, else the writer's scene.
  */
 export function stillCards(params: {
   format: ContentFormat;
   script: PostScript;
-  direction: { overlay: string }[] | null;
+  direction: { overlay: string; picture?: string }[] | null;
+  /** Seeds the layout; the same piece always draws the same way. */
+  postId?: string;
 }): StillCard[] {
   const { format, script } = params;
   const direction = params.direction ?? [];
   const aspect: StillAspect = format === 'story' ? '9:16' : '4:5';
+  const layout = layoutFor(params.postId ?? script.hook, aspect);
   const cta = script.cta?.trim() || null;
+  const sceneAt = (i: number) => direction[i]?.picture?.trim() || script.frames[i]?.scene?.trim() || script.frames[0]?.scene?.trim() || '';
+  const queryAt = (i: number) => script.frames[i]?.stock?.trim() || script.frames[0]?.stock?.trim() || '';
 
   if (format !== 'carousel') {
     const headline = direction[0]?.overlay?.trim() || script.hook;
-    return [planStill({ headline, body: cta && cta !== headline ? cta : null, aspect })];
+    return [
+      planStill({
+        headline,
+        body: cta && cta !== headline ? cta : null,
+        aspect,
+        layout,
+        scene: sceneAt(0),
+        query: queryAt(0),
+      }),
+    ];
   }
 
   const count = Math.min(10, Math.max(2, direction.length || script.frames.length || 5));
@@ -118,8 +185,10 @@ export function stillCards(params: {
       headline,
       body: last && cta && cta !== headline ? cta : null,
       aspect,
-      lime: i === 0 || last,
+      layout,
       counter: `${i + 1}/${count}`,
+      scene: sceneAt(i),
+      query: queryAt(i),
     });
   });
 }
@@ -131,37 +200,81 @@ export interface StillPaths {
   bodyFont: string;
   /** The brand line at the foot, as a file; absent means Velocity's own. */
   wordmarkFile?: string;
+  /** The picture under the words. Absent means the brand gradient. */
+  photo?: string;
+  /** The accent, as ffmpeg's 0xRRGGBB. Lime when absent. */
+  accent?: string;
 }
+
+/** Dark gradients a card falls back to, one per piece: never the same flat black. */
+const GRADIENTS: [number[], number[]][] = [
+  [[26, 28, 28], [14, 58, 38]],
+  [[16, 24, 40], [26, 28, 28]],
+  [[26, 28, 28], [58, 22, 52]],
+  [[10, 44, 52], [26, 28, 28]],
+];
 
 /** The card as one ffmpeg filter graph. Pure, like `filterGraph` in reel.ts. */
 export function stillGraph(card: StillCard, paths: StillPaths): string {
-  const steps: string[] = [`color=c=${INK}:s=${card.width}x${card.height}:d=1,format=rgba[bg]`];
+  const { width: W, height: H } = card;
+  const accent = paths.accent ?? LIME;
+  const steps: string[] = [];
+
+  if (paths.photo) {
+    // Fill the frame, a touch of contrast so a flat stock photo does not read grey.
+    steps.push(
+      `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,` +
+        `eq=contrast=1.06:saturation=1.1,format=rgba[photo]`,
+    );
+    // The fade the words sit on, darkest where they are.
+    const alpha =
+      card.layout === 'top'
+        ? `clip((H*0.62-Y)/(H*0.62)\\,0\\,1)*225`
+        : `clip((Y-H*0.32)/(H*0.68)\\,0\\,1)*230`;
+    steps.push(`color=c=black:s=${W}x${H}:d=1,format=rgba,geq=r=0:g=0:b=0:a='${alpha}'[fade]`);
+    steps.push(`[photo][fade]overlay=0:0:format=auto[bg]`);
+  } else {
+    const [from, to] = GRADIENTS[hashOf(card.headline.lines.join(' ')) % GRADIENTS.length];
+    const ch = (i: number) => `${from[i]}+(${to[i] - from[i]})*Y/H`;
+    steps.push(`color=c=black:s=${W}x${H}:d=1,format=rgb24,geq=r='${ch(0)}':g='${ch(1)}':b='${ch(2)}',format=rgba[bg]`);
+  }
+
   let last = 'bg';
   let n = 0;
   const push = (filter: string) => {
     steps.push(`[${last}]${filter}[s${n}]`);
     last = `s${n++}`;
   };
+  const shadow = 'shadowcolor=0x000000@0.55:shadowx=0:shadowy=4';
 
-  // The lime rule the eye arrives on, and a hairline along the top edge.
-  push(`drawbox=x=0:y=0:w=${card.width}:h=10:color=${LIME}:t=fill`);
-  push(`drawbox=x=${SIDE}:y=${card.headline.y - 54}:w=180:h=10:color=${LIME}:t=fill`);
+  // A hairline of the accent along the top edge: the one brand mark on every card.
+  push(`drawbox=x=0:y=0:w=${W}:h=10:color=${accent}:t=fill`);
 
   const head = card.headline;
-  const headLine = Math.round(head.size * 1.14);
+  if (card.layout !== 'highlight') {
+    push(`drawbox=x=${SIDE}:y=${head.y - 40}:w=150:h=10:color=${accent}:t=fill`);
+  }
   head.lines.forEach((_, i) => {
+    const y = head.y + i * head.lineHeight + (card.layout === 'highlight' ? PAD : 0);
+    const look =
+      card.layout === 'highlight'
+        ? `fontcolor=${INK}:box=1:boxcolor=${accent}:boxborderw=${PAD}`
+        : `fontcolor=${PAPER}:${shadow}`;
     push(
       `drawtext=fontfile='${escapeArg(paths.displayFont)}':textfile='${escapeArg(paths.textFiles[i])}':` +
-        `fontcolor=${head.lime ? LIME : PAPER}:fontsize=${head.size}:x=${SIDE}:y=${head.y + i * headLine}`,
+        `${look}:fontsize=${head.size}:x=${SIDE + (card.layout === 'highlight' ? PAD : 0)}:y=${y}`,
     );
   });
 
   if (card.body) {
-    const bodyLine = Math.round(card.body.size * 1.3);
-    card.body.lines.forEach((_, i) => {
+    const body = card.body;
+    // The ask is a pill: the accent with dark words, or white on a highlight card.
+    const pill = card.layout === 'highlight' ? PAPER : accent;
+    body.lines.forEach((_, i) => {
       push(
         `drawtext=fontfile='${escapeArg(paths.bodyFont)}':textfile='${escapeArg(paths.textFiles[head.lines.length + i])}':` +
-          `fontcolor=${PAPER}:fontsize=${card.body!.size}:x=${SIDE}:y=${card.body!.y + i * bodyLine}`,
+          `fontcolor=${INK}:box=1:boxcolor=${pill}:boxborderw=${PAD}:fontsize=${body.size}:` +
+          `x=${SIDE + PAD}:y=${body.y + PAD + i * body.lineHeight}`,
       );
     });
   }
@@ -169,15 +282,15 @@ export function stillGraph(card: StillCard, paths: StillPaths): string {
   if (card.counter) {
     push(
       `drawtext=fontfile='${escapeArg(paths.bodyFont)}':text='${card.counter}':` +
-        `fontcolor=${PAPER}@0.6:fontsize=34:x=w-tw-${SIDE}:y=${BAND[card.aspect].top - 90}`,
+        `fontcolor=${PAPER}@0.85:${shadow}:fontsize=34:x=w-tw-${SIDE}:y=${BAND[card.aspect].top - 90}`,
     );
   }
 
   push(
     `drawtext=fontfile='${escapeArg(paths.bodyFont)}':` +
       (paths.wordmarkFile ? `textfile='${escapeArg(paths.wordmarkFile)}'` : `text='VELOCITY RIDES'`) +
-      `:fontcolor=${PAPER}@0.55:` +
-      `fontsize=34:x=${SIDE}:y=${BAND[card.aspect].bottom + 30}`,
+      `:fontcolor=${PAPER}@0.8:${shadow}:` +
+      `fontsize=32:x=${SIDE}:y=${BAND[card.aspect].bottom + 56}`,
   );
 
   // The last label has to be the one -map asks for.
@@ -186,7 +299,10 @@ export function stillGraph(card: StillCard, paths: StillPaths): string {
 }
 
 /** Render one card to JPEG bytes — the only format Instagram publishes. */
-export async function renderStill(card: StillCard, opts: { ffmpeg?: string; wordmark?: string } = {}): Promise<Buffer> {
+export async function renderStill(
+  card: StillCard,
+  opts: { ffmpeg?: string; wordmark?: string; photo?: string | null; accent?: string } = {},
+): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), 'velocity-still-'));
   try {
     const lines = [...card.headline.lines, ...(card.body?.lines ?? [])];
@@ -207,12 +323,15 @@ export async function renderStill(card: StillCard, opts: { ffmpeg?: string; word
         displayFont: path.join(fontDir(), 'Outfit-Black.ttf'),
         bodyFont: path.join(fontDir(), 'WorkSans-SemiBold.ttf'),
         wordmarkFile,
+        photo: opts.photo ?? undefined,
+        accent: opts.accent,
       }),
       'utf8',
     );
 
     const out = path.join(dir, 'still.jpg');
     await runFfmpeg(opts.ffmpeg ?? ffmpegPath(), [
+      ...(opts.photo ? ['-i', opts.photo] : []),
       '-filter_complex_script',
       graphFile,
       '-map',
