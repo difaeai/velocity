@@ -29,9 +29,10 @@
 import { logger } from 'firebase-functions';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
+import { SCHEDULE_REGION } from '../lib/firebase';
 import { sweepLapsedPoolOffers } from './dispatch';
 
-export const sweepPoolDispatch = onSchedule('every 1 minutes', async () => {
+export const sweepPoolDispatch = onSchedule({ schedule: 'every 1 minutes', region: SCHEDULE_REGION }, async () => {
   try {
     const { scanned, advanced } = await sweepLapsedPoolOffers();
     // Only worth a line when it actually did something. A quiet minute is the

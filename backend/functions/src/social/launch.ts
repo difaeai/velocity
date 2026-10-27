@@ -34,7 +34,7 @@ import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { dayKey } from '../analytics';
-import { db } from '../lib/firebase';
+import { db, SCHEDULE_REGION } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { fetchPage, readSite, textOf } from '../sales/site';
 import { salesReadiness, seedSales } from '../sales';
@@ -56,8 +56,6 @@ import {
 import { getSocialSettings, patchSettings } from './settings';
 import { planMonth, planRef } from './strategy';
 import { currentWorkspace, deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, workspaceRef } from './workspace';
-
-const REGION = 'asia-south1';
 
 export const STEPS = ['market', 'content', 'execute', 'funnel', 'close'] as const;
 export type StepId = (typeof STEPS)[number];
@@ -574,7 +572,7 @@ export async function advanceLaunch(): Promise<void> {
 /** Every ten minutes, every live workspace: carry on where its sequence stopped. */
 export const socialLaunchSweep = onSchedule(
   // 2GiB because the funnel step may draw the first campaign's creative.
-  { schedule: 'every 10 minutes', region: REGION, timeoutSeconds: 540, memory: '2GiB' },
+  { schedule: 'every 10 minutes', region: SCHEDULE_REGION, timeoutSeconds: 540, memory: '2GiB' },
   () => forEachWorkspace('any', advanceLaunch),
 );
 

@@ -40,7 +40,7 @@ import { logger } from 'firebase-functions';
 import { geohashForLocation } from 'geofire-common';
 import { z } from 'zod';
 
-import { db } from '../lib/firebase';
+import { db, SCHEDULE_REGION } from '../lib/firebase';
 import { invalid, requireRole } from '../lib/guards';
 import { DRIVER_GEOHASH_FIELD } from '../lib/nearbyDrivers';
 
@@ -57,7 +57,7 @@ const MAX_DRIVERS_PER_RUN = 5000;
 const WRITE_BATCH_SIZE = 400;
 
 export const sweepDriverGeohashes = onSchedule(
-  { schedule: '* * * * *', timeZone: 'Asia/Karachi', region: REGION },
+  { schedule: '* * * * *', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
     const snap = await db
       .collection('drivers')

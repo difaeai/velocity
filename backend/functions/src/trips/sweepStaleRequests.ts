@@ -28,7 +28,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 
 /**
  * How long a request may stay open before it counts as abandoned.
@@ -53,7 +53,7 @@ const OPEN_STATUS = 'requested';
 /** Firestore caps a batch at 500 writes; stay well under with room per doc. */
 const BATCH_LIMIT = 200;
 
-export const sweepStaleOpenRequests = onSchedule('every 5 minutes', async () => {
+export const sweepStaleOpenRequests = onSchedule({ schedule: 'every 5 minutes', region: SCHEDULE_REGION }, async () => {
   const cutoff = new Date(Date.now() - REQUEST_TTL_MS);
 
   // Only ever look at requests old enough to be candidates. A busy city's

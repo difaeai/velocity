@@ -21,7 +21,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { docId, invalid, requireAuth } from '../lib/guards';
 import { encodeGeohash } from '../lib/geohash';
 import { notifyUser } from '../lib/fcm';
@@ -173,7 +173,7 @@ export function karachiNow(date = new Date()): { day: string; minutes: number; d
 // ── runScheduledRides (cron) ──────────────────────────────────────────────────
 
 export const runScheduledRides = onSchedule(
-  { schedule: 'every 5 minutes', timeZone: 'Asia/Karachi' },
+  { schedule: 'every 5 minutes', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
     const now = karachiNow();
     const snap = await db.collection('scheduledRides').where('active', '==', true).get();

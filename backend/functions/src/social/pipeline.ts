@@ -44,7 +44,7 @@ import { z } from 'zod';
 
 import { batchAllows, overBudget, paceAllows } from '../ai/config';
 import { recordPiece } from '../ai/usage';
-import { db, FieldValue, storage } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION, storage } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
 import { deskCall, forEachWorkspace, sdb, wsPath } from './workspace';
@@ -98,7 +98,6 @@ import {
   type WorkState,
 } from './types';
 
-const REGION = 'asia-south1';
 /** Research, several model calls and a render. The run needs room. */
 const RUN_TIMEOUT_SECONDS = 900;
 
@@ -1324,7 +1323,7 @@ export const socialDailyContent = onSchedule(
   {
     schedule: '0 * * * *',
     timeZone: 'Asia/Karachi',
-    region: REGION,
+    region: SCHEDULE_REGION,
     timeoutSeconds: RUN_TIMEOUT_SECONDS,
     // 2GiB rather than 1 because a run can now end in an ffmpeg render, and
     // on Cloud Functions the memory tier is what buys the CPU that finishes
@@ -1531,7 +1530,7 @@ export async function scheduleWaiting(settings: SocialSettings): Promise<number>
  */
 export const socialPublishSweep = onSchedule(
   // 2GiB because it may cut a reel, and on Cloud Functions the memory tier buys the CPU.
-  { schedule: 'every 5 minutes', region: REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
+  { schedule: 'every 5 minutes', region: SCHEDULE_REGION, timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   () => forEachWorkspace('content', sweep),
 );
 

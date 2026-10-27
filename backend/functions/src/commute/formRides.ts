@@ -60,7 +60,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { createHash } from 'crypto';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { notifyUser } from '../lib/fcm';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
@@ -242,7 +242,7 @@ async function bookRideForHost(args: {
 // ── runCommuteRideFormation (cron) ───────────────────────────────────────────
 
 export const runCommuteRideFormation = onSchedule(
-  { schedule: 'every 10 minutes', timeZone: 'Asia/Karachi' },
+  { schedule: 'every 10 minutes', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
     const now = karachiNow();
     const snap = await db.collection('commuteSchedules').where('active', '==', true).get();

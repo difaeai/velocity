@@ -33,7 +33,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { notifyUser } from '../lib/fcm';
 import {
   POOL_EXPIRY_NOTIFY_WINDOW_MS,
@@ -323,7 +323,7 @@ async function announce(expiries: Expiry[], now: number): Promise<number> {
   return sent;
 }
 
-export const sweepStaleSharedRides = onSchedule('every 10 minutes', async () => {
+export const sweepStaleSharedRides = onSchedule({ schedule: 'every 10 minutes', region: SCHEDULE_REGION }, async () => {
   const now = Date.now();
   skipped = 0;
 
