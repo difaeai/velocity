@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from 'react';
 
 import { AppleMark, Close, GooglePlay, Menu, Person } from './Icons';
-import { SoundToggle } from './siteSound';
+import { SoundHint, SoundToggle } from './siteSound';
 import { VelocityMark } from '@/components/BrandMark';
 import { APP_STORE_URL, PLAY_URL } from '@/lib/site';
 import styles from './site.module.css';
@@ -105,7 +105,12 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
             ))}
           </div>
 
-          {sound ? <SoundToggle className={styles.navSound} /> : null}
+          {sound ? (
+            <span className={styles.navSoundWrap}>
+              <SoundToggle className={styles.navSound} />
+              <SoundHint className={styles.soundHint} />
+            </span>
+          ) : null}
 
           {cta ? (
             <div className={styles.navCta}>
@@ -126,6 +131,13 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
             {open ? <Close /> : <Menu />}
           </button>
         </nav>
+
+        {/* A phone has no room for the speaker in the header row (it is in the menu), and any tap starts the sound. */}
+        {sound ? (
+          <SoundHint className={styles.soundHintPhone}>
+            Tap anywhere for sound — a narrator explains every part.
+          </SoundHint>
+        ) : null}
 
         {open ? (
           <div className={styles.mobileMenu} id={menuId}>
