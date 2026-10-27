@@ -177,8 +177,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
         // starts a ride and never required — the face scan still never asks.
         'expo-camera',
         {
+          // Word for word the camera string in app.json (infoPlist and expo-image-picker):
+          // only one reaches Info.plist, and 1.21.0 build 23 shipped the chat-only one.
           cameraPermission:
-            'Velocity Rides uses the camera to scan your face and photograph your documents when you register as a driver, and to record your rides with the in-car dash cam.',
+            "Velocity Rides uses the camera to record your rides with the in-car dash cam for everyone's safety, to scan your face and photograph your documents when you register as a driver, and to take photos to share in chat.",
           microphonePermission:
             'Velocity Rides uses your microphone for free in-app calls with your driver, your passenger or our helpline, so you can book a ride by speaking instead of typing, and so drivers can record sound with the in-car dash cam.',
           recordAudioAndroid: true,
