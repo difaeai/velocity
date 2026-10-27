@@ -365,6 +365,17 @@ export default function EmployeesPage() {
                   placeholder="https://…"
                   style={{ ...inputStyle, flex: 1 }}
                 />
+                <input
+                  value={competitor.instagram ?? ''}
+                  onChange={(e) => {
+                    const next = [...list];
+                    next[i] = { ...competitor, instagram: e.target.value.trim().replace(/^@/, '') };
+                    set('competitors', next);
+                  }}
+                  placeholder="@instagram"
+                  aria-label={`${competitor.name || 'Competitor'} on Instagram`}
+                  style={{ ...inputStyle, width: 140 }}
+                />
                 <Button variant="ghost" onClick={() => set('competitors', list.filter((_, j) => j !== i))}>
                   Remove
                 </Button>

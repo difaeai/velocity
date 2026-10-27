@@ -31,6 +31,7 @@ import path from 'node:path';
 
 import { logger } from 'firebase-functions';
 
+import { overBudget } from '../ai/config';
 import { db, storage } from '../lib/firebase';
 import { geminiReady, geminiSpeech } from './gemini';
 import { wsPath } from './workspace';
@@ -128,6 +129,69 @@ export async function searchPixabay(key: string, query: string): Promise<Pixabay
   return hits;
 }
 
+interface PixabayPhoto {
+  id: number;
+  user_id: number;
+  largeImageURL: string;
+  imageWidth: number;
+  imageHeight: number;
+}
+
+/** Pixabay's photo search, under the same 24-hour rule and key as the footage. */
+export async function searchPixabayPhotos(
+  key: string,
+  query: string,
+  orientation: 'vertical' | 'horizontal',
+): Promise<PixabayPhoto[]> {
+  if (!query) return [];
+  // Its own cache key: the same words as a footage search are a different answer.
+  const id = createHash('sha1').update(`photo:${orientation}:${query.toLowerCase()}`).digest('hex');
+  const doc = db.doc(`socialStockSearches/${id}`);
+  const cached = (await doc.get().catch(() => null))?.data() as { atMs: number; photos: PixabayPhoto[] } | undefined;
+  if (cached?.photos && Date.now() - cached.atMs < SEARCH_CACHE_MS) return cached.photos;
+
+  const url = new URL('https://pixabay.com/api/');
+  url.searchParams.set('key', key);
+  url.searchParams.set('q', query.slice(0, 100));
+  url.searchParams.set('image_type', 'photo');
+  url.searchParams.set('orientation', orientation);
+  url.searchParams.set('per_page', '20');
+  url.searchParams.set('safesearch', 'true');
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`Pixabay said ${res.status}`);
+  const photos = (((await res.json()) as { hits?: PixabayPhoto[] }).hits ?? [])
+    .filter((h) => h.largeImageURL)
+    .map((h) => ({ id: h.id, user_id: h.user_id, largeImageURL: h.largeImageURL, imageWidth: h.imageWidth, imageHeight: h.imageHeight }));
+  await doc.set({ query, atMs: Date.now(), photos }).catch(() => {});
+  return photos;
+}
+
+/**
+ * One stock photograph for a frame, downloaded to `out`. The search is tried
+ * shorter when the full one finds nothing; `skip` keeps a carousel from showing
+ * the same photo twice. Null with no key or no match.
+ */
+export async function stockPhoto(params: {
+  query: string;
+  orientation: 'vertical' | 'horizontal';
+  out: string;
+  skip?: Set<number>;
+}): Promise<string | null> {
+  const key = process.env.PIXABAY_API_KEY?.trim();
+  if (!key || !params.query.trim()) return null;
+  const words = params.query.trim().split(/\s+/);
+  for (const query of [words.join(' '), words.slice(0, 2).join(' ')]) {
+    const hit = (await searchPixabayPhotos(key, query, params.orientation)).find((p) => !params.skip?.has(p.id));
+    if (!hit) continue;
+    const res = await fetch(hit.largeImageURL, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) continue;
+    await writeFile(params.out, Buffer.from(await res.arrayBuffer()));
+    params.skip?.add(hit.id);
+    return params.out;
+  }
+  return null;
+}
+
 /**
  * Download one stock clip per scene into `dir`, never the same video twice.
  *
@@ -206,9 +270,9 @@ export const VOICE_STYLE =
 /** Seconds of audio in a 24 kHz mono 16-bit WAV, which is what the speech model returns. */
 export const wavSeconds = (bytes: number) => Math.max(0, bytes - 44) / 48_000;
 
-/** The writer's spoken line, read aloud into `dir`, or null with no key or no line. */
+/** The writer's spoken line, read aloud into `dir`, or null with no key, no line, or no AI budget left this month. */
 async function voiceOver(text: string, dir: string): Promise<{ path: string; seconds: number } | null> {
-  if (!text.trim() || !geminiReady()) return null;
+  if (!text.trim() || !geminiReady() || overBudget()) return null;
   const wav = await geminiSpeech(text.trim(), VOICE_STYLE);
   const out = path.join(dir, 'voice.wav');
   await writeFile(out, wav);

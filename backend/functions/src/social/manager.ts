@@ -71,8 +71,9 @@ export async function planDistribution(params: {
 
   // This is the one stage the local engine does at least as well: the per-
   // network rules are character limits and a layout, which `slice` applies
-  // exactly and a prompt only asks for.
-  if (!modelReady()) {
+  // exactly and a prompt only asks for. So the model is paid for only when a
+  // person has asked for something here that has to be read.
+  if (!modelReady() || !params.feedback.length) {
     return localDistribution({
       caption: params.caption,
       hashtags: params.hashtags,

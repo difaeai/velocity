@@ -321,5 +321,44 @@ export function playbookForStandup(format: ContentFormat): string {
   return [ALGORITHM, FORMAT_CRAFT[format], HOOK_FORMULAS].join('\n\n');
 }
 
+/**
+ * The shapes a piece can take, one handed to each standup by code.
+ *
+ * A team left to choose falls back on the same explainer every morning —
+ * "here is how X works" with a new noun — which is exactly what the feed was
+ * full of. The shape is the structure, not the subject: the same angle as a
+ * myth busted, a day in someone's life or a quiz is three different posts.
+ */
+export const STORY_SHAPES: Record<string, string> = {
+  pov: 'POV — the viewer IS someone in one specific moment ("POV: it is 11pm and the last bus left"). First person, present tense.',
+  'myth-vs-fact': 'Myth vs fact — say the thing people wrongly believe, then knock it down with what is actually true.',
+  'before-after': 'Before / after — the old way and our way, the same moment twice, the difference obvious without explaining it.',
+  'mini-story': 'A mini story with a turn — a person, a problem, and a resolution nobody saw coming, in three beats.',
+  'nobody-tells-you': 'Things nobody tells you — three short, specific insider truths, numbered, the best one last.',
+  'how-to': 'How-to in three steps — one useful thing the viewer can do today, step by step, nothing else.',
+  relatable: 'The relatable moment — the frustration everyone in this market has had, played for a knowing laugh, then the way out.',
+  'day-in-life': 'A day in the life — one person, four moments of their day with times on screen, ending on why it matters.',
+  comparison: 'Side by side — two ways of doing the same thing (never a named competitor), the costs or the effort plainly compared.',
+  'behind-scenes': 'Behind the scenes — how something works on the inside that customers never see, and why it was built that way.',
+  quiz: 'Guess first — ask the viewer to guess (a price, a time, a fact), hold the answer, reveal it at the end. Built to pull comments.',
+  'answer-question': 'Answering a real question — the question people actually ask, on screen, answered straight in under twenty seconds.',
+  'local-spotlight': 'Local spotlight — one city, one road, one neighbourhood, so specific that people from there send it to each other.',
+};
+
+export type StoryShape = keyof typeof STORY_SHAPES;
+
+/**
+ * The shape for the next piece: never one of the last six used, and otherwise
+ * spread by the seed (the piece's own id) so two desks do not march in step. Pure.
+ */
+export function nextShape(recent: string[], seed: string): string {
+  const all = Object.keys(STORY_SHAPES);
+  const fresh = all.filter((s) => !recent.slice(0, 6).includes(s));
+  const pool = fresh.length ? fresh : all;
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return pool[h % pool.length];
+}
+
 /** Exported for the profile audit the manager can be asked for. */
 export { PROFILE_RUBRIC, FORMAT_CRAFT, REPLY_CRAFT };

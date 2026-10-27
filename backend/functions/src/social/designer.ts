@@ -40,12 +40,13 @@ export class DesignError extends Error {}
  */
 const HOUSE_STYLE = [
   'Photographic, editorial quality, shot on a full-frame camera. Natural Pakistani daylight, real streets, real people, nothing that looks like stock photography.',
-  'Brand palette: near-black #1a1c1c grounds the frame, bright lime #ccff00 is the single accent — a jacket, a sign, a highlight, never the whole image.',
+  // Not "near-black grounds the frame" any more: dark frames under dark type were the "black screen" on the grid.
+  'Real colour and natural light. Bright lime #ccff00 is the single brand accent — a jacket, a sign, a highlight, never the whole image.',
   'No watermarks. No gibberish text. No fake app screenshots. No Western suburbs.',
 ].join(' ');
 
 /** A customer's house style: the same standard, in their market, with no palette of ours. */
-const houseStyle = (): string =>
+export const houseStyle = (): string =>
   isHouse()
     ? HOUSE_STYLE
     : `Photographic, editorial quality, shot on a full-frame camera. Natural light in ${marketName()}, real places, real people, nothing that looks like stock photography. No watermarks. No gibberish text. No fake screenshots.`;
@@ -88,7 +89,7 @@ export async function directFrames(params: {
     model: params.settings.textModel,
     system: `${systemFor(params.employee, params.settings, params.format)}
 
-You are writing prompts for whoever makes this picture, not describing a mood. Each prompt names: the subject and what they are doing, the setting, the time of day and light, the lens and framing, and where the lime accent sits. One sentence of story, then the craft. It has to work as a brief for a person and as a prompt for an image tool, because it will be used as both.
+You are writing prompts for whoever makes this picture, not describing a mood. Each prompt names: the subject and what they are doing, the setting, the time of day and light, the lens and framing, and where the lime accent sits. One sentence of story, then the craft. It has to work as a brief for a person and as a prompt for an image tool, because it will be used as both — an image model draws it exactly as written, so the prompt describes only what is in the photograph: no words, captions or signs with writing in it. Make each piece look different from the last: vary the place, the time of day, the distance and the colour.
 
 The overlay text is added to the frame afterwards — keep it to the words the writer chose, and say where in the frame it sits so it never covers a face.
 
@@ -201,6 +202,9 @@ export async function design(params: {
     prompt: briefFor(frame, spec.aspect),
     overlay: frame.overlay,
     alt: params.seo?.altTexts[index] || frame.alt,
+    // The scene alone: the picture model gets its own rules, and never the words.
+    // Locally the prompt already carries the house style, so the writer's scene is the cleaner source.
+    picture: (modelReady() ? frame.prompt : params.script.frames[index]?.scene || frame.prompt).slice(0, 1200),
   }));
 
   return {

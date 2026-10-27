@@ -110,7 +110,8 @@ async function warmSpend(wid: string): Promise<void> {
     const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
     const plan = ws?.get('plan') as PlanId | undefined;
     spent.set(wid, {
-      usd: num(row.get('usd') ?? 0),
+      // What counts against the month: everything but what is paid for apart (AI calls).
+      usd: allowanceUsd(row.data()),
       extraUsd: num(row.get('extraUsd') ?? 0),
       plan: plan && PLANS[plan] ? plan : undefined,
       month,
@@ -168,10 +169,43 @@ export function budgetFor(
   return base > 0 ? base + extraUsd : 0;
 }
 
-/** True when this workspace has spent its month. */
+/** A month's usage row as it counts against the allowance: the meter total less what is paid apart. Pure. */
+export function allowanceUsd(row: { usd?: unknown; apartUsd?: unknown } | undefined): number {
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return Math.max(0, num(row?.usd) - num(row?.apartUsd));
+}
+
+/**
+ * Held back from every cap: the dearest single thing the desk does (a grounded
+ * read, a picture) costs a few cents, and the spend each instance sees can be a
+ * minute old. Stopping this far short means the month's figure is a ceiling the
+ * bill never crosses, not a line it crosses by one call.
+ */
+export const CAP_RESERVE_USD = 0.1;
+
+/** True when this workspace has spent its month — or is close enough that the next call could cross it. */
 export function overBudget(wid: string = currentWorkspace()): boolean {
   const cap = budgetFor(wid);
-  return cap > 0 && thisMonth(wid).usd >= cap;
+  return cap > 0 && thisMonth(wid).usd + CAP_RESERVE_USD >= cap;
+}
+
+/** What is left of this workspace's month, USD; Infinity when it is uncapped. */
+export function budgetLeft(wid: string = currentWorkspace()): number {
+  const cap = budgetFor(wid);
+  return cap > 0 ? Math.max(0, cap - thisMonth(wid).usd) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * The share of a capped month a batch of content may use. The rest is kept for
+ * the month's management — comment replies, a change asked for — so making the
+ * calendar never leaves the desk unable to answer anyone.
+ */
+export const BATCH_SHARE = 0.85;
+
+/** Whether the desk may go on making the calendar ahead now. Always, when uncapped. */
+export function batchAllows(wid: string = currentWorkspace()): boolean {
+  const cap = budgetFor(wid);
+  return cap <= 0 || thisMonth(wid).usd < cap * BATCH_SHARE;
 }
 
 /** The Pakistan day of the month, and how many days that month has. */

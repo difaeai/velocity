@@ -1259,6 +1259,8 @@ export interface SocialWorkEntry {
 export interface SocialCompetitor {
   name: string;
   url: string;
+  /** Their Instagram username, read every morning with its real numbers. */
+  instagram?: string;
 }
 
 /**
@@ -1286,8 +1288,12 @@ export interface SocialSettings {
   /** Pakistan hour the team starts — and the hour a piece made ahead goes out on its day. */
   runHour: number;
   postsPerDay: number;
-  /** Days ahead the calendar is kept made; 0 makes each day on the day. */
+  /** Days one batch of the calendar covers; 0 makes each day on the day. */
   makeAheadDays: number;
+  /** The last day the made calendar reaches; the desk only posts until it runs low. */
+  calendarUntil?: string | null;
+  /** Set while a batch is being made: the day it fills to. */
+  batchUntil?: string | null;
   /** A story every day on top of the rotation, rather than a turn at a slot. */
   dailyStory: boolean;
   platforms: SocialPlatform[];
@@ -1396,6 +1402,13 @@ export interface SocialResearch {
   sounds?: string[];
   /** Real posts travelling this week, found by the morning search. */
   viral?: { title: string; url: string; why: string }[];
+  /** Other Instagram accounts read with their real numbers. Mirrors `AccountRead` in social/types.ts. */
+  accounts?: {
+    username: string;
+    followers: number;
+    medianEngagement: number;
+    top: { caption: string; mediaType: string; permalink: string | null; likes: number; comments: number; multiple: number }[];
+  }[];
   sources: { title: string; url: string }[];
   error: string | null;
 }
@@ -1949,6 +1962,8 @@ export interface AiUsageRow {
   pieces: number;
   /** What this desk's month plan asks it to make (backend `countPlanned`). */
   planned?: { pieces: number; byFormat: Record<string, number> };
+  /** The part of `usd` that counts against the budget — AI calls are paid apart. */
+  allowanceUsd?: number;
   budgetUsd: number;
   byFeature: Record<string, { usd: number; calls: number }>;
   byService: Record<string, { usd?: number; calls?: number }>;

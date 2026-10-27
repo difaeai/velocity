@@ -30,6 +30,7 @@ import { logger } from 'firebase-functions';
 
 import { isHouse, sdb, workspaceBrand } from './workspace';
 import { brandBlock, brandName, marketName, systemFor } from './crew';
+import { readAccounts } from './discovery';
 import { generateJson, modelReady } from './engine';
 import { localResearch } from './local';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings, type ViralFind } from './types';
@@ -56,6 +57,8 @@ Also look up which sounds are trending on Instagram Reels right now: this week's
 
 Also find the posts themselves: 3-6 short videos or posts in this market and niche that are travelling unusually well right now. Each must be one you found in search, with its real address — YouTube Shorts links first, because the team can watch those. Never guess an address; leave an item out instead.
 
+Also name the Instagram accounts worth studying: the competitors' own Instagram usernames, and 3-5 creators or brands in this market and niche whose posts are getting real engagement. Only usernames a source actually showed you — the team reads each one's real numbers afterwards, and a guessed name wastes the read.
+
 Reply with one JSON object and nothing else:
 {
   "trends": ["4-7 short observations about what is travelling right now, each with the specific thing that made it travel"],
@@ -64,7 +67,8 @@ Reply with one JSON object and nothing else:
   "hookPatterns": ["3-6 hook shapes that are working, as patterns not copy"],
   "avoid": ["2-4 things that are done to death or that would land badly here"],
   "sounds": ["3-6 sounds trending on Instagram Reels this week, each as 'Title — Artist: the kind of reel using it'"],
-  "viral": [{ "title": "what the post is", "url": "its real https address", "why": "the one thing that made it travel" }]
+  "viral": [{ "title": "what the post is", "url": "its real https address", "why": "the one thing that made it travel" }],
+  "accounts": ["instagram usernames, without the @"]
 }`;
 
 /** Only real web addresses survive, and only the fields the dashboard shows. */
@@ -151,7 +155,7 @@ export async function runResearch(params: {
         `Date: ${params.date}. Market: ${marketName()}.`,
         competitors.length
           ? `The competitors to read around (never to name in our own posts):\n${competitors
-              .map((c) => `- ${c.name}${c.url ? ` — ${c.url}` : ''}`)
+              .map((c) => `- ${c.name}${c.url ? ` — ${c.url}` : ''}${c.instagram ? ` — Instagram @${c.instagram.replace(/^@/, '')}` : ''}`)
               .join('\n')}`
           : isHouse()
             ? 'No competitor list was configured — search for the main ride-hailing and delivery apps operating in Pakistan yourself.'
@@ -160,6 +164,12 @@ export async function runResearch(params: {
         'Search first, then answer. Include what you actually found this time, not what was true last year.',
       ].join('\n'),
     });
+
+    // The accounts the owner named first, then the ones the search turned up — each read with its real numbers.
+    const accounts = await readAccounts([
+      ...competitors.map((c) => c.instagram ?? '').filter(Boolean),
+      ...list(data.accounts, 10, 60),
+    ]);
 
     const research: ContentResearch = {
       atMs: Date.now(),
@@ -170,6 +180,7 @@ export async function runResearch(params: {
       avoid: list(data.avoid, 6, 200),
       sounds: list(data.sounds, 6, 160),
       viral: viralList(data.viral),
+      accounts,
       sources: sources.slice(0, 20).map((s) => ({ title: s.title.slice(0, 200), url: s.url.slice(0, 500) })),
       error: null,
     };

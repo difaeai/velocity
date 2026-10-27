@@ -28,15 +28,20 @@
  * same Facebook sign-in as Instagram, started from the Ads page with the ads
  * scopes added (see `meta.ts`), and lasts about sixty days.
  */
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { dateRange, statsFor } from '../analytics';
+import { dateRange, dayKey, statsFor } from '../analytics';
 import { FieldValue } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
-import { deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, wsPath } from './workspace';
+import { rateLimit } from '../lib/ratelimit';
+import { currentWorkspace, deskCall, forEachWorkspace, isHouse, sdb, workspaceBrand, wsPath } from './workspace';
 import {
   AD_OBJECTIVES,
   META_OBJECTIVE,
@@ -75,10 +80,14 @@ import { activeTeam, employeeIntro } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { personas, planningResearch, topObjections, verdictFor, type AudienceTest, type Persona } from './market';
 import { AD_NUMBERS } from './playbook';
-import { planReel, renderReel } from './reel';
+import { underlay } from './footage';
+import { latestPageRead } from './insights';
+import { pictureFor } from './picture';
+import { planReel, renderReel, stockQuery } from './reel';
 import { getSocialSettings } from './settings';
+import { planRef, type MonthPlan } from './strategy';
 import { open, tokenVaultReady, type SealedSecret } from './secrets';
-import { planStill, renderStill } from './still';
+import { accentFor, planStill, renderStill } from './still';
 import { postMedia, type Employee, type SocialPost } from './types';
 
 const REGION = 'asia-south1';
@@ -113,6 +122,8 @@ export interface AdsConfig {
   lastSyncAtMs: number | null;
   lastSyncStatus: string | null;
   review: { atMs: number; summary: string; moves: string[]; engine: string } | null;
+  /** When the expert last proposed a campaign of its own (`proposeIfIdle`). */
+  lastProposalAtMs?: number | null;
 }
 
 const DEFAULTS: AdsConfig = {
@@ -311,41 +322,78 @@ async function buildCreative(
   // The picture: drawn here, or taken from a piece the desk already made.
   let still: Buffer;
   let videoUrl: string | null = null;
+  // What the photograph shows: the expert's own idea, else the ad's words as a scene.
+  const scene = plan.picture?.trim() || `${plan.headline}. ${plan.lines.join('. ')}`;
+  const accent = accentFor(isHouse() ? null : currentWorkspace());
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-ad-'));
 
-  if (source.kind === 'post') {
-    const post = (await sdb.doc(`socialPosts/${source.postId}`).get()).data() as SocialPost | undefined;
-    if (!post) throw new HttpsError('not-found', 'No such piece.');
-    const media = await refreshAssetUrls(postMedia(post));
-    const video = media.find((m) => m.kind === 'video' && m.url);
-    const image = media.find((m) => m.kind === 'image');
-    if (!video && !image) throw new HttpsError('failed-precondition', 'That piece has no picture or video yet.');
-    videoUrl = video?.url ?? null;
-    still = image
-      ? await downloadAsset(image)
-      : await renderStill(planStill({ headline: post.script?.hook || plan.lines[0], aspect: '9:16' }), { wordmark: wordmark() });
-  } else if (plan.format === 'video') {
-    const reel = planReel({
-      format: 'reel',
-      script: {
-        hook: plan.lines[0],
-        hookVariants: [],
-        frames: plan.lines.slice(1).map((overlay) => ({ scene: '', overlay })),
-        voiceover: '',
-        cta: plan.headline,
-        rationale: '',
-        viralHook: '',
-      },
-    });
-    const stored = await storeFile({
-      path: wsPath(`socialAds/${stamp}/video.mp4`),
-      bytes: await renderReel(reel, { wordmark: wordmark() }),
-      contentType: 'video/mp4',
-    });
-    videoUrl = stored.url;
-    still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16' }), { wordmark: wordmark() });
-  } else {
-    const body = plan.lines.slice(1).join(' ') || (plan.headline !== plan.lines[0] ? plan.headline : null);
-    still = await renderStill(planStill({ headline: plan.lines[0], body, aspect: '4:5' }), { wordmark: wordmark() });
+  try {
+    if (source.kind === 'post') {
+      const post = (await sdb.doc(`socialPosts/${source.postId}`).get()).data() as SocialPost | undefined;
+      if (!post) throw new HttpsError('not-found', 'No such piece.');
+      const media = await refreshAssetUrls(postMedia(post));
+      const video = media.find((m) => m.kind === 'video' && m.url);
+      // A reel's cover is its picture; a still piece's first slide is.
+      const image = media.find((m) => m.kind === 'image') ?? (post.cover?.storagePath ? post.cover : undefined);
+      if (!video && !image) throw new HttpsError('failed-precondition', 'That piece has no picture or video yet.');
+      videoUrl = video?.url ?? null;
+      still = image
+        ? await downloadAsset(image)
+        : await renderStill(planStill({ headline: post.script?.hook || plan.lines[0], aspect: '9:16', layout: 'top' }), { wordmark: wordmark(), accent });
+    } else if (plan.format === 'video') {
+      const reel = planReel({
+        format: 'reel',
+        script: {
+          hook: plan.lines[0],
+          hookVariants: [],
+          frames: plan.lines.slice(1).map((overlay) => ({ scene: overlay, overlay })),
+          voiceover: '',
+          cta: plan.headline,
+          rationale: '',
+          viralHook: '',
+        },
+      });
+      // Real footage, a track and a voice under the words — the same as the organic reels.
+      const under = await underlay({
+        postId: `ad-${stamp}`,
+        scenes: reel.beats.map((b) => b.scene),
+        orientation: 'portrait',
+        footage: true,
+        voiceover: [plan.lines.join('. '), plan.headline].join('. '),
+      });
+      const pic = await pictureFor({ scene, query: stockQuery(scene), aspect: '9:16', layout: 'top', out: path.join(dir, 'picture.jpg') });
+      try {
+        const stored = await storeFile({
+          path: wsPath(`socialAds/${stamp}/video.mp4`),
+          bytes: await renderReel(reel, {
+            wordmark: wordmark(),
+            localClips: under.clips,
+            localImages: under.clips.length || !pic ? [] : [pic.path],
+            music: under.music,
+            voice: under.voice,
+          }),
+          contentType: 'video/mp4',
+        });
+        videoUrl = stored.url;
+      } finally {
+        await under.cleanup();
+      }
+      still = await renderStill(planStill({ headline: plan.lines[0], body: plan.headline, aspect: '9:16', layout: 'top' }), {
+        wordmark: wordmark(),
+        photo: pic?.path,
+        accent,
+      });
+    } else {
+      const body = plan.lines.slice(1).join(' ') || (plan.headline !== plan.lines[0] ? plan.headline : null);
+      const pic = await pictureFor({ scene, query: stockQuery(scene), aspect: '4:5', out: path.join(dir, 'picture.jpg') });
+      still = await renderStill(planStill({ headline: plan.lines[0], body, aspect: '4:5', layout: 'bottom' }), {
+        wordmark: wordmark(),
+        photo: pic?.path,
+        accent,
+      });
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 
   const preview = await storeFile({ path: wsPath(`socialAds/${stamp}/preview.jpg`), bytes: still, contentType: 'image/jpeg' });
@@ -567,6 +615,7 @@ const planShape = (currency: string) => `{
   "headline": "40 characters or fewer",
   "cta": "LEARN_MORE" | "DOWNLOAD" | "SIGN_UP" | "APPLY_NOW" | "BOOK_TRAVEL" | "GET_OFFER",
   "lines": ["hook", "line", "line"],
+  "picture": "the photograph behind the words: who or what, where, the light — a real scene in this market, no text in it",
   "why": "3–5 sentences: why this objective, this audience, this budget, and the CPC/CTR it should hit"
 }`;
 
@@ -1071,12 +1120,67 @@ async function syncAds(): Promise<string> {
     lastSyncStatus: status.slice(0, 600),
   };
 
+  // Not waiting to be asked: with nothing of the desk's running, it proposes something.
+  const proposed = await proposeIfIdle(cfg, now);
+  if (proposed) patch.lastSyncStatus = `${status} ${proposed}`.slice(0, 600);
+
   // The expert's read of the whole account, once a day.
   if (!cfg.review || now - cfg.review.atMs > 20 * 3600_000) {
     patch.review = await reviewAccount(cfg, judged, totals, returns);
   }
   await sdb.doc(CONFIG_PATH).set(patch, { merge: true });
   return status;
+}
+
+/** How long the expert waits after one proposal before it makes another. */
+const PROPOSE_EVERY_MS = 7 * 86_400_000;
+
+/**
+ * The expert does not wait to be asked. When none of the desk's own campaigns
+ * is running or waiting for an Approve, it proposes one — at most once a week:
+ * boosting our best recent Instagram post (the cheapest result there is: it
+ * already proved it lands with nobody paying for it), or, with none, the first
+ * paid campaign the month plan named. `ask` mode creates it paused for Approve,
+ * so nothing is spent until a person says so; `direct` launches it inside the
+ * daily limit, which is what the owner chose that mode for. Every rupee still
+ * goes through `clampBudget` inside `launchCampaign`.
+ */
+async function proposeIfIdle(cfg: AdsConfig, now: number): Promise<string | null> {
+  if (!cfg.pageId || !cfg.mode || cfg.dailyCap <= 0 || !cfg.link) return null;
+  if (now - (cfg.lastProposalAtMs ?? 0) < PROPOSE_EVERY_MS) return null;
+  const ours = (await sdb.collection('socialAds').where('managed', '==', true).get()).docs.map(
+    (d) => d.data() as CampaignDoc & { status?: string; approval?: string },
+  );
+  if (ours.some((c) => (c.status === 'ACTIVE' && !(c.endMs && c.endMs < now)) || c.approval === 'pending')) return null;
+
+  const read = await latestPageRead().catch(() => null);
+  const best = (read?.best ?? []).find(
+    // Instagram media ids are all digits; that is also the only kind Meta boosts as a post.
+    (p) => /^\d{5,40}$/.test(p.mediaId) && p.multiple >= 1.5 && now - p.postedAtMs < 30 * 86_400_000,
+  );
+  const idea = best ? null : (((await planRef(dayKey(now).slice(0, 7)).get()).data() as MonthPlan | undefined)?.ads?.[0] ?? null);
+  if (!best && !idea) return null;
+
+  // Before trying, so one that fails is not retried — and its model calls paid for — every three hours.
+  await sdb.doc(CONFIG_PATH).set({ lastProposalAtMs: now }, { merge: true });
+  const goal = isHouse() ? 'install the app and book a ride' : 'become customers';
+  const brief = best
+    ? `Boost our best recent Instagram post — on its own it reached ${best.multiple}x our usual audience: "${best.hook.slice(0, 160)}". Put money behind it to reach new people in ${marketName()} who would ${goal}.`
+    : `${idea} (from this month's plan)`;
+  try {
+    const made = await launchCampaign({
+      brief,
+      by: 'meta-ad-expert',
+      days: Math.min(7, cfg.maxDays),
+      ...(best ? { source: { kind: 'boost' as const, mediaId: best.mediaId } } : {}),
+    });
+    return `Proposed "${made.plan.name}" (${best ? `boosting our best post, ${best.multiple}x our normal` : "from this month's plan"}) — ${
+      made.launched ? `live at ${money(made.budget, cfg.currency)} a day` : 'waiting for your Approve'
+    }.`;
+  } catch (e) {
+    logger.warn('ads: the expert could not propose a campaign', { message: (e as Error).message });
+    return `Tried to propose a campaign but could not: ${(e as Error).message}`.slice(0, 300);
+  }
 }
 
 /** A few sentences on the whole account: what is working, where the next rupee goes. */
@@ -1104,7 +1208,7 @@ async function reviewAccount(
       ? `${live.length} campaign${live.length === 1 ? '' : 's'} running: ${['good', 'ok', 'bad', 'learning']
           .map((g) => `${live.filter((j) => j.verdict.grade === g).length} ${g === 'good' ? 'winning' : g === 'bad' ? 'underperforming' : g}`)
           .join(', ')}. ${money(totals.spend, cfg.currency)} spent this week. ${business}`.trim()
-      : 'Nothing is running. Tell the desk what you want an ad to do and it will plan one.',
+      : 'Nothing is running. The expert proposes a campaign on its own once a week — or tell it what you want an ad to do.',
     moves: live.filter((j) => j.verdict.action.kind !== 'none').map((j) => `${j.name}: ${(j.verdict.action as { why: string }).why}`),
     engine: 'local',
   });
@@ -1214,6 +1318,7 @@ export const adminSetAdsSettings = deskCall('ads', async (req) => {
  */
 export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2GiB' }, async (req) => {
   const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'adsCreate', 10, 3600);
   const parsed = z
     .object({
       brief: z.string().trim().min(5).max(2000),
@@ -1236,7 +1341,8 @@ export const adminCreateAd = deskCall('ads', { timeoutSeconds: 540, memory: '2Gi
  * owner's limit, the same way the create call will hold it.
  */
 export const adminDesignAd = deskCall('ads', { timeoutSeconds: 120 }, async (req) => {
-  requireAuth(req);
+  // One model call a turn: the AI month caps the cost, this caps a runaway tab.
+  await rateLimit(requireAuth(req).uid, 'adsDesign', 40, 3600);
   const parsed = z
     .object({
       chat: z

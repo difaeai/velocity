@@ -414,6 +414,8 @@ export interface Frame {
   scene: string;
   /** The words burned into it. Short — this is read at a glance. */
   overlay: string;
+  /** Two to four plain English words a stock library can match ("rickshaw street night"). */
+  stock?: string;
 }
 
 /** The script. One shape for every format; unused parts are empty. */
@@ -442,6 +444,8 @@ export interface ContentPlan {
   atMs: number;
   /** The idea, in one sentence a human can veto. */
   concept: string;
+  /** The structure it was built in (`STORY_SHAPES`), handed to the standup by code. Absent before 2026-10-27. */
+  shape?: string;
   audience: string;
   /** Why this, today. */
   why: string;
@@ -515,6 +519,12 @@ export interface ContentResearch {
   sounds?: string[];
   /** Real posts travelling this week, found by the search. Absent before 2026-10-23. */
   viral?: ViralFind[];
+  /**
+   * Other Instagram accounts read through Business Discovery, with their real
+   * numbers: which of their recent posts beat their own normal. Absent before
+   * 2026-10-27, and empty with no Instagram connected.
+   */
+  accounts?: AccountRead[];
   sources: ResearchSource[];
   /** Set when research was asked for but could not run. */
   error: string | null;
@@ -525,6 +535,23 @@ export interface ViralFind {
   url: string;
   /** The one thing that made it travel. */
   why: string;
+}
+
+/** One account the researcher read, and its posts that did best against that account's own median. */
+export interface AccountRead {
+  username: string;
+  followers: number;
+  /** Median likes + comments across the posts read. */
+  medianEngagement: number;
+  top: {
+    caption: string;
+    mediaType: string;
+    permalink: string | null;
+    likes: number;
+    comments: number;
+    /** Times its own median. */
+    multiple: number;
+  }[];
 }
 
 /**
@@ -629,8 +656,18 @@ export interface SocialPost {
   seo: SeoPack | null;
   search: SearchPack | null;
   ads: AdPlan | null;
-  /** The designer's brief — one render-ready prompt per frame. The deliverable. */
-  direction: { prompt: string; overlay: string; alt: string }[] | null;
+  /**
+   * The designer's brief — one render-ready prompt per frame. `picture` is the
+   * art direction alone (no words, no house style), which is what the picture
+   * is drawn from; pieces made before it existed draw from the writer's scene.
+   */
+  direction: { prompt: string; overlay: string; alt: string; picture?: string }[] | null;
+  /** The reel's cover — the frame the grid and the Reels tab show. Never part of `media`. */
+  cover?: MediaAsset | null;
+  /** Which hook and scene the cover's picture was drawn for: a re-cut with both unchanged reuses it. */
+  coverKey?: string | null;
+  /** The reel went out without its voice-over; the sweep cuts it again. */
+  voiceMissing?: boolean;
   /** The editor's cut — the brief the video is made from, and a line about it. */
   cut: { prompt: string; note: string } | null;
   /** Everything the team made, in publish order. Slides 1..n for a carousel. */
@@ -706,6 +743,8 @@ export interface Competitor {
   name: string;
   /** A page the researcher can point at. */
   url: string;
+  /** Their Instagram username, read every morning with its real numbers (`discovery.ts`). */
+  instagram?: string;
 }
 
 /** Who else is in this market. The team reads around these, never copies them. */
@@ -790,13 +829,19 @@ export interface SocialSettings {
   /** How many pieces a day, each the next format up. */
   postsPerDay: number;
   /**
-   * How many days ahead the calendar is kept made: the month plan's pieces for
-   * the next N days are written and drawn in advance, one an hour, so the owner
-   * can read (and change) the month before it goes out. 0 makes each day on the
-   * day. 30 everywhere since 2026-10-24: the owner asked for the month to stay
-   * filled, every month.
+   * How many days one batch of the calendar covers: the month plan's pieces and
+   * the day's story for the next N days are written and drawn in one go, so the
+   * owner can read (and change) the month before it goes out — and then the
+   * desk only posts until the calendar runs low (`REFILL_DAYS`), when the next
+   * batch is made. 0 makes each day on the day. 30 everywhere since 2026-10-24;
+   * batches rather than a rolling window since 2026-10-27, because the owner
+   * saw the AI called every day once the month was already made.
    */
   makeAheadDays: number;
+  /** The last day the made calendar reaches. Set when a batch is finished. */
+  calendarUntil?: string | null;
+  /** Set while a batch is being made: the day it fills to. Null between batches. */
+  batchUntil?: string | null;
   /**
    * A story every day, on top of the rotation.
    *

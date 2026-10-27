@@ -121,6 +121,32 @@ export function voiceTempo(voiceSeconds: number, reelSeconds: number): number {
  */
 const CHAR_WIDTH = 0.56;
 
+/** Words a stock search cannot use: articles, pronouns, the camera talk an art direction is full of. */
+const STOP = new Set(
+  (
+    'a an the and or of in on at to for with from by into over under near his her their its our your my this that ' +
+    'is are was be being while who what which as it he she they we you i close up wide shot frame camera lens ' +
+    'light lit golden hour daylight natural soft shallow depth field focus background foreground photo photograph image ' +
+    'picture shows showing seen view angle portrait landscape vertical horizontal style editorial cinematic real'
+  ).split(' '),
+);
+
+/**
+ * An art direction cut down to what a stock search matches: the nouns and
+ * verbs, five at most. "A driver counting cash on his bonnet at dusk, close up"
+ * searched as written finds nothing and falls through to the generic clip every
+ * reel then shares; "driver counting cash bonnet dusk" finds a driver.
+ */
+export function stockQuery(scene: string, words = 5): string {
+  return scene
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !STOP.has(w))
+    .slice(0, words)
+    .join(' ');
+}
+
 /** Break a line into as few lines as fit, without splitting a word. */
 export function wrap(text: string, maxChars: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -185,12 +211,15 @@ export function planReel(params: {
 
   /** The lines the video actually shows, in order, and what is behind each. */
   const frames = params.script.frames.filter((f) => f.overlay || f.scene);
+  // The writer's stock words when there are some, the scene cut down when not.
+  const search = (f: (typeof frames)[number] | undefined, fallback: string) =>
+    f?.stock?.trim() || stockQuery(f?.scene || f?.overlay || fallback) || fallback;
   const sources: { kind: BeatKind; text: string; scene: string }[] = [
-    { kind: 'hook', text: params.script.hook, scene: frames[0]?.scene || params.script.hook },
-    ...frames.map((f) => ({ kind: 'body' as const, text: f.overlay || f.scene, scene: f.scene || f.overlay })),
+    { kind: 'hook', text: params.script.hook, scene: search(frames[0], params.script.hook) },
+    ...frames.map((f) => ({ kind: 'body' as const, text: f.overlay || f.scene, scene: search(f, f.overlay) })),
   ];
   if (params.script.cta) {
-    sources.push({ kind: 'cta', text: params.script.cta, scene: frames[frames.length - 1]?.scene || params.script.cta });
+    sources.push({ kind: 'cta', text: params.script.cta, scene: search(frames[frames.length - 1], params.script.cta) });
   }
 
   // How long each line takes to *say* is the honest measure of how long it
@@ -401,7 +430,7 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
       const ruleY = top - 46;
       steps.push(
         `[${last}]drawbox=x=${SAFE.side}:y=${ruleY}:w=180:h=8:color=${LIME}:t=fill:` +
-          `enable='between(t,${round(beat.start + 0.3)},${beat.end})'[r${n}]`,
+          `enable='between(t,${bi === 0 ? 0 : round(beat.start + 0.3)},${beat.end})'[r${n}]`,
       );
       last = `r${n++}`;
     }
@@ -409,14 +438,19 @@ export function filterGraph(plan: ReelPlan, paths: GraphPaths): string {
     beat.lines.forEach((_, li) => {
       const y = top + li * lineHeight;
       // Each line arrives a beat after the one above it, which is what makes
-      // it read as typed rather than pasted.
+      // it read as typed rather than pasted — except the hook, which is on
+      // screen at frame one. Frame one is the thumbnail wherever no cover is
+      // set and what shows before the video starts, and a hook that fades in
+      // from nothing made every reel's first frame a black screen.
+      const first = bi === 0;
       const start = round(beat.start + li * 0.09);
       steps.push(
         `[${last}]drawtext=fontfile='${escapeArg(font)}':` +
           `textfile='${escapeArg(paths.textFiles[bi][li])}':` +
           `fontcolor=${colour}:fontsize=${beat.size}:` +
-          `x=${SAFE.side}:y='${riseExpr(y, start)}':` +
-          `alpha='${alphaExpr(start, beat.end)}':` +
+          `shadowcolor=0x000000@0.5:shadowx=0:shadowy=4:` +
+          `x=${SAFE.side}:y='${first ? y : riseExpr(y, start)}':` +
+          `alpha='${first ? `if(lt(t,${round(beat.end - 0.22)}),1,max(0,(${beat.end}-t)/0.22))` : alphaExpr(start, beat.end)}':` +
           `enable='between(t,${beat.start},${beat.end})'[t${n}]`,
       );
       last = `t${n++}`;

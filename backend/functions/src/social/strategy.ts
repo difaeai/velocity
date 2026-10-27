@@ -99,6 +99,8 @@ export function normalisePlan(
   data: Record<string, unknown>,
   month: string,
   perDay: number,
+  /** The formats this desk was told to make. A slot in any other is dropped: the owner chose these. */
+  allowed: readonly ContentFormat[] = FORMATS,
 ): Omit<MonthPlan, 'atMs' | 'by' | 'engine'> {
   const rawDays = (data.days && typeof data.days === 'object' ? data.days : {}) as Record<string, unknown>;
   const days: Record<string, PlannedSlot[]> = {};
@@ -109,7 +111,7 @@ export function normalisePlan(
     for (const item of raw) {
       if (!item || typeof item !== 'object') continue;
       const s = item as Record<string, unknown>;
-      const format = FORMATS.includes(s.format as ContentFormat) ? (s.format as ContentFormat) : null;
+      const format = allowed.includes(s.format as ContentFormat) ? (s.format as ContentFormat) : null;
       const topic = text(s.topic, 240);
       if (!format || !topic || seen.has(format)) continue;
       seen.add(format);
@@ -164,12 +166,13 @@ export function localMonthPlan(month: string, settings: SocialSettings): Omit<Mo
   };
 }
 
-const TASK = (month: string, perDay: number) => `Plan the whole of ${month} for this account, the way a social media lead does on the 1st.
+const TASK = (month: string, perDay: number, formats: readonly ContentFormat[]) => `Plan the whole of ${month} for this account, the way a social media lead does on the 1st.
 
 - One goal for the month, in one sentence, that the numbers can show.
 - 3-5 content pillars: the recurring kinds of story this account tells.
 - A theme for each week, and what that week builds towards.
-- For EVERY day of the month: ${perDay} piece${perDay === 1 ? '' : 's'}, each with a format (one of: ${FORMATS.join(', ')}), a topic specific enough to film or design today, a hook line, and the pillar it belongs to. No two pieces on one day share a format. Vary the formats across the week; reels carry reach.
+- For EVERY day of the month: ${perDay} piece${perDay === 1 ? '' : 's'}, each with a format (ONLY one of: ${formats.join(', ')} — the owner chose these, never use another), a topic specific enough to film or design today, a hook line, and the pillar it belongs to. No two pieces on one day share a format. Vary the formats across the week${formats.includes('reel') ? '; reels carry reach' : ''}.
+- No two days may share a topic, and no week may repeat the same kind of story: a month of one idea in different words is the commonest way a feed goes dead.
 - Lean on dates that matter to this audience this month — paydays, holidays, the season — but only ones you are sure of.
 - 3-5 paid campaigns worth running this month: objective, who, and the offer, one line each.
 - 3-5 sales moves: which kind of customer or business to approach this month, and the opening line, one line each.
@@ -190,6 +193,8 @@ Reply with one JSON object and nothing else:
 export async function planMonth(month: string, research: ContentResearch | null = null): Promise<MonthPlan> {
   const settings = await getSocialSettings();
   const perDay = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
+  // The owner's chosen formats; a day cannot hold two of one format, so perDay is capped by how many they chose.
+  const allowed = [...new Set(settings.formats.length ? settings.formats : DEFAULT_SETTINGS.formats)];
 
   let body: Omit<MonthPlan, 'atMs' | 'by' | 'engine'>;
   let by = 'The rotation';
@@ -202,13 +207,13 @@ export async function planMonth(month: string, research: ContentResearch | null 
     by = lead.employee.name;
     const { data } = await generateJson<Record<string, unknown>>({
       model: settings.textModel,
-      system: [systemFor(lead.employee, settings), brandBlock(), TASK(month, perDay)].join('\n\n'),
+      system: [systemFor(lead.employee, settings), brandBlock(), TASK(month, perDay, allowed)].join('\n\n'),
       what: 'The month plan',
       prompt: [`Month: ${month}. Today: ${new Date().toISOString().slice(0, 10)}.`, researchBlock(research)]
         .filter(Boolean)
         .join('\n\n'),
     });
-    body = normalisePlan(data, month, perDay);
+    body = normalisePlan(data, month, perDay, allowed);
     if (!Object.keys(body.days).length) throw new Error('The month plan came back with no days in it.');
   }
 
@@ -217,10 +222,15 @@ export async function planMonth(month: string, research: ContentResearch | null 
   return plan;
 }
 
-/** Today's planned pieces, or none — the daily run falls back to the rotation. */
-export async function plannedSlots(date: string): Promise<PlannedSlot[]> {
+/**
+ * Today's planned pieces, or none — the daily run falls back to the rotation.
+ * Only in the formats the owner chose: a plan made before they changed their
+ * mind (or before the plan was held to them) does not get to overrule them.
+ */
+export async function plannedSlots(date: string, allowed?: readonly ContentFormat[]): Promise<PlannedSlot[]> {
   const plan = (await planRef(date.slice(0, 7)).get()).data() as MonthPlan | undefined;
-  return plan?.days?.[date] ?? [];
+  const slots = plan?.days?.[date] ?? [];
+  return allowed?.length ? slots.filter((s) => allowed.includes(s.format)) : slots;
 }
 
 /**

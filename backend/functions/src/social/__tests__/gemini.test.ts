@@ -187,30 +187,22 @@ describe('a grounded read', () => {
 });
 
 describe('JSON mode', () => {
-  it('asks for it on an ordinary call', async () => {
-    const fetchMock = vi.fn(async () => reply([answer('{"ok":true}')]));
+  it('is never asked for: the bare shape cost every fresh instance a refused call', async () => {
+    const fetchMock = vi.fn(async () => reply([answer('```json\n{"ok":true}\n```')]));
     vi.stubGlobal('fetch', fetchMock);
 
-    await geminiText({ model: '', system: 's', prompt: 'p', json: true });
-    expect(body(fetchMock).response_format).toEqual({ type: 'text', mime_type: 'application/json' });
+    const out = await geminiText({ model: '', system: 's', prompt: 'p', json: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body(fetchMock).response_format).toBeUndefined();
+    // The object is read out of the reply instead, fenced or not.
+    expect(out.text).toContain('{"ok":true}');
   });
 
-  it('drops it once and carries on, rather than failing every call', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(failure(400, 'response_format is not supported for this model'))
-      .mockResolvedValueOnce(reply([answer('{"ok":true}')]))
-      .mockResolvedValueOnce(reply([answer('{"ok":true}')]));
+  it('does not retry a refused request as if a mode were to blame', async () => {
+    const fetchMock = vi.fn(async () => failure(400, 'response_format is not supported for this model'));
     vi.stubGlobal('fetch', fetchMock);
-
-    await geminiText({ model: '', system: 's', prompt: 'p', json: true });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(body(fetchMock, 0).response_format).toBeDefined();
-    expect(body(fetchMock, 1).response_format).toBeUndefined();
-
-    // And it is remembered: the next call does not pay for the lesson again.
-    await geminiText({ model: '', system: 's', prompt: 'p', json: true });
-    expect(body(fetchMock, 2).response_format).toBeUndefined();
+    await expect(geminiText({ model: '', system: 's', prompt: 'p', json: true })).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

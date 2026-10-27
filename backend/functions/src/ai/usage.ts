@@ -111,6 +111,12 @@ export interface UsageEntry {
   wid?: string;
   /** Overrides the Cloud Run service name (the voice bridge, which is not a function). */
   service?: string;
+  /**
+   * Paid for apart from the plan's AI allowance — an AI phone call, which the
+   * customer's agent package pays for. Still on the meter (`usd`, the true
+   * total), but also in `apartUsd`, so it never uses up their content month.
+   */
+  apart?: boolean;
 }
 
 /** One finished piece of content (post, reel, story…), so the page can show what a piece costs. Never throws. */
@@ -129,7 +135,7 @@ export async function recordAi(e: UsageEntry): Promise<void> {
   const wid = e.wid ?? currentWorkspace();
   const service = keyOf(e.service ?? process.env.K_SERVICE ?? 'local');
   const usd = Math.max(0, e.usd);
-  noteSpend(wid, usd);
+  if (!e.apart) noteSpend(wid, usd);
   const inc = FieldValue.increment;
   const what = keyOf(e.what ?? 'other');
   try {
@@ -138,6 +144,7 @@ export async function recordAi(e: UsageEntry): Promise<void> {
         month: monthKey(),
         wid,
         usd: inc(usd),
+        ...(e.apart ? { apartUsd: inc(usd) } : {}),
         calls: inc(1),
         inTok: inc(e.inTok ?? 0),
         outTok: inc(e.outTok ?? 0),

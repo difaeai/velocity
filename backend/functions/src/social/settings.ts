@@ -104,7 +104,13 @@ const settingsSchema = z.object({
 
   researchEnabled: z.boolean().optional(),
   competitors: z
-    .array(z.object({ name: z.string().min(1).max(80), url: z.string().max(300) }))
+    .array(
+      z.object({
+        name: z.string().min(1).max(80),
+        url: z.string().max(300),
+        instagram: z.string().trim().regex(/^@?[A-Za-z0-9._]{0,30}$/).optional(),
+      }),
+    )
     .max(12)
     .optional(),
 

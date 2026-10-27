@@ -115,7 +115,7 @@ const RESPONSE_SHAPE = `Reply with one JSON object and nothing else:
   "hook": "the opening line, 5-12 words, payload in the first three",
   "hookFormula": "the number and name of the formula you used, e.g. '3 Nobody Tells You'",
   "hookVariants": ["2-3 other openings for the same concept, from DIFFERENT formulas, in case the first is weak"],
-  "frames": [{ "scene": "what is in the picture", "overlay": "the words burned onto it, 6 words max" }],
+  "frames": [{ "scene": "what is in the picture", "overlay": "the words burned onto it, 6 words max", "stock": "2-4 plain English words a stock-video library would match for this shot, e.g. 'rickshaw street night'" }],
   "voiceover": "the full spoken script. Empty string for still formats.",
   "cta": "the closing line",
   "rationale": "one sentence: why this angle today",
@@ -199,8 +199,39 @@ export async function draftPost(params: {
   });
 
   const draft = parseDraft(data, params.format, params.seo);
-  return reviseIfNeeded({ draft, system, prompt, params });
+  return reviseIfNeeded({ draft, system, prompt, params, recentHooks: params.recentHooks });
 }
+
+/** The words of a hook that carry meaning, for comparing two hooks. */
+const hookWords = (hook: string): Set<string> =>
+  new Set(
+    hook
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2),
+  );
+
+/**
+ * The recent hook this one is closest to, and how close (shared words over all
+ * words, 0–1). A feed that says "your fare, your offer" every Tuesday is the
+ * same post however good the checks think each one is. Pure.
+ */
+export function closestHook(hook: string, recent: string[]): { hook: string; similarity: number } | null {
+  const mine = hookWords(hook);
+  if (!mine.size) return null;
+  let best: { hook: string; similarity: number } | null = null;
+  for (const other of recent) {
+    const theirs = hookWords(other);
+    const shared = [...mine].filter((w) => theirs.has(w)).length;
+    const similarity = shared / new Set([...mine, ...theirs]).size;
+    if (!best || similarity > best.similarity) best = { hook: other, similarity };
+  }
+  return best;
+}
+
+/** At or above this a hook is the same hook again. */
+export const SAME_HOOK = 0.5;
 
 /**
  * The second pass, and only when it is earned.
@@ -221,14 +252,23 @@ async function reviseIfNeeded(args: {
   system: string;
   prompt: string;
   params: { settings: SocialSettings; format: ContentFormat; seo: SeoPack | null };
+  recentHooks?: string[];
 }): Promise<DraftedPost> {
   const { draft, params } = args;
-  if (draft.quality.verdict !== 'FIX') return draft;
+  const recent = args.recentHooks ?? [];
+  // A hook the feed already had is sent back on the same one rewrite the checks use — never a second.
+  const repeat = closestHook(draft.script.hook, recent);
+  const repeated = repeat && repeat.similarity >= SAME_HOOK ? repeat.hook : null;
+  if (draft.quality.verdict !== 'FIX' && !repeated) return draft;
+  const notes = [
+    ...(draft.quality.verdict === 'FIX' ? draft.quality.notes : []),
+    ...(repeated ? [`The hook is nearly the same as one already posted ("${repeated}"). Write a different opening on a different idea.`] : []),
+  ];
 
   logger.info('social: the checks sent the draft back once', {
     format: params.format,
     score: Math.round(draft.quality.score),
-    notes: draft.quality.notes,
+    notes,
   });
 
   try {
@@ -247,7 +287,7 @@ async function reviseIfNeeded(args: {
         ),
         '',
         'EVERY POINT BELOW HAS TO BE FIXED IN THIS VERSION:',
-        ...draft.quality.notes.map((n, i) => `${i + 1}. ${n}`),
+        ...notes.map((n, i) => `${i + 1}. ${n}`),
         '',
         'Keep the concept. Change only what the points above name. Reply with the same JSON object.',
       ].join('\n'),
@@ -255,8 +295,10 @@ async function reviseIfNeeded(args: {
 
     const revised = parseDraft(data, params.format, params.seo);
     // Only keep the rewrite if it actually scored better. A second pass that
-    // trades a weak hook for a weaker one is worse than the first.
-    return revised.quality.score > draft.quality.score ? revised : draft;
+    // trades a weak hook for a weaker one is worse than the first — unless the
+    // first was a repeat and the rewrite is not: a fresh hook beats a polished copy.
+    const fresh = repeated && (closestHook(revised.script.hook, recent)?.similarity ?? 0) < SAME_HOOK;
+    return fresh || revised.quality.score > draft.quality.score ? revised : draft;
   } catch (e) {
     // A failed rewrite is not a failed run: the first draft is readable, and
     // its scorecard tells the admin exactly what the checks did not like.
@@ -296,7 +338,8 @@ function parseDraft(
     ? (raw.frames as unknown[])
         .map((f) => {
           const obj = (f ?? {}) as Record<string, unknown>;
-          return { scene: str(obj.scene, 300), overlay: str(obj.overlay, 80) };
+          const stock = str(obj.stock, 60);
+          return { scene: str(obj.scene, 300), overlay: str(obj.overlay, 80), ...(stock ? { stock } : {}) };
         })
         .filter((f) => f.scene || f.overlay)
         .slice(0, Math.max(spec.slides, 6))

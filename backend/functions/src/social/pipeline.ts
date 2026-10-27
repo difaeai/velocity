@@ -32,7 +32,8 @@
  * from the console without a redeploy; the post id carries the date and the
  * format, so a retried tick cannot produce a duplicate.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -41,10 +42,11 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { paceAllows } from '../ai/config';
+import { batchAllows, overBudget, paceAllows } from '../ai/config';
 import { recordPiece } from '../ai/usage';
 import { db, FieldValue, storage } from '../lib/firebase';
 import { requireAuth } from '../lib/guards';
+import { rateLimit } from '../lib/ratelimit';
 import { deskCall, forEachWorkspace, sdb, wsPath } from './workspace';
 import { dayKey } from '../analytics';
 import { flagIfDead, healAccounts, loadCredentials, publishableAccounts } from './accounts';
@@ -57,13 +59,17 @@ import { captionFor, planDistribution } from './manager';
 import { PlatformError, publishTo } from './platforms';
 import { latestPageRead, pageReadBlock } from './insights';
 import { underlay } from './footage';
-import { planReel, renderReel } from './reel';
+import { IMAGE_MODEL, geminiReady } from './gemini';
+import { pictureFor } from './picture';
+import { nextShape } from './playbook';
+import { planReel, renderReel, stockQuery } from './reel';
 import { referenceBrief, watchReference, youtubeLink } from './reference';
 import { runResearch } from './research';
-import { renderStill, stillCards } from './still';
+import { accentFor, planStill, renderStill, stillCards } from './still';
+import { currentWorkspace, isHouse } from './scope';
 import { draftPost, gatherFacts, rewriteCaption } from './script';
 import { adPass, searchPass, seoPass } from './seo';
-import { getSocialSettings, nextAngle, nextFormat, recordRun } from './settings';
+import { getSocialSettings, nextAngle, nextFormat, patchSettings, recordRun } from './settings';
 import { ensureMonthPlan, plannedSlots, type PlannedSlot } from './strategy';
 import { planCut, storeVideo } from './video';
 import {
@@ -142,17 +148,25 @@ async function noteNobody(id: string, stage: Stage): Promise<void> {
   });
 }
 
-/** The hooks and concepts of the last fortnight, so the team doesn't repeat itself. */
-async function recentWork(): Promise<{ hooks: string[]; concepts: string[] }> {
-  const snap = await sdb.collection('socialPosts').orderBy('date', 'desc').limit(14).get();
+/**
+ * The hooks, concepts and shapes of the last thirty pieces, newest first, so the
+ * team doesn't repeat itself. Thirty rather than fourteen: with a story every
+ * day as well, fourteen was under a week, and a feed repeats itself on a
+ * fortnight's scale.
+ */
+async function recentWork(exceptId?: string): Promise<{ hooks: string[]; concepts: string[]; shapes: string[] }> {
+  const snap = await sdb.collection('socialPosts').orderBy('date', 'desc').limit(30).get();
   const hooks: string[] = [];
   const concepts: string[] = [];
+  const shapes: string[] = [];
   for (const doc of snap.docs) {
+    if (doc.id === exceptId) continue;
     const post = doc.data() as SocialPost;
     if (post.script?.hook) hooks.push(post.script.hook);
     if (post.plan?.concept) concepts.push(post.plan.concept);
+    if (post.plan?.shape) shapes.push(post.plan.shape);
   }
-  return { hooks, concepts };
+  return { hooks, concepts, shapes };
 }
 
 /** Everything the admin has asked for on this piece so far, oldest first. */
@@ -258,8 +272,22 @@ async function runTeam(params: {
 
   await patch(params.id, { team: teamRefs(team) });
 
+  // The YouTube copy and the Google Ads brief are for YouTube alone: a piece
+  // going only to Instagram and Facebook paid two calls for words nobody posted.
+  const youtube = (params.targets ?? existing?.targets ?? settings.platforms).includes('youtube');
+  const forYoutube: Stage[] = ['search', 'ads'];
+
+  // A story carries no caption and no hashtags on either network, so a search brief for it is paid for and never read.
+  const story = params.format === 'story';
+
   /** Only the stages this format needs, in run order, that were asked for. */
-  const wanted = ALL_STAGES.filter((s) => spec.stages.includes(s) && params.stages.includes(s));
+  const wanted = ALL_STAGES.filter(
+    (s) =>
+      spec.stages.includes(s) &&
+      params.stages.includes(s) &&
+      (youtube || !forYoutube.includes(s)) &&
+      !(story && s === 'seo'),
+  );
 
   /** Who is on this stage — and record it, or record that nobody is. */
   const who = async (stage: Stage): Promise<Employee | null> => {
@@ -333,7 +361,7 @@ async function runTeam(params: {
   // ── standup ───────────────────────────────────────────────────────────────
   if (params.standup) {
     await patch(params.id, { status: 'planning' as PostStatus });
-    const { concepts } = await recentWork();
+    const { concepts, shapes } = await recentWork(params.id);
     try {
       plan = await planContent({
         settings,
@@ -345,6 +373,8 @@ async function runTeam(params: {
         recentConcepts: concepts,
         feedback,
         pageRead: settings.learnFromOwnPage ? pageReadBlock(await latestPageRead()) : '',
+        // A piece being remade keeps its shape; a new one gets one the feed has not had lately.
+        shape: existing?.plan?.shape ?? nextShape(shapes, params.id),
       });
       await patch(params.id, { plan });
     } catch (e) {
@@ -386,7 +416,7 @@ async function runTeam(params: {
       throw new Error('No content writer.');
     }
     try {
-      const { hooks } = await recentWork();
+      const { hooks } = await recentWork(params.id);
       const drafted = await draftPost({
         employee: writer,
         settings,
@@ -468,7 +498,10 @@ async function runTeam(params: {
     const designer = await who('design');
     let direction = existing?.direction ?? null;
     let briefNote = '';
-    if (designer) {
+    // A story's one frame is drawn from the writer's own line and scene; a brief for it is a call nobody needs.
+    if (designer && story) {
+      await setWork(params.id, 'design', { state: 'working', employeeId: designer.id, name: designer.name, role: designer.role, note: 'Drawing the story from the writer’s frame.' });
+    } else if (designer) {
       try {
         const result = await design({
           employee: designer,
@@ -510,12 +543,14 @@ async function runTeam(params: {
           employeeId: designer?.id ?? null,
           name: designer?.name ?? 'The desk',
           role: designer?.role ?? null,
-          note: `${briefNote} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'}.`.trim(),
+          note: `${briefNote} Drew ${drawn.made} picture${drawn.made === 1 ? '' : 's'} (${drawn.note}).`.trim(),
         });
       } else if (drawn.error) {
         await patch(params.id, {
           error: `Pictures: ${drawn.error} — the desk tries again in a few minutes, or press "Make the picture".`,
         });
+        // With no brief written, a failed drawing is the whole of the stage.
+        if (designer && story) await failed('design', designer, drawn.error);
       }
     }
   }
@@ -529,7 +564,8 @@ async function runTeam(params: {
     await patch(params.id, { status: 'rendering' as PostStatus });
     const editor = await who('video');
     let cutNote: string | null = null;
-    if (editor) {
+    // The written cut is for a person editing by hand; when the desk cuts the reel itself, nothing reads it.
+    if (editor && !settings.autoRenderVideo) {
       try {
         const cut = await planCut({
           employee: editor,
@@ -552,7 +588,8 @@ async function runTeam(params: {
     const rendered = settings.autoRenderVideo
       ? await renderAndAttach({ id: params.id, format: params.format, script })
       : null;
-    if (rendered || cutNote !== null) {
+    // `editor` too: someone was marked working on this stage, and must be marked finished.
+    if (rendered || cutNote !== null || editor) {
       await setWork(params.id, 'video', {
         // No render and no error with rendering on means a video uploaded by hand was kept.
         state: rendered?.error ? 'failed' : rendered?.line || settings.autoRenderVideo ? 'done' : 'briefed',
@@ -671,12 +708,14 @@ async function runTeam(params: {
 
   // Made ahead for a later day: approved now, posted on its own day at the
   // desk's hour by the sweep — not the moment it happens to be finished.
-  if (isAhead(params.date)) {
+  // A reel whose voice failed goes through the sweep too, which cuts it once
+  // more before it posts, rather than out of here silent.
+  if (isAhead(params.date) || finished?.voiceMissing) {
     await patch(params.id, {
       status: 'ready' as PostStatus,
       approvedBy: 'auto',
       publishQueuedAtMs: Date.now(),
-      scheduled: true,
+      ...(isAhead(params.date) ? { scheduled: true } : {}),
     });
     return;
   }
@@ -739,17 +778,22 @@ async function renderAndAttach(params: {
     const local = await downloadForRender(images);
 
     const plan = planReel({ script: params.script, format: params.format });
+    // A reel always speaks: a writer who left the voice-over empty still wrote every line on screen.
+    const spoken = params.script.voiceover.trim() || spokenFrom(params.script);
     const under = await underlay({
       postId: params.id,
       scenes: plan.beats.map((b) => b.scene),
       orientation: params.format === 'video' ? 'landscape' : 'portrait',
       footage: !local.paths.length,
-      voiceover: params.script.voiceover,
+      voiceover: spoken,
     });
+    // The picture the cover is drawn on, and the backdrop when no footage came.
+    const art = await reelArt({ id: params.id, format: params.format, script: params.script, existing });
 
     try {
+      const backdrop = local.paths.length ? local.paths : under.clips.length || !art.picture ? [] : [art.picture];
       const bytes = await renderReel(plan, {
-        localImages: local.paths,
+        localImages: backdrop,
         localClips: under.clips,
         music: under.music,
         voice: under.voice,
@@ -774,11 +818,21 @@ async function renderAndAttach(params: {
       // Slides stay: a carousel's images and the reel made from them are both
       // the piece, and the publisher picks by format.
       // error: a failed render's message would otherwise sit under a finished reel.
-      await patch(params.id, { media: [...media.filter((m) => m.kind !== 'video'), asset], error: null });
-      return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB, ${under.note}`, error: null };
+      // voiceMissing: a voice that failed is tried again by the sweep, not shrugged off.
+      await patch(params.id, {
+        media: [...media.filter((m) => m.kind !== 'video'), asset],
+        cover: art.cover,
+        coverKey: art.key,
+        // Over budget is a choice not to speak this month, not a voice that failed.
+        voiceMissing: Boolean(spoken && !under.voice && geminiReady() && !overBudget()),
+        error: null,
+      });
+      const backdropNote = under.clips.length || local.paths.length ? '' : art.picture ? `, backdrop: ${art.source} picture` : '';
+      return { line: `${plan.seconds}s, ${(bytes.length / 1024 / 1024).toFixed(1)} MB, ${under.note}${backdropNote}`, error: null };
     } finally {
       await under.cleanup();
       await local.cleanup();
+      await art.cleanup();
     }
   } catch (e) {
     const message = (e as Error).message;
@@ -789,22 +843,97 @@ async function renderAndAttach(params: {
   }
 }
 
+/** What a reel says out loud when the writer left the voice-over empty: the lines it shows. Pure. */
+export function spokenFrom(script: PostScript): string {
+  const lines = [script.hook, ...script.frames.map((f) => f.overlay), script.cta].map((l) => l?.trim()).filter(Boolean);
+  return [...new Set(lines)].map((l) => (/[.!?]$/.test(l) ? l : `${l}.`)).join(' ');
+}
+
+/** This desk's accent: lime in the house, one stable colour per customer. */
+const deskAccent = (): string => accentFor(isHouse() ? null : currentWorkspace());
+
+/**
+ * A reel's picture: drawn from the designer's cover idea, set under the hook as
+ * the cover the grid and the Reels tab show, and kept to sit behind the words
+ * when no footage came. A reel cut again with the same hook (its voice failed,
+ * the sweep's retry) keeps the picture it had rather than paying for another.
+ * Never throws — a reel with no cover is the reel it was.
+ */
+async function reelArt(params: {
+  id: string;
+  format: ContentFormat;
+  script: PostScript;
+  existing: SocialPost | undefined;
+}): Promise<{ cover: MediaAsset | null; key: string | null; picture: string | null; source: string; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-cover-'));
+  const cleanup = () => rm(dir, { recursive: true, force: true }).catch(() => {});
+  const first = params.script.frames[0];
+  const scene = params.existing?.direction?.[0]?.picture || first?.scene || params.script.hook;
+  const tall = params.format !== 'video';
+  const out = path.join(dir, 'picture.jpg');
+  // The bare picture, kept beside the cover so a re-cut can reuse it — only while the hook and the scene are the same.
+  const kept = storage.bucket().file(`${postFolder(params.id)}/cover-picture.jpg`);
+  const key = createHash('sha1').update(`${params.script.hook}|${scene}`).digest('hex').slice(0, 16);
+  try {
+    const had = params.existing?.cover;
+    if (had?.url && params.existing?.coverKey === key) {
+      const reused = await kept.download({ destination: out }).then(() => true, () => false);
+      if (reused) return { cover: had, key, picture: out, source: 'kept', cleanup };
+    }
+    const pic = await pictureFor({
+      scene,
+      query: first?.stock || stockQuery(scene),
+      aspect: tall ? '9:16' : '16:9',
+      layout: 'top',
+      out,
+    });
+    if (pic) await kept.save(await readFile(pic.path), { contentType: 'image/jpeg', resumable: false }).catch(() => undefined);
+    // Only Instagram takes a cover, and only on a reel.
+    if (!tall) return { cover: null, key: null, picture: pic?.path ?? null, source: pic?.source ?? 'no', cleanup };
+    const card = planStill({ headline: params.script.hook, aspect: '9:16', layout: 'top', scene });
+    const stored = await storeFile({
+      path: `${postFolder(params.id)}/cover.jpg`,
+      bytes: await renderStill(card, { wordmark: wordmark(), photo: pic?.path, accent: deskAccent() }),
+      contentType: 'image/jpeg',
+    });
+    const cover: MediaAsset = {
+      kind: 'image',
+      provider: 'velocity-render',
+      model: pic?.source === 'drawn' ? IMAGE_MODEL : null,
+      jobId: null,
+      storagePath: stored.path,
+      url: stored.url,
+      urlExpiresAtMs: stored.expiresAtMs,
+      durationSec: null,
+      aspect: '9:16',
+      slide: 0,
+      alt: params.script.hook,
+    };
+    return { cover, key: pic ? key : null, picture: pic?.path ?? null, source: pic?.source ?? 'no', cleanup };
+  } catch (e) {
+    logger.warn('social: the reel cover could not be made', { id: params.id, message: (e as Error).message });
+    return { cover: params.existing?.cover ?? null, key: params.existing?.coverKey ?? null, picture: null, source: 'no', cleanup };
+  }
+}
+
 /**
  * Draw the pictures a still piece needs and hang them on it.
  *
  * Slides somebody attached by hand are never touched. Slides this desk drew
  * before are drawn again, because the only way back here for a piece that
  * already has them is a "redraw it" note, and that note is about the words.
- * Never fatal: a failure returns its message for the work log.
+ * Each slide gets a picture under its words — drawn, or stock — and a
+ * gradient only when neither could be had. Never fatal: a failure returns its
+ * message for the work log.
  */
 async function renderStillsAndAttach(params: {
   id: string;
   format: ContentFormat;
   script: PostScript;
-  direction: { overlay: string; alt: string }[] | null;
-}): Promise<{ made: number; error: string | null }> {
+  direction: { overlay: string; alt: string; picture?: string }[] | null;
+}): Promise<{ made: number; error: string | null; note: string }> {
   const spec = FORMAT_SPECS[params.format];
-  if (spec.kind !== 'image') return { made: 0, error: null };
+  if (spec.kind !== 'image') return { made: 0, error: null, note: '' };
 
   const existing = postMedia(((await postRef(params.id).get()).data() as SocialPost | undefined) ?? {});
   const byHand = new Set(
@@ -812,14 +941,29 @@ async function renderStillsAndAttach(params: {
   );
 
   const made: MediaAsset[] = [];
+  const sources: Record<string, number> = {};
+  const dir = await mkdtemp(path.join(tmpdir(), 'velocity-pictures-'));
+  // One stock photo once per set: a carousel showing the same photograph twice reads as a mistake.
+  const skip = new Set<number>();
   try {
-    const cards = stillCards({ format: params.format, script: params.script, direction: params.direction });
+    const cards = stillCards({ format: params.format, script: params.script, direction: params.direction, postId: params.id });
     for (const [i, card] of cards.entries()) {
       const slide = i + 1;
       if (byHand.has(slide)) continue;
+      const pic = await pictureFor({
+        scene: card.scene,
+        query: card.query,
+        aspect: card.aspect,
+        layout: card.layout,
+        out: path.join(dir, `picture-${slide}.jpg`),
+        skip,
+        // A story is gone in a day: a stock photo, never a paid picture.
+        drawn: params.format !== 'story',
+      });
+      sources[pic?.source ?? 'gradient'] = (sources[pic?.source ?? 'gradient'] ?? 0) + 1;
       const stored = await storeFile({
         path: `${postFolder(params.id)}/slide-${slide}.jpg`,
-        bytes: await renderStill(card, { wordmark: wordmark() }),
+        bytes: await renderStill(card, { wordmark: wordmark(), photo: pic?.path, accent: deskAccent() }),
         contentType: 'image/jpeg',
       });
       made.push({
@@ -844,8 +988,10 @@ async function renderStillsAndAttach(params: {
       await patch(params.id, {
         media: existing.filter((m) => !(m.kind === 'image' && m.provider === 'velocity-render')),
       });
-      return { made: 0, error: message.slice(0, 240) };
+      return { made: 0, error: message.slice(0, 240), note: '' };
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 
   if (made.length) {
@@ -853,7 +999,9 @@ async function renderStillsAndAttach(params: {
     const kept = existing.filter((m) => !(m.kind === 'image' && drawn.has(m.slide)));
     await patch(params.id, { media: [...kept, ...made].sort((a, b) => a.slide - b.slide), error: null });
   }
-  return { made: made.length, error: null };
+  const WORDS: Record<string, string> = { drawn: 'drawn by AI', stock: 'stock photo', gradient: 'gradient' };
+  const note = Object.entries(sources).map(([k, n]) => `${n} ${WORDS[k] ?? k}`).join(', ');
+  return { made: made.length, error: null, note };
 }
 
 /** Pull attached slides onto local disk so ffmpeg can read them. */
@@ -1048,6 +1196,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
     media = refreshed;
     await patch(id, { media });
   }
+  const cover = post.cover?.url ? (await refreshAssetUrls([post.cover]))[0] : null;
 
   // Whoever manages social signs the post — and it is their name in the log.
   const team = await activeTeam();
@@ -1082,6 +1231,7 @@ async function publishPost(id: string, only?: Platform[]): Promise<{ published: 
         title: post.script?.hook ?? brandName(),
         tags: post.hashtags ?? [],
         youtube: post.search?.youtube ?? null,
+        cover: cover?.url ?? null,
       });
       results[platform] = { ok: true, id: out.id, url: out.url, error: null, atMs: Date.now() };
       published++;
@@ -1146,7 +1296,7 @@ async function runDaily(date: string): Promise<string> {
   };
 
   // The month plan decides the day when it has one; the rotation fills the rest.
-  const planned = (await plannedSlots(date)).slice(0, wanted);
+  const planned = (await plannedSlots(date, settings.formats)).slice(0, wanted);
   for (const slot of planned) await queue(slot.format, slot);
 
   for (let i = planned.length; i < wanted; i++) {
@@ -1229,40 +1379,95 @@ async function daily(): Promise<void> {
     }
 }
 
+/** With this few days of the made calendar left, the next batch starts. */
+export const REFILL_DAYS = 3;
+/** Pieces one hourly tick makes while a batch is being made — and never past the time below. */
+const BATCH_PER_TICK = 2;
+const BATCH_TICK_MS = 8 * 60_000;
+
+/** The pieces one day of the calendar needs: its planned slots, and the story when there is one a day. Pure. */
+export function dayPieces(
+  slots: PlannedSlot[],
+  wanted: number,
+  dailyStory: boolean,
+): { format: ContentFormat; slot: PlannedSlot | null }[] {
+  const pieces: { format: ContentFormat; slot: PlannedSlot | null }[] = slots
+    .slice(0, wanted)
+    .map((slot) => ({ format: slot.format, slot }));
+  if (dailyStory && !pieces.some((p) => p.format === 'story')) pieces.push({ format: 'story', slot: null });
+  return pieces;
+}
+
 /**
- * Make the earliest planned piece in the next `makeAheadDays` that the
- * calendar does not have yet — one per call, so a month fills over a day or two
- * of hourly ticks instead of in one burst against the model's quota.
- *
- * Only planned slots, never the story: a story is about today and is made on
- * the day. A piece that fails keeps its id, so the next tick moves past it
- * instead of retrying it forever; the calendar shows it red to remake.
+ * What the calendar does this hour. Between batches nothing is made at all —
+ * the desk only posts what is already made — until the made calendar has fewer
+ * than `REFILL_DAYS` left; then the next `makeAheadDays` are made in one batch.
+ * Pure: `until` is the day the made calendar reaches, `filling` the day a batch
+ * in progress fills to.
  */
-// shortcut: one piece per workspace per hour; with many Studio customers on the shared free model, slow this further or move it to a job queue.
+export function batchStep(p: {
+  today: string;
+  until: string | null | undefined;
+  filling: string | null | undefined;
+  makeAheadDays: number;
+}): { fill: string | null } {
+  if (p.filling && p.filling > p.today) return { fill: p.filling };
+  const left = p.until ? Math.round((Date.parse(`${p.until}T00:00:00Z`) - Date.parse(`${p.today}T00:00:00Z`)) / 86_400_000) : 0;
+  if (left >= REFILL_DAYS) return { fill: null };
+  return { fill: dayKey(Date.parse(`${p.today}T12:00:00Z`) + p.makeAheadDays * 86_400_000) };
+}
+
+/**
+ * Make the calendar in batches: the next `makeAheadDays` — every planned piece
+ * and every day's story — in one go, two pieces an hour, and then nothing until
+ * the made calendar runs low. A rolling window made one new day every day once
+ * the month was full, which put the model to work every single day for a
+ * calendar that was already made; the owner asked for exactly the opposite.
+ *
+ * A piece that fails keeps its id, so the batch moves past it instead of
+ * retrying it forever; the calendar shows it red to remake. A capped workspace
+ * stops at `BATCH_SHARE` of its month, keeping the rest for replies and changes.
+ */
+// shortcut: two pieces per workspace per hour, one workspace after another; past ~20 Studio customers, move batches to a job queue.
 async function makeAhead(settings: SocialSettings): Promise<void> {
   // Only with a model: a piece the local writer makes a month early is the same
-  // piece it makes on the day, held for approval meanwhile. The plan's slots
-  // already fill the calendar either way.
-  // A set budget is spread over the month: no working ahead past today's share of it.
-  if (!modelReady() || !paceAllows() || !(await activeTeam()).length) return;
+  // piece it makes on the day, held for approval meanwhile.
+  if (!modelReady() || !(await activeTeam()).length) return;
+  const today = dayKey(Date.now());
+  const { fill } = batchStep({ today, until: settings.calendarUntil, filling: settings.batchUntil, makeAheadDays: settings.makeAheadDays });
+  if (!fill) return;
+  // Also when a batch blocked past its own end (a spent month) starts over with a new end.
+  if (settings.batchUntil !== fill) await patchSettings({ batchUntil: fill });
+  if (!batchAllows()) return;
+
+  const started = Date.now();
   const wanted = Math.max(1, Math.min(settings.postsPerDay, FORMATS.length));
-  for (let i = 1; i <= settings.makeAheadDays; i++) {
+  let made = 0;
+  for (let i = 1; ; i++) {
     const date = dayKey(Date.now() + i * 86_400_000);
-    // The window crosses into next month long before the 1st's own run would plan it.
+    if (date > fill) break;
+    // The batch crosses into next month long before the 1st's own run would plan it.
     await ensureMonthPlan(date.slice(0, 7));
-    for (const slot of (await plannedSlots(date)).slice(0, wanted)) {
-      if ((await postRef(postIdFor(date, slot.format)).get()).exists) continue;
-      await createPost({ date, format: slot.format, ...fromSlot(slot) });
-      return;
+    for (const piece of dayPieces(await plannedSlots(date, settings.formats), wanted, settings.dailyStory)) {
+      if ((await postRef(postIdFor(date, piece.format)).get()).exists) continue;
+      if (made >= BATCH_PER_TICK || Date.now() - started > BATCH_TICK_MS || !batchAllows()) return;
+      await createPost({ date, format: piece.format, ...(piece.slot ? fromSlot(piece.slot) : {}) }).catch((e) =>
+        logger.error('social: a piece in the batch failed', { date, format: piece.format, message: (e as Error).message }),
+      );
+      made++;
     }
   }
+  // Everything to `fill` exists: the batch is done, and the desk only posts until the calendar runs low.
+  await patchSettings({ calendarUntil: fill, batchUntil: null });
+  logger.info('social: the calendar is made', { until: fill });
 }
 
 /** A written piece still missing its picture or video, with automatic tries left. */
 export function needsMedia(post: Partial<SocialPost> & { renderTries?: number }): boolean {
   if (!post.script || (post.renderTries ?? 0) >= 3) return false;
   const kind = FORMAT_SPECS[post.format ?? 'reel'].kind;
-  return !postMedia(post).some((m) => m.kind === kind && m.url);
+  // A reel that lost its voice is cut again too: "sometimes there is no voice" was a reel posted as it came out.
+  return !postMedia(post).some((m) => m.kind === kind && m.url) || (kind === 'video' && post.voiceMissing === true);
 }
 
 /** Make a piece's pictures or video from its script. The queue's button and the sweep share it. */
@@ -1279,7 +1484,7 @@ async function makeMedia(postId: string, post: SocialPost): Promise<{ made: numb
     await setWork(postId, 'design', {
       state: 'done',
       name: 'The desk',
-      note: `Drew ${out.made} picture${out.made === 1 ? '' : 's'}.`,
+      note: `Drew ${out.made} picture${out.made === 1 ? '' : 's'} (${out.note}).`,
     });
   }
   return out;
@@ -1469,10 +1674,12 @@ async function readReference(
 }
 
 /** "Put the team on it" — the same run the scheduler does, on demand. */
-export const adminGenerateSocialPost = deskCall('content', 
+export const adminGenerateSocialPost = deskCall('content',
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
     const ctx = requireAuth(req);
+    // A run is minutes of a 2GiB render: the AI budget caps the model, this caps the machine.
+    await rateLimit(ctx.uid, 'socialMakeNow', 12, 3600);
     const parsed = z
       .object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -1577,10 +1784,11 @@ const SCOPE_STAGES: Record<RevisionScope, Stage[]> = {
  * everyone who touches it later, so "stop saying seamless" said once keeps
  * being true.
  */
-export const adminRequestSocialChanges = deskCall('content', 
+export const adminRequestSocialChanges = deskCall('content',
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
     const ctx = requireAuth(req);
+    await rateLimit(ctx.uid, 'socialChanges', 30, 3600);
     const parsed = z
       .object({
         postId: z.string().min(1).max(64),
@@ -1743,9 +1951,10 @@ export const adminPublishSocialPost = deskCall('content',
  * the queue without re-running the team. A failure answers with the renderer's
  * own last words rather than "something went wrong".
  */
-export const adminRenderSocialPost = deskCall('content', 
+export const adminRenderSocialPost = deskCall('content',
   { timeoutSeconds: RUN_TIMEOUT_SECONDS, memory: '2GiB' },
   async (req) => {
+    await rateLimit(requireAuth(req).uid, 'socialRender', 12, 3600);
     const parsed = z.object({ postId: z.string().min(1).max(64) }).safeParse(req.data);
     if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid request.');
     const { postId } = parsed.data;

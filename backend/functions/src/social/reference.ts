@@ -27,6 +27,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { overBudget } from '../ai/config';
 import { brandBlock, marketName } from './crew';
 import { extractJson } from './engine';
 import { GeminiError, geminiReady, geminiText } from './gemini';
@@ -142,6 +143,10 @@ export async function watchReference(params: {
 }): Promise<ReferenceRead> {
   if (!geminiReady()) {
     throw new ReferenceError('Watching a video needs Gemini, and GEMINI_KEY_RESEARCH is not set.');
+  }
+  // It calls Gemini directly rather than through the engine, so it checks the month itself.
+  if (overBudget()) {
+    throw new ReferenceError('This month’s AI work is used up, so the team cannot watch a video now. Buy credits on the Billing page, or it starts again on the 1st.');
   }
   if (!params.youtube && !params.file) throw new ReferenceError('There is no video to watch.');
 
