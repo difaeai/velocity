@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from 'react';
 
-import { AppleMark, Close, GooglePlay, Menu, Person } from './Icons';
+import { AppleMark, Close, GooglePlay, Menu, Sparkle } from './Icons';
 import { SoundHint, SoundToggle } from './siteSound';
 import { VelocityMark } from '@/components/BrandMark';
 import { APP_STORE_URL, PLAY_URL } from '@/lib/site';
@@ -114,9 +114,7 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
 
           {cta ? (
             <div className={styles.navCta}>
-              <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href}>
-                <Person /> {cta.label}
-              </a>
+              <MagicCta {...cta} />
             </div>
           ) : null}
 
@@ -146,11 +144,7 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
                 {l.label}
               </a>
             ))}
-            {cta ? (
-              <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href} onClick={() => setOpen(false)}>
-                <Person /> {cta.label}
-              </a>
-            ) : null}
+            {cta ? <MagicCta {...cta} onClick={() => setOpen(false)} /> : null}
             {sound ? (
               <span className={styles.menuSound}>
                 Narration <SoundToggle className={styles.navSoundMenu} />
@@ -164,5 +158,27 @@ export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink
         <div className={styles.progressBar} style={{ ['--progress' as string]: `${progress}%` }} />
       </div>
     </header>
+  );
+}
+
+/**
+ * The homepage's way into Velocity AI Studio, with a little magic that never
+ * stops: a ring of light running round the edge, a shine sweeping across, a
+ * turning sparkle and stars twinkling at the corners. All CSS; still for anyone
+ * who asked their device for reduced motion.
+ */
+function MagicCta({ href, label, onClick }: NavLink & { onClick?: () => void }) {
+  return (
+    <a className={`${styles.btn} ${styles.btnLime} ${styles.magic}`} href={href} onClick={onClick}>
+      <span className={styles.magicShine} aria-hidden />
+      <span className={styles.magicStars} aria-hidden>
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <Sparkle className={styles.magicIcon} />
+      {label}
+    </a>
   );
 }

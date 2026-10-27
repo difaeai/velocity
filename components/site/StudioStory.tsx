@@ -80,7 +80,6 @@ const STEPS: Step[] = [
     film: '/site/step4',
     filmLabel: 'Ads bring buyers in',
     cues: [
-      [0.3, 'whoosh'],
       [1.6, 'chime'],
       [2.2, 'tick'],
       [2.9, 'pop'],
@@ -156,6 +155,8 @@ const NAV = [
   '📊 Usage & credits',
 ];
 const LAST = STEPS.length - 1;
+/** Seconds the wipe covers the console before the next step's scene starts (matches `wipe` in the CSS). */
+const WIPE_LAG = 0.65;
 /** Where the layout stacks, as in the CSS. */
 const NARROW = '(max-width: 900px)';
 const LINES = Object.fromEntries((VOICE as { key: StepKey; text: string }[]).map((v) => [v.key, v.text])) as Record<
@@ -178,6 +179,9 @@ export function StudioStory() {
   const sound = useSiteSound();
   const speaking = sound.speaking && sound.owner === 'story';
   const rows = useRef<(HTMLLIElement | null)[]>([]);
+  // Each move to another step: which way, and a count so the wipe replays. Read by the sound effect too.
+  const [turn, setTurn] = useState({ n: 0, dir: 1 });
+  const shownRef = useRef(0);
 
   // The step crossing the middle of the screen is the one in view — on a phone, the band just under the pinned console.
   useEffect(() => {
@@ -192,7 +196,12 @@ export function StudioStory() {
         }
         const top = [...inBand].sort((a, b) => b[1] - a[1])[0];
         setActive(top ? top[0] : -1);
-        if (top) setShown(top[0]);
+        if (top && top[0] !== shownRef.current) {
+          const dir = top[0] > shownRef.current ? 1 : -1;
+          shownRef.current = top[0];
+          setTurn((t) => ({ n: t.n + 1, dir }));
+          setShown(top[0]);
+        }
       },
       { rootMargin: window.matchMedia(NARROW).matches ? '-58% 0px -34% 0px' : '-48% 0px -42% 0px' },
     );
@@ -200,13 +209,18 @@ export function StudioStory() {
     return () => io.disconnect();
   }, []);
 
-  // Each step that scrolls in is read aloud at once, with its sounds timed to its animation.
+  // Each step that scrolls in is read aloud at once, with its sounds timed to its animation — after the wipe
+  // that announces it (and its whoosh), when it was reached from another step.
+  const lag = turn.n > 0 && !reduced ? WIPE_LAG : 0;
   useEffect(() => {
     if (active < 0) return;
     say('story', `/site/voice/${STEPS[active].key}.mp3`);
+    const cues: [number, Cue][] = lag
+      ? [[0, 'whoosh'], ...STEPS[active].cues.map(([at, c]): [number, Cue] => [at + lag, c])]
+      : STEPS[active].cues;
     const timers = reduced
       ? []
-      : STEPS[active].cues.map(([at, cue]) =>
+      : cues.map(([at, cue]) =>
           setTimeout(() => {
             const ac = effects();
             if (ac) play(ac, cue);
@@ -216,7 +230,7 @@ export function StudioStory() {
       hush('story');
       timers.forEach(clearTimeout);
     };
-  }, [active, reduced]);
+  }, [active, reduced, lag]);
 
   const step = STEPS[shown];
   const films = !reduced && !saveData;
@@ -235,13 +249,14 @@ export function StudioStory() {
         </header>
 
         <div className={s.grid}>
-          <ol className={s.steps}>
+          <ol className={s.steps} style={{ ['--fill' as string]: (shown + 1) / STEPS.length }}>
             {STEPS.map((st, i) => (
               <li
                 key={st.key}
                 ref={(el) => {
                   rows.current[i] = el;
                 }}
+                id={`step-${i + 1}`}
                 data-i={i}
                 className={`${s.step} ${i === shown ? s.on : ''}`}
                 aria-current={i === shown ? 'step' : undefined}
@@ -257,6 +272,12 @@ export function StudioStory() {
                     <li key={p}>{p}</li>
                   ))}
                 </ul>
+                {i < LAST ? (
+                  <a className={s.next} href={`#step-${i + 2}`}>
+                    Next · Step {i + 2}: {STEPS[i + 1].title}
+                    <DownArrow />
+                  </a>
+                ) : null}
                 {i === LAST ? (
                   <div className={s.cta}>
                     <Link href="/studio/signup" className={`${site.btn} ${site.btnLime}`}>
@@ -285,6 +306,16 @@ export function StudioStory() {
                       ))}
                     </span>
                   </div>
+                  <span className={s.meter} style={{ ['--p' as string]: (shown + 1) / STEPS.length }} />
+                  {turn.n > 0 && !reduced ? (
+                    <div key={turn.n} className={`${s.wipe} ${turn.dir < 0 ? s.wipeBack : ''}`}>
+                      <span className={s.wipeKicker}>{turn.dir > 0 ? 'Next step' : 'Back a step'}</span>
+                      <span className={s.wipeNum}>
+                        Step {shown + 1} <small>of {STEPS.length}</small>
+                      </span>
+                      <strong className={s.wipeTitle}>{step.title}</strong>
+                    </div>
+                  ) : null}
                   <div className={s.app}>
                     <nav className={s.side}>
                       <span className={s.logo}>
@@ -305,7 +336,11 @@ export function StudioStory() {
                         <span className={s.stepTag}>Step {shown + 1}</span>
                         <strong>{step.page}</strong>
                       </div>
-                      <div key={step.key} className={`${s.scene} ${reduced ? s.rest : ''}`}>
+                      <div
+                        key={step.key}
+                        className={`${s.scene} ${reduced ? s.rest : turn.dir < 0 ? s.fromLeft : ''}`}
+                        style={{ ['--lag' as string]: `${lag}s` }}
+                      >
                         <Scene k={step.key} />
                       </div>
                     </div>
@@ -568,6 +603,24 @@ function play(ac: AudioContext, cue: Cue) {
       tone(500, 1500, 0.05, 0.3);
       break;
   }
+}
+
+function DownArrow() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </svg>
+  );
 }
 
 function Bars() {
