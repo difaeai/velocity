@@ -27,4 +27,10 @@ describe('resolveAdUnit', () => {
   it('turns off a malformed id, e.g. the app id pasted as a unit', () => {
     expect(resolveAdUnit(APP, APP, TEST, false).unit).toBeNull();
   });
+
+  it('a release build with no app id for its platform serves nothing', () => {
+    expect(resolveAdUnit(BANNER, undefined, TEST, false).unit).toBeNull();
+    // Dev keeps working without one (the build uses Google's sample app id).
+    expect(resolveAdUnit(BANNER, undefined, TEST, true).unit).toBe(BANNER);
+  });
 });

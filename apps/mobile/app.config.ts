@@ -50,26 +50,23 @@ const TEST_IOS_APP_ID = 'ca-app-pub-3940256099942544~1458002511';
 const SKADNETWORK_ITEMS = ['cstr6suwn9.skadnetwork'];
 
 /**
- * Whether ads run on iOS. MUST stay in step with `ADS_SUPPORTED` in
- * `src/ads/useAdsEnabled.ts`, which is currently `Platform.OS !== 'ios'` because
- * the AdMob account is closed and there is no real iOS app id to ship.
- *
- * This exists because the two iOS-only options on the AdMob config plugin —
- * `userTrackingUsageDescription` and `skAdNetworkItems` — write
- * `NSUserTrackingUsageDescription` and `SKAdNetworkItems` into Info.plist, and
- * App Store Connect refuses to let a build be added for review when the binary
- * advertises tracking that the App Privacy answers say does not happen:
+ * iOS ads run WITHOUT App Tracking Transparency: no ATT prompt, no IDFA, so
+ * AdMob serves non-personalised ads. That is deliberate. The plugin's
+ * `userTrackingUsageDescription` option writes `NSUserTrackingUsageDescription`
+ * into Info.plist, and App Store Connect refuses to add such a build for review
+ * while the App Privacy answers say there is no tracking:
  *
  *   "Your app contains NSUserTrackingUsageDescription, indicating that it may
  *    request permission to track users. To submit for review, update your App
  *    Privacy response ... or update your app binary and upload a new build."
  *
- * The App Privacy answers are the truthful half: nothing in the app calls an
- * ATT API, the ad SDK is never initialised on iOS, and no ATT prompt is ever
- * shown. So the binary is what has to change. Flip this to `true` in the same
- * commit that re-enables iOS ads, never before.
+ * Turning tracking on is therefore three changes together, never one: this flag,
+ * a "Data used to track you" answer in App Privacy, and an ATT message set up in
+ * the AdMob console (Google's UMP form shows the prompt). SKAdNetwork is NOT
+ * tracking — it is Apple's privacy-preserving install attribution — so it ships
+ * either way.
  */
-const IOS_ADS_ENABLED = false;
+const IOS_TRACKING_DECLARED = false;
 
 /**
  * Read one <key>/<string> pair out of GoogleService-Info.plist.
@@ -199,21 +196,13 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
           // typing into; muting audio keeps a video creative from talking over
           // someone mid-booking.
           startAdsMuted: true,
-          // Both of these are iOS-only, and both are omitted while ads are
-          // compiled out on iOS — see IOS_ADS_ENABLED above for why that is not
-          // merely tidiness but the difference between a submittable binary and
-          // a blocked one.
-          ...(IOS_ADS_ENABLED
+          skAdNetworkItems: SKADNETWORK_ITEMS,
+          // Off — see IOS_TRACKING_DECLARED above for why adding it alone is the
+          // difference between a submittable binary and a blocked one.
+          ...(IOS_TRACKING_DECLARED
             ? {
-                // Apple requires this string to exist before anything in the
-                // process touches the tracking APIs the ad SDK links against,
-                // and rejects builds that reach for them without one. Declaring
-                // it does not itself show a prompt — Google's UMP form does
-                // that, and only where an ATT message is configured in the
-                // AdMob console.
                 userTrackingUsageDescription:
                   'Velocity uses this to show you more relevant ads. Your rides and personal details are never shared.',
-                skAdNetworkItems: SKADNETWORK_ITEMS,
               }
             : {}),
         },

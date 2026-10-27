@@ -19,36 +19,35 @@
  * traffic, and repeated invalid traffic is what gets an AdMob account limited or
  * disabled — so real revenue is always a deliberate opt-in.
  */
+import { Platform } from 'react-native';
 import { TestIds } from 'react-native-google-mobile-ads';
 
 import { resolveAdUnit } from '../lib/adUnit';
 
+// Each AdMob app (Android, iOS) has its own app id and its own units. Every
+// process.env.EXPO_PUBLIC_* is spelled out in full: Expo only inlines literal
+// member accesses, so an aliased `process.env` would read undefined in a build.
+const IOS = Platform.OS === 'ios';
+const APP_ID = IOS ? process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID : process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID;
+
 /** null = that placement is off (see resolveAdUnit for when and why). */
 function resolve(configured: string | undefined, testId: string, label: string): string | null {
-  const { unit, problem } = resolveAdUnit(
-    configured, process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID, testId, __DEV__,
-  );
+  const { unit, problem } = resolveAdUnit(configured, APP_ID, testId, __DEV__);
   if (problem) console.warn(`[ads] ${label} ${problem}`);
   return unit;
 }
 
-/** The single banner unit, shared by all three banner placements. */
-export const BANNER_UNIT_ID = resolve(
-  process.env.EXPO_PUBLIC_ADMOB_BANNER_ID,
-  TestIds.ADAPTIVE_BANNER,
-  'EXPO_PUBLIC_ADMOB_BANNER_ID',
-);
+/** The single banner unit, shared by all banner placements. */
+export const BANNER_UNIT_ID = IOS
+  ? resolve(process.env.EXPO_PUBLIC_ADMOB_IOS_BANNER_ID, TestIds.ADAPTIVE_BANNER, 'EXPO_PUBLIC_ADMOB_IOS_BANNER_ID')
+  : resolve(process.env.EXPO_PUBLIC_ADMOB_BANNER_ID, TestIds.ADAPTIVE_BANNER, 'EXPO_PUBLIC_ADMOB_BANNER_ID');
 
 /** The single interstitial unit, shared by both interstitial triggers. */
-export const INTERSTITIAL_UNIT_ID = resolve(
-  process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID,
-  TestIds.INTERSTITIAL,
-  'EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID',
-);
+export const INTERSTITIAL_UNIT_ID = IOS
+  ? resolve(process.env.EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL_ID, TestIds.INTERSTITIAL, 'EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL_ID')
+  : resolve(process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID, TestIds.INTERSTITIAL, 'EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID');
 
 /** The native ("Native advanced") unit — the in-deck video card in Travel Partner. */
-export const NATIVE_UNIT_ID = resolve(
-  process.env.EXPO_PUBLIC_ADMOB_NATIVE_ID,
-  TestIds.NATIVE_VIDEO,
-  'EXPO_PUBLIC_ADMOB_NATIVE_ID',
-);
+export const NATIVE_UNIT_ID = IOS
+  ? resolve(process.env.EXPO_PUBLIC_ADMOB_IOS_NATIVE_ID, TestIds.NATIVE_VIDEO, 'EXPO_PUBLIC_ADMOB_IOS_NATIVE_ID')
+  : resolve(process.env.EXPO_PUBLIC_ADMOB_NATIVE_ID, TestIds.NATIVE_VIDEO, 'EXPO_PUBLIC_ADMOB_NATIVE_ID');

@@ -20,6 +20,8 @@ const UNIT_ID_PATTERN = /^ca-app-pub-\d{16}\/\d{10}$/;
  *   placements stay visible while developing.
  * - A unit from a different AdMob account than the app id can never serve under
  *   it — e.g. the closed account's interstitial left in EAS env after the move.
+ * - A release build with no app id for its platform is off: app.config.ts then
+ *   ships Google's SAMPLE app id, and live units under it bill nothing.
  */
 export function resolveAdUnit(
   configured: string | undefined,
@@ -38,6 +40,9 @@ export function resolveAdUnit(
     };
   }
   const publisher = appId?.trim().match(/^ca-app-pub-(\d{16})~/)?.[1];
+  if (!publisher && !dev) {
+    return { unit: null, problem: 'has no AdMob app id for this platform — placement off.' };
+  }
   if (publisher && !value.startsWith(`ca-app-pub-${publisher}/`)) {
     return { unit: off, problem: 'belongs to a different AdMob account than the app id — placement off.' };
   }
