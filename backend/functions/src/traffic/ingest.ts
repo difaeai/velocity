@@ -34,12 +34,10 @@ import { createHash } from 'node:crypto';
 import { logger } from 'firebase-functions';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-import { db } from '../lib/firebase';
+import { db, SCHEDULE_REGION } from '../lib/firebase';
 import { classify, type RefusalReason } from './classify';
 import { fetchAllSources } from './sources';
 import { TRAFFIC_COLLECTION, type TrafficAlert } from './types';
-
-const REGION = 'asia-south1';
 
 /** Firestore refuses a batch over 500 writes. We will never be near it. */
 const MAX_WRITES_PER_RUN = 400;
@@ -206,7 +204,7 @@ export const refreshTrafficAlerts = onSchedule(
   {
     schedule: 'every 20 minutes',
     timeZone: 'Asia/Karachi',
-    region: REGION,
+    region: SCHEDULE_REGION,
     timeoutSeconds: 180,
   },
   async () => {

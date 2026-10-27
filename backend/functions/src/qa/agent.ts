@@ -32,7 +32,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 
-import { db } from '../lib/firebase';
+import { db, SCHEDULE_REGION } from '../lib/firebase';
 import { requireAdmin } from '../lib/guards';
 import { pktDayKey, pktDayStart } from '../domain/dailyTarget';
 import { featureContract, unknownFeatureContract } from './features';
@@ -125,6 +125,7 @@ async function runChecks(checks: readonly QaCheck[], now: Date): Promise<RunSumm
 export const runQaAgent = onSchedule(
   {
     schedule: `every ${WAKE_EVERY_MIN} minutes`,
+    region: SCHEDULE_REGION,
     timeZone: 'Asia/Karachi',
     timeoutSeconds: 180,
     memory: '512MiB',

@@ -38,7 +38,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { auth, db, FieldValue, Timestamp } from '../lib/firebase';
+import { auth, db, FieldValue, SCHEDULE_REGION, Timestamp } from '../lib/firebase';
 import { docId, invalid, requireAdmin } from '../lib/guards';
 import { sendToUser } from '../lib/fcm';
 import { applyRole } from '../users';
@@ -531,7 +531,7 @@ async function processVerificationJob(
 const JOBS_PER_RUN = 5;
 
 export const sweepDriverVerificationJobs = onSchedule(
-  { schedule: '* * * * *', timeZone: 'Asia/Karachi', timeoutSeconds: 540, memory: '2GiB' },
+  { schedule: '* * * * *', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION, timeoutSeconds: 540, memory: '2GiB' },
   async () => {
     const snap = await db
       .collection(VERIFICATION_JOBS)

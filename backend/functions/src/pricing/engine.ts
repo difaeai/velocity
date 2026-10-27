@@ -43,7 +43,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { fareCityIdsFor } from '../fare/cityConfig';
 import {
   PRESENCE_COLLECTION,
@@ -61,8 +61,6 @@ import {
   type QueueEntry,
   type ZoneSample,
 } from './types';
-
-const REGION = 'asia-south1';
 
 /** Trip statuses that have a driver committed and therefore unavailable. */
 const BUSY_STATUSES = ['matched', 'arriving', 'arrived', 'in_progress'] as const;
@@ -394,7 +392,7 @@ async function recordPresence(
  * same samples and both append to them.
  */
 export const runPricingTick = onSchedule(
-  { schedule: 'every 1 minutes', region: REGION, maxInstances: 1, timeoutSeconds: 300 },
+  { schedule: 'every 1 minutes', region: SCHEDULE_REGION, maxInstances: 1, timeoutSeconds: 300 },
   async () => {
     const report = await runTick();
     if (report.surging > 0 || report.frozen > 0 || report.forfeited > 0) {

@@ -20,7 +20,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
-import { db, FieldValue } from '../lib/firebase';
+import { db, FieldValue, SCHEDULE_REGION } from '../lib/firebase';
 import { docId, invalid, requireAdmin, requireAuth } from '../lib/guards';
 import { notifyUser } from '../lib/fcm';
 import { getPartnerSettings } from './config';
@@ -35,7 +35,7 @@ import type { PartnerRideStatus, WithdrawalStatus } from './types';
  * one-rupee credits do not each deserve their own scheduled job, and a partner
  * seeing money mature within the half-hour is indistinguishable from instant.
  */
-export const maturePartnerEarnings = onSchedule('every 30 minutes', async () => {
+export const maturePartnerEarnings = onSchedule({ schedule: 'every 30 minutes', region: SCHEDULE_REGION }, async () => {
   const due = await db
     .collection('partner_transactions')
     .where('status', '==', 'pending')
