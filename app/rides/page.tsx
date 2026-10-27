@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 
 import { VelocityMark } from '@/components/BrandMark';
-import { ScreenBook, ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
+import { ScreenEarn, ScreenTrip } from '@/components/site/AppScreens';
 import { Counter } from '@/components/site/Counter';
 import { FareSplit } from '@/components/site/FareSplit';
 import { Marquee } from '@/components/site/Marquee';
@@ -458,10 +459,21 @@ export default function RidesPage() {
       <SiteNav links={RIDE_LINKS} />
 
       <main>
-        {/* ── hero ──────────────────────────────────────────────────────── */}
+        {/* ── hero: the poster, live ─────────────────────────────────────────
+            The owner's "Sasti ride, double kamayi" poster as real text over
+            their own Higgsfield photo of a shared ride in Islamabad, so it is
+            sharp on every screen and readable by a crawler. The QR code is the
+            owner's app link (onelink.to → the Play Store, the App Store or this
+            site, by device). ──────────────────────────────────────────────── */}
         <section className={styles.hero}>
-          <span className={styles.heroAurora} aria-hidden="true" />
-          <span className={styles.heroGrid} aria-hidden="true" />
+          <picture className={styles.heroPhoto}>
+            <source media="(max-width: 1080px)" srcSet="/site/rides-hero-sm.jpg" />
+            <img
+              src="/site/rides-hero.jpg"
+              alt="Two women getting into a shared Velocity Rides car at dusk in Islamabad, the Faisal Mosque behind them."
+              fetchPriority="high"
+            />
+          </picture>
 
           <div className={styles.wrap}>
             <div className={styles.heroLayout}>
@@ -471,26 +483,35 @@ export default function RidesPage() {
                   Now live on iPhone and Android
                 </span>
 
-                {/* Each line rises out of its own mask. The text is real text —
-                    no per-character spans — so it stays selectable and legible
-                    to a crawler with JavaScript switched off. */}
-                <h1 className={styles.heroTitle}>
+                <h1 className={`${styles.heroTitle} ${styles.posterTitle}`}>
                   <span className={styles.line}>
-                    <span style={{ ['--line-delay' as string]: '80ms' }}>Name your fare.</span>
+                    <span style={{ ['--line-delay' as string]: '80ms' }}>Sasti ride,</span>
                   </span>
                   <span className={styles.line}>
-                    <span style={{ ['--line-delay' as string]: '200ms' }}>Split the ride.</span>
-                  </span>
-                  <span className={styles.line}>
-                    <em style={{ ['--line-delay' as string]: '320ms' }}>Keep the change.</em>
+                    <span style={{ ['--line-delay' as string]: '220ms' }}>
+                      <em>Double kamayi!!!</em>
+                    </span>
                   </span>
                 </h1>
 
-                <p className={styles.heroLead}>
-                  Velocity Rides is a ride-hailing app built for how Pakistan actually travels and actually
-                  pays. City rides, pooled seats, intercity trips and couriers — one app, one
-                  account, cash accepted everywhere.
-                </p>
+                <p className={styles.heroLead}>Share the ride. Split the fare.</p>
+
+                <div className={styles.audienceRows}>
+                  <p className={styles.audienceRow}>
+                    <Users />
+                    <span>
+                      <b>Passengers</b>
+                      Register, find a ride, and travel for less.
+                    </span>
+                  </p>
+                  <p className={styles.audienceRow}>
+                    <Car />
+                    <span>
+                      <b>Drivers</b>
+                      Register as a driver, share your route, and earn more with every seat filled.
+                    </span>
+                  </p>
+                </div>
 
                 <div className={styles.heroActions}>
                   <StoreBadge variant="play" />
@@ -498,79 +519,34 @@ export default function RidesPage() {
                 </div>
 
                 <p className={styles.heroNote}>
-                  <Check />
-                  Free to download · Free to join as a driver
+                  <Shield />
+                  Your safety, our priority — the most secure ride-sharing app in town!
                 </p>
 
                 <div className={styles.trustRow}>
                   <span className={styles.trustItem}>
-                    <Banknote />
-                    Cash accepted
-                  </span>
-                  <span className={styles.trustItem}>
                     <BadgeCheck />
-                    Verified drivers
+                    Verified drivers &amp; riders
                   </span>
                   <span className={styles.trustItem}>
-                    <Shield />
-                    In-app SOS
+                    <MapPin />
+                    Live location tracking
                   </span>
                   <span className={styles.trustItem}>
-                    <Mic />
-                    Book by voice
+                    <Clock />
+                    24/7 support
+                  </span>
+                  <span className={styles.trustItem}>
+                    <Bell />
+                    One-tap police help
                   </span>
                 </div>
               </div>
 
-              <div className={styles.heroArt}>
-                <span className={styles.heroGlow} aria-hidden="true" />
-
-                {/* A radar sweep, not decoration for its own sake: it is the
-                    same idea as the live supply map inside the app. */}
-                <span className={styles.heroRings} aria-hidden="true">
-                  <span className={styles.ring} style={{ ['--size' as string]: '300px' }} />
-                  <span
-                    className={styles.ring}
-                    style={{ ['--size' as string]: '420px', ['--ring-delay' as string]: '1.1s' }}
-                  />
-                  <span
-                    className={styles.ring}
-                    style={{ ['--size' as string]: '560px', ['--ring-delay' as string]: '2.2s' }}
-                  />
-                </span>
-
-                <div className={styles.phoneStack}>
-                  <div
-                    className={styles.phone}
-                    role="img"
-                    aria-label="The Velocity Rides booking screen: a route pinned on the map, with a fare of 480 rupees offered and a Find a driver button."
-                  >
-                    <span className={styles.notch} aria-hidden="true" />
-                    <div className={styles.phoneScreen}>
-                      <ScreenBook />
-                    </div>
-                  </div>
-
-                  <div className={`${styles.floatCard} ${styles.floatA}`}>
-                    <span className={styles.floatIcon}>
-                      <Users />
-                    </span>
-                    <span>
-                      <b>3 riders matched</b>
-                      <span>Everyone pays 45%</span>
-                    </span>
-                  </div>
-
-                  <div className={`${styles.floatCard} ${styles.floatB}`}>
-                    <span className={styles.floatIcon}>
-                      <Clock />
-                    </span>
-                    <span>
-                      <b>Driver 2 min away</b>
-                      <span>Tracked live on the map</span>
-                    </span>
-                  </div>
-                </div>
+              <div className={styles.qrCard}>
+                <Image src="/site/rides-qr.png" alt="QR code: scan to download Velocity Rides" width={152} height={152} />
+                <b>Scan to get the app</b>
+                <span>iPhone and Android</span>
               </div>
             </div>
           </div>

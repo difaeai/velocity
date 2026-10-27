@@ -919,39 +919,6 @@
   isolation: isolate;
 }
 
-/* Layer 1 — the aurora. Two slow-drifting radial pools, green and lime. */
-.heroAurora {
-  position: absolute;
-  inset: -30% -10% auto -10%;
-  height: 130%;
-  z-index: -3;
-  background:
-    radial-gradient(48% 42% at 78% 18%, rgba(18, 161, 94, 0.4) 0%, transparent 68%),
-    radial-gradient(38% 34% at 22% 4%, rgba(204, 255, 0, 0.16) 0%, transparent 66%),
-    radial-gradient(60% 50% at 50% 100%, rgba(4, 107, 65, 0.24) 0%, transparent 70%);
-  filter: blur(14px);
-  animation: drift 26s var(--ease) infinite alternate;
-}
-
-@keyframes drift {
-  to {
-    transform: translate3d(-3%, 2%, 0) scale(1.08);
-  }
-}
-
-/* Layer 2 — a faint survey grid, fading out before it reaches the copy. */
-.heroGrid {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 74px 74px;
-  mask-image: radial-gradient(72% 62% at 50% 34%, #000 0%, transparent 78%);
-  -webkit-mask-image: radial-gradient(72% 62% at 50% 34%, #000 0%, transparent 78%);
-}
-
 .heroLayout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
@@ -1098,66 +1065,114 @@
   color: var(--lime);
 }
 
-/* ── hero art ──────────────────────────────────────────────────────────── */
-.heroArt {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 664px;
-}
-
-.heroGlow {
-  position: absolute;
-  width: 118%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(18, 161, 94, 0.34) 0%, transparent 62%);
-  filter: blur(30px);
-}
-
-/* Concentric rings behind the phone — a radar sweep, not decoration for its
-   own sake: it is the same idea as the supply map inside the app. */
-.heroRings {
+/* ── the poster hero (/rides): the photo behind, the poster's words on it ── */
+.heroPhoto {
+  display: block;
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
+  z-index: -2;
 }
 
-.ring {
+.heroPhoto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 72% 42%;
+}
+
+/* Dark where the words are, clear over the riders, and into the page below. */
+.heroPhoto::after {
+  content: "";
   position: absolute;
-  border: 1px solid rgba(204, 255, 0, 0.14);
-  border-radius: 50%;
-  aspect-ratio: 1;
-  width: var(--size);
-  animation: sweep 4.6s var(--ease-out) infinite;
-  animation-delay: var(--ring-delay, 0ms);
-  opacity: 0;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(4, 18, 12, 0.95) 0%, rgba(4, 18, 12, 0.82) 36%, rgba(4, 18, 12, 0.2) 66%, rgba(4, 18, 12, 0.35) 100%),
+    linear-gradient(0deg, var(--ink) 0%, transparent 24%);
 }
 
-@keyframes sweep {
-  0% {
-    transform: scale(0.72);
-    opacity: 0;
-  }
-  22% {
-    opacity: 0.85;
-  }
-  100% {
-    transform: scale(1.18);
-    opacity: 0;
-  }
+.posterTitle {
+  text-transform: uppercase;
+  font-style: italic;
 }
 
-.phoneStack {
-  position: relative;
-  transform: perspective(1400px) rotateY(-13deg) rotateX(4deg) translateZ(0);
-  transition: transform 700ms var(--ease-out);
+/* The lime line slants with the rest; no glow, which the line's mask would cut into a box over the photo. */
+.posterTitle em {
+  font-style: inherit;
+  text-shadow: none;
 }
 
-.heroArt:hover .phoneStack {
-  transform: perspective(1400px) rotateY(-7deg) rotateX(2deg);
+.audienceRows {
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+  margin-bottom: var(--s-5);
+}
+
+.audienceRow {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 13px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-hi);
+  background: rgba(4, 18, 12, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.audienceRow svg {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  color: var(--lime);
+  flex: none;
+}
+
+.audienceRow b {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: 17px;
+  color: var(--lime);
+}
+
+.audienceRow span {
+  font-size: 15px;
+  color: var(--text-mut);
+}
+
+/* Scanned from a laptop screen with a phone; a phone cannot scan itself, so it hides below. */
+.qrCard {
+  justify-self: end;
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(204, 255, 0, 0.35);
+  background: rgba(4, 18, 12, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.qrCard img {
+  width: 152px;
+  height: 152px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.qrCard b {
+  font-family: var(--font-display), sans-serif;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.qrCard span {
+  font-size: 12.5px;
+  color: var(--text-dim);
 }
 
 /* The device frame. Shared with PhoneShowcase and the split sections. */
@@ -1193,73 +1208,6 @@
   border-radius: 33px;
   overflow: hidden;
   background: #f6f9f7;
-}
-
-/* Floating proof cards — the two facts worth interrupting the phone for. */
-.floatCard {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 17px;
-  border-radius: var(--r-md);
-  background: rgba(9, 28, 20, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--line-hi);
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-  max-width: 216px;
-  animation: bob 6.5s var(--ease) infinite alternate;
-}
-
-.floatCard b {
-  display: block;
-  font-family: var(--font-display), sans-serif;
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.01em;
-}
-
-.floatCard span span {
-  font-size: 12.5px;
-  color: var(--text-dim);
-}
-
-.floatIcon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  background: rgba(204, 255, 0, 0.13);
-  color: var(--lime);
-  flex: none;
-}
-
-.floatIcon svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* Both cards clear the device silhouette rather than covering the screen —
-   they annotate the phone, they do not obscure it. */
-.floatA {
-  top: 6%;
-  right: calc(100% - 46px);
-  animation-delay: -1.4s;
-}
-
-.floatB {
-  bottom: 8%;
-  left: calc(100% - 46px);
-}
-
-@keyframes bob {
-  to {
-    transform: translateY(-13px);
-  }
 }
 
 /* ==========================================================================
@@ -2858,12 +2806,22 @@
     gap: var(--s-6);
   }
 
-  .heroCopy {
-    max-width: none;
+  .heroPhoto {
+    position: relative;
+    height: min(52vh, 460px);
+    margin: calc(-1 * clamp(40px, 6vw, 76px)) 0 var(--s-5);
   }
 
-  .heroArt {
-    min-height: 480px;
+  .heroPhoto::after {
+    background: linear-gradient(0deg, var(--ink) 0%, transparent 45%);
+  }
+
+  .qrCard {
+    display: none;
+  }
+
+  .heroCopy {
+    max-width: none;
   }
 
   .split,
@@ -2962,36 +2920,9 @@
     grid-column: span 1;
   }
 
-  .heroArt {
-    min-height: 420px;
-  }
-
   .phone {
     width: 250px;
     --screen-scale: 0.64;
-  }
-
-  .floatA {
-    right: calc(100% - 76px);
-    top: 4%;
-  }
-
-  .floatB {
-    left: calc(100% - 76px);
-    bottom: 6%;
-  }
-
-  .floatCard {
-    max-width: 170px;
-    white-space: normal;
-  }
-
-  .floatCard {
-    padding: 10px 13px;
-  }
-
-  .floatCard b {
-    font-size: 13px;
   }
 
   .fareCar {
@@ -3049,10 +2980,6 @@
   }
 
   .line > span {
-    transform: none;
-  }
-
-  .phoneStack {
     transform: none;
   }
 }

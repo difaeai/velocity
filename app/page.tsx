@@ -68,55 +68,8 @@ function StoreBadge({ variant }: { variant: 'play' | 'ios' }) {
   );
 }
 
+// Studio first: it is the slide that opens when the site loads, and the tab selected under it.
 const SLIDES: HeroSlide[] = [
-  {
-    key: 'rides',
-    voice: '/site/voice/hero-rides.mp3',
-    tab: 'Velocity Rides',
-    sub: 'Book, share the ride, pay less',
-    film: {
-      large: '/site/rides.mp4',
-      small: '/site/rides-sm.mp4',
-      poster: '/site/rides.jpg',
-      label: 'A rider books on her phone in Lahore, a white car picks her up, and a second rider joins her on the way.',
-    },
-    beats: [
-      { at: 0, icon: '📱', title: 'Ride booked', detail: 'A shared ride — the fare is fixed, no haggling' },
-      { at: 4, icon: '🚗', title: 'Your driver is here', detail: 'Verified driver, tracked live on the map' },
-      { at: 7.5, icon: '👥', title: 'A second rider joins on the way', detail: 'Two riders: each pays 60% of the solo fare' },
-    ],
-    copy: (
-      <>
-        <span className={styles.launchPill}>
-          <span className={styles.pulse} aria-hidden="true" />
-          Now live on iPhone and Android
-        </span>
-        <h1 className={styles.heroTitle}>
-          <span className={styles.line}>
-            <span style={{ ['--line-delay' as string]: '80ms' }}>Name your fare.</span>
-          </span>
-          <span className={styles.line}>
-            <span style={{ ['--line-delay' as string]: '200ms' }}>Split the ride.</span>
-          </span>
-          <span className={styles.line}>
-            <em style={{ ['--line-delay' as string]: '320ms' }}>Keep the change.</em>
-          </span>
-        </h1>
-        <p className={styles.heroLead}>
-          Velocity Rides is the ride app built for how Pakistan travels and pays: book a ride, share it with people
-          going your way, pay in cash.
-        </p>
-        <div className={styles.heroActions}>
-          <StoreBadge variant="play" />
-          <StoreBadge variant="ios" />
-        </div>
-        <p className={styles.heroNote}>
-          <Check />
-          <Link href="/rides">How Velocity Rides works →</Link>
-        </p>
-      </>
-    ),
-  },
   {
     key: 'studio',
     voice: '/site/voice/hero-studio.mp3',
@@ -140,11 +93,11 @@ const SLIDES: HeroSlide[] = [
         <span className={styles.eyebrow}>
           <Sparkle /> Velocity Studio
         </span>
-        <h2 className={styles.heroTitle}>
+        <h1 className={styles.heroTitle}>
           Make your own
           <br />
           <em>Digital Marketing Agency.</em>
-        </h2>
+        </h1>
         <p className={styles.heroLead}>
           It reads your market, plans a month of content, posts every day at your time, runs your Meta ads and closes
           your leads — while you run the shop.
@@ -160,6 +113,54 @@ const SLIDES: HeroSlide[] = [
         <p className={styles.heroNote}>
           <Check />
           From ${STUDIO_FROM_USD} a month after the free day · no card
+        </p>
+      </>
+    ),
+  },
+  {
+    key: 'rides',
+    voice: '/site/voice/hero-rides.mp3',
+    tab: 'Velocity Rides',
+    sub: 'Book, share the ride, pay less',
+    film: {
+      large: '/site/rides.mp4',
+      small: '/site/rides-sm.mp4',
+      poster: '/site/rides.jpg',
+      label: 'A rider books on her phone in Lahore, a white car picks her up, and a second rider joins her on the way.',
+    },
+    beats: [
+      { at: 0, icon: '📱', title: 'Ride booked', detail: 'A shared ride — the fare is fixed, no haggling' },
+      { at: 4, icon: '🚗', title: 'Your driver is here', detail: 'Verified driver, tracked live on the map' },
+      { at: 7.5, icon: '👥', title: 'A second rider joins on the way', detail: 'Two riders: each pays 60% of the solo fare' },
+    ],
+    copy: (
+      <>
+        <span className={styles.launchPill}>
+          <span className={styles.pulse} aria-hidden="true" />
+          Now live on iPhone and Android
+        </span>
+        <h2 className={styles.heroTitle}>
+          <span className={styles.line}>
+            <span style={{ ['--line-delay' as string]: '80ms' }}>Name your fare.</span>
+          </span>
+          <span className={styles.line}>
+            <span style={{ ['--line-delay' as string]: '200ms' }}>Split the ride.</span>
+          </span>
+          <span className={styles.line}>
+            <em style={{ ['--line-delay' as string]: '320ms' }}>Keep the change.</em>
+          </span>
+        </h2>
+        <p className={styles.heroLead}>
+          Velocity Rides is the ride app built for how Pakistan travels and pays: book a ride, share it with people
+          going your way, pay in cash.
+        </p>
+        <div className={styles.heroActions}>
+          <StoreBadge variant="play" />
+          <StoreBadge variant="ios" />
+        </div>
+        <p className={styles.heroNote}>
+          <Check />
+          <Link href="/rides">How Velocity Rides works →</Link>
         </p>
       </>
     ),
