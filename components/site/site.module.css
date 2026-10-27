@@ -597,6 +597,68 @@
   color: var(--text-dim);
 }
 
+/* Until the first touch: a label under the speaker asking for the press that starts the sound. */
+.navSoundWrap {
+  position: relative;
+  flex: none;
+  display: grid;
+}
+
+.soundHint,
+.soundHintPhone {
+  position: absolute;
+  top: calc(100% + 14px);
+  z-index: 2;
+  width: 230px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--lime);
+  color: #0b1400;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  box-shadow: var(--shadow-lime);
+  animation: hintBob 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.soundHint {
+  right: -12px;
+}
+
+.soundHint::before,
+.soundHintPhone::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  background: var(--lime);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.soundHint::before {
+  right: 26px;
+}
+
+.soundHintPhone {
+  display: none;
+  right: 0;
+  top: 70px;
+}
+
+.soundHintPhone::before {
+  right: 17px;
+}
+
+@keyframes hintBob {
+  50% {
+    transform: translateY(4px);
+  }
+}
+
 .menuSound {
   display: flex;
   align-items: center;
@@ -2786,9 +2848,13 @@
     gap: 6px;
   }
 
-  /* no room in a phone's header row: the mute is in the menu */
-  .navSound {
+  /* no room in a phone's header row: the mute is in the menu, and the label points at the menu button */
+  .navSoundWrap {
     display: none;
+  }
+
+  .soundHintPhone {
+    display: block;
   }
 
   .footerGrid {
