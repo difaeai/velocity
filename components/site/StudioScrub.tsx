@@ -21,6 +21,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ArrowRight } from './Icons';
+import { hush, say, useAtMiddle } from './siteSound';
 import { useReducedMotion } from './useReducedMotion';
 import site from './site.module.css';
 import styles from './studioScrub.module.css';
@@ -34,6 +35,7 @@ const CHAPTERS = [
   {
     at: 0,
     label: 'Intro',
+    voice: 'film-intro',
     kicker: 'After hours',
     title: 'The shop is closed. Your team isn’t.',
     body: 'Velocity AI Studio gives your business its own AI team. Every scene in this film is a job the team does for you.',
@@ -41,6 +43,7 @@ const CHAPTERS = [
   {
     at: 2.8,
     label: 'Market',
+    voice: 'film-market',
     kicker: '01 · Reads your market',
     title: 'It reads your market first',
     body: 'Your notes and links, a live search of your market, and an audience test — a simulated panel of customers reacts to your offer before you spend a rupee.',
@@ -48,6 +51,7 @@ const CHAPTERS = [
   {
     at: 5,
     label: 'Content',
+    voice: 'film-content',
     kicker: '02 · Makes the content',
     title: 'A month of content, made ahead',
     body: 'Thirty days planned and made — reels with voice-over and music, posts and stories — on a calendar you can change any day.',
@@ -55,6 +59,7 @@ const CHAPTERS = [
   {
     at: 6.8,
     label: 'Posts & ads',
+    voice: 'film-posts',
     kicker: '03 · Posts and advertises',
     title: 'Posted at your time. Ads improved daily.',
     body: 'It posts to Instagram and Facebook at the hour you pick, and the Meta Ad Expert keeps the winners running and stops the losers, inside the daily limit you set.',
@@ -62,6 +67,7 @@ const CHAPTERS = [
   {
     at: 8.4,
     label: 'Leads',
+    voice: 'film-leads',
     kicker: '04 · Closes the leads',
     title: 'Leads followed up, replies drafted',
     body: 'The sales agent writes to businesses that could buy from you, follows up twice, and has your answer drafted the moment someone replies.',
@@ -69,6 +75,7 @@ const CHAPTERS = [
   {
     at: 10,
     label: 'You',
+    voice: 'film-you',
     kicker: '05 · And you',
     title: 'You run the shop. Your team does the rest.',
     body: `The first ${STUDIO_TRIAL_HOURS} hours are free, and the market analysis starts the minute you sign up. No card.`,
@@ -81,7 +88,8 @@ const chapterAt = (t: number) => CHAPTERS.reduce((n, c, i) => (t >= c.at ? i : n
 const stamp = (t: number) => `00:${String(Math.floor(t)).padStart(2, '0')}`;
 
 const never = () => () => {};
-const savingData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+const savingData = () =>
+  (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
 
 export function StudioScrub() {
   const reduced = useReducedMotion();
@@ -91,6 +99,18 @@ export function StudioScrub() {
   const stageRef = useRef<HTMLElement | null>(null);
   const filmRef = useRef<HTMLVideoElement | null>(null);
   const clockRef = useRef<HTMLSpanElement | null>(null);
+  const inView = useAtMiddle(stageRef);
+
+  // Each chapter is read as the film reaches it, while the film holds the middle of the screen (the film is silent).
+  // A chapter scrolled straight past says nothing: it speaks once it has held for a moment.
+  useEffect(() => {
+    if (!inView) return;
+    const t = setTimeout(() => say('film', `/site/voice/${CHAPTERS[chapter].voice}.mp3`), 400);
+    return () => {
+      clearTimeout(t);
+      hush('film');
+    };
+  }, [chapter, inView]);
 
   useEffect(() => {
     const stage = stageRef.current;

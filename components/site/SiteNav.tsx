@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from 'react';
 
 import { AppleMark, Close, GooglePlay, Menu, Person } from './Icons';
+import { SoundToggle } from './siteSound';
 import { VelocityMark } from '@/components/BrandMark';
 import { APP_STORE_URL, PLAY_URL } from '@/lib/site';
 import styles from './site.module.css';
@@ -18,9 +19,11 @@ export type NavLink = { href: string; label: string };
  *
  * It takes its links: the homepage (Velocity Studio) and the ride app's page
  * each point at their own sections. `cta` is the button on the right — the
- * homepage's is the Velocity AI Studio log-in.
+ * homepage's is the Velocity AI Studio log-in. `sound` adds the page's one
+ * mute (a narrated page only), in the header rather than over the content;
+ * on a phone it lives in the menu.
  */
-export function SiteNav({ links, cta }: { links: NavLink[]; cta?: NavLink }) {
+export function SiteNav({ links, cta, sound }: { links: NavLink[]; cta?: NavLink; sound?: boolean }) {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [open, setOpen] = useState(false);
@@ -102,6 +105,8 @@ export function SiteNav({ links, cta }: { links: NavLink[]; cta?: NavLink }) {
             ))}
           </div>
 
+          {sound ? <SoundToggle className={styles.navSound} /> : null}
+
           {cta ? (
             <div className={styles.navCta}>
               <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href}>
@@ -133,6 +138,11 @@ export function SiteNav({ links, cta }: { links: NavLink[]; cta?: NavLink }) {
               <a className={`${styles.btn} ${styles.btnLime}`} href={cta.href} onClick={() => setOpen(false)}>
                 <Person /> {cta.label}
               </a>
+            ) : null}
+            {sound ? (
+              <span className={styles.menuSound}>
+                Narration <SoundToggle className={styles.navSoundMenu} />
+              </span>
             ) : null}
           </div>
         ) : null}

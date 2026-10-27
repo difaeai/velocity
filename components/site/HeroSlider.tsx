@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { hush, say, useAtMiddle } from './siteSound';
 import { useReducedMotion, useSaveData } from './useReducedMotion';
 import styles from './hero.module.css';
 
@@ -36,6 +37,8 @@ export interface HeroSlide {
   film: { large: string; small: string; poster: string; label: string };
   beats: HeroBeat[];
   copy: ReactNode;
+  /** Narration for the (silent) film, read while the slide shows — shorter than the film, or the next slide cuts it. */
+  voice?: string;
 }
 
 export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
@@ -47,7 +50,17 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
   /** Seconds into the shown film, and the share of it played. */
   const [clock, setClock] = useState({ t: 0, share: 0 });
   const films = useRef<(HTMLVideoElement | null)[]>([]);
+  const hero = useRef<HTMLElement>(null);
   const running = !still && !paused;
+  const inView = useAtMiddle(hero);
+
+  // The shown slide's narration, while the hero holds the middle of the screen and the films are not paused.
+  const line = slides[index].voice;
+  useEffect(() => {
+    if (!line || !inView || paused) return;
+    say('hero', line);
+    return () => hush('hero');
+  }, [line, inView, paused]);
 
   // Only the shown film plays; the other one waits.
   useEffect(() => {
@@ -66,7 +79,12 @@ export function HeroSlider({ slides }: { slides: HeroSlide[] }) {
   }, []);
 
   return (
-    <section className={styles.hero} aria-roledescription="carousel" aria-label="Velocity Rides and Velocity Studio">
+    <section
+      ref={hero}
+      className={styles.hero}
+      aria-roledescription="carousel"
+      aria-label="Velocity Rides and Velocity Studio"
+    >
       <div className={styles.stage}>
         {slides.map((s, i) => {
           const on = i === index;
