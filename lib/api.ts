@@ -452,6 +452,10 @@ export const adminApi = {
   mergeLocations: callable<{ keepId: string; mergeId: string }, { ok: boolean }>(
     'adminMergeVelocityLocations',
   ),
+  geocodeAddress: callable<
+    { text: string },
+    { ok: boolean; configured: boolean; detail: { lat: number; lng: number; address: string } | null }
+  >('geocodeAddress'),
 
   // ── Travel Mate admin ─────────────────────────────────────────────────────
   approveTravelMateSubscription: callable<

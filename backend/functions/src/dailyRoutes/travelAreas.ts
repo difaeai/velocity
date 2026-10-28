@@ -15,6 +15,11 @@
  * a shared ride on that route would reach.
  *
  * Riders call it from the home map, drivers from the "Heading somewhere" screen.
+ *
+ * Admins can add demand of their own from the dashboard ("Travel demand"):
+ * adminConfig/travelAreas.seeds, each an area pair with a count of men and
+ * women. Every seeded person becomes one route here, so it groups, tallies and
+ * averages exactly like a rider's saved route, and no app release is needed.
  */
 import { onCall } from 'firebase-functions/v2/https';
 import { z } from 'zod';
@@ -39,6 +44,9 @@ const schema = point.extend({
 /** The radius a saved route matches a shared ride on — dailyRoutes DEFAULT_RADIUS_KM. */
 const SAME_WAY_KM = 3;
 const MAX_ROWS = 40;
+/** Admin-entered demand, written by the dashboard's Travel demand page. */
+export const SEEDS_DOC = 'adminConfig/travelAreas';
+const MAX_SEED_PEOPLE = 99;
 
 type LatLng = { lat: number; lng: number };
 type Gender = 'male' | 'female' | null;
@@ -117,6 +125,28 @@ export function parseRoute(uid: string | undefined, d: Record<string, unknown>):
   return { uid, pickup, dropoff, time };
 }
 
+/**
+ * The admin's seeds as routes, one per seeded person, with their genders.
+ * A seed is shaped like a saved route ({ pickup, dropoff, time }) plus `male`
+ * and `female` counts, so parseRoute validates it the same way.
+ */
+export function seededRoutes(raw: unknown): { routes: SavedRoute[]; genders: Map<string, Gender> } {
+  const routes: SavedRoute[] = [];
+  const genders = new Map<string, Gender>();
+  const count = (v: unknown) => (Number.isInteger(v) && (v as number) > 0 ? Math.min(v as number, MAX_SEED_PEOPLE) : 0);
+  (Array.isArray(raw) ? raw : []).forEach((seed: Record<string, unknown>, n) => {
+    const male = count(seed?.male);
+    const people = male + count(seed?.female);
+    for (let i = 0; i < people; i++) {
+      const r = parseRoute(`seed:${n}:${i}`, seed ?? {});
+      if (!r) return;
+      routes.push(r);
+      genders.set(r.uid, i < male ? 'male' : 'female');
+    }
+  });
+  return { routes, genders };
+}
+
 const km = (a: LatLng, b: LatLng) => haversineM(a.lat, a.lng, b.lat, b.lng) / 1000;
 
 /** Each person once, however many of their routes are in the set. */
@@ -183,15 +213,17 @@ export const getTravelAreas = onCall(async (req) => {
   await rateLimit(uid, 'travelAreas', 20, 60);
 
   // shortcut: reads every saved route per call, as notifyDailyRouteMatches does; fine to a few thousand routes, past that keep a scheduled per-area summary doc and read that instead.
-  const snap = await db.collectionGroup('dailyRoutes').get();
+  const [snap, seedSnap] = await Promise.all([db.collectionGroup('dailyRoutes').get(), db.doc(SEEDS_DOC).get()]);
+  const seeds = seededRoutes(seedSnap.get('seeds'));
   const routes = snap.docs.flatMap((d) => {
     const r = parseRoute(d.ref.parent.parent?.id, d.data());
     return r ? [r] : [];
-  });
+  }).concat(seeds.routes);
 
   const near = routes.filter((r) => km(r.pickup, { lat, lng }) <= radiusKm);
   const same = route ? sameWayRoutes(routes, route, uid) : [];
-  const genders = await readGenders(new Set([...near, ...same].map((r) => r.uid)));
+  const genders = await readGenders(new Set([...near, ...same].map((r) => r.uid).filter((u) => !seeds.genders.has(u))));
+  for (const [u, g] of seeds.genders) genders.set(u, g);
 
   return {
     areas: groupAreas(near, genders).slice(0, MAX_ROWS),

@@ -66,6 +66,7 @@ const APP_NAV: NavGroup[] = [
       // Next to each other because an operator moves between the two mid-call.
       { href: '/dashboard/rides', label: '🧾 Ride record' },
       { href: '/dashboard/locations', label: '📍 Locations' },
+      { href: '/dashboard/travel-areas', label: '🧭 Travel demand' },
       { href: '/dashboard/ride-settings', label: '⚙️ Ride settings' },
       { href: '/dashboard/pricing', label: '🧮 Pricing engine' },
       { href: '/dashboard/market-rates', label: '📊 Market rates' },

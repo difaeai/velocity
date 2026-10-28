@@ -13,6 +13,7 @@ import {
   groupAreas,
   parseRoute,
   sameWayRoutes,
+  seededRoutes,
   tally,
   type SavedRoute,
 } from '../travelAreas';
@@ -78,6 +79,26 @@ describe('groupAreas', () => {
   it('never carries an address or a uid', () => {
     const [row] = groupAreas([route('a', '08:00')], genders);
     expect(JSON.stringify(row)).not.toMatch(/House|Street|Shop|"a"/);
+  });
+});
+
+describe('seededRoutes', () => {
+  it('turns an admin seed into that many people, merged with saved routes', () => {
+    const seeds = seededRoutes([
+      { pickup: { ...F7, address: 'F-7, Islamabad' }, dropoff: { ...BLUE_AREA, address: 'Blue Area' }, male: 2, female: 1, time: '08:30' },
+      { pickup: { lat: 0, lng: 0, address: 'x' }, dropoff: { ...BLUE_AREA, address: 'y' }, male: 5 },
+      { pickup: { ...F7, address: 'F-7' }, dropoff: { ...BLUE_AREA, address: 'Blue Area' }, male: -3, female: '4' },
+      null,
+    ]);
+    expect(seeds.routes).toHaveLength(3);
+    const genders = new Map([...seeds.genders, ['a', 'male' as const]]);
+    expect(groupAreas([route('a', '08:30'), ...seeds.routes], genders)).toEqual([
+      { from: 'F-7', to: 'Blue Area', people: 4, male: 3, female: 1, time: '08:30' },
+    ]);
+  });
+
+  it('is empty when nothing was seeded', () => {
+    expect(seededRoutes(undefined).routes).toEqual([]);
   });
 });
 
