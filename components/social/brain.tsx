@@ -24,14 +24,13 @@ import { useWorkspace } from '@/lib/workspace';
 import {
   adsApi,
   socialApi,
-  SOCIAL_PLATFORMS,
   type AdsConfigDoc,
+  type SalesSettingsDoc,
   type SocialAccountDoc,
   type SocialFormat,
-  type SocialPlatform,
   type SocialSettings,
 } from '@/lib/api';
-import { FORMAT_META, PLATFORM_META, PlatformBadge } from './shared';
+import { FORMAT_META, PLATFORM_META } from './shared';
 import { adMoney } from './ads';
 
 export type Agent = 'team' | 'expert' | 'campaign';
@@ -264,42 +263,137 @@ export function ringSpots(n: number, from = 60, to = 300): { x: number; y: numbe
   });
 }
 
-const RING_STATE = {
-  connected: { word: 'Live', cls: 'live' },
-  error: { word: 'Fix', cls: 'fix' },
-  disconnected: { word: 'Connect', cls: 'off' },
-} as const;
+type Link4 = 'live' | 'fix' | 'off' | 'soon';
+const RING_WORD: Record<Link4, string> = { live: 'Live', fix: 'Fix', off: 'Connect', soon: 'Soon' };
 
-/** Every network round the brain, lit when it is connected — so the home page says where the work goes out. */
-function PlatformRing({ accounts }: { accounts: SocialAccountDoc[] }) {
-  const n = SOCIAL_PLATFORMS.length;
+interface RingNode {
+  key: string;
+  name: string;
+  glyph: string;
+  brand: string;
+  state: Link4;
+  /** Said to a screen reader and on hover: what exactly is connected, or what is wrong. */
+  title: string;
+  href: string | null;
+}
+
+/**
+ * The connections the work runs through — Instagram, Facebook, the sales
+ * mailbox, Meta Ads, Google Ads — each from its own real state. Google Ads has
+ * no integration (the desk writes briefs a person takes into Google Ads, see
+ * seo.ts), so it says Soon rather than offering a Connect that leads nowhere.
+ * A plan without ads or sales does not show those. Pure.
+ */
+export function ringNodes(p: {
+  accounts: SocialAccountDoc[];
+  ads: AdsConfigDoc | null;
+  sales: SalesSettingsDoc | null;
+  adsPaid: boolean;
+  salesPaid: boolean;
+  nowMs: number;
+}): RingNode[] {
+  const social = (platform: 'instagram' | 'facebook'): RingNode => {
+    const a = p.accounts.find((x) => x.platform === platform);
+    const who = a?.handle ? `@${a.handle.replace(/^@/, '')}` : a?.displayName;
+    const name = platform === 'instagram' ? 'Instagram' : 'Facebook';
+    return {
+      key: platform,
+      name,
+      glyph: PLATFORM_META[platform].glyph,
+      brand: PLATFORM_META[platform].brand,
+      state: a?.status === 'connected' ? 'live' : a?.status === 'error' ? 'fix' : 'off',
+      title:
+        a?.status === 'connected'
+          ? `${name}: connected${who ? ` as ${who}` : ''}`
+          : a?.status === 'error'
+            ? `${name}: needs reconnecting${a.lastError ? ` — ${a.lastError}` : ''}`
+            : `${name}: not connected`,
+      href: '/dashboard/social/accounts',
+    };
+  };
+  const smtp = p.sales?.mode === 'mailbox' ? p.sales.smtp : null;
+  const gmail = !smtp || /gmail|googlemail/i.test(smtp.host);
+  const adAccount = p.ads?.adAccountId;
+  const expired = Boolean(adAccount && p.ads?.tokenExpiresAtMs && p.ads.tokenExpiresAtMs < p.nowMs);
+  return [
+    social('instagram'),
+    social('facebook'),
+    ...(p.salesPaid
+      ? [
+          {
+            key: 'mail',
+            name: gmail ? 'Gmail' : 'Email',
+            glyph: '✉',
+            brand: '#ea4335',
+            state: (smtp ? 'live' : 'off') as Link4,
+            title: smtp ? `Mailbox: sending as ${smtp.from || smtp.user}` : 'Mailbox: not connected — the sales agent only writes',
+            href: '/dashboard/social/sales',
+          },
+        ]
+      : []),
+    ...(p.adsPaid
+      ? [
+          {
+            key: 'meta-ads',
+            name: 'Meta Ads',
+            glyph: '∞',
+            brand: '#0866ff',
+            state: (adAccount ? (expired ? 'fix' : 'live') : 'off') as Link4,
+            title: adAccount
+              ? expired
+                ? 'Meta Ads: the token has expired — reconnect the ad account'
+                : `Meta Ads: ad account ${adAccount}`
+              : 'Meta Ads: no ad account connected',
+            href: '/dashboard/social/ads',
+          },
+          {
+            key: 'google-ads',
+            name: 'Google Ads',
+            glyph: 'G',
+            brand: '#4285f4',
+            state: 'soon' as Link4,
+            title: 'Google Ads: not connected yet — the team writes the brief for a person to take into Google Ads',
+            href: null,
+          },
+        ]
+      : []),
+  ];
+}
+
+/** The connections round the brain, lit when connected — so the home page says where the work goes out. */
+function ConnectionRing({ nodes }: { nodes: RingNode[] }) {
+  const n = nodes.length;
   const spots = ringSpots(n);
   const round = ringSpots(n, -90, 270 - 360 / n);
-  const of = (p: SocialPlatform) => accounts.find((a) => a.platform === p);
   return (
     <>
       <svg className="bn-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-        {SOCIAL_PLATFORMS.map((p, i) => {
+        {nodes.map((node, i) => {
           const d = `M50 50 L${spots[i].x} ${spots[i].y}`;
-          const live = of(p)?.status === 'connected';
+          const live = node.state === 'live';
           return (
-            <g key={p} className={live ? 'on' : undefined}>
+            <g key={node.key} className={live ? 'on' : undefined}>
               <path d={d} className="bn-spoke" vectorEffect="non-scaling-stroke" />
               {live ? <path d={d} pathLength={100} className="bn-comet" vectorEffect="non-scaling-stroke" /> : null}
             </g>
           );
         })}
       </svg>
-      <ul className="bn-nets" aria-label="Where the work goes out">
-        {SOCIAL_PLATFORMS.map((p, i) => {
-          const a = of(p);
-          const state = RING_STATE[a?.status ?? 'disconnected'];
-          const who = a?.handle ? `@${a.handle.replace(/^@/, '')}` : a?.displayName;
-          const label = `${PLATFORM_META[p].label}: ${a?.status === 'connected' ? `connected${who ? ` as ${who}` : ''}` : a?.status === 'error' ? 'needs reconnecting' : 'not connected'}`;
+      <ul className="bn-nets" aria-label="Connections">
+        {nodes.map((node, i) => {
+          const body = (
+            <>
+              <span className="bdg" style={{ background: node.brand }} aria-hidden>
+                {node.glyph}
+              </span>
+              <span className="nm">{node.name}</span>
+              <span className="st">{RING_WORD[node.state]}</span>
+            </>
+          );
           return (
             <li
-              key={p}
-              className={`bn-net ${state.cls}`}
+              key={node.key}
+              className={`bn-net ${node.state}`}
               style={vars({
                 '--x': `${spots[i].x}%`,
                 '--y': `${spots[i].y}%`,
@@ -308,11 +402,15 @@ function PlatformRing({ accounts }: { accounts: SocialAccountDoc[] }) {
                 '--d': `${i * 0.08}s`,
               })}
             >
-              <Link href="/dashboard/social/accounts" title={a?.lastError && a.status === 'error' ? `${label} — ${a.lastError}` : label} aria-label={label}>
-                <PlatformBadge platform={p} size={26} />
-                <span className="nm">{PLATFORM_META[p].label.replace(' Page', '')}</span>
-                <span className="st">{state.word}</span>
-              </Link>
+              {node.href ? (
+                <Link href={node.href} title={node.title} aria-label={node.title}>
+                  {body}
+                </Link>
+              ) : (
+                <span className="bn-node" title={node.title} aria-label={node.title} role="img">
+                  {body}
+                </span>
+              )}
             </li>
           );
         })}
@@ -334,6 +432,8 @@ function PlatformRing({ accounts }: { accounts: SocialAccountDoc[] }) {
 export function Brain({
   settings,
   accounts,
+  sales,
+  nowMs,
   ads,
   want,
   onWant,
@@ -348,6 +448,9 @@ export function Brain({
 }: {
   settings: SocialSettings;
   accounts: SocialAccountDoc[];
+  sales: SalesSettingsDoc | null;
+  /** 0 until the page has read the clock: an ad token is never called expired on the first paint. */
+  nowMs: number;
   ads: AdsConfigDoc | null;
   want: SocialFormat;
   onWant: (w: SocialFormat) => void;
@@ -511,7 +614,9 @@ export function Brain({
             })}
           </svg>
           <div className="bn-brainbox ringed">
-            <PlatformRing accounts={accounts} />
+            <ConnectionRing
+              nodes={ringNodes({ accounts, ads, sales, adsPaid, salesPaid: includes('sales'), nowMs })}
+            />
             <BrainArt />
           </div>
           <div className="bn-agents" role="radiogroup" aria-label="Who does it">
@@ -824,18 +929,20 @@ export const BRAIN_CSS = `
 .bn-net { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); pointer-events: auto;
   animation: bn-pop .5s cubic-bezier(.2,.9,.3,1.3) both; animation-delay: var(--d); }
 @keyframes bn-pop { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
-.bn-net a { display: grid; justify-items: center; gap: 2px; min-width: 60px; padding: 5px 6px; border-radius: 13px; text-decoration: none;
+.bn-net a, .bn-node { display: grid; justify-items: center; gap: 2px; min-width: 64px; padding: 5px 6px; border-radius: 13px; text-decoration: none;
   color: #e8f5ec; background: rgba(9,20,13,.86); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(6px);
   transition: transform .2s ease, border-color .2s ease; }
 .bn-net a:hover, .bn-net a:focus-visible { transform: translateY(-2px); border-color: rgba(204,255,0,.6); }
+.bn-net .bdg { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; font-weight: 900; font-size: 13px; }
 .bn-net .nm { font-size: 10px; font-weight: 800; white-space: nowrap; }
 .bn-net .st { font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; border-radius: 99px; padding: 1px 7px; }
 .bn-net.live a { border-color: rgba(204,255,0,.55); box-shadow: 0 0 18px -4px rgba(204,255,0,.6); }
 .bn-net.live .st { background: var(--lime); color: var(--ink); }
 .bn-net.fix a { border-color: rgba(245,179,1,.6); }
 .bn-net.fix .st { background: #f5b301; color: #1a1300; }
-.bn-net.off .st { background: rgba(255,255,255,.08); color: #a9c2b4; }
-.bn-net.off a > span:first-child { filter: grayscale(1); opacity: .5; }
+.bn-net.off .st, .bn-net.soon .st { background: rgba(255,255,255,.08); color: #a9c2b4; }
+.bn-net.off .bdg, .bn-net.soon .bdg { filter: grayscale(1); opacity: .5; }
+.bn-net.soon .bn-node { border-style: dashed; }
 @media (max-width: 1180px) {
   .bn-grid { grid-template-columns: minmax(0, 1fr); }
   .bn-out { display: none; }

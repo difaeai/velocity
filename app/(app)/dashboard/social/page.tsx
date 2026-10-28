@@ -335,6 +335,8 @@ export default function SocialOverview() {
           <Brain
             settings={settings}
             accounts={accounts}
+            sales={sales}
+            nowMs={nowMs}
             ads={ads}
             want={want}
             onWant={setWant}
