@@ -21,7 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freeModelReady, freeModelText, resolveFreeModel } from '../freeModel';
-import { activeEngine, generateText, modelReady, outOfCredit, resetEngineBench } from '../engine';
+import { activeEngine, generateText, modelGone, modelReady, outOfCredit, resetEngineBench } from '../engine';
 import { DEFAULT_FREE_MODEL } from '../types';
 
 const saved = {
@@ -124,6 +124,20 @@ describe('which engine answers', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failure(400, 'Invalid argument: the prompt is empty')));
     await expect(generateText({ model: '', system: 's', prompt: 'p' })).rejects.toThrow(/400/);
     expect(activeEngine()).toBe('gemini');
+  });
+
+  it('benches the free model when its model id is gone, so the local writer takes over', async () => {
+    // What production said for every story of the November batch, 2026-10-27.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failure(404, 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.')));
+    await expect(generateText({ model: '', system: 's', prompt: 'p' })).rejects.toThrow(/404/);
+    expect(activeEngine()).toBe('local');
+    expect(modelReady()).toBe(false);
+  });
+
+  it('knows a retired model from a bad request', () => {
+    expect(modelGone('404: The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.')).toBe(true);
+    expect(modelGone('The model `x` has been decommissioned and is no longer supported.')).toBe(true);
+    expect(modelGone('400: Invalid argument')).toBe(false);
   });
 
   it('knows a spent account from a bad request', () => {

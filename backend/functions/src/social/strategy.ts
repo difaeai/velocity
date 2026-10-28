@@ -26,6 +26,7 @@ import { brandBlock, researchBlock, systemFor } from './crew';
 import { activeTeam, assign } from './employees';
 import { activeEngine, generateJson, modelReady } from './engine';
 import { planningResearch } from './market';
+import { CONTENT_MIX } from './playbook';
 import { getSocialSettings } from './settings';
 import { DEFAULT_SETTINGS, FORMATS, type ContentFormat, type ContentResearch, type SocialSettings } from './types';
 
@@ -173,6 +174,9 @@ const TASK = (month: string, perDay: number, formats: readonly ContentFormat[]) 
 - A theme for each week, and what that week builds towards.
 - For EVERY day of the month: ${perDay} piece${perDay === 1 ? '' : 's'}, each with a format (ONLY one of: ${formats.join(', ')} — the owner chose these, never use another), a topic specific enough to film or design today, a hook line, and the pillar it belongs to. No two pieces on one day share a format. Vary the formats across the week${formats.includes('reel') ? '; reels carry reach' : ''}.
 - No two days may share a topic, and no week may repeat the same kind of story: a month of one idea in different words is the commonest way a feed goes dead.
+- Pillars and days follow the mix below: most days entertain, a few teach, few sell. A pillar named after a product feature is an advert pillar — at most one.
+
+${CONTENT_MIX}
 - Lean on dates that matter to this audience this month — paydays, holidays, the season — but only ones you are sure of.
 - 3-5 paid campaigns worth running this month: objective, who, and the offer, one line each.
 - 3-5 sales moves: which kind of customer or business to approach this month, and the opening line, one line each.

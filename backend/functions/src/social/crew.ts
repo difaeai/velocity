@@ -166,7 +166,8 @@ export function systemFor(
 
 /** The research block, rendered for a prompt. Empty when research was skipped. */
 export function researchBlock(research: ContentResearch | null): string {
-  if (!research || research.error) return '';
+  // A failed search still carries the accounts' real numbers; its lists are simply empty.
+  if (!research) return '';
   const lines = [
     research.trends.length ? `Travelling right now: ${research.trends.join(' | ')}` : '',
     research.competitorMoves.length ? `What the other apps are doing: ${research.competitorMoves.join(' | ')}` : '',
@@ -298,7 +299,8 @@ Reply with one JSON object and nothing else:
     prompt: [
       `FORMAT: ${spec.label} — ${spec.brief}`,
       `Aspect ${spec.aspect}${spec.seconds ? `, about ${spec.seconds} seconds` : ''}${spec.slides > 1 ? `, ${spec.slides} slides` : ''}.`,
-      `TODAY'S ANGLE: ${params.angle}`,
+      // The month plan wrote this weeks ago; this morning's read is newer, and the owner wants the day decided by it.
+      `TODAY'S ANGLE (from the month plan — keep it unless this morning's read shows something better for today): ${params.angle}`,
       '',
       `FACTS (the only numbers anyone may use):\n${JSON.stringify(params.facts, null, 2)}`,
       '',

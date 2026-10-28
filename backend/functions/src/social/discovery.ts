@@ -25,8 +25,16 @@ import type { AccountRead } from './types';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 
-/** How many accounts one morning reads. Each is one Graph call. */
-export const MAX_ACCOUNTS = 8;
+/** How many accounts one morning reads. Each is one free Graph call. */
+export const MAX_ACCOUNTS = 14;
+
+/**
+ * Velocity's own desk also studies brands next door whose posts travel — not
+ * rivals, so never in the competitor list the search reads around. Handles
+ * taken from each brand's own site where it links one (rapidoapp, zomato);
+ * one Instagram will not answer for is skipped and logged, never guessed at.
+ */
+export const HOUSE_STUDY = ['rapidoapp', 'zomato', 'swiggyindia', 'letsblinkit'];
 
 /** An Instagram username as people write it — "@careem", a profile link — cut to the handle, or null. */
 export function handleOf(raw: string): string | null {

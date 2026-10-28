@@ -1111,15 +1111,17 @@ async function createPost(opts: {
     publishedAt: null,
   });
 
-  await runTeam({
-    id,
-    date: opts.date,
-    format: opts.format,
-    angle,
-    stages: ALL_STAGES,
-    targets,
-    standup: true,
-  });
+  const team = { id, date: opts.date, format: opts.format, angle, stages: ALL_STAGES, targets, standup: true };
+  const engineAtStart = activeEngine();
+  try {
+    await runTeam(team);
+  } catch (e) {
+    // The last model refused mid-piece and sat out (Groq's retired Llama failed 23 stories this way):
+    // every stage now takes its local branch, so the local writer makes it rather than leave a red card.
+    if (engineAtStart === 'local' || modelReady()) throw e;
+    await patch(id, { error: null });
+    await runTeam(team);
+  }
   // Only pieces a model made: the meter divides the month's content spend by these.
   if (modelReady()) void recordPiece();
   return id;

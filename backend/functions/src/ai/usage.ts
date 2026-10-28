@@ -124,7 +124,10 @@ export async function recordPiece(wid: string = currentWorkspace()): Promise<voi
   try {
     await db
       .doc(`aiUsage/${usageId(wid)}`)
-      .set({ month: monthKey(), wid, pieces: FieldValue.increment(1), updatedAtMs: Date.now() }, { merge: true });
+      .set(
+        { month: monthKey(), wid, pieces: FieldValue.increment(1), byDayPieces: { [dayOfMonth()]: FieldValue.increment(1) }, updatedAtMs: Date.now() },
+        { merge: true },
+      );
   } catch (err) {
     logger.warn('ai: could not count a piece', { wid, message: (err as Error).message });
   }

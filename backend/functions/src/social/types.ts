@@ -748,11 +748,13 @@ export interface Competitor {
 }
 
 /** Who else is in this market. The team reads around these, never copies them. */
+// Instagram handles Business Discovery answered for on 2026-10-28 (Bykea's site links none). Without them the morning read
+// had nobody to read: accounts [] every day before that.
 export const DEFAULT_COMPETITORS: Competitor[] = [
-  { name: 'Careem', url: 'https://www.careem.com/pk' },
-  { name: 'inDrive', url: 'https://indrive.com/en-pk/' },
+  { name: 'Careem', url: 'https://www.careem.com/pk', instagram: 'careempak' },
+  { name: 'inDrive', url: 'https://indrive.com/en-pk/', instagram: 'indrive.pk' },
   { name: 'Bykea', url: 'https://bykea.com/' },
-  { name: 'Yango', url: 'https://yango.com/en_pk/' },
+  { name: 'Yango', url: 'https://yango.com/en_pk/', instagram: 'yango.pakistan' },
 ];
 
 // ── engagement ──────────────────────────────────────────────────────────────
@@ -836,6 +838,10 @@ export interface SocialSettings {
    * batch is made. 0 makes each day on the day. 30 everywhere since 2026-10-24;
    * batches rather than a rolling window since 2026-10-27, because the owner
    * saw the AI called every day once the month was already made.
+   *
+   * 0 by default since 2026-10-28, the owner's call: a month written on one
+   * day never saw a single morning's research ("roz team research kry… roz k
+   * roz kren"), and the cost lands a day at a time instead of all at once.
    */
   makeAheadDays: number;
   /** The last day the made calendar reaches. Set when a batch is finished. */
@@ -983,15 +989,16 @@ export const DEFAULT_FREE_MODEL_URL = 'https://api.groq.com/openai/v1';
  * And which model there. A production id rather than a preview one, because
  * this runs unattended at 10am: a preview model can be withdrawn between one
  * morning and the next. `FREE_MODEL_ID` overrides it without a deploy, and the
- * console's own model box overrides both.
+ * console's own model box overrides both. Groq shut down the Llama 3.3 70B
+ * this used to name on 2026-08-16; gpt-oss-120b is its listed replacement.
  */
-export const DEFAULT_FREE_MODEL = 'llama-3.3-70b-versatile';
+export const DEFAULT_FREE_MODEL = 'openai/gpt-oss-120b';
 
 export const DEFAULT_SETTINGS: SocialSettings = {
   enabled: false,
   runHour: 10,
   postsPerDay: 1,
-  makeAheadDays: 30,
+  makeAheadDays: 0,
   dailyStory: true,
   platforms: ['facebook', 'instagram'],
 
