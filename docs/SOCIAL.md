@@ -714,6 +714,25 @@ under `SOCIAL_TOKEN_KEY` at `system/socialMetaApp/secret/credentials`. If
 both, the `WHATSAPP_APP_ID`/`WHATSAPP_APP_SECRET` pair already deployed for the
 WhatsApp Cloud API is used, because it belongs to the same Meta app.
 
+### Google Ads: one button, read only (2026-10-28)
+
+`googleAds.ts`, the same handshake as Meta's: an admin stores the app once on
+Connected accounts → Google Ads (an OAuth client from Google Cloud with the Google
+Ads API enabled, the **developer token** from a manager account's API Center, and
+the manager id if the ads account sits under one), then "Continue with Google"
+→ `/connect/google-ads` → pick the account. The refresh token is sealed at
+`system/socialAds/secret/google` (never in Meta's `secret/credentials`, which
+Meta's connect overwrites); the account's name sits on the ads config as
+`google`, which is what the Brain lights.
+
+It **reads**: the last 30 days and the ten biggest campaigns on Connected
+accounts, and the last 7 days' spend added to blended ROAS (converted PKR⇄USD,
+left out for any other currency). It **never creates or changes a campaign** —
+that spends money and nothing here has met a live account yet. A developer token
+still on test access answers only for test accounts, in Google's own words.
+API version is one constant, `GOOGLE_ADS_API` (v26 on 2026-10-28; Google sunsets
+each about a year after release).
+
 ### Everything else: a paste
 
 For the networks Meta does not own, connecting is a **paste, not a redirect**.

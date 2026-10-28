@@ -84,6 +84,7 @@ import { underlay } from './footage';
 import { latestPageRead } from './insights';
 import { pictureFor } from './picture';
 import { planReel, renderReel, stockQuery } from './reel';
+import { googleAdsSpend } from './googleAds';
 import { getSocialSettings } from './settings';
 import { planRef, type MonthPlan } from './strategy';
 import { open, tokenVaultReady, type SealedSecret } from './secrets';
@@ -1102,9 +1103,11 @@ async function syncAds(): Promise<string> {
         logger.warn('ads: could not read our own rides for cost per order', { message: (e as Error).message });
         return null;
       });
+  // Blended means every ad rupee: Google's spend over the same seven days, when an account is connected.
+  const google = rides ? await googleAdsSpend(cfg.currency) : null;
   const returns = rides
     ? blended({
-        spend: totals.spend,
+        spend: totals.spend + (google ?? 0),
         currency: cfg.currency,
         orders: rides.reduce((n, d) => n + d.tripsCompleted, 0),
         commission: rides.reduce((n, d) => n + d.commission, 0),
