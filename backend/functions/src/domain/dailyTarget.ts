@@ -252,7 +252,7 @@ export function dailyTargetProgress(
   const blockers: TargetBlocker[] = [];
 
   if (day.qualifyingRides < target) {
-    const kind = poolOnly ? 'pool rides' : 'rides';
+    const kind = poolOnly ? 'sharing rides' : 'rides';
     blockers.push({
       key: 'rides',
       label:

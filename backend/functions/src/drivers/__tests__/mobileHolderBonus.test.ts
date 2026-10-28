@@ -15,7 +15,7 @@ const sweep = () => grantMobileHolderBonuses.run({} as never);
 describe('grantMobileHolderBonuses', () => {
   beforeEach(clearFirestore);
 
-  it('gives each approved driver PKR 2,000 once, and it pays a closed day', async () => {
+  it('gives each approved driver PKR 1,000 once, and it pays a closed day', async () => {
     // Yesterday closed on PKR 10,000 cash: 5% = 500 owed, so this driver is locked.
     await db().doc('drivers/approved').set({
       verificationStatus: 'approved',

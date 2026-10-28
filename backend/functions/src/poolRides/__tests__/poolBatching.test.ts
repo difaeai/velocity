@@ -218,7 +218,7 @@ describe('pool batching simulation — F-8 Markaz → Blue Area', () => {
     expect((await queuedRequests('male')).length).toBe(0);
 
     const bilalNotifs = await notificationsOf(BILAL);
-    expect(bilalNotifs.some((n) => String(n.title).includes('Pool Seat Confirmed'))).toBe(true);
+    expect(bilalNotifs.some((n) => String(n.title).includes('Sharing ride seat confirmed'))).toBe(true);
 
     // ── 6. Ride is full — a fifth passenger is rejected ──────────────────────
     // (status flips to 'full', so the join is refused at the status gate)

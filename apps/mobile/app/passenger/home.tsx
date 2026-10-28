@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Text } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '../../src/auth/AuthContext';
@@ -28,25 +29,23 @@ import { useNearbyBusinessAdCheck } from '../../src/hooks/businessAds';
 import { useMessagesUnreadTotal } from '../../src/hooks/messages';
 import { useSupportUnread } from '../../src/hooks/support';
 import { useDailyRoutes, useMyProfile } from '../../src/hooks/passenger';
-import { HOME_SUGGESTED_RADIUS_KM, useSuggestedRides } from '../../src/hooks/suggestedRides';
+import { useSuggestedRides } from '../../src/hooks/suggestedRides';
 import { colors } from '../../src/config';
 import { otherLanguageLabel, otherLanguageTag, toggleLanguage } from '../../src/i18n';
 import { getThemeMode, themed, toggleTheme } from '../../src/theme';
 import { DEFAULT_SNAP_POINTS, DraggableSheet } from '../../src/ui/DraggableSheet';
 import { LiveMap } from '../../src/ui/LiveMap';
-import { NewsTicker } from '../../src/ui/NewsTicker';
 import {
   ShareGenderPill,
   ShareGenderSheet,
   useNeedsShareGender,
 } from '../../src/ui/ShareGenderSelector';
-import { RouteTimePill, RouteTimeSheet } from '../../src/ui/RouteTimeSelector';
 import { TravelAreasPill, TravelAreasSheet } from '../../src/ui/TravelAreas';
 import { PassengerDrawer } from '../../src/ui/PassengerDrawer';
 import { TravelMateCard } from '../../src/ui/TravelMateCard';
 import { EarnCard } from '../../src/ui/EarnCard';
 import { ArrowIcon, MicIcon, SearchIcon } from '../../src/ui/ServiceIcons';
-import { PoolIcon, SoloIcon } from '../../src/ui/RideIcons';
+import { MotoIcon, PoolIcon } from '../../src/ui/RideIcons';
 import { isRecognitionAvailable } from '../../src/voice/speech';
 
 /**
@@ -84,11 +83,9 @@ export default function PassengerHome() {
   // phone sign-in. Feeds the card at the top of the menu.
   const me = useMyProfile(user?.uid);
 
-  // The rider's regular trips (pickup, drop-off, optional time) for the
-  // "Location & time" pill on the map and the sheet it opens. 'add' is the
-  // pill's + button, which opens straight on a new route.
+  // The rider's regular trips — the places saved on the Corporate / daily
+  // screen, counted on its tile.
   const routes = useDailyRoutes(user?.uid);
-  const [routeSheet, setRouteSheet] = useState<'list' | 'add' | null>(null);
   // "Locations people are traveling to": everyone's saved routes, as areas.
   const [areasOpen, setAreasOpen] = useState(false);
 
@@ -143,29 +140,8 @@ export default function PassengerHome() {
   useNearbyBusinessAdCheck(coords);
 
   // Shared cars around this rider that still have a seat — every pooling
-  // subsystem merged into one count. This is the number behind the Suggested
-  // Rides row below "Where to?": it is the difference between "tap to find out"
-  // and "three cars are going your way right now", and only the second one is
-  // worth a tap.
+  // subsystem merged into one count, badged on the Corporate / daily tile.
   const suggested = useSuggestedRides(coords);
-
-  // "♀ 2 women's · ♂ 1 men's · 3 open" — only the groups that exist, so the
-  // line never pads itself out with zeroes.
-  const suggestedSplit = (() => {
-    const { female, male, mixed, open } = suggested.byAudience;
-    const parts: string[] = [];
-    if (female) parts.push(`♀ ${female} women’s`);
-    if (male) parts.push(`♂ ${male} men’s`);
-    if (mixed) parts.push(`♂♀ ${mixed} mixed`);
-    if (open) parts.push(`${open} open`);
-    return parts.length > 0 ? parts.join(' · ') : null;
-  })();
-
-  // The one lime line on the shared-rides tile: who is in those cars if we know,
-  // otherwise the cheapest seat going. Never both — the tile is half a screen
-  // wide and a second line of detail is what makes it a wall of text.
-  const suggestedAccent =
-    suggestedSplit ?? (suggested.cheapestFare ? `From PKR ${suggested.cheapestFare}` : null);
 
   // Checked once on mount rather than per render: the answer is a property of
   // the handset and cannot change while the app is open.
@@ -301,12 +277,6 @@ export default function PassengerHome() {
           </View>
         </View>
 
-        {/* One scrolling line, directly under the header: anyone — not only
-            drivers — can bring people onto Velocity and earn from their rides.
-            A strip instead of a card so it can't take space away from the
-            booking controls or hide anything in the sheet. */}
-        <NewsTicker onPress={() => router.push('/passenger/earn')} />
-
         {/* ── The ride already in progress, if there is one.
              Pinned over the map, not in the sheet: the first thing a rider
              sees when they come back to the app — after Back, after a call,
@@ -339,7 +309,7 @@ export default function PassengerHome() {
           </Pressable>
         ) : null}
 
-        {/* Under the ticker (and a live ride, if any) the map splits in two:
+        {/* Under the header (and a live ride, if any) the map splits in two:
             the rider's own settings down the left, and what everyone else is
             doing down the right. Both sides are box-none, so the map between
             them still pans. */}
@@ -352,16 +322,6 @@ export default function PassengerHome() {
                 moment the app opens, and it is where a shared-ride tap is sent
                 when it has not been answered. */}
             <ShareGenderPill onPress={() => setGenderSheet({ next: null })} />
-
-            {/* Where and when this rider usually travels. Saved routes are what
-                the backend matches every new shared ride against, so this is
-                how a shared ride finds the rider instead of the other way
-                round. See src/ui/RouteTimeSelector.tsx. */}
-            <RouteTimePill
-              routes={routes}
-              onOpen={() => setRouteSheet('list')}
-              onAdd={() => setRouteSheet('add')}
-            />
           </View>
 
           {/* Where people around here travel: every saved route as a pickup
@@ -453,95 +413,64 @@ export default function PassengerHome() {
         </View>
 
         {/* ── The two ways to ride ──────────────────────────────
-             Share a car, or have it to yourself. Side by side because that is
-             the actual choice in front of a rider, and it belongs here rather
-             than three taps deep inside the booking sheet.
+             The daily trip shared with people going the same way (office,
+             campus, anywhere regular), or a bike — for the rider or for their
+             parcel. A solo car is still "Where to?" above.
 
-             City to City used to hold the right-hand tile. It is a journey
-             planned for another day, not one hailed off the map in front of
-             you, so it has moved to the drawer under Corporate / Students and this
-             row asks the one question home should be asking.
-
-             Who you will share WITH is asked on the map now, not under these
-             tiles — see ShareGenderPill. ── */}
+             Who you will share WITH is asked on the map, not under these
+             tiles — see ShareGenderPill; the booking sheet asks it again before
+             a first shared seat. ── */}
         <Rise progress={sheetIn} index={0}>
           <Text style={styles.sectionLabel}>How will you ride?</Text>
         </Rise>
 
-        {/* The sheet as riders knew it before the 2x2 grid (owner's ask,
-            2026-10-25): the two ride tiles with their full lines, then Travel
-            Partner and Earn as big animated cards. "Travel the same way every
-            day?" stays off — the map's Location & time pill does that job. */}
         <Rise progress={sheetIn} index={1}>
           <View style={styles.rideTiles}>
-            {/* Shared cars near this rider that still have a seat, whichever
-                way they were created — a shared ride somebody booked, riders
-                clubbing together, or a driver selling seats on a route they are
-                already driving. Full cars never appear (the server drops them),
-                so the count is seats that can actually be taken.
-
-                Tapping it with the sharing preference unanswered opens the
-                chooser first and comes back here — see goSharing. */}
+            {/* Where the rider works, studies or usually goes, and a shared
+                ride there with anyone making the same trip — see
+                app/passenger/daily-travel.tsx. The badge is the shared cars
+                near them with a seat free right now. Through goSharing, like
+                every way into a shared seat. */}
             <Pressable
-              style={({ pressed }) => [styles.rideTile, styles.rideTileLime, pressed && { opacity: 0.85 }]}
-              onPress={() => goSharing('/passenger/suggested-rides')}
+              style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+              onPress={() => goSharing('/passenger/daily-travel')}
               accessibilityRole="button"
-              accessibilityLabel="Shared rides — cars near you with a seat free"
+              accessibilityLabel="Corporate, Students or daily go-to — share your regular ride"
             >
-              <View style={styles.rideTileTop}>
-                <View style={styles.rideTileIconLime}>
-                  <PoolIcon size={19} color="#ccff00" accent="#ccff00" />
+              <TileGlow id="tileCorporate" />
+              <View style={styles.tileHead}>
+                <View style={styles.tileIcon}>
+                  <PoolIcon size={20} color="#0b0d0c" accent="#0b0d0c" />
                 </View>
                 {suggested.count > 0 ? (
-                  <View style={styles.suggestedCount}>
-                    <Text style={styles.suggestedCountTxt}>{suggested.count}</Text>
+                  <View style={styles.liveBadge}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.liveBadgeTxt}>{suggested.count} live</Text>
                   </View>
                 ) : (
-                  <ArrowIcon size={18} color="#7d8482" />
+                  <ArrowIcon size={16} color="#ccff00" />
                 )}
               </View>
-              <Text style={styles.rideTileTitle} numberOfLines={1}>Shared rides</Text>
-              <Text style={styles.rideTileSub} numberOfLines={2}>
-                {!suggested.loaded
-                  ? 'Looking for seats near you…'
-                  : suggested.count === 0
-                    ? `None within ${HOME_SUGGESTED_RADIUS_KM} km — tap to search wider`
-                    : suggested.nearestDestination
-                      ? `${suggested.count} going your way · ${suggested.nearestDestination}`
-                      : `${suggested.count} seat${suggested.count === 1 ? '' : 's'} free near you`}
-              </Text>
-              {/* Which of those cars are the women's, the men's and the mixed
-                  ones — or, failing a tally, the cheapest seat. A rider's first
-                  question about a shared seat is who else is in it. */}
-              {suggestedAccent ? (
-                <Text style={styles.rideTileAccent} numberOfLines={1}>{suggestedAccent}</Text>
-              ) : null}
+              <Text style={styles.tileTitle} numberOfLines={2}>Corporate & Students</Text>
+              <Text style={styles.tileSub} numberOfLines={1}>or your daily go-to</Text>
             </Pressable>
 
-            {/* The whole car, to yourself. Straight into the booking flow with
-                Solo already chosen (`mode=solo`), because a rider who tapped
-                "Ride Solo" has already answered the only question the ride
-                sheet would have asked them about sharing. No lime: that edge
-                means "shared, near you, right now". */}
+            {/* A bike ride, or a parcel on one — app/passenger/bike.tsx. */}
             <Pressable
-              style={({ pressed }) => [styles.rideTile, pressed && { opacity: 0.85 }]}
-              onPress={() => router.push('/passenger/booking?mode=solo')}
+              style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+              onPress={() => router.push('/passenger/bike')}
               accessibilityRole="button"
-              accessibilityLabel="Ride Solo — the whole car to yourself"
+              accessibilityLabel="Bike — book a bike ride or send a parcel"
             >
-              <View style={styles.rideTileTop}>
-                <View style={styles.rideTileIcon}>
-                  <SoloIcon size={19} color="#ffffff" />
+              <TileGlow id="tileBike" />
+              <View style={styles.tileHead}>
+                <View style={styles.tileIcon}>
+                  <MotoIcon size={22} color="#0b0d0c" accent="#0b0d0c" />
                 </View>
-                <ArrowIcon size={18} color="#7d8482" />
+                <ArrowIcon size={16} color="#ccff00" />
               </View>
-              <Text style={styles.rideTileTitle} numberOfLines={1}>Ride Solo</Text>
-              <Text style={styles.rideTileSub} numberOfLines={2}>
-                The whole car to yourself — nobody else joins
-              </Text>
-              <Text style={styles.rideTileAccentMuted} numberOfLines={1}>
-                Name your own fare
-              </Text>
+              <Text style={styles.tileTitle} numberOfLines={2}>Bike</Text>
+              <Text style={styles.tileSub} numberOfLines={1}>Ride or send a parcel</Text>
             </Pressable>
           </View>
         </Rise>
@@ -598,27 +527,15 @@ export default function PassengerHome() {
         }
       />
 
-      {/* "Location & time": the rider's saved routes, or the editor for one.
-          A new route starts from where they are standing. */}
-      <RouteTimeSheet
-        open={routeSheet !== null}
-        startWith={routeSheet ?? 'list'}
-        routes={routes}
-        uid={user?.uid}
-        here={coords && currentAddress ? { lat: coords.lat, lng: coords.lng, address: currentAddress } : null}
-        onClose={() => setRouteSheet(null)}
-      />
-
-      {/* "Locations people are traveling to". Its "Add your route" hands over
-          to the Location & time editor once this sheet is off the screen:
-          two Modals swapping in one frame leaves the first one behind on iOS. */}
+      {/* "Locations people are traveling to". Its "Add your route" opens the
+          Corporate / daily screen once this sheet is off the screen. */}
       <TravelAreasSheet
         open={areasOpen}
         coords={coords}
         onClose={() => setAreasOpen(false)}
         onAdd={() => {
           setAreasOpen(false);
-          setTimeout(() => setRouteSheet('add'), 250);
+          setTimeout(() => goSharing('/passenger/daily-travel'), 250);
         }}
       />
 
@@ -658,6 +575,21 @@ function Rise({
     >
       {children}
     </Animated.View>
+  );
+}
+
+/** A tile's soft lime glow, fading out from the top-left corner. */
+function TileGlow({ id }: { id: string }) {
+  return (
+    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Defs>
+        <LinearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor="#ccff00" stopOpacity={0.14} />
+          <Stop offset="1" stopColor="#ccff00" stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill={`url(#${id})`} />
+    </Svg>
   );
 }
 
@@ -1057,67 +989,46 @@ const styles = themed(() => StyleSheet.create({
     alignItems: 'stretch',
     gap: 10,
   },
-  rideTile: {
+  // Half-width tiles in the Travel Partner card's colours (dark olive, lime
+  // edge and accents), with a soft lime glow from the top corner (TileGlow).
+  tile: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    borderRadius: 16,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#ccff0040',
+    backgroundColor: '#1e1a00',
     paddingHorizontal: 12,
     paddingVertical: 11,
-    gap: 2,
+    overflow: 'hidden',
   },
-  /* Lime means "near you, right now" — which is exactly what the shared-rides
-     tile is, and exactly what the intercity one is not. */
-  rideTileLime: {
-    backgroundColor: 'rgba(204,255,0,0.07)',
-    borderColor: 'rgba(204,255,0,0.35)',
-  },
-  /* Icon left, count or arrow right, on one line above the text: at half the
-     sheet's width there is no room for the icon-beside-text layout these two
-     used as full rows. */
-  rideTileTop: {
+  tilePressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+  tileHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 7,
+    marginBottom: 8,
   },
-  rideTileIcon: {
+  tileIcon: {
     width: 34,
     height: 34,
-    borderRadius: 12,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  rideTileIconLime: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(204,255,0,0.12)',
-  },
-  rideTileTitle: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
-  rideTileSub: { color: '#9aa2a0', fontSize: 11, fontWeight: '600', lineHeight: 14.5 },
-  /* The gender breakdown (or the cheapest seat), one line under the summary.
-     Lime rather than grey: it answers a different question from the line above
-     it and should not read as a continuation of it. */
-  rideTileAccent: { color: '#ccff00', fontSize: 10.5, fontWeight: '800', marginTop: 2 },
-  /* The same line on the non-lime tile. Grey rather than lime for the same
-     reason that tile has no lime edge: Solo is not the "right now, near you"
-     offer, and painting its footnote brand-colour would say it was. */
-  rideTileAccentMuted: { color: '#7d8482', fontSize: 10.5, fontWeight: '800', marginTop: 2 },
-  suggestedCount: {
-    minWidth: 26,
-    height: 26,
-    paddingHorizontal: 7,
-    borderRadius: 13,
     backgroundColor: '#ccff00',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  suggestedCountTxt: { color: '#0b0d0c', fontSize: 12.5, fontWeight: '900' },
+  tileTitle: { color: '#ffffff', fontSize: 14.5, fontWeight: '900', lineHeight: 18 },
+  tileSub: { color: '#ccff00', fontSize: 11.5, fontWeight: '700', marginTop: 2 },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(204,255,0,0.16)',
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ccff00' },
+  liveBadgeTxt: { color: '#ccff00', fontSize: 10.5, fontWeight: '900' },
   hamburgerDot: {
     position: 'absolute',
     top: 7,

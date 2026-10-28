@@ -1,8 +1,8 @@
 /**
- * PKR 2,000 of bonus for a mobile holder — once, for every driver.
+ * PKR 1,000 of bonus for a mobile holder — once, for every driver.
  *
  * The offer: fit a mobile holder in the car, and the commission on your rides
- * comes off these 2,000 instead of out of your pocket until they are used up.
+ * comes off these 1,000 instead of out of your pocket until they are used up.
  * It is ordinary `commissionCredit`, so the code that already spends a bonus
  * spends this one (domain/commission.ts, drivers/cycle.ts), the app already
  * shows it on the home screen as "Your bonus", and like every bonus it can
@@ -24,7 +24,7 @@ import { db, FieldValue } from '../lib/firebase';
 import { sendToUser } from '../lib/fcm';
 import { commissionCredit } from '../domain/commission';
 
-export const MOBILE_HOLDER_BONUS = 2000;
+export const MOBILE_HOLDER_BONUS = 1000;
 
 /** Grants per run. Whoever is left over is picked up by the next run. */
 const MAX_GRANTS_PER_RUN = 500;

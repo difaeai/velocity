@@ -742,7 +742,7 @@ export const joinPoolRide = onCall(async (req) => {
       await notifyUser(
         driverId,
         `${waitingSameGender} ${genderLabelTxt} riders waiting 🚗`,
-        'Two riders of the same gender want to join your pool. Open your route to accept them together.',
+        'Two riders of the same gender want to join your sharing ride. Open your route to accept them together.',
         'ride',
       ).catch(() => {});
     }
@@ -877,7 +877,7 @@ export const driverAcceptPoolBatch = onCall(async (req) => {
     accepted.map(({ uid }) =>
       notifyUser(
         uid,
-        'Pool Seat Confirmed! 🎉',
+        'Sharing ride seat confirmed! 🎉',
         `The driver accepted you together with another ${gender} rider — you'll share the back row. Check the ride for pickup details.`,
         'ride',
       ).catch(() => {}),

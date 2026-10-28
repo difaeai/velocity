@@ -14,6 +14,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { useDriverEntry } from '../../src/hooks/useDriverEntry';
 import { useWalletComingSoon } from '../../src/hooks/driver';
 import { useMyProfile } from '../../src/hooks/passenger';
+import { useGenderPref } from '../../src/hooks/genderPref';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
 import { Card, comingSoon } from '../../src/ui/components';
@@ -25,6 +26,11 @@ export default function ProfileScreen() {
   const me = useMyProfile(user?.uid);
   const driverEntry = useDriverEntry();
   const walletComingSoon = useWalletComingSoon();
+  // The two things "Complete profile" asks for, both set in Settings.
+  const { gender } = useGenderPref();
+  const hasName = !!me?.name;
+  const hasGender = gender === 'male' || gender === 'female';
+  const profileDone = (hasName ? 1 : 0) + (hasGender ? 1 : 0);
 
   const openSettings = () => router.push('/passenger/settings');
   const openActivity = () => router.push('/passenger/activity');
@@ -91,7 +97,8 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
-        {/* Complete Profile Card */}
+        {/* Complete Profile Card — gone once the name and gender are both set. */}
+        {profileDone < 2 ? (
         <Card style={styles.completeProfileCard}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.completeTitle}>COMPLETE PROFILE</Text>
@@ -106,7 +113,7 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.progressRow}>
-            <Text style={styles.progressText}>0 of 2</Text>
+            <Text style={styles.progressText}>{profileDone} of 2</Text>
             <Pressable onPress={openSettings}>
               <Text style={styles.completeLink}>Complete</Text>
             </Pressable>
@@ -114,16 +121,16 @@ export default function ProfileScreen() {
 
           {/* Progress Bar */}
           <View style={styles.progressBarBg}>
-            <View style={styles.progressBarFill} />
+            <View style={[styles.progressBarFill, { width: `${profileDone * 50}%` }]} />
           </View>
 
           {/* Checklist Item */}
-          <View style={styles.checkItem}>
+          <Pressable style={styles.checkItem} onPress={openSettings}>
             <View style={styles.checkIconCircle}>
-              <Text style={styles.checkIcon}>👤</Text>
+              <Text style={styles.checkIcon}>{hasName ? '⚧' : '👤'}</Text>
             </View>
-            <Text style={styles.checkLabel}>Confirm your name</Text>
-          </View>
+            <Text style={styles.checkLabel}>{hasName ? 'Choose your gender' : 'Confirm your name'}</Text>
+          </Pressable>
 
           {/* Carousel dots indicator */}
           <View style={styles.dotsRow}>
@@ -131,11 +138,12 @@ export default function ProfileScreen() {
             <View style={styles.dot} />
           </View>
         </Card>
+        ) : null}
 
         {/* List items: Discounts & Payment methods */}
         <View style={styles.listCard}>
-          {/* My Fleet is not here: it is the drawer's Corporate / Students
-              screen, and one door to it is enough. */}
+          {/* My Fleet is not here: it is linked from home's Corporate,
+              Students & daily screen, and one door to it is enough. */}
           <Pressable style={styles.listItem} onPress={() => router.push('/referral-code')}>
             <View style={styles.itemLeftRow}>
               <Text style={styles.itemIcon}>🎁</Text>
@@ -356,7 +364,7 @@ const styles = themed(() => StyleSheet.create({
     height: 4,
     backgroundColor: '#3b82f6',
     borderRadius: 2,
-    width: '0%', // 0 of 2 complete
+    width: '0%', // set inline from how many of the two are done
   },
   checkItem: {
     flexDirection: 'row',

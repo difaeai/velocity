@@ -76,7 +76,7 @@ ${t.walletLive
 ## Driver commission
 - Velocity takes **${t.commissionRatePct}%** of the cash fares a driver collects,
   and it is charged **by the day**.
-${t.dailyTargetEnabled ? `- A day with **${t.dailyTargetRides} qualifying ${t.dailyTargetPoolOnly ? 'pool rides' : 'rides'}** in it costs the
+${t.dailyTargetEnabled ? `- A day with **${t.dailyTargetRides} qualifying ${t.dailyTargetPoolOnly ? 'sharing rides' : 'rides'}** in it costs the
   driver **no commission at all**. A day with fewer owes ${t.commissionRatePct}% of
   the cash it took.
 - Nothing is owed while the day is still running. At **midnight (Pakistan time)**
@@ -88,7 +88,7 @@ ${t.dailyTargetEnabled ? `- A day with **${t.dailyTargetRides} qualifying ${t.da
   in the app. An AI check either clears it in seconds or sends it to our team.
 ${t.dailyTargetEnabled ? `
 ## The daily ride target
-- **${t.dailyTargetRides} qualifying ${t.dailyTargetPoolOnly ? 'pool rides' : 'rides'} in one day → that whole day is commission-free.**
+- **${t.dailyTargetRides} qualifying ${t.dailyTargetPoolOnly ? 'sharing rides' : 'rides'} in one day → that whole day is commission-free.**
   That is the reward. ${t.dailyTargetBonus > 0 ? `There is also a **PKR ${t.dailyTargetBonus.toLocaleString()} bonus** on top of it right now.` : 'There is no separate cash bonus — the free day IS the deal.'}
 ${t.dailyTargetPoolOnly ? `- Only **pool / sharing rides** count. A solo ride still earns the driver their
   fare, it just does not move the counter and it still owes its commission.` : ''}

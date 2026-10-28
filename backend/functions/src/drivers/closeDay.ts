@@ -103,7 +103,7 @@ export const notifyClosedCommissionDays = onSchedule(
       const cycleDay = readCycle(driverSnap).day;
       const fresh = cycleDay === yesterday;
       const target = Math.max(1, Math.round(settings.dailyTargetRides));
-      const rides = settings.dailyTargetPoolOnly ? 'pool rides' : 'rides';
+      const rides = settings.dailyTargetPoolOnly ? 'sharing rides' : 'rides';
 
       try {
         await sendToUser(

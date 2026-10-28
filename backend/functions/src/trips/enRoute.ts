@@ -1342,13 +1342,13 @@ export const acceptEnRouteRider = onCall(async (req) => {
     sendToUser(
       result.riderUid,
       '🚗 Driver found — shared ride',
-      `You're on a pool going your way. Fare: PKR ${result.fare}.`,
+      `You're on a sharing ride going your way. Fare: PKR ${result.fare}.`,
       { tripId: result.carrierTripId },
     ),
     ...result.seated.map((s) =>
       sendToUser(
         s.uid,
-        `👤 ${result.riderName} is joining your pool`,
+        `👤 ${result.riderName} is joining your sharing ride`,
         s.fareAfter < s.fareBefore
           ? `Picked up at ${result.pickupAddress}. Your fare drops to PKR ${s.fareAfter}.`
           : `Picked up at ${result.pickupAddress}. Your fare stays at PKR ${s.fareAfter}.`,

@@ -1,8 +1,8 @@
 /**
  * My Fleet — the people you actually share a car with.
  *
- * It is the drawer's "Corporate / Students" screen: colleagues and classmates
- * are the people who make the same run every day.
+ * Reached from the foot of the Corporate, Students & daily screen
+ * (daily-travel.tsx): colleagues and classmates who make the same run every day.
  *
  * The screen is in the order the feature is used, which is also the order the
  * data becomes meaningful:

@@ -524,7 +524,7 @@ export const joinPoolRideRequest = onCall(async (req) => {
     await notifyUser(
       pendingDriverId,
       '🙋 A rider wants to join your shared ride',
-      `PKR ${farePerSeat!} more if you take them. Open the pool to accept or decline.`,
+      `PKR ${farePerSeat!} more if you take them. Open the sharing ride to accept or decline.`,
       'ride',
     ).catch(() => {});
     return { ok: true, farePerSeat: farePerSeat!, pending: true };

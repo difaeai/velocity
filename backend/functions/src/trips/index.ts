@@ -186,6 +186,8 @@ const createTripSchema = z.object({
    */
   paymentMethod: z.enum(['cash', 'wallet']).default('cash'),
   preferFemaleDriver: z.boolean().optional(),
+  /** Booked from home's "Corporate, Students & daily travel" screen. */
+  commute: z.boolean().nullish(),
   pickup: geoSchema,
   dropoff: geoSchema,
 });
@@ -362,6 +364,7 @@ export const createTrip = onCall(async (req) => {
       paymentMethod,
       paymentMethods,
       preferFemaleDriver: data.preferFemaleDriver ?? false,
+      commute: data.commute === true,
       pickup: data.pickup,
       dropoff: data.dropoff,
       passengerName: (userSnap.get('name') as string | undefined)
@@ -386,11 +389,12 @@ export const createTrip = onCall(async (req) => {
       data.pickup,
       data.pool ?? false,
       data.rideType,
-      { fare: finalFare },
+      { fare: finalFare, commute: data.commute === true },
     ).catch((err) => logger.error('Broadcast failed', { tripId: tripRef.id, err })),
     // Public pools go out to riders whose saved daily route matches this one
-    // on both ends, so they can choose to hop in.
-    isPool && poolVisibility === 'public'
+    // on both ends, so they can choose to hop in. Not a corporate ride: its
+    // host picks who to ask (dailyRoutes/routeMates → inviteRouteMates).
+    isPool && poolVisibility === 'public' && data.commute !== true
       ? notifyDailyRouteMatches({
         tripId:  tripRef.id,
         hostUid: ctx.uid,
@@ -421,7 +425,7 @@ export async function broadcastTripToNearbyDrivers(
   pickup: { lat: number; lng: number; address?: string },
   isPool: boolean,
   rideType: string,
-  opts: { fare?: number } = {},
+  opts: { fare?: number; commute?: boolean } = {},
 ): Promise<void> {
   const settingsSnap = await db.doc('config/rideSettings').get();
   const radiusKm = (settingsSnap.get('searchRadiusKm') as number) ?? 2;
@@ -435,6 +439,8 @@ export async function broadcastTripToNearbyDrivers(
   for (const d of driverDocs) {
     const loc = d.get('lastLocation') as { lat: number; lng: number } | undefined;
     if (!loc?.lat || !loc?.lng) continue;
+    // A driver on "Regular" has opted out of corporate / student rides.
+    if (opts.commute && d.get('rideMode') === 'regular') continue;
     if (haversineKm(pickup.lat, pickup.lng, loc.lat, loc.lng) <= radiusKm) {
       nearbyUids.push(d.id);
     }
@@ -457,7 +463,7 @@ export async function broadcastTripToNearbyDrivers(
     return;
   }
 
-  const title = isPool ? '🔀 Pool ride request nearby' : '🚗 Ride request nearby';
+  const title = isPool ? '🔀 Sharing ride request nearby' : '🚗 Ride request nearby';
   const body  = `A passenger needs a ${rideType} — tap to view`;
 
   await sendToUsers(nearbyUids, title, body, { tripId, screen: 'request-detail' });
@@ -1680,7 +1686,7 @@ export const completeTrip = onCall(async (req) => {
     ...completedCoRiders.filter((uid) => !noShows.includes(uid)).map((uid) =>
       sendToUser(
         uid,
-        '✅ Pool trip complete!',
+        '✅ Sharing ride complete!',
         (completedPoolFares
           ? `You've arrived. Your fare: PKR ${completedPoolFares[uid] ?? settlement.passengerShare}.`
           : `You've arrived. Your share: PKR ${settlement.passengerShare}.`) + feeLine(uid),

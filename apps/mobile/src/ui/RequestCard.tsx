@@ -156,19 +156,28 @@ export function RequestCard({
   const isPool = r.pool === true;
   const poolRiders = r.poolRiders ?? 1;
   const poolCap = r.maxPoolRiders ?? 4;
+  // A corporate / student / daily-commute ride outranks shared vs solo: yellow.
+  const kind = r.commute ? 'commute' : isPool ? 'shared' : 'solo';
+  const ks = kind === 'commute'
+    ? { card: styles.cardCommute, banner: styles.kindBannerCommute, tag: styles.kindTagCommute }
+    : isPool
+      ? { card: styles.cardShared, banner: styles.kindBannerShared, tag: styles.kindTagShared }
+      : { card: styles.cardSolo, banner: styles.kindBannerSolo, tag: styles.kindTagSolo };
 
   return (
     <Animated.View
-      style={[styles.card, isPool ? styles.cardShared : styles.cardSolo, { transform: [{ translateX: dx }] }]}
+      style={[styles.card, ks.card, { transform: [{ translateX: dx }] }]}
       {...pan.panHandlers}
     >
-      <View style={[styles.kindBanner, isPool ? styles.kindBannerShared : styles.kindBannerSolo]}>
-        <Text style={[styles.kindTag, isPool ? styles.kindTagShared : styles.kindTagSolo]}>
-          {isPool ? 'SHARED' : 'SOLO'}
+      <View style={[styles.kindBanner, ks.banner]}>
+        <Text style={[styles.kindTag, ks.tag]}>
+          {kind === 'commute' ? 'CORPORATE' : isPool ? 'SHARED' : 'SOLO'}
         </Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.kindTitle} numberOfLines={1}>
-            {isPool ? 'Shared ride with other passengers' : 'Solo ride'}
+            {kind === 'commute'
+              ? 'Corporate / student fixed ride'
+              : isPool ? 'Shared ride with other passengers' : 'Solo ride'}
           </Text>
           <Text style={styles.kindSub} numberOfLines={1}>
             {isPool
@@ -261,7 +270,7 @@ const styles = themed(() => StyleSheet.create({
     fontWeight: '800',
     color: colors.secondary,
   },
-  // A box per ride, coloured by kind: blue shared, pink solo.
+  // A box per ride, coloured by kind: blue shared, pink solo, yellow corporate.
   card: {
     marginHorizontal: 12,
     marginTop: 10,
@@ -271,6 +280,7 @@ const styles = themed(() => StyleSheet.create({
   },
   cardShared: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)' },
   cardSolo:   { borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,0.12)' },
+  cardCommute: { borderColor: '#facc15', backgroundColor: 'rgba(250,204,21,0.12)' },
   cardInner: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 12, gap: 10 },
 
   // ── Shared / solo banner, across the top of the box ──
@@ -283,6 +293,7 @@ const styles = themed(() => StyleSheet.create({
   },
   kindBannerShared: { backgroundColor: 'rgba(59,130,246,0.18)' },
   kindBannerSolo:   { backgroundColor: 'rgba(236,72,153,0.18)' },
+  kindBannerCommute: { backgroundColor: 'rgba(250,204,21,0.2)' },
   kindTag: {
     fontSize: 11,
     fontWeight: '900',
@@ -295,6 +306,7 @@ const styles = themed(() => StyleSheet.create({
   },
   kindTagShared: { backgroundColor: '#3b82f6' },
   kindTagSolo:   { backgroundColor: '#ec4899' },
+  kindTagCommute: { backgroundColor: '#ca8a04' },
   kindTitle: { fontSize: 14, fontWeight: '900', color: colors.text },
   kindSub:   { fontSize: 11.5, fontWeight: '600', color: colors.muted, marginTop: 1 },
 

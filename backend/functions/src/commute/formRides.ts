@@ -229,11 +229,12 @@ async function bookRideForHost(args: {
       coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
       // So support can tell at a glance why a rider has a trip they do not
       // remember booking, and so the strike check can find it tomorrow.
+      commute: true,
       provenance: { autoBooked: true, commuteFormed: true },
     });
   });
 
-  broadcastTripToNearbyDrivers(tripRef.id, pickup, true, rideType, { fare: quote.fare })
+  broadcastTripToNearbyDrivers(tripRef.id, pickup, true, rideType, { fare: quote.fare, commute: true })
     .catch((err) => logger.error('auto-book broadcast failed', { tripId: tripRef.id, err }));
 
   return tripRef.id;

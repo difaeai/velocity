@@ -27,8 +27,12 @@ export interface DriverProfile {
   fullName?: string;
   verificationStatus?: string;
   online?: boolean;
-  /** Left by the old Solo | Sharing switch; 'solo' keeps a driver out of the shared-ride offer ladder. */
-  rideMode?: 'solo' | 'sharing';
+  /**
+   * Home's Corporate & Students | Regular selector. 'regular' hides corporate
+   * rides (and their pushes); 'corporate', absent or the old Solo | Sharing
+   * values show everything. Legacy 'solo' keeps a driver out of the offer ladder.
+   */
+  rideMode?: 'corporate' | 'regular' | 'solo' | 'sharing';
   rating?: number;
   tripsCount?: number;
   reviewReason?: string;
@@ -291,6 +295,8 @@ export interface OpenRequest {
   poolRiders?: number;
   /** Seat cap for the pool — how many riders it can grow to. */
   maxPoolRiders?: number;
+  /** A corporate / student / daily-commute ride — boxed in yellow. */
+  commute?: boolean;
   /**
    * Metres from the driver to the pickup point, computed on the client from the
    * driver's live coordinates. Undefined until the driver's location is known.

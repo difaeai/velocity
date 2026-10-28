@@ -250,9 +250,12 @@ export default function DriverHome() {
     }).catch(() => {});
   }, []);
 
+  // "Corporate & Students" (the default) shows every ride, corporate ones boxed
+  // in yellow; "Regular" leaves the corporate ones out.
+  const regularOnly = profile?.rideMode === 'regular';
   const visible = useMemo(
-    () => liveRequests.filter((r) => !hiddenIds.has(r.tripId)),
-    [liveRequests, hiddenIds],
+    () => liveRequests.filter((r) => !hiddenIds.has(r.tripId) && !(regularOnly && r.commute)),
+    [liveRequests, hiddenIds, regularOnly],
   );
 
   // ── "Show new requests" ──────────────────────────────────────────────────
@@ -665,6 +668,29 @@ export default function DriverHome() {
             </Svg>
           </Pressable>
       </View>
+
+      {/* ── Which rides: Corporate & Students (every ride, the corporate ones in
+          yellow) or Regular (shared and solo only). Hidden mid-trip. ── */}
+      {!activeTrip ? (
+        <View style={[styles.toggle, styles.modeToggle]}>
+          <Pressable
+            style={[styles.toggleHalf, !regularOnly && styles.modeCorporateActive]}
+            onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'corporate' }, { merge: true }).catch(() => {})}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: !regularOnly }}
+          >
+            <Text style={[styles.modeTxt, !regularOnly && styles.toggleOnTxt]} numberOfLines={1}>Corporate & Students</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.toggleHalf, regularOnly && styles.toggleOnActive]}
+            onPress={() => uid && setDoc(doc(db, 'drivers', uid), { rideMode: 'regular' }, { merge: true }).catch(() => {})}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: regularOnly }}
+          >
+            <Text style={[styles.modeTxt, regularOnly && styles.toggleOnTxt]} numberOfLines={1}>Regular</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* ── Car not confirmed ── The one thing standing between this driver and
           work, said before they press Online rather than after. Hidden mid-trip:
@@ -1269,6 +1295,9 @@ const styles = themed(() => StyleSheet.create({
   toggleTxt: { fontSize: 15, fontWeight: '600', color: colors.muted },
   toggleOffTxt: { color: '#1a1a1a', fontWeight: '700' },
   toggleOnTxt: { color: '#1a1a1a', fontWeight: '700' },
+  modeToggle: { flex: 0, alignSelf: 'center', width: 300, maxWidth: 300, height: 38, marginBottom: 6 },
+  modeCorporateActive: { backgroundColor: '#facc15' },
+  modeTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
 
   // ── Solo | Sharing rides selector ──
   // Amber, not red: nothing is broken and nothing is lost — there is simply one

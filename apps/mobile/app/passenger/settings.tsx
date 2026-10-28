@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -9,14 +10,18 @@ import {
   Text as RNText,
   View,
 } from 'react-native';
-import { Text } from '../../src/ui/Text';
+import { Text, TextInput } from '../../src/ui/Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import { doc, updateDoc } from 'firebase/firestore';
 
 import { api } from '../../src/api/client';
 import type { MyReferral } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
+import { db } from '../../src/firebase';
+import { useMyProfile } from '../../src/hooks/passenger';
+import { useGenderPref } from '../../src/hooks/genderPref';
 import { colors } from '../../src/config';
 import { useDriverProfile, vehicleCheckStatus } from '../../src/hooks/driver';
 import { PRIVACY_URL, TERMS_URL } from '../../src/share/links';
@@ -62,6 +67,55 @@ export default function Settings() {
   const { user, role, signOut } = useAuth();
   const [push, setPush] = useState(true);
   const [dark, setDark] = useState(getThemeMode() === 'dark');
+
+  // ── Name and gender ──
+  // Both live on users/{uid}. The rules let the owner rewrite the name at will,
+  // but set the gender only ONCE (while it is still 'unspecified'): women-only
+  // shared rides are gated on it, so a later change goes through support.
+  const me = useMyProfile(user?.uid);
+  const { gender } = useGenderPref();
+  const genderSet = gender === 'male' || gender === 'female';
+  const [name, setName] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  useEffect(() => {
+    if (me?.name) setName(me.name);
+  }, [me?.name]);
+  const nameChanged = name.trim() !== (me?.name ?? '') && name.trim().length > 0;
+
+  async function saveName() {
+    const next = name.trim();
+    if (!user || next.length < 2 || next.length > 40) {
+      Alert.alert('Check your name', 'Use between 2 and 40 characters.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { name: next, displayName: next });
+    } catch {
+      Alert.alert('Could not save your name', 'Please try again.');
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  function chooseGender(next: 'male' | 'female') {
+    if (!user) return;
+    Alert.alert(
+      next === 'male' ? 'You are male?' : 'You are female?',
+      'This decides which shared rides you can sit in, so it cannot be changed later from the app.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: () => {
+            updateDoc(doc(db, 'users', user.uid), { gender: next }).catch(() =>
+              Alert.alert('Could not save', 'Please try again.'),
+            );
+          },
+        },
+      ],
+    );
+  }
 
   // ── WhatsApp ride alerts (drivers only) ──
   // The switch reads its truth from the driver document, because the backend
@@ -123,7 +177,60 @@ export default function Settings() {
         <View style={{ width: 32 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <Text style={styles.sectionLabel}>YOUR PROFILE</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.rowIcon}>👤</Text>
+            <TextInput
+              style={styles.nameInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Your name"
+              placeholderTextColor={colors.muted}
+              maxLength={40}
+              autoCapitalize="words"
+              returnKeyType="done"
+              onSubmitEditing={() => nameChanged && void saveName()}
+            />
+            {nameChanged ? (
+              <Pressable style={styles.saveBtn} onPress={() => void saveName()} disabled={savingProfile}>
+                {savingProfile ? (
+                  <ActivityIndicator size="small" color={colors.btnText} />
+                ) : (
+                  <Text style={styles.saveTxt}>Save</Text>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowIcon}>⚧</Text>
+            <Text style={styles.rowLabel}>Gender</Text>
+            {genderSet ? (
+              <Text style={styles.rowValue}>{gender === 'male' ? 'Male' : 'Female'} 🔒</Text>
+            ) : (
+              <View style={styles.genderChips}>
+                {(['male', 'female'] as const).map((g) => (
+                  <Pressable key={g} style={styles.genderChip} onPress={() => chooseGender(g)}>
+                    <Text style={styles.genderChipTxt}>{g === 'male' ? '♂ Male' : '♀ Female'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+        <Text style={styles.hint}>
+          {genderSet
+            ? 'Your gender decides which shared rides you can join, so it is locked. If it is wrong, contact Support.'
+            : 'Choose your gender once — it decides which shared rides (like women only) you can join.'}
+        </Text>
+        {genderSet ? (
+          <Pressable onPress={() => router.push('/support')} hitSlop={6}>
+            <Text style={styles.supportLink}>Contact Support ›</Text>
+          </Pressable>
+        ) : null}
+
         <Text style={styles.sectionLabel}>ACCOUNT</Text>
         <View style={styles.card}>
           <Row icon="📧" label="Email" value={user?.email ?? '—'} />
@@ -303,6 +410,19 @@ const styles = themed(() => StyleSheet.create({
   chevron: { fontSize: 22, color: colors.muted },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 52 },
   hint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginLeft: 4, marginTop: -2 },
+  nameInput: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text, paddingVertical: 0 },
+  saveBtn: {
+    minWidth: 60, height: 32, borderRadius: 10, paddingHorizontal: 12,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.btnBg,
+  },
+  saveTxt: { fontSize: 13, fontWeight: '900', color: colors.btnText },
+  genderChips: { flexDirection: 'row', gap: 8 },
+  genderChip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1.5, borderColor: colors.primary,
+  },
+  genderChipTxt: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  supportLink: { fontSize: 12.5, fontWeight: '800', color: colors.primary, marginLeft: 4 },
   version: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 20 },
 
   /* The language the switch would take you to — same weight as a row value,
