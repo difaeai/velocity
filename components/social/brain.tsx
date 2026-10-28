@@ -21,8 +21,17 @@ import { ref, uploadBytes } from 'firebase/storage';
 
 import { storage } from '@/lib/firebase';
 import { useWorkspace } from '@/lib/workspace';
-import { adsApi, socialApi, type AdsConfigDoc, type SocialFormat, type SocialSettings } from '@/lib/api';
-import { FORMAT_META } from './shared';
+import {
+  adsApi,
+  socialApi,
+  SOCIAL_PLATFORMS,
+  type AdsConfigDoc,
+  type SocialAccountDoc,
+  type SocialFormat,
+  type SocialPlatform,
+  type SocialSettings,
+} from '@/lib/api';
+import { FORMAT_META, PLATFORM_META, PlatformBadge } from './shared';
 import { adMoney } from './ads';
 
 export type Agent = 'team' | 'expert' | 'campaign';
@@ -242,16 +251,89 @@ function BrainArt() {
 // ── the box ─────────────────────────────────────────────────────────────────
 
 /**
+ * Where each network sits round the brain, in % of its box, from one angle to
+ * another (degrees, 0 = right, clockwise). Wide: an arc round the left, leaving
+ * the right side to the agents' wires. On a phone those wires are hidden, so the
+ * whole circle. Pure.
+ */
+export function ringSpots(n: number, from = 60, to = 300): { x: number; y: number }[] {
+  const step = (to - from) / Math.max(1, n - 1);
+  return Array.from({ length: n }, (_, i) => {
+    const a = ((from + i * step) * Math.PI) / 180;
+    return { x: r1(50 + 42 * Math.cos(a)), y: r1(50 + 43 * Math.sin(a)) };
+  });
+}
+
+const RING_STATE = {
+  connected: { word: 'Live', cls: 'live' },
+  error: { word: 'Fix', cls: 'fix' },
+  disconnected: { word: 'Connect', cls: 'off' },
+} as const;
+
+/** Every network round the brain, lit when it is connected — so the home page says where the work goes out. */
+function PlatformRing({ accounts }: { accounts: SocialAccountDoc[] }) {
+  const n = SOCIAL_PLATFORMS.length;
+  const spots = ringSpots(n);
+  const round = ringSpots(n, -90, 270 - 360 / n);
+  const of = (p: SocialPlatform) => accounts.find((a) => a.platform === p);
+  return (
+    <>
+      <svg className="bn-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+        {SOCIAL_PLATFORMS.map((p, i) => {
+          const d = `M50 50 L${spots[i].x} ${spots[i].y}`;
+          const live = of(p)?.status === 'connected';
+          return (
+            <g key={p} className={live ? 'on' : undefined}>
+              <path d={d} className="bn-spoke" vectorEffect="non-scaling-stroke" />
+              {live ? <path d={d} pathLength={100} className="bn-comet" vectorEffect="non-scaling-stroke" /> : null}
+            </g>
+          );
+        })}
+      </svg>
+      <ul className="bn-nets" aria-label="Where the work goes out">
+        {SOCIAL_PLATFORMS.map((p, i) => {
+          const a = of(p);
+          const state = RING_STATE[a?.status ?? 'disconnected'];
+          const who = a?.handle ? `@${a.handle.replace(/^@/, '')}` : a?.displayName;
+          const label = `${PLATFORM_META[p].label}: ${a?.status === 'connected' ? `connected${who ? ` as ${who}` : ''}` : a?.status === 'error' ? 'needs reconnecting' : 'not connected'}`;
+          return (
+            <li
+              key={p}
+              className={`bn-net ${state.cls}`}
+              style={vars({
+                '--x': `${spots[i].x}%`,
+                '--y': `${spots[i].y}%`,
+                '--mx': `${round[i].x}%`,
+                '--my': `${round[i].y}%`,
+                '--d': `${i * 0.08}s`,
+              })}
+            >
+              <Link href="/dashboard/social/accounts" title={a?.lastError && a.status === 'error' ? `${label} — ${a.lastError}` : label} aria-label={label}>
+                <PlatformBadge platform={p} size={26} />
+                <span className="nm">{PLATFORM_META[p].label.replace(' Page', '')}</span>
+                <span className="st">{state.word}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+/**
  * The brain, with the Approval box (`children`) wired in beside it.
  *
  * A post, reel, story or carousel goes to the team with your words as the
  * brief, posted or queued by the "this one" switch (which starts on whatever
  * the Approval box says). A new campaign goes to the ads desk with the same
  * words, held to the daily limit set on the Ads page. The expert opens the Ads
- * page's designer with your words as its first message.
+ * page's designer with your words as its first message. Round it, every
+ * network it posts to, lit when connected.
  */
 export function Brain({
   settings,
+  accounts,
   ads,
   want,
   onWant,
@@ -265,6 +347,7 @@ export function Brain({
   children,
 }: {
   settings: SocialSettings;
+  accounts: SocialAccountDoc[];
   ads: AdsConfigDoc | null;
   want: SocialFormat;
   onWant: (w: SocialFormat) => void;
@@ -427,7 +510,8 @@ export function Brain({
               );
             })}
           </svg>
-          <div className="bn-brainbox">
+          <div className="bn-brainbox ringed">
+            <PlatformRing accounts={accounts} />
             <BrainArt />
           </div>
           <div className="bn-agents" role="radiogroup" aria-label="Who does it">
@@ -732,6 +816,26 @@ export const BRAIN_CSS = `
 .bn-pick { border: 1px solid rgba(204,255,0,.55); color: var(--lime); background: transparent; border-radius: 10px; padding: 7px 12px; font: inherit;
   font-size: 13px; font-weight: 800; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.bn-brainbox.ringed .bn-art { width: 60%; height: 60%; position: relative; z-index: 1; }
+.bn-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.bn-spoke { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.on > .bn-spoke { stroke: rgba(204,255,0,.42); stroke-dasharray: none; }
+.bn-nets { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.bn-net { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); pointer-events: auto;
+  animation: bn-pop .5s cubic-bezier(.2,.9,.3,1.3) both; animation-delay: var(--d); }
+@keyframes bn-pop { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
+.bn-net a { display: grid; justify-items: center; gap: 2px; min-width: 60px; padding: 5px 6px; border-radius: 13px; text-decoration: none;
+  color: #e8f5ec; background: rgba(9,20,13,.86); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(6px);
+  transition: transform .2s ease, border-color .2s ease; }
+.bn-net a:hover, .bn-net a:focus-visible { transform: translateY(-2px); border-color: rgba(204,255,0,.6); }
+.bn-net .nm { font-size: 10px; font-weight: 800; white-space: nowrap; }
+.bn-net .st { font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; border-radius: 99px; padding: 1px 7px; }
+.bn-net.live a { border-color: rgba(204,255,0,.55); box-shadow: 0 0 18px -4px rgba(204,255,0,.6); }
+.bn-net.live .st { background: var(--lime); color: var(--ink); }
+.bn-net.fix a { border-color: rgba(245,179,1,.6); }
+.bn-net.fix .st { background: #f5b301; color: #1a1300; }
+.bn-net.off .st { background: rgba(255,255,255,.08); color: #a9c2b4; }
+.bn-net.off a > span:first-child { filter: grayscale(1); opacity: .5; }
 @media (max-width: 1180px) {
   .bn-grid { grid-template-columns: minmax(0, 1fr); }
   .bn-out { display: none; }
@@ -745,6 +849,10 @@ export const BRAIN_CSS = `
   .bn-stage { aspect-ratio: auto; }
   .bn-wires { display: none; }
   .bn-brainbox { position: relative; width: 100%; height: 230px; }
+  .bn-brainbox.ringed { height: 330px; }
+  .bn-brainbox.ringed .bn-art { width: 48%; height: 48%; }
+  .bn-ring { display: none; }
+  .bn-net { left: var(--mx); top: var(--my); }
   .bn-agents { position: static; display: grid; gap: 8px; pointer-events: auto; }
   .bn-agent { position: static; width: 100%; transform: none; }
   .bn-agent:hover { transform: none; }

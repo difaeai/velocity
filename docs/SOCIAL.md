@@ -619,6 +619,12 @@ step waiting on the owner (`needs_you`) lets the next one go ahead, so a
 customer still waiting on Meta's App Review still gets a funnel. Studio only:
 the house never has a `socialLaunch/state`, so the sweep skips it.
 
+**Velocity's own desk is day by day since 2026-10-28** (`makeAheadDays` default 0):
+the owner found the 30-day batch meant a month written before a single morning's
+research, and wanted the cost a day at a time. The 10am run reads the market and
+makes that day's pieces. A Studio customer's launch still sets 30 (`launch.ts`).
+See [RESEARCH_AUDIT.md](RESEARCH_AUDIT.md).
+
 **Made in batches, posted on its day.** With `makeAheadDays > 0` the calendar
 is made **in batches** (`makeAhead` + the pure `batchStep` in `pipeline.ts`):
 the next 30 days — every planned piece *and every day's story* — are made in
@@ -874,7 +880,7 @@ environment variables inside `FREE_MODEL_ENV` rather than a file:
 ```
 FREE_MODEL_KEY=...                              turns the engine on
 FREE_MODEL_URL=https://api.groq.com/openai/v1   optional, this is the default
-FREE_MODEL_ID=llama-3.3-70b-versatile           optional, this is the default
+FREE_MODEL_ID=openai/gpt-oss-120b               optional, this is the default (Llama 3.3 70B was shut down 2026-08-16)
 ```
 
 Free tiers change their limits, their models and their terms, and the provider

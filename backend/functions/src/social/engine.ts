@@ -105,6 +105,16 @@ export function outOfCredit(message: string): boolean {
 }
 
 /**
+ * The provider no longer serves the model we asked for. Groq shut down
+ * `llama-3.3-70b-versatile` on 2026-08-16; every story in the November batch
+ * then failed on "404: The model … does not exist" instead of falling through
+ * to the local writer. Retrying this hour changes nothing, so it sits out too.
+ */
+export function modelGone(message: string): boolean {
+  return /^404\b|does not exist|decommissioned|model_not_found|no longer (available|supported)/i.test(message);
+}
+
+/**
  * Which engine a call made right now would go to. Gemini also sits out for a
  * workspace that has spent this month's AI budget (`ai/config.ts`), so the
  * desk carries on, on the free model or the local writer, instead of the bill.
@@ -154,9 +164,10 @@ export async function generateText(req: TextRequest): Promise<TextResult> {
       }
     } catch (e) {
       const message = (e as Error).message ?? '';
-      if (engine === 'local' || !outOfCredit(message)) throw e;
+      if (engine === 'local' || !(outOfCredit(message) || modelGone(message))) throw e;
       benchedUntil[engine] = Date.now() + BENCH_MS;
-      logger.warn('social: an engine is out of credit; the next one answers', { engine, message: message.slice(0, 200) });
+      // `error`, not `message`: the logger's own message field overwrote the refusal, so nobody could read why.
+      logger.warn('social: an engine refused; the next one answers', { engine, error: message.slice(0, 300) });
       // Only the local writer left: the stage composes it itself on its next call.
       if (activeEngine() === 'local') throw e;
     }

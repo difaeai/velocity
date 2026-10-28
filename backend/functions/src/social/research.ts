@@ -30,7 +30,7 @@ import { logger } from 'firebase-functions';
 
 import { isHouse, sdb, workspaceBrand } from './workspace';
 import { brandBlock, brandName, marketName, systemFor } from './crew';
-import { readAccounts } from './discovery';
+import { HOUSE_STUDY, readAccounts } from './discovery';
 import { generateJson, modelReady } from './engine';
 import { localResearch } from './local';
 import { ROLE_SPECS, type ContentResearch, type Employee, type SocialSettings, type ViralFind } from './types';
@@ -135,6 +135,8 @@ export async function runResearch(params: {
 
   const competitors = params.settings.competitors.filter((c) => c.name.trim());
   const own = params.employee.role === 'research-assistant';
+  // Read with real numbers whatever the search does: it is free, needs no model, and was lost with every failed search.
+  const named = [...competitors.map((c) => c.instagram ?? '').filter(Boolean), ...(isHouse() ? HOUSE_STUDY : [])];
 
   try {
     const { data, sources } = await generateJson<Record<string, unknown>>({
@@ -166,10 +168,7 @@ export async function runResearch(params: {
     });
 
     // The accounts the owner named first, then the ones the search turned up — each read with its real numbers.
-    const accounts = await readAccounts([
-      ...competitors.map((c) => c.instagram ?? '').filter(Boolean),
-      ...list(data.accounts, 10, 60),
-    ]);
+    const accounts = await readAccounts([...named, ...list(data.accounts, 10, 60)]);
 
     const research: ContentResearch = {
       atMs: Date.now(),
@@ -189,9 +188,9 @@ export async function runResearch(params: {
     return research;
   } catch (e) {
     const message = (e as Error).message;
-    logger.warn('social: the market read failed; writing without it', { date: params.date, message });
+    logger.warn('social: the market read failed; writing without it', { date: params.date, error: message });
     // Deliberately not cached: a failure should be retried by the next run
-    // rather than poisoning the whole day.
-    return { ...empty, error: message.slice(0, 400) };
+    // rather than poisoning the whole day. The accounts still come: real numbers need no search.
+    return { ...empty, accounts: await readAccounts(named), error: message.slice(0, 400) };
   }
 }

@@ -135,6 +135,9 @@ export const adminAiOverview = onCall(async (req) => {
         byWhat: u.byWhat ?? {},
         byModel: u.byModel ?? {},
         byDay: u.byDay ?? {},
+        // Per day since 2026-10-28; earlier days have spend only.
+        byDayCalls: u.byDayCalls ?? {},
+        byDayPieces: u.byDayPieces ?? {},
       };
     })
     .sort((a, z2) => z2.usd - a.usd);

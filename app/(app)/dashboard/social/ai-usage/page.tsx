@@ -20,11 +20,12 @@
  * spread evenly over the month by the desk itself (`withinPace`).
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/config';
 import { aiApi, type AiBudgets, type AiKeySlot, type AiOverview, type AiUsageRow } from '@/lib/api';
+import { DEFAULT_USD_TO_PKR } from '@/lib/costs';
 import { Badge, Button, Card } from '@/components/ui';
 import { AreaSpark, CountUp, FX_CSS } from '@/components/social/fx';
 
@@ -96,6 +97,67 @@ function sumBy(rows: AiUsageRow[], pick: (r: AiUsageRow) => Record<string, { usd
     }
   }
   return [...out.entries()].sort((a, b) => b[1].usd - a[1].usd);
+}
+
+const rs = (n: number) => `Rs ${Math.round(n * DEFAULT_USD_TO_PKR).toLocaleString('en-PK')}`;
+
+/**
+ * "What did today cost, and for how much content" — one row a day, newest
+ * first. Calls and pieces per day are counted since 28 Oct 2026; an earlier
+ * day shows its spend and a dash rather than a guessed count.
+ */
+function DayTable({ rows, daily }: { rows: AiUsageRow[]; daily: number[] }) {
+  if (!daily.length) return null;
+  const count = (pick: (r: AiUsageRow) => Record<string, number> | undefined, day: string) =>
+    rows.some((r) => pick(r)) ? rows.reduce((s, r) => s + (pick(r)?.[day] ?? 0), 0) : null;
+  const days = daily
+    .map((usdDay, i) => {
+      const key = String(i + 1).padStart(2, '0');
+      return { day: i + 1, usd: usdDay, calls: count((r) => r.byDayCalls, key), pieces: count((r) => r.byDayPieces, key) };
+    })
+    .filter((d) => d.usd > 0 || d.calls || d.pieces)
+    .reverse();
+  const cell: CSSProperties = { padding: '7px 10px', borderBottom: '1px solid #eef2ef', textAlign: 'right', whiteSpace: 'nowrap' };
+  const total = days.reduce((s, d) => s + d.usd, 0);
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+        <thead>
+          <tr style={{ color: colors.muted, fontSize: 12 }}>
+            <th style={{ ...cell, textAlign: 'left' }}>Day</th>
+            <th style={cell}>Pieces made</th>
+            <th style={cell}>AI calls</th>
+            <th style={cell}>Cost</th>
+            <th style={cell}>In rupees</th>
+            <th style={cell}>Per piece</th>
+          </tr>
+        </thead>
+        <tbody>
+          {days.map((d) => (
+            <tr key={d.day}>
+              <td style={{ ...cell, textAlign: 'left', fontWeight: 700 }}>{d.day}</td>
+              <td style={cell}>{d.pieces ?? '—'}</td>
+              <td style={cell}>{d.calls ?? '—'}</td>
+              <td style={cell}>{usd(d.usd)}</td>
+              <td style={cell}>{rs(d.usd)}</td>
+              <td style={cell}>{d.pieces ? `${usd(d.usd / d.pieces)} · ${rs(d.usd / d.pieces)}` : '—'}</td>
+            </tr>
+          ))}
+          <tr style={{ fontWeight: 800 }}>
+            <td style={{ ...cell, textAlign: 'left' }}>Month so far</td>
+            <td style={cell} colSpan={2} />
+            <td style={cell}>{usd(total)}</td>
+            <td style={cell}>{rs(total)}</td>
+            <td style={cell} />
+          </tr>
+        </tbody>
+      </table>
+      <p style={{ color: colors.muted, fontSize: 12, margin: '8px 0 0' }}>
+        Gemini only — every AI call priced as it is made. Rendering pictures and reels runs on our own servers (Google Cloud bill,
+        not this meter); stock photos and footage are free. Pieces and calls per day are counted from 28 Oct 2026.
+      </p>
+    </div>
+  );
 }
 
 function Bars({ items, label }: { items: [string, { usd: number; calls: number }][]; label: (k: string) => string }) {
@@ -324,6 +386,7 @@ export default function AiUsagePage() {
               </span>
             </div>
             {daily.length >= 2 ? <AreaSpark values={daily} color={colors.primary} height={90} /> : <p style={{ color: colors.muted }}>One day so far.</p>}
+            <DayTable rows={rows} daily={daily} />
           </Card>
 
           {house && houseSuggest && budgets ? (

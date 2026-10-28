@@ -1970,6 +1970,9 @@ export interface AiUsageRow {
   byWhat: Record<string, { usd?: number; calls?: number }>;
   byModel: Record<string, { usd?: number; calls?: number }>;
   byDay: Record<string, number>;
+  /** Calls and finished pieces per day of the month — counted since 28 Oct 2026, absent before. */
+  byDayCalls?: Record<string, number>;
+  byDayPieces?: Record<string, number>;
 }
 
 export interface AiOverview {

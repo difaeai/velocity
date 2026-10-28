@@ -59,7 +59,7 @@ const FIRST_PAINT = {
   enabled: false,
   runHour: 10,
   postsPerDay: 1,
-  makeAheadDays: 30,
+  makeAheadDays: 0,
   dailyStory: true,
   autoPublish: false,
   publishModeChosen: false,
@@ -334,6 +334,7 @@ export default function SocialOverview() {
         <div id="make" style={{ scrollMarginTop: 16 }}>
           <Brain
             settings={settings}
+            accounts={accounts}
             ads={ads}
             want={want}
             onWant={setWant}

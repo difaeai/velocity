@@ -318,8 +318,23 @@ export function playbookFor(role: Role, format: ContentFormat | null): string {
 
 /** The standup needs the shapes and the signals, since it picks the concept. */
 export function playbookForStandup(format: ContentFormat): string {
-  return [ALGORITHM, FORMAT_CRAFT[format], HOOK_FORMULAS].join('\n\n');
+  return [ALGORITHM, CONTENT_MIX, FORMAT_CRAFT[format], HOOK_FORMULAS].join('\n\n');
 }
+
+/**
+ * What a feed is made of. The house calendar of October 2026 was thirty
+ * adverts ("Islamabad: your fares, your rules") and reached 10–500 people a
+ * piece, while the competitors' read that same week showed their outliers were
+ * all jokes and small stories: a Roman Urdu meme at 10.8x the account's normal,
+ * a relatable office reel at 52x, a late-parcel story at 3x — not one advert.
+ */
+export const CONTENT_MIX = `THE MIX — what a feed that grows is made of:
+- About 7 pieces in 10 ENTERTAIN or MOVE people: a meme, a joke about a moment everyone has lived, "that one friend who…", a POV, a small human story, nostalgia. Somebody sends it to a friend because it is funny or true, not because it sells. The brand is a light touch at the end, or not there at all.
+- About 2 in 10 TEACH one useful thing (a tip, a hack, how something works).
+- At most 1 in 10 SELLS — an offer, a feature, a launch.
+- Write the way people here talk: Roman Urdu or Urdu-English mixed when the audience speaks that way, never translated-from-English slogans.
+- If it reads like an advert, it is the wrong piece. "Your fares, your rules" is a slogan; a rider haggling with themself at 2am is a piece.
+- The accounts' real numbers in the market read are the evidence: build in the SHAPE of what beat its own normal there (never copy the post, never name the account).`;
 
 /**
  * The shapes a piece can take, one handed to each standup by code.
@@ -343,6 +358,10 @@ export const STORY_SHAPES: Record<string, string> = {
   quiz: 'Guess first — ask the viewer to guess (a price, a time, a fact), hold the answer, reveal it at the end. Built to pull comments.',
   'answer-question': 'Answering a real question — the question people actually ask, on screen, answered straight in under twenty seconds.',
   'local-spotlight': 'Local spotlight — one city, one road, one neighbourhood, so specific that people from there send it to each other.',
+  meme: 'A meme — one picture and one line of text that is a joke about a moment everyone here has lived, in the words they would use for it. Nothing to sell; the brand at most in the corner.',
+  'that-one-friend': '"That one friend who…" — a character everybody knows (the one who never pays, who always says five minutes), played for the laugh, so people tag that exact friend.',
+  nostalgia: 'Nostalgia — how getting around (or this business) used to be, a specific memory people of one age share, warm rather than mocking.',
+  'small-story': 'A small human story — the person behind an everyday thing (the courier in the rain, the driver at dawn), told with feeling, no pitch at all.',
 };
 
 export type StoryShape = keyof typeof STORY_SHAPES;
