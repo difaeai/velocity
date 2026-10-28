@@ -257,6 +257,8 @@ export interface CreateTripInput {
   paymentMethods?: PaymentMethod[];
   paymentMethod?: 'cash' | 'wallet';
   preferFemaleDriver?: boolean;
+  /** Booked from home's "Corporate, Students & daily travel" screen; drivers see it in yellow. */
+  commute?: boolean;
   pickup: GeoPoint;
   dropoff: GeoPoint;
 }
@@ -1055,6 +1057,18 @@ export const api = {
     },
     TravelAreas
   >('getTravelAreas'),
+  // ── "People on your route": who travels it, and a ride request to them ────
+  getRouteMates: callable<
+    { from: { lat: number; lng: number }; to: { lat: number; lng: number } },
+    { mates: RouteMate[] }
+  >('getRouteMates'),
+  inviteRouteMates: callable<
+    { tripId: string; mateIds?: string[]; usernames?: string[] },
+    { invited: number; notFound: string[] }
+  >('inviteRouteMates'),
+  /** Sharing rides somebody asked this rider into, still taking riders. */
+  getMyRideInvites: callable<Record<string, never>, { invites: RideInvite[] }>('getMyRideInvites'),
+  declineRideInvite: callable<{ tripId: string }, { ok: boolean }>('declineRideInvite'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
   // `polyline` is a FALLBACK, and optional. When the backend has its own Maps key
   // (GOOGLE_MAPS_SERVER_KEY) it fetches the road itself and never looks at ours.
@@ -2572,6 +2586,34 @@ export interface TravelArea {
   female: number;
   /** Average departure "HH:MM", rounded to 15 minutes; null = nobody set a time. */
   time: string | null;
+}
+
+/** Another rider on the same saved route — what a co-rider may see, nothing more. */
+export interface RouteMate {
+  /** Their saved route's random id; names nobody. */
+  id: string;
+  firstName: string;
+  gender: 'male' | 'female' | null;
+  fromArea: string;
+  toArea: string;
+  /** "HH:MM", or null for any time. */
+  time: string | null;
+}
+
+/** A sharing ride somebody asked this rider into. */
+export interface RideInvite {
+  tripId: string;
+  /** Share code — what joinPoolTrip takes. */
+  code: string;
+  hostName: string;
+  riders: number;
+  fromArea: string;
+  toArea: string;
+  rideType: string;
+  /** What this rider would pay per seat once they join. */
+  perSeat: number;
+  /** "Bilal · Corolla", or null while no driver has it yet. */
+  driver: string | null;
 }
 
 export interface TravelAreas {

@@ -140,7 +140,7 @@ export const claimUsername = onCall(async (req) => {
 });
 
 /** The uid behind a username, or null. Case-insensitive, like the claim. */
-async function uidForUsername(raw: string): Promise<string | null> {
+export async function uidForUsername(raw: string): Promise<string | null> {
   const parsed = normalizeUsername(raw);
   if (!parsed.ok) return null;
   const snap = await db.doc(`usernames/${parsed.slug}`).get();
@@ -683,6 +683,7 @@ export const bookFleetRide = onCall(async (req) => {
       coRiderRating: userSnap.get('coRiderRating') as number | undefined,
       coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
       // So support can tell at a glance why this car arrived full.
+      commute: true,
       provenance: { fleetFormed: true, fleetAskId: askRef.id },
     });
   });
@@ -704,7 +705,7 @@ export const bookFleetRide = onCall(async (req) => {
   await closeAsk(askRef, ask, 'booked', tripRef.id);
 
   // Drivers are told LAST, deliberately — see the note on this function.
-  broadcastTripToNearbyDrivers(tripRef.id, pickup, true, rideType, { fare: quote.fare })
+  broadcastTripToNearbyDrivers(tripRef.id, pickup, true, rideType, { fare: quote.fare, commute: true })
     .catch((err) => logger.error('fleet broadcast failed', { tripId: tripRef.id, err }));
 
   await Promise.all(seated.map((m) => notifyUser(

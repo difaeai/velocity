@@ -291,7 +291,7 @@ export async function notifyDailyTarget(
   rideId?: string,
 ): Promise<void> {
   const data = rideId ? { tripId: rideId } : undefined;
-  const rides = outcome.dailyTarget.poolOnly ? 'pool rides' : 'rides';
+  const rides = outcome.dailyTarget.poolOnly ? 'sharing rides' : 'rides';
   try {
     if (outcome.dailyTargetMet || outcome.dailyTargetBonus > 0) {
       const waived = outcome.dailyTargetCredit - outcome.dailyTargetBonus;
@@ -318,8 +318,8 @@ export async function notifyDailyTarget(
         driverId,
         '🔥 One more ride!',
         outcome.dailyTarget.bonus > 0
-          ? `One more pool ride makes today commission-free and unlocks your PKR ${outcome.dailyTarget.bonus.toLocaleString()} bonus.`
-          : `One more pool ride today and you pay no commission on the whole day.`,
+          ? `One more sharing ride makes today commission-free and unlocks your PKR ${outcome.dailyTarget.bonus.toLocaleString()} bonus.`
+          : `One more sharing ride today and you pay no commission on the whole day.`,
         data,
       );
     }

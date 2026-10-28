@@ -108,10 +108,10 @@ describe('dailyTargetProgress', () => {
     expect(p.met).toBe(false);
   });
 
-  it('says "pool rides" while only pool rides count', () => {
+  it('says "sharing rides" while only pool rides count', () => {
     const p = dailyTargetProgress(day({ qualifyingRides: 1 }), settings());
     expect(p.poolOnly).toBe(true);
-    expect(p.blockers.find((b) => b.key === 'rides')!.label).toBe('16 pool rides of PKR 150+');
+    expect(p.blockers.find((b) => b.key === 'rides')!.label).toBe('16 sharing rides of PKR 150+');
 
     const anyRide = dailyTargetProgress(day(), settings({ dailyTargetPoolOnly: false }));
     expect(anyRide.blockers.find((b) => b.key === 'rides')!.label).toBe('16 rides of PKR 150+');

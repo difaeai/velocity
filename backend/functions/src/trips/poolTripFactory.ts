@@ -100,6 +100,13 @@ export interface TripSeed {
   coRiderRatingCount?: number;
 
   /**
+   * A corporate / student / daily-commute ride. Unlike `provenance` this IS
+   * mirrored to openRequests: the driver feed boxes these rides in yellow and
+   * drivers on "Regular" never see them.
+   */
+  commute?: boolean;
+
+  /**
    * Anything the caller wants on the trip document that is particular to how
    * the trip came about — `autoBooked`/`commuteFormed` from the commute cron,
    * `scheduled`/`scheduleId` from a saved schedule. Kept as an escape hatch so
@@ -179,6 +186,7 @@ export function writeTripDocuments(
     preferFemaleDriver: seed.preferFemaleDriver ?? false,
     pickup: seed.pickup,
     dropoff: seed.dropoff,
+    ...(seed.commute ? { commute: true } : {}),
     ...(seed.provenance ?? {}),
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -213,6 +221,7 @@ export function writeTripDocuments(
     pickup: seed.pickup,
     dropoff: seed.dropoff,
     pickupGeohash: encodeGeohash(seed.pickup.lat, seed.pickup.lng, 6),
+    ...(seed.commute ? { commute: true } : {}),
     createdAt: FieldValue.serverTimestamp(),
   });
 

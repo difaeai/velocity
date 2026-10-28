@@ -247,6 +247,8 @@ export default function Booking() {
     voiceSeats?: string;
     /** 'solo' when home's Ride Solo tile opened this screen — see below. */
     mode?: string;
+    /** 'bike' from home's Bike screen: Moto picked, solo. */
+    rideType?: string;
   }>();
   const { user, role } = useAuth();
   // Woken while the rider is choosing, so Book does not wait on a cold start.
@@ -428,9 +430,11 @@ export default function Booking() {
     // the screen that asks it: arriving with mode=solo means the rider has
     // already said they want the car to themselves, and re-defaulting them into
     // sharing would be overruling the tap they just made.
-    params.mode === 'solo' || (voicePrefill && !voicePrefill.pool) ? 'solo' : 'pool',
+    params.mode === 'solo' || params.rideType === 'bike' || (voicePrefill && !voicePrefill.pool) ? 'solo' : 'pool',
   );
-  const [rideType, setRideType] = useState<RideType>(voicePrefill?.rideType ?? 'mini');
+  const [rideType, setRideType] = useState<RideType>(
+    voicePrefill?.rideType ?? (params.rideType === 'bike' ? 'bike' : 'mini'),
+  );
 
   useEffect(() => {
     let alive = true;

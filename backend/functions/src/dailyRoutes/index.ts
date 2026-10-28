@@ -117,9 +117,9 @@ export async function notifyDailyRouteMatches(opts: {
     return;
   }
 
-  const title = '🚕 A pool on your daily route';
+  const title = '🚕 A sharing ride on your daily route';
   const body =
-    `Someone just opened a ${rideType} pool going your way — tap to join and split the fare.`;
+    `Someone just booked a ${rideType} sharing ride going your way — tap to join and split the fare.`;
   const data: Record<string, string> = { tripId, screen: 'pool-join' };
   if (shareCode) data.code = shareCode;
 

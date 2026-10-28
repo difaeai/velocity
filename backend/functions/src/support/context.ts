@@ -205,7 +205,7 @@ export async function buildSupportContext(uid: string): Promise<SupportContext> 
     if (!target.enabled) {
       lines.push('The daily target programme is currently switched off.');
     } else {
-      const kind = target.poolOnly ? 'pool rides' : 'rides';
+      const kind = target.poolOnly ? 'sharing rides' : 'rides';
       lines.push(
         `Qualifying ${kind}: ${target.rides} of ${target.target}` +
           (target.bonus > 0 ? ` — plus a ${money(target.bonus)} bonus` : ' — reward is a commission-free day'),

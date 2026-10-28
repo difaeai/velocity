@@ -299,7 +299,7 @@ async function announce(expiries: Expiry[], now: number): Promise<number> {
   for (const e of fresh) {
     const riderTitle = e.reason === 'no_driver' ? 'No driver took your shared ride' : 'Shared ride cancelled';
     const riderBody = e.reason === 'no_driver'
-      ? `Nobody drove your pool to ${e.where}. Nothing was charged — book again whenever you like.`
+      ? `Nobody drove your sharing ride to ${e.where}. Nothing was charged — book again whenever you like.`
       : `The driver never set off for ${e.where}, so your seat was released. Nothing was charged.`;
 
     for (const uid of e.riderIds) {
@@ -311,8 +311,8 @@ async function announce(expiries: Expiry[], now: number): Promise<number> {
         e.driverId,
         'Your posted ride expired',
         e.reason === 'never_departed'
-          ? 'A pool ride you posted sat unstarted and has been closed. Post a new one when you are driving.'
-          : `Your pool ride to ${e.where} passed its departure time without boarding, so it was closed.`,
+          ? 'A sharing ride you posted sat unstarted and has been closed. Post a new one when you are driving.'
+          : `Your sharing ride to ${e.where} passed its departure time without boarding, so it was closed.`,
         'ride',
         { poolId: e.id },
       ).catch(() => {});

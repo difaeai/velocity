@@ -76,7 +76,6 @@ import {
   SharedRideIcon,
   ShieldIcon,
   SignOutIcon,
-  SpecialRideIcon,
   WalletCardIcon,
   type DrawerIconProps,
 } from './DrawerIcons';
@@ -187,21 +186,9 @@ export function PassengerDrawer({
         active: true,
         onPress: onClose,
       },
-      /* The fleet: the colleagues or classmates you make the same run with,
-         asked all at once so the car leaves full. It took over the Special
-         Rides slot; renting a whole car is a link at the foot of that screen. */
-      {
-        key: 'fleet',
-        Icon: SpecialRideIcon,
-        label: 'Corporate / Students',
-        blurb: 'Your fleet for the office or campus run',
-        tint: 'rgba(168,85,247,0.16)',
-        onPress: () => onNavigate('/passenger/fleet'),
-      },
-      /* Moved off the home sheet, and this is where it belongs: City to City
-         is a journey you plan for another day, not one you book from the map
-         in front of you. Directly under Corporate / Students because they are
-         the same kind of thing — a ride arranged ahead rather than hailed. */
+      /* Corporate / Students is not here: it is home's left ride tile now
+         (app/passenger/daily-travel.tsx). City to City is a journey you plan
+         for another day, not one you book from the map in front of you. */
       {
         key: 'intercity',
         Icon: CityToCityIcon,

@@ -304,7 +304,7 @@ export function assertCommissionClear(
       'failed-precondition',
       `Commission due: pay ${due} PKR to Velocity Rides to start taking rides again. ` +
         `Complete ${Math.max(1, Math.round(settings.dailyTargetRides))} ` +
-        `${settings.dailyTargetPoolOnly ? 'pool rides' : 'rides'} in a day and that day costs you no commission.`,
+        `${settings.dailyTargetPoolOnly ? 'sharing rides' : 'rides'} in a day and that day costs you no commission.`,
     );
   }
 }

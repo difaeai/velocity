@@ -111,7 +111,7 @@ export { notifyClosedCommissionDays } from './drivers/closeDay';
 // `drivers/{uid}/dailyTargets/{day}` — no callable on the hot path.
 export { adminAdjustCommissionCredit, adminGetDriverCommission } from './drivers/commissionCredit';
 
-// Hourly: PKR 2,000 of bonus for a mobile holder, once for every approved driver.
+// Hourly: PKR 1,000 of bonus for a mobile holder, once for every approved driver.
 export { grantMobileHolderBonuses } from './drivers/mobileHolderBonus';
 
 // Cancellation-fee settlement — same proof flow, open to passengers and drivers
@@ -376,6 +376,7 @@ export {
 export { runCommuteRideFormation } from './commute/formRides';
 // Saved daily routes as areas: "Locations people are traveling to".
 export { getTravelAreas } from './dailyRoutes/travelAreas';
+export { getRouteMates, inviteRouteMates, getMyRideInvites, declineRideInvite } from './dailyRoutes/routeMates';
 
 // Usernames, and the personal fleet they address. A fleet fills a shared car
 // BEFORE a driver is asked — see fleet/index.ts for why that ordering is the

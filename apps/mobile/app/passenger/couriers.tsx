@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,8 +16,17 @@ import { themed } from '../../src/theme';
 import { api } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCnicVerification } from '../../src/hooks/passenger';
+import { usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 
 type PackageSize = 'document' | 'parcel' | 'box';
+
+// Places API (New) requires session tokens to be UUID v4.
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 const PACKAGE_TYPES: {
   key: PackageSize; emoji: string; label: string; desc: string; basePrice: number; maxPrice: number;
@@ -41,6 +50,21 @@ export default function CouriersScreen() {
   const [instructions,   setInstructions]   = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Address suggestions while one of the two fields is being typed in. The
+  // order takes plain addresses, so a pick only fills the text.
+  const [field, setField] = useState<'pickup' | 'dropoff' | null>(null);
+  const tokenRef = useRef(uuidv4());
+  const { predictions } = usePlacesAutocomplete(
+    field === 'pickup' ? pickup : field === 'dropoff' ? dropoff : '',
+    tokenRef.current,
+  );
+
+  function choosePlace(pred: PlacePrediction) {
+    const label = pred.mainText && pred.secondaryText ? `${pred.mainText}, ${pred.secondaryText}` : pred.fullText;
+    if (field === 'pickup') setPickup(label);
+    else setDropoff(label);
+    setField(null);
+  }
 
   const selected = PACKAGE_TYPES.find(p => p.key === pkgType)!;
 
@@ -160,7 +184,7 @@ export default function CouriersScreen() {
               placeholder="Pickup address"
               placeholderTextColor={colors.muted}
               value={pickup}
-              onChangeText={setPickup}
+              onChangeText={(t) => { setField('pickup'); setPickup(t); }}
               autoFocus
             />
           </View>
@@ -172,7 +196,7 @@ export default function CouriersScreen() {
               placeholder="Delivery address"
               placeholderTextColor={colors.muted}
               value={dropoff}
-              onChangeText={setDropoff}
+              onChangeText={(t) => { setField('dropoff'); setDropoff(t); }}
             />
             {dropoff.length > 0 && (
               <Pressable onPress={() => setDropoff('')} hitSlop={10}>
@@ -181,6 +205,23 @@ export default function CouriersScreen() {
             )}
           </View>
         </View>
+
+        {field && predictions.length > 0 ? (
+          <View style={styles.predictions}>
+            {predictions.slice(0, 5).map((pred) => (
+              <Pressable
+                key={pred.placeId}
+                style={({ pressed }) => [styles.predictionRow, pressed && { opacity: 0.7 }]}
+                onPress={() => choosePlace(pred)}
+              >
+                <Text style={styles.predictionMain} numberOfLines={1}>{pred.mainText}</Text>
+                {pred.secondaryText ? (
+                  <Text style={styles.predictionSub} numberOfLines={1}>{pred.secondaryText}</Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.tipBox}>
           <Text style={styles.tipText}>
@@ -413,6 +454,13 @@ const styles = themed(() => StyleSheet.create({
     padding: 14,
   },
   tipText: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  predictions: {
+    marginHorizontal: 16, marginTop: -4, marginBottom: 12,
+    borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  predictionRow: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
+  predictionMain: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  predictionSub: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   continueBtn: {
     height: 54,
     backgroundColor: colors.primary,
