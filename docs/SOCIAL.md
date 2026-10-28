@@ -717,9 +717,9 @@ WhatsApp Cloud API is used, because it belongs to the same Meta app.
 ### Google Ads: one button, read only (2026-10-28)
 
 `googleAds.ts`, the same handshake as Meta's: an admin stores the app once on
-Connected accounts → Google Ads (an OAuth client from Google Cloud with the Google
-Ads API enabled, the **developer token** from a manager account's API Center, and
-the manager id if the ads account sits under one), then "Continue with Google"
+Connected accounts → Google Ads (an OAuth Web client from velocity-fe379, where
+the Google Ads API is on, and the manager id only if the ads account is reachable
+solely through one), then "Continue with Google"
 → `/connect/google-ads` → pick the account. The refresh token is sealed at
 `system/socialAds/secret/google` (never in Meta's `secret/credentials`, which
 Meta's connect overwrites); the account's name sits on the ads config as
@@ -728,8 +728,15 @@ Meta's connect overwrites); the account's name sits on the ads config as
 It **reads**: the last 30 days and the ten biggest campaigns on Connected
 accounts, and the last 7 days' spend added to blended ROAS (converted PKR⇄USD,
 left out for any other currency). It **never creates or changes a campaign** —
-that spends money and nothing here has met a live account yet. A developer token
-still on test access answers only for test accounts, in Google's own words.
+that spends money and nothing here has met a live account yet.
+
+**No developer token.** Google sunset them on 2026-09-09: the header is ignored
+and a later major version will reject calls that send one, so none is stored or
+sent. Access comes from the Cloud project that owns the OAuth client — Test
+(test accounts only), Explorer (real accounts, 2,880 operations a day, applied
+for on Cloud Console → Google Ads API → Overview), Basic, Standard. A Test
+project reading a real account gets `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION`
+(v25+), which the console turns into "Explorer access has to be approved first".
 API version is one constant, `GOOGLE_ADS_API` (v26 on 2026-10-28; Google sunsets
 each about a year after release).
 

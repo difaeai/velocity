@@ -10,8 +10,9 @@
  * blocked and the whole tab went), and the backend spends it.
  *
  * Before the first connect an admin stores the app once: an OAuth client from
- * Google Cloud and the developer token from a Google Ads manager account. A
- * Studio customer never sees that form — the app is Velocity's.
+ * the Google Cloud project with the Google Ads API on. No developer token —
+ * Google sunset them on 2026-09-09; the Cloud project's access level (Test,
+ * Explorer…) decides what can be read. A Studio customer never sees that form.
  */
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
@@ -270,9 +271,9 @@ function Numbers({ s }: { s: Summary }) {
   );
 }
 
-/** The app, stored once by an admin: the OAuth client and the developer token. */
+/** The app, stored once by an admin: the OAuth client. */
 function AppSetup({ redirectUri, vaultReady, onSaved }: { redirectUri: string; vaultReady: boolean; onSaved: () => void }) {
-  const [form, setForm] = useState({ clientId: '', clientSecret: '', developerToken: '', loginCustomerId: '' });
+  const [form, setForm] = useState({ clientId: '', clientSecret: '', loginCustomerId: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
@@ -284,7 +285,6 @@ function AppSetup({ redirectUri, vaultReady, onSaved }: { redirectUri: string; v
       await googleAdsApi.setApp({
         clientId: form.clientId.trim(),
         clientSecret: form.clientSecret.trim(),
-        developerToken: form.developerToken.trim(),
         ...(form.loginCustomerId.trim() ? { loginCustomerId: form.loginCustomerId.trim() } : {}),
       });
       onSaved();
@@ -300,30 +300,27 @@ function AppSetup({ redirectUri, vaultReady, onSaved }: { redirectUri: string; v
       <strong>One-time set-up (admins only)</strong>
       <ol style={{ margin: 0, paddingLeft: 18, color: colors.muted, lineHeight: 1.6 }}>
         <li>
-          Google Ads manager account → Tools → API Center → copy the <strong>developer token</strong>. Until Google grants Basic
-          access it works only with test accounts.
+          console.cloud.google.com → enable the <strong>Google Ads API</strong> → its Overview page → apply for{' '}
+          <strong>Explorer access</strong>. Until it is approved the project reads test accounts only.
         </li>
         <li>
-          console.cloud.google.com → APIs &amp; Services → enable the <strong>Google Ads API</strong> → Credentials → Create OAuth
-          client ID (Web application).
+          APIs &amp; Services → Credentials → Create OAuth client ID (Web application) with this exact redirect URI:{' '}
+          <code style={{ userSelect: 'all' }}>{redirectUri}</code>
         </li>
-        <li>
-          Add this exact redirect URI: <code style={{ userSelect: 'all' }}>{redirectUri}</code>
-        </li>
+        <li>Paste its client ID and secret below. No developer token — Google retired them on 9 September 2026.</li>
       </ol>
       {!vaultReady ? <p style={{ color: colors.danger, margin: 0 }}>SOCIAL_TOKEN_KEY is missing, so nothing can be stored.</p> : null}
       <input style={field} placeholder="Client ID (…apps.googleusercontent.com)" value={form.clientId} onChange={set('clientId')} aria-label="OAuth client ID" />
       <input style={field} placeholder="Client secret" value={form.clientSecret} onChange={set('clientSecret')} aria-label="OAuth client secret" type="password" />
-      <input style={field} placeholder="Developer token" value={form.developerToken} onChange={set('developerToken')} aria-label="Developer token" type="password" />
       <input
         style={field}
-        placeholder="Manager account ID, if your ads account sits under one (optional)"
+        placeholder="Manager account ID — leave empty unless your ads account is reachable only through it"
         value={form.loginCustomerId}
         onChange={set('loginCustomerId')}
         aria-label="Manager account ID"
       />
       <div>
-        <Button onClick={save} disabled={busy || !vaultReady || !form.clientId || !form.clientSecret || !form.developerToken}>
+        <Button onClick={save} disabled={busy || !vaultReady || !form.clientId || !form.clientSecret}>
           {busy ? 'Checking with Google…' : 'Save'}
         </Button>
       </div>

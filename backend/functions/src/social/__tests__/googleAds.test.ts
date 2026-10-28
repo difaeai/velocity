@@ -23,12 +23,22 @@ describe("Google's sentence", () => {
     const body = {
       error: {
         message: 'The caller does not have permission',
-        details: [{ errors: [{ message: 'The developer token is only approved for use with test accounts.' }] }],
+        details: [{ errors: [{ message: 'User does not have permission to access customer.' }] }],
       },
     };
-    expect(adsErrorText(body, 403)).toBe('The developer token is only approved for use with test accounts.');
+    expect(adsErrorText(body, 403)).toBe('User does not have permission to access customer.');
     expect(adsErrorText({ error: { message: 'Request had invalid authentication credentials.' } }, 401)).toMatch(/invalid authentication/);
     expect(adsErrorText('<html>', 502)).toBe('Google Ads returned HTTP 502.');
+  });
+
+  it('says what to do when a Test-access Cloud project reads a real account (v25+)', () => {
+    const body = {
+      error: {
+        message: 'The caller does not have permission',
+        details: [{ errors: [{ errorCode: { authorizationError: 'CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION' }, message: 'x' }] }],
+      },
+    };
+    expect(adsErrorText(body, 403)).toMatch(/Explorer access/);
   });
 });
 

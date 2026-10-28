@@ -2491,7 +2491,7 @@ export const googleAdsApi = {
     { ready: boolean; vaultReady: boolean; clientId: string | null; loginCustomerId: string | null; redirectUri: string }
   >('adminGetGoogleAdsState'),
   setApp: callable<
-    { clientId: string; clientSecret: string; developerToken: string; loginCustomerId?: string },
+    { clientId: string; clientSecret: string; loginCustomerId?: string },
     { ok: boolean; redirectUri: string }
   >('adminSetGoogleAdsApp'),
   start: callable<Record<string, never>, { url: string; state: string }>('adminStartGoogleAdsConnect'),

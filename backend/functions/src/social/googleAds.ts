@@ -10,8 +10,10 @@
  *
  * The flow mirrors `meta.ts`:
  *  1. An admin stores the app once (`adminSetGoogleAdsApp`): an OAuth client from
- *     Google Cloud and the developer token from a Google Ads manager account's
- *     API Center. Shared by every workspace, like `system/socialMetaApp`.
+ *     the Google Cloud project that has the Google Ads API on. Shared by every
+ *     workspace, like `system/socialMetaApp`. No developer token: Google sunset
+ *     them on 2026-09-09 — the header is ignored, and a later API version will
+ *     reject a call that sends one. Access now comes from that Cloud project.
  *  2. `adminStartGoogleAdsConnect` mints a one-time state and returns Google's
  *     consent URL (offline access, so a refresh token comes back).
  *  3. Google redirects to `/connect/google-ads`, which hands the code to the
@@ -28,8 +30,10 @@
  *   second connect silently comes back with no refresh token.
  * - An account reached through a manager account answers only with the
  *   manager's id in `login-customer-id`. The app's optional manager id is sent.
- * - A developer token still on test access answers only for test accounts:
- *   Google's own error says so, and it reaches the console word for word.
+ * - The Cloud project's access level decides what can be read: Test reaches only
+ *   test accounts, Explorer (applied for on the Google Ads API Overview page in
+ *   Cloud Console) reaches real ones. A Test project reading a real account gets
+ *   CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION, which the console says plainly.
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -60,7 +64,6 @@ const SECRET_PATH = 'system/socialAds/secret/google';
 interface GoogleApp {
   clientId: string;
   clientSecret: string;
-  developerToken: string;
   /** A manager account the client accounts are reached through, digits only. */
   loginCustomerId: string | null;
 }
@@ -97,10 +100,14 @@ export const dashed = (id: string): string => `${id.slice(0, 3)}-${id.slice(3, 6
 
 /**
  * Google's own sentence out of a Google Ads error body: the first per-field
- * error when there is one ("The developer token is only approved for use with
- * test accounts"), else the top-level message. Pure.
+ * error when there is one, else the top-level message — except the one the
+ * owner will meet first, a Test-access project reading a real account, which
+ * gets said in words they can act on. Pure.
  */
 export function adsErrorText(body: unknown, status: number): string {
+  if (JSON.stringify(body ?? '').includes('CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION')) {
+    return 'The Google Cloud project only has Test access, which reads test accounts only. Explorer access (Cloud Console → Google Ads API → Overview) has to be approved first.';
+  }
   const e = (body as { error?: { message?: string; details?: { errors?: { message?: string }[] }[] } })?.error;
   const detail = e?.details?.flatMap((d) => d.errors ?? []).find((x) => x.message)?.message;
   return detail || e?.message || `Google Ads returned HTTP ${status}.`;
@@ -118,13 +125,12 @@ async function googleApp(): Promise<GoogleApp | null> {
   if (!tokenVaultReady()) return null;
   const [pub, sec] = await Promise.all([appRef.get(), appSecretRef.get()]);
   const clientId = (pub.get('clientId') as string | undefined)?.trim();
-  const sealed = sec.data() as { clientSecret?: SealedSecret; developerToken?: SealedSecret } | undefined;
-  if (!clientId || !sealed?.clientSecret || !sealed.developerToken) return null;
+  const sealed = sec.get('clientSecret') as SealedSecret | undefined;
+  if (!clientId || !sealed) return null;
   try {
     return {
       clientId,
-      clientSecret: open(sealed.clientSecret),
-      developerToken: open(sealed.developerToken),
+      clientSecret: open(sealed),
       loginCustomerId: (pub.get('loginCustomerId') as string | null | undefined) ?? null,
     };
   } catch {
@@ -170,7 +176,6 @@ async function accessToken(app: GoogleApp, refreshToken: string): Promise<string
 async function gads<T>(app: GoogleApp, token: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${token}`,
-    'developer-token': app.developerToken,
     'content-type': 'application/json',
   };
   // Only on calls about one account; listing what a sign-in reaches is not one.
@@ -264,7 +269,7 @@ export const adminGetGoogleAdsState = deskCall('ads', async () => {
 });
 
 /**
- * Store the OAuth client and the developer token, once, for every workspace.
+ * Store the OAuth client, once, for every workspace.
  * The client pair is proved before it is kept: a refresh with a dummy token
  * answers `invalid_grant` for a real client and `invalid_client` for a wrong
  * one, so a typo surfaces here rather than as a blank Google error page.
@@ -275,12 +280,11 @@ export const adminSetGoogleAdsApp = onCall(async (req) => {
     .object({
       clientId: z.string().trim().regex(/\.apps\.googleusercontent\.com$/, 'That is not an OAuth client ID.'),
       clientSecret: z.string().trim().min(10).max(200),
-      developerToken: z.string().trim().min(15).max(60),
       loginCustomerId: z.string().trim().max(20).optional(),
     })
     .safeParse(req.data);
   if (!parsed.success) {
-    throw new HttpsError('invalid-argument', parsed.error.issues[0]?.message ?? 'Client ID, client secret and developer token are required.');
+    throw new HttpsError('invalid-argument', parsed.error.issues[0]?.message ?? 'The client ID and client secret are both required.');
   }
   if (!tokenVaultReady()) throw new HttpsError('failed-precondition', 'SOCIAL_TOKEN_KEY is not configured.');
   const manager = parsed.data.loginCustomerId ? customerDigits(parsed.data.loginCustomerId) : null;
@@ -301,11 +305,7 @@ export const adminSetGoogleAdsApp = onCall(async (req) => {
   await db
     .batch()
     .set(appRef, { clientId: parsed.data.clientId, loginCustomerId: manager, updatedAt: FieldValue.serverTimestamp(), updatedBy: ctx.uid })
-    .set(appSecretRef, {
-      clientSecret: seal(parsed.data.clientSecret),
-      developerToken: seal(parsed.data.developerToken),
-      updatedAt: FieldValue.serverTimestamp(),
-    })
+    .set(appSecretRef, { clientSecret: seal(parsed.data.clientSecret), updatedAt: FieldValue.serverTimestamp() })
     .commit();
   return { ok: true, redirectUri: redirectUri() };
 });
