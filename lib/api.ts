@@ -2443,7 +2443,76 @@ export interface AdForecast {
 }
 
 /** system/socialAds — the connection, the owner's limits, and the account at a glance. */
+/** The connected Google Ads account, on the ads config (backend `GoogleAdsLink`). */
+export interface GoogleAdsLink {
+  customerId: string;
+  name: string;
+  currency: string;
+  testAccount: boolean;
+  connectedBy: string | null;
+  connectedAtMs: number;
+  /** Google refused the stored sign-in — connect again. */
+  lastError: string | null;
+}
+
+export interface GoogleAdsChoice {
+  customerId: string;
+  name: string;
+  currency: string;
+  manager: boolean;
+  testAccount: boolean;
+  note: string | null;
+}
+
+export interface GoogleAdsTotals {
+  spend: number;
+  clicks: number;
+  impressions: number;
+  conversions: number;
+  value: number;
+}
+
+/** Where /connect/google-ads leaves its result when it could not postMessage it. */
+export const GOOGLE_ADS_HANDOFF_KEY = 'velocity.social.googleAdsConnect';
+export const GOOGLE_ADS_RETURN_KEY = 'velocity.social.googleAdsConnect.return';
+
+export interface GoogleAdsHandoff {
+  kind: 'velocity:google-ads-connect';
+  code: string | null;
+  state: string | null;
+  error: string | null;
+  atMs: number;
+}
+
+/** Google Ads: connected with "Continue with Google" and read. Nothing here spends. */
+export const googleAdsApi = {
+  state: callable<
+    Record<string, never>,
+    { ready: boolean; vaultReady: boolean; clientId: string | null; loginCustomerId: string | null; redirectUri: string }
+  >('adminGetGoogleAdsState'),
+  setApp: callable<
+    { clientId: string; clientSecret: string; developerToken: string; loginCustomerId?: string },
+    { ok: boolean; redirectUri: string }
+  >('adminSetGoogleAdsApp'),
+  start: callable<Record<string, never>, { url: string; state: string }>('adminStartGoogleAdsConnect'),
+  finish: callable<{ code: string; state: string }, { choices: GoogleAdsChoice[] }>('adminFinishGoogleAdsConnect'),
+  choose: callable<{ state: string; customerId: string }, { ok: boolean; name: string; customerId: string }>(
+    'adminChooseGoogleAdsAccount',
+  ),
+  disconnect: callable<Record<string, never>, { ok: boolean }>('adminDisconnectGoogleAds'),
+  summary: callable<
+    Record<string, never>,
+    {
+      currency: string;
+      totals: GoogleAdsTotals;
+      campaigns: (GoogleAdsTotals & { id: string; name: string; status: string; channel: string })[];
+    }
+  >('adminGoogleAdsSummary'),
+};
+
 export interface AdsConfigDoc {
+  /** Absent or null until a Google Ads account is connected. */
+  google?: GoogleAdsLink | null;
   adAccountId: string | null;
   accountName: string | null;
   currency: string;

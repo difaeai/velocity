@@ -25,6 +25,17 @@ export {
   adminConnectAdsToken,
 } from './meta';
 
+/** Google Ads: connected with "Continue with Google" and read, never spent from. */
+export {
+  adminGetGoogleAdsState,
+  adminSetGoogleAdsApp,
+  adminStartGoogleAdsConnect,
+  adminFinishGoogleAdsConnect,
+  adminChooseGoogleAdsAccount,
+  adminDisconnectGoogleAds,
+  adminGoogleAdsSummary,
+} from './googleAds';
+
 export {
   adminGetSocialRoles,
   adminHireSocialEmployee,

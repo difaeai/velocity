@@ -36,6 +36,7 @@ import {
 import { Button, Card } from '@/components/ui';
 import { PlatformBadge, PLATFORM_META, StatusPill } from '@/components/social/shared';
 import { InstagramConnect } from '@/components/social/instagramConnect';
+import { GoogleAdsConnect } from '@/components/social/googleAdsConnect';
 
 export default function AccountsPage() {
   const { path, includes } = useWorkspace();
@@ -92,6 +93,7 @@ export default function AccountsPage() {
       {error ? <p style={{ color: colors.danger, marginBottom: 14 }}>{error}</p> : null}
 
       {showAds ? <AdsAccount cfg={ads} postingPageId={accounts.facebook?.externalId ?? null} /> : null}
+      {showAds ? <GoogleAdsConnect link={ads?.google} /> : null}
 
       {schema && !schema.vaultReady ? (
         <Card style={{ marginBottom: 16, borderColor: '#fab219', background: '#fab2190f' }}>

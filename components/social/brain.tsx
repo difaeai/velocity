@@ -263,8 +263,8 @@ export function ringSpots(n: number, from = 60, to = 300): { x: number; y: numbe
   });
 }
 
-type Link4 = 'live' | 'fix' | 'off' | 'soon';
-const RING_WORD: Record<Link4, string> = { live: 'Live', fix: 'Fix', off: 'Connect', soon: 'Soon' };
+type Link4 = 'live' | 'fix' | 'off';
+const RING_WORD: Record<Link4, string> = { live: 'Live', fix: 'Fix', off: 'Connect' };
 
 interface RingNode {
   key: string;
@@ -274,15 +274,13 @@ interface RingNode {
   state: Link4;
   /** Said to a screen reader and on hover: what exactly is connected, or what is wrong. */
   title: string;
-  href: string | null;
+  href: string;
 }
 
 /**
  * The connections the work runs through — Instagram, Facebook, the sales
- * mailbox, Meta Ads, Google Ads — each from its own real state. Google Ads has
- * no integration (the desk writes briefs a person takes into Google Ads, see
- * seo.ts), so it says Soon rather than offering a Connect that leads nowhere.
- * A plan without ads or sales does not show those. Pure.
+ * mailbox, Meta Ads, Google Ads — each from its own real state, each linking to
+ * where it is connected. A plan without ads or sales does not show those. Pure.
  */
 export function ringNodes(p: {
   accounts: SocialAccountDoc[];
@@ -314,6 +312,7 @@ export function ringNodes(p: {
   const smtp = p.sales?.mode === 'mailbox' ? p.sales.smtp : null;
   const gmail = !smtp || /gmail|googlemail/i.test(smtp.host);
   const adAccount = p.ads?.adAccountId;
+  const google = p.ads?.google?.customerId ? p.ads.google : null;
   const expired = Boolean(adAccount && p.ads?.tokenExpiresAtMs && p.ads.tokenExpiresAtMs < p.nowMs);
   return [
     social('instagram'),
@@ -351,9 +350,13 @@ export function ringNodes(p: {
             name: 'Google Ads',
             glyph: 'G',
             brand: '#4285f4',
-            state: 'soon' as Link4,
-            title: 'Google Ads: not connected yet — the team writes the brief for a person to take into Google Ads',
-            href: null,
+            state: (google ? (google.lastError ? 'fix' : 'live') : 'off') as Link4,
+            title: google
+              ? google.lastError
+                ? `Google Ads: ${google.lastError}`
+                : `Google Ads: ${google.name} (read only — spend counts in blended ROAS)`
+              : 'Google Ads: not connected',
+            href: '/dashboard/social/accounts#google-ads',
           },
         ]
       : []),
@@ -380,40 +383,27 @@ function ConnectionRing({ nodes }: { nodes: RingNode[] }) {
         })}
       </svg>
       <ul className="bn-nets" aria-label="Connections">
-        {nodes.map((node, i) => {
-          const body = (
-            <>
+        {nodes.map((node, i) => (
+          <li
+            key={node.key}
+            className={`bn-net ${node.state}`}
+            style={vars({
+              '--x': `${spots[i].x}%`,
+              '--y': `${spots[i].y}%`,
+              '--mx': `${round[i].x}%`,
+              '--my': `${round[i].y}%`,
+              '--d': `${i * 0.08}s`,
+            })}
+          >
+            <Link href={node.href} title={node.title} aria-label={node.title}>
               <span className="bdg" style={{ background: node.brand }} aria-hidden>
                 {node.glyph}
               </span>
               <span className="nm">{node.name}</span>
               <span className="st">{RING_WORD[node.state]}</span>
-            </>
-          );
-          return (
-            <li
-              key={node.key}
-              className={`bn-net ${node.state}`}
-              style={vars({
-                '--x': `${spots[i].x}%`,
-                '--y': `${spots[i].y}%`,
-                '--mx': `${round[i].x}%`,
-                '--my': `${round[i].y}%`,
-                '--d': `${i * 0.08}s`,
-              })}
-            >
-              {node.href ? (
-                <Link href={node.href} title={node.title} aria-label={node.title}>
-                  {body}
-                </Link>
-              ) : (
-                <span className="bn-node" title={node.title} aria-label={node.title} role="img">
-                  {body}
-                </span>
-              )}
-            </li>
-          );
-        })}
+            </Link>
+          </li>
+        ))}
       </ul>
     </>
   );
@@ -929,7 +919,7 @@ export const BRAIN_CSS = `
 .bn-net { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); pointer-events: auto;
   animation: bn-pop .5s cubic-bezier(.2,.9,.3,1.3) both; animation-delay: var(--d); }
 @keyframes bn-pop { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } }
-.bn-net a, .bn-node { display: grid; justify-items: center; gap: 2px; min-width: 64px; padding: 5px 6px; border-radius: 13px; text-decoration: none;
+.bn-net a { display: grid; justify-items: center; gap: 2px; min-width: 64px; padding: 5px 6px; border-radius: 13px; text-decoration: none;
   color: #e8f5ec; background: rgba(9,20,13,.86); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(6px);
   transition: transform .2s ease, border-color .2s ease; }
 .bn-net a:hover, .bn-net a:focus-visible { transform: translateY(-2px); border-color: rgba(204,255,0,.6); }
@@ -940,9 +930,8 @@ export const BRAIN_CSS = `
 .bn-net.live .st { background: var(--lime); color: var(--ink); }
 .bn-net.fix a { border-color: rgba(245,179,1,.6); }
 .bn-net.fix .st { background: #f5b301; color: #1a1300; }
-.bn-net.off .st, .bn-net.soon .st { background: rgba(255,255,255,.08); color: #a9c2b4; }
-.bn-net.off .bdg, .bn-net.soon .bdg { filter: grayscale(1); opacity: .5; }
-.bn-net.soon .bn-node { border-style: dashed; }
+.bn-net.off .st { background: rgba(255,255,255,.08); color: #a9c2b4; }
+.bn-net.off .bdg { filter: grayscale(1); opacity: .5; }
 @media (max-width: 1180px) {
   .bn-grid { grid-template-columns: minmax(0, 1fr); }
   .bn-out { display: none; }
