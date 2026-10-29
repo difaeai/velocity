@@ -207,17 +207,19 @@ function uuidv4() {
 }
 
 // Pool fare breakdown — percentage of solo fare per seat based on total riders
-// 2 riders total (you + 1 joins): each pays 60%
+// 2 riders total (you + 1 joins): each pays 55%
 // 3 riders total (you + 2 join):  each pays 45%
 // 4 riders total (you + 3 join):  each pays 35%
+// Mirrors POOL_SEAT_PCT in backend/functions/src/domain/fares.ts.
 const POOL_TIERS = [
-  { extra: 1, pct: 0.60, label: '+1 joins' },
+  { extra: 1, pct: 0.55, label: '+1 joins' },
   { extra: 2, pct: 0.45, label: '+2 join'  },
   { extra: 3, pct: 0.35, label: '+3 join'  },
 ];
 function poolFareFor(soloFare: number, extra: number): number {
   const tier = POOL_TIERS.find(t => t.extra === extra);
-  return Math.ceil(soloFare * (tier?.pct ?? 1));
+  // In whole percents, as the backend does: 400 × 0.55 is 220.00000000000003, which ceil makes 221.
+  return Math.ceil((soloFare * Math.round((tier?.pct ?? 1) * 100)) / 100);
 }
 
 // Vehicle catalogue for the carousel — brand SVG marks, not emoji, so every

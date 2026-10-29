@@ -211,7 +211,7 @@ describe('bookSharedTravelMateRide', () => {
     const res = await bookSharedTravelMateRide.run(makeReq({ shareId }, PARTNER));
     expect(res.booked).toBe(true);
     expect(res.pending).toBe(false);
-    expect(res.farePerSeat).toBe(300); // 60% of the 500 fare, two riders
+    expect(res.farePerSeat).toBe(275); // 55% of the 500 fare, two riders
 
     const trip = (await db().doc('trips/trip-pool').get()).data()!;
     expect(trip.poolMembers).toEqual([SHARER, PARTNER]);

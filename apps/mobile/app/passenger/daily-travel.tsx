@@ -1,30 +1,29 @@
 /**
- * Corporate, Students & daily travel — home's left ride tile.
+ * Corporate, Students & daily travel — home's left ride tile. Ride sharing,
+ * laid out the owner's way (2026-10-29): one search, then cards.
  *
- * One question at the top: where do you work, study or usually go (one place
- * or several), and where do you leave from. Each answer is a saved daily route
- * (`users/{uid}/dailyRoutes`). Once a place is saved the question folds into
- * one "Add another place" row, so the screen is about the places, not the form.
+ *   1. The city, at the top.
+ *   2. Where to (drop-off), then where from (pickup — the phone's location
+ *      until the rider types).
+ *   3. With both set, the shared rides on that route appear as cards: the fare
+ *      per seat on top, the car under it with its seats taken and free, then
+ *      Join. A car that fills stays on its card for two minutes; then the same
+ *      route is an empty car again for the next riders (backend sharedPools/).
+ *   4. Nobody going that way yet? The card for a new shared ride on the route
+ *      is already there — start it, with a name and a daily time if wanted.
  *
- * Matching is by PLACE, never by employer: anyone leaving near you and going
- * near your place shares the car, whether or not they work in the same office.
- *
- * Everything happens on this screen. Each place shows:
- *  - the car and the fare: the whole car, and what each rider pays at 1-4;
- *  - the people on that route (first name, gender, area, usual time), each one
- *    ticked to receive a ride request (getRouteMates / inviteRouteMates);
- *  - the shared cars already going there, with a Join on each;
- *  - "Book & send request": books the shared ride here (createTrip) and asks
- *    the ticked people to join it, so the pool forms around this rider.
- * At the top: the ride the rider is on (car, fare, who is aboard, driver), with
- * "Ask by username" while it is their own sharing ride; then the sharing-ride
- * requests other riders sent them (getMyRideInvites), to Join or turn down.
+ * A seat booked for later is PENDING until a driver accepts, and every card and
+ * sheet says so. Riders meet the car at its pickup and leave it at its drop-off,
+ * each within 1 km of their own — that is what "on your route" means.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,34 +32,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
-import { addDoc, collection, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-import {
-  api,
-  type RideInvite,
-  type RouteMate,
-  type SharedFareQuote,
-  type SuggestedRide,
-  type TravelAreas,
-} from '../../src/api/client';
+import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
-import { db } from '../../src/firebase';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
-import { RIDE_TYPE_LABELS, type RideType, type Trip } from '../../src/domain/types';
+import { RIDE_TYPE_LABELS, type RideType } from '../../src/domain/types';
+import { PAKISTAN_CITIES } from '../../src/domain/intercityTypes';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
-import { useTrip } from '../../src/hooks/useTrip';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
-import { useGenderPref } from '../../src/hooks/genderPref';
-import { useDailyRoutes, type DailyRoute, type RoutePlace } from '../../src/hooks/passenger';
 import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 import { areaLabel } from '../../src/lib/areaLabel';
-import { clockLabel } from '../../src/lib/dailyRouteTime';
-import { distanceMeters } from '../../src/lib/geo';
+import { clockLabel, fromHHMM, toHHMM } from '../../src/lib/dailyRouteTime';
 import { Text, TextInput } from '../../src/ui/Text';
-import { GenderTally } from '../../src/ui/TravelAreas';
-import { DestinationPinIcon, PickupDotIcon, PoolIcon } from '../../src/ui/RideIcons';
+import { DestinationPinIcon, PickupDotIcon } from '../../src/ui/RideIcons';
 import { ArrowIcon } from '../../src/ui/ServiceIcons';
 
 // Places API (New) requires session tokens to be UUID v4.
@@ -72,6 +60,8 @@ function uuidv4() {
 }
 
 type Field = 'to' | 'from';
+type Place = { lat: number; lng: number; address: string };
+type SharedCar = 'mini' | 'ac';
 
 /** What the live ride is doing, in the rider's words. */
 const ACTIVE_LABEL: Record<string, string> = {
@@ -83,43 +73,69 @@ const ACTIVE_LABEL: Record<string, string> = {
 };
 
 /** The two cars a shared ride can be: four seats each. */
-const SHARED_CARS: { key: RideType; note: string }[] = [
+const SHARED_CARS: { key: SharedCar; note: string }[] = [
   { key: 'mini', note: 'No AC · 4 seats' },
   { key: 'ac', note: 'AC on · 4 seats' },
 ];
 
-/** Ride states other riders can still be asked into — the backend's list. */
-const INVITABLE = new Set(['requested', 'matched', 'arriving']);
+/** The chosen city outlives the screen and the theme/language remount. */
+let rememberedCity: string | null = null;
 
-/** A ride already booked counts as "going to this place" within this distance. */
-const SAME_PLACE_M = 3000;
+/** The city named in an address, if it is one we list. */
+function cityFromAddress(address: string | null | undefined): string | null {
+  const a = (address ?? '').toLowerCase();
+  return PAKISTAN_CITIES.find((c) => a.includes(c.name.toLowerCase()))?.id ?? null;
+}
 
-const MALE = '#60a5fa';
-const FEMALE = '#f472b6';
+const distance = (m: number | null) =>
+  m === null ? '' : m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1)} km`;
+
+const clockOf = (ms: number) => clockLabel(toHHMM(new Date(ms))) ?? '';
+
+/** "Leaves 8:00 AM today — or as soon as it is full". */
+function departLine(p: Pick<SharedPool, 'departTime' | 'departsAtMs'>): string {
+  if (!p.departTime) return 'Leaves as soon as a driver accepts';
+  const day = p.departsAtMs && new Date(p.departsAtMs).toDateString() !== new Date().toDateString()
+    ? 'tomorrow'
+    : 'today';
+  return `Leaves ${clockLabel(p.departTime)} ${day} — or as soon as it is full`;
+}
+
+function statusOf(p: SharedPool): { label: string; tone: 'wait' | 'go' | 'full' } {
+  if (p.state === 'full') return { label: 'Full — on its way', tone: 'full' };
+  if (p.driver) return { label: 'Driver assigned', tone: 'go' };
+  if (p.state === 'car') return { label: 'Finding a driver', tone: 'wait' };
+  return { label: 'Driver needed', tone: 'wait' };
+}
+
+const errorText = (e: unknown) => (e instanceof FirebaseError ? e.message : 'Please try again.');
 
 export default function DailyTravelScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const uid = user?.uid;
-  const routes = useDailyRoutes(uid);
   const { coords, address: currentAddress, request: requestLocation } = useCurrentLocation();
-  const { active } = useActiveTrip(uid);
-  const { trip: activeTrip } = useTrip(active?.id);
-  // Woken while the rider is choosing, so Book does not wait on a cold start.
-  useForegroundInterval(() => { api.warmRide('createTrip').catch(() => {}); }, 5 * 60_000);
+  const { active } = useActiveTrip(user?.uid);
 
-  // The question card folds away once there is a place; "+ Add another" opens it.
-  const [adding, setAdding] = useState(false);
-  const formOpen = adding || (routes !== null && routes.length === 0);
+  const [city, setCityState] = useState(() => rememberedCity ?? cityFromAddress(currentAddress) ?? 'islamabad');
+  const [cityOpen, setCityOpen] = useState(false);
+  const cityName = PAKISTAN_CITIES.find((c) => c.id === city)?.name ?? 'Islamabad';
+  function setCity(id: string) {
+    rememberedCity = id;
+    setCityState(id);
+  }
+  // Until the rider picks a city, it follows the phone's address once that arrives.
+  useEffect(() => {
+    const guess = cityFromAddress(currentAddress);
+    if (!rememberedCity && guess) setCityState(guess);
+  }, [currentAddress]);
 
   const [toText, setToText] = useState('');
-  const [to, setTo] = useState<RoutePlace | null>(null);
+  const [to, setTo] = useState<Place | null>(null);
   const [fromText, setFromText] = useState('');
-  const [from, setFrom] = useState<RoutePlace | null>(null);
+  const [from, setFrom] = useState<Place | null>(null);
   // Until the rider types in it, "from" follows the phone's location.
   const [fromEdited, setFromEdited] = useState(false);
   const [field, setField] = useState<Field | null>(null);
-  const [saving, setSaving] = useState(false);
   const tokenRef = useRef(uuidv4());
 
   useEffect(() => {
@@ -135,6 +151,13 @@ export default function DailyTravelScreen() {
     field === 'to' ? toText : field === 'from' ? fromText : '',
     tokenRef.current,
   );
+  // The chosen city's places first. Ordered, never filtered: a suggestion that
+  // does not name its city is still a real place.
+  const suggestions = useMemo(() => {
+    const name = cityName.toLowerCase();
+    const inCity = (p: PlacePrediction) => `${p.fullText} ${p.secondaryText ?? ''}`.toLowerCase().includes(name);
+    return [...predictions].sort((a, b) => Number(inCity(b)) - Number(inCity(a))).slice(0, 6);
+  }, [predictions, cityName]);
 
   function type(which: Field, text: string) {
     setField(which);
@@ -163,69 +186,171 @@ export default function DailyTravelScreen() {
       Alert.alert('Could not find that place', 'Please pick another suggestion.');
       return;
     }
-    const place: RoutePlace = { lat: detail.lat, lng: detail.lng, address: label };
+    const place: Place = { lat: detail.lat, lng: detail.lng, address: label };
     if (which === 'to') setTo(place);
     else setFrom(place);
   }
 
-  async function addPlace() {
-    if (!uid) return;
-    if (!to) {
-      Alert.alert('Choose your place', 'Type your office, university or area and pick it from the list.');
-      return;
-    }
-    if (!from) {
-      Alert.alert('Where do you leave from?', 'Pick your home or starting point from the list.');
-      return;
-    }
-    setSaving(true);
-    try {
-      // Same shape "My routes" (daily-routes.tsx) writes and the backend matches on.
-      await addDoc(collection(db, 'users', uid, 'dailyRoutes'), {
-        pickup: from,
-        dropoff: to,
-        time: null,
-        label: `To ${areaLabel(to.address)}`,
-        radiusKm: 3,
-        notify: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      setTo(null);
-      setToText('');
-      setAdding(false);
-    } catch {
-      Alert.alert('Could not save the place', 'Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  }
+  // ── The cards ─────────────────────────────────────────────────────────────
+  const [pools, setPools] = useState<SharedPool[] | null>(null);
+  const [mine, setMine] = useState<SharedPool[] | null>(null);
+  const [showMine, setShowMine] = useState(false);
+  const [quote, setQuote] = useState<SharedFareQuote | null>(null);
+  const [joining, setJoining] = useState<SharedPool | null>(null);
+  const [sheet, setSheet] = useState<{ edit: SharedPool | null } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  // Only the newest search may paint: an older answer landing late is a different route.
+  const searchSeq = useRef(0);
 
-  function remove(r: DailyRoute) {
-    if (!uid) return;
-    Alert.alert('Remove this place?', `${r.dropoff.address}. You will stop getting shared-ride alerts for it.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          deleteDoc(doc(db, 'users', uid, 'dailyRoutes', r.id)).catch(() =>
-            Alert.alert('Could not remove the place', 'Please try again.'),
-          );
-        },
-      },
-    ]);
-  }
+  const loadPools = useCallback(() => {
+    const n = ++searchSeq.current;
+    if (!from || !to) {
+      setPools(null);
+      return;
+    }
+    api
+      .getSharedPools({ city, from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng } })
+      .then((r) => n === searchSeq.current && setPools(r.pools))
+      .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
+  }, [city, from, to]);
+  useEffect(() => {
+    setPools(null);
+    loadPools();
+  }, [loadPools]);
+  // Seats fill and cars leave while the rider watches.
+  useForegroundInterval(from && to ? loadPools : null, 20_000);
+
+  const loadMine = useCallback(() => {
+    api.getSharedPools({ mine: true }).then((r) => setMine(r.pools)).catch(() => {});
+  }, []);
+  useFocusEffect(loadMine);
+
+  // The fare for a new shared ride on this route — the card shown when nobody shares it yet.
+  useEffect(() => {
+    setQuote(null);
+    if (!from || !to) return;
+    let live = true;
+    api
+      .getSharedRideFare({ rideType: 'mini', pickup: { lat: from.lat, lng: from.lng }, dropoff: { lat: to.lat, lng: to.lng } })
+      .then((q) => live && setQuote(q))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [from, to]);
+
+  const refresh = () => {
+    loadPools();
+    loadMine();
+  };
 
   const openRide = useCallback(
     (tripId: string) => router.push(`/passenger/trip/${tripId}` as Parameters<typeof router.push>[0]),
     [router],
   );
 
-  // The pickup for a ride booked or joined here: where the phone is now.
-  const here = coords
-    ? { lat: coords.lat, lng: coords.lng, address: currentAddress ?? 'Current location' }
-    : null;
+  function announce(res: SharedPoolSeat) {
+    if (res.status === 'booked') {
+      Alert.alert(
+        'Seat booked',
+        `${res.departsAtMs ? `The car leaves at ${clockOf(res.departsAtMs)}. ` : ''}` +
+          `It is not confirmed until a driver accepts — we will notify you. PKR ${res.perSeatFare} for now, less if more people join.`,
+      );
+    } else if (res.status === 'asked') {
+      Alert.alert('Asked the driver', 'They have to agree before you take the seat. You will get a notification either way.');
+    } else {
+      Alert.alert(
+        'You are in 🎉',
+        `PKR ${res.perSeatFare} for your seat — less if more people join. Drivers nearby are being asked now.`,
+        [
+          { text: 'Stay here', style: 'cancel' },
+          { text: 'Open my ride', onPress: () => openRide(res.tripId) },
+        ],
+      );
+    }
+  }
+
+  async function join(p: SharedPool) {
+    setBusy(p.id);
+    try {
+      const res = await api.joinSharedPool({ poolId: p.id });
+      setJoining(null);
+      announce(res);
+      refresh();
+    } catch (e) {
+      Alert.alert('Could not join', errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submit(form: { label: string; departTime: string | null; rideType: SharedCar }) {
+    const editing = sheet?.edit ?? null;
+    setBusy('sheet');
+    try {
+      if (editing) {
+        await api.editSharedPool({ poolId: editing.id, label: form.label.trim() || null, departTime: form.departTime });
+        setSheet(null);
+      } else {
+        if (!from || !to) return;
+        const res = await api.createSharedPool({
+          city,
+          label: form.label.trim() || null,
+          departTime: form.departTime,
+          rideType: form.rideType,
+          pickup: from,
+          dropoff: to,
+        });
+        setSheet(null);
+        announce(res);
+      }
+      refresh();
+    } catch (e) {
+      Alert.alert(editing ? 'Could not save' : 'Could not start it', errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function leave(p: SharedPool) {
+    Alert.alert('Cancel your seat?', 'It is free — no driver has accepted yet.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Cancel seat',
+        style: 'destructive',
+        onPress: () => {
+          api.leaveSharedPool({ poolId: p.id }).then(refresh).catch((e) => Alert.alert('Could not cancel', errorText(e)));
+        },
+      },
+    ]);
+  }
+
+  function remove(p: SharedPool) {
+    Alert.alert('Remove it from your list?', 'It stays open for everyone else going this way.', [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          api.editSharedPool({ poolId: p.id, remove: true }).then(loadMine).catch((e) => Alert.alert('Could not remove', errorText(e)));
+        },
+      },
+    ]);
+  }
+
+  const cardProps = (p: SharedPool, owner = false) => ({
+    pool: p,
+    busy: busy === p.id,
+    onJoin: () => setJoining(p),
+    onLeave: () => leave(p),
+    onOpenRide: openRide,
+    onEdit: owner && p.mine ? () => setSheet({ edit: p }) : undefined,
+    onRemove: owner && p.mine ? () => remove(p) : undefined,
+  });
+
+  // Seats the rider holds that this search does not already show.
+  const shownIds = new Set((pools ?? []).map((p) => p.id));
+  const yourSeats = (mine ?? []).filter((p) => (p.booked || p.aboardTripId) && !shownIds.has(p.id));
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -242,25 +367,56 @@ export default function DailyTravelScreen() {
           </View>
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={1}>Corporate, Students & daily</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>Share a car with people going your way</Text>
+          <Text style={styles.title} numberOfLines={1}>Ride sharing</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>Corporate, students & daily travel</Text>
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.mineBtn, showMine && styles.mineBtnOn, pressed && { opacity: 0.85 }]}
+          onPress={() => setShowMine((v) => !v)}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.mineBtnTxt, showMine && styles.mineBtnTxtOn]}>{showMine ? 'Search' : 'My rides'}</Text>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* The ride this rider is on — booked or joined here or anywhere. */}
-        {active && activeTrip ? <BookedRide trip={activeTrip} onOpen={() => openRide(active.id)} /> : null}
-        {active && activeTrip?.pool && activeTrip.passengerId === uid && INVITABLE.has(activeTrip.status) ? (
-          <AskByUsername tripId={active.id} />
+        {active ? (
+          <Pressable style={({ pressed }) => [styles.activeCard, pressed && { opacity: 0.9 }]} onPress={() => openRide(active.id)}>
+            <View style={styles.activeDot} />
+            <Text style={styles.activeTxt} numberOfLines={1}>
+              {ACTIVE_LABEL[active.status] ?? 'You are on a ride'} — open it
+            </Text>
+            <ArrowIcon size={18} color="#0b1a00" />
+          </Pressable>
         ) : null}
 
-        {/* Sharing rides other riders asked this one into. */}
-        <RequestsForYou disabled={!!active} onJoined={openRide} />
+        {showMine ? (
+          mine === null ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+          ) : mine.length === 0 ? (
+            <Text style={styles.hint}>
+              Shared rides you start or book a seat on show up here.
+            </Text>
+          ) : (
+            mine.map((p) => <PoolCardView key={p.id} {...cardProps(p, true)} />)
+          )
+        ) : (
+          <>
+            {/* 1. The city, first and centred. */}
+            <Pressable
+              style={({ pressed }) => [styles.cityPill, pressed && { opacity: 0.85 }]}
+              onPress={() => setCityOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`City: ${cityName}. Change city`}
+            >
+              <DestinationPinIcon size={16} color={colors.text} accent={colors.primary} />
+              <Text style={styles.cityTxt}>{cityName}</Text>
+              <View style={{ transform: [{ rotate: '90deg' }] }}>
+                <ArrowIcon size={14} color={colors.muted} />
+              </View>
+            </Pressable>
 
-        {formOpen ? (
-          <View style={styles.card}>
-            <Text style={styles.question}>Where do you work, study or usually go?</Text>
-
+            {/* 2. Where to, then where from. */}
             <View style={styles.routeBox}>
               <View style={styles.fieldRow}>
                 <DestinationPinIcon size={16} color={colors.text} accent={colors.primary} />
@@ -268,7 +424,7 @@ export default function DailyTravelScreen() {
                   style={styles.fieldInput}
                   value={toText}
                   onChangeText={(t) => type('to', t)}
-                  placeholder="Office, university, school or area"
+                  placeholder="Drop-off — office, university or area"
                   placeholderTextColor={colors.muted}
                   maxLength={200}
                 />
@@ -281,7 +437,7 @@ export default function DailyTravelScreen() {
                   style={styles.fieldInput}
                   value={fromText}
                   onChangeText={(t) => type('from', t)}
-                  placeholder="You leave from (home, hostel…)"
+                  placeholder="Pickup — your current location"
                   placeholderTextColor={colors.muted}
                   maxLength={200}
                 />
@@ -289,12 +445,12 @@ export default function DailyTravelScreen() {
               </View>
             </View>
 
-            {field && (searching || predictions.length > 0) ? (
+            {field && (searching || suggestions.length > 0) ? (
               <View style={styles.predictions}>
-                {searching && predictions.length === 0 ? (
+                {searching && suggestions.length === 0 ? (
                   <ActivityIndicator color={colors.primary} style={{ paddingVertical: 12 }} />
                 ) : (
-                  predictions.slice(0, 6).map((pred) => (
+                  suggestions.map((pred) => (
                     <Pressable
                       key={pred.placeId}
                       style={({ pressed }) => [styles.predictionRow, pressed && { opacity: 0.7 }]}
@@ -310,654 +466,571 @@ export default function DailyTravelScreen() {
               </View>
             ) : null}
 
-            <Pressable
-              style={({ pressed }) => [styles.primaryBtn, (!to || !from) && { opacity: 0.45 }, pressed && { opacity: 0.85 }]}
-              onPress={() => void addPlace()}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.btnText} />
-              ) : (
-                <Text style={styles.primaryBtnTxt}>Save my place</Text>
-              )}
-            </Pressable>
-            {routes && routes.length > 0 ? (
-              <Pressable onPress={() => setAdding(false)} hitSlop={8} style={{ alignSelf: 'center' }}>
-                <Text style={styles.cancelTxt}>Cancel</Text>
-              </Pressable>
-            ) : (
+            {yourSeats.length > 0 ? (
+              <>
+                <Text style={styles.blockLabel}>YOUR SEAT</Text>
+                {yourSeats.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)}
+              </>
+            ) : null}
+
+            {/* 3. The cards, once both ends are set. */}
+            {!to || !from ? (
               <Text style={styles.hint}>
-                You do not need colleagues on Velocity. Anyone leaving near you and going near your place can
-                share your car — from your office, your campus or the building next door.
+                {!from && !coords
+                  ? 'Type your pickup, or turn on location.'
+                  : 'Choose where you are going. Shared rides on your route appear here — join one, or start your own.'}
               </Text>
+            ) : pools === null ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
+            ) : (
+              <>
+                <Text style={styles.blockLabel}>
+                  {pools.length > 0 ? `SHARED RIDES ON YOUR ROUTE · ${pools.length}` : 'NOBODY SHARES THIS ROUTE YET'}
+                </Text>
+                {pools.length === 0 ? (
+                  <NewRideCard dropoff={to} quote={quote} onStart={() => setSheet({ edit: null })} />
+                ) : (
+                  pools.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)
+                )}
+                {pools.length > 0 ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.addRow, pressed && { opacity: 0.85 }]}
+                    onPress={() => setSheet({ edit: null })}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.addPlus}>+</Text>
+                    <Text style={styles.addTxt}>Start your own on this route — another time or name</Text>
+                  </Pressable>
+                ) : null}
+              </>
             )}
-          </View>
-        ) : (
-          <Pressable
-            style={({ pressed }) => [styles.addRow, pressed && { opacity: 0.85 }]}
-            onPress={() => setAdding(true)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.addPlus}>+</Text>
-            <Text style={styles.addTxt}>Add another place — office, campus or area</Text>
-          </Pressable>
+          </>
         )}
 
-        {routes === null ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
-        ) : (
-          routes.map((r) => (
-            <PlaceCard
-              key={r.id}
-              route={r}
-              here={here}
-              onNeedLocation={requestLocation}
-              activeTrip={active ? activeTrip : null}
-              onOpenRide={openRide}
-              onRemove={() => remove(r)}
-            />
-          ))
-        )}
-
-        {/* The older fixed-group flow (add colleagues by username, ask them all
-            at once). Its only door used to be the drawer row this screen replaced. */}
+        {/* The older fixed-group flow (add colleagues by username, ask them all at once). */}
         <Pressable onPress={() => router.push('/passenger/fleet')} hitSlop={8} style={styles.fleetLink}>
           <Text style={styles.fleetLinkTxt}>Travel with a fixed group? Open your fleet ›</Text>
         </Pressable>
       </ScrollView>
+
+      <CityPicker
+        open={cityOpen}
+        selected={city}
+        onClose={() => setCityOpen(false)}
+        onPick={(id) => {
+          setCity(id);
+          setCityOpen(false);
+        }}
+      />
+      <JoinSheet
+        pool={joining}
+        busy={joining !== null && busy === joining.id}
+        onClose={() => setJoining(null)}
+        onConfirm={(p) => void join(p)}
+      />
+      <RideSheet
+        open={sheet !== null}
+        edit={sheet?.edit ?? null}
+        from={from}
+        to={to}
+        busy={busy === 'sheet'}
+        onClose={() => setSheet(null)}
+        onSubmit={(form) => void submit(form)}
+      />
     </SafeAreaView>
   );
 }
 
-/** The ride this rider is on: car, fare, who is aboard and the driver. */
-function BookedRide({ trip, onOpen }: { trip: Trip; onOpen: () => void }) {
-  const riders = trip.poolMembers?.length ?? 1;
-  const carFare = trip.fare ?? trip.offeredFare;
-  const myFare = trip.pool ? trip.poolPerSeatFare ?? carFare : carFare;
-  const driver = trip.driverInfo;
+/**
+ * The car from above: the driver's seat and four for riders, filled as people
+ * take them. The fare sits on top of it on the card — together they are the
+ * two things a rider decides on.
+ */
+function CarSeats({ taken, total, driver }: { taken: number; total: number; driver: boolean }) {
+  // Front passenger first, then the back row, left to right as you look at it.
+  const seats = [
+    { x: 126, y: 66, w: 34, h: 30 },
+    { x: 50, y: 22, w: 36, h: 24 },
+    { x: 50, y: 48, w: 36, h: 24 },
+    { x: 50, y: 74, w: 36, h: 24 },
+  ].slice(0, total);
   return (
-    <Pressable style={({ pressed }) => [styles.bookedCard, pressed && { opacity: 0.92 }]} onPress={onOpen}>
-      <View style={styles.bookedHead}>
-        <View style={styles.bookedDot} />
-        <Text style={styles.bookedTitle} numberOfLines={1}>{ACTIVE_LABEL[trip.status] ?? 'You are on a ride'}</Text>
-        <ArrowIcon size={18} color="#0b1a00" />
-      </View>
-      <Text style={styles.bookedTo} numberOfLines={1}>To {trip.dropoff?.address ?? 'your place'}</Text>
-      <View style={styles.bookedGrid}>
-        <Detail label="Car" value={RIDE_TYPE_LABELS[trip.rideType] ?? trip.rideType} />
-        <Detail label="Riders" value={trip.pool ? `${riders} of 4` : 'Just you'} />
-        <Detail label="You pay" value={`PKR ${myFare}`} />
-        <Detail label="Whole car" value={`PKR ${carFare}`} />
-      </View>
-      {trip.pool && trip.poolRoster && trip.poolRoster.length > 0 ? (
-        <Text style={styles.bookedDriver} numberOfLines={2}>
-          Aboard: {trip.poolRoster.map((r) => r.firstName).join(', ')}
-        </Text>
-      ) : null}
-      <Text style={styles.bookedDriver} numberOfLines={2}>
-        {driver
-          ? `Driver: ${driver.displayName} · ${driver.vehicleLabel} · ${driver.plate}`
-          : 'Driver: being found now — nearby drivers have your request'}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.detail}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
-/** Ask anyone into this rider's own sharing ride by their username. */
-function AskByUsername({ tripId }: { tripId: string }) {
-  const [name, setName] = useState('');
-  const [sending, setSending] = useState(false);
-
-  async function send() {
-    const username = name.trim().replace(/^@/, '');
-    if (username.length < 3) return;
-    setSending(true);
-    try {
-      const res = await api.inviteRouteMates({ tripId, usernames: [username] });
-      if (res.invited > 0) {
-        Alert.alert('Request sent', `@${username} was asked to join your sharing ride.`);
-        setName('');
-      } else if (res.notFound.length > 0) {
-        Alert.alert('No such username', `Nobody on Velocity is called @${username}.`);
-      } else {
-        Alert.alert(
-          'Could not ask them',
-          'They are already asked or aboard, or the ride’s gender rules do not let you share a car.',
-        );
-      }
-    } catch (e) {
-      Alert.alert('Could not send', e instanceof FirebaseError ? e.message : 'Please try again.');
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <View style={styles.card}>
-      <Text style={styles.blockLabel}>ASK SOMEONE BY USERNAME</Text>
-      <View style={styles.askRow}>
-        <View style={styles.askField}>
-          <Text style={styles.askAt}>@</Text>
-          <TextInput
-            style={styles.askInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="username"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            maxLength={20}
-            returnKeyType="send"
-            onSubmitEditing={() => void send()}
+    <View style={styles.carWrap} accessible accessibilityLabel={`${taken} of ${total} seats taken`}>
+      <Svg width={240} height={120} viewBox="0 0 240 120">
+        {/* Wheels and mirrors first, so the body sits over them. */}
+        {[48, 162].flatMap((x) => [5, 101].map((y) => (
+          <Rect key={`${x}-${y}`} x={x} y={y} width={34} height={14} rx={5} fill={colors.muted} />
+        )))}
+        <Rect x={160} y={4} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
+        <Rect x={160} y={107} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
+        {/* Body, nose to the right. */}
+        <Path
+          d="M30 12 H188 C214 12 232 32 232 60 C232 88 214 108 188 108 H30 C17 108 8 99 8 86 V34 C8 21 17 12 30 12 Z"
+          fill={colors.glassLime}
+          stroke={colors.glassLimeBorder}
+          strokeWidth={2}
+        />
+        {/* Windscreen and rear glass. */}
+        <Path d="M172 22 L192 28 Q197 60 192 92 L172 98 Z" fill={colors.border} />
+        <Path d="M38 26 L26 32 Q22 60 26 88 L38 94 Z" fill={colors.border} />
+        {/* The driver's seat: dashed until a driver accepts. */}
+        <Rect
+          x={126} y={24} width={34} height={30} rx={9}
+          fill={driver ? colors.muted : 'none'}
+          stroke={colors.muted}
+          strokeWidth={2}
+          strokeDasharray={driver ? undefined : '4 3'}
+        />
+        {driver ? <Circle cx={143} cy={39} r={6} fill="#0b1a00" /> : null}
+        <Circle cx={166} cy={39} r={7} stroke={colors.muted} strokeWidth={3} fill="none" />
+        {seats.map((s, i) => (i < taken ? (
+          <Rect key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8} fill={colors.primary} />
+        ) : (
+          <Rect
+            key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8}
+            fill="none" stroke={colors.primary} strokeWidth={2} strokeDasharray="4 3"
           />
-        </View>
-        <Pressable
-          style={({ pressed }) => [styles.joinBtn, styles.askBtn, pressed && { opacity: 0.85 }]}
-          onPress={() => void send()}
-          disabled={sending || name.trim().replace(/^@/, '').length < 3}
-        >
-          {sending ? <ActivityIndicator size="small" color={colors.btnText} /> : <Text style={styles.joinTxt}>Ask</Text>}
-        </Pressable>
-      </View>
-      <Text style={styles.emptyTxt}>They get a notification and join your sharing ride in one tap.</Text>
+        )))}
+        {seats.slice(0, taken).map((s, i) => (
+          <Circle key={`h${i}`} cx={s.x + s.w / 2} cy={s.y + s.h / 2} r={6} fill="#0b1a00" />
+        ))}
+      </Svg>
     </View>
   );
 }
 
-/** Sharing rides other riders asked this one into: Join, or Not now. */
-function RequestsForYou({ disabled, onJoined }: { disabled: boolean; onJoined: (tripId: string) => void }) {
-  const [invites, setInvites] = useState<RideInvite[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api.getMyRideInvites({}).then((r) => setInvites(r.invites)).catch(() => {});
-  }, []);
-  // Re-read whenever the screen comes back into view — a request arrives by push.
-  useFocusEffect(load);
-
-  async function join(inv: RideInvite) {
-    setBusy(inv.tripId);
-    try {
-      const res = await api.joinPoolTrip({ code: inv.code, bookedFor: 'self' });
-      if (res.pending) {
-        Alert.alert('Asked', 'They have to agree before you take the seat. You will get a notification either way.');
-      } else {
-        Alert.alert('You are in 🎉', `PKR ${res.perSeatFare} for your seat.`, [
-          { text: 'Stay here', style: 'cancel' },
-          { text: 'Open my ride', onPress: () => onJoined(res.tripId) },
-        ]);
-      }
-      load();
-    } catch (e) {
-      Alert.alert('Could not join', e instanceof FirebaseError ? e.message : 'Please try again.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function notNow(inv: RideInvite) {
-    setInvites((prev) => prev.filter((i) => i.tripId !== inv.tripId));
-    api.declineRideInvite({ tripId: inv.tripId }).catch(() => {});
-  }
-
-  if (invites.length === 0) return null;
+/** What each rider pays at 1, 2, 3 and 4 aboard — the rung they would be on lit. */
+function FareLadder({ ladder, at }: { ladder: number[]; at: number }) {
   return (
-    <View style={styles.placeCard}>
-      <Text style={styles.blockLabel}>SHARING REQUESTS FOR YOU · {invites.length}</Text>
-      {invites.map((inv) => (
-        <View key={inv.tripId} style={styles.inviteRow}>
-          <View style={styles.mateHead}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarTxt}>{inv.hostName.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.rideNames} numberOfLines={1}>{inv.hostName} asked you to share a ride</Text>
-              <Text style={styles.rideMeta} numberOfLines={2}>
-                {inv.fromArea} → {inv.toArea} · {RIDE_TYPE_LABELS[inv.rideType as RideType] ?? inv.rideType} ·{' '}
-                {inv.riders} aboard · {inv.driver ?? 'finding a driver'}
-              </Text>
-            </View>
-            <Text style={styles.rideFare}>PKR {inv.perSeat}</Text>
-          </View>
-          <View style={styles.inviteActions}>
-            <Pressable onPress={() => notNow(inv)} hitSlop={8} style={styles.notNowBtn}>
-              <Text style={styles.cancelTxt}>Not now</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => void join(inv)}
-              disabled={busy !== null || disabled}
-            >
-              {busy === inv.tripId ? (
-                <ActivityIndicator size="small" color={colors.btnText} />
-              ) : (
-                <Text style={styles.joinTxt}>{disabled ? 'On a ride' : 'Join'}</Text>
-              )}
-            </Pressable>
-          </View>
+    <View style={styles.ladder}>
+      {ladder.map((f, i) => (
+        <View key={i} style={[styles.rung, i + 1 === at && styles.rungOn]}>
+          <Text style={[styles.rungFare, i + 1 === at && styles.rungFareOn]}>PKR {f}</Text>
+          <Text style={styles.rungWho}>{i === 0 ? 'alone' : `each of ${i + 1}`}</Text>
         </View>
       ))}
     </View>
   );
 }
 
-/**
- * One saved place: the car and its fare, the people on this route (ticked to
- * be asked), the shared cars going there now, and the button that books.
- */
-function PlaceCard({
-  route,
-  here,
-  onNeedLocation,
-  activeTrip,
+function PoolCardView({
+  pool: p,
+  busy,
+  onJoin,
+  onLeave,
   onOpenRide,
+  onEdit,
   onRemove,
 }: {
-  route: DailyRoute;
-  here: RoutePlace | null;
-  onNeedLocation: () => void;
-  activeTrip: Trip | null;
+  pool: SharedPool;
+  busy: boolean;
+  onJoin: () => void;
+  onLeave: () => void;
   onOpenRide: (tripId: string) => void;
-  onRemove: () => void;
+  onEdit?: () => void;
+  onRemove?: () => void;
 }) {
-  const [sameWay, setSameWay] = useState<TravelAreas['sameWay'] | 'loading'>('loading');
-  const [mates, setMates] = useState<RouteMate[] | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [rides, setRides] = useState<SuggestedRide[] | null>(null);
-  const [rideType, setRideType] = useState<RideType>('mini');
-  const [quote, setQuote] = useState<SharedFareQuote | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const { gender } = useGenderPref();
-  const { pickup: p, dropoff: d } = route;
-  // Cars and fares are worked out from where the rider stands; else the saved start.
-  const start = here ?? p;
-
-  // The rider's own shared ride, if it already goes to this place: requests go into it.
-  const myRideHere =
-    activeTrip?.pool && activeTrip.dropoff &&
-    distanceMeters(activeTrip.dropoff.lat, activeTrip.dropoff.lng, d.lat, d.lng) <= SAME_PLACE_M
-      ? activeTrip
-      : null;
-  const onOtherRide = !!activeTrip && !myRideHere;
-
-  const loadRides = useCallback(() => {
-    let live = true;
-    api
-      .getSuggestedRides({ lat: start.lat, lng: start.lng, radiusKm: 5, destLat: d.lat, destLng: d.lng, destRadiusKm: 2 })
-      .then((res) => live && setRides(res.rides))
-      .catch(() => live && setRides([]));
-    return () => {
-      live = false;
-    };
-  }, [start.lat, start.lng, d.lat, d.lng]);
-  useEffect(() => loadRides(), [loadRides]);
-
-  useEffect(() => {
-    let live = true;
-    const r = { from: { lat: p.lat, lng: p.lng }, to: { lat: d.lat, lng: d.lng } };
-    api
-      .getTravelAreas({ lat: p.lat, lng: p.lng, radiusKm: 1, route: r })
-      .then((res) => live && setSameWay(res.sameWay))
-      .catch(() => live && setSameWay(null));
-    api
-      .getRouteMates(r)
-      .then((res) => {
-        if (!live) return;
-        setMates(res.mates);
-        setPicked(new Set(res.mates.map((m) => m.id))); // everyone ticked to start with
-      })
-      .catch(() => live && setMates([]));
-    return () => {
-      live = false;
-    };
-  }, [p.lat, p.lng, d.lat, d.lng]);
-
-  useEffect(() => {
-    let live = true;
-    setQuote(null);
-    api
-      .getSharedRideFare({ rideType, pickup: { lat: start.lat, lng: start.lng }, dropoff: { lat: d.lat, lng: d.lng } })
-      .then((q) => live && setQuote(q))
-      .catch(() => live && setQuote(null));
-    return () => {
-      live = false;
-    };
-  }, [rideType, start.lat, start.lng, d.lat, d.lng]);
-
-  function toggle(id: string) {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function needHere(): boolean {
-    if (here) return false;
-    onNeedLocation();
-    Alert.alert('Location needed', 'Turn on location so the driver knows where to pick you up.');
-    return true;
-  }
-
-  async function invite(tripId: string): Promise<number> {
-    if (picked.size === 0) return 0;
-    try {
-      return (await api.inviteRouteMates({ tripId, mateIds: [...picked].slice(0, 10) })).invited;
-    } catch {
-      return 0;
-    }
-  }
-
-  async function join(ride: SuggestedRide) {
-    if (needHere() || !here) return;
-    setBusy(ride.id);
-    try {
-      if (ride.kind === 'trip') {
-        const res = await api.joinPoolTrip({ code: ride.id, bookedFor: 'self' });
-        if (res.pending) {
-          Alert.alert(
-            res.vetBy === 'host' ? 'Asked the rider who started it' : 'Asked the driver',
-            'They have to agree before you take the seat. You will get a notification either way.',
-          );
-        } else {
-          Alert.alert('You are in 🎉', `PKR ${res.perSeatFare} for your seat.`, [
-            { text: 'Stay here', style: 'cancel' },
-            { text: 'Open my ride', onPress: () => onOpenRide(res.tripId) },
-          ]);
-        }
-      } else if (ride.kind === 'request') {
-        const res = await api.joinPoolRideRequest({ requestId: ride.id, bookedFor: 'self' });
-        Alert.alert(
-          res.pending ? 'Asked the driver' : 'You are in 🎉',
-          res.pending
-            ? 'The driver has to agree before you take the seat — you will get a notification either way.'
-            : `PKR ${res.farePerSeat} for your seat. You will see the ride in your activity.`,
-        );
-      } else {
-        const res = await api.joinPoolRide({
-          rideId: ride.id,
-          pickupLat: here.lat,
-          pickupLng: here.lng,
-          pickupAddress: here.address,
-          dropoffAddress: d.address,
-          bookedFor: 'self',
-        });
-        Alert.alert(
-          res.vetting || res.queued ? 'You are in the queue' : 'You are in 🎉',
-          res.vetting || res.queued
-            ? 'The driver is asked as soon as your seat can be confirmed. You will be notified.'
-            : `PKR ${ride.farePerSeat} for your seat.`,
-        );
-      }
-      loadRides();
-    } catch (e) {
-      Alert.alert('Could not join', e instanceof FirebaseError ? e.message : 'Please try again.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /** Book the shared ride here and ask the ticked people — or just ask, into the ride already booked. */
-  async function bookAndAsk() {
-    if (myRideHere) {
-      setBusy('book');
-      const n = await invite(myRideHere.id);
-      setBusy(null);
-      Alert.alert(
-        n > 0 ? 'Request sent' : 'Nobody new to ask',
-        n > 0 ? `${n} ${n === 1 ? 'person was' : 'people were'} asked to join your ride.` : 'Everyone ticked has already been asked.',
-      );
-      return;
-    }
-    if (needHere() || !here) return;
-    setBusy('book');
-    try {
-      // A shared ride's fare is the server's; createTrip recomputes it either way.
-      const res = await api.createTrip({
-        rideType,
-        offeredFare: quote?.fare ?? 300,
-        seats: 1,
-        passengerGender: gender === 'male' || gender === 'female' ? gender : 'unspecified',
-        bookedFor: 'self',
-        sharedFareFixed: true,
-        pool: true,
-        poolVisibility: 'public',
-        paymentMethods: ['cash'],
-        preferFemaleDriver: false,
-        commute: true,
-        pickup: { lat: here.lat, lng: here.lng, address: here.address },
-        dropoff: { lat: d.lat, lng: d.lng, address: d.address },
-      });
-      const n = await invite(res.tripId);
-      Alert.alert(
-        'Shared ride booked 🎉',
-        `${RIDE_TYPE_LABELS[rideType]} to ${areaLabel(d.address)}, PKR ${quote?.fare ?? ''} for the whole car — less each as people join.` +
-          (n > 0 ? ` Ride request sent to ${n} ${n === 1 ? 'person' : 'people'} on your route.` : '') +
-          ' Drivers nearby are being asked now.',
-        [
-          { text: 'Stay here', style: 'cancel' },
-          { text: 'Open my ride', onPress: () => onOpenRide(res.tripId) },
-        ],
-      );
-    } catch (e) {
-      Alert.alert('Could not book', e instanceof FirebaseError ? e.message : 'Please try again.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const perSeat = quote?.perSeat ?? [];
-  // How many would be in the car if everyone ticked said yes.
-  const expected = Math.min(4, 1 + picked.size);
-  const ctaLabel = useMemo(() => {
-    if (onOtherRide) return 'You are already on another ride';
-    if (myRideHere) return picked.size > 0 ? `Send request to ${picked.size}` : 'Tick people to ask';
-    const fare = quote ? ` · PKR ${quote.fare}` : '';
-    return picked.size > 0 ? `Book${fare} & ask ${picked.size}` : `Book shared ride${fare}`;
-  }, [onOtherRide, myRideHere, picked.size, quote]);
-
+  const st = statusOf(p);
+  const inIt = p.booked || p.aboardTripId !== null;
+  const rung = Math.min(p.seatsTotal, inIt || p.state === 'full' ? p.riders : p.riders + 1);
   return (
-    <View style={styles.placeCard}>
-      <View style={styles.placeHead}>
-        <View style={styles.placeIcon}>
-          <DestinationPinIcon size={18} color="#0b0d0c" accent="#0b0d0c" />
+    <View style={[styles.poolCard, p.state === 'full' && { opacity: 0.75 }]}>
+      <View style={styles.poolHead}>
+        <Text style={styles.poolTitle} numberOfLines={1}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
+        <View style={[styles.chip, st.tone === 'go' ? styles.chipGo : st.tone === 'full' ? styles.chipFull : styles.chipWait]}>
+          <Text style={[styles.chipTxt, st.tone === 'go' && styles.chipTxtGo]}>{st.label}</Text>
         </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.placeName} numberOfLines={2}>{d.address}</Text>
-          <Text style={styles.placeFrom} numberOfLines={1}>from {areaLabel(p.address)}</Text>
-        </View>
-        <Pressable onPress={onRemove} hitSlop={10} accessibilityLabel="Remove this place">
-          <Text style={styles.removeTxt}>✕</Text>
+      </View>
+
+      {/* The fare on top of the car. */}
+      <Text style={styles.fareBig}>PKR {p.farePerSeat}</Text>
+      <Text style={styles.fareSub}>
+        {inIt ? 'your seat, so far' : p.state === 'full' ? 'per seat in this car' : 'per seat if you join now'}
+      </Text>
+      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} />
+      <Text style={styles.seatsTxt}>
+        {p.state === 'full'
+          ? 'No seats left — an empty car opens here in 2 minutes'
+          : `${p.seatsLeft} of ${p.seatsTotal} seats available`}
+      </Text>
+      <FareLadder ladder={p.fareLadder} at={rung} />
+
+      <View style={styles.lines}>
+        <Line icon={<PickupDotIcon size={14} color={colors.text} accent={colors.primary} />}>
+          {p.pickup.address}
+          {p.pickupDistanceM !== null ? <Text style={styles.lineMuted}>  · {distance(p.pickupDistanceM)} from you</Text> : null}
+        </Line>
+        <Line icon={<DestinationPinIcon size={14} color={colors.text} accent={colors.primary} />}>
+          {p.dropoff.address}
+          {p.dropoffDistanceM !== null ? (
+            <Text style={styles.lineMuted}>  · {distance(p.dropoffDistanceM)} from your drop-off</Text>
+          ) : null}
+        </Line>
+        <Text style={styles.metaTxt}>{departLine(p)}</Text>
+        <Text style={styles.metaTxt}>
+          {p.driver
+            ? `${p.driver.name} · ${p.driver.vehicle}${p.driver.plate ? ` · ${p.driver.plate}` : ''}`
+            : `${RIDE_TYPE_LABELS[p.rideType as RideType] ?? p.rideType} · no driver yet — the fare only drops as people join`}
+        </Text>
+      </View>
+
+      {p.aboardTripId ? (
+        <Pressable style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]} onPress={() => onOpenRide(p.aboardTripId!)}>
+          <Text style={styles.joinTxt}>Open my ride</Text>
         </Pressable>
-      </View>
-
-      {/* Who makes this trip: everyone's saved routes near both ends. */}
-      <View style={styles.peopleRow}>
-        {sameWay === 'loading' ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : (
-          <>
-            <Text style={styles.peopleNum}>{sameWay?.people ?? 0}</Text>
-            <Text style={styles.peopleTxt} numberOfLines={2}>
-              {(sameWay?.people ?? 0) === 0
-                ? 'Nobody else has saved this trip yet — be the first'
-                : `${sameWay?.people === 1 ? 'person makes' : 'people make'} this trip every day`}
-            </Text>
-            {sameWay && sameWay.people > 0 ? <GenderTally {...sameWay} /> : null}
-          </>
-        )}
-      </View>
-
-      {/* The car, and what it costs: the whole car, and each rider's share. */}
-      <Text style={styles.blockLabel}>CAR & FARE</Text>
-      <View style={styles.carRow}>
-        {SHARED_CARS.map((c) => (
-          <Pressable
-            key={c.key}
-            style={[styles.carChip, rideType === c.key && styles.carChipOn]}
-            onPress={() => setRideType(c.key)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: rideType === c.key }}
-          >
-            <Text style={[styles.carName, rideType === c.key && styles.carNameOn]}>{RIDE_TYPE_LABELS[c.key]}</Text>
-            <Text style={styles.carNote}>{c.note}</Text>
+      ) : p.booked ? (
+        <View style={styles.bookedRow}>
+          <Text style={styles.bookedTxt}>Seat booked — not confirmed until a driver accepts</Text>
+          <Pressable onPress={onLeave} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.cancelTxt}>Cancel seat</Text>
           </Pressable>
-        ))}
+        </View>
+      ) : p.state === 'full' ? null : (
+        <Pressable
+          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+          onPress={onJoin}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          {busy ? (
+            <ActivityIndicator color={colors.btnText} />
+          ) : (
+            <Text style={styles.joinTxt}>{p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR {p.farePerSeat}</Text>
+          )}
+        </Pressable>
+      )}
+
+      {onEdit || onRemove ? (
+        <View style={styles.ownerRow}>
+          {onEdit ? (
+            <Pressable onPress={onEdit} hitSlop={8}><Text style={styles.ownerTxt}>Edit name or time</Text></Pressable>
+          ) : null}
+          {onRemove ? (
+            <Pressable onPress={onRemove} hitSlop={8}><Text style={styles.ownerTxt}>Remove from my list</Text></Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Line({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <View style={styles.line}>
+      {icon}
+      <Text style={styles.lineTxt} numberOfLines={2}>{children}</Text>
+    </View>
+  );
+}
+
+/** Nobody shares this route yet: the card of the car that would, ready to start. */
+function NewRideCard({ dropoff, quote, onStart }: { dropoff: Place; quote: SharedFareQuote | null; onStart: () => void }) {
+  return (
+    <View style={styles.poolCard}>
+      <View style={styles.poolHead}>
+        <Text style={styles.poolTitle} numberOfLines={1}>To {areaLabel(dropoff.address)}</Text>
+        <View style={[styles.chip, styles.chipWait]}><Text style={styles.chipTxt}>New</Text></View>
       </View>
       {quote ? (
-        <View style={styles.fareRow}>
-          {perSeat.map((f, i) => (
-            <View key={i} style={[styles.fareBox, i + 1 === expected && styles.fareBoxOn]}>
-              <Text style={[styles.fareNum, i + 1 === expected && styles.fareNumOn]}>PKR {f}</Text>
-              <Text style={styles.fareWho}>{i === 0 ? 'alone' : `each of ${i + 1}`}</Text>
-            </View>
-          ))}
-        </View>
+        <>
+          <Text style={styles.fareBig}>PKR {quote.perSeat[0]}</Text>
+          <Text style={styles.fareSub}>alone — less for everyone as people join</Text>
+        </>
       ) : (
-        <ActivityIndicator color={colors.primary} style={{ paddingVertical: 8 }} />
+        <ActivityIndicator color={colors.primary} style={{ paddingVertical: 14 }} />
       )}
-
-      {/* The people on this route — ticked ones get the ride request. */}
-      <Text style={styles.blockLabel}>
-        PEOPLE ON YOUR ROUTE{mates && mates.length > 0 ? ` · ${picked.size} OF ${mates.length} TICKED` : ''}
+      <CarSeats taken={0} total={4} driver={false} />
+      <Text style={styles.seatsTxt}>4 of 4 seats available</Text>
+      {quote ? <FareLadder ladder={quote.perSeat} at={1} /> : null}
+      <Text style={styles.metaTxt}>
+        Start it now or at a daily time, and anyone going the same way can join you.
       </Text>
-      {mates === null ? (
-        <ActivityIndicator color={colors.primary} style={{ paddingVertical: 8 }} />
-      ) : mates.length === 0 ? (
-        <Text style={styles.emptyTxt}>
-          Nobody you can share with has saved this route yet. Book anyway — anyone going near this place sees your
-          ride below theirs.
-        </Text>
-      ) : (
-        mates.map((m) => {
-          const on = picked.has(m.id);
-          return (
-            <Pressable
-              key={m.id}
-              style={({ pressed }) => [styles.mateRow, pressed && { opacity: 0.85 }]}
-              onPress={() => toggle(m.id)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: on }}
-            >
-              <View
-                style={[
-                  styles.avatar,
-                  m.gender === 'male' && { borderColor: MALE },
-                  m.gender === 'female' && { borderColor: FEMALE },
-                ]}
-              >
-                <Text style={styles.avatarTxt}>{m.firstName.charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rideNames} numberOfLines={1}>
-                  {m.firstName} {m.gender === 'male' ? '♂' : m.gender === 'female' ? '♀' : ''}
-                </Text>
-                <Text style={styles.rideMeta} numberOfLines={1}>
-                  {m.fromArea} → {m.toArea} · {clockLabel(m.time) ?? 'any time'}
-                </Text>
-              </View>
-              <View style={[styles.check, on && styles.checkOn]}>
-                {on ? <Text style={styles.checkMark}>✓</Text> : null}
-              </View>
-            </Pressable>
-          );
-        })
+      <Pressable style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]} onPress={onStart} accessibilityRole="button">
+        <Text style={styles.joinTxt}>Start this shared ride</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function Sheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
+        <View style={styles.sheet}>
+          <View style={styles.grabber} />
+          <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function SheetRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.sheetRow}>
+      <Text style={styles.sheetLabel}>{label}</Text>
+      <Text style={styles.sheetValue}>{children}</Text>
+    </View>
+  );
+}
+
+/** Everything a rider agrees to before the seat is theirs. */
+function JoinSheet({
+  pool: p,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  pool: SharedPool | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (p: SharedPool) => void;
+}) {
+  if (!p) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
+  const later = p.state === 'gathering' && !!p.departTime;
+  return (
+    <Sheet open onClose={onClose}>
+      <Text style={styles.sheetTitle}>{p.state === 'gathering' ? 'Book your seat' : 'Join this car'}</Text>
+      <Text style={styles.sheetName} numberOfLines={2}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
+      <SheetRow label="PICKUP">
+        {p.pickup.address}{p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} from you` : ''}
+      </SheetRow>
+      <SheetRow label="DROP-OFF">
+        {p.dropoff.address}{p.dropoffDistanceM !== null ? ` — ${distance(p.dropoffDistanceM)} from yours` : ''}
+      </SheetRow>
+      <SheetRow label="WHEN">{departLine(p)}</SheetRow>
+      <SheetRow label="YOUR FARE">
+        PKR {p.farePerSeat} now, cash to the driver. It only goes down as people join: PKR {p.fareLadder[1]} each for 2,
+        PKR {p.fareLadder[2]} for 3, PKR {p.fareLadder[3]} for 4.
+      </SheetRow>
+      <SheetRow label="DRIVER">
+        {p.driver
+          ? `${p.driver.name} · ${p.driver.vehicle}${p.driver.plate ? ` · ${p.driver.plate}` : ''}${p.needsDriverApproval ? ' — they have to agree to take you' : ''}`
+          : later
+            ? 'Not yet. Drivers are asked 10 minutes before the car leaves. Your ride is not confirmed until one accepts — we will notify you.'
+            : 'Not yet. Drivers nearby are asked as soon as you join. Your ride is not confirmed until one accepts.'}
+      </SheetRow>
+      <SheetRow label="CANCELLING">
+        Free until a driver accepts. After that, the usual cancellation fee applies.
+      </SheetRow>
+      <Pressable
+        style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+        onPress={() => onConfirm(p)}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        {busy ? (
+          <ActivityIndicator color={colors.btnText} />
+        ) : (
+          <Text style={styles.joinTxt}>
+            {later ? 'Book my seat' : `${p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR ${p.farePerSeat}`}
+          </Text>
+        )}
+      </Pressable>
+      <Pressable onPress={onClose} hitSlop={8} style={{ alignSelf: 'center' }}>
+        <Text style={styles.cancelTxt}>Not now</Text>
+      </Pressable>
+    </Sheet>
+  );
+}
+
+/** The next half hour, as the time a new daily ride starts at. */
+function nextHalfHour(): Date {
+  const d = new Date(Date.now() + 30 * 60_000);
+  d.setMinutes(d.getMinutes() < 30 ? 30 : 60, 0, 0);
+  return d;
+}
+
+/** Start a shared ride on the searched route — or, with `edit`, rename or retime one. */
+function RideSheet({
+  open,
+  edit,
+  from,
+  to,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  edit: SharedPool | null;
+  from: Place | null;
+  to: Place | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (form: { label: string; departTime: string | null; rideType: SharedCar }) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [timed, setTimed] = useState(false);
+  const [time, setTime] = useState(nextHalfHour);
+  const [picking, setPicking] = useState(false);
+  const [rideType, setRideType] = useState<SharedCar>('mini');
+  const [quote, setQuote] = useState<SharedFareQuote | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLabel(edit?.label ?? '');
+    setTimed(!!edit?.departTime);
+    setTime(fromHHMM(edit?.departTime ?? null, nextHalfHour()));
+    setRideType('mini');
+  }, [open, edit]);
+
+  useEffect(() => {
+    setQuote(null);
+    if (!open || edit || !from || !to) return;
+    let live = true;
+    api
+      .getSharedRideFare({ rideType, pickup: { lat: from.lat, lng: from.lng }, dropoff: { lat: to.lat, lng: to.lng } })
+      .then((q) => live && setQuote(q))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, edit, rideType, from, to]);
+
+  function picked(event: DateTimePickerEvent, d?: Date) {
+    if (Platform.OS === 'android') setPicking(false);
+    if (event.type === 'set' && d) setTime(d);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose}>
+      <Text style={styles.sheetTitle}>{edit ? 'Edit your shared ride' : 'Start a shared ride'}</Text>
+      {edit ? null : (
+        <>
+          <SheetRow label="PICKUP">{from?.address ?? '—'}</SheetRow>
+          <SheetRow label="DROP-OFF">{to?.address ?? '—'}</SheetRow>
+          {/* The pickup defaults to where the phone is — often a front door. */}
+          <Text style={styles.metaTxt}>
+            Everyone going this way sees the pickup and drop-off. A landmark or gate is better than your door.
+          </Text>
+        </>
       )}
 
-      {/* The shared cars going there now — join one right here. */}
-      <Text style={styles.blockLabel}>SHARED CARS GOING THERE NOW</Text>
-      {rides === null ? (
-        <ActivityIndicator color={colors.primary} style={{ paddingVertical: 8 }} />
-      ) : rides.length === 0 ? (
-        <Text style={styles.emptyTxt}>None yet — yours will be the first.</Text>
-      ) : (
-        rides.slice(0, 4).map((ride) => (
-          <View key={ride.id} style={styles.rideRow}>
-            <View style={styles.avatars}>
-              {(ride.companions.length > 0 ? ride.companions : [{ firstName: '?', gender: '' }])
-                .slice(0, 3)
-                .map((c, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.avatar,
-                      { marginLeft: i === 0 ? 0 : -8 },
-                      c.gender === 'male' && { borderColor: MALE },
-                      c.gender === 'female' && { borderColor: FEMALE },
-                    ]}
-                  >
-                    <Text style={styles.avatarTxt}>{c.firstName.charAt(0).toUpperCase()}</Text>
-                  </View>
-                ))}
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.rideNames} numberOfLines={1}>
-                {ride.companions.length > 0
-                  ? ride.companions.map((c) => c.firstName).join(', ')
-                  : `${ride.riders} rider${ride.riders === 1 ? '' : 's'}`}
-              </Text>
-              <Text style={styles.rideMeta} numberOfLines={1}>
-                {ride.rideType ? `${RIDE_TYPE_LABELS[ride.rideType as RideType] ?? ride.rideType} · ` : ''}
-                {ride.seatsLeft} seat{ride.seatsLeft === 1 ? '' : 's'} left ·{' '}
-                {ride.hasDriver
-                  ? `${ride.driverName ?? 'Driver'}${ride.driverVehicle ? `, ${ride.driverVehicle}` : ''}`
-                  : 'finding a driver'}
-              </Text>
-            </View>
-            <View style={styles.rideSide}>
-              <Text style={styles.rideFare}>PKR {ride.farePerSeat}</Text>
+      <Text style={styles.sheetLabel}>NAME IT (OPTIONAL)</Text>
+      <TextInput
+        style={styles.sheetInput}
+        value={label}
+        onChangeText={setLabel}
+        placeholder="e.g. Bahria University, E-8"
+        placeholderTextColor={colors.muted}
+        maxLength={60}
+      />
+
+      <Text style={styles.sheetLabel}>WHEN DOES IT LEAVE?</Text>
+      <View style={styles.choiceRow}>
+        <Pressable style={[styles.choice, !timed && styles.choiceOn]} onPress={() => setTimed(false)} accessibilityRole="radio" accessibilityState={{ selected: !timed }}>
+          <Text style={[styles.choiceTxt, !timed && styles.choiceTxtOn]}>As soon as a driver accepts</Text>
+        </Pressable>
+        <Pressable style={[styles.choice, timed && styles.choiceOn]} onPress={() => setTimed(true)} accessibilityRole="radio" accessibilityState={{ selected: timed }}>
+          <Text style={[styles.choiceTxt, timed && styles.choiceTxtOn]}>Every day at a time</Text>
+        </Pressable>
+      </View>
+      {timed ? (
+        Platform.OS === 'ios' ? (
+          <DateTimePicker value={time} mode="time" display="spinner" textColor={colors.text} onChange={picked} />
+        ) : (
+          <>
+            <Pressable style={styles.timeBtn} onPress={() => setPicking(true)} accessibilityRole="button">
+              <Text style={styles.timeTxt}>{clockLabel(toHHMM(time))}</Text>
+              <Text style={styles.cancelTxt}>Change</Text>
+            </Pressable>
+            {picking ? <DateTimePicker value={time} mode="time" display="default" onChange={picked} /> : null}
+          </>
+        )
+      ) : null}
+      <Text style={styles.metaTxt}>
+        {timed
+          ? 'Seats are booked for the time. Drivers are asked 10 minutes before — or the moment all 4 seats are taken. After each car leaves, the next one opens here.'
+          : 'Drivers nearby are asked as soon as it starts. Anyone going your way can join until the car leaves.'}
+      </Text>
+
+      {edit ? null : (
+        <>
+          <Text style={styles.sheetLabel}>CAR</Text>
+          <View style={styles.choiceRow}>
+            {SHARED_CARS.map((c) => (
               <Pressable
-                style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-                onPress={() => void join(ride)}
-                disabled={busy !== null || !!activeTrip}
+                key={c.key}
+                style={[styles.choice, rideType === c.key && styles.choiceOn]}
+                onPress={() => setRideType(c.key)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: rideType === c.key }}
               >
-                {busy === ride.id ? (
-                  <ActivityIndicator size="small" color={colors.btnText} />
-                ) : (
-                  <Text style={styles.joinTxt}>Join</Text>
-                )}
+                <Text style={[styles.choiceTxt, rideType === c.key && styles.choiceTxtOn]}>{RIDE_TYPE_LABELS[c.key]}</Text>
+                <Text style={styles.choiceNote}>{c.note}</Text>
               </Pressable>
-            </View>
+            ))}
           </View>
-        ))
+          {quote ? (
+            <>
+              <FareLadder ladder={quote.perSeat} at={1} />
+              <Text style={styles.metaTxt}>
+                Your seat is PKR {quote.perSeat[0]} if nobody joins, and it drops for everyone as people do. The driver
+                earns up to PKR {(quote.perSeat[3] ?? 0) * 4} with all 4 seats taken. Cash to the driver.
+              </Text>
+            </>
+          ) : (
+            <ActivityIndicator color={colors.primary} />
+          )}
+        </>
       )}
 
       <Pressable
-        style={({ pressed }) => [
-          styles.bookBtn,
-          (busy !== null || onOtherRide || (myRideHere && picked.size === 0)) && { opacity: 0.5 },
-          pressed && { opacity: 0.85 },
-        ]}
-        onPress={() => void bookAndAsk()}
-        disabled={busy !== null || onOtherRide || (!!myRideHere && picked.size === 0)}
+        style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+        onPress={() => onSubmit({ label, departTime: timed ? toHHMM(time) : null, rideType })}
+        disabled={busy || (!edit && (!from || !to))}
+        accessibilityRole="button"
       >
-        {busy === 'book' ? (
-          <ActivityIndicator color={colors.btnText} />
-        ) : (
-          <>
-            <PoolIcon size={18} color={colors.btnText} accent={colors.btnText} />
-            <Text style={styles.primaryBtnTxt}>{ctaLabel}</Text>
-          </>
-        )}
+        {busy ? <ActivityIndicator color={colors.btnText} /> : <Text style={styles.joinTxt}>{edit ? 'Save' : 'Start and book my seat'}</Text>}
       </Pressable>
-      <Text style={styles.fareHint}>
-        {myRideHere
-          ? 'They get a notification and join your ride in one tap.'
-          : `${RIDE_TYPE_LABELS[rideType]} · cash · pickup where you are now${
-              perSeat.length > 0 ? ` · PKR ${perSeat[expected - 1]} each if ${expected === 1 ? 'nobody joins' : `${expected} ride`}` : ''
-            }`}
-      </Text>
-    </View>
+      <Pressable onPress={onClose} hitSlop={8} style={{ alignSelf: 'center' }}>
+        <Text style={styles.cancelTxt}>Cancel</Text>
+      </Pressable>
+    </Sheet>
+  );
+}
+
+/** Every city we list, searchable — the chosen one ticked. */
+function CityPicker({
+  open,
+  selected,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  selected: string;
+  onClose: () => void;
+  onPick: (id: string) => void;
+}) {
+  const [q, setQ] = useState('');
+  const list = PAKISTAN_CITIES.filter((c) => !q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <Sheet open={open} onClose={onClose}>
+      <Text style={styles.sheetTitle}>Choose your city</Text>
+      <TextInput
+        style={styles.sheetInput}
+        value={q}
+        onChangeText={setQ}
+        placeholder="Search cities"
+        placeholderTextColor={colors.muted}
+        maxLength={40}
+      />
+      {list.map((c) => (
+        <Pressable
+          key={c.id}
+          style={({ pressed }) => [styles.cityRow, pressed && { opacity: 0.7 }]}
+          onPress={() => onPick(c.id)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: c.id === selected }}
+        >
+          <Text style={[styles.cityRowTxt, c.id === selected && { color: colors.primary }]}>{c.name}</Text>
+          <Text style={styles.cityRowSub}>{c.province}</Text>
+        </Pressable>
+      ))}
+    </Sheet>
   );
 }
 
@@ -971,36 +1044,30 @@ const styles = themed(() => StyleSheet.create({
   backBtn: { padding: 4 },
   title: { fontSize: 19, fontWeight: '900', color: colors.text },
   subtitle: { fontSize: 12.5, color: colors.muted, fontWeight: '700' },
+  mineBtn: {
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
+  },
+  mineBtnOn: { backgroundColor: colors.btnBg, borderColor: colors.btnBg },
+  mineBtnTxt: { fontSize: 13, fontWeight: '900', color: colors.text },
+  mineBtnTxtOn: { color: colors.btnText },
   scroll: { padding: 16, gap: 14, paddingBottom: 40 },
 
-  bookedCard: { borderRadius: 18, padding: 14, gap: 8, backgroundColor: colors.primary },
-  bookedHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  bookedDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#0b1a00' },
-  bookedTitle: { flex: 1, fontSize: 15, fontWeight: '900', color: '#0b1a00' },
-  bookedTo: { fontSize: 12.5, fontWeight: '700', color: '#0b1a00', opacity: 0.8 },
-  bookedGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  detail: { flexGrow: 1, flexBasis: '22%', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: 'rgba(0,0,0,0.12)' },
-  detailLabel: { fontSize: 10, fontWeight: '800', color: '#0b1a00', opacity: 0.7 },
-  detailValue: { fontSize: 13, fontWeight: '900', color: '#0b1a00' },
-  bookedDriver: { fontSize: 12, fontWeight: '800', color: '#0b1a00' },
-
-  card: {
-    backgroundColor: colors.surface, borderRadius: 18, padding: 16, gap: 12,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  question: { fontSize: 18, fontWeight: '900', color: colors.text, lineHeight: 24 },
-  hint: { fontSize: 12.5, color: colors.muted, fontWeight: '600', lineHeight: 18 },
-  cancelTxt: { fontSize: 13, fontWeight: '800', color: colors.muted },
-
-  addRow: {
+  activeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderStyle: 'dashed', borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
+    borderRadius: 16, padding: 14, backgroundColor: colors.primary,
   },
-  addPlus: { fontSize: 20, fontWeight: '900', color: colors.primary, marginTop: -2 },
-  addTxt: { flex: 1, fontSize: 13.5, fontWeight: '800', color: colors.text },
+  activeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#0b1a00' },
+  activeTxt: { flex: 1, fontSize: 14.5, fontWeight: '900', color: '#0b1a00' },
 
-  routeBox: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+  cityPill: {
+    alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
+    borderWidth: 1, borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
+  },
+  cityTxt: { fontSize: 16, fontWeight: '900', color: colors.text },
+
+  routeBox: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
   fieldInput: { flex: 1, color: colors.text, fontSize: 14.5, fontWeight: '700', paddingVertical: 13 },
   /** A lime dot once the field holds a real place, not just typed words. */
@@ -1012,109 +1079,99 @@ const styles = themed(() => StyleSheet.create({
   predictionMain: { color: colors.text, fontSize: 14, fontWeight: '800' },
   predictionSub: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
 
-  primaryBtn: { height: 48, borderRadius: 14, backgroundColor: colors.btnBg, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnTxt: { fontSize: 15, fontWeight: '900', color: colors.btnText },
+  hint: { fontSize: 13, color: colors.muted, fontWeight: '600', lineHeight: 19, textAlign: 'center', marginTop: 8 },
+  blockLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, marginTop: 4 },
 
-  placeCard: {
-    borderRadius: 20, padding: 16, gap: 10,
+  poolCard: {
+    borderRadius: 20, padding: 16, gap: 8,
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassLimeBorder,
   },
-  placeHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  placeIcon: {
-    width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary,
-  },
-  placeName: { fontSize: 15.5, fontWeight: '900', color: colors.text },
-  placeFrom: { fontSize: 12.5, fontWeight: '700', color: colors.muted },
-  removeTxt: { fontSize: 15, color: colors.muted, fontWeight: '800' },
+  poolHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  poolTitle: { flex: 1, fontSize: 15.5, fontWeight: '900', color: colors.text },
+  chip: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
+  chipWait: { backgroundColor: 'rgba(251,191,36,0.18)' },
+  chipGo: { backgroundColor: colors.primary },
+  chipFull: { backgroundColor: colors.border },
+  chipTxt: { fontSize: 11.5, fontWeight: '900', color: colors.text },
+  chipTxtGo: { color: '#0b1a00' },
+  fareBig: { fontSize: 30, fontWeight: '900', color: colors.primary, textAlign: 'center', marginTop: 4 },
+  fareSub: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center', marginTop: -4 },
+  carWrap: { alignItems: 'center', paddingVertical: 2 },
+  seatsTxt: { fontSize: 14, fontWeight: '900', color: colors.text, textAlign: 'center' },
 
-  peopleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-    borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: colors.glassLime,
-  },
-  peopleNum: { fontSize: 24, fontWeight: '900', color: colors.primary },
-  peopleTxt: { flex: 1, minWidth: 120, fontSize: 12.5, fontWeight: '700', color: colors.text },
-
-  blockLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.8, marginTop: 4 },
-  emptyTxt: { fontSize: 12.5, color: colors.muted, fontWeight: '600', lineHeight: 18 },
-
-  carRow: { flexDirection: 'row', gap: 8 },
-  carChip: {
-    flex: 1, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 12,
-    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background,
-  },
-  carChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  carName: { fontSize: 14, fontWeight: '900', color: colors.text },
-  carNameOn: { color: colors.primary },
-  carNote: { fontSize: 11, fontWeight: '600', color: colors.muted, marginTop: 1 },
-
-  fareRow: { flexDirection: 'row', gap: 6 },
-  fareBox: {
-    flex: 1, alignItems: 'center', borderRadius: 12, paddingVertical: 8,
+  ladder: { flexDirection: 'row', gap: 6 },
+  rung: {
+    flex: 1, alignItems: 'center', borderRadius: 12, paddingVertical: 7,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
   },
-  fareBoxOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
-  fareNum: { fontSize: 13, fontWeight: '900', color: colors.text },
-  fareNumOn: { color: colors.primary },
-  fareWho: { fontSize: 10, fontWeight: '700', color: colors.muted, marginTop: 1 },
+  rungOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  rungFare: { fontSize: 12.5, fontWeight: '900', color: colors.text },
+  rungFareOn: { color: colors.primary },
+  rungWho: { fontSize: 10, fontWeight: '700', color: colors.muted, marginTop: 1 },
 
-  mateRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderRadius: 14, padding: 10,
-    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
-  },
-  check: {
-    width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: colors.border,
+  lines: { gap: 6, marginTop: 2 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  lineTxt: { flex: 1, fontSize: 13, fontWeight: '800', color: colors.text },
+  lineMuted: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  metaTxt: { fontSize: 12.5, fontWeight: '600', color: colors.muted, lineHeight: 18 },
+
+  joinBtn: {
+    height: 50, borderRadius: 14, backgroundColor: colors.btnBg, marginTop: 4,
     alignItems: 'center', justifyContent: 'center',
   },
-  checkOn: { borderColor: colors.primary, backgroundColor: colors.primary },
-  checkMark: { fontSize: 14, fontWeight: '900', color: colors.btnText },
+  joinTxt: { fontSize: 15, fontWeight: '900', color: colors.btnText },
+  bookedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4,
+    borderRadius: 14, padding: 12, backgroundColor: colors.glassLime,
+  },
+  bookedTxt: { flex: 1, fontSize: 12.5, fontWeight: '800', color: colors.text },
+  cancelTxt: { fontSize: 13, fontWeight: '800', color: colors.muted },
+  ownerRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
+  ownerTxt: { fontSize: 12.5, fontWeight: '800', color: colors.muted },
 
-  rideRow: {
+  addRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderRadius: 14, padding: 10,
-    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderStyle: 'dashed', borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
   },
-  avatars: { flexDirection: 'row' },
-  avatar: {
-    width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: colors.border,
-    backgroundColor: colors.glassStrong, alignItems: 'center', justifyContent: 'center',
-  },
-  avatarTxt: { fontSize: 12, fontWeight: '900', color: colors.text },
-  rideNames: { fontSize: 13.5, fontWeight: '900', color: colors.text },
-  rideMeta: { fontSize: 11.5, fontWeight: '600', color: colors.muted, marginTop: 1 },
-  rideSide: { alignItems: 'flex-end', gap: 4 },
-  rideFare: { fontSize: 12.5, fontWeight: '900', color: colors.primary },
-  joinBtn: {
-    minWidth: 58, height: 30, borderRadius: 10, paddingHorizontal: 12,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.btnBg,
-  },
-  joinTxt: { fontSize: 13, fontWeight: '900', color: colors.btnText },
-
-  bookBtn: {
-    height: 50, borderRadius: 14, backgroundColor: colors.btnBg, marginTop: 4,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  fareHint: { fontSize: 11.5, fontWeight: '600', color: colors.muted, textAlign: 'center' },
-
-  askRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  askField: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', height: 42, borderRadius: 12,
-    paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
-  },
-  askAt: { fontSize: 15, fontWeight: '900', color: colors.muted },
-  askInput: { flex: 1, fontSize: 14.5, fontWeight: '700', color: colors.text, paddingVertical: 0, marginLeft: 2 },
-  askBtn: { height: 42 },
-
-  inviteRow: {
-    gap: 8, borderRadius: 14, padding: 10,
-    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
-  },
-  mateHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  inviteActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 14 },
-  notNowBtn: { paddingVertical: 6 },
+  addPlus: { fontSize: 20, fontWeight: '900', color: colors.primary, marginTop: -2 },
+  addTxt: { flex: 1, fontSize: 13.5, fontWeight: '800', color: colors.text },
 
   fleetLink: { alignSelf: 'center', paddingVertical: 6 },
   fleetLinkTxt: { fontSize: 12.5, fontWeight: '800', color: colors.muted },
+
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: {
+    maxHeight: '86%', backgroundColor: colors.background,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 18, paddingTop: 10, paddingBottom: 28,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  grabber: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.border, marginBottom: 10 },
+  sheetTitle: { fontSize: 19, fontWeight: '900', color: colors.text },
+  sheetName: { fontSize: 14, fontWeight: '800', color: colors.primary, marginTop: -6 },
+  sheetRow: { gap: 3 },
+  sheetLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  sheetValue: { fontSize: 13.5, fontWeight: '700', color: colors.text, lineHeight: 19 },
+  sheetInput: {
+    borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+    paddingHorizontal: 13, paddingVertical: 11, color: colors.text, fontSize: 14.5, fontWeight: '700',
+  },
+  choiceRow: { flexDirection: 'row', gap: 8 },
+  choice: {
+    flex: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  choiceOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  choiceTxt: { fontSize: 13.5, fontWeight: '900', color: colors.text },
+  choiceTxtOn: { color: colors.primary },
+  choiceNote: { fontSize: 11, fontWeight: '600', color: colors.muted, marginTop: 1 },
+  timeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 12, borderWidth: 1, borderColor: colors.primary, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  timeTxt: { fontSize: 18, fontWeight: '900', color: colors.primary },
+  cityRow: { paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
+  cityRowTxt: { fontSize: 15, fontWeight: '800', color: colors.text },
+  cityRowSub: { fontSize: 11.5, fontWeight: '600', color: colors.muted, marginTop: 1 },
 }));

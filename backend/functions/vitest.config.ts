@@ -30,6 +30,7 @@ export default defineConfig({
       'src/admin/__tests__/**/*.test.ts',
       'src/partners/__tests__/**/*.test.ts',
       'src/dailyRoutes/__tests__/**/*.test.ts',
+      'src/sharedPools/__tests__/**/*.test.ts',
       'src/businessAds/__tests__/**/*.test.ts',
       'src/analytics/__tests__/**/*.test.ts',
       'src/locations/__tests__/**/*.test.ts',

@@ -30,7 +30,7 @@ const CHAPTERS = [
   {
     gear: 'Chapter 02',
     title: 'Split it with the city',
-    body: 'Going the same way as someone else? Pool the ride and the fare splits with you. Two riders pay 60% each. Four pay 35%.',
+    body: 'Going the same way as someone else? Pool the ride and the fare splits with you. Two riders pay 55% each. Four pay 35%.',
     metric: 'Up to 65% off a solo fare',
   },
   {

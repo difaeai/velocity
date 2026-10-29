@@ -37,19 +37,21 @@ export const MAX_SEATS = 4;
 
 /**
  * Pool rides — per-seat fare as a share of the solo fare, by total riders.
- * 2 riders → each pays 60% · 3 → 45% · 4 → 35%. Every rider saves versus
+ * 2 riders → each pays 55% · 3 → 45% · 4 → 35%. Every rider saves versus
  * riding alone, and the driver's gross must grow with EVERY extra stop
- * (perSeat × riders): 100% → 120% → 135% → 140%. The third tier used to be 40%,
- * which made three riders worth exactly as much as two (120% both ways), so a
- * driver had every reason to refuse the third person. Mirrors POOL_TIERS on
- * the mobile booking screen.
+ * (perSeat × riders): 100% → 110% → 135% → 140%. The owner's own example
+ * (2026-10-29): a PKR 1,000 ride is 550 each for two, 450 each for three. The
+ * third tier used to be 40%, which made three riders worth no more than two, so
+ * a driver had every reason to refuse the third person. Mirrors POOL_TIERS on
+ * the mobile booking screen and SHARE in the web FareSplit.
  */
 export const MAX_POOL_RIDERS = 4;
-const POOL_SEAT_PCT: Record<number, number> = { 1: 1, 2: 0.6, 3: 0.45, 4: 0.35 };
+/** Whole percents: 400 × 0.55 is 220.00000000000003 in floating point, and ceil made it 221. */
+const POOL_SEAT_PCT: Record<number, number> = { 1: 100, 2: 55, 3: 45, 4: 35 };
 
 export function poolPerSeatFare(soloFare: number, riders: number): number {
   const n = Math.min(Math.max(Math.trunc(riders) || 1, 1), MAX_POOL_RIDERS);
-  return Math.ceil(soloFare * (POOL_SEAT_PCT[n] ?? 1));
+  return Math.ceil((soloFare * (POOL_SEAT_PCT[n] ?? 100)) / 100);
 }
 
 export interface FareBounds {

@@ -179,7 +179,7 @@ const SERVICES = [
     icon: Users,
     tag: 'Save up to 65%',
     title: 'Pooled rides',
-    body: 'Share the car with people already going your way. Two riders pay 60% of the solo fare each, three pay 45%, four pay 35%.',
+    body: 'Share the car with people already going your way. Two riders pay 55% of the solo fare each, three pay 45%, four pay 35%.',
     wide: true,
   },
   {
@@ -354,7 +354,7 @@ const FAQS = [
   },
   {
     q: 'How does pooling actually save money?',
-    a: 'The fare for the trip is worked out once, then split by how many people are in the car. On your own you pay 100%. With two riders you each pay 60%, with three 45%, and with four 35% — so a full car costs each person about a third of the solo fare.',
+    a: 'The fare for the trip is worked out once, then split by how many people are in the car. On your own you pay 100%. With two riders you each pay 55%, with three 45%, and with four 35% — so a full car costs each person about a third of the solo fare.',
   },
   {
     q: 'Can I choose what to pay?',
