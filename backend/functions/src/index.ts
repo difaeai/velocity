@@ -377,6 +377,11 @@ export { runCommuteRideFormation } from './commute/formRides';
 // Saved daily routes as areas: "Locations people are traveling to".
 export { getTravelAreas } from './dailyRoutes/travelAreas';
 export { getRouteMates, inviteRouteMates, getMyRideInvites, declineRideInvite } from './dailyRoutes/routeMates';
+// Shared pools: a route that fills a car, sends it, and is empty again for the
+// next riders two minutes later — the "Corporate & Students" screen.
+export {
+  getSharedPools, createSharedPool, joinSharedPool, leaveSharedPool, editSharedPool, dispatchSharedPools,
+} from './sharedPools';
 
 // Usernames, and the personal fleet they address. A fleet fills a shared car
 // BEFORE a driver is asked — see fleet/index.ts for why that ordering is the

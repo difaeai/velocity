@@ -99,16 +99,16 @@ beforeEach(async () => {
 });
 
 describe('poolPerSeatFare', () => {
-  it('follows the 100/60/45/35 tier table', () => {
+  it('follows the 100/55/45/35 tier table', () => {
     expect(poolPerSeatFare(400, 1)).toBe(400);
-    expect(poolPerSeatFare(400, 2)).toBe(240);
+    expect(poolPerSeatFare(400, 2)).toBe(220);
     expect(poolPerSeatFare(400, 3)).toBe(180);
     expect(poolPerSeatFare(400, 4)).toBe(140);
   });
   it('pays the driver more for every extra rider, the third included', () => {
     const total = (n: number) => poolPerSeatFare(400, n) * n;
-    // 400 → 480 → 540 → 560. The third tier used to be 40%: 3 × 160 = 480,
-    // exactly what two riders paid, so the third stop earned the driver nothing.
+    // 400 → 440 → 540 → 560. The third tier used to be 40%: 3 × 160 = 480,
+    // no more than two riders paid, so the third stop earned the driver nothing.
     expect(total(2)).toBeGreaterThan(total(1));
     expect(total(3)).toBeGreaterThan(total(2));
     expect(total(4)).toBeGreaterThan(total(3));
@@ -197,7 +197,7 @@ describe('getPoolTripByCode', () => {
     expect(info.riders).toBe(1);
     expect(info.seatsLeft).toBe(3);
     expect(info.perSeatFareNow).toBe(400);
-    expect(info.perSeatFareIfYouJoin).toBe(240);
+    expect(info.perSeatFareIfYouJoin).toBe(220);
     expect(info.pickupAddress).toBe(PICKUP.address);
     // Choosing this car, not just this price: who is driving and who is in it.
     expect(info.driverName).toBe('Bilal Khan');
@@ -240,13 +240,13 @@ describe('joinPoolTrip', () => {
     const res = await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     expect(res.alreadyJoined).toBe(false);
     expect(res.riders).toBe(2);
-    expect(res.perSeatFare).toBe(240);
+    expect(res.perSeatFare).toBe(220);
     expect(res.tripId).toBe(tripId);
 
     const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
     expect(trip.poolMembers).toEqual([HOST, JOINER]);
     expect(trip.seats).toBe(2);
-    expect(trip.poolPerSeatFare).toBe(240);
+    expect(trip.poolPerSeatFare).toBe(220);
 
     // Joiner now tracks the pool as their active trip.
     const joiner = (await db().doc(`users/${JOINER}`).get()).data()!;
@@ -293,7 +293,7 @@ describe('joinPoolTrip', () => {
     const reqDoc = (await db().doc(`trips/${tripId}/joinRequests/${JOINER}`).get()).data()!;
     expect(reqDoc.status).toBe('pending');
     // Quoted at the pool's own tier — the joiner never named this number.
-    expect(reqDoc.farePerSeat).toBe(240);
+    expect(reqDoc.farePerSeat).toBe(220);
 
     // Asking twice is not a second request.
     await expect(joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER)))
@@ -363,7 +363,7 @@ describe('driverRespondToPoolJoin', () => {
 
     const trip = (await db().doc(`trips/${tripId}`).get()).data()!;
     expect(trip.poolMembers).toEqual([HOST, JOINER]);
-    expect(trip.poolPerSeatFare).toBe(240);
+    expect(trip.poolPerSeatFare).toBe(220);
     expect((await db().doc(`users/${JOINER}`).get()).get('activeTripId')).toBe(tripId);
   });
 
@@ -425,7 +425,7 @@ describe('driverRespondToPoolJoin', () => {
     const queue = await getPoolJoinRequests.run(makeReq({ tripId }, DRIVER));
     expect(queue.requests).toHaveLength(1);
     expect(queue.requests[0].riderId).toBe(JOINER);
-    expect(queue.requests[0].farePerSeat).toBe(240);
+    expect(queue.requests[0].farePerSeat).toBe(220);
 
     await cancelPoolTripJoinRequest.run(makeReq({ tripId }, JOINER));
     const after = await getPoolJoinRequests.run(makeReq({ tripId }, DRIVER));
@@ -529,7 +529,7 @@ describe('visibility', () => {
       { firstName: 'Usman', gender: 'male', coRiderRating: null, coRiderRatingCount: 0 },
     ]);
     expect(pool.riders).toBe(1);
-    expect(pool.perSeatFareIfYouJoin).toBe(240); // 2 riders → 60% of 400
+    expect(pool.perSeatFareIfYouJoin).toBe(220); // 2 riders → 55% of 400
   });
 
   it('a private pool stays hidden even after a driver accepts it', async () => {
@@ -678,11 +678,11 @@ describe('join requests tell the driver the truth', () => {
     const { shareCode, tripId } = await createConfirmedPool();
     await joinPoolTrip.run(makeReq({ code: shareCode! }, JOINER));
     const request = (await db().doc(`trips/${tripId}/joinRequests/${JOINER}`).get()).data()!;
-    // The host alone owed 400. With the joiner: 240 × 2 = 480 — Rs 80 more for
-    // the driver, where the push used to say "PKR 240 more".
-    expect(request.farePerSeat).toBe(240);
-    expect(request.driverTotalAfter).toBe(480);
-    expect(request.driverEarnExtra).toBe(80);
+    // The host alone owed 400. With the joiner: 220 × 2 = 440 — Rs 40 more for
+    // the driver, where the push used to say "PKR 220 more".
+    expect(request.farePerSeat).toBe(220);
+    expect(request.driverTotalAfter).toBe(440);
+    expect(request.driverEarnExtra).toBe(40);
   });
 });
 

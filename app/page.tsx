@@ -131,7 +131,7 @@ const SLIDES: HeroSlide[] = [
     beats: [
       { at: 0, icon: '📱', title: 'Ride booked', detail: 'A shared ride — the fare is fixed, no haggling' },
       { at: 4, icon: '🚗', title: 'Your driver is here', detail: 'Verified driver, tracked live on the map' },
-      { at: 7.5, icon: '👥', title: 'A second rider joins on the way', detail: 'Two riders: each pays 60% of the solo fare' },
+      { at: 7.5, icon: '👥', title: 'A second rider joins on the way', detail: 'Two riders: each pays 55% of the solo fare' },
     ],
     copy: (
       <>

@@ -1057,18 +1057,37 @@ export const api = {
     },
     TravelAreas
   >('getTravelAreas'),
-  // ── "People on your route": who travels it, and a ride request to them ────
-  getRouteMates: callable<
-    { from: { lat: number; lng: number }; to: { lat: number; lng: number } },
-    { mates: RouteMate[] }
-  >('getRouteMates'),
-  inviteRouteMates: callable<
-    { tripId: string; mateIds?: string[]; usernames?: string[] },
-    { invited: number; notFound: string[] }
-  >('inviteRouteMates'),
-  /** Sharing rides somebody asked this rider into, still taking riders. */
-  getMyRideInvites: callable<Record<string, never>, { invites: RideInvite[] }>('getMyRideInvites'),
-  declineRideInvite: callable<{ tripId: string }, { ok: boolean }>('declineRideInvite'),
+  // ── Shared pools: the "Corporate & Students" screen ───────────────────────
+  // Search needs a city and both ends; `mine` lists the rider's own pools.
+  getSharedPools: callable<
+    {
+      city?: string;
+      from?: { lat: number; lng: number };
+      to?: { lat: number; lng: number };
+      mine?: boolean;
+    },
+    { pools: SharedPool[] }
+  >('getSharedPools'),
+  /** Start a pool and take its first seat. */
+  createSharedPool: callable<
+    {
+      city: string;
+      label?: string | null;
+      departTime?: string | null;
+      rideType: 'mini' | 'ac';
+      pickup: { lat: number; lng: number; address: string };
+      dropoff: { lat: number; lng: number; address: string };
+    },
+    SharedPoolSeat & { poolId: string }
+  >('createSharedPool'),
+  joinSharedPool: callable<{ poolId: string }, SharedPoolSeat>('joinSharedPool'),
+  /** Give back a booked seat — free, no driver has committed. */
+  leaveSharedPool: callable<{ poolId: string }, { ok: boolean }>('leaveSharedPool'),
+  /** The creator renames, retimes, or removes it from their own list. */
+  editSharedPool: callable<
+    { poolId: string; label?: string | null; departTime?: string | null; remove?: boolean },
+    { ok: boolean }
+  >('editSharedPool'),
   // ── En-route pickups: riders on the driver's way ──────────────────────────
   // `polyline` is a FALLBACK, and optional. When the backend has its own Maps key
   // (GOOGLE_MAPS_SERVER_KEY) it fetches the road itself and never looks at ours.
@@ -2588,33 +2607,48 @@ export interface TravelArea {
   time: string | null;
 }
 
-/** Another rider on the same saved route — what a co-rider may see, nothing more. */
-export interface RouteMate {
-  /** Their saved route's random id; names nobody. */
+/**
+ * One shared pool as a card — backend sharedPools/index.ts `PoolCard`. A pool
+ * is a route that fills a car, sends it, and is empty again two minutes later.
+ */
+export interface SharedPool {
   id: string;
-  firstName: string;
-  gender: 'male' | 'female' | null;
-  fromArea: string;
-  toArea: string;
-  /** "HH:MM", or null for any time. */
-  time: string | null;
+  /** "Bahria University, E-8" — or null, then the drop-off names it. */
+  label: string | null;
+  city: string;
+  rideType: string;
+  pickup: { lat: number; lng: number; address: string };
+  dropoff: { lat: number; lng: number; address: string };
+  /** From the rider's own pickup / drop-off; null on "My rides". */
+  pickupDistanceM: number | null;
+  dropoffDistanceM: number | null;
+  /** Daily "HH:MM", or null: leaves as soon as a driver takes it. */
+  departTime: string | null;
+  departsAtMs: number | null;
+  /** gathering: seats booked, no driver yet · car: a car is on · full: it just filled. */
+  state: 'gathering' | 'car' | 'full';
+  riders: number;
+  seatsTotal: number;
+  seatsLeft: number;
+  fare: number;
+  /** What this rider pays per seat if they join now. */
+  farePerSeat: number;
+  /** Per seat at 1, 2, 3, 4 riders. */
+  fareLadder: number[];
+  driver: { name: string; vehicle: string; plate: string } | null;
+  needsDriverApproval: boolean;
+  /** This rider holds a seat for the next car. */
+  booked: boolean;
+  /** This rider is in the pool's car. */
+  aboardTripId: string | null;
+  /** This rider started the pool. */
+  mine: boolean;
 }
 
-/** A sharing ride somebody asked this rider into. */
-export interface RideInvite {
-  tripId: string;
-  /** Share code — what joinPoolTrip takes. */
-  code: string;
-  hostName: string;
-  riders: number;
-  fromArea: string;
-  toArea: string;
-  rideType: string;
-  /** What this rider would pay per seat once they join. */
-  perSeat: number;
-  /** "Bilal · Corolla", or null while no driver has it yet. */
-  driver: string | null;
-}
+/** seated: in the car · asked: waiting on the driver's yes · booked: a seat for the next car. */
+export type SharedPoolSeat =
+  | { status: 'seated' | 'asked'; tripId: string; perSeatFare: number }
+  | { status: 'booked'; tripId: null; perSeatFare: number; departsAtMs: number | null };
 
 export interface TravelAreas {
   areas: TravelArea[];
