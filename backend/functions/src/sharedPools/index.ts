@@ -525,6 +525,8 @@ async function nearbyCars(near: { lat: number; lng: number }) {
   const hit = nearbyCarsCache.get(cell);
   if (hit && Date.now() - hit.atMs < NEARBY_CARS_TTL_MS) return hit.cars;
   const cars = (await queryNearbyDriverDocs(near.lat, near.lng, POSSIBLE_CARS_RADIUS_M))
+    // The reviewers' demo driver (scripts/seed-demo-driver.mjs) wears a placeholder photo.
+    .filter((d) => d.get('vehicleCheck.reviewedBy') !== 'seed-demo-driver')
     .map((d) => ({ photo: carPhotoOf(d), at: d.get('lastLocation') as { lat: number; lng: number } | undefined }))
     .filter((c): c is { photo: string; at: { lat: number; lng: number } } =>
       !!c.photo && typeof c.at?.lat === 'number' && typeof c.at?.lng === 'number');

@@ -3,17 +3,18 @@
  * laid out the owner's way (2026-10-29; the + box 2026-10-30): one search,
  * then cards — and + to start one.
  *
- *   1. The city, at the top.
+ *   1. The top row: "Ride sharing", the city in the middle, then +.
  *   2. Where to (drop-off), then where from (pickup — the phone's location
  *      until the rider types).
- *   3. Small animated boxes, two to a row (2026-10-30): a real car on top that
- *      drives in, then from → to, fare and "2 seats available", a green light
- *      pulsing while one is active. Before a search, every shared ride in the
- *      city — the rider's own first. Searched, the related ones: leaving from
- *      the rider's area, those to their drop-off first, then further, then
- *      further still. Tap a box: a dialog with only fare, seats, from and to,
- *      Join in green and Cancel see-through (Leave there for a rider in it).
- *      A car that fills stays two minutes; then the route is an empty car again.
+ *   3. Small animated boxes, two to a row (2026-10-30), and only once asked
+ *      for: a search shows the related ones — leaving from the rider's area,
+ *      those to their drop-off first, then further, then further still — and
+ *      All shows every ride in the city. Nothing chosen, no boxes. Each has a
+ *      car on top (the driver's own, nearby cars, or the placeholder BMW), from
+ *      → to, fare, "2 seats available", a pulsing "Available" and a ♀/♂ badge.
+ *      Tap a box: a dialog with only fare, seats, from and to, Join in green
+ *      and Cancel see-through (Leave there for a rider in it). A car that fills
+ *      stays two minutes; then the route is an empty car again.
  *   4. + (top right) opens the box that starts one, in this order: institution
  *      and location name, drop-off, pickup, start time — then its fare and the
  *      seats still free.
@@ -41,7 +42,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import Svg, { Rect } from 'react-native-svg';
 
 import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
@@ -147,9 +148,12 @@ export default function DailyTravelScreen() {
   // The owner's All: every ride in the city instead of the relevant ones.
   const [all, setAll] = useState(false);
   const searching = !all && !!from && !!to;
+  // The owner (2026-10-30): no location chosen and no All, no boxes at all.
+  const listing = all || searching;
 
   const loadPools = useCallback(() => {
     const n = ++searchSeq.current;
+    if (!listing) return;
     api
       .getSharedPools({
         city,
@@ -158,7 +162,7 @@ export default function DailyTravelScreen() {
       })
       .then((r) => n === searchSeq.current && setPools(r.pools))
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
-  }, [city, from, to, all]);
+  }, [city, from, to, all, listing]);
   // On focus and on every new search — and seats fill and cars leave while the rider watches.
   useFocusEffect(loadPools);
   useForegroundInterval(loadPools, 20_000);
@@ -373,11 +377,11 @@ export default function DailyTravelScreen() {
         />
         {to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
 
-        {/* 3. The boxes: the relevant ones — from where the rider is, or their
-            search's — or, with All, every ride in the city. */}
+        {/* 3. The boxes, only once asked for: the search's (exact first, then the
+            nearest drop-offs), or — with All — every ride in the city. */}
         <View style={styles.listHead}>
           <Text style={[styles.blockLabel, styles.listHeading]} numberOfLines={1}>
-            {all ? `ALL IN ${cityName.toUpperCase()}` : searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : fromHeading(from, cityName)}
+            {all ? `ALL IN ${cityName.toUpperCase()}` : searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : 'SHARED RIDES'}
           </Text>
           <Pressable
             style={({ pressed }) => [styles.allChip, all && styles.allChipOn, pressed && { opacity: 0.85 }]}
@@ -393,12 +397,16 @@ export default function DailyTravelScreen() {
             <Text style={[styles.allChipTxt, all && styles.allChipTxtOn]}>All</Text>
           </Pressable>
         </View>
-        {pools === null ? (
+        {!listing ? (
+          <Text style={styles.hint}>
+            Enter your drop-off location to see the shared rides going there — or tap All for every ride in {cityName}.
+          </Text>
+        ) : pools === null ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
         ) : pools.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.hint}>
-              {!all && (searching || from) ? 'No shared rides from your area yet.' : `No shared rides in ${cityName} yet.`}
+              {all ? `No shared rides in ${cityName} yet.` : 'No shared rides from your area yet.'}
             </Text>
             <Pressable
               style={({ pressed }) => [styles.joinBtn, styles.emptyBtn, pressed && { opacity: 0.85 }]}
@@ -475,20 +483,8 @@ const seatsText = (p: SharedPool) =>
       ? 'No seats available'
       : `${p.seatsLeft} ${p.seatsLeft === 1 ? 'seat' : 'seats'} available`;
 
-/** Someone is in it or its car is out: its car idles. */
-const isActive = (p: SharedPool) => p.state === 'car' || (p.state === 'gathering' && p.riders > 0);
-
 /** Seats to be had: the owner's blinking green light and "Available" (2026-10-30). */
 const isAvailable = (p: SharedPool) => p.state !== 'full' && p.seatsLeft > 0;
-
-/** The list before a search: what leaves from where the rider is — "FROM GULBERG". */
-function fromHeading(from: Place | null, cityName: string): string {
-  if (!from) return `SHARED RIDES IN ${cityName.toUpperCase()}`;
-  const area = areaLabel(from.address);
-  return !area || area.toLowerCase() === cityName.toLowerCase() || area === 'Current location'
-    ? 'FROM YOUR LOCATION'
-    : `FROM ${area.toUpperCase()}`;
-}
 
 /** Who is sitting in it, top right (owner, 2026-10-30) — a shared ride is one gender. */
 function GenderBadge({ gender }: { gender: 'male' | 'female' }) {
@@ -515,139 +511,18 @@ function StatusTag({ open }: { open: boolean }) {
 }
 
 /**
- * The car from above — the owner's first car, back as the placeholder until a
- * real one comes (2026-10-30): the driver's seat and four for riders, filled as
- * people take them.
+ * The placeholder until a real car comes (owner, 2026-10-30): a white BMW from
+ * the front corner — Pixabay 5849410 (Pixabay Content License: commercial use, no
+ * credit needed), its number plate blanked, cropped to 960×600.
  */
-function CarSeats({ taken, total, driver, width = 240 }: { taken: number; total: number; driver: boolean; width?: number }) {
-  // Front passenger first, then the back row, left to right as you look at it.
-  const seats = [
-    { x: 126, y: 66, w: 34, h: 30 },
-    { x: 50, y: 22, w: 36, h: 24 },
-    { x: 50, y: 48, w: 36, h: 24 },
-    { x: 50, y: 74, w: 36, h: 24 },
-  ].slice(0, total);
-  return (
-    <View style={styles.carWrap} accessible accessibilityLabel={`${taken} of ${total} seats taken`}>
-      <Svg width={width} height={width / 2} viewBox="0 0 240 120">
-        {/* Wheels and mirrors first, so the body sits over them. */}
-        {[48, 162].flatMap((x) => [5, 101].map((y) => (
-          <Rect key={`${x}-${y}`} x={x} y={y} width={34} height={14} rx={5} fill={colors.muted} />
-        )))}
-        <Rect x={160} y={4} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
-        <Rect x={160} y={107} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
-        {/* Body, nose to the right. */}
-        <Path
-          d="M30 12 H188 C214 12 232 32 232 60 C232 88 214 108 188 108 H30 C17 108 8 99 8 86 V34 C8 21 17 12 30 12 Z"
-          fill={colors.glassLime}
-          stroke={colors.glassLimeBorder}
-          strokeWidth={2}
-        />
-        {/* Windscreen and rear glass. */}
-        <Path d="M172 22 L192 28 Q197 60 192 92 L172 98 Z" fill={colors.border} />
-        <Path d="M38 26 L26 32 Q22 60 26 88 L38 94 Z" fill={colors.border} />
-        {/* The driver's seat: dashed until a driver accepts. */}
-        <Rect
-          x={126} y={24} width={34} height={30} rx={9}
-          fill={driver ? colors.muted : 'none'}
-          stroke={colors.muted}
-          strokeWidth={2}
-          strokeDasharray={driver ? undefined : '4 3'}
-        />
-        {driver ? <Circle cx={143} cy={39} r={6} fill="#0b1a00" /> : null}
-        <Circle cx={166} cy={39} r={7} stroke={colors.muted} strokeWidth={3} fill="none" />
-        {seats.map((s, i) => (i < taken ? (
-          <Rect key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8} fill={colors.primary} />
-        ) : (
-          <Rect
-            key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8}
-            fill="none" stroke={colors.primary} strokeWidth={2} strokeDasharray="4 3"
-          />
-        )))}
-        {seats.slice(0, taken).map((s, i) => (
-          <Circle key={`h${i}`} cx={s.x + s.w / 2} cy={s.y + s.h / 2} r={6} fill="#0b1a00" />
-        ))}
-      </Svg>
-    </View>
-  );
-}
+const PLACEHOLDER_CAR = require('../../assets/placeholder-car.jpg') as number;
 
 /**
- * The drawn car, moving: it drives in from the left as `arrive` goes 0 → 1, and
- * idles — a small bob — while its ride is active.
+ * A ride's cars (owner, 2026-10-30): the accepted driver's own, else the nearby
+ * cars that could come, turning over on each `beat` — or, with none, the
+ * placeholder BMW. It drives in with `arrive`.
  */
-function DrawnCar({
-  width,
-  taken,
-  total,
-  driver,
-  arrive,
-  idle = false,
-}: {
-  width: number;
-  taken: number;
-  total: number;
-  driver: boolean;
-  arrive?: Animated.Value;
-  idle?: boolean;
-}) {
-  const [still] = useState(() => new Animated.Value(1));
-  const [bob] = useState(() => new Animated.Value(0));
-  const shown = arrive ?? still;
-  useEffect(() => {
-    if (!idle) return;
-    const ease = Easing.inOut(Easing.quad);
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(bob, { toValue: 1, duration: 900, easing: ease, useNativeDriver: true }),
-        Animated.timing(bob, { toValue: 0, duration: 900, easing: ease, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [bob, idle]);
-  return (
-    <Animated.View
-      style={{
-        alignSelf: 'center',
-        opacity: shown,
-        transform: [
-          { translateX: shown.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.35, 0] }) },
-          { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -1.5] }) },
-        ],
-      }}
-    >
-      <CarSeats taken={taken} total={total} driver={driver} width={width} />
-    </Animated.View>
-  );
-}
-
-/**
- * A ride's real cars (owner, 2026-10-30): the accepted driver's own, else the
- * nearby cars that could come, turning over on each `beat` — or, with none,
- * the drawn car with its seats. It drives in with `arrive`, as the drawn car does.
- */
-function RideCars({
-  photos,
-  beat,
-  width,
-  arrive,
-  idle,
-  taken,
-  total,
-  driver,
-}: {
-  photos: string[];
-  beat: number;
-  /** The drawn car's width; a photo fills its box. */
-  width: number;
-  arrive?: Animated.Value;
-  idle?: boolean;
-  /** For the drawn car: its seats, and whether a driver has it. */
-  taken: number;
-  total: number;
-  driver: boolean;
-}) {
+function RideCars({ photos, beat, arrive }: { photos: string[]; beat: number; arrive?: Animated.Value }) {
   const [still] = useState(() => new Animated.Value(1));
   const [fade] = useState(() => new Animated.Value(1));
   const [shown, setShown] = useState(0);
@@ -664,9 +539,6 @@ function RideCars({
     return () => out.stop();
   }, [beat, firstBeat, count, fade]);
 
-  if (count === 0) {
-    return <DrawnCar width={width} taken={taken} total={total} driver={driver} arrive={arrive} idle={idle} />;
-  }
   const shownIn = arrive ?? still;
   return (
     <Animated.View
@@ -676,12 +548,15 @@ function RideCars({
         transform: [{ translateX: shownIn.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] }) }],
       }}
     >
-      <Animated.Image
-        source={{ uri: photos[shown % count] }}
-        resizeMode="cover"
-        accessible={false}
-        style={[styles.carPhoto, { opacity: fade }]}
-      />
+      {/* A frame the photo fills: a bundled image would otherwise take its own pixel height. */}
+      <View style={styles.carFrame}>
+        <Animated.Image
+          source={count > 0 ? { uri: photos[shown % count] } : PLACEHOLDER_CAR}
+          resizeMode="cover"
+          accessible={false}
+          style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', opacity: fade }]}
+        />
+      </View>
       {count > 1 ? (
         <View style={styles.carDots}>
           {photos.map((url, i) => <View key={url} style={[styles.carDot, i === shown % count && styles.carDotOn]} />)}
@@ -708,7 +583,6 @@ function SeatIcons({ taken, total }: { taken: number; total: number }) {
  * in after the one before it with its car driving in, and dips when pressed.
  */
 function PoolBox({ pool: p, index, beat, onPress }: { pool: SharedPool; index: number; beat: number; onPress: () => void }) {
-  const active = isActive(p);
   const yours = p.mine || p.booked || p.aboardTripId !== null;
   const from = areaLabel(p.pickup.address);
   const to = areaLabel(p.dropoff.address);
@@ -740,16 +614,7 @@ function PoolBox({ pool: p, index, beat, onPress }: { pool: SharedPool; index: n
         <StatusTag open={isAvailable(p)} />
         {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
         <View style={styles.boxCar}>
-          <RideCars
-            photos={p.carPhotos ?? []}
-            beat={beat}
-            width={128}
-            arrive={arrive}
-            idle={active}
-            taken={p.state === 'full' ? p.seatsTotal : p.riders}
-            total={p.seatsTotal}
-            driver={!!p.driver}
-          />
+          <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={arrive} />
         </View>
         <View>
           <View style={styles.boxLine}>
@@ -1043,16 +908,7 @@ function RideDialog({
           <StatusTag open={isAvailable(p)} />
           {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
           <View style={styles.boxCar}>
-            <RideCars
-              photos={p.carPhotos ?? []}
-              beat={beat}
-              width={240}
-              arrive={pop}
-              idle={isActive(p)}
-              taken={p.state === 'full' ? p.seatsTotal : p.riders}
-              total={p.seatsTotal}
-              driver={!!p.driver}
-            />
+            <RideCars photos={p.carPhotos ?? []} beat={beat} arrive={pop} />
             {p.carPhotos?.length ? (
               <Text style={styles.carCaption}>{p.carIsDrivers ? 'The driver’s car' : 'Cars nearby that could come'}</Text>
             ) : null}
@@ -1314,7 +1170,7 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
           )}
 
           <Text style={styles.sheetLabel}>AVAILABLE SEATS</Text>
-          <CarSeats taken={1} total={4} driver={false} width={220} />
+          <RideCars photos={[]} beat={0} />
           <Text style={styles.seatsTxt}>3 seats available — one is yours</Text>
         </>
       )}
@@ -1461,7 +1317,7 @@ const styles = themed(() => StyleSheet.create({
   },
   genderBadgeTxt: { color: '#ffffff', fontSize: 15, fontWeight: '900', lineHeight: 18 },
   /** A real car's photo: the driver's own, or one of the cars nearby. */
-  carPhoto: { width: '100%', aspectRatio: 1.6, borderRadius: 12, backgroundColor: colors.background },
+  carFrame: { width: '100%', aspectRatio: 1.6, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.background },
   carDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 5 },
   carDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.border },
   carDotOn: { width: 12, backgroundColor: colors.primary },
@@ -1483,7 +1339,6 @@ const styles = themed(() => StyleSheet.create({
     borderTopLeftRadius: 4, borderTopRightRadius: 4, borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
   },
   seatIconTaken: { backgroundColor: colors.primary },
-  carWrap: { alignItems: 'center', paddingVertical: 2 },
   fareBig: { fontSize: 30, fontWeight: '900', color: colors.primary, textAlign: 'center', marginTop: 4 },
   fareSub: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center', marginTop: -4 },
   seatsTxt: { fontSize: 14, fontWeight: '900', color: colors.text, textAlign: 'center' },
