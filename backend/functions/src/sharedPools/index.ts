@@ -252,6 +252,12 @@ export interface PoolCard {
   mine: boolean;
   /** Outside the 1 km match: the rider walks to the car's own pickup and from its drop-off. */
   nearby: boolean;
+  /**
+   * Real cars (owner, 2026-10-30): the accepted driver's own (`carIsDrivers`),
+   * else up to five nearby online cars that could come. Empty: the stock car.
+   */
+  carPhotos: string[];
+  carIsDrivers: boolean;
 }
 
 /** One pool as a card, for one rider. Pure — the tests drive it with a clock. */
@@ -329,6 +335,9 @@ export function poolCard(args: {
     aboardTripId: inCar ? args.tripId : null,
     mine: pool.createdBy === uid,
     nearby: args.nearby === true,
+    // Filled in by getSharedPools (attachCarPhotos), which reads the drivers.
+    carPhotos: [],
+    carIsDrivers: false,
   };
 }
 
@@ -453,6 +462,8 @@ export const getSharedPools = onCall(async (req) => {
   };
 
   const pools: PoolCard[] = [];
+  /** Card id → the uid of the driver who accepted it, for their car's photo. */
+  const accepted = new Map<string, string>();
   for (const { doc, nearby: walk } of picked) {
     const pool = doc.data()!;
     const tripId = (pool.tripId as string | null) ?? null;
@@ -466,13 +477,79 @@ export const getSharedPools = onCall(async (req) => {
     // refuse — it is only on the card to say it left, and that it will be back.
     const offersSeat = card.state !== 'full' && !card.booked && card.aboardTripId === null && !card.mine;
     if (!mine && offersSeat && !poolJoinGenderGate(aboardOf(card, pool, trip), myGender, myMixedOk).allowed) continue;
+    const driverUid = !card.driver ? null
+      : card.driverAhead ? aheadDriver(pool, nowMs)?.uid ?? null
+      : (trip?.driverId as string | undefined) ?? null;
+    if (driverUid) accepted.set(card.id, driverUid);
     pools.push(card);
   }
   if (mine) {
     pools.sort((a, b) => Number(!!b.aboardTripId) - Number(!!a.aboardTripId) || Number(b.booked) - Number(a.booked));
   }
+  await attachCarPhotos(pools, accepted, from ?? null).catch((e) =>
+    logger.warn('sharedPools: car photos failed', { err: String(e) }));
   return { pools };
 });
+
+/** A driver's car as riders see it: their latest car check, else the photo it was registered with. */
+const carPhotoOf = (d: FirebaseFirestore.DocumentSnapshot): string | null =>
+  (d.get('vehicleCheck.photoUrl') as string | null | undefined)
+  ?? (d.get('vehiclePhotoDocUrl') as string | null | undefined)
+  ?? null;
+
+/** How many nearby cars a box nobody has accepted shows, and how far it looks for them. */
+const POSSIBLE_CARS = 5;
+const POSSIBLE_CARS_RADIUS_M = 8000;
+/** Online drivers' cars per ~5 km cell, briefly: a rider's screen asks every 20 seconds. */
+const NEARBY_CARS_TTL_MS = 60_000;
+const nearbyCarsCache = new Map<string, { atMs: number; cars: { photo: string; at: { lat: number; lng: number } }[] }>();
+/** For tests, which change drivers between searches faster than the cache forgets. */
+export const clearNearbyCarsCache = () => nearbyCarsCache.clear();
+
+async function nearbyCars(near: { lat: number; lng: number }) {
+  const cell = geohashForLocation([near.lat, near.lng], 5);
+  const hit = nearbyCarsCache.get(cell);
+  if (hit && Date.now() - hit.atMs < NEARBY_CARS_TTL_MS) return hit.cars;
+  const cars = (await queryNearbyDriverDocs(near.lat, near.lng, POSSIBLE_CARS_RADIUS_M))
+    .map((d) => ({ photo: carPhotoOf(d), at: d.get('lastLocation') as { lat: number; lng: number } | undefined }))
+    .filter((c): c is { photo: string; at: { lat: number; lng: number } } =>
+      !!c.photo && typeof c.at?.lat === 'number' && typeof c.at?.lng === 'number');
+  nearbyCarsCache.set(cell, { atMs: Date.now(), cars });
+  return cars;
+}
+
+/**
+ * Real cars on the boxes (owner, 2026-10-30): a box a driver has accepted
+ * shows that driver's own car; one nobody has accepted shows up to
+ * POSSIBLE_CARS of the online cars nearest its pickup — the cars that could
+ * come. With none, `carPhotos` stays empty and the app shows its stock car.
+ */
+async function attachCarPhotos(
+  cards: PoolCard[],
+  accepted: Map<string, string>,
+  near: { lat: number; lng: number } | null,
+): Promise<void> {
+  const uids = [...new Set(accepted.values())];
+  const [drivers, cars] = await Promise.all([
+    uids.length ? db.getAll(...uids.map((u) => db.doc(`drivers/${u}`))) : Promise.resolve([]),
+    near && cards.some((c) => !accepted.has(c.id)) ? nearbyCars(near) : Promise.resolve([]),
+  ]);
+  const photoOf = new Map(drivers.map((d) => [d.id, carPhotoOf(d)]));
+  for (const card of cards) {
+    const uid = accepted.get(card.id);
+    if (uid) {
+      const photo = photoOf.get(uid);
+      card.carPhotos = photo ? [photo] : [];
+      card.carIsDrivers = true;
+    } else {
+      card.carPhotos = cars
+        .map((c) => ({ photo: c.photo, km: haversineKm(c.at.lat, c.at.lng, card.pickup.lat, card.pickup.lng) }))
+        .sort((a, b) => a.km - b.km)
+        .slice(0, POSSIBLE_CARS)
+        .map((c) => c.photo);
+    }
+  }
+}
 
 // ── Seats and cars ───────────────────────────────────────────────────────────
 
