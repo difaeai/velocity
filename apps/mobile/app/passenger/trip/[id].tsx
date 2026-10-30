@@ -25,6 +25,7 @@ import { db } from '../../../src/firebase';
 
 import { api } from '../../../src/api/client';
 import { useTrip } from '../../../src/hooks/useTrip';
+import { poolLeaveFee, poolLeaveRate } from '../../../src/lib/poolLeave';
 import { useCancellationSettings, useTripFees } from '../../../src/hooks/driver';
 import { ArrivalCountdown } from '../../../src/ui/ArrivalCountdown';
 import { DraggableSheet } from '../../../src/ui/DraggableSheet';
@@ -211,21 +212,8 @@ export default function TripScreen() {
     );
   }
 
-  /**
-   * What leaving a shared pool's car costs this rider right now — the backend's
-   * rule (trips/poolLeave): free before a driver accepts, or when somebody
-   * else's leaving raised their share; otherwise a share of their OWN fare.
-   */
-  function leaveRate(t: Trip, uid?: string): number {
-    if (t.status === 'requested' || (uid && t.poolFreeLeave?.[uid])) return 0;
-    return t.status === 'arrived' || t.status === 'in_progress'
-      ? cancellation.poolLeaveArrivedRate
-      : cancellation.poolLeaveRate;
-  }
-  function leaveFee(t: Trip, uid?: string): number {
-    const fare = t.poolFares?.[uid ?? ''] ?? t.poolPerSeatFare ?? t.fare ?? t.offeredFare;
-    return Math.round(fare * leaveRate(t, uid));
-  }
+  const leaveRate = (t: Trip, uid?: string) => poolLeaveRate(t, uid, cancellation);
+  const leaveFee = (t: Trip, uid?: string) => poolLeaveFee(t, uid, cancellation);
 
   /** Leave a shared pool's car; everyone else keeps their ride. */
   function confirmLeave() {
