@@ -176,7 +176,12 @@ export default function DailyTravelScreen() {
   );
 
   function announce(res: SharedPoolSeat) {
-    if (res.status === 'booked') {
+    if (res.status === 'booked' && res.backup) {
+      Alert.alert(
+        'Seat held as a backup',
+        'You are already in another shared ride. When you confirm that one, this seat is given back — if it falls through, this ride takes you.',
+      );
+    } else if (res.status === 'booked') {
       Alert.alert(
         'Seat booked',
         `${res.departsAtMs ? `The car leaves at ${clockOf(res.departsAtMs)}. ` : ''}` +

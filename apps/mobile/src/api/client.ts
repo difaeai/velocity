@@ -2749,7 +2749,14 @@ export interface DriverPoolView {
 /** seated: in the car · asked: waiting on the driver's yes · booked: a seat for the next car. */
 export type SharedPoolSeat =
   | { status: 'seated' | 'asked'; tripId: string; perSeatFare: number }
-  | { status: 'booked'; tripId: null; perSeatFare: number; departsAtMs: number | null };
+  | {
+    status: 'booked';
+    tripId: null;
+    perSeatFare: number;
+    departsAtMs: number | null;
+    /** Held while the rider is in another shared car that has not set off. */
+    backup?: boolean;
+  };
 
 export interface TravelAreas {
   areas: TravelArea[];
