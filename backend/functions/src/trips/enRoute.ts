@@ -945,6 +945,27 @@ export function genderGate(
  * rule — only the tally was bumped — so this is the one gate both doors to the
  * same car now go through.
  */
+/**
+ * Shared rides from the ride sharing screen (`sharedPoolId`), the owner's rule
+ * (2026-10-30): women ride only with women and men only with men. The first
+ * rider decides; a rider whose gender we do not know only gets an empty car.
+ */
+export function sameGenderGate(
+  aboard: (string | null | undefined)[],
+  joinerGender: string,
+): { allowed: true } | { allowed: false; reason: string } {
+  const known = joinerGender === 'male' || joinerGender === 'female';
+  if (aboard.length === 0 || (known && aboard.every((g) => g === joinerGender))) return { allowed: true };
+  return {
+    allowed: false,
+    reason: aboard.every((g) => g === 'female')
+      ? 'This shared ride is for women only.'
+      : aboard.every((g) => g === 'male')
+        ? 'This shared ride is for men only.'
+        : 'This shared ride is not open to you.',
+  };
+}
+
 export function poolJoinGenderGate(
   trip: FirebaseFirestore.DocumentData,
   joinerGender: string,
@@ -956,6 +977,7 @@ export function poolJoinGenderGate(
       ? stored
       : rosterForTrip(trip).map((r) => ({ gender: r.gender }));
   if (aboard.length === 0) return { allowed: true };
+  if (typeof trip.sharedPoolId === 'string') return sameGenderGate(aboard.map((a) => a.gender), joinerGender);
   const { male, female, other } = genderCounts(aboard);
   return canJoinPool({
     currentComposition: computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any'),
@@ -1448,14 +1470,23 @@ export const getPoolRiders = onCall(async (req) => {
     }));
   }
 
-  // The order the car collects and drops everyone — shortest path, each rider
-  // in before they are out (trips/poolPricing). Riders already out are done.
+  // A started shared car (sharedPools startSharedCar): who said they are coming.
+  const confirm = trip.poolStartedAt ? ((trip.poolConfirm as Record<string, string> | undefined) ?? {}) : null;
+
+  // The order the car collects and drops everyone — shortest path from where
+  // the driver is, each rider in before they are out (trips/poolPricing).
+  // Riders already out are done; once a shared car has started, the driver
+  // gets a rider's stops when they confirm (or once they are aboard).
   const located = riders.filter(
     (r) => !r.droppedAt
+      && (!confirm || confirm[r.uid] === 'confirmed' || !!r.boardedAt)
       && typeof r.pickup?.lat === 'number' && typeof r.pickup?.lng === 'number'
       && typeof r.dropoff?.lat === 'number' && typeof r.dropoff?.lng === 'number',
   ) as (RiderRow & { pickup: LatLng; dropoff: LatLng })[];
-  const stops = orderStops(located);
+  const driverAt = confirm && typeof trip.driverId === 'string'
+    ? ((await db.doc(`drivers/${trip.driverId}`).get()).get('lastLocation') as LatLng | undefined) ?? null
+    : null;
+  const stops = orderStops(located, driverAt);
 
   // The driver's list is the one they work from at the kerb, so it carries the
   // full name and a number to ring when somebody is not where they said.
@@ -1498,6 +1529,8 @@ export const getPoolRiders = onCall(async (req) => {
         fare: isDriver || r.uid === ctx.uid ? r.fare : null,
         /** Already let out. The driver's remaining-stops list is built from this. */
         droppedOff: !!r.droppedAt,
+        /** A started shared car: 'pending' until they confirm they are coming. */
+        confirm: confirm ? (confirm[r.uid] ?? null) : null,
       };
     }),
     yourFare: riders.find((r) => r.uid === ctx.uid)?.fare ?? null,

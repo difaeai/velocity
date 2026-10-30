@@ -244,6 +244,10 @@ export interface Trip {
   sharedPoolId?: string;
   /** Riders whose share rose when somebody left: they may leave free of charge. */
   poolFreeLeave?: Record<string, boolean>;
+  /** A shared pool's car the driver has started (sharedPools startSharedCar). */
+  poolStartedAt?: { seconds: number; nanoseconds: number };
+  /** Since the start: each rider's answer to "are you coming?". */
+  poolConfirm?: Record<string, 'pending' | 'confirmed'>;
   /** The corridor the driver is running, once en-route pickups are in play. */
   enRoute?: {
     active: boolean;

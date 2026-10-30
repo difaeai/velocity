@@ -551,6 +551,8 @@ export interface PoolRiderView {
   /** Where to collect them. Driver only. */
   pickupLat?: number | null;
   pickupLng?: number | null;
+  /** A started shared car: 'pending' until they confirm they are coming. */
+  confirm?: 'pending' | 'confirmed' | null;
 }
 
 /** One chat attachment — a photo or a document uploaded to Velocity storage. */
@@ -1094,6 +1096,10 @@ export const api = {
   >('joinSharedPool'),
   /** Give back a booked seat — free, no driver has committed. */
   leaveSharedPool: callable<{ poolId: string }, { ok: boolean }>('leaveSharedPool'),
+  /** The driver sets off to collect a shared car's riders; each is asked to confirm. */
+  startSharedRide: callable<{ tripId: string }, { ok: boolean }>('startSharedRide'),
+  /** A rider says yes, I am coming. (No is leaveSharedRide.) */
+  confirmSharedSeat: callable<{ tripId: string }, { ok: boolean }>('confirmSharedSeat'),
   /** Leave a shared pool's car — any rider, the host too. Fee rules: trips/poolLeave. */
   leaveSharedRide: callable<
     { tripId: string },

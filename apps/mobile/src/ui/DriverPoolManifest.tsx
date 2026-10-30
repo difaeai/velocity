@@ -59,7 +59,7 @@ export function DriverPoolManifest({
   /** Seats still open, so the driver knows the car may yet fill up further. */
   seatsFree: number;
   /** Bump to re-read the list — e.g. when a "rider joined" push arrives. */
-  refreshKey?: number;
+  refreshKey?: number | string;
   /** Only the ask-for-a-seat queue: another list on screen already names everyone. */
   requestsOnly?: boolean;
 }) {
@@ -178,7 +178,10 @@ export function DriverPoolManifest({
   // One rider is not a shared car worth explaining — the trip card already
   // says everything there is to say about a single passenger. A rider asking
   // to get in is a different matter, and still has to be answerable.
-  if (!riders || riders.length < 2) return requestQueue;
+  // A started shared car (sharedPools startSharedCar) lists even one rider: the
+  // driver works from who has confirmed and from the stops they get with that.
+  const started = !!riders?.some((r) => r.confirm != null);
+  if (!riders || (riders.length < 2 && !started)) return requestQueue;
 
   const total = riders.reduce((sum, r) => sum + (r.fare ?? 0), 0);
 
@@ -188,7 +191,7 @@ export function DriverPoolManifest({
     <View style={styles.card}>
       <View style={styles.head}>
         <Text style={styles.title}>
-          {riders.length} passengers in this car
+          {riders.length} passenger{riders.length === 1 ? '' : 's'} in this car
         </Text>
         {seatsFree > 0 ? (
           <Text style={styles.headSub}>{seatsFree} seat{seatsFree === 1 ? '' : 's'} free</Text>
@@ -215,6 +218,12 @@ export function DriverPoolManifest({
                 ? `Collect PKR ${r.fare ?? 0} in cash`
                 : `PKR ${r.fare ?? 0} from wallet`}
             </Text>
+            {/* A started shared car: their stop shows below once they confirm. */}
+            {r.confirm ? (
+              <Text style={[styles.confirm, r.confirm === 'confirmed' && styles.confirmed]}>
+                {r.confirm === 'confirmed' ? '✓ Confirmed — coming' : 'Waiting for them to confirm'}
+              </Text>
+            ) : null}
           </View>
           <Pressable
             style={styles.callBtn}
@@ -235,16 +244,17 @@ export function DriverPoolManifest({
         </Text>
         <Text style={styles.totalValue}>PKR {total}</Text>
       </View>
-      {stops.length > 0 && new Set(riders.map((r) => r.pickupAddress)).size > 1 ? (
+      {stops.length > 0 && (started || new Set(riders.map((r) => r.pickupAddress)).size > 1) ? (
         <View style={styles.stops}>
-          <Text style={styles.stopsTitle}>Stops, in order</Text>
+          <Text style={styles.stopsTitle}>Stops, in order — nearest first</Text>
           {stops.map((s, i) => {
             const r = riders.find((x) => x.uid === s.uid);
             if (!r) return null;
             return (
-              <Text key={`${s.uid}-${s.kind}`} style={styles.stopLine} numberOfLines={1}>
+              <Text key={`${s.uid}-${s.kind}`} style={styles.stopLine} numberOfLines={2}>
                 {i + 1}. {s.kind === 'pickup' ? 'Pick up' : 'Drop'} {r.name}
                 {(s.kind === 'pickup' ? r.pickupAddress : r.dropoffAddress) ? ` · ${s.kind === 'pickup' ? r.pickupAddress : r.dropoffAddress}` : ''}
+                {s.kind === 'dropoff' ? ` · PKR ${r.fare ?? 0}` : ''}
               </Text>
             );
           })}
@@ -290,6 +300,8 @@ const styles = themed(() => StyleSheet.create({
   name: { color: colors.text, fontSize: 14, fontWeight: '800' },
   sub: { color: colors.muted, fontSize: 11, marginTop: 1 },
   fare: { color: colors.primary, fontSize: 12, fontWeight: '800', marginTop: 2 },
+  confirm: { color: '#facc15', fontSize: 11.5, fontWeight: '800', marginTop: 2 },
+  confirmed: { color: '#22c55e' },
   callBtn: {
     width: 38,
     height: 38,
