@@ -1058,7 +1058,8 @@ export const api = {
     TravelAreas
   >('getTravelAreas'),
   // ── Shared pools: the "Corporate & Students" screen ───────────────────────
-  // Search needs a city and both ends; `mine` lists the rider's own pools.
+  // A city alone lists all its shared rides (own first, nearest `from` next);
+  // with both ends, the related ones — nearest drop-off first. `mine`: the rider's own.
   getSharedPools: callable<
     {
       city?: string;
@@ -1068,8 +1069,7 @@ export const api = {
       at?: number;
       mine?: boolean;
     },
-    /** `nearby`: a short walk away, met at the car's own pickup. */
-    { pools: SharedPool[]; nearby?: SharedPool[] }
+    { pools: SharedPool[] }
   >('getSharedPools'),
   /** Start a pool and take its first seat. */
   createSharedPool: callable<
