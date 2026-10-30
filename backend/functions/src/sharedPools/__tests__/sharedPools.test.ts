@@ -224,7 +224,8 @@ describe('search and ownership', () => {
   it('will not move a time other riders have booked for', async () => {
     const made = await create('sp-a', { departTime: pktClock(2 * 3600_000) });
     await join('sp-b', made.poolId);
-    await expect(editSharedPool.run(makeReq({ poolId: made.poolId, departTime: '23:59' }, 'sp-a')))
+    // An hour on from the booked time — a fixed '23:59' IS the booked time when this runs at 21:59 PKT.
+    await expect(editSharedPool.run(makeReq({ poolId: made.poolId, departTime: pktClock(3 * 3600_000) }, 'sp-a')))
       .rejects.toThrow(/cannot change now/);
   });
 });
