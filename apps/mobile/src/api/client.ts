@@ -1070,6 +1070,8 @@ export const api = {
       /** Leaving around this time, epoch-ms. */
       at?: number;
       mine?: boolean;
+      /** Every ride in the city, nearest first — the screen's All. */
+      all?: boolean;
     },
     { pools: SharedPool[] }
   >('getSharedPools'),
@@ -2711,6 +2713,8 @@ export interface SharedPool {
    */
   carPhotos?: string[];
   carIsDrivers?: boolean;
+  /** Who is sitting in it — a shared ride is one gender. Null while it is empty. */
+  riderGender?: 'male' | 'female' | null;
 }
 
 /** A shared ride as a job for a driver — backend sharedPools `DriverPoolView`. */

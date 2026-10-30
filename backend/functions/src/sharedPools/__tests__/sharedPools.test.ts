@@ -52,7 +52,7 @@ const join = (uid: string, poolId: string) =>
   joinSharedPool.run(makeReq({ poolId }, uid)) as Promise<{ status: string; tripId: string | null; perSeatFare: number }>;
 
 type Point = { lat: number; lng: number };
-const search = async (uid: string, at: { from?: Point; to?: Point } = NEAR): Promise<PoolCard[]> =>
+const search = async (uid: string, at: { from?: Point; to?: Point; all?: boolean } = NEAR): Promise<PoolCard[]> =>
   ((await getSharedPools.run(makeReq({ city: 'islamabad', ...at }, uid))) as { pools: PoolCard[] }).pools;
 
 describe('the owner’s fare split', () => {
@@ -193,8 +193,14 @@ describe('search and ownership', () => {
     expect(await search('sp-b', farDrop)).toMatchObject([{ id: made.poolId, nearby: true }]);
     // A pickup ~5 km away is not your area.
     expect(await search('sp-b', { from: { lat: 33.64, lng: 73.0479 }, to: NEAR.to })).toEqual([]);
-    // Before a search: every shared ride in the city.
+    // Before a search: what leaves from where the rider is (the city, without a location).
     expect((await search('sp-b', {})).map((c) => c.id)).toEqual([made.poolId]);
+    expect((await search('sp-b', { from: NEAR.from })).map((c) => c.id)).toEqual([made.poolId]);
+    expect(await search('sp-b', { from: { lat: 33.64, lng: 73.0479 } })).toEqual([]);
+    // "All": the whole city, wherever the rider is.
+    expect((await search('sp-b', { from: { lat: 33.64, lng: 73.0479 }, all: true })).map((c) => c.id)).toEqual([made.poolId]);
+    // Who is in it: a shared ride is one gender.
+    expect((await search('sp-b'))[0]!.riderGender).toBe('female');
 
     // Two cars from F-7, neither on a route to (33.76, 73.0433): the one that ends nearer it first.
     const further = await create('sp-c', { departTime: pktClock(2 * 3600_000), dropoff: { lat: 33.7485, lng: 73.0433, address: 'F-11 north' } });
@@ -218,7 +224,8 @@ describe('search and ownership', () => {
   it('will not move a time other riders have booked for', async () => {
     const made = await create('sp-a', { departTime: pktClock(2 * 3600_000) });
     await join('sp-b', made.poolId);
-    await expect(editSharedPool.run(makeReq({ poolId: made.poolId, departTime: '23:59' }, 'sp-a')))
+    // An hour on from the booked time — a fixed '23:59' IS the booked time when this runs at 21:59 PKT.
+    await expect(editSharedPool.run(makeReq({ poolId: made.poolId, departTime: pktClock(3 * 3600_000) }, 'sp-a')))
       .rejects.toThrow(/cannot change now/);
   });
 });

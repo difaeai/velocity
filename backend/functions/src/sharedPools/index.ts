@@ -258,6 +258,8 @@ export interface PoolCard {
    */
   carPhotos: string[];
   carIsDrivers: boolean;
+  /** Who is sitting in it (a shared ride is one gender); null while it is empty. */
+  riderGender: 'male' | 'female' | null;
 }
 
 /** One pool as a card, for one rider. Pure — the tests drive it with a clock. */
@@ -304,7 +306,9 @@ export function poolCard(args: {
       : priceJoin(riders, { uid: '__joiner__', soloFare: ownSolo }, current.gross).joinerFare;
   const ahead = onCar ? null : aheadDriver(pool, nowMs);
   const departTime = (pool.departTime as string | null) ?? null;
-  const closed = closedForComfort(onCar ? rosterForTrip(trip!).map((r) => r.gender) : bookings.map((b) => b.gender));
+  const aboardGenders = onCar ? rosterForTrip(trip!).map((r) => r.gender) : bookings.map((b) => b.gender);
+  const firstGender = aboardGenders[0];
+  const closed = closedForComfort(aboardGenders);
 
   const km = (a?: { lat: number; lng: number }, b?: { lat: number; lng: number }) =>
     a && b ? Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng) * 1000) : null;
@@ -338,6 +342,9 @@ export function poolCard(args: {
     // Filled in by getSharedPools (attachCarPhotos), which reads the drivers.
     carPhotos: [],
     carIsDrivers: false,
+    riderGender: (firstGender === 'male' || firstGender === 'female') && aboardGenders.every((g) => g === firstGender)
+      ? firstGender
+      : null,
   };
 }
 
@@ -373,6 +380,8 @@ const listSchema = z.object({
   at: z.number().int().positive().nullish(),
   /** "My rides": pools this rider created, holds a seat in, or is riding with. */
   mine: z.boolean().nullish(),
+  /** The owner's "All": every ride in the city, nearest to `from` first — no search, no area. */
+  all: z.boolean().nullish(),
 });
 
 /** The most cards one search returns. */
@@ -381,8 +390,9 @@ const MAX_CARDS = 40;
 /**
  * The owner's list (2026-10-30), as `pools`, in order:
  *
- *   - Before a search (no `to`): every shared ride in the city — the rider's
- *     own first, then the nearest pickup to `from`.
+ *   - Before a search (no `to`): what leaves from where the rider is — every
+ *     ride with a pickup within NEARBY_RADIUS_M of `from` (the whole city
+ *     without one), nearest first, the rider's own on top wherever they leave.
  *   - With `from` and `to`: the related ones — on the rider's route (they are
  *     dropped at their own stop, so they come first), then the rest leaving
  *     from within NEARBY_RADIUS_M of their pickup, nearest drop-off to theirs
@@ -397,7 +407,8 @@ export const getSharedPools = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = listSchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid search.');
-  const { city, from, to, at, mine } = parsed.data;
+  const { city, from, at, mine, all } = parsed.data;
+  const to = all ? null : parsed.data.to;
   const nowMs = Date.now();
 
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
@@ -443,7 +454,10 @@ export const getSharedPools = onCall(async (req) => {
           ranked.push({ doc: d, nearby: true, rank: LATER + metres(to, route.dropoff) });
         }
       } else {
+        // Before a search (owner, 2026-10-30): what leaves from where the rider
+        // is — "from Gulberg, who is going where" — nearest first, their own on top.
         const yours = inIt || d.get('createdBy') === ctx.uid;
+        if (!all && !yours && from && metres(from, route.pickup) > NEARBY_RADIUS_M) continue;
         ranked.push({ doc: d, nearby: true, rank: (yours ? 0 : LATER) + (from ? metres(from, route.pickup) : 0) });
       }
     }
