@@ -6,13 +6,14 @@
  *   1. The city, at the top.
  *   2. Where to (drop-off), then where from (pickup — the phone's location
  *      until the rider types).
- *   3. Small boxes, two to a row (2026-10-30): the car on top, then pickup,
- *      drop-off, fare and "2 seats available", a green light blinking while one
- *      is active. Before a search, every shared ride in the city — the rider's
- *      own first. Searched, the related ones: leaving from the rider's area,
- *      those to their drop-off first, then further, then further still. Tap a
- *      box for the rest — Join, or Edit / Delete on your own. A car that fills
- *      stays two minutes; then the route is an empty car again (sharedPools/).
+ *   3. Small animated boxes, two to a row (2026-10-30): a real car on top that
+ *      drives in, then from → to, fare and "2 seats available", a green light
+ *      pulsing while one is active. Before a search, every shared ride in the
+ *      city — the rider's own first. Searched, the related ones: leaving from
+ *      the rider's area, those to their drop-off first, then further, then
+ *      further still. Tap a box: a dialog with only fare, seats, from and to,
+ *      Join in green and Cancel see-through (Leave there for a rider in it).
+ *      A car that fills stays two minutes; then the route is an empty car again.
  *   4. + (top right) opens the box that starts one, in this order: institution
  *      and location name, drop-off, pickup, start time — then its fare and the
  *      seats still free.
@@ -26,6 +27,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -39,7 +41,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
@@ -90,26 +92,18 @@ function cityFromAddress(address: string | null | undefined): string | null {
   return PAKISTAN_CITIES.find((c) => a.includes(c.name.toLowerCase()))?.id ?? null;
 }
 
-const distance = (m: number | null) =>
-  m === null ? '' : m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1)} km`;
-
 const clockOf = (ms: number) => clockLabel(toHHMM(new Date(ms))) ?? '';
 
-/** "Leaves 8:00 AM today — or as soon as it is full". */
-function departLine(p: Pick<SharedPool, 'departTime' | 'departsAtMs'>): string {
-  if (!p.departTime) return 'Leaves as soon as a driver accepts';
-  const day = p.departsAtMs && new Date(p.departsAtMs).toDateString() !== new Date().toDateString()
-    ? 'tomorrow'
-    : 'today';
-  return `Leaves ${clockLabel(p.departTime)} ${day} — or as soon as it is full`;
-}
-
-function statusOf(p: SharedPool): { label: string; tone: 'wait' | 'go' | 'full' } {
-  if (p.state === 'full') return { label: 'Full — on its way', tone: 'full' };
-  if (p.driver) return { label: 'Driver assigned', tone: 'go' };
-  if (p.state === 'car') return { label: 'Finding a driver', tone: 'wait' };
-  return { label: 'Driver needed', tone: 'wait' };
-}
+/**
+ * The real car on every box and dialog (owner, 2026-10-30): a white sedan, no
+ * badge, Pixabay image 3185869 (Pixabay Content License — commercial use, no
+ * credit needed), trimmed to 720 px.
+ */
+const CAR = require('../../assets/shared-ride-car.png') as number;
+/** The car's own width : height, so it never stretches. */
+const CAR_RATIO = 720 / 361;
+/** "Go" green — Join and the active light. */
+const GO = '#22c55e';
 
 const errorText = (e: unknown) => (e instanceof FirebaseError ? e.message : 'Please try again.');
 
@@ -398,7 +392,7 @@ export default function DailyTravelScreen() {
               {searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : `SHARED RIDES IN ${cityName.toUpperCase()}`}
             </Text>
             <View style={styles.grid}>
-              {pools.map((p) => <PoolBox key={p.id} pool={p} onPress={() => setOpened(p)} />)}
+              {pools.map((p, i) => <PoolBox key={p.id} pool={p} index={i} onPress={() => setOpened(p)} />)}
             </View>
           </>
         )}
@@ -413,11 +407,9 @@ export default function DailyTravelScreen() {
           setCityOpen(false);
         }}
       />
-      <JoinSheet
+      <RideDialog
         pool={opened}
         uid={user?.uid}
-        from={from}
-        to={to}
         rates={cancellation}
         busy={opened !== null && busy === opened.id}
         onClose={() => setOpened(null)}
@@ -439,63 +431,6 @@ export default function DailyTravelScreen() {
         onSubmit={(form) => void submit(form)}
       />
     </SafeAreaView>
-  );
-}
-
-/**
- * The car from above: the driver's seat and four for riders, filled as people
- * take them — on top of every box, the owner's order.
- */
-function CarSeats({ taken, total, driver, width = 240 }: { taken: number; total: number; driver: boolean; width?: number }) {
-  // Front passenger first, then the back row, left to right as you look at it.
-  const seats = [
-    { x: 126, y: 66, w: 34, h: 30 },
-    { x: 50, y: 22, w: 36, h: 24 },
-    { x: 50, y: 48, w: 36, h: 24 },
-    { x: 50, y: 74, w: 36, h: 24 },
-  ].slice(0, total);
-  return (
-    <View style={styles.carWrap} accessible accessibilityLabel={`${taken} of ${total} seats taken`}>
-      <Svg width={width} height={width / 2} viewBox="0 0 240 120">
-        {/* Wheels and mirrors first, so the body sits over them. */}
-        {[48, 162].flatMap((x) => [5, 101].map((y) => (
-          <Rect key={`${x}-${y}`} x={x} y={y} width={34} height={14} rx={5} fill={colors.muted} />
-        )))}
-        <Rect x={160} y={4} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
-        <Rect x={160} y={107} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
-        {/* Body, nose to the right. */}
-        <Path
-          d="M30 12 H188 C214 12 232 32 232 60 C232 88 214 108 188 108 H30 C17 108 8 99 8 86 V34 C8 21 17 12 30 12 Z"
-          fill={colors.glassLime}
-          stroke={colors.glassLimeBorder}
-          strokeWidth={2}
-        />
-        {/* Windscreen and rear glass. */}
-        <Path d="M172 22 L192 28 Q197 60 192 92 L172 98 Z" fill={colors.border} />
-        <Path d="M38 26 L26 32 Q22 60 26 88 L38 94 Z" fill={colors.border} />
-        {/* The driver's seat: dashed until a driver accepts. */}
-        <Rect
-          x={126} y={24} width={34} height={30} rx={9}
-          fill={driver ? colors.muted : 'none'}
-          stroke={colors.muted}
-          strokeWidth={2}
-          strokeDasharray={driver ? undefined : '4 3'}
-        />
-        {driver ? <Circle cx={143} cy={39} r={6} fill="#0b1a00" /> : null}
-        <Circle cx={166} cy={39} r={7} stroke={colors.muted} strokeWidth={3} fill="none" />
-        {seats.map((s, i) => (i < taken ? (
-          <Rect key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8} fill={colors.primary} />
-        ) : (
-          <Rect
-            key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8}
-            fill="none" stroke={colors.primary} strokeWidth={2} strokeDasharray="4 3"
-          />
-        )))}
-        {seats.slice(0, taken).map((s, i) => (
-          <Circle key={`h${i}`} cx={s.x + s.w / 2} cy={s.y + s.h / 2} r={6} fill="#0b1a00" />
-        ))}
-      </Svg>
-    </View>
   );
 }
 
@@ -525,53 +460,160 @@ const seatsText = (p: SharedPool) =>
 const isActive = (p: SharedPool) => p.state === 'car' || (p.state === 'gathering' && p.riders > 0);
 
 /**
- * One shared ride as a small box, half the screen wide, in the owner's order:
- * the car, then pickup, drop-off, fare and the seats still free. Tapping it
- * opens everything else.
+ * The real car on a lime spotlight, its shadow under it. It drives in from the
+ * left as `arrive` goes 0 → 1, and idles — a small bob — while its ride is active.
  */
-function PoolBox({ pool: p, onPress }: { pool: SharedPool; onPress: () => void }) {
+function ShowCar({ width, arrive, idle = false }: { width: number; arrive?: Animated.Value; idle?: boolean }) {
+  const height = width / CAR_RATIO;
+  const [still] = useState(() => new Animated.Value(1));
+  const [bob] = useState(() => new Animated.Value(0));
+  const shown = arrive ?? still;
+  useEffect(() => {
+    if (!idle) return;
+    const ease = Easing.inOut(Easing.quad);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 900, easing: ease, useNativeDriver: true }),
+        Animated.timing(bob, { toValue: 0, duration: 900, easing: ease, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bob, idle]);
+  return (
+    <View style={{ width, height: height + 8, alignSelf: 'center' }}>
+      <Svg width={width} height={height + 8} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id="spot" cx="50%" cy="55%" rx="55%" ry="55%">
+            <Stop offset="0" stopColor={colors.primary} stopOpacity={0.26} />
+            <Stop offset="1" stopColor={colors.primary} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="shade" cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0" stopColor="#000000" stopOpacity={0.6} />
+            <Stop offset="1" stopColor="#000000" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect width={width} height={height + 8} fill="url(#spot)" />
+        <Ellipse cx={width / 2} cy={height + 2} rx={width * 0.46} ry={6} fill="url(#shade)" />
+      </Svg>
+      <Animated.Image
+        source={CAR}
+        resizeMode="contain"
+        accessible={false}
+        style={{
+          width,
+          height,
+          opacity: shown,
+          transform: [
+            { translateX: shown.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.35, 0] }) },
+            { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -1.5] }) },
+          ],
+        }}
+      />
+    </View>
+  );
+}
+
+/** A seat for each place in the car: lime when taken, an outline when free. */
+function SeatIcons({ taken, total }: { taken: number; total: number }) {
+  return (
+    <View style={styles.seatIcons}>
+      {Array.from({ length: total }, (_, i) => (
+        <View key={i} style={[styles.seatIcon, i < taken && styles.seatIconTaken]} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One shared ride as a small box, half the screen wide, in the owner's order:
+ * the car, then from → to, the fare and the seats still free. Each box rises
+ * in after the one before it with its car driving in, and dips when pressed.
+ */
+function PoolBox({ pool: p, index, onPress }: { pool: SharedPool; index: number; onPress: () => void }) {
   const active = isActive(p);
   const yours = p.mine || p.booked || p.aboardTripId !== null;
   const from = areaLabel(p.pickup.address);
   const to = areaLabel(p.dropoff.address);
+  const [arrive] = useState(() => new Animated.Value(0));
+  const [press] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    Animated.spring(arrive, { toValue: 1, delay: Math.min(index, 8) * 70, friction: 8, tension: 50, useNativeDriver: true }).start();
+  }, [arrive, index]);
+  const pressTo = (toValue: number) =>
+    Animated.spring(press, { toValue, friction: 5, tension: 260, useNativeDriver: true }).start();
   return (
-    <Pressable
-      style={({ pressed }) => [styles.box, yours && styles.boxYours, pressed && { opacity: 0.85 }]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${active ? 'Active. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
+    <Animated.View
+      style={[
+        styles.boxWrap,
+        {
+          opacity: arrive,
+          transform: [{ translateY: arrive.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }, { scale: press }],
+        },
+      ]}
     >
-      {active ? <LiveDot /> : null}
-      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} width={128} />
-      <View style={styles.boxLine}>
-        <PickupDotIcon size={12} color={colors.text} accent={colors.primary} />
-        <Text style={styles.boxPlace} numberOfLines={1}>{from}</Text>
-      </View>
-      <View style={styles.boxLine}>
-        <DestinationPinIcon size={12} color={colors.text} accent={colors.primary} />
-        <Text style={styles.boxPlace} numberOfLines={1}>{to}</Text>
-      </View>
-      <Text style={styles.boxFare}>PKR {p.farePerSeat}</Text>
-      <Text style={styles.boxSeats}>{seatsText(p)}</Text>
-      {/* Two rides on one route differ by their time. */}
-      <Text style={styles.boxTime}>{p.departTime ? `${clockLabel(p.departTime)} daily` : 'Leaves now'}</Text>
-    </Pressable>
+      <Pressable
+        style={[styles.box, yours && styles.boxYours]}
+        onPress={onPress}
+        onPressIn={() => pressTo(0.95)}
+        onPressOut={() => pressTo(1)}
+        accessibilityRole="button"
+        accessibilityLabel={`${active ? 'Active. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
+      >
+        {active ? <LiveDot /> : null}
+        <ShowCar width={124} arrive={arrive} idle={active} />
+        <View>
+          <View style={styles.boxLine}>
+            <PickupDotIcon size={12} color={colors.text} accent={colors.primary} />
+            <Text style={styles.boxPlace} numberOfLines={1}>{from}</Text>
+          </View>
+          <View style={styles.routeDots}>
+            <View style={styles.routeDot} />
+            <View style={styles.routeDot} />
+          </View>
+          <View style={styles.boxLine}>
+            <DestinationPinIcon size={12} color={colors.text} accent={colors.primary} />
+            <Text style={styles.boxPlace} numberOfLines={1}>{to}</Text>
+          </View>
+        </View>
+        <View style={styles.boxFoot}>
+          <Text style={styles.boxFare}>PKR {p.farePerSeat}</Text>
+          <SeatIcons taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} />
+        </View>
+        <Text style={styles.boxSeats}>{seatsText(p)}</Text>
+        {/* Two rides on one route differ by their time. */}
+        <Text style={styles.boxTime}>{p.departTime ? `${clockLabel(p.departTime)} daily` : 'Leaves now'}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
+/** The owner's green light: a blinking dot with a ring rippling out of it. */
 function LiveDot() {
-  const [glow] = useState(() => new Animated.Value(1));
+  const [pulse] = useState(() => new Animated.Value(0));
   useEffect(() => {
-    const blink = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, { toValue: 0.15, duration: 700, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]),
+    const loop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1300, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     );
-    blink.start();
-    return () => blink.stop();
-  }, [glow]);
-  return <Animated.View style={[styles.liveDot, { opacity: glow }]} />;
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return (
+    <View style={styles.live} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.liveRing,
+          {
+            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] }),
+            transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] }) }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[styles.liveCore, { opacity: pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0.35, 1] }) }]}
+      />
+    </View>
+  );
 }
 
 /** The + of "start a shared ride" — drawn, so every phone's font agrees on it. */
@@ -752,15 +794,14 @@ function SheetRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 /**
- * A box, opened: the ride in full, and what this rider can do with it — join,
- * leave (a booked seat or a car already out, right here), open the ride they
- * are on, or (theirs) edit or delete it.
+ * A box, tapped — the owner's dialog: the car, then only what decides it —
+ * fare, seats, from and to — with Join in green and Cancel see-through. A
+ * rider already in it gets Leave right here (and Open my ride once its car is
+ * out); its creator also gets Edit and Delete.
  */
-function JoinSheet({
+function RideDialog({
   pool: p,
   uid,
-  from,
-  to,
   rates,
   busy,
   onClose,
@@ -773,8 +814,6 @@ function JoinSheet({
 }: {
   pool: SharedPool | null;
   uid: string | undefined;
-  from: Place | null;
-  to: Place | null;
   rates: { poolLeaveRate: number; poolLeaveArrivedRate: number };
   busy: boolean;
   onClose: () => void;
@@ -787,111 +826,118 @@ function JoinSheet({
 }) {
   // The car this rider is in: what leaving it costs depends on where it is.
   const { trip } = useTrip(p?.aboardTripId ?? undefined);
-  if (!p) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
-  const leaveFee = trip && trip.id === p.aboardTripId ? poolLeaveFee(trip, uid, rates) : null;
-  const later = p.state === 'gathering' && !!p.departTime;
+  const [pop] = useState(() => new Animated.Value(0));
+  const openId = p?.id;
+  useEffect(() => {
+    if (!openId) return;
+    pop.setValue(0);
+    Animated.spring(pop, { toValue: 1, friction: 7, tension: 65, useNativeDriver: true }).start();
+  }, [openId, pop]);
+  if (!p) return null;
+
   const inIt = p.booked || p.aboardTripId !== null;
   const canJoin = !inIt && p.state !== 'full' && p.seatsLeft > 0;
-  // On the rider's route the car collects them at their own stops; otherwise at its own.
-  const own = canJoin && !p.nearby && from && to;
-  const pct = (r: number) => `${Math.round(r * 100)}%`;
-  const rung = Math.min(p.seatsTotal, inIt || p.state === 'full' ? p.riders : p.riders + 1);
+  const leaveFee = trip && trip.id === p.aboardTripId ? poolLeaveFee(trip, uid, rates) : null;
   return (
-    <Sheet open onClose={onClose}>
-      <Text style={styles.sheetTitle} numberOfLines={2}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
-      <Text style={styles.sheetName}>{statusOf(p).label}</Text>
-      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} />
-      <SheetRow label="PICKUP">
-        {own ? `${from.address} — the car collects you here` : `${p.pickup.address}${p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} from you` : ''}`}
-      </SheetRow>
-      <SheetRow label="DROP-OFF">
-        {own ? to.address : `${p.dropoff.address}${p.dropoffDistanceM !== null ? ` — ${distance(p.dropoffDistanceM)} from yours` : ''}`}
-      </SheetRow>
-      <SheetRow label="FARE">
-        PKR {p.farePerSeat} {inIt ? 'for your seat so far' : p.state === 'full' ? 'a seat in this car' : 'a seat if you join now'}, cash
-        to the driver. It goes down as people join, and is never above PKR {p.soloFare}, riding alone.
-      </SheetRow>
-      <FareLadder ladder={p.fareLadder} at={rung} />
-      <SheetRow label="SEATS">{p.state === 'full' ? 'Full — an empty car opens here in 2 minutes' : seatsText(p)}</SheetRow>
-      <SheetRow label="WHEN">{departLine(p)}</SheetRow>
-      <SheetRow label="DRIVER">
-        {p.driver
-          ? `${p.driver.name} · ${p.driver.vehicle}${p.driver.plate ? ` · ${p.driver.plate}` : ''}${p.needsDriverApproval ? ' — they have to agree to take you' : ''}`
-          : later
-            ? 'Not yet. Drivers are asked 10 minutes before the car leaves. Your ride is not confirmed until one accepts — we will notify you.'
-            : 'Not yet. Drivers nearby are asked as soon as you join. Your ride is not confirmed until one accepts.'}
-      </SheetRow>
-      {canJoin ? (
-        <SheetRow label="LEAVING">
-          Free until a driver accepts. After that, {pct(rates.poolLeaveRate)} of your fare —{' '}
-          {pct(rates.poolLeaveArrivedRate)} once the driver is at the pickup. If someone else leaves and your share goes
-          up, you are told — and can leave free until a driver accepts.
-        </SheetRow>
-      ) : null}
-
-      {p.aboardTripId ? (
-        <>
-          <Pressable
-            style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => onOpenRide(p.aboardTripId!)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.joinTxt}>Open my ride</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => leaveFee !== null && onLeaveCar(p.aboardTripId!, leaveFee)}
-            disabled={leaveFee === null}
-            accessibilityRole="button"
-          >
-            {leaveFee === null ? (
-              <ActivityIndicator color={colors.danger} />
-            ) : (
-              <Text style={styles.leaveTxt}>Leave this ride · {leaveFee > 0 ? `PKR ${leaveFee}` : 'free'}</Text>
-            )}
-          </Pressable>
-        </>
-      ) : p.booked ? (
-        <>
-          <Text style={styles.metaTxt}>Seat booked — not confirmed until a driver accepts.</Text>
-          <Pressable
-            style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => onLeave(p)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.leaveTxt}>Leave this ride · free</Text>
-          </Pressable>
-        </>
-      ) : canJoin ? (
-        <Pressable
-          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-          onPress={() => onJoin(p)}
-          disabled={busy}
-          accessibilityRole="button"
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.dialogScreen}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+        <Animated.View
+          style={[
+            styles.dialog,
+            { opacity: pop, transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }] },
+          ]}
         >
-          {busy ? (
-            <ActivityIndicator color={colors.btnText} />
-          ) : (
-            <Text style={styles.joinTxt}>
-              {later ? 'Book my seat' : `${p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR ${p.farePerSeat}`}
-            </Text>
-          )}
-        </Pressable>
-      ) : null}
-      {p.mine ? (
-        <View style={styles.ownerRow}>
-          <Pressable onPress={() => onEdit(p)} hitSlop={8} accessibilityRole="button">
-            <Text style={styles.ownerTxt}>Edit</Text>
+          {isActive(p) ? <LiveDot /> : null}
+          <ShowCar width={220} arrive={pop} idle={isActive(p)} />
+
+          <View style={styles.dialogStats}>
+            <View style={styles.dialogStat}>
+              <Text style={styles.dialogLabel}>FARE</Text>
+              <Text style={styles.dialogFare}>PKR {p.farePerSeat}</Text>
+            </View>
+            <View style={styles.dialogDivider} />
+            <View style={styles.dialogStat}>
+              <Text style={styles.dialogLabel}>SEATS</Text>
+              <Text style={styles.dialogSeats}>{seatsText(p)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.dialogPlace}>
+            <PickupDotIcon size={14} color={colors.text} accent={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dialogLabel}>FROM</Text>
+              <Text style={styles.dialogPlaceTxt} numberOfLines={2}>{p.pickup.address}</Text>
+            </View>
+          </View>
+          <View style={styles.dialogPlace}>
+            <DestinationPinIcon size={14} color={colors.text} accent={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dialogLabel}>TO</Text>
+              <Text style={styles.dialogPlaceTxt} numberOfLines={2}>{p.dropoff.address}</Text>
+            </View>
+          </View>
+
+          {p.aboardTripId ? (
+            <>
+              <Pressable
+                style={({ pressed }) => [styles.goBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => onOpenRide(p.aboardTripId!)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.goTxt}>Open my ride</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => leaveFee !== null && onLeaveCar(p.aboardTripId!, leaveFee)}
+                disabled={leaveFee === null}
+                accessibilityRole="button"
+              >
+                {leaveFee === null ? (
+                  <ActivityIndicator color={colors.danger} />
+                ) : (
+                  <Text style={styles.leaveTxt}>Leave this ride · {leaveFee > 0 ? `PKR ${leaveFee}` : 'free'}</Text>
+                )}
+              </Pressable>
+            </>
+          ) : p.booked ? (
+            <Pressable
+              style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => onLeave(p)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.leaveTxt}>Leave this ride · free</Text>
+            </Pressable>
+          ) : canJoin ? (
+            <Pressable
+              style={({ pressed }) => [styles.goBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => onJoin(p)}
+              disabled={busy}
+              accessibilityRole="button"
+            >
+              {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.goTxt}>Join</Text>}
+            </Pressable>
+          ) : null}
+          <Pressable
+            style={({ pressed }) => [styles.ghostBtn, pressed && { opacity: 0.7 }]}
+            onPress={onClose}
+            accessibilityRole="button"
+          >
+            <Text style={styles.ghostTxt}>{inIt ? 'Close' : 'Cancel'}</Text>
           </Pressable>
-          <Pressable onPress={() => onRemove(p)} hitSlop={8} accessibilityRole="button">
-            <Text style={styles.ownerTxt}>Delete</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      <Pressable onPress={onClose} hitSlop={8} style={{ alignSelf: 'center' }}>
-        <Text style={styles.cancelTxt}>Close</Text>
-      </Pressable>
-    </Sheet>
+          {p.mine ? (
+            <View style={styles.ownerRow}>
+              <Pressable onPress={() => onEdit(p)} hitSlop={8} accessibilityRole="button">
+                <Text style={styles.ownerTxt}>Edit</Text>
+              </Pressable>
+              <Pressable onPress={() => onRemove(p)} hitSlop={8} accessibilityRole="button">
+                <Text style={styles.ownerTxt}>Delete</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1061,8 +1107,11 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
           )}
 
           <Text style={styles.sheetLabel}>AVAILABLE SEATS</Text>
-          <CarSeats taken={1} total={4} driver={false} />
-          <Text style={styles.seatsTxt}>3 of 4 seats available — one is yours</Text>
+          <ShowCar width={200} />
+          <View style={styles.seatsRow}>
+            <SeatIcons taken={1} total={4} />
+            <Text style={styles.seatsTxt}>3 seats available — one is yours</Text>
+          </View>
         </>
       )}
 
@@ -1169,26 +1218,67 @@ const styles = themed(() => StyleSheet.create({
   empty: { gap: 4 },
   emptyBtn: { flexDirection: 'row', gap: 8 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
+  boxWrap: { width: '48.5%' },
   box: {
-    width: '48.5%', borderRadius: 16, padding: 10, gap: 4,
+    borderRadius: 20, padding: 10, gap: 6, overflow: 'hidden',
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   boxYours: { borderColor: colors.primary },
-  /** The owner's green light, top right. */
-  liveDot: {
-    position: 'absolute', top: 9, right: 9, zIndex: 1, width: 11, height: 11, borderRadius: 6,
-    backgroundColor: '#22c55e', borderWidth: 2, borderColor: 'rgba(34,197,94,0.35)',
+  /** The owner's green light, top right: a core that blinks and a ring that ripples out. */
+  live: {
+    position: 'absolute', top: 10, right: 10, zIndex: 2, width: 12, height: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
+  liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: GO },
+  liveCore: { width: 10, height: 10, borderRadius: 5, backgroundColor: GO },
   boxLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   boxPlace: { flex: 1, fontSize: 12.5, fontWeight: '800', color: colors.text },
-  boxFare: { fontSize: 17, fontWeight: '900', color: colors.primary, marginTop: 2 },
+  /** The dotted line from pickup to drop-off. */
+  routeDots: { paddingLeft: 5, paddingVertical: 2, gap: 2 },
+  routeDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: colors.muted },
+  boxFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  boxFare: { fontSize: 17, fontWeight: '900', color: colors.primary },
   boxSeats: { fontSize: 12, fontWeight: '800', color: colors.text },
   boxTime: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  seatIcons: { flexDirection: 'row', gap: 3 },
+  seatIcon: {
+    width: 9, height: 11, borderWidth: 1.5, borderColor: colors.primary,
+    borderTopLeftRadius: 4, borderTopRightRadius: 4, borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
+  },
+  seatIconTaken: { backgroundColor: colors.primary },
+  seatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   fareBig: { fontSize: 30, fontWeight: '900', color: colors.primary, textAlign: 'center', marginTop: 4 },
   fareSub: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center', marginTop: -4 },
-  carWrap: { alignItems: 'center', paddingVertical: 2 },
   seatsTxt: { fontSize: 14, fontWeight: '900', color: colors.text, textAlign: 'center' },
+
+  // The box's dialog: centred, to the point.
+  dialogScreen: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', alignItems: 'center', justifyContent: 'center', padding: 22 },
+  // Solid: `surface` is frosted glass, and the boxes would show through it.
+  dialog: {
+    width: '100%', maxWidth: 380, borderRadius: 26, padding: 18, gap: 14,
+    backgroundColor: colors.background, borderWidth: 1, borderColor: colors.glassLimeBorder,
+  },
+  dialogStats: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+    borderRadius: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  dialogStat: { flex: 1, alignItems: 'center', gap: 2 },
+  dialogDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
+  dialogLabel: { fontSize: 10.5, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
+  dialogFare: { fontSize: 24, fontWeight: '900', color: colors.primary },
+  dialogSeats: { fontSize: 15, fontWeight: '900', color: colors.text },
+  dialogPlace: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  dialogPlaceTxt: { fontSize: 14, fontWeight: '800', color: colors.text, lineHeight: 19 },
+  /** Join, in the owner's green. */
+  goBtn: { height: 52, borderRadius: 16, backgroundColor: GO, alignItems: 'center', justifyContent: 'center' },
+  goTxt: { fontSize: 16, fontWeight: '900', color: '#ffffff' },
+  /** Cancel, see-through. */
+  ghostBtn: {
+    height: 50, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, backgroundColor: 'transparent',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ghostTxt: { fontSize: 15, fontWeight: '800', color: colors.text },
 
   ladder: { flexDirection: 'row', gap: 6 },
   rung: {
@@ -1225,7 +1315,6 @@ const styles = themed(() => StyleSheet.create({
   },
   grabber: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.border, marginBottom: 10 },
   sheetTitle: { fontSize: 19, fontWeight: '900', color: colors.text },
-  sheetName: { fontSize: 14, fontWeight: '800', color: colors.primary, marginTop: -6 },
   sheetRow: { gap: 3 },
   sheetLabel: { fontSize: 11, fontWeight: '900', color: colors.muted, letterSpacing: 0.8 },
   sheetValue: { fontSize: 13.5, fontWeight: '700', color: colors.text, lineHeight: 19 },
