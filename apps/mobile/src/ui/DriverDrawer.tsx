@@ -177,6 +177,9 @@ export function DriverDrawer({
                 asking for a shared ride are a different job — several pickups and
                 drop-offs, a fare to accept or counter — so they get their own
                 screen rather than being mixed into the incoming solo requests. */}
+            {/* Riders' shared rides (Ride sharing): take a car now or ahead of
+                time, or post your own route for riders to book. */}
+            <NavItem icon="🔀" label="Shared rides to take"   onPress={() => go('/driver/shared-pools')} />
             <NavItem icon="👥" label="Sharing ride requests"  onPress={() => go('/driver/pool-requests')} />
             <NavItem icon="📍" label="Offer a Pool Route"     onPress={() => go('/driver/pool-ride-offer')} />
             {/* The only channel that reaches a driver with the app closed — which

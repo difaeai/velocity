@@ -8,54 +8,87 @@
  * Four things, kept apart on purpose — never one status:
  *
  *   the POOL     sharedPools/{id}. The route, its name, its daily time. Lasts.
- *   a BOOKING    an entry in pool.bookings: a seat held for the next car. It is
- *                PENDING — no driver has said yes and nobody is in a car. It
- *                sets no activeTripId, so an 08:00 seat booked the night before
- *                never stops the rider taking another ride in between.
+ *   a BOOKING    an entry in pool.bookings: a seat held for the next car, with
+ *                the rider's OWN pickup and drop-off on the route and their own
+ *                solo fare. PENDING — no driver has said yes and nobody is in a
+ *                car — and it sets no activeTripId, so an 08:00 seat booked the
+ *                night before never stops the rider taking another ride.
  *   the RIDE     an ordinary shared trip (trips/{id}), made from the bookings by
- *                `dispatchPool`. Drivers, OTP, cash, ratings, drop-offs — all
- *                exactly as every other shared ride, nothing rebuilt here.
- *   the DRIVER   whoever takes that trip. A bid on a shared ride is at its fixed
- *                fare, so the first driver to accept is the driver.
+ *                `dispatchPool`. Drivers, OTP, cash, drop-offs — exactly as every
+ *                other shared ride; each rider pays their own route at the car's
+ *                tier (trips/poolPricing) and can leave it (trips/poolLeave).
+ *   the DRIVER   whoever takes that trip: a driver who accepted the pool ahead of
+ *                time (`acceptSharedPool`, or one who posted the route himself —
+ *                `offerDriverRoute`) gets it the moment it exists; otherwise the
+ *                first nearby driver to accept at the fixed fare.
  *
- * WHEN A CAR IS SENT. A pool with no time sends one the moment somebody books
- * ("leaves as soon as a driver takes it"). A pool with a time sends one
- * DISPATCH_LEAD_MS before it — or the moment its last seat is booked, because a
- * full car has nobody left to wait for. No minimum: one booked rider still
- * gets a car, at the one-rider price, which drops for everybody as others join.
+ * WHEN A CAR IS SENT. A pool with no time sends one the moment somebody books.
+ * A pool with a time sends one DISPATCH_LEAD_MS before it — or the moment its
+ * last seat is booked, because a full car has nobody left to wait for. No
+ * minimum: one booked rider still gets a car.
  *
- * Every rule a seat must pass lives where it already lived: the fixed fare in
- * fare/sharedRideFare, the gender gates in trips/enRoute + lib/seatGender, the
- * "can this account book" checks in trips/assertRiderCanBook, joining a car in
- * trips/poolShare. This file only decides WHICH car and WHEN.
+ * MATCHING. A rider's journey is on a pool when both ends are within 1 km of
+ * its route, going the same way, over at least half of it (`routeFit`) — not
+ * merely "two points near two points". Pools a short walk further away come back
+ * separately as "also going your way", met at the car's own pickup.
  * ----------------------------------------------------------------------------
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
+import { geohashForLocation, geohashQueryBounds } from 'geofire-common';
 
 import { db, FieldValue, SCHEDULE_REGION, Timestamp } from '../lib/firebase';
-import { docId, invalid, requireAuth } from '../lib/guards';
+import { docId, invalid, requireAuth, requireRole } from '../lib/guards';
 import { rateLimit } from '../lib/ratelimit';
-import { notifyUser } from '../lib/fcm';
+import { notifyUser, sendToUsers } from '../lib/fcm';
 import { resolveSeatOccupant } from '../lib/seatGender';
+import { computeGenderAccess } from '../lib/genderAccess';
+import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
+import type { DriverPublicInfo } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
+import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
+import { pktDayKey } from '../domain/dailyTarget';
+import { assertVehicleConfirmed } from '../domain/vehicleCheck';
+import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { sharedRideFare } from '../fare/sharedRideFare';
-import { assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm } from '../trips';
+import { assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
 import { joinPoolTripAsRider, POOL_JOIN_WINDOW_MS } from '../trips/poolShare';
-import { firstNameOf, rosterForTrip } from '../trips/poolRoster';
+import { firstNameOf, hostRosterEntry, rosterForTrip } from '../trips/poolRoster';
 import { poolJoinGenderGate } from '../trips/enRoute';
+import {
+  orderStops,
+  priceCar,
+  priceInOrder,
+  priceJoin,
+  routeFit,
+  sharedCarRiders,
+  type PricedRider,
+  type RiderStops,
+} from '../trips/poolPricing';
 import { timestampMs } from '../poolRides/lifecycle';
 
-/** A rider's pickup and drop-off must each be this close to the pool's. */
+/** A rider's pickup and drop-off must each be this close to the pool's route. */
 export const MATCH_RADIUS_M = 1000;
+/** "Also going your way": a walk to the car's own pickup, and from its drop-off. */
+export const NEARBY_RADIUS_M = 2500;
 /** A car that filled stays on the card this long; then the pool is empty again. */
 export const FULL_HOLD_MS = 2 * 60 * 1000;
 /** A pool with a time asks drivers this long before it, so the car is there on time. */
 export const DISPATCH_LEAD_MS = 10 * 60 * 1000;
+/** A car still without a driver this long after it went out: its riders are told. */
+export const NO_DRIVER_ALERT_MS = 8 * 60 * 1000;
+/** "Leaving around 8:00" matches departures this close to it. */
+export const TIME_WINDOW_MS = 60 * 60 * 1000;
+/** A driver is shown shared rides with a pickup this close. */
+const DRIVER_RADIUS_M = 15_000;
+/** A driver's route catches pools whose ends are this close to it. */
+const DRIVER_ROUTE_RADIUS_M = 1500;
+/** A driver who posts "leaving now" is held to it this long. */
+const NOW_OFFER_MS = 2 * 60 * 60 * 1000;
 /** Seats one rider may hold at once — there and back on the same day. */
 const MAX_BOOKINGS_PER_RIDER = 2;
 /** A pool nobody has booked for this long stops turning up in search. */
@@ -63,10 +96,13 @@ const STALE_POOL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Pakistan Standard Time, UTC+5 all year (no daylight saving since 2009). */
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** Driver statuses in which a car has a driver and has not left yet. */
 const WITH_DRIVER = new Set(['matched', 'arriving', 'arrived']);
+
+type Place = { lat: number; lng: number; address: string };
 
 /** A seat held for the next car. A plain Timestamp: Firestore refuses sentinels in arrays. */
 interface Booking {
@@ -75,9 +111,22 @@ interface Booking {
   /** The seat's gender — see lib/seatGender. */
   gender: string;
   bookedAt: FirebaseFirestore.Timestamp;
+  /** Their own stops on the route and their own solo fare. Older bookings: the pool's. */
+  pickup?: Place;
+  dropoff?: Place;
+  soloFare?: number;
 }
 
-type Place = { lat: number; lng: number; address: string };
+/** The driver who said yes to the pool's next car before it existed. */
+interface PoolDriver {
+  uid: string;
+  name: string;
+  vehicle: string;
+  plate: string;
+  acceptedAtMs: number;
+  /** The departure they accepted; null for a pool that leaves on demand. */
+  forDepartureMs: number | null;
+}
 
 /** Epoch-ms of the next HH:MM in Pakistan time that is still ahead of `nowMs`. */
 export function nextDepartureMs(hhmm: string, nowMs: number): number {
@@ -85,6 +134,44 @@ export function nextDepartureMs(hhmm: string, nowMs: number): number {
   const pkt = new Date(nowMs + PKT_OFFSET_MS);
   const today = Date.UTC(pkt.getUTCFullYear(), pkt.getUTCMonth(), pkt.getUTCDate(), h, m) - PKT_OFFSET_MS;
   return today > nowMs ? today : today + DAY_MS;
+}
+
+/** The departure the pool's bookings are for (or its next one); null when it leaves on demand. */
+export function departureOf(pool: FirebaseFirestore.DocumentData, nowMs: number): number | null {
+  const departTime = (pool.departTime as string | null) ?? null;
+  if (!departTime) return null;
+  const dispatchMs = timestampMs(pool.dispatchAt);
+  return ((pool.bookings as Booking[] | undefined) ?? []).length > 0 && dispatchMs !== null
+    ? dispatchMs + DISPATCH_LEAD_MS
+    : nextDepartureMs(departTime, nowMs);
+}
+
+/** The driver who accepted the pool's next car ahead of time, while that still holds. */
+export function aheadDriver(pool: FirebaseFirestore.DocumentData, nowMs: number): PoolDriver | null {
+  const d = pool.driver as PoolDriver | null | undefined;
+  if (!d?.uid) return null;
+  const until = d.forDepartureMs === null ? d.acceptedAtMs + NOW_OFFER_MS : d.forDepartureMs + HOUR_MS;
+  return until > nowMs ? d : null;
+}
+
+const bookingStops = (b: Booking, pool: FirebaseFirestore.DocumentData): RiderStops => ({
+  pickup: b.pickup ?? (pool.pickup as Place),
+  dropoff: b.dropoff ?? (pool.dropoff as Place),
+  soloFare: b.soloFare ?? (pool.fare as number),
+});
+
+const bookedRiders = (bookings: Booking[], pool: FirebaseFirestore.DocumentData): PricedRider[] =>
+  bookings.map((b) => ({ uid: b.uid, soloFare: b.soloFare ?? (pool.fare as number) }));
+
+/**
+ * True when the gender rules close the car's remaining seats — a mixed car of
+ * three (lib/genderAccess, "the third rider makes seating uncomfortable"). Its
+ * empty seat is not one anybody can be offered, so it is not shown as one.
+ */
+function closedForComfort(genders: string[]): boolean {
+  const male = genders.filter((g) => g === 'male').length;
+  const female = genders.filter((g) => g === 'female').length;
+  return genders.length < MAX_POOL_RIDERS && computeGenderAccess(male, female, MAX_POOL_RIDERS, 'any') === 'none';
 }
 
 /** What the pool's last car can still do, read off its trip. */
@@ -108,6 +195,7 @@ export function carOf(trip: FirebaseFirestore.DocumentData | null | undefined, n
     /** When the last seat went: the newest roster entry. */
     filledAtMs: full ? Math.max(0, ...rosterForTrip(trip).map((r) => timestampMs(r.joinedAt) ?? 0)) : null,
     fare: (trip.fare as number | null) ?? (trip.offeredFare as number),
+    gross: typeof trip.poolDriverGross === 'number' ? (trip.poolDriverGross as number) : null,
     driver: driver && (WITH_DRIVER.has(status) || status === 'in_progress')
       ? { name: driver.displayName ?? 'Driver', vehicle: driver.vehicleLabel ?? 'Car', plate: driver.plate ?? '' }
       : null,
@@ -129,21 +217,25 @@ export interface PoolCard {
   /** The departure the current bookings are for (or the next one), epoch-ms. */
   departsAtMs: number | null;
   /**
-   * gathering — seats are being booked for the next car; no driver yet.
-   * car       — a car is on, still taking riders; `driver` once one accepted.
+   * gathering — seats are being booked for the next car; no car yet.
+   * car       — a car is out, still taking riders; `driver` once one accepted.
    * full      — the car just filled (FULL_HOLD_MS); after that, gathering again.
    */
   state: 'gathering' | 'car' | 'full';
   riders: number;
   seatsTotal: number;
   seatsLeft: number;
-  /** The whole-car fare. */
+  /** The car's own route fare. */
   fare: number;
-  /** What THIS rider pays per seat if they join now (or pay now, if already in). */
+  /** What THIS rider pays if they join now (or pays now, if already in). */
   farePerSeat: number;
-  /** Per seat at 1, 2, 3, 4 riders. */
+  /** This rider's own route at 1, 2, 3, 4 riders. */
   fareLadder: number[];
+  /** This rider's own route, alone: the most their share can ever be. */
+  soloFare: number;
   driver: { name: string; vehicle: string; plate: string } | null;
+  /** The driver accepted the next car before it went out. */
+  driverAhead: boolean;
   /** Joining asks the driver rather than taking the seat. */
   needsDriverApproval: boolean;
   /** This rider holds a seat for the next car. */
@@ -152,6 +244,8 @@ export interface PoolCard {
   aboardTripId: string | null;
   /** This rider created the pool. */
   mine: boolean;
+  /** Outside the 1 km match: the rider walks to the car's own pickup and from its drop-off. */
+  nearby: boolean;
 }
 
 /** One pool as a card, for one rider. Pure — the tests drive it with a clock. */
@@ -164,9 +258,12 @@ export function poolCard(args: {
   nowMs: number;
   from?: { lat: number; lng: number };
   to?: { lat: number; lng: number };
+  /** The asking rider's own route, alone — null when they would ride the pool's own. */
+  mySolo?: number | null;
+  nearby?: boolean;
 }): PoolCard {
-  const { pool, uid, nowMs } = args;
-  const car = carOf(args.trip, nowMs);
+  const { pool, uid, nowMs, trip } = args;
+  const car = carOf(trip, nowMs);
   const inCar = !!car && !car.ended && car.members.includes(uid);
   const state: PoolCard['state'] = car?.joinable
     ? 'car'
@@ -175,13 +272,27 @@ export function poolCard(args: {
       : 'gathering';
 
   const bookings = (pool.bookings as Booking[] | undefined) ?? [];
-  const booked = bookings.some((b) => b.uid === uid);
-  const onCar = state !== 'gathering' && !!car;
-  const fare = onCar ? car.fare : (pool.fare as number);
-  const riders = onCar ? car.members.length : bookings.length;
-  const paying = booked || (onCar && inCar) ? riders : riders + 1;
+  const booking = bookings.find((b) => b.uid === uid);
+  const onCar = state !== 'gathering' && !!car && !!trip;
+  const riders = onCar ? sharedCarRiders(trip!, car!.members) : bookedRiders(bookings, pool);
+  const current = onCar
+    ? {
+        fares: (trip!.poolFares as Record<string, number> | undefined) ?? priceCar(riders).fares,
+        gross: car!.gross ?? priceCar(riders).gross,
+      }
+    : priceInOrder(riders);
+  const involved = !!booking || inCar;
+  const ownSolo = involved
+    ? riders.find((r) => r.uid === uid)?.soloFare ?? (pool.fare as number)
+    : args.mySolo ?? (pool.fare as number);
+  const farePerSeat = involved
+    ? current.fares[uid] ?? poolPerSeatFare(ownSolo, riders.length)
+    : state === 'full'
+      ? poolPerSeatFare(car!.fare, car!.members.length)
+      : priceJoin(riders, { uid: '__joiner__', soloFare: ownSolo }, current.gross).joinerFare;
+  const ahead = onCar ? null : aheadDriver(pool, nowMs);
   const departTime = (pool.departTime as string | null) ?? null;
-  const dispatchMs = timestampMs(pool.dispatchAt);
+  const closed = closedForComfort(onCar ? rosterForTrip(trip!).map((r) => r.gender) : bookings.map((b) => b.gender));
 
   const km = (a?: { lat: number; lng: number }, b?: { lat: number; lng: number }) =>
     a && b ? Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng) * 1000) : null;
@@ -196,23 +307,22 @@ export function poolCard(args: {
     pickupDistanceM: km(args.from, pool.pickup),
     dropoffDistanceM: km(args.to, pool.dropoff),
     departTime,
-    departsAtMs: !departTime
-      ? null
-      : bookings.length > 0 && dispatchMs !== null
-        ? dispatchMs + DISPATCH_LEAD_MS
-        : nextDepartureMs(departTime, nowMs),
+    departsAtMs: departureOf(pool, nowMs),
     state,
-    riders,
+    riders: riders.length,
     seatsTotal: MAX_POOL_RIDERS,
-    seatsLeft: state === 'full' ? 0 : Math.max(0, MAX_POOL_RIDERS - riders),
-    fare,
-    farePerSeat: poolPerSeatFare(fare, Math.min(MAX_POOL_RIDERS, Math.max(1, paying))),
-    fareLadder: Array.from({ length: MAX_POOL_RIDERS }, (_, i) => poolPerSeatFare(fare, i + 1)),
-    driver: onCar ? car.driver : null,
+    seatsLeft: state === 'full' || closed ? 0 : Math.max(0, MAX_POOL_RIDERS - riders.length),
+    fare: onCar ? car!.fare : (pool.fare as number),
+    farePerSeat,
+    fareLadder: Array.from({ length: MAX_POOL_RIDERS }, (_, i) => poolPerSeatFare(ownSolo, i + 1)),
+    soloFare: ownSolo,
+    driver: onCar ? car!.driver : ahead ? { name: ahead.name, vehicle: ahead.vehicle, plate: ahead.plate } : null,
+    driverAhead: !!ahead,
     needsDriverApproval: state === 'car' && !!car && WITH_DRIVER.has(car.status) && !inCar,
-    booked,
+    booked: !!booking,
     aboardTripId: inCar ? args.tripId : null,
     mine: pool.createdBy === uid,
+    nearby: args.nearby === true,
   };
 }
 
@@ -222,35 +332,49 @@ function aboardOf(card: PoolCard, pool: FirebaseFirestore.DocumentData, trip: Fi
   return { poolRoster: ((pool.bookings as Booking[] | undefined) ?? []).map((b) => ({ uid: b.uid, gender: b.gender })) };
 }
 
+/** Whether a pool still counts: open, and booked within the last month. */
+const live = (d: FirebaseFirestore.DocumentSnapshot, nowMs: number) =>
+  d.get('status') === 'active' && nowMs - (timestampMs(d.get('lastActiveAt')) ?? 0) <= STALE_POOL_MS;
+
+/** Does a pool's next departure suit "leaving around `at`"? On-demand pools suit "soon". */
+function suitsTime(pool: FirebaseFirestore.DocumentData, at: number, nowMs: number): boolean {
+  const dep = departureOf(pool, nowMs);
+  return dep === null ? at - nowMs <= TIME_WINDOW_MS / 2 : Math.abs(dep - at) <= TIME_WINDOW_MS;
+}
+
 // ── getSharedPools ───────────────────────────────────────────────────────────
 
 const point = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
+const place = point.extend({ address: z.string().trim().min(1).max(200) });
 const listSchema = z.object({
   city: z.string().trim().min(2).max(40).nullish(),
   from: point.nullish(),
   to: point.nullish(),
+  /** Leaving around this time, epoch-ms. Absent: any time. */
+  at: z.number().int().positive().nullish(),
   /** "My rides": pools this rider created, holds a seat in, or is riding with. */
   mine: z.boolean().nullish(),
 });
 
 /**
- * Pools going the rider's way — both ends within MATCH_RADIUS_M — or, with
- * `mine`, the rider's own. Pools whose car the gender rules keep this rider
- * out of are left out, as in every shared-ride feed: a Join that can only
- * fail is not an offer.
+ * Pools on the rider's route (`pools`) and a short walk away (`nearby`), or —
+ * with `mine` — the rider's own. Every price is THIS rider's: their own route at
+ * the car's tier. Pools whose car the gender rules keep this rider out of are
+ * left out, as in every shared-ride feed: a Join that can only fail is no offer.
  */
 export const getSharedPools = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = listSchema.safeParse(req.data);
   if (!parsed.success) invalid('Invalid search.');
-  const { city, from, to, mine } = parsed.data;
+  const { city, from, to, at, mine } = parsed.data;
   const nowMs = Date.now();
 
   const userSnap = await db.doc(`users/${ctx.uid}`).get();
   const myGender = resolveSeatOccupant(userSnap.get('gender'), null).seatGender;
   const myMixedOk = userSnap.get('mixedRideOk') === true;
 
-  let docs: FirebaseFirestore.DocumentSnapshot[];
+  /** Each candidate pool, and whether the rider would walk to it. */
+  let picked: { doc: FirebaseFirestore.DocumentSnapshot; nearby: boolean }[];
   if (mine) {
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
     const activeTrip = activeTripId ? await db.doc(`trips/${activeTripId}`).get() : null;
@@ -264,44 +388,61 @@ export const getSharedPools = onCall(async (req) => {
     for (const d of created.docs) if (d.get('creatorRemoved') !== true) byId.set(d.id, d);
     for (const d of booked.docs) byId.set(d.id, d);
     if (riding?.exists) byId.set(riding.id, riding);
-    docs = [...byId.values()];
+    picked = [...byId.values()].map((doc) => ({ doc, nearby: false }));
   } else {
     if (!city || !from || !to) invalid('Choose a city, a pickup and a drop-off.');
-    // shortcut: scans one city's pools (≤300) per search; add a geohash range
-    // query once a city holds more pools than that.
+    // shortcut: scans one city's pools (≤300) per search; switch to the
+    // pickupGeohash range query (as getDriverPools does) past a few hundred.
     const snap = await db.collection('sharedPools').where('city', '==', city).limit(300).get();
-    docs = snap.docs.filter((d) => {
-      if (d.get('status') !== 'active') return false;
-      const active = timestampMs(d.get('lastActiveAt')) ?? 0;
-      if (nowMs - active > STALE_POOL_MS) return false;
-      const p = d.get('pickup') as Place;
-      const q = d.get('dropoff') as Place;
-      return haversineKm(from.lat, from.lng, p.lat, p.lng) * 1000 <= MATCH_RADIUS_M
-        && haversineKm(to.lat, to.lng, q.lat, q.lng) * 1000 <= MATCH_RADIUS_M;
-    });
+    picked = [];
+    for (const d of snap.docs) {
+      if (!live(d, nowMs) || (at && !suitsTime(d.data(), at, nowMs))) continue;
+      const route = { pickup: d.get('pickup') as Place, dropoff: d.get('dropoff') as Place };
+      if (routeFit(route, from, to, MATCH_RADIUS_M)) {
+        picked.push({ doc: d, nearby: false });
+      } else if (
+        haversineKm(from.lat, from.lng, route.pickup.lat, route.pickup.lng) * 1000 <= NEARBY_RADIUS_M
+        && haversineKm(to.lat, to.lng, route.dropoff.lat, route.dropoff.lng) * 1000 <= NEARBY_RADIUS_M
+      ) {
+        picked.push({ doc: d, nearby: true });
+      }
+    }
   }
 
-  const tripIds = docs.map((d) => d.get('tripId') as string | null).filter((t): t is string => !!t);
+  const tripIds = picked.map((p) => p.doc.get('tripId') as string | null).filter((t): t is string => !!t);
   const tripSnaps = tripIds.length ? await db.getAll(...tripIds.map((t) => db.doc(`trips/${t}`))) : [];
   const trips = new Map(tripSnaps.filter((s) => s.exists).map((s) => [s.id, s.data()!]));
 
+  // This rider's own route, alone, per car type — what every one of their prices is built on.
+  const quotes = new Map<string, Promise<number>>();
+  const mySoloFor = (rideType: string): Promise<number> => {
+    if (!quotes.has(rideType)) quotes.set(rideType, sharedRideFare(rideType, from!, to!).then((q) => q.fare));
+    return quotes.get(rideType)!;
+  };
+
   const pools: PoolCard[] = [];
-  for (const d of docs) {
-    const pool = d.data()!;
+  const nearby: PoolCard[] = [];
+  for (const { doc, nearby: walk } of picked) {
+    const pool = doc.data()!;
     const tripId = (pool.tripId as string | null) ?? null;
     const trip = tripId ? trips.get(tripId) ?? null : null;
-    const card = poolCard({ id: d.id, pool, trip, tripId, uid: ctx.uid, nowMs, from: from ?? undefined, to: to ?? undefined });
+    const mySolo = !mine && !walk && from && to ? await mySoloFor((pool.rideType as string) ?? 'mini') : null;
+    const card = poolCard({
+      id: doc.id, pool, trip, tripId, uid: ctx.uid, nowMs,
+      from: from ?? undefined, to: to ?? undefined, mySolo, nearby: walk,
+    });
     // A full car offers no seat, so there is no Join for the gender rules to
     // refuse — it is only on the card to say it left, and that it will be back.
     const offersSeat = card.state !== 'full' && !card.booked && card.aboardTripId === null && !card.mine;
     if (!mine && offersSeat && !poolJoinGenderGate(aboardOf(card, pool, trip), myGender, myMixedOk).allowed) continue;
-    pools.push(card);
+    (walk ? nearby : pools).push(card);
   }
-  pools.sort((a, b) =>
-    mine
-      ? Number(!!b.aboardTripId) - Number(!!a.aboardTripId) || Number(b.booked) - Number(a.booked)
-      : (a.pickupDistanceM ?? 0) - (b.pickupDistanceM ?? 0));
-  return { pools };
+  const byDistance = (a: PoolCard, b: PoolCard) => (a.pickupDistanceM ?? 0) - (b.pickupDistanceM ?? 0);
+  pools.sort(mine
+    ? (a, b) => Number(!!b.aboardTripId) - Number(!!a.aboardTripId) || Number(b.booked) - Number(a.booked)
+    : byDistance);
+  nearby.sort(byDistance);
+  return { pools, nearby: nearby.slice(0, 10) };
 });
 
 // ── Seats and cars ───────────────────────────────────────────────────────────
@@ -327,9 +468,11 @@ async function releaseBooking(poolRef: FirebaseFirestore.DocumentReference, uid:
 class SeatGone extends Error {}
 
 /**
- * Turn one booking into a new car: a shared trip with this rider as its host.
- * The booking leaves the pool in the same transaction the trip is written in,
- * so a seat is never in both places and never in neither.
+ * Turn one booking into a new car: a shared trip with this rider as its host,
+ * on the pool's route, priced at their own solo fare. The booking leaves the
+ * pool in the same transaction the trip is written in, so a seat is never in
+ * both places and never in neither. Nobody is told yet — `dispatchPool` seats
+ * the rest first, then hands the car to its driver.
  */
 async function startCar(
   poolRef: FirebaseFirestore.DocumentReference,
@@ -338,7 +481,7 @@ async function startCar(
 ): Promise<string> {
   const tripRef = db.collection('trips').doc();
   const shareCode = generateShareCode();
-  const pool = await db.runTransaction(async (tx) => {
+  await db.runTransaction(async (tx) => {
     const [snap, userSnap, walletSnap] = await Promise.all([
       tx.get(poolRef),
       tx.get(db.doc(`users/${uid}`)),
@@ -346,11 +489,14 @@ async function startCar(
     ]);
     const d = snap.data() ?? {};
     const bookings = (d.bookings as Booking[] | undefined) ?? [];
-    if (!bookings.some((b) => b.uid === uid)) throw new SeatGone();
+    const booking = bookings.find((b) => b.uid === uid);
+    if (!booking) throw new SeatGone();
     // Banned, already on a ride, or fees owing: refused here, at the moment a
     // car would be made — a booking for a later time does not hold a ride.
     await assertRiderCanBook(tx, userSnap, walletSnap, settings);
     const seat = resolveSeatOccupant(userSnap.get('gender'), null);
+    const own = bookingStops(booking, d);
+    const name = (userSnap.get('name') as string | undefined) ?? (userSnap.get('displayName') as string | undefined);
 
     writeTripDocuments(tx, tripRef, {
       uid,
@@ -367,13 +513,39 @@ async function startCar(
       paymentMethods: ['cash'],
       pickup: d.pickup as Place,
       dropoff: d.dropoff as Place,
-      passengerName: (userSnap.get('name') as string | undefined) ?? (userSnap.get('displayName') as string | undefined),
+      passengerName: name,
       passengerRating: userSnap.get('rating') as number | undefined,
       passengerRatingCount: userSnap.get('ratingCount') as number | undefined,
       coRiderRating: userSnap.get('coRiderRating') as number | undefined,
       coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
-      provenance: { sharedPoolId: poolRef.id },
+      // One rider so far, paying their own route alone (trips/poolPricing).
+      provenance: {
+        sharedPoolId: poolRef.id,
+        poolSoloFares: { [uid]: own.soloFare },
+        poolFares: { [uid]: own.soloFare },
+        poolDriverGross: own.soloFare,
+      },
     });
+    // The host is collected and dropped at their own stops too.
+    tx.set(tripRef, {
+      poolRoster: [hostRosterEntry({
+        uid,
+        name,
+        gender: seat.seatGender,
+        bookedForOther: seat.bookedForOther,
+        coRiderRating: userSnap.get('coRiderRating'),
+        coRiderRatingCount: userSnap.get('coRiderRatingCount'),
+        pickup: own.pickup,
+        dropoff: own.dropoff,
+      })],
+    }, { merge: true });
+    tx.set(tripRef.collection('stops').doc(uid), {
+      pickup: own.pickup,
+      dropoff: own.dropoff,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(db.doc(`openRequests/${tripRef.id}`), { poolDriverGross: own.soloFare }, { merge: true });
+
     const rest = bookings.filter((b) => b.uid !== uid);
     tx.update(poolRef, {
       bookings: rest,
@@ -381,15 +553,40 @@ async function startCar(
       ...(rest.length === 0 ? { dispatchAt: FieldValue.delete() } : {}),
       tripId: tripRef.id,
       runs: FieldValue.increment(1),
+      noDriverCheckAt: Timestamp.fromMillis(Date.now() + NO_DRIVER_ALERT_MS),
       lastActiveAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return d;
   });
-
-  await broadcastTripToNearbyDrivers(tripRef.id, pool.pickup as Place, true, pool.rideType as string, { fare: pool.fare as number })
-    .catch((err) => logger.error('sharedPools: broadcast failed', { tripId: tripRef.id, err }));
   return tripRef.id;
+}
+
+/** Give a car to the driver who accepted it ahead of time — the same lock-in a bid uses. */
+async function lockToDriver(tripId: string, driverUid: string): Promise<void> {
+  const [tripSnap, userSnap, driverSnap] = await Promise.all([
+    db.doc(`trips/${tripId}`).get(),
+    db.doc(`users/${driverUid}`).get(),
+    db.doc(`drivers/${driverUid}`).get(),
+  ]);
+  const driverInfo: DriverPublicInfo = {
+    driverId: driverUid,
+    displayName: (userSnap.get('displayName') as string | undefined) ?? 'Driver',
+    photoURL: (userSnap.get('photoURL') as string | undefined) ?? null,
+    vehicleLabel: (driverSnap.get('vehicleLabel') as string | undefined) ?? 'Vehicle',
+    plate: (driverSnap.get('plate') as string | undefined) ?? '',
+    rating: (driverSnap.get('rating') as number | undefined) ?? 5,
+  };
+  await lockInBid(tripId, driverUid, { by: 'driver', uid: driverUid }, {
+    id: driverUid,
+    tripId,
+    driverId: driverUid,
+    fare: tripSnap.get('offeredFare') as number,
+    status: 'pending',
+    driverInfo,
+    driverLocation: (driverSnap.get('lastLocation') as { lat: number; lng: number } | undefined) ?? null,
+    aheadOfTime: true,
+    createdAt: FieldValue.serverTimestamp(),
+  });
 }
 
 export interface DispatchOutcome {
@@ -398,20 +595,25 @@ export interface DispatchOutcome {
   /** Waiting on a driver's (or the host's) yes — see joinPoolTripAsRider. */
   asked: string[];
   dropped: { uid: string; reason: string }[];
+  /** The car went straight to a driver who had accepted it ahead of time. */
+  driverAssigned: boolean;
 }
 
 /**
  * Put everybody booked on this pool into a car. One booking at a time, each
  * let go only once it is settled, so a crash halfway leaves the rest booked
- * and the next tick of `dispatchSharedPools` finishes the job.
+ * and the next tick of `dispatchSharedPools` finishes the job. A car made here
+ * then goes to its driver — the one who accepted it ahead of time, or every
+ * driver nearby.
  *
  * `quiet` is the rider who triggered it from the app: they get the answer on
  * their screen, not a push about it.
  */
 export async function dispatchPool(poolId: string, quiet?: string): Promise<DispatchOutcome> {
   const poolRef = db.doc(`sharedPools/${poolId}`);
-  const out: DispatchOutcome = { tripId: null, seated: [], asked: [], dropped: [] };
+  const out: DispatchOutcome = { tripId: null, seated: [], asked: [], dropped: [], driverAssigned: false };
   const settings = await getCancellationSettings();
+  let created: string | null = null;
 
   for (let i = 0; i <= MAX_POOL_RIDERS; i += 1) {
     const snap = await poolRef.get();
@@ -421,13 +623,14 @@ export async function dispatchPool(poolId: string, quiet?: string): Promise<Disp
     const tripSnap = tripId ? await db.doc(`trips/${tripId}`).get() : null;
     const car = carOf(tripSnap?.data(), Date.now());
     try {
-      if (tripSnap && car && (car.joinable || car.members.includes(next.uid))) {
-        const res = await joinPoolTripAsRider(next.uid, tripSnap.ref, 'self');
+      if (tripSnap && car && !car.ended && (car.joinable || car.members.includes(next.uid))) {
+        const res = await joinPoolTripAsRider(next.uid, tripSnap.ref, 'self', bookingStops(next, snap.data()!));
         (res.pending ? out.asked : out.seated).push(next.uid);
         out.tripId = tripSnap.id;
         await releaseBooking(poolRef, next.uid);
       } else {
         out.tripId = await startCar(poolRef, next.uid, settings);
+        created = out.tripId;
         out.seated.push(next.uid);
       }
     } catch (e) {
@@ -439,14 +642,42 @@ export async function dispatchPool(poolId: string, quiet?: string): Promise<Disp
     }
   }
 
-  const label = await poolRef.get().then((s) => (s.get('label') as string | null) ?? 'Your shared ride');
+  const pool = (await poolRef.get()).data() ?? {};
+  const label = (pool.label as string | null) ?? 'Your shared ride';
+  if (created) {
+    // Everybody booked is in before the car is handed over: a car with a driver
+    // only takes new riders with that driver's yes.
+    const ahead = aheadDriver(pool, Date.now());
+    if (ahead) {
+      try {
+        await lockToDriver(created, ahead.uid);
+        out.driverAssigned = true;
+        await poolRef.update({ noDriverCheckAt: FieldValue.delete() });
+      } catch (e) {
+        logger.warn('sharedPools: ahead-of-time driver could not take the car', { poolId, driver: ahead.uid, err: String(e) });
+        await notifyUser(
+          ahead.uid,
+          'Your shared ride went to other drivers',
+          `${label}: ${e instanceof HttpsError ? e.message : 'you could not be given the car.'}`,
+          'ride',
+        ).catch(() => {});
+      }
+      await poolRef.update({ driver: FieldValue.delete(), driverUid: FieldValue.delete() });
+    }
+    if (!out.driverAssigned) {
+      await broadcastTripToNearbyDrivers(created, pool.pickup as Place, true, pool.rideType as string, { fare: pool.fare as number })
+        .catch((err) => logger.error('sharedPools: broadcast failed', { tripId: created, err }));
+    }
+  }
+
   const tell = out.tripId ? { tripId: out.tripId } : undefined;
   await Promise.all([
-    ...out.seated.filter((u) => u !== quiet).map((u) => notifyUser(
+    // A driver who accepted ahead of time already told every rider (lockInBid).
+    ...(out.driverAssigned ? [] : out.seated.filter((u) => u !== quiet).map((u) => notifyUser(
       u, '🚗 Finding your driver',
-      `${label}: your car is on and drivers nearby are being asked now. You will hear the moment one accepts.`,
+      `${label}: your car is out and drivers nearby are being asked now. You will hear the moment one accepts.`,
       'ride', tell,
-    )),
+    ))),
     ...out.dropped.filter((d) => d.uid !== quiet).map((d) => notifyUser(
       d.uid, 'Your shared-ride seat was let go', `${label}: ${d.reason}`, 'ride',
     )),
@@ -455,29 +686,70 @@ export async function dispatchPool(poolId: string, quiet?: string): Promise<Disp
   return out;
 }
 
+/**
+ * Tell nearby online drivers a shared ride is forming — once per departure,
+ * the moment its second seat is booked: demand they can plan around.
+ */
+async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference): Promise<void> {
+  const pool = (await poolRef.get()).data() ?? {};
+  const pickup = pool.pickup as Place;
+  const riders = bookedRiders((pool.bookings as Booking[] | undefined) ?? [], pool);
+  const dep = departureOf(pool, Date.now());
+  const docs = await queryNearbyDriverDocs(pickup.lat, pickup.lng, DRIVER_RADIUS_M / 3);
+  const near = docs
+    .filter((d) => {
+      const loc = d.get('lastLocation') as { lat: number; lng: number } | undefined;
+      return loc && haversineKm(pickup.lat, pickup.lng, loc.lat, loc.lng) <= DRIVER_RADIUS_M / 3000;
+    })
+    .map((d) => d.id);
+  if (near.length === 0) return;
+  const when = dep ? `at ${new Date(dep + PKT_OFFSET_MS).toISOString().slice(11, 16)}` : 'now';
+  await sendToUsers(
+    near,
+    `🔀 ${riders.length} riders sharing ${when}`,
+    `${pickup.address} to ${(pool.dropoff as Place).address}: PKR ${priceInOrder(riders).gross} so far. Open Shared rides to take it.`,
+    { poolId: poolRef.id, screen: 'shared-pools' },
+  ).catch(() => {});
+}
+
 export type SeatResult =
   | { status: 'seated' | 'asked'; tripId: string; perSeatFare: number }
   | { status: 'booked'; tripId: null; perSeatFare: number; departsAtMs: number | null };
 
 /**
- * Take a seat on a pool: in its car when one is on and has room, else a
+ * Take a seat on a pool: in its car when one is out and has room, else a
  * booking for the next car — which, for a pool with no time or a booking that
- * fills it, is sent at once.
+ * fills it, is sent at once. `stops` are the rider's own pickup and drop-off
+ * (checked against the route); without them they ride the pool's own ends.
  */
-async function seatOnPool(uid: string, poolId: string): Promise<SeatResult> {
+async function seatOnPool(
+  uid: string,
+  poolId: string,
+  stops?: { pickup: Place; dropoff: Place } | null,
+): Promise<SeatResult> {
   const poolRef = db.doc(`sharedPools/${poolId}`);
   const snap = await poolRef.get();
   if (!snap.exists || snap.get('status') !== 'active') {
     throw new HttpsError('not-found', 'This shared ride is no longer running.');
   }
+  const route = { pickup: snap.get('pickup') as Place, dropoff: snap.get('dropoff') as Place };
+  if (stops && !routeFit(route, stops.pickup, stops.dropoff, MATCH_RADIUS_M)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Your pickup or drop-off is more than 1 km off this shared ride’s route. Join one shown for your route, or start your own.',
+    );
+  }
+  const own = stops ?? route;
+  const rideType = snap.get('rideType') as string;
+  const ownStops: RiderStops = { ...own, soloFare: (await sharedRideFare(rideType, own.pickup, own.dropoff)).fare };
 
-  // A car already on with room: take a seat in it like any shared ride.
+  // A car already out with room: take a seat in it like any shared ride.
   const tripId = snap.get('tripId') as string | null;
   if (tripId) {
     const tripRef = db.doc(`trips/${tripId}`);
     const car = carOf((await tripRef.get()).data(), Date.now());
     if (car && !car.ended && (car.joinable || car.members.includes(uid))) {
-      const res = await joinPoolTripAsRider(uid, tripRef, 'self');
+      const res = await joinPoolTripAsRider(uid, tripRef, 'self', ownStops);
       await poolRef.update({ lastActiveAt: FieldValue.serverTimestamp() });
       return { status: res.pending ? 'asked' : 'seated', tripId, perSeatFare: res.perSeatFare };
     }
@@ -488,10 +760,10 @@ async function seatOnPool(uid: string, poolId: string): Promise<SeatResult> {
     throw new HttpsError('failed-precondition', 'You already hold seats on two shared rides. Cancel one first.');
   }
 
-  // The first seat of a new car is priced fresh; later seats keep that price,
-  // so nobody's fare moves while the car is filling.
+  // The first seat of a new car re-prices the car's own route, so a pool's
+  // fare follows fuel and the city table from one car to the next.
   const fresh = ((snap.get('bookings') as Booking[] | undefined) ?? []).length === 0
-    ? await sharedRideFare(snap.get('rideType') as string, snap.get('pickup') as Place, snap.get('dropoff') as Place)
+    ? await sharedRideFare(rideType, route.pickup, route.dropoff)
     : null;
   const settings = await getCancellationSettings();
   const nowMs = Date.now();
@@ -504,12 +776,14 @@ async function seatOnPool(uid: string, poolId: string): Promise<SeatResult> {
     ]);
     const d = poolSnap.data() ?? {};
     const bookings = (d.bookings as Booking[] | undefined) ?? [];
-    const fare = bookings.length === 0 && fresh ? fresh.fare : (d.fare as number);
     const departTime = (d.departTime as string | null) ?? null;
     const dueMs = bookings.length > 0
       ? timestampMs(d.dispatchAt) ?? nowMs
       : departTime ? nextDepartureMs(departTime, nowMs) - DISPATCH_LEAD_MS : nowMs;
-    if (bookings.some((b) => b.uid === uid)) return { count: bookings.length, dueMs, fare, departTime };
+    const pricedPool = { ...d, fare: bookings.length === 0 && fresh ? fresh.fare : d.fare };
+    if (bookings.some((b) => b.uid === uid)) {
+      return { count: bookings.length, dueMs, departTime, quote: priceInOrder(bookedRiders(bookings, pricedPool)).fares[uid] ?? 0, demand: false };
+    }
     if (bookings.length >= MAX_POOL_RIDERS) {
       throw new HttpsError('failed-precondition', 'This shared ride is full. The next car opens two minutes after it leaves.');
     }
@@ -530,17 +804,34 @@ async function seatOnPool(uid: string, poolId: string): Promise<SeatResult> {
       firstName: firstNameOf(userSnap.get('name') ?? userSnap.get('displayName')),
       gender: seat.seatGender,
       bookedAt: Timestamp.now(),
+      pickup: ownStops.pickup,
+      dropoff: ownStops.dropoff,
+      soloFare: ownStops.soloFare,
     }];
+    // Demand drivers can plan around: the second seat of a departure, once.
+    const depKey = departTime ? dueMs + DISPATCH_LEAD_MS : 0;
+    const demand = next.length === 2 && !aheadDriver(d, nowMs) && d.demandAlertedFor !== depKey;
     tx.update(poolRef, {
       bookings: next,
       bookingUids: next.map((b) => b.uid),
-      fare,
+      fare: pricedPool.fare,
       dispatchAt: Timestamp.fromMillis(dueMs),
+      // For drivers' "shared rides near you" — set here too for pools made before it existed.
+      pickupGeohash: geohashForLocation([route.pickup.lat, route.pickup.lng]),
+      ...(demand ? { demandAlertedFor: depKey } : {}),
       lastActiveAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return { count: next.length, dueMs, fare, departTime };
+    return {
+      count: next.length,
+      dueMs,
+      departTime,
+      quote: priceInOrder(bookedRiders(next, pricedPool)).fares[uid]!,
+      demand,
+    };
   });
+
+  if (booked.demand) await alertDriversOfDemand(poolRef).catch((err) => logger.warn('sharedPools: demand alert failed', { poolId, err: String(err) }));
 
   if (booked.count >= MAX_POOL_RIDERS || booked.dueMs <= Date.now()) {
     const sent = await dispatchPool(poolId, uid);
@@ -549,25 +840,23 @@ async function seatOnPool(uid: string, poolId: string): Promise<SeatResult> {
     if (sent.tripId && (sent.seated.includes(uid) || sent.asked.includes(uid))) {
       const trip = (await db.doc(`trips/${sent.tripId}`).get()).data() ?? {};
       const fares = trip.poolFares as Record<string, number> | undefined;
-      const riders = ((trip.poolMembers as string[] | undefined) ?? []).length || 1;
       return {
         status: sent.asked.includes(uid) ? 'asked' : 'seated',
         tripId: sent.tripId,
-        perSeatFare: fares?.[uid] ?? (trip.poolPerSeatFare as number | undefined) ?? poolPerSeatFare(booked.fare, riders),
+        perSeatFare: fares?.[uid] ?? booked.quote,
       };
     }
   }
   return {
     status: 'booked',
     tripId: null,
-    perSeatFare: poolPerSeatFare(booked.fare, booked.count),
+    perSeatFare: booked.quote,
     departsAtMs: booked.departTime ? booked.dueMs + DISPATCH_LEAD_MS : null,
   };
 }
 
-// ── Callables ────────────────────────────────────────────────────────────────
+// ── Rider callables ──────────────────────────────────────────────────────────
 
-const place = point.extend({ address: z.string().trim().min(1).max(200) });
 const createSchema = z.object({
   /** A PAKISTAN_CITIES id from the app, e.g. 'islamabad'. Scopes search. */
   city: z.string().trim().regex(/^[a-z_]{2,40}$/),
@@ -580,17 +869,11 @@ const createSchema = z.object({
   dropoff: place,
 });
 
-/** Start a pool and take its first seat. */
-export const createSharedPool = onCall(async (req) => {
-  const ctx = requireAuth(req);
-  await rateLimit(ctx.uid, 'createSharedPool', 10, 3600);
-  const parsed = createSchema.safeParse(req.data);
-  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid shared ride.');
-  const d = parsed.data;
+/** A new pool's document — riders' and drivers' alike. */
+async function newPool(uid: string, d: z.infer<typeof createSchema>, driver?: PoolDriver | null) {
   const km = haversineKm(d.pickup.lat, d.pickup.lng, d.dropoff.lat, d.dropoff.lng);
   if (km < 0.5) invalid('Pickup and drop-off are the same place.');
   if (km > 80) invalid('That is another city — book it from City to City.');
-
   const quote = await sharedRideFare(d.rideType, d.pickup, d.dropoff);
   const ref = db.collection('sharedPools').doc();
   await ref.set({
@@ -598,20 +881,32 @@ export const createSharedPool = onCall(async (req) => {
     label: d.label || null,
     pickup: d.pickup,
     dropoff: d.dropoff,
+    pickupGeohash: geohashForLocation([d.pickup.lat, d.pickup.lng]),
     departTime: d.departTime ?? null,
     rideType: d.rideType,
     fare: quote.fare,
-    createdBy: ctx.uid,
+    createdBy: uid,
     creatorRemoved: false,
     bookings: [],
     bookingUids: [],
     tripId: null,
     runs: 0,
     status: 'active',
+    ...(driver ? { driver, driverUid: driver.uid, offeredBy: uid } : {}),
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     lastActiveAt: FieldValue.serverTimestamp(),
   });
+  return ref;
+}
+
+/** Start a pool and take its first seat. */
+export const createSharedPool = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  await rateLimit(ctx.uid, 'createSharedPool', 10, 3600);
+  const parsed = createSchema.safeParse(req.data);
+  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid shared ride.');
+  const ref = await newPool(ctx.uid, parsed.data);
   try {
     return { poolId: ref.id, ...(await seatOnPool(ctx.uid, ref.id)) };
   } catch (e) {
@@ -621,27 +916,45 @@ export const createSharedPool = onCall(async (req) => {
   }
 });
 
-/** Take a seat on somebody's pool. */
+/**
+ * Take a seat on somebody's pool, at your own pickup and drop-off on its route
+ * (`pickup`/`dropoff`) — or, without them, at the car's own ends.
+ */
 export const joinSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
   await rateLimit(ctx.uid, 'joinSharedPool', 10, 60);
-  const parsed = z.object({ poolId: docId }).safeParse(req.data);
+  const parsed = z.object({ poolId: docId, pickup: place.nullish(), dropoff: place.nullish() }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
-  return seatOnPool(ctx.uid, parsed.data.poolId);
+  const { poolId, pickup, dropoff } = parsed.data;
+  return seatOnPool(ctx.uid, poolId, pickup && dropoff ? { pickup, dropoff } : null);
 });
 
 /**
  * Give back a booked seat. Free: no driver has committed to anything. A rider
- * already in the pool's car cancels from the ride screen, where the ordinary
- * cancellation rules apply.
+ * already in the pool's car leaves from the ride screen (trips/poolLeave).
  */
 export const leaveSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = z.object({ poolId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
   const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
-  if (await releaseBooking(poolRef, ctx.uid)) return { ok: true };
-  throw new HttpsError('failed-precondition', 'You hold no seat here. If you are in the car, cancel from your ride.');
+  const before = (await poolRef.get()).data() ?? {};
+  if (!(await releaseBooking(poolRef, ctx.uid))) {
+    throw new HttpsError('failed-precondition', 'You hold no seat here. If you are in the car, leave from your ride.');
+  }
+  // The others' estimates move back up the tiers: tell whoever's went up.
+  const after = (await poolRef.get()).data() ?? {};
+  const was = priceInOrder(bookedRiders((before.bookings as Booking[] | undefined) ?? [], before)).fares;
+  const now = priceInOrder(bookedRiders((after.bookings as Booking[] | undefined) ?? [], after)).fares;
+  await Promise.allSettled(Object.entries(now)
+    .filter(([uid, fare]) => fare > (was[uid] ?? Infinity))
+    .map(([uid, fare]) => notifyUser(
+      uid,
+      'A rider cancelled their seat',
+      `${(after.label as string | null) ?? 'Your shared ride'}: your estimated share is now PKR ${fare} — never more than riding alone. Cancelling stays free.`,
+      'ride',
+    )));
+  return { ok: true };
 });
 
 const editSchema = z.object({
@@ -671,9 +984,12 @@ export const editSharedPool = onCall(async (req) => {
     if (label !== undefined) update.label = label || null;
     if (departTime !== undefined && departTime !== (snap.get('departTime') ?? null)) {
       const bookings = (snap.get('bookings') as Booking[] | undefined) ?? [];
-      // Riders booked for 08:00 did not agree to 09:00.
+      // Riders booked for 08:00 did not agree to 09:00, and neither did a driver.
       if (bookings.some((b) => b.uid !== ctx.uid)) {
         throw new HttpsError('failed-precondition', 'Others have booked seats for this time, so it cannot change now.');
+      }
+      if (aheadDriver(snap.data()!, Date.now())) {
+        throw new HttpsError('failed-precondition', 'A driver has accepted this time, so it cannot change now.');
       }
       update.departTime = departTime;
       if (bookings.length > 0) {
@@ -687,23 +1003,350 @@ export const editSharedPool = onCall(async (req) => {
   return { ok: true };
 });
 
+// ── Driver side ──────────────────────────────────────────────────────────────
+
+/** What a driver sees of a pool: the job, the money and the stops, before saying yes. */
+export interface DriverPoolView {
+  id: string;
+  label: string | null;
+  rideType: string;
+  pickup: Place;
+  dropoff: Place;
+  /** The pool's own route, km. */
+  routeKm: number;
+  /** From the driver to the pickup, km — null without a location. */
+  toPickupKm: number | null;
+  departTime: string | null;
+  departsAtMs: number | null;
+  riders: number;
+  seatsLeft: number;
+  /** What the car collects with the riders it has now. */
+  earnNow: number;
+  /** With every seat taken — the next riders priced at the route's own fare. */
+  earnIfFull: number;
+  /** Pickups and drop-offs in the order to make them: first names and places. */
+  stops: { kind: 'pickup' | 'dropoff'; name: string; address: string }[];
+  /** This driver accepted it ahead of time. */
+  mine: boolean;
+  /** A car already out with nobody driving it: accepting takes it now. */
+  liveTripId: string | null;
+}
+
+/** A pool as a job for a driver, or null when it has no work in it for them. */
+async function driverView(
+  doc: FirebaseFirestore.DocumentSnapshot,
+  trip: FirebaseFirestore.DocumentSnapshot | null,
+  driverUid: string,
+  at: { lat: number; lng: number } | null,
+  nowMs: number,
+): Promise<DriverPoolView | null> {
+  const pool = doc.data()!;
+  const ahead = aheadDriver(pool, nowMs);
+  if (ahead && ahead.uid !== driverUid) return null; // somebody else's already
+  const car = carOf(trip?.data(), nowMs);
+  const liveTripId = car && !car.ended && car.status === 'requested' && trip ? trip.id : null;
+  const bookings = (pool.bookings as Booking[] | undefined) ?? [];
+  if (!liveTripId && bookings.length === 0 && !ahead) return null; // no riders yet
+
+  let riders: PricedRider[];
+  let located: { uid: string; name: string; pickup: Place; dropoff: Place }[];
+  let earnNow: number;
+  if (liveTripId && trip) {
+    const t = trip.data()!;
+    riders = sharedCarRiders(t, car!.members);
+    earnNow = car!.gross ?? priceCar(riders).gross;
+    const own = new Map((await trip.ref.collection('stops').get()).docs.map((s) => [s.id, s.data()] as const));
+    located = rosterForTrip(t).map((r) => ({
+      uid: r.uid,
+      name: r.firstName,
+      pickup: (own.get(r.uid)?.pickup as Place | undefined) ?? (t.pickup as Place),
+      dropoff: (own.get(r.uid)?.dropoff as Place | undefined) ?? (t.dropoff as Place),
+    }));
+  } else {
+    riders = bookedRiders(bookings, pool);
+    earnNow = priceInOrder(riders).gross;
+    located = bookings.map((b) => ({ uid: b.uid, name: b.firstName, ...bookingStops(b, pool) }));
+  }
+  // Seats the gender rules have closed are not earnings anybody can promise.
+  const genders = liveTripId && trip ? rosterForTrip(trip.data()!).map((r) => r.gender) : bookings.map((b) => b.gender);
+  const open = closedForComfort(genders) ? 0 : Math.max(0, MAX_POOL_RIDERS - riders.length);
+  const filler = Array.from({ length: open }, (_, i) => ({
+    uid: `seat-${i}`,
+    soloFare: pool.fare as number,
+  }));
+  const byUid = new Map(located.map((l) => [l.uid, l] as const));
+  const pickup = pool.pickup as Place;
+  const dropoff = pool.dropoff as Place;
+  return {
+    id: doc.id,
+    label: (pool.label as string | null) ?? null,
+    rideType: (pool.rideType as string) ?? 'mini',
+    pickup,
+    dropoff,
+    routeKm: Math.round(haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng) * 10) / 10,
+    toPickupKm: at ? Math.round(haversineKm(at.lat, at.lng, pickup.lat, pickup.lng) * 10) / 10 : null,
+    departTime: (pool.departTime as string | null) ?? null,
+    departsAtMs: departureOf(pool, nowMs),
+    riders: riders.length,
+    seatsLeft: open,
+    earnNow,
+    earnIfFull: priceInOrder([...riders, ...filler]).gross,
+    stops: orderStops(located, at).map((s) => {
+      const r = byUid.get(s.uid)!;
+      return { kind: s.kind, name: r.name, address: (s.kind === 'pickup' ? r.pickup : r.dropoff).address };
+    }),
+    mine: ahead?.uid === driverUid,
+    liveTripId,
+  };
+}
+
+/** Pools near a point — the driver's side of the pickupGeohash index. */
+async function poolsNear(lat: number, lng: number, radiusM: number): Promise<FirebaseFirestore.DocumentSnapshot[]> {
+  const snaps = await Promise.all(
+    geohashQueryBounds([lat, lng], radiusM).map((b) =>
+      db.collection('sharedPools').where('pickupGeohash', '>=', b[0]).where('pickupGeohash', '<=', b[1]).limit(100).get(),
+    ),
+  );
+  const byId = new Map<string, FirebaseFirestore.DocumentSnapshot>();
+  for (const s of snaps) for (const d of s.docs) byId.set(d.id, d);
+  return [...byId.values()];
+}
+
+/** Driver views for some pools, with their cars read in one go. */
+async function viewsFor(
+  docs: FirebaseFirestore.DocumentSnapshot[],
+  driverUid: string,
+  at: { lat: number; lng: number } | null,
+  nowMs: number,
+): Promise<DriverPoolView[]> {
+  const tripIds = docs.map((d) => d.get('tripId') as string | null).filter((t): t is string => !!t);
+  const tripSnaps = tripIds.length ? await db.getAll(...tripIds.map((t) => db.doc(`trips/${t}`))) : [];
+  const trips = new Map(tripSnaps.filter((s) => s.exists).map((s) => [s.id, s] as const));
+  const views = await Promise.all(docs.map((d) => {
+    const tripId = d.get('tripId') as string | null;
+    return driverView(d, tripId ? trips.get(tripId) ?? null : null, driverUid, at, nowMs);
+  }));
+  // Demand first: the fullest, best-paying cars, then the nearest.
+  return views
+    .filter((v): v is DriverPoolView => v !== null)
+    .sort((a, b) => Number(b.mine) - Number(a.mine) || b.riders - a.riders || b.earnNow - a.earnNow
+      || (a.toPickupKm ?? 0) - (b.toPickupKm ?? 0));
+}
+
+/** Shared rides near a driver that need one — booked seats, or a car out with nobody driving it. */
+export const getDriverPools = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const parsed = point.safeParse(req.data);
+  if (!parsed.success) invalid('Your location is needed to show shared rides near you.');
+  const { lat, lng } = parsed.data;
+  const nowMs = Date.now();
+  const docs = (await poolsNear(lat, lng, DRIVER_RADIUS_M)).filter((d) => {
+    if (!live(d, nowMs)) return false;
+    const p = d.get('pickup') as Place;
+    return haversineKm(lat, lng, p.lat, p.lng) * 1000 <= DRIVER_RADIUS_M;
+  });
+  return { pools: await viewsFor(docs, ctx.uid, { lat, lng }, nowMs) };
+});
+
+/** What every driver must be before taking riders — the checks placeBid applies. */
+async function assertDriverCanTake(uid: string): Promise<FirebaseFirestore.DocumentSnapshot> {
+  const [driverSnap, walletSnap, commission, cancellation] = await Promise.all([
+    db.doc(`drivers/${uid}`).get(),
+    db.doc(`wallets/${uid}`).get(),
+    getCommissionSettings(),
+    getCancellationSettings(),
+  ]);
+  if (driverSnap.get('verificationStatus') !== 'approved') {
+    throw new HttpsError('permission-denied', 'Driver is not approved.');
+  }
+  assertCommissionClear(driverSnap, commission, pktDayKey());
+  assertOutstandingClear(walletSnap, cancellation, 'driver');
+  assertVehicleConfirmed(driverSnap);
+  assertFaceCheckedIn(driverSnap);
+  return driverSnap;
+}
+
+/** The driver as riders are shown them, for a pool's `driver` field. */
+async function poolDriverFor(uid: string, driverSnap: FirebaseFirestore.DocumentSnapshot, forDepartureMs: number | null): Promise<PoolDriver> {
+  const userSnap = await db.doc(`users/${uid}`).get();
+  return {
+    uid,
+    name: firstNameOf(userSnap.get('displayName') ?? userSnap.get('name'), 'Driver'),
+    vehicle: (driverSnap.get('vehicleLabel') as string | undefined) ?? 'Car',
+    plate: (driverSnap.get('plate') as string | undefined) ?? '',
+    acceptedAtMs: Date.now(),
+    forDepartureMs,
+  };
+}
+
+/** A driver may hold one shared ride per hour of the day. */
+async function assertFreeAt(uid: string, departureMs: number | null, exceptPoolId?: string): Promise<void> {
+  const mine = await db.collection('sharedPools').where('driverUid', '==', uid).limit(20).get();
+  const nowMs = Date.now();
+  for (const d of mine.docs) {
+    if (d.id === exceptPoolId) continue;
+    const held = aheadDriver(d.data(), nowMs);
+    if (!held || held.uid !== uid) continue;
+    const a = held.forDepartureMs ?? nowMs;
+    const b = departureMs ?? nowMs;
+    if (Math.abs(a - b) < HOUR_MS) {
+      throw new HttpsError('failed-precondition', 'You already accepted a shared ride around that time. Withdraw from it first.');
+    }
+  }
+}
+
 /**
- * The clock for pools with a time: every booking whose car is due goes to
- * drivers. Also finishes any dispatch a crash left halfway — every booking
- * keeps `dispatchAt` until it is settled.
+ * A driver takes a shared ride: a car already out without a driver, now — or
+ * the pool's next car, ahead of time, so its riders see who is coming before
+ * it leaves. Atomic: two drivers tapping at once, one wins.
+ */
+export const acceptSharedPool = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  await rateLimit(ctx.uid, 'acceptSharedPool', 10, 60);
+  const parsed = z.object({ poolId: docId }).safeParse(req.data);
+  if (!parsed.success) invalid('Choose a shared ride.');
+  const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
+  const driverSnap = await assertDriverCanTake(ctx.uid);
+  const pre = await poolRef.get();
+  if (!pre.exists || pre.get('status') !== 'active') throw new HttpsError('not-found', 'This shared ride is no longer running.');
+
+  // A car already out with nobody driving it: it is leaving now, take it now.
+  const tripId = pre.get('tripId') as string | null;
+  const trip = tripId ? await db.doc(`trips/${tripId}`).get() : null;
+  const car = carOf(trip?.data(), Date.now());
+  if (tripId && car && !car.ended && car.status === 'requested') {
+    await lockToDriver(tripId, ctx.uid);
+    return { status: 'matched' as const, tripId };
+  }
+
+  const nowMs = Date.now();
+  const departure = departureOf(pre.data()!, nowMs);
+  await assertFreeAt(ctx.uid, departure, poolRef.id);
+  const driver = await poolDriverFor(ctx.uid, driverSnap, departure);
+  const riders = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(poolRef);
+    const d = snap.data() ?? {};
+    const bookings = (d.bookings as Booking[] | undefined) ?? [];
+    if (bookings.length === 0) throw new HttpsError('failed-precondition', 'Nobody has booked this shared ride yet.');
+    const held = aheadDriver(d, nowMs);
+    if (held && held.uid !== ctx.uid) throw new HttpsError('failed-precondition', 'Another driver has already accepted this ride.');
+    tx.update(poolRef, { driver, driverUid: ctx.uid, updatedAt: FieldValue.serverTimestamp() });
+    return bookings.map((b) => b.uid);
+  });
+  const label = (pre.get('label') as string | null) ?? 'Your shared ride';
+  await sendToUsers(
+    riders,
+    '🚗 Driver assigned',
+    `${label}: ${driver.name} · ${driver.vehicle}${driver.plate ? ` · ${driver.plate}` : ''} will drive your car.`,
+    { poolId: poolRef.id },
+  ).catch(() => {});
+  return { status: 'accepted' as const, departsAtMs: departure };
+});
+
+/** A driver gives back a ride they accepted ahead of time. The riders are told. */
+export const withdrawSharedPool = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const parsed = z.object({ poolId: docId }).safeParse(req.data);
+  if (!parsed.success) invalid('Choose a shared ride.');
+  const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
+  const riders = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(poolRef);
+    if ((snap.get('driver') as PoolDriver | undefined)?.uid !== ctx.uid) {
+      throw new HttpsError('failed-precondition', 'You have not accepted this shared ride.');
+    }
+    tx.update(poolRef, { driver: FieldValue.delete(), driverUid: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
+    return ((snap.get('bookings') as Booking[] | undefined) ?? []).map((b) => b.uid);
+  });
+  await sendToUsers(
+    riders,
+    'Your driver can no longer make it',
+    'Your seat still stands. Drivers nearby are asked when your car goes out.',
+    { poolId: poolRef.id },
+  ).catch(() => {});
+  return { ok: true };
+});
+
+const routeSchema = z.object({
+  pickup: place,
+  dropoff: place,
+  /** Daily "HH:MM", or null: leaving now. */
+  departTime: z.string().regex(HHMM).nullish(),
+});
+
+/**
+ * "I am driving G-10 to F-11 at 17:30" — shared rides whose riders sit on that
+ * road, going that way, around that time. The driver still has to accept each.
+ */
+export const findPoolsForRoute = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  const parsed = routeSchema.safeParse(req.data);
+  if (!parsed.success) invalid('Choose where you are driving from and to.');
+  const { pickup, dropoff, departTime } = parsed.data;
+  const nowMs = Date.now();
+  const at = departTime ? nextDepartureMs(departTime, nowMs) : nowMs;
+  const mid = { lat: (pickup.lat + dropoff.lat) / 2, lng: (pickup.lng + dropoff.lng) / 2 };
+  const reach = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng) * 500 + DRIVER_ROUTE_RADIUS_M;
+  const docs = (await poolsNear(mid.lat, mid.lng, reach)).filter((d) => {
+    if (!live(d, nowMs) || !suitsTime(d.data() ?? {}, at, nowMs)) return false;
+    return !!routeFit({ pickup, dropoff }, d.get('pickup') as Place, d.get('dropoff') as Place, DRIVER_ROUTE_RADIUS_M, 0);
+  });
+  return { pools: await viewsFor(docs, ctx.uid, pickup, nowMs) };
+});
+
+/**
+ * The driver posts their own route as a shared ride, with themselves already
+ * its driver: riders find it like any other ("Driver assigned") and its car
+ * goes straight to this driver.
+ */
+export const offerDriverRoute = onCall(async (req) => {
+  const ctx = requireRole(req, 'driver');
+  await rateLimit(ctx.uid, 'offerDriverRoute', 10, 3600);
+  const parsed = createSchema.extend({ rideType: z.enum(['mini', 'ac']).nullish() }).safeParse(req.data);
+  if (!parsed.success) invalid(parsed.error.issues[0]?.message ?? 'Invalid route.');
+  const driverSnap = await assertDriverCanTake(ctx.uid);
+  const d = parsed.data;
+  const departure = d.departTime ? nextDepartureMs(d.departTime, Date.now()) : null;
+  await assertFreeAt(ctx.uid, departure);
+  const rideType = d.rideType ?? ((driverSnap.get('vehicleCategory') as string | undefined) === 'ac' ? 'ac' : 'mini');
+  const ref = await newPool(ctx.uid, { ...d, rideType }, await poolDriverFor(ctx.uid, driverSnap, departure));
+  return { poolId: ref.id };
+});
+
+/**
+ * The clock: every booking whose car is due goes out, and every car still
+ * without a driver NO_DRIVER_ALERT_MS after it went out tells its riders. Also
+ * finishes any dispatch a crash left halfway — every booking keeps `dispatchAt`
+ * until it is settled.
  */
 export const dispatchSharedPools = onSchedule(
   { schedule: 'every 2 minutes', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
-    const due = await db.collection('sharedPools')
-      .where('dispatchAt', '<=', Timestamp.now())
-      .limit(50)
-      .get();
+    const now = Timestamp.now();
+    const [due, waiting] = await Promise.all([
+      db.collection('sharedPools').where('dispatchAt', '<=', now).limit(50).get(),
+      db.collection('sharedPools').where('noDriverCheckAt', '<=', now).limit(50).get(),
+    ]);
     for (const doc of due.docs) {
       try {
         await dispatchPool(doc.id);
       } catch (e) {
         logger.warn('sharedPools: dispatch tick failed', { poolId: doc.id, err: String(e) });
+      }
+    }
+    for (const doc of waiting.docs) {
+      try {
+        await doc.ref.update({ noDriverCheckAt: FieldValue.delete() });
+        const tripId = doc.get('tripId') as string | null;
+        const trip = tripId ? await db.doc(`trips/${tripId}`).get() : null;
+        if (trip?.get('status') !== 'requested') continue;
+        await sendToUsers(
+          (trip.get('poolMembers') as string[] | undefined) ?? [],
+          'Still finding a driver',
+          `${(doc.get('label') as string | null) ?? 'Your shared ride'}: no driver has accepted yet. Keep waiting — or leave free of charge from your ride.`,
+          { tripId: trip.id },
+        );
+      } catch (e) {
+        logger.warn('sharedPools: no-driver alert failed', { poolId: doc.id, err: String(e) });
       }
     }
   },

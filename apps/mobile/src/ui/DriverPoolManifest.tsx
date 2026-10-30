@@ -64,6 +64,8 @@ export function DriverPoolManifest({
   requestsOnly?: boolean;
 }) {
   const [riders, setRiders] = useState<PoolRiderView[] | null>(null);
+  // A shared pool's car: pickups and drop-offs in the order to make them.
+  const [stops, setStops] = useState<{ uid: string; kind: 'pickup' | 'dropoff' }[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<PoolJoinRequest[]>([]);
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -74,7 +76,11 @@ export function DriverPoolManifest({
     let alive = true;
     setLoading(true);
     api.getPoolRiders({ tripId })
-      .then((r) => { if (alive) setRiders(r.riders); })
+      .then((r) => {
+        if (!alive) return;
+        setRiders(r.riders);
+        setStops(r.stops ?? []);
+      })
       // A list we cannot read must not break the trip card it sits inside.
       .catch(() => { if (alive) setRiders(null); })
       .finally(() => { if (alive) setLoading(false); });
@@ -229,9 +235,25 @@ export function DriverPoolManifest({
         </Text>
         <Text style={styles.totalValue}>PKR {total}</Text>
       </View>
+      {stops.length > 0 && new Set(riders.map((r) => r.pickupAddress)).size > 1 ? (
+        <View style={styles.stops}>
+          <Text style={styles.stopsTitle}>Stops, in order</Text>
+          {stops.map((s, i) => {
+            const r = riders.find((x) => x.uid === s.uid);
+            if (!r) return null;
+            return (
+              <Text key={`${s.uid}-${s.kind}`} style={styles.stopLine} numberOfLines={1}>
+                {i + 1}. {s.kind === 'pickup' ? 'Pick up' : 'Drop'} {r.name}
+                {(s.kind === 'pickup' ? r.pickupAddress : r.dropoffAddress) ? ` · ${s.kind === 'pickup' ? r.pickupAddress : r.dropoffAddress}` : ''}
+              </Text>
+            );
+          })}
+        </View>
+      ) : null}
       <Text style={styles.note}>
-        Everyone rides to the same drop-off. You let them out one at a time and take each
-        person&apos;s fare from them — the ride only ends when the last one is out.
+        {stops.length > 0 && new Set(riders.map((r) => r.pickupAddress)).size > 1
+          ? 'Each rider gets in and out at their own stop. Take each person’s fare from them as you let them out — the ride only ends when the last one is out.'
+          : 'Everyone rides to the same drop-off. You let them out one at a time and take each person’s fare from them — the ride only ends when the last one is out.'}
       </Text>
     </View>
     </>
@@ -321,4 +343,7 @@ const styles = themed(() => StyleSheet.create({
   totalLabel: { color: colors.muted, fontSize: 12.5, fontWeight: '700' },
   totalValue: { color: colors.text, fontSize: 17, fontWeight: '900' },
   note: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  stops: { gap: 4, marginTop: 6 },
+  stopsTitle: { color: colors.text, fontSize: 12, fontWeight: '800' },
+  stopLine: { color: colors.text, fontSize: 12, lineHeight: 17 },
 }));

@@ -42,6 +42,7 @@ import { themed } from '../../src/theme';
 import { RIDE_TYPE_LABELS, type RideType } from '../../src/domain/types';
 import { PAKISTAN_CITIES } from '../../src/domain/intercityTypes';
 import { useCurrentLocation } from '../../src/hooks/location';
+import { useCancellationSettings } from '../../src/hooks/driver';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
@@ -109,6 +110,13 @@ function statusOf(p: SharedPool): { label: string; tone: 'wait' | 'go' | 'full' 
 }
 
 const errorText = (e: unknown) => (e instanceof FirebaseError ? e.message : 'Please try again.');
+
+/** The next moment at this clock time — today if still ahead, else tomorrow. */
+function nextAt(time: Date): number {
+  const d = new Date();
+  d.setHours(time.getHours(), time.getMinutes(), 0, 0);
+  return d.getTime() > Date.now() - 5 * 60_000 ? d.getTime() : d.getTime() + 24 * 3600_000;
+}
 
 export default function DailyTravelScreen() {
   const router = useRouter();
@@ -193,12 +201,18 @@ export default function DailyTravelScreen() {
 
   // ── The cards ─────────────────────────────────────────────────────────────
   const [pools, setPools] = useState<SharedPool[] | null>(null);
+  // A short walk away: met at the car's own pickup.
+  const [nearby, setNearby] = useState<SharedPool[]>([]);
   const [mine, setMine] = useState<SharedPool[] | null>(null);
   const [showMine, setShowMine] = useState(false);
   const [quote, setQuote] = useState<SharedFareQuote | null>(null);
   const [joining, setJoining] = useState<SharedPool | null>(null);
   const [sheet, setSheet] = useState<{ edit: SharedPool | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // "Leaving around" — optional; null is any time.
+  const [at, setAt] = useState<Date | null>(null);
+  const [timeOpen, setTimeOpen] = useState(false);
+  const cancellation = useCancellationSettings();
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
 
@@ -209,10 +223,19 @@ export default function DailyTravelScreen() {
       return;
     }
     api
-      .getSharedPools({ city, from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng } })
-      .then((r) => n === searchSeq.current && setPools(r.pools))
+      .getSharedPools({
+        city,
+        from: { lat: from.lat, lng: from.lng },
+        to: { lat: to.lat, lng: to.lng },
+        ...(at ? { at: nextAt(at) } : {}),
+      })
+      .then((r) => {
+        if (n !== searchSeq.current) return;
+        setPools(r.pools);
+        setNearby(r.nearby ?? []);
+      })
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
-  }, [city, from, to]);
+  }, [city, from, to, at]);
   useEffect(() => {
     setPools(null);
     loadPools();
@@ -273,7 +296,10 @@ export default function DailyTravelScreen() {
   async function join(p: SharedPool) {
     setBusy(p.id);
     try {
-      const res = await api.joinSharedPool({ poolId: p.id });
+      // On the route, at the rider's own stops; a short walk away, at the car's own.
+      const res = await api.joinSharedPool(
+        !p.nearby && from && to ? { poolId: p.id, pickup: from, dropoff: to } : { poolId: p.id },
+      );
       setJoining(null);
       announce(res);
       refresh();
@@ -445,6 +471,25 @@ export default function DailyTravelScreen() {
               </View>
             </View>
 
+            {/* Departure time — optional, for riders who are not flexible. */}
+            <View style={styles.timeRow}>
+              <Pressable
+                style={({ pressed }) => [styles.timeChip, at && styles.timeChipOn, pressed && { opacity: 0.85 }]}
+                onPress={() => setTimeOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={at ? `Leaving around ${clockLabel(toHHMM(at))}. Change` : 'Leaving at any time. Pick a time'}
+              >
+                <Text style={[styles.timeChipTxt, at && styles.timeChipTxtOn]}>
+                  {at ? `Leaving around ${clockLabel(toHHMM(at))}` : 'Leaving: any time'}
+                </Text>
+              </Pressable>
+              {at ? (
+                <Pressable onPress={() => setAt(null)} hitSlop={10} accessibilityLabel="Any time">
+                  <Text style={styles.cancelTxt}>Any time</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
             {field && (searching || suggestions.length > 0) ? (
               <View style={styles.predictions}>
                 {searching && suggestions.length === 0 ? (
@@ -502,6 +547,15 @@ export default function DailyTravelScreen() {
                     <Text style={styles.addTxt}>Start your own on this route — another time or name</Text>
                   </Pressable>
                 ) : null}
+                {nearby.length > 0 ? (
+                  <>
+                    <Text style={styles.blockLabel}>ALSO GOING YOUR WAY · A SHORT WALK</Text>
+                    <Text style={styles.metaTxt}>
+                      These leave from a little further away: you meet the car at its own pickup and get out at its drop-off.
+                    </Text>
+                    {nearby.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)}
+                  </>
+                ) : null}
               </>
             )}
           </>
@@ -522,8 +576,20 @@ export default function DailyTravelScreen() {
           setCityOpen(false);
         }}
       />
+      <TimeSheet
+        open={timeOpen}
+        value={at}
+        onClose={() => setTimeOpen(false)}
+        onPick={(d) => {
+          setAt(d);
+          setTimeOpen(false);
+        }}
+      />
       <JoinSheet
         pool={joining}
+        from={from}
+        to={to}
+        rates={cancellation}
         busy={joining !== null && busy === joining.id}
         onClose={() => setJoining(null)}
         onConfirm={(p) => void join(p)}
@@ -780,31 +846,40 @@ function SheetRow({ label, children }: { label: string; children: React.ReactNod
 /** Everything a rider agrees to before the seat is theirs. */
 function JoinSheet({
   pool: p,
+  from,
+  to,
+  rates,
   busy,
   onClose,
   onConfirm,
 }: {
   pool: SharedPool | null;
+  from: Place | null;
+  to: Place | null;
+  rates: { poolLeaveRate: number; poolLeaveArrivedRate: number };
   busy: boolean;
   onClose: () => void;
   onConfirm: (p: SharedPool) => void;
 }) {
   if (!p) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
   const later = p.state === 'gathering' && !!p.departTime;
+  // On the route the car collects you at your own stops; a short walk away, at its own.
+  const own = !p.nearby && from && to;
+  const pct = (r: number) => `${Math.round(r * 100)}%`;
   return (
     <Sheet open onClose={onClose}>
       <Text style={styles.sheetTitle}>{p.state === 'gathering' ? 'Book your seat' : 'Join this car'}</Text>
       <Text style={styles.sheetName} numberOfLines={2}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
-      <SheetRow label="PICKUP">
-        {p.pickup.address}{p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} from you` : ''}
+      <SheetRow label="YOUR PICKUP">
+        {own ? `${from.address} — the car collects you here` : `${p.pickup.address}${p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} walk from you` : ''}`}
       </SheetRow>
-      <SheetRow label="DROP-OFF">
-        {p.dropoff.address}{p.dropoffDistanceM !== null ? ` — ${distance(p.dropoffDistanceM)} from yours` : ''}
+      <SheetRow label="YOUR DROP-OFF">
+        {own ? to.address : `${p.dropoff.address}${p.dropoffDistanceM !== null ? ` — ${distance(p.dropoffDistanceM)} from yours` : ''}`}
       </SheetRow>
       <SheetRow label="WHEN">{departLine(p)}</SheetRow>
       <SheetRow label="YOUR FARE">
-        PKR {p.farePerSeat} now, cash to the driver. It only goes down as people join: PKR {p.fareLadder[1]} each for 2,
-        PKR {p.fareLadder[2]} for 3, PKR {p.fareLadder[3]} for 4.
+        PKR {p.farePerSeat} now, cash to the driver — your own route at the car’s size. It goes down as people join
+        (PKR {p.fareLadder[2]} with 3 in the car), and never above PKR {p.soloFare}, riding alone.
       </SheetRow>
       <SheetRow label="DRIVER">
         {p.driver
@@ -813,8 +888,10 @@ function JoinSheet({
             ? 'Not yet. Drivers are asked 10 minutes before the car leaves. Your ride is not confirmed until one accepts — we will notify you.'
             : 'Not yet. Drivers nearby are asked as soon as you join. Your ride is not confirmed until one accepts.'}
       </SheetRow>
-      <SheetRow label="CANCELLING">
-        Free until a driver accepts. After that, the usual cancellation fee applies.
+      <SheetRow label="LEAVING">
+        Free until a driver accepts. After that, {pct(rates.poolLeaveRate)} of your fare —{' '}
+        {pct(rates.poolLeaveArrivedRate)} once the driver is at the pickup. If someone else leaves and your share goes
+        up, you are told — and can leave free until a driver accepts.
       </SheetRow>
       <Pressable
         style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
@@ -993,6 +1070,53 @@ function RideSheet({
   );
 }
 
+/** "Leaving around" — for riders who are not flexible about when they go. */
+function TimeSheet({
+  open,
+  value,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  value: Date | null;
+  onClose: () => void;
+  onPick: (d: Date) => void;
+}) {
+  const [time, setTime] = useState(nextHalfHour);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (open) setTime(value ?? nextHalfHour());
+  }, [open, value]);
+
+  function picked(event: DateTimePickerEvent, d?: Date) {
+    if (Platform.OS === 'android') setPicking(false);
+    if (event.type === 'set' && d) setTime(d);
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose}>
+      <Text style={styles.sheetTitle}>Leaving around</Text>
+      {Platform.OS === 'ios' ? (
+        <DateTimePicker value={time} mode="time" display="spinner" textColor={colors.text} onChange={picked} />
+      ) : (
+        <>
+          <Pressable style={styles.timeBtn} onPress={() => setPicking(true)} accessibilityRole="button">
+            <Text style={styles.timeTxt}>{clockLabel(toHHMM(time))}</Text>
+            <Text style={styles.cancelTxt}>Change</Text>
+          </Pressable>
+          {picking ? <DateTimePicker value={time} mode="time" display="default" onChange={picked} /> : null}
+        </>
+      )}
+      <Text style={styles.metaTxt}>
+        Shows shared rides leaving within an hour of this time — and rides that leave on demand when it is soon.
+      </Text>
+      <Pressable style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]} onPress={() => onPick(time)}>
+        <Text style={styles.joinTxt}>Show rides around {clockLabel(toHHMM(time))}</Text>
+      </Pressable>
+    </Sheet>
+  );
+}
+
 /** Every city we list, searchable — the chosen one ticked. */
 function CityPicker({
   open,
@@ -1073,6 +1197,15 @@ const styles = themed(() => StyleSheet.create({
   /** A lime dot once the field holds a real place, not just typed words. */
   pinned: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
   fieldDivider: { height: 1, backgroundColor: colors.border, marginLeft: 39 },
+
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  timeChip: {
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  timeChipOn: { borderColor: colors.primary, backgroundColor: colors.glassLime },
+  timeChipTxt: { fontSize: 13, fontWeight: '800', color: colors.muted },
+  timeChipTxtOn: { color: colors.primary },
 
   predictions: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
   predictionRow: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border },

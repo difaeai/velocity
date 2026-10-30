@@ -1105,6 +1105,10 @@ export interface CancellationSettings {
   driverFeeRate: number;
   /** Outstanding debt (PKR) at which the account can no longer book or bid. */
   outstandingLimit: number;
+  /** Leaving a shared pool's car once a driver accepted, of the rider's own fare… */
+  poolLeaveRate: number;
+  /** …and once the driver is at the pickup. */
+  poolLeaveArrivedRate: number;
 }
 
 /**
@@ -1117,6 +1121,8 @@ export function useCancellationSettings(): CancellationSettings {
     passengerFeeRate: 0.05,
     driverFeeRate: 0.08,
     outstandingLimit: 300,
+    poolLeaveRate: 0.03,
+    poolLeaveArrivedRate: 0.05,
   });
   useEffect(() => {
     return onSnapshot(
@@ -1130,6 +1136,8 @@ export function useCancellationSettings(): CancellationSettings {
           passengerFeeRate: rate(s.get('passengerFeeRate'), 0.05),
           driverFeeRate: rate(s.get('driverFeeRate'), 0.08),
           outstandingLimit: typeof limit === 'number' && limit >= 0 ? limit : 300,
+          poolLeaveRate: rate(s.get('poolLeaveRate'), 0.03),
+          poolLeaveArrivedRate: rate(s.get('poolLeaveArrivedRate'), 0.05),
         });
       },
       () => undefined,

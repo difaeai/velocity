@@ -21,6 +21,7 @@ import {
   DriverPublicInfo, TripStatus, PaymentMethod, PAYMENT_METHODS, settlementChannel,
 } from '../domain/types';
 import {
+  MAX_POOL_RIDERS,
   MAX_SEATS,
   computeSettlement,
   fareBounds,
@@ -54,7 +55,8 @@ import { loadFareConfigFor } from '../fare/cityConfig';
 import { franchiseCutFor, franchiseRateFrom } from '../domain/franchise';
 import { notifyDailyRouteMatches } from '../dailyRoutes';
 import { alertOfflineDriversOnWhatsApp } from '../whatsapp/alerts';
-import { generateShareCode, writeTripDocuments } from './poolTripFactory';
+import { generateShareCode, openRequestDoc, writeTripDocuments } from './poolTripFactory';
+import { isSharedPoolCar, leaveSharedCar } from './poolLeave';
 import { claimGateFor, waitMessage } from '../pricing/claimGate';
 import { resolveSeatOccupant } from '../lib/seatGender';
 import { sharedRideFare } from '../fare/sharedRideFare';
@@ -751,9 +753,11 @@ export const acceptBid = onCall(async (req) => {
  *
  * The one write behind both ways a ride gets its driver — the passenger
  * accepting a counter-offer (`acceptBid`), and a driver taking the passenger's
- * own fare (`placeBid`), which needs no second yes from anybody.
+ * own fare (`placeBid`), which needs no second yes from anybody — and a
+ * shared pool's car going to the driver who accepted it ahead of time
+ * (sharedPools/), who said yes before it existed.
  */
-async function lockInBid(
+export async function lockInBid(
   tripId: string,
   bidId: string,
   actor: { by: 'passenger' | 'driver'; uid: string },
@@ -857,6 +861,9 @@ async function lockInBid(
         driverInfo,
         fare,
         ...(poolPerSeat !== null ? { poolPerSeatFare: poolPerSeat } : {}),
+        // A rider whose share rose before this had until now to leave free
+        // (trips/poolLeave); staying for the driver is their yes to it.
+        ...(tripSnap.get('poolFreeLeave') ? { poolFreeLeave: FieldValue.delete() } : {}),
         walletHold,
         // Co-riders can read the trip doc; with more than one aboard the
         // driver gets each number from getPoolRiders instead.
@@ -870,7 +877,8 @@ async function lockInBid(
     tx.set(bidRef, { ...(newBid ?? {}), status: 'accepted' }, { merge: true });
     tx.set(db.doc(`drivers/${driverInfo.driverId}`), { activeTripId: tripId }, { merge: true });
     tx.delete(db.doc(`openRequests/${tripId}`)); // no longer open
-    return { fare, driverId: driverInfo.driverId, passengerId };
+    // Everyone waiting in a shared car, not only whoever booked it first.
+    return { fare, driverId: driverInfo.driverId, passengerId, riders: poolMembers.length > 0 ? poolMembers : [passengerId] };
   });
 
   // Settled, not all: the ride is locked in by now, and a push that fails must
@@ -881,7 +889,14 @@ async function lockInBid(
     actor.by === 'passenger'
       ? sendToUser(result.driverId, '✅ Bid accepted!', `Your offer of PKR ${result.fare} was accepted. Head to the pickup point.`, { tripId })
       : null,
-    sendToUser(result.passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId }),
+    result.riders.length > 1
+      ? sendToUsers(
+        result.riders,
+        '🚗 Driver assigned!',
+        `${result.riders.length} riders, one car — your driver is heading to the pickup. Open the ride for the car and plate.`,
+        { tripId },
+      )
+      : sendToUser(result.passengerId, '🚗 Driver on the way!', `Your driver is heading to your pickup — PKR ${result.fare}`, { tripId }),
   ]);
 
   logger.info('Bid accepted', { tripId, fare: result.fare, driverId: result.driverId, by: actor.by });
@@ -1053,12 +1068,24 @@ export const cancelTrip = onCall(async (req) => {
   const parsed = cancelSchema.safeParse(req.data);
   if (!parsed.success) invalid('Provide a valid tripId.');
   const { tripId, reason } = parsed.data;
+  const tripRef = db.doc(`trips/${tripId}`);
+
+  // A rider in a shared pool's car LEAVES it — everyone else keeps their ride,
+  // which a cancel used to take from them. trips/poolLeave owns what it costs.
+  const pre = await tripRef.get();
+  if (
+    isSharedPoolCar(pre.data())
+    && pre.get('driverId') !== ctx.uid
+    && ((pre.get('poolMembers') as string[] | undefined) ?? []).includes(ctx.uid)
+  ) {
+    const left = await leaveSharedCar(ctx.uid, tripId);
+    return { ok: true, fee: left.fee, paidFromWallet: left.paidFromWallet, paidFromCredit: 0, outstanding: left.outstanding };
+  }
 
   // Admin-configured rates; read outside the transaction (config is not part of
   // the atomic set and a transactional read of it would only add contention).
   const settings = await getCancellationSettings();
 
-  const tripRef = db.doc(`trips/${tripId}`);
   const cancellerWalletRef = db.doc(`wallets/${ctx.uid}`);
 
   const outcome = await db.runTransaction(async (tx) => {
@@ -1079,6 +1106,11 @@ export const cancelTrip = onCall(async (req) => {
     if (status === 'in_progress' || status === 'completed' || status === 'cancelled') {
       throw new HttpsError('failed-precondition', `Cannot cancel a ${status} trip.`);
     }
+
+    // A driver walking away from a shared pool's car does not end its riders'
+    // ride: the car goes back to the other drivers, riders and fares untouched.
+    const rematch = ctx.uid === driverId && isSharedPoolCar(snap.data());
+    const hostSnap = rematch ? await tx.get(db.doc(`users/${passengerId}`)) : null;
 
     const cancelledByRole: 'passenger' | 'driver' = ctx.uid === driverId ? 'driver' : 'passenger';
     // The fare locked in at acceptBid is what both sides agreed to. Before a bid
@@ -1189,37 +1221,90 @@ export const cancelTrip = onCall(async (req) => {
       );
     }
 
-    tx.set(
-      tripRef,
-      {
-        status: 'cancelled' as TripStatus,
-        cancelledBy: ctx.uid,
-        cancelledByRole,
-        cancelledFrom: status,
-        cancelReason: reason ?? null,
-        cancellationFee: fee > 0
-          ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding }
-          : null,
-        walletHold: 0,
-        // How long the canceller had waited decides whether the helpline may take the fee off.
-        cancelledAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-    tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
     // Free the driver for their next accept — only from THIS trip.
     if (driverSnap?.get('activeTripId') === tripId) {
       tx.set(driverSnap.ref, { activeTripId: null }, { merge: true });
     }
     const coRiders = ((snap.get('poolMembers') as string[] | undefined) ?? [])
       .filter((member) => member !== passengerId);
-    for (const member of coRiders) {
-      tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
+
+    if (rematch) {
+      const trip = snap.data()!;
+      tx.set(
+        tripRef,
+        {
+          status: 'requested' as TripStatus,
+          driverId: null,
+          driverInfo: FieldValue.delete(),
+          driverPhone: FieldValue.delete(),
+          matchedAt: FieldValue.delete(),
+          arrivedAt: FieldValue.delete(),
+          fare: null,
+          walletHold: 0,
+          rematches: FieldValue.increment(1),
+          lastDriverCancel: { driverId, fee, at: FieldValue.serverTimestamp() },
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(db.doc(`trips/${tripId}/bids/${driverId}`), { status: 'withdrawn' }, { merge: true });
+      // Back in the feed exactly as a new car would be (trips/poolTripFactory).
+      tx.set(db.doc(`openRequests/${tripId}`), openRequestDoc(tripId, {
+        uid: passengerId,
+        rideType: trip.rideType as string,
+        fare: trip.offeredFare as number,
+        seats: (trip.seats as number | undefined) ?? 1,
+        passengerGender: (trip.passengerGender as string | undefined) ?? 'unspecified',
+        bookedForOther: trip.bookedForOther === true,
+        pool: true,
+        poolVisibility: (trip.poolVisibility as 'public' | 'private' | undefined) ?? 'public',
+        shareCode: (trip.shareCode as string | undefined) ?? null,
+        paymentMethod: (trip.paymentMethod as 'cash' | 'wallet' | undefined) ?? 'cash',
+        paymentMethods: (trip.paymentMethods as PaymentMethod[] | undefined) ?? ['cash'],
+        preferFemaleDriver: trip.preferFemaleDriver === true,
+        pickup: trip.pickup as { lat: number; lng: number; address?: string },
+        dropoff: trip.dropoff as { lat: number; lng: number; address?: string },
+        passengerName: (hostSnap?.get('name') as string | undefined) ?? (hostSnap?.get('displayName') as string | undefined),
+        passengerRating: hostSnap?.get('rating') as number | undefined,
+        passengerRatingCount: hostSnap?.get('ratingCount') as number | undefined,
+      }, {
+        poolVisibility: trip.poolVisibility ?? 'public',
+        shareCode: trip.shareCode ?? null,
+        maxPoolRiders: trip.maxPoolRiders ?? MAX_POOL_RIDERS,
+        poolPerSeatFare: trip.poolPerSeatFare ?? trip.offeredFare,
+        poolGenders: trip.poolGenders ?? {},
+        ...(typeof trip.poolDriverGross === 'number' ? { poolDriverGross: trip.poolDriverGross } : {}),
+      }, coRiders.length + 1));
+    } else {
+      tx.set(
+        tripRef,
+        {
+          status: 'cancelled' as TripStatus,
+          cancelledBy: ctx.uid,
+          cancelledByRole,
+          cancelledFrom: status,
+          cancelReason: reason ?? null,
+          cancellationFee: fee > 0
+            ? { amount: fee, rate, role: cancelledByRole, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding }
+            : null,
+          walletHold: 0,
+          // How long the canceller had waited decides whether the helpline may take the fee off.
+          cancelledAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(db.doc(`users/${passengerId}`), { activeTripId: null }, { merge: true });
+      for (const member of coRiders) {
+        tx.set(db.doc(`users/${member}`), { activeTripId: null }, { merge: true });
+      }
+      tx.delete(db.doc(`openRequests/${tripId}`));
     }
-    tx.delete(db.doc(`openRequests/${tripId}`));
 
     return {
+      rematch,
+      pickup: snap.get('pickup') as { lat: number; lng: number; address?: string },
+      rideType: snap.get('rideType') as string,
       passengerId,
       driverId,
       coRiders,
@@ -1236,6 +1321,29 @@ export const cancelTrip = onCall(async (req) => {
   const {
     passengerId, driverId, coRiders, cancelledByRole, fee, paidFromWallet, paidFromCredit, addedToOutstanding,
   } = outcome;
+
+  // A shared pool's car whose driver walked away: back to the other drivers.
+  if (outcome.rematch) {
+    await Promise.allSettled([
+      sendToUsers(
+        [passengerId, ...coRiders],
+        '🔁 Your driver cancelled',
+        'We are asking other drivers now. Your seat and your fare stay the same, and leaving is free until a new driver accepts.',
+        { tripId },
+      ),
+      broadcastTripToNearbyDrivers(tripId, outcome.pickup, true, outcome.rideType, { fare: outcome.fare }),
+      fee > 0
+        ? sendToUser(
+          ctx.uid,
+          '⚠️ Cancellation fee',
+          `PKR ${fee} for cancelling a shared ride you had accepted. The riders are being offered to other drivers.`,
+          { tripId },
+        )
+        : null,
+    ]);
+    logger.info('Shared car back to drivers after a driver cancel', { tripId, driver: ctx.uid, fee });
+    return { ok: true, fee, paidFromWallet, paidFromCredit, outstanding: addedToOutstanding };
+  }
 
   // The pushes go out together: one after another they held the canceller's
   // spinner for several seconds, which read as a Cancel button that did nothing.

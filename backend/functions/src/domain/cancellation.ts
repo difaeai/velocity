@@ -30,12 +30,21 @@ export interface CancellationSettings {
   driverFeeRate: number;
   /** Outstanding debt (PKR) at which the account is blocked until it settles. */
   outstandingLimit: number;
+  /**
+   * Leaving a shared pool's car (trips/poolLeave) after a driver accepted it,
+   * as a fraction of the leaver's OWN fare: while the driver is on the way…
+   */
+  poolLeaveRate: number;
+  /** …and once the driver is at the pickup. The owner's "3 to 5%". */
+  poolLeaveArrivedRate: number;
 }
 
 export const DEFAULT_CANCELLATION: CancellationSettings = {
   passengerFeeRate: 0.05,
   driverFeeRate: 0.08,
   outstandingLimit: 300,
+  poolLeaveRate: 0.03,
+  poolLeaveArrivedRate: 0.05,
 };
 
 /**
@@ -67,6 +76,8 @@ export async function getCancellationSettings(): Promise<CancellationSettings> {
       typeof limit === 'number' && Number.isFinite(limit) && limit >= 0
         ? Math.round(limit)
         : DEFAULT_CANCELLATION.outstandingLimit,
+    poolLeaveRate: safeRate(snap.get('poolLeaveRate'), DEFAULT_CANCELLATION.poolLeaveRate),
+    poolLeaveArrivedRate: safeRate(snap.get('poolLeaveArrivedRate'), DEFAULT_CANCELLATION.poolLeaveArrivedRate),
   };
 }
 

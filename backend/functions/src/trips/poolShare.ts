@@ -63,6 +63,7 @@ import {
   priceShareJoinerOnto,
 } from './enRoute';
 import type { CityFareConfig } from '../fare/fareEngine';
+import { priceJoin, sharedCarRiders, type RiderStops } from './poolPricing';
 
 /**
  * When a pool has a driver, so a new rider is the driver's decision.
@@ -295,6 +296,8 @@ async function seatRiderOnPool(
    * the person seated is the person the driver said yes to.
    */
   seat?: SeatOccupant,
+  /** A shared pool's rider: their own pickup, drop-off and solo fare. */
+  stops?: RiderStops | null,
 ): Promise<SeatResult> {
   const members = (snap.get('poolMembers') as string[] | undefined)
     ?? [snap.get('passengerId') as string];
@@ -347,8 +350,9 @@ async function seatRiderOnPool(
       // Free of charge: `userSnap` is already read above for the gender gate.
       coRiderRating: userSnap.get('coRiderRating') as number | undefined,
       coRiderRatingCount: userSnap.get('coRiderRatingCount') as number | undefined,
-      pickup: snap.get('pickup'),
-      dropoff: snap.get('dropoff'),
+      // A shared pool's rider is collected and dropped at their own stops.
+      pickup: stops?.pickup ?? snap.get('pickup'),
+      dropoff: stops?.dropoff ?? snap.get('dropoff'),
     }),
   ];
 
@@ -361,7 +365,16 @@ async function seatRiderOnPool(
     { uid: riderUid, name: firstNameOf(joinerName), gender: joinerGender },
     cfg,
   );
-  const perSeatFare = priced ? priced.joinerFare : tierFare;
+  // A shared pool's car: everyone pays their own route's fare at the car's
+  // tier, and the driver never loses by a join (trips/poolPricing).
+  const shared = !priced && typeof trip.sharedPoolId === 'string'
+    ? priceJoin(
+      sharedCarRiders(trip, members),
+      { uid: riderUid, soloFare: stops?.soloFare ?? soloFare },
+      trip.poolDriverGross as number | undefined,
+    )
+    : null;
+  const perSeatFare = priced ? priced.joinerFare : shared ? shared.joinerFare : tierFare;
 
   // Bump the running gender tally so the nearby feed reflects who's aboard.
   // Merge keeps the existing map and only touches the joiner's bucket.
@@ -391,10 +404,26 @@ async function seatRiderOnPool(
             genderComposition: computeGenderAccess(priced.male, priced.female, MAX_POOL_RIDERS, 'any'),
           }
         : {}),
+      ...(shared
+        ? {
+            poolFares: shared.fares,
+            poolDriverGross: shared.gross,
+            poolSoloFares: { [riderUid]: stops?.soloFare ?? soloFare },
+          }
+        : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
+  // Where the driver collects and drops them — coordinates stay off the trip
+  // document, which every rider in the car can read (see getPoolRiders).
+  if (shared && stops) {
+    tx.set(tripRef.collection('stops').doc(riderUid), {
+      pickup: stops.pickup,
+      dropoff: stops.dropoff,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
   // While a pool is still gathering, its openRequests mirror is what drivers
   // browse — so that mirror has to learn the job just grew. A driver deciding
   // on a ride needs to see three riders and three fares, not the one that was
@@ -408,6 +437,8 @@ async function seatRiderOnPool(
         poolPerSeatFare: tierFare,
         seats: newMembers.length,
         ...(genderBump ? { poolGenders: genderBump } : {}),
+        // What the driver really collects once riders pay their own fares.
+        ...(shared ? { poolDriverGross: shared.gross } : {}),
       },
       { merge: true },
     );
@@ -420,7 +451,7 @@ async function seatRiderOnPool(
     perSeatFare,
     members: newMembers,
     driverId: (snap.get('driverId') as string | null) ?? null,
-    fares: priced ? priced.fares : null,
+    fares: priced ? priced.fares : shared ? shared.fares : null,
   };
 }
 
@@ -545,6 +576,8 @@ export async function joinPoolTripAsRider(
   uid: string,
   tripRef: FirebaseFirestore.DocumentReference,
   bookedFor: BookedFor | null = null,
+  /** A shared pool's rider: their own pickup, drop-off and solo fare. */
+  stops: RiderStops | null = null,
 ): Promise<JoinOutcome> {
   const pre = await tripRef.get();
   const cfg = await loadFareConfig((pre.get('pickup') as { lat: number; lng: number } | undefined) ?? null);
@@ -597,7 +630,7 @@ export async function joinPoolTripAsRider(
       if (!withinJoinWindow(trip)) {
         throw new HttpsError('failed-precondition', WINDOW_CLOSED_MESSAGE);
       }
-      const seated = await seatRiderOnPool(tx, tripRef, snap, uid, cfg, seat);
+      const seated = await seatRiderOnPool(tx, tripRef, snap, uid, cfg, seat, stops);
       return { ...seated, alreadyJoined: false, pending: false, driverEarnExtra: null, driverTotal: null };
     }
 
@@ -651,10 +684,19 @@ export async function joinPoolTripAsRider(
     // total after minus their total now. The push used to quote the joiner's
     // per-seat fare as "more", which is not what the driver's total moves by.
     const priced = priceShareJoinerOnto(trip, { uid, name: riderName, gender: joinerGender }, cfg);
-    const fareIfSeated = priced ? priced.joinerFare : poolPerSeatFare(soloFare, members.length + 1);
+    const shared = !priced && typeof trip.sharedPoolId === 'string'
+      ? priceJoin(
+        sharedCarRiders(trip, members),
+        { uid, soloFare: stops?.soloFare ?? soloFare },
+        trip.poolDriverGross as number | undefined,
+      )
+      : null;
+    const fareIfSeated = priced
+      ? priced.joinerFare
+      : shared ? shared.joinerFare : poolPerSeatFare(soloFare, members.length + 1);
     const driverTotal = priced
       ? priced.gross
-      : poolPerSeatFare(soloFare, members.length + 1) * (members.length + 1);
+      : shared ? shared.gross : poolPerSeatFare(soloFare, members.length + 1) * (members.length + 1);
     const driverEarnExtra = driverTotal - agreedGrossOf(trip);
 
     const driverId = (snap.get('driverId') as string | null) ?? null;
@@ -686,6 +728,8 @@ export async function joinPoolTripAsRider(
        * the rules and the driver's UI to read.
        */
       objections:  [] as string[],
+      // A shared pool's rider is seated at their own stops once accepted.
+      ...(stops ? { stops } : {}),
       createdAt:   FieldValue.serverTimestamp(),
     });
 
@@ -857,7 +901,7 @@ export const driverRespondToPoolJoin = onCall(async (req) => {
     const seated = await seatRiderOnPool(tx, tripRef, snap, riderId, cfg, {
       seatGender: normalizeGender(reqSnap.get('riderGender')),
       bookedForOther: reqSnap.get('bookedForOther') === true,
-    });
+    }, (reqSnap.get('stops') as RiderStops | undefined) ?? null);
     tx.set(reqRef, {
       status: 'accepted',
       decidedAt: FieldValue.serverTimestamp(),

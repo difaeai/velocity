@@ -1064,9 +1064,12 @@ export const api = {
       city?: string;
       from?: { lat: number; lng: number };
       to?: { lat: number; lng: number };
+      /** Leaving around this time, epoch-ms. */
+      at?: number;
       mine?: boolean;
     },
-    { pools: SharedPool[] }
+    /** `nearby`: a short walk away, met at the car's own pickup. */
+    { pools: SharedPool[]; nearby?: SharedPool[] }
   >('getSharedPools'),
   /** Start a pool and take its first seat. */
   createSharedPool: callable<
@@ -1080,9 +1083,50 @@ export const api = {
     },
     SharedPoolSeat & { poolId: string }
   >('createSharedPool'),
-  joinSharedPool: callable<{ poolId: string }, SharedPoolSeat>('joinSharedPool'),
+  /** At the rider's own pickup and drop-off on the route; without them, the car's own ends. */
+  joinSharedPool: callable<
+    {
+      poolId: string;
+      pickup?: { lat: number; lng: number; address: string };
+      dropoff?: { lat: number; lng: number; address: string };
+    },
+    SharedPoolSeat
+  >('joinSharedPool'),
   /** Give back a booked seat — free, no driver has committed. */
   leaveSharedPool: callable<{ poolId: string }, { ok: boolean }>('leaveSharedPool'),
+  /** Leave a shared pool's car — any rider, the host too. Fee rules: trips/poolLeave. */
+  leaveSharedRide: callable<
+    { tripId: string },
+    { ok: boolean; fee: number; paidFromWallet: number; outstanding: number; remaining: number }
+  >('leaveSharedRide'),
+  // ── Driver side of shared pools ────────────────────────────────────────────
+  getDriverPools: callable<{ lat: number; lng: number }, { pools: DriverPoolView[] }>('getDriverPools'),
+  /** `matched`: a car already out, now yours. `accepted`: the next car, ahead of time. */
+  acceptSharedPool: callable<
+    { poolId: string },
+    { status: 'matched'; tripId: string } | { status: 'accepted'; departsAtMs: number | null }
+  >('acceptSharedPool'),
+  withdrawSharedPool: callable<{ poolId: string }, { ok: boolean }>('withdrawSharedPool'),
+  /** Shared rides along the driver's own route, around their time. */
+  findPoolsForRoute: callable<
+    {
+      pickup: { lat: number; lng: number; address: string };
+      dropoff: { lat: number; lng: number; address: string };
+      departTime?: string | null;
+    },
+    { pools: DriverPoolView[] }
+  >('findPoolsForRoute'),
+  /** Post the driver's own route as a shared ride, with them already its driver. */
+  offerDriverRoute: callable<
+    {
+      city: string;
+      label?: string | null;
+      departTime?: string | null;
+      pickup: { lat: number; lng: number; address: string };
+      dropoff: { lat: number; lng: number; address: string };
+    },
+    { poolId: string }
+  >('offerDriverRoute'),
   /** The creator renames, retimes, or removes it from their own list. */
   editSharedPool: callable<
     { poolId: string; label?: string | null; departTime?: string | null; remove?: boolean },
@@ -1156,7 +1200,13 @@ export const api = {
   >('askDriverEnRoutePickup'),
   getPoolRiders: callable<
     { tripId: string },
-    { riders: PoolRiderView[]; yourFare: number | null; driverGross: number | null }
+    {
+      riders: PoolRiderView[];
+      yourFare: number | null;
+      driverGross: number | null;
+      /** Pickups and drop-offs still to come, in the order to make them. */
+      stops?: { uid: string; kind: 'pickup' | 'dropoff' }[];
+    }
   >('getPoolRiders'),
 
   /**
@@ -2643,6 +2693,37 @@ export interface SharedPool {
   aboardTripId: string | null;
   /** This rider started the pool. */
   mine: boolean;
+  /** This rider's own route, alone — the most their share can ever be. */
+  soloFare: number;
+  /** The driver accepted the next car before it went out. */
+  driverAhead: boolean;
+  /** A short walk away: the rider meets the car at its own pickup and leaves at its drop-off. */
+  nearby: boolean;
+}
+
+/** A shared ride as a job for a driver — backend sharedPools `DriverPoolView`. */
+export interface DriverPoolView {
+  id: string;
+  label: string | null;
+  rideType: string;
+  pickup: { lat: number; lng: number; address: string };
+  dropoff: { lat: number; lng: number; address: string };
+  routeKm: number;
+  toPickupKm: number | null;
+  departTime: string | null;
+  departsAtMs: number | null;
+  riders: number;
+  seatsLeft: number;
+  /** What the car collects with the riders it has now. */
+  earnNow: number;
+  /** With every seat taken. */
+  earnIfFull: number;
+  /** Pickups and drop-offs in the order to make them. */
+  stops: { kind: 'pickup' | 'dropoff'; name: string; address: string }[];
+  /** This driver accepted it ahead of time. */
+  mine: boolean;
+  /** A car already out with nobody driving it: accepting takes it now. */
+  liveTripId: string | null;
 }
 
 /** seated: in the car · asked: waiting on the driver's yes · booked: a seat for the next car. */
