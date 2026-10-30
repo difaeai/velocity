@@ -240,6 +240,10 @@ export interface Trip {
    */
   poolRoster?: PoolRosterEntry[];
   poolFares?: Record<string, number>;
+  /** Set when a shared pool (Ride sharing) made this car — its riders leave by leaveSharedRide. */
+  sharedPoolId?: string;
+  /** Riders whose share rose when somebody left: they may leave free of charge. */
+  poolFreeLeave?: Record<string, boolean>;
   /** The corridor the driver is running, once en-route pickups are in play. */
   enRoute?: {
     active: boolean;

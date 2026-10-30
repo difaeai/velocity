@@ -40,7 +40,7 @@ import { ChatModal } from '../../../src/ui/ChatModal';
 import { PoolRidersCard, sharedRidersFrom } from '../../../src/ui/PoolRidersCard';
 import { PoolJoinRequestsCard } from '../../../src/ui/PoolJoinRequestsCard';
 import { EnRouteSavingsCard } from '../../../src/ui/EnRouteSavingsCard';
-import { RIDE_TYPE_LABELS, type TripStatus } from '../../../src/domain/types';
+import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../../src/domain/types';
 import { dashcamWatchable } from '../../../src/domain/dashcam';
 import { distanceMeters, formatDistance } from '../../../src/lib/geo';
 import { callInApp, useWarmRideLine } from '../../../src/lib/inAppCall';
@@ -208,6 +208,48 @@ export default function TripScreen() {
     });
     setCoRiders((cur) =>
       cur.map((c) => (c.uid === target.uid ? { ...c, alreadyRated: true } : c)),
+    );
+  }
+
+  /**
+   * What leaving a shared pool's car costs this rider right now — the backend's
+   * rule (trips/poolLeave): free before a driver accepts, or when somebody
+   * else's leaving raised their share; otherwise a share of their OWN fare.
+   */
+  function leaveRate(t: Trip, uid?: string): number {
+    if (t.status === 'requested' || (uid && t.poolFreeLeave?.[uid])) return 0;
+    return t.status === 'arrived' || t.status === 'in_progress'
+      ? cancellation.poolLeaveArrivedRate
+      : cancellation.poolLeaveRate;
+  }
+  function leaveFee(t: Trip, uid?: string): number {
+    const fare = t.poolFares?.[uid ?? ''] ?? t.poolPerSeatFare ?? t.fare ?? t.offeredFare;
+    return Math.round(fare * leaveRate(t, uid));
+  }
+
+  /** Leave a shared pool's car; everyone else keeps their ride. */
+  function confirmLeave() {
+    if (!trip) return;
+    const fee = leaveFee(trip, user?.uid);
+    Alert.alert(
+      fee > 0 ? `Leave this shared ride? It costs PKR ${fee}` : 'Leave this shared ride?',
+      fee > 0
+        ? `A driver has accepted this car, so leaving costs ${Math.round(leaveRate(trip, user?.uid) * 100)}% of your fare. Everyone else keeps their ride.`
+        : 'It is free. Everyone else keeps their ride.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: fee > 0 ? `Leave & pay PKR ${fee}` : 'Leave',
+          style: 'destructive',
+          onPress: () => {
+            setCancelling(true);
+            void run(async () => {
+              await api.leaveSharedRide({ tripId: trip.id });
+              router.replace('/passenger/daily-travel');
+            }).finally(() => setCancelling(false));
+          },
+        },
+      ],
     );
   }
 
@@ -474,6 +516,10 @@ export default function TripScreen() {
   const isHost = trip.passengerId === user?.uid;
   const poolRiderCount = trip.poolMembers?.length ?? 1;
   const poolSeatsFree = Math.max(0, (trip.maxPoolRiders ?? 4) - poolRiderCount);
+  // A shared pool's riders each pay their own route (backend trips/poolPricing).
+  const myPoolFare = trip.poolFares?.[user?.uid ?? ''] ?? trip.poolPerSeatFare ?? trip.fare ?? trip.offeredFare;
+  // Any rider of a shared pool's car may leave it — not only its host.
+  const sharedPoolCar = !!trip.sharedPoolId && trip.status !== 'completed' && trip.status !== 'cancelled';
 
   // The ten minutes a pool spends visible to riders going the same way. It runs
   // from the moment the ride is booked, alongside the search for a driver — the
@@ -515,7 +561,7 @@ export default function TripScreen() {
           {trip.pool && (
             <View style={styles.poolRideBanner}>
               <Text style={styles.poolRideBannerText}>
-                🔀 Shared · {poolRiderCount}/{trip.maxPoolRiders ?? 4} riders · PKR {trip.poolPerSeatFare ?? trip.offeredFare} each
+                🔀 Shared · {poolRiderCount}/{trip.maxPoolRiders ?? 4} riders · {trip.sharedPoolId ? `you pay PKR ${myPoolFare}` : `PKR ${trip.poolPerSeatFare ?? trip.offeredFare} each`}
               </Text>
               {/* Nobody could tell whether "shared" meant anything was actually
                   happening. It does: for these ten minutes the ride is on other
@@ -924,7 +970,7 @@ export default function TripScreen() {
                 being told the wrong number about their own money. */}
             <Text style={[styles.fare, { marginTop: 6 }]}>
               {trip.pool
-                ? `Your fare: ${trip.poolPerSeatFare ?? trip.fare} PKR${poolRiderCount > 1 ? ` · shared ${poolRiderCount} ways` : ''}`
+                ? `Your fare: ${trip.sharedPoolId ? myPoolFare : trip.poolPerSeatFare ?? trip.fare} PKR${poolRiderCount > 1 ? ` · shared ${poolRiderCount} ways` : ''}`
                 : `Fare: ${trip.fare} PKR`}
             </Text>
 
@@ -1105,7 +1151,22 @@ export default function TripScreen() {
                 🛡️ Safety Centre — call police 15, report a problem
               </Text>
             </Pressable>
-            {trip.status !== 'in_progress' && isHost && (
+            {sharedPoolCar ? (
+              <>
+                <PrimaryButton
+                  variant="secondary"
+                  label="Leave this shared ride"
+                  loading={cancelling}
+                  disabled={busy}
+                  onPress={confirmLeave}
+                />
+                <Text style={styles.cancelFeeNote}>
+                  {leaveFee(trip, user?.uid) > 0
+                    ? `Leaving now costs ${Math.round(leaveRate(trip, user?.uid) * 100)}% of your fare — PKR ${leaveFee(trip, user?.uid)}. Everyone else keeps their ride.`
+                    : 'Leaving now is free. Everyone else keeps their ride.'}
+                </Text>
+              </>
+            ) : trip.status !== 'in_progress' && isHost && (
               <>
                 <PrimaryButton
                   variant="secondary"

@@ -194,10 +194,31 @@ export function writeTripDocuments(
 
   tx.set(db.doc(`users/${seed.uid}`), { activeTripId: tripRef.id }, { merge: true });
 
-  // The public-safe feed approved online drivers read to discover work. Carries
-  // the passenger's display name and rating — never their uid, phone or photo.
-  tx.set(db.doc(`openRequests/${tripRef.id}`), {
-    tripId: tripRef.id,
+  tx.set(db.doc(`openRequests/${tripRef.id}`), openRequestDoc(tripRef.id, seed, poolFields, 1));
+
+  // Share-code → trip lookup, used by the invite link and the join flow.
+  if (isPool && shareCode) {
+    tx.set(db.doc(`poolShareCodes/${shareCode}`), {
+      tripId: tripRef.id,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
+
+/**
+ * The public-safe feed approved online drivers read to discover work. Carries
+ * the passenger's display name and rating — never their uid, phone or photo.
+ * Also what a shared car goes back to when its driver walks away (cancelTrip).
+ */
+export function openRequestDoc(
+  tripId: string,
+  seed: TripSeed,
+  poolFields: Record<string, unknown>,
+  riders: number,
+): Record<string, unknown> {
+  const isPool = seed.pool;
+  return {
+    tripId,
     rideType: seed.rideType,
     offeredFare: seed.fare,
     seats: seed.seats,
@@ -212,7 +233,7 @@ export function writeTripDocuments(
           ...poolFields,
           // Mirrored so the driver feed can say "1 rider now, up to 4" without
           // hard-coding the cap on the client.
-          poolRiders: 1,
+          poolRiders: riders,
         }
       : {}),
     paymentMethod: seed.paymentMethod,
@@ -223,13 +244,5 @@ export function writeTripDocuments(
     pickupGeohash: encodeGeohash(seed.pickup.lat, seed.pickup.lng, 6),
     ...(seed.commute ? { commute: true } : {}),
     createdAt: FieldValue.serverTimestamp(),
-  });
-
-  // Share-code → trip lookup, used by the invite link and the join flow.
-  if (isPool && shareCode) {
-    tx.set(db.doc(`poolShareCodes/${shareCode}`), {
-      tripId: tripRef.id,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-  }
+  };
 }

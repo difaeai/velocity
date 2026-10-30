@@ -381,7 +381,11 @@ export { getRouteMates, inviteRouteMates, getMyRideInvites, declineRideInvite } 
 // next riders two minutes later — the "Corporate & Students" screen.
 export {
   getSharedPools, createSharedPool, joinSharedPool, leaveSharedPool, editSharedPool, dispatchSharedPools,
+  getDriverPools, acceptSharedPool, withdrawSharedPool, findPoolsForRoute, offerDriverRoute,
 } from './sharedPools';
+// Any rider leaves a shared pool's car — not only its host, and without
+// cancelling everyone else's ride with theirs.
+export { leaveSharedRide } from './trips/poolLeave';
 
 // Usernames, and the personal fleet they address. A fleet fills a shared car
 // BEFORE a driver is asked — see fleet/index.ts for why that ordering is the

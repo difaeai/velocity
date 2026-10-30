@@ -149,6 +149,8 @@ const CALLABLE_FEATURE: Record<string, FeatureId> = {
   getSharedPools: FEATURE.sharedBook,
   createSharedPool: FEATURE.sharedBook,
   joinSharedPool: FEATURE.sharedJoin,
+  leaveSharedRide: FEATURE.booking,
+  acceptSharedPool: FEATURE.driverBid,
   joinPoolTrip: FEATURE.sharedJoin,
   joinPoolRide: FEATURE.sharedJoin,
   joinPoolRideRequest: FEATURE.sharedJoin,

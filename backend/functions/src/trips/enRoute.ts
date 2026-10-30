@@ -66,6 +66,7 @@ import {
   projectToCorridor,
   validateRoutePolyline,
 } from '../lib/corridor';
+import { orderStops } from './poolPricing';
 import { fetchRouteServerSide, serverRoutingConfigured } from '../lib/routes';
 import { enRouteRosterEntry, firstNameOf, isBoarded, rosterForTrip } from './poolRoster';
 import {
@@ -1430,18 +1431,31 @@ export const getPoolRiders = onCall(async (req) => {
     const soloFare = (trip.fare as number | null) ?? (trip.offeredFare as number) ?? 0;
     const perSeat = poolPerSeatFare(soloFare, Math.max(1, roster.length));
     const poolFares = (trip.poolFares as Record<string, number> | undefined) ?? {};
+    // A shared pool's riders stand at their own stops, kept off the trip doc.
+    const own = typeof trip.sharedPoolId === 'string'
+      ? new Map((await snap.ref.collection('stops').get()).docs.map((d) => [d.id, d.data()] as const))
+      : new Map<string, FirebaseFirestore.DocumentData>();
     riders = roster.map((r) => ({
       uid: r.uid,
       name: r.firstName,
       gender: r.gender,
-      pickup:  { ...(trip.pickup  as object ?? {}), address: r.pickupAddress  ?? undefined },
-      dropoff: { ...(trip.dropoff as object ?? {}), address: r.dropoffAddress ?? undefined },
+      pickup:  own.get(r.uid)?.pickup ?? { ...(trip.pickup  as object ?? {}), address: r.pickupAddress  ?? undefined },
+      dropoff: own.get(r.uid)?.dropoff ?? { ...(trip.dropoff as object ?? {}), address: r.dropoffAddress ?? undefined },
       kind: r.kind,
       fare: poolFares[r.uid] ?? perSeat,
       droppedAt: r.droppedAt ?? undefined,
       boardedAt: r.boardedAt ?? undefined,
     }));
   }
+
+  // The order the car collects and drops everyone — shortest path, each rider
+  // in before they are out (trips/poolPricing). Riders already out are done.
+  const located = riders.filter(
+    (r) => !r.droppedAt
+      && typeof r.pickup?.lat === 'number' && typeof r.pickup?.lng === 'number'
+      && typeof r.dropoff?.lat === 'number' && typeof r.dropoff?.lng === 'number',
+  ) as (RiderRow & { pickup: LatLng; dropoff: LatLng })[];
+  const stops = orderStops(located);
 
   // The driver's list is the one they work from at the kerb, so it carries the
   // full name and a number to ring when somebody is not where they said.
@@ -1488,5 +1502,7 @@ export const getPoolRiders = onCall(async (req) => {
     }),
     yourFare: riders.find((r) => r.uid === ctx.uid)?.fare ?? null,
     driverGross: isDriver ? (snap.get('poolDriverGross') ?? null) : null,
+    /** Every pickup and drop-off still to come, in the order to make them. */
+    stops,
   };
 });
