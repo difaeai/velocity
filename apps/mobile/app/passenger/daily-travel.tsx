@@ -41,7 +41,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FirebaseError } from 'firebase/app';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
@@ -94,16 +94,11 @@ function cityFromAddress(address: string | null | undefined): string | null {
 
 const clockOf = (ms: number) => clockLabel(toHHMM(new Date(ms))) ?? '';
 
-/**
- * The real car on every box and dialog (owner, 2026-10-30): a white sedan, no
- * badge, Pixabay image 3185869 (Pixabay Content License — commercial use, no
- * credit needed), trimmed to 720 px.
- */
-const CAR = require('../../assets/shared-ride-car.png') as number;
-/** The car's own width : height, so it never stretches. */
-const CAR_RATIO = 720 / 361;
 /** "Go" green — Join and the active light. */
 const GO = '#22c55e';
+/** The gender badge: women and men, as on the rest of the app's pink and blue. */
+const WOMEN = '#ec4899';
+const MEN = '#3b82f6';
 
 const errorText = (e: unknown) => (e instanceof FirebaseError ? e.message : 'Please try again.');
 
@@ -149,7 +144,9 @@ export default function DailyTravelScreen() {
   const cancellation = useCancellationSettings();
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
-  const searching = !!from && !!to;
+  // The owner's All: every ride in the city instead of the relevant ones.
+  const [all, setAll] = useState(false);
+  const searching = !all && !!from && !!to;
 
   const loadPools = useCallback(() => {
     const n = ++searchSeq.current;
@@ -157,11 +154,11 @@ export default function DailyTravelScreen() {
       .getSharedPools({
         city,
         ...(from ? { from: { lat: from.lat, lng: from.lng } } : {}),
-        ...(to ? { to: { lat: to.lat, lng: to.lng } } : {}),
+        ...(all ? { all: true } : to ? { to: { lat: to.lat, lng: to.lng } } : {}),
       })
       .then((r) => n === searchSeq.current && setPools(r.pools))
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
-  }, [city, from, to]);
+  }, [city, from, to, all]);
   // On focus and on every new search — and seats fill and cars leave while the rider watches.
   useFocusEffect(loadPools);
   useForegroundInterval(loadPools, 20_000);
@@ -316,9 +313,20 @@ export default function DailyTravelScreen() {
             <ArrowIcon size={22} color={colors.text} />
           </View>
         </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={1}>Ride sharing</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>Corporate, students & daily travel</Text>
+        {/* The owner's top row (2026-10-30): the heading, the city in the middle, then +. */}
+        <Text style={styles.title} numberOfLines={1}>Ride sharing</Text>
+        <View style={styles.headerMid}>
+          <Pressable
+            style={({ pressed }) => [styles.cityPill, pressed && { opacity: 0.85 }]}
+            onPress={() => setCityOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`City: ${cityName}. Change city`}
+          >
+            <Text style={styles.cityTxt} numberOfLines={1}>{cityName}</Text>
+            <View style={{ transform: [{ rotate: '90deg' }] }}>
+              <ArrowIcon size={12} color={colors.muted} />
+            </View>
+          </Pressable>
         </View>
         <Pressable
           style={({ pressed }) => [styles.plusBtn, pressed && { opacity: 0.85 }]}
@@ -344,21 +352,7 @@ export default function DailyTravelScreen() {
           </Pressable>
         ) : null}
 
-        {/* 1. The city, first and centred. */}
-        <Pressable
-          style={({ pressed }) => [styles.cityPill, pressed && { opacity: 0.85 }]}
-          onPress={() => setCityOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`City: ${cityName}. Change city`}
-        >
-          <DestinationPinIcon size={16} color={colors.text} accent={colors.primary} />
-          <Text style={styles.cityTxt}>{cityName}</Text>
-          <View style={{ transform: [{ rotate: '90deg' }] }}>
-            <ArrowIcon size={14} color={colors.muted} />
-          </View>
-        </Pressable>
-
-        {/* 2. Where to, then where from. */}
+        {/* The search box: drop-off, then pickup (the phone's location until typed). */}
         <RouteFields
           key={routeKey}
           cityName={cityName}
@@ -367,6 +361,8 @@ export default function DailyTravelScreen() {
           onTo={(p) => {
             // A new search shows its own boxes, never the last one's under its heading.
             if (p !== to) setPools(null);
+            // Choosing a drop-off is asking for the relevant ones, not All.
+            if (p) setAll(false);
             setTo(p);
           }}
           onFrom={(p) => {
@@ -377,13 +373,32 @@ export default function DailyTravelScreen() {
         />
         {to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
 
-        {/* 3. The boxes: every shared ride in the city, or — searched — the related ones. */}
+        {/* 3. The boxes: the relevant ones — from where the rider is, or their
+            search's — or, with All, every ride in the city. */}
+        <View style={styles.listHead}>
+          <Text style={[styles.blockLabel, styles.listHeading]} numberOfLines={1}>
+            {all ? `ALL IN ${cityName.toUpperCase()}` : searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : fromHeading(from, cityName)}
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.allChip, all && styles.allChipOn, pressed && { opacity: 0.85 }]}
+            onPress={() => {
+              setPools(null);
+              setAll((a) => !a);
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: all }}
+            accessibilityLabel={all ? 'Show the rides near you' : `Show every ride in ${cityName}`}
+          >
+            <Text style={[styles.allChipTxt, all && styles.allChipTxtOn]}>All</Text>
+          </Pressable>
+        </View>
         {pools === null ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
         ) : pools.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.hint}>
-              {searching ? 'No shared rides from your area yet.' : `No shared rides in ${cityName} yet.`}
+              {!all && (searching || from) ? 'No shared rides from your area yet.' : `No shared rides in ${cityName} yet.`}
             </Text>
             <Pressable
               style={({ pressed }) => [styles.joinBtn, styles.emptyBtn, pressed && { opacity: 0.85 }]}
@@ -395,14 +410,9 @@ export default function DailyTravelScreen() {
             </Pressable>
           </View>
         ) : (
-          <>
-            <Text style={styles.blockLabel}>
-              {searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : `SHARED RIDES IN ${cityName.toUpperCase()}`}
-            </Text>
-            <View style={styles.grid}>
-              {pools.map((p, i) => <PoolBox key={p.id} pool={p} index={i} beat={carBeat} onPress={() => setOpened(p)} />)}
-            </View>
-          </>
+          <View style={styles.grid}>
+            {pools.map((p, i) => <PoolBox key={p.id} pool={p} index={i} beat={carBeat} onPress={() => setOpened(p)} />)}
+          </View>
         )}
       </ScrollView>
 
@@ -471,6 +481,29 @@ const isActive = (p: SharedPool) => p.state === 'car' || (p.state === 'gathering
 /** Seats to be had: the owner's blinking green light and "Available" (2026-10-30). */
 const isAvailable = (p: SharedPool) => p.state !== 'full' && p.seatsLeft > 0;
 
+/** The list before a search: what leaves from where the rider is — "FROM GULBERG". */
+function fromHeading(from: Place | null, cityName: string): string {
+  if (!from) return `SHARED RIDES IN ${cityName.toUpperCase()}`;
+  const area = areaLabel(from.address);
+  return !area || area.toLowerCase() === cityName.toLowerCase() || area === 'Current location'
+    ? 'FROM YOUR LOCATION'
+    : `FROM ${area.toUpperCase()}`;
+}
+
+/** Who is sitting in it, top right (owner, 2026-10-30) — a shared ride is one gender. */
+function GenderBadge({ gender }: { gender: 'male' | 'female' }) {
+  const female = gender === 'female';
+  return (
+    <View
+      style={[styles.genderBadge, { backgroundColor: female ? WOMEN : MEN }]}
+      accessible
+      accessibilityLabel={female ? 'Women in this car' : 'Men in this car'}
+    >
+      <Text style={styles.genderBadgeTxt}>{female ? '♀' : '♂'}</Text>
+    </View>
+  );
+}
+
 /** The box's status, top left: a blinking green light and "Available", or "Full". */
 function StatusTag({ open }: { open: boolean }) {
   return (
@@ -482,11 +515,82 @@ function StatusTag({ open }: { open: boolean }) {
 }
 
 /**
- * The real car on a lime spotlight, its shadow under it. It drives in from the
- * left as `arrive` goes 0 → 1, and idles — a small bob — while its ride is active.
+ * The car from above — the owner's first car, back as the placeholder until a
+ * real one comes (2026-10-30): the driver's seat and four for riders, filled as
+ * people take them.
  */
-function ShowCar({ width, arrive, idle = false }: { width: number; arrive?: Animated.Value; idle?: boolean }) {
-  const height = width / CAR_RATIO;
+function CarSeats({ taken, total, driver, width = 240 }: { taken: number; total: number; driver: boolean; width?: number }) {
+  // Front passenger first, then the back row, left to right as you look at it.
+  const seats = [
+    { x: 126, y: 66, w: 34, h: 30 },
+    { x: 50, y: 22, w: 36, h: 24 },
+    { x: 50, y: 48, w: 36, h: 24 },
+    { x: 50, y: 74, w: 36, h: 24 },
+  ].slice(0, total);
+  return (
+    <View style={styles.carWrap} accessible accessibilityLabel={`${taken} of ${total} seats taken`}>
+      <Svg width={width} height={width / 2} viewBox="0 0 240 120">
+        {/* Wheels and mirrors first, so the body sits over them. */}
+        {[48, 162].flatMap((x) => [5, 101].map((y) => (
+          <Rect key={`${x}-${y}`} x={x} y={y} width={34} height={14} rx={5} fill={colors.muted} />
+        )))}
+        <Rect x={160} y={4} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
+        <Rect x={160} y={107} width={12} height={9} rx={4} fill={colors.glassLimeBorder} />
+        {/* Body, nose to the right. */}
+        <Path
+          d="M30 12 H188 C214 12 232 32 232 60 C232 88 214 108 188 108 H30 C17 108 8 99 8 86 V34 C8 21 17 12 30 12 Z"
+          fill={colors.glassLime}
+          stroke={colors.glassLimeBorder}
+          strokeWidth={2}
+        />
+        {/* Windscreen and rear glass. */}
+        <Path d="M172 22 L192 28 Q197 60 192 92 L172 98 Z" fill={colors.border} />
+        <Path d="M38 26 L26 32 Q22 60 26 88 L38 94 Z" fill={colors.border} />
+        {/* The driver's seat: dashed until a driver accepts. */}
+        <Rect
+          x={126} y={24} width={34} height={30} rx={9}
+          fill={driver ? colors.muted : 'none'}
+          stroke={colors.muted}
+          strokeWidth={2}
+          strokeDasharray={driver ? undefined : '4 3'}
+        />
+        {driver ? <Circle cx={143} cy={39} r={6} fill="#0b1a00" /> : null}
+        <Circle cx={166} cy={39} r={7} stroke={colors.muted} strokeWidth={3} fill="none" />
+        {seats.map((s, i) => (i < taken ? (
+          <Rect key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8} fill={colors.primary} />
+        ) : (
+          <Rect
+            key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={8}
+            fill="none" stroke={colors.primary} strokeWidth={2} strokeDasharray="4 3"
+          />
+        )))}
+        {seats.slice(0, taken).map((s, i) => (
+          <Circle key={`h${i}`} cx={s.x + s.w / 2} cy={s.y + s.h / 2} r={6} fill="#0b1a00" />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+/**
+ * The drawn car, moving: it drives in from the left as `arrive` goes 0 → 1, and
+ * idles — a small bob — while its ride is active.
+ */
+function DrawnCar({
+  width,
+  taken,
+  total,
+  driver,
+  arrive,
+  idle = false,
+}: {
+  width: number;
+  taken: number;
+  total: number;
+  driver: boolean;
+  arrive?: Animated.Value;
+  idle?: boolean;
+}) {
   const [still] = useState(() => new Animated.Value(1));
   const [bob] = useState(() => new Animated.Value(0));
   const shown = arrive ?? still;
@@ -503,43 +607,25 @@ function ShowCar({ width, arrive, idle = false }: { width: number; arrive?: Anim
     return () => loop.stop();
   }, [bob, idle]);
   return (
-    <View style={{ width, height: height + 8, alignSelf: 'center' }}>
-      <Svg width={width} height={height + 8} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <RadialGradient id="spot" cx="50%" cy="55%" rx="55%" ry="55%">
-            <Stop offset="0" stopColor={colors.primary} stopOpacity={0.26} />
-            <Stop offset="1" stopColor={colors.primary} stopOpacity={0} />
-          </RadialGradient>
-          <RadialGradient id="shade" cx="50%" cy="50%" rx="50%" ry="50%">
-            <Stop offset="0" stopColor="#000000" stopOpacity={0.6} />
-            <Stop offset="1" stopColor="#000000" stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Rect width={width} height={height + 8} fill="url(#spot)" />
-        <Ellipse cx={width / 2} cy={height + 2} rx={width * 0.46} ry={6} fill="url(#shade)" />
-      </Svg>
-      <Animated.Image
-        source={CAR}
-        resizeMode="contain"
-        accessible={false}
-        style={{
-          width,
-          height,
-          opacity: shown,
-          transform: [
-            { translateX: shown.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.35, 0] }) },
-            { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -1.5] }) },
-          ],
-        }}
-      />
-    </View>
+    <Animated.View
+      style={{
+        alignSelf: 'center',
+        opacity: shown,
+        transform: [
+          { translateX: shown.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.35, 0] }) },
+          { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -1.5] }) },
+        ],
+      }}
+    >
+      <CarSeats taken={taken} total={total} driver={driver} width={width} />
+    </Animated.View>
   );
 }
 
 /**
  * A ride's real cars (owner, 2026-10-30): the accepted driver's own, else the
  * nearby cars that could come, turning over on each `beat` — or, with none,
- * the stock car. It drives in with `arrive`, as the stock car does.
+ * the drawn car with its seats. It drives in with `arrive`, as the drawn car does.
  */
 function RideCars({
   photos,
@@ -547,13 +633,20 @@ function RideCars({
   width,
   arrive,
   idle,
+  taken,
+  total,
+  driver,
 }: {
   photos: string[];
   beat: number;
-  /** The stock car's width; a photo fills its box. */
+  /** The drawn car's width; a photo fills its box. */
   width: number;
   arrive?: Animated.Value;
   idle?: boolean;
+  /** For the drawn car: its seats, and whether a driver has it. */
+  taken: number;
+  total: number;
+  driver: boolean;
 }) {
   const [still] = useState(() => new Animated.Value(1));
   const [fade] = useState(() => new Animated.Value(1));
@@ -571,7 +664,9 @@ function RideCars({
     return () => out.stop();
   }, [beat, firstBeat, count, fade]);
 
-  if (count === 0) return <ShowCar width={width * 0.9} arrive={arrive} idle={idle} />;
+  if (count === 0) {
+    return <DrawnCar width={width} taken={taken} total={total} driver={driver} arrive={arrive} idle={idle} />;
+  }
   const shownIn = arrive ?? still;
   return (
     <Animated.View
@@ -643,8 +738,18 @@ function PoolBox({ pool: p, index, beat, onPress }: { pool: SharedPool; index: n
         accessibilityLabel={`${isAvailable(p) ? 'Available. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
       >
         <StatusTag open={isAvailable(p)} />
+        {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
         <View style={styles.boxCar}>
-          <RideCars photos={p.carPhotos ?? []} beat={beat} width={136} arrive={arrive} idle={active} />
+          <RideCars
+            photos={p.carPhotos ?? []}
+            beat={beat}
+            width={128}
+            arrive={arrive}
+            idle={active}
+            taken={p.state === 'full' ? p.seatsTotal : p.riders}
+            total={p.seatsTotal}
+            driver={!!p.driver}
+          />
         </View>
         <View>
           <View style={styles.boxLine}>
@@ -936,8 +1041,18 @@ function RideDialog({
           ]}
         >
           <StatusTag open={isAvailable(p)} />
+          {p.riderGender ? <GenderBadge gender={p.riderGender} /> : null}
           <View style={styles.boxCar}>
-            <RideCars photos={p.carPhotos ?? []} beat={beat} width={240} arrive={pop} idle={isActive(p)} />
+            <RideCars
+              photos={p.carPhotos ?? []}
+              beat={beat}
+              width={240}
+              arrive={pop}
+              idle={isActive(p)}
+              taken={p.state === 'full' ? p.seatsTotal : p.riders}
+              total={p.seatsTotal}
+              driver={!!p.driver}
+            />
             {p.carPhotos?.length ? (
               <Text style={styles.carCaption}>{p.carIsDrivers ? 'The driver’s car' : 'Cars nearby that could come'}</Text>
             ) : null}
@@ -1199,11 +1314,8 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
           )}
 
           <Text style={styles.sheetLabel}>AVAILABLE SEATS</Text>
-          <ShowCar width={200} />
-          <View style={styles.seatsRow}>
-            <SeatIcons taken={1} total={4} />
-            <Text style={styles.seatsTxt}>3 seats available — one is yours</Text>
-          </View>
+          <CarSeats taken={1} total={4} driver={false} width={220} />
+          <Text style={styles.seatsTxt}>3 seats available — one is yours</Text>
         </>
       )}
 
@@ -1266,15 +1378,16 @@ function CityPicker({
 const styles = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn: { padding: 4 },
-  title: { fontSize: 19, fontWeight: '900', color: colors.text },
-  subtitle: { fontSize: 12.5, color: colors.muted, fontWeight: '700' },
+  title: { fontSize: 17, fontWeight: '900', color: colors.text, flexShrink: 0 },
+  /** The city, centred between the heading and +. */
+  headerMid: { flex: 1, alignItems: 'center', minWidth: 0 },
   plusBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.btnBg,
+    width: 42, height: 42, borderRadius: 21, backgroundColor: colors.btnBg,
     alignItems: 'center', justifyContent: 'center',
   },
   scroll: { padding: 16, gap: 14, paddingBottom: 40 },
@@ -1287,11 +1400,11 @@ const styles = themed(() => StyleSheet.create({
   activeTxt: { flex: 1, fontSize: 14.5, fontWeight: '900', color: '#0b1a00' },
 
   cityPill: {
-    alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%',
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
     borderWidth: 1, borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
   },
-  cityTxt: { fontSize: 16, fontWeight: '900', color: colors.text },
+  cityTxt: { flexShrink: 1, fontSize: 14, fontWeight: '900', color: colors.text },
 
   routeBox: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
@@ -1310,6 +1423,16 @@ const styles = themed(() => StyleSheet.create({
   empty: { gap: 4 },
   emptyBtn: { flexDirection: 'row', gap: 8 },
 
+  /** The boxes' heading, with the owner's All on the right. */
+  listHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  listHeading: { flex: 1, marginTop: 0 },
+  allChip: {
+    paddingHorizontal: 16, paddingVertical: 6, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.glassLimeBorder, backgroundColor: colors.glassLime,
+  },
+  allChipOn: { backgroundColor: colors.btnBg, borderColor: colors.btnBg },
+  allChipTxt: { fontSize: 13, fontWeight: '900', color: colors.text },
+  allChipTxtOn: { color: colors.btnText },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
   boxWrap: { width: '48.5%' },
   box: {
@@ -1331,6 +1454,12 @@ const styles = themed(() => StyleSheet.create({
   statusFull: { color: colors.danger },
   /** Room above the car for the status. */
   boxCar: { paddingTop: 16 },
+  /** ♀ / ♂ over the top-right corner of a box or the dialog. */
+  genderBadge: {
+    position: 'absolute', top: 7, right: 7, zIndex: 2,
+    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+  },
+  genderBadgeTxt: { color: '#ffffff', fontSize: 15, fontWeight: '900', lineHeight: 18 },
   /** A real car's photo: the driver's own, or one of the cars nearby. */
   carPhoto: { width: '100%', aspectRatio: 1.6, borderRadius: 12, backgroundColor: colors.background },
   carDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 5 },
@@ -1354,7 +1483,7 @@ const styles = themed(() => StyleSheet.create({
     borderTopLeftRadius: 4, borderTopRightRadius: 4, borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
   },
   seatIconTaken: { backgroundColor: colors.primary },
-  seatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  carWrap: { alignItems: 'center', paddingVertical: 2 },
   fareBig: { fontSize: 30, fontWeight: '900', color: colors.primary, textAlign: 'center', marginTop: 4 },
   fareSub: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center', marginTop: -4 },
   seatsTxt: { fontSize: 14, fontWeight: '900', color: colors.text, textAlign: 'center' },
