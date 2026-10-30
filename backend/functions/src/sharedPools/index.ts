@@ -94,8 +94,11 @@ const DRIVER_RADIUS_M = 15_000;
 const DRIVER_ROUTE_RADIUS_M = 1500;
 /** A driver who posts "leaving now" is held to it this long. */
 const NOW_OFFER_MS = 2 * 60 * 60 * 1000;
-/** Seats one rider may hold at once — there and back on the same day. */
-const MAX_BOOKINGS_PER_RIDER = 2;
+/**
+ * Seats one rider may hold at once (owner, 2026-10-30): several shared rides,
+ * to be sure of one — confirming a car gives the rest back (confirmSharedSeat).
+ */
+const MAX_BOOKINGS_PER_RIDER = 5;
 /** A pool nobody has booked for this long stops turning up in search. */
 const STALE_POOL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Pakistan Standard Time, UTC+5 all year (no daylight saving since 2009). */
@@ -880,7 +883,7 @@ async function seatOnPool(
 
   const held = await db.collection('sharedPools').where('bookingUids', 'array-contains', uid).get();
   if (held.docs.filter((d) => d.id !== poolId).length >= MAX_BOOKINGS_PER_RIDER) {
-    throw new HttpsError('failed-precondition', 'You already hold seats on two shared rides. Cancel one first.');
+    throw new HttpsError('failed-precondition', `You already hold seats on ${MAX_BOOKINGS_PER_RIDER} shared rides. Cancel one first.`);
   }
 
   // The first seat of a new car re-prices the car's own route, so a pool's
@@ -1060,11 +1063,19 @@ export const leaveSharedPool = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = z.object({ poolId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a shared ride.');
-  const poolRef = db.doc(`sharedPools/${parsed.data.poolId}`);
-  const before = (await poolRef.get()).data() ?? {};
-  if (!(await releaseBooking(poolRef, ctx.uid))) {
+  if (!(await giveBackSeat(db.doc(`sharedPools/${parsed.data.poolId}`), ctx.uid))) {
     throw new HttpsError('failed-precondition', 'You hold no seat here. If you are in the car, leave from your ride.');
   }
+  return { ok: true };
+});
+
+/**
+ * Give back a rider's booked seat on a pool, and tell the riders whose
+ * estimates went back up the tiers. False when they held no seat there.
+ */
+async function giveBackSeat(poolRef: FirebaseFirestore.DocumentReference, uid: string): Promise<boolean> {
+  const before = (await poolRef.get()).data() ?? {};
+  if (!(await releaseBooking(poolRef, uid))) return false;
   // The others' estimates move back up the tiers: tell whoever's went up.
   const after = (await poolRef.get()).data() ?? {};
   const was = priceInOrder(bookedRiders((before.bookings as Booking[] | undefined) ?? [], before)).fares;
@@ -1077,8 +1088,8 @@ export const leaveSharedPool = onCall(async (req) => {
       `${(after.label as string | null) ?? 'Your shared ride'}: your estimated share is now PKR ${fare} — never more than riding alone. Cancelling stays free.`,
       'ride',
     )));
-  return { ok: true };
-});
+  return true;
+}
 
 const editSchema = z.object({
   poolId: docId,
@@ -1489,20 +1500,30 @@ export const startSharedRide = onCall(async (req) => {
   return { ok: true };
 });
 
-/** A rider answers the start prompt: yes, I am coming. Cancel goes through leaveSharedRide. */
+/**
+ * A rider answers the start prompt: yes, I am coming. Cancel goes through
+ * leaveSharedRide. Saying yes to one car ends the rider's seats on every other
+ * shared ride at once (owner, 2026-10-30): they booked those to be sure of one.
+ */
 export const confirmSharedSeat = onCall(async (req) => {
   const ctx = requireAuth(req);
   const parsed = z.object({ tripId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a ride.');
   const tripRef = db.doc(`trips/${parsed.data.tripId}`);
-  await db.runTransaction(async (tx) => {
+  const poolId = await db.runTransaction(async (tx) => {
     const t = (await tx.get(tripRef)).data();
     if (!t?.poolStartedAt || !((t.poolMembers as string[] | undefined) ?? []).includes(ctx.uid)) {
       throw new HttpsError('failed-precondition', 'There is nothing to confirm on this ride.');
     }
     tx.update(tripRef, { [`poolConfirm.${ctx.uid}`]: 'confirmed', updatedAt: FieldValue.serverTimestamp() });
+    return t.sharedPoolId as string;
   });
-  return { ok: true };
+  const held = await db.collection('sharedPools').where('bookingUids', 'array-contains', ctx.uid).get();
+  let released = 0;
+  for (const d of held.docs) {
+    if (d.id !== poolId && (await giveBackSeat(d.ref, ctx.uid).catch(() => false))) released++;
+  }
+  return { ok: true, released };
 });
 
 /**

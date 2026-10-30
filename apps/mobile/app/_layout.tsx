@@ -27,6 +27,7 @@ import {
 } from '../src/theme';
 import { BrandSplash } from '../src/ui/BrandSplash';
 import { IncomingCallWatcher } from '../src/ui/IncomingCallWatcher';
+import { SharedRideConfirmGate } from '../src/ui/SharedRideConfirmGate';
 import { UpdateGate } from '../src/ui/UpdateGate';
 import { Text } from '../src/ui/Text';
 
@@ -182,6 +183,8 @@ export default function RootLayout() {
             reappear because somebody tapped the moon icon. */}
         <UpdateGate />
         <IncomingCallWatcher />
+        {/* A started shared car's "are you coming?" — over whatever screen is open. */}
+        <SharedRideConfirmGate />
         <Fragment key={`${themeVersion}:${languageVersion}`}>
           <Slot />
         </Fragment>
