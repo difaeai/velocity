@@ -318,7 +318,13 @@ describe('6 · the driver starts the car; riders confirm', () => {
       stops: { uid: string; kind: string }[];
     };
     expect((await manifest()).stops).toEqual([]);
-    await confirmSharedSeat.run(makeReq({ tripId: made.tripId }, 'amna'));
+    // Amna also holds a seat on a later ride, to be sure of one; saying yes to this car gives it back.
+    const later = (await createSharedPool.run(makeReq({
+      city: 'islamabad', rideType: 'mini', departTime: pktClock(3 * 3600_000), pickup: A_PICKUP, dropoff: A_DROPOFF,
+    }, 'erum'))) as { poolId: string };
+    await joinSharedPool.run(makeReq({ poolId: later.poolId }, 'amna'));
+    expect(await confirmSharedSeat.run(makeReq({ tripId: made.tripId }, 'amna'))).toMatchObject({ released: 1 });
+    expect((await db().doc(`sharedPools/${later.poolId}`).get()).get('bookingUids')).toEqual(['erum']);
     const m = await manifest();
     expect(m.stops.map((s) => `${s.kind}:${s.uid}`)).toEqual(['pickup:amna', 'dropoff:amna']);
     expect(m.riders.find((r) => r.uid === 'bushra')!.confirm).toBe('pending');

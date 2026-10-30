@@ -1101,7 +1101,11 @@ export const api = {
   /** The driver sets off to collect a shared car's riders; each is asked to confirm. */
   startSharedRide: callable<{ tripId: string }, { ok: boolean }>('startSharedRide'),
   /** A rider says yes, I am coming. (No is leaveSharedRide.) */
-  confirmSharedSeat: callable<{ tripId: string }, { ok: boolean }>('confirmSharedSeat'),
+  confirmSharedSeat: callable<
+    { tripId: string },
+    /** `released`: seats on other shared rides given back by saying yes to this one. */
+    { ok: boolean; released?: number }
+  >('confirmSharedSeat'),
   /** Leave a shared pool's car — any rider, the host too. Fee rules: trips/poolLeave. */
   leaveSharedRide: callable<
     { tripId: string },
