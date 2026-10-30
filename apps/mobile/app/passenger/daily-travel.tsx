@@ -49,6 +49,8 @@ import { PAKISTAN_CITIES } from '../../src/domain/intercityTypes';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useCancellationSettings } from '../../src/hooks/driver';
 import { useActiveTrip } from '../../src/hooks/useActiveTrip';
+import { useTrip } from '../../src/hooks/useTrip';
+import { poolLeaveFee } from '../../src/lib/poolLeave';
 import { useForegroundInterval } from '../../src/hooks/useForegroundInterval';
 import { fetchPlaceDetail, usePlacesAutocomplete, type PlacePrediction } from '../../src/hooks/places';
 import { areaLabel } from '../../src/lib/areaLabel';
@@ -245,16 +247,36 @@ export default function DailyTravelScreen() {
   }
 
   function leave(p: SharedPool) {
-    Alert.alert('Cancel your seat?', 'It is free — no driver has accepted yet.', [
-      { text: 'Keep it', style: 'cancel' },
+    Alert.alert('Leave this shared ride?', 'It is free — no driver has accepted yet.', [
+      { text: 'Stay', style: 'cancel' },
       {
-        text: 'Cancel seat',
+        text: 'Leave',
         style: 'destructive',
         onPress: () => {
-          api.leaveSharedPool({ poolId: p.id }).then(closeAndReload).catch((e) => Alert.alert('Could not cancel', errorText(e)));
+          api.leaveSharedPool({ poolId: p.id }).then(closeAndReload).catch((e) => Alert.alert('Could not leave', errorText(e)));
         },
       },
     ]);
+  }
+
+  /** Leave a car that is already out, from its box — no ride screen needed. */
+  function leaveCar(tripId: string, fee: number) {
+    Alert.alert(
+      fee > 0 ? `Leave this shared ride? It costs PKR ${fee}` : 'Leave this shared ride?',
+      fee > 0
+        ? 'A driver has accepted this car, so leaving costs a share of your fare. Everyone else keeps their ride.'
+        : 'It is free. Everyone else keeps their ride.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: fee > 0 ? `Leave & pay PKR ${fee}` : 'Leave',
+          style: 'destructive',
+          onPress: () => {
+            api.leaveSharedRide({ tripId }).then(closeAndReload).catch((e) => Alert.alert('Could not leave', errorText(e)));
+          },
+        },
+      ],
+    );
   }
 
   function remove(p: SharedPool) {
@@ -393,6 +415,7 @@ export default function DailyTravelScreen() {
       />
       <JoinSheet
         pool={opened}
+        uid={user?.uid}
         from={from}
         to={to}
         rates={cancellation}
@@ -400,6 +423,7 @@ export default function DailyTravelScreen() {
         onClose={() => setOpened(null)}
         onJoin={(p) => void join(p)}
         onLeave={leave}
+        onLeaveCar={leaveCar}
         onOpenRide={openRide}
         onEdit={edit}
         onRemove={remove}
@@ -729,10 +753,12 @@ function SheetRow({ label, children }: { label: string; children: React.ReactNod
 
 /**
  * A box, opened: the ride in full, and what this rider can do with it — join,
- * cancel their seat, open the ride they are on, or (theirs) edit or delete it.
+ * leave (a booked seat or a car already out, right here), open the ride they
+ * are on, or (theirs) edit or delete it.
  */
 function JoinSheet({
   pool: p,
+  uid,
   from,
   to,
   rates,
@@ -740,11 +766,13 @@ function JoinSheet({
   onClose,
   onJoin,
   onLeave,
+  onLeaveCar,
   onOpenRide,
   onEdit,
   onRemove,
 }: {
   pool: SharedPool | null;
+  uid: string | undefined;
   from: Place | null;
   to: Place | null;
   rates: { poolLeaveRate: number; poolLeaveArrivedRate: number };
@@ -752,11 +780,15 @@ function JoinSheet({
   onClose: () => void;
   onJoin: (p: SharedPool) => void;
   onLeave: (p: SharedPool) => void;
+  onLeaveCar: (tripId: string, fee: number) => void;
   onOpenRide: (tripId: string) => void;
   onEdit: (p: SharedPool) => void;
   onRemove: (p: SharedPool) => void;
 }) {
+  // The car this rider is in: what leaving it costs depends on where it is.
+  const { trip } = useTrip(p?.aboardTripId ?? undefined);
   if (!p) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
+  const leaveFee = trip && trip.id === p.aboardTripId ? poolLeaveFee(trip, uid, rates) : null;
   const later = p.state === 'gathering' && !!p.departTime;
   const inIt = p.booked || p.aboardTripId !== null;
   const canJoin = !inIt && p.state !== 'full' && p.seatsLeft > 0;
@@ -798,20 +830,38 @@ function JoinSheet({
       ) : null}
 
       {p.aboardTripId ? (
-        <Pressable
-          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-          onPress={() => onOpenRide(p.aboardTripId!)}
-          accessibilityRole="button"
-        >
-          <Text style={styles.joinTxt}>Open my ride</Text>
-        </Pressable>
-      ) : p.booked ? (
-        <View style={styles.bookedRow}>
-          <Text style={styles.bookedTxt}>Seat booked — not confirmed until a driver accepts</Text>
-          <Pressable onPress={() => onLeave(p)} hitSlop={8} accessibilityRole="button">
-            <Text style={styles.cancelTxt}>Cancel seat</Text>
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => onOpenRide(p.aboardTripId!)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.joinTxt}>Open my ride</Text>
           </Pressable>
-        </View>
+          <Pressable
+            style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => leaveFee !== null && onLeaveCar(p.aboardTripId!, leaveFee)}
+            disabled={leaveFee === null}
+            accessibilityRole="button"
+          >
+            {leaveFee === null ? (
+              <ActivityIndicator color={colors.danger} />
+            ) : (
+              <Text style={styles.leaveTxt}>Leave this ride · {leaveFee > 0 ? `PKR ${leaveFee}` : 'free'}</Text>
+            )}
+          </Pressable>
+        </>
+      ) : p.booked ? (
+        <>
+          <Text style={styles.metaTxt}>Seat booked — not confirmed until a driver accepts.</Text>
+          <Pressable
+            style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => onLeave(p)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.leaveTxt}>Leave this ride · free</Text>
+          </Pressable>
+        </>
       ) : canJoin ? (
         <Pressable
           style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
@@ -1157,11 +1207,11 @@ const styles = themed(() => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   joinTxt: { fontSize: 15, fontWeight: '900', color: colors.btnText },
-  bookedRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4,
-    borderRadius: 14, padding: 12, backgroundColor: colors.glassLime,
+  leaveBtn: {
+    height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: colors.danger,
+    alignItems: 'center', justifyContent: 'center',
   },
-  bookedTxt: { flex: 1, fontSize: 12.5, fontWeight: '800', color: colors.text },
+  leaveTxt: { fontSize: 14.5, fontWeight: '900', color: colors.danger },
   cancelTxt: { fontSize: 13, fontWeight: '800', color: colors.muted },
   ownerRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
   ownerTxt: { fontSize: 12.5, fontWeight: '800', color: colors.muted },
