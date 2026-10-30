@@ -73,7 +73,7 @@ import { timestampMs } from '../poolRides/lifecycle';
 
 /** A rider's pickup and drop-off must each be this close to the pool's route. */
 export const MATCH_RADIUS_M = 1000;
-/** "Also going your way": a walk to the car's own pickup, and from its drop-off. */
+/** "From your area": a search lists every car leaving within this of the rider's pickup. */
 export const NEARBY_RADIUS_M = 2500;
 /** A car that filled stays on the card this long; then the pool is empty again. */
 export const FULL_HOLD_MS = 2 * 60 * 1000;
@@ -356,11 +356,23 @@ const listSchema = z.object({
   mine: z.boolean().nullish(),
 });
 
+/** The most cards one search returns. */
+const MAX_CARDS = 40;
+
 /**
- * Pools on the rider's route (`pools`) and a short walk away (`nearby`), or —
- * with `mine` — the rider's own. Every price is THIS rider's: their own route at
- * the car's tier. Pools whose car the gender rules keep this rider out of are
- * left out, as in every shared-ride feed: a Join that can only fail is no offer.
+ * The owner's list (2026-10-30), as `pools`, in order:
+ *
+ *   - Before a search (no `to`): every shared ride in the city — the rider's
+ *     own first, then the nearest pickup to `from`.
+ *   - With `from` and `to`: the related ones — on the rider's route (they are
+ *     dropped at their own stop, so they come first), then the rest leaving
+ *     from within NEARBY_RADIUS_M of their pickup, nearest drop-off to theirs
+ *     first. Those are `nearby`: met at the car's pickup, left at its drop-off.
+ *
+ * With `mine`, the rider's own. Every price is THIS rider's: on their route,
+ * their own route at the car's tier; otherwise the car's own route. Pools whose
+ * car the gender rules keep this rider out of are left out, as in every
+ * shared-ride feed: a Join that can only fail is no offer.
  */
 export const getSharedPools = onCall(async (req) => {
   const ctx = requireAuth(req);
@@ -373,7 +385,7 @@ export const getSharedPools = onCall(async (req) => {
   const myGender = resolveSeatOccupant(userSnap.get('gender'), null).seatGender;
   const myMixedOk = userSnap.get('mixedRideOk') === true;
 
-  /** Each candidate pool, and whether the rider would walk to it. */
+  /** Each candidate pool and whether the rider would walk to it, in list order. */
   let picked: { doc: FirebaseFirestore.DocumentSnapshot; nearby: boolean }[];
   if (mine) {
     const activeTripId = userSnap.get('activeTripId') as string | undefined;
@@ -390,23 +402,33 @@ export const getSharedPools = onCall(async (req) => {
     if (riding?.exists) byId.set(riding.id, riding);
     picked = [...byId.values()].map((doc) => ({ doc, nearby: false }));
   } else {
-    if (!city || !from || !to) invalid('Choose a city, a pickup and a drop-off.');
+    if (!city) invalid('Choose a city.');
     // shortcut: scans one city's pools (≤300) per search; switch to the
     // pickupGeohash range query (as getDriverPools does) past a few hundred.
     const snap = await db.collection('sharedPools').where('city', '==', city).limit(300).get();
-    picked = [];
+    const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
+      haversineKm(a.lat, a.lng, b.lat, b.lng) * 1000;
+    // Any rank past every on-route one: those come first.
+    const LATER = 1e9;
+    const ranked: { doc: FirebaseFirestore.DocumentSnapshot; nearby: boolean; rank: number }[] = [];
     for (const d of snap.docs) {
       if (!live(d, nowMs) || (at && !suitsTime(d.data(), at, nowMs))) continue;
+      const inIt = ((d.get('bookingUids') as string[] | undefined) ?? []).includes(ctx.uid);
+      // Deleted by its creator: gone from their screen, still open to everyone else.
+      if (d.get('createdBy') === ctx.uid && d.get('creatorRemoved') === true && !inIt) continue;
       const route = { pickup: d.get('pickup') as Place, dropoff: d.get('dropoff') as Place };
-      if (routeFit(route, from, to, MATCH_RADIUS_M)) {
-        picked.push({ doc: d, nearby: false });
-      } else if (
-        haversineKm(from.lat, from.lng, route.pickup.lat, route.pickup.lng) * 1000 <= NEARBY_RADIUS_M
-        && haversineKm(to.lat, to.lng, route.dropoff.lat, route.dropoff.lng) * 1000 <= NEARBY_RADIUS_M
-      ) {
-        picked.push({ doc: d, nearby: true });
+      if (from && to) {
+        if (routeFit(route, from, to, MATCH_RADIUS_M)) {
+          ranked.push({ doc: d, nearby: false, rank: metres(from, route.pickup) });
+        } else if (metres(from, route.pickup) <= NEARBY_RADIUS_M) {
+          ranked.push({ doc: d, nearby: true, rank: LATER + metres(to, route.dropoff) });
+        }
+      } else {
+        const yours = inIt || d.get('createdBy') === ctx.uid;
+        ranked.push({ doc: d, nearby: true, rank: (yours ? 0 : LATER) + (from ? metres(from, route.pickup) : 0) });
       }
     }
+    picked = ranked.sort((a, b) => a.rank - b.rank).slice(0, MAX_CARDS);
   }
 
   const tripIds = picked.map((p) => p.doc.get('tripId') as string | null).filter((t): t is string => !!t);
@@ -421,7 +443,6 @@ export const getSharedPools = onCall(async (req) => {
   };
 
   const pools: PoolCard[] = [];
-  const nearby: PoolCard[] = [];
   for (const { doc, nearby: walk } of picked) {
     const pool = doc.data()!;
     const tripId = (pool.tripId as string | null) ?? null;
@@ -435,14 +456,12 @@ export const getSharedPools = onCall(async (req) => {
     // refuse — it is only on the card to say it left, and that it will be back.
     const offersSeat = card.state !== 'full' && !card.booked && card.aboardTripId === null && !card.mine;
     if (!mine && offersSeat && !poolJoinGenderGate(aboardOf(card, pool, trip), myGender, myMixedOk).allowed) continue;
-    (walk ? nearby : pools).push(card);
+    pools.push(card);
   }
-  const byDistance = (a: PoolCard, b: PoolCard) => (a.pickupDistanceM ?? 0) - (b.pickupDistanceM ?? 0);
-  pools.sort(mine
-    ? (a, b) => Number(!!b.aboardTripId) - Number(!!a.aboardTripId) || Number(b.booked) - Number(a.booked)
-    : byDistance);
-  nearby.sort(byDistance);
-  return { pools, nearby: nearby.slice(0, 10) };
+  if (mine) {
+    pools.sort((a, b) => Number(!!b.aboardTripId) - Number(!!a.aboardTripId) || Number(b.booked) - Number(a.booked));
+  }
+  return { pools };
 });
 
 // ── Seats and cars ───────────────────────────────────────────────────────────

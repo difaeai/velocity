@@ -6,13 +6,16 @@
  *   1. The city, at the top.
  *   2. Where to (drop-off), then where from (pickup — the phone's location
  *      until the rider types).
- *   3. With both set, the shared rides on that route appear as cards: the fare
- *      per seat on top, the car under it with its seats taken and free, then
- *      Join. A car that fills stays on its card for two minutes; then the same
- *      route is an empty car again for the next riders (backend sharedPools/).
+ *   3. Small boxes, two to a row (2026-10-30): the car on top, then pickup,
+ *      drop-off, fare and "2 seats available", a green light blinking while one
+ *      is active. Before a search, every shared ride in the city — the rider's
+ *      own first. Searched, the related ones: leaving from the rider's area,
+ *      those to their drop-off first, then further, then further still. Tap a
+ *      box for the rest — Join, or Edit / Delete on your own. A car that fills
+ *      stays two minutes; then the route is an empty car again (sharedPools/).
  *   4. + (top right) opens the box that starts one, in this order: institution
  *      and location name, drop-off, pickup, start time — then its fare and the
- *      seats still free. The rider's own rides are listed under the search.
+ *      seats still free.
  *
  * A seat booked for later is PENDING until a driver accepts, and every card and
  * sheet says so. Riders on the route are collected at their own stops, each
@@ -22,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -41,7 +45,6 @@ import { api, type SharedFareQuote, type SharedPool, type SharedPoolSeat } from 
 import { useAuth } from '../../src/auth/AuthContext';
 import { colors } from '../../src/config';
 import { themed } from '../../src/theme';
-import { RIDE_TYPE_LABELS, type RideType } from '../../src/domain/types';
 import { PAKISTAN_CITIES } from '../../src/domain/intercityTypes';
 import { useCurrentLocation } from '../../src/hooks/location';
 import { useCancellationSettings } from '../../src/hooks/driver';
@@ -139,49 +142,31 @@ export default function DailyTravelScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromEdited, coords?.lat, coords?.lng, currentAddress]);
 
-  // ── The cards ─────────────────────────────────────────────────────────────
+  // ── The boxes ─────────────────────────────────────────────────────────────
+  // Before a search, every shared ride in the city; with both ends, the related ones.
   const [pools, setPools] = useState<SharedPool[] | null>(null);
-  // A short walk away: met at the car's own pickup.
-  const [nearby, setNearby] = useState<SharedPool[]>([]);
-  const [mine, setMine] = useState<SharedPool[] | null>(null);
-  const [joining, setJoining] = useState<SharedPool | null>(null);
+  const [opened, setOpened] = useState<SharedPool | null>(null);
   const [sheet, setSheet] = useState<{ edit: SharedPool | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const cancellation = useCancellationSettings();
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
+  const searching = !!from && !!to;
 
   const loadPools = useCallback(() => {
     const n = ++searchSeq.current;
-    if (!from || !to) {
-      setPools(null);
-      return;
-    }
     api
-      .getSharedPools({ city, from: { lat: from.lat, lng: from.lng }, to: { lat: to.lat, lng: to.lng } })
-      .then((r) => {
-        if (n !== searchSeq.current) return;
-        setPools(r.pools);
-        setNearby(r.nearby ?? []);
+      .getSharedPools({
+        city,
+        ...(from ? { from: { lat: from.lat, lng: from.lng } } : {}),
+        ...(to ? { to: { lat: to.lat, lng: to.lng } } : {}),
       })
+      .then((r) => n === searchSeq.current && setPools(r.pools))
       .catch(() => n === searchSeq.current && setPools((prev) => prev ?? []));
   }, [city, from, to]);
-  useEffect(() => {
-    setPools(null);
-    loadPools();
-  }, [loadPools]);
-  // Seats fill and cars leave while the rider watches.
-  useForegroundInterval(from && to ? loadPools : null, 20_000);
-
-  const loadMine = useCallback(() => {
-    api.getSharedPools({ mine: true }).then((r) => setMine(r.pools)).catch(() => {});
-  }, []);
-  useFocusEffect(loadMine);
-
-  const refresh = () => {
-    loadPools();
-    loadMine();
-  };
+  // On focus and on every new search — and seats fill and cars leave while the rider watches.
+  useFocusEffect(loadPools);
+  useForegroundInterval(loadPools, 20_000);
 
   const openRide = useCallback(
     (tripId: string) => router.push(`/passenger/trip/${tripId}` as Parameters<typeof router.push>[0]),
@@ -216,9 +201,9 @@ export default function DailyTravelScreen() {
       const res = await api.joinSharedPool(
         !p.nearby && from && to ? { poolId: p.id, pickup: from, dropoff: to } : { poolId: p.id },
       );
-      setJoining(null);
+      setOpened(null);
       announce(res);
-      refresh();
+      loadPools();
     } catch (e) {
       Alert.alert('Could not join', errorText(e));
     } finally {
@@ -244,13 +229,14 @@ export default function DailyTravelScreen() {
           dropoff: form.to,
         });
         setSheet(null);
-        // Its card then shows where riders find it: the search on its own route.
+        // Its box then shows first, where riders find it: the search on its own route.
+        setPools(null);
         setFromEdited(true);
         setFrom(form.from);
         setTo(form.to);
         announce(res);
       }
-      refresh();
+      loadPools();
     } catch (e) {
       Alert.alert(editing ? 'Could not save' : 'Could not start it', errorText(e));
     } finally {
@@ -265,7 +251,7 @@ export default function DailyTravelScreen() {
         text: 'Cancel seat',
         style: 'destructive',
         onPress: () => {
-          api.leaveSharedPool({ poolId: p.id }).then(refresh).catch((e) => Alert.alert('Could not cancel', errorText(e)));
+          api.leaveSharedPool({ poolId: p.id }).then(closeAndReload).catch((e) => Alert.alert('Could not cancel', errorText(e)));
         },
       },
     ]);
@@ -278,25 +264,22 @@ export default function DailyTravelScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          api.editSharedPool({ poolId: p.id, remove: true }).then(loadMine).catch((e) => Alert.alert('Could not delete', errorText(e)));
+          api.editSharedPool({ poolId: p.id, remove: true }).then(closeAndReload).catch((e) => Alert.alert('Could not delete', errorText(e)));
         },
       },
     ]);
   }
 
-  const cardProps = (p: SharedPool) => ({
-    pool: p,
-    busy: busy === p.id,
-    onJoin: () => setJoining(p),
-    onLeave: () => leave(p),
-    onOpenRide: openRide,
-    onEdit: p.mine ? () => setSheet({ edit: p }) : undefined,
-    onRemove: p.mine ? () => remove(p) : undefined,
-  });
+  function closeAndReload() {
+    setOpened(null);
+    loadPools();
+  }
 
-  // The rider's own — started or booked — that this search does not already show.
-  const shownIds = new Set((pools ?? []).map((p) => p.id));
-  const yours = (mine ?? []).filter((p) => !shownIds.has(p.id));
+  function edit(p: SharedPool) {
+    setOpened(null);
+    // iOS will not present a sheet while the last one is still sliding away.
+    setTimeout(() => setSheet({ edit: p }), 350);
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -357,60 +340,46 @@ export default function DailyTravelScreen() {
           cityName={cityName}
           to={to}
           from={from}
-          onTo={setTo}
+          onTo={(p) => {
+            // A new search shows its own boxes, never the last one's under its heading.
+            if (p !== to) setPools(null);
+            setTo(p);
+          }}
           onFrom={(p) => {
+            if (p !== from) setPools(null);
             setFromEdited(true);
             setFrom(p);
           }}
         />
+        {to && !from ? <Text style={styles.hint}>Type your pickup, or turn on location.</Text> : null}
 
-        {/* 3. The cards, once both ends are set. */}
-        {!to || !from ? (
-          <Text style={styles.hint}>
-            {!from && !coords
-              ? 'Type your pickup, or turn on location.'
-              : 'Enter your drop-off to see the shared rides going there — or tap + to start your own.'}
-          </Text>
-        ) : pools === null ? (
+        {/* 3. The boxes: every shared ride in the city, or — searched — the related ones. */}
+        {pools === null ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
+        ) : pools.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.hint}>
+              {searching ? 'No shared rides from your area yet.' : `No shared rides in ${cityName} yet.`}
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.joinBtn, styles.emptyBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => setSheet({ edit: null })}
+              accessibilityRole="button"
+            >
+              <PlusIcon />
+              <Text style={styles.joinTxt}>Create a shared ride</Text>
+            </Pressable>
+          </View>
         ) : (
           <>
-            {pools.length === 0 ? (
-              <View style={styles.empty}>
-                <Text style={styles.hint}>No shared rides on this route yet.</Text>
-                <Pressable
-                  style={({ pressed }) => [styles.joinBtn, styles.emptyBtn, pressed && { opacity: 0.85 }]}
-                  onPress={() => setSheet({ edit: null })}
-                  accessibilityRole="button"
-                >
-                  <PlusIcon />
-                  <Text style={styles.joinTxt}>Create one on this route</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <Text style={styles.blockLabel}>SHARED RIDES ON YOUR ROUTE · {pools.length}</Text>
-                {pools.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)}
-              </>
-            )}
-            {nearby.length > 0 ? (
-              <>
-                <Text style={styles.blockLabel}>ALSO GOING YOUR WAY · A SHORT WALK</Text>
-                <Text style={styles.metaTxt}>
-                  These leave from a little further away: you meet the car at its own pickup and get out at its drop-off.
-                </Text>
-                {nearby.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)}
-              </>
-            ) : null}
+            <Text style={styles.blockLabel}>
+              {searching ? 'NEAREST TO YOUR DROP-OFF FIRST' : `SHARED RIDES IN ${cityName.toUpperCase()}`}
+            </Text>
+            <View style={styles.grid}>
+              {pools.map((p) => <PoolBox key={p.id} pool={p} onPress={() => setOpened(p)} />)}
+            </View>
           </>
         )}
-
-        {yours.length > 0 ? (
-          <>
-            <Text style={styles.blockLabel}>YOUR SHARED RIDES</Text>
-            {yours.map((p) => <PoolCardView key={p.id} {...cardProps(p)} />)}
-          </>
-        ) : null}
       </ScrollView>
 
       <CityPicker
@@ -423,13 +392,17 @@ export default function DailyTravelScreen() {
         }}
       />
       <JoinSheet
-        pool={joining}
+        pool={opened}
         from={from}
         to={to}
         rates={cancellation}
-        busy={joining !== null && busy === joining.id}
-        onClose={() => setJoining(null)}
-        onConfirm={(p) => void join(p)}
+        busy={opened !== null && busy === opened.id}
+        onClose={() => setOpened(null)}
+        onJoin={(p) => void join(p)}
+        onLeave={leave}
+        onOpenRide={openRide}
+        onEdit={edit}
+        onRemove={remove}
       />
       <RideSheet
         open={sheet !== null}
@@ -447,10 +420,9 @@ export default function DailyTravelScreen() {
 
 /**
  * The car from above: the driver's seat and four for riders, filled as people
- * take them. The fare sits on top of it on the card — together they are the
- * two things a rider decides on.
+ * take them — on top of every box, the owner's order.
  */
-function CarSeats({ taken, total, driver }: { taken: number; total: number; driver: boolean }) {
+function CarSeats({ taken, total, driver, width = 240 }: { taken: number; total: number; driver: boolean; width?: number }) {
   // Front passenger first, then the back row, left to right as you look at it.
   const seats = [
     { x: 126, y: 66, w: 34, h: 30 },
@@ -460,7 +432,7 @@ function CarSeats({ taken, total, driver }: { taken: number; total: number; driv
   ].slice(0, total);
   return (
     <View style={styles.carWrap} accessible accessibilityLabel={`${taken} of ${total} seats taken`}>
-      <Svg width={240} height={120} viewBox="0 0 240 120">
+      <Svg width={width} height={width / 2} viewBox="0 0 240 120">
         {/* Wheels and mirrors first, so the body sits over them. */}
         {[48, 162].flatMap((x) => [5, 101].map((y) => (
           <Rect key={`${x}-${y}`} x={x} y={y} width={34} height={14} rx={5} fill={colors.muted} />
@@ -517,114 +489,65 @@ function FareLadder({ ladder, at }: { ladder: number[]; at: number }) {
   );
 }
 
-function PoolCardView({
-  pool: p,
-  busy,
-  onJoin,
-  onLeave,
-  onOpenRide,
-  onEdit,
-  onRemove,
-}: {
-  pool: SharedPool;
-  busy: boolean;
-  onJoin: () => void;
-  onLeave: () => void;
-  onOpenRide: (tripId: string) => void;
-  onEdit?: () => void;
-  onRemove?: () => void;
-}) {
-  const st = statusOf(p);
-  const inIt = p.booked || p.aboardTripId !== null;
-  const rung = Math.min(p.seatsTotal, inIt || p.state === 'full' ? p.riders : p.riders + 1);
+/** "2 seats available" — the owner's words, never "2 of 4". */
+const seatsText = (p: SharedPool) =>
+  p.state === 'full'
+    ? 'Full'
+    : p.seatsLeft === 0
+      ? 'No seats available'
+      : `${p.seatsLeft} ${p.seatsLeft === 1 ? 'seat' : 'seats'} available`;
+
+/** Someone is in it or its car is out: the owner's blinking green light. */
+const isActive = (p: SharedPool) => p.state === 'car' || (p.state === 'gathering' && p.riders > 0);
+
+/**
+ * One shared ride as a small box, half the screen wide, in the owner's order:
+ * the car, then pickup, drop-off, fare and the seats still free. Tapping it
+ * opens everything else.
+ */
+function PoolBox({ pool: p, onPress }: { pool: SharedPool; onPress: () => void }) {
+  const active = isActive(p);
+  const yours = p.mine || p.booked || p.aboardTripId !== null;
+  const from = areaLabel(p.pickup.address);
+  const to = areaLabel(p.dropoff.address);
   return (
-    <View style={[styles.poolCard, p.state === 'full' && { opacity: 0.75 }]}>
-      <View style={styles.poolHead}>
-        <Text style={styles.poolTitle} numberOfLines={1}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
-        <View style={[styles.chip, st.tone === 'go' ? styles.chipGo : st.tone === 'full' ? styles.chipFull : styles.chipWait]}>
-          <Text style={[styles.chipTxt, st.tone === 'go' && styles.chipTxtGo]}>{st.label}</Text>
-        </View>
+    <Pressable
+      style={({ pressed }) => [styles.box, yours && styles.boxYours, pressed && { opacity: 0.85 }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${active ? 'Active. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
+    >
+      {active ? <LiveDot /> : null}
+      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} width={128} />
+      <View style={styles.boxLine}>
+        <PickupDotIcon size={12} color={colors.text} accent={colors.primary} />
+        <Text style={styles.boxPlace} numberOfLines={1}>{from}</Text>
       </View>
-
-      {/* The fare on top of the car. */}
-      <Text style={styles.fareBig}>PKR {p.farePerSeat}</Text>
-      <Text style={styles.fareSub}>
-        {inIt ? 'your seat, so far' : p.state === 'full' ? 'per seat in this car' : 'per seat if you join now'}
-      </Text>
-      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} />
-      <Text style={styles.seatsTxt}>
-        {p.state === 'full'
-          ? 'No seats left — an empty car opens here in 2 minutes'
-          : `${p.seatsLeft} of ${p.seatsTotal} seats available`}
-      </Text>
-      <FareLadder ladder={p.fareLadder} at={rung} />
-
-      <View style={styles.lines}>
-        <Line icon={<PickupDotIcon size={14} color={colors.text} accent={colors.primary} />}>
-          {p.pickup.address}
-          {p.pickupDistanceM !== null ? <Text style={styles.lineMuted}>  · {distance(p.pickupDistanceM)} from you</Text> : null}
-        </Line>
-        <Line icon={<DestinationPinIcon size={14} color={colors.text} accent={colors.primary} />}>
-          {p.dropoff.address}
-          {p.dropoffDistanceM !== null ? (
-            <Text style={styles.lineMuted}>  · {distance(p.dropoffDistanceM)} from your drop-off</Text>
-          ) : null}
-        </Line>
-        <Text style={styles.metaTxt}>{departLine(p)}</Text>
-        <Text style={styles.metaTxt}>
-          {p.driver
-            ? `${p.driver.name} · ${p.driver.vehicle}${p.driver.plate ? ` · ${p.driver.plate}` : ''}`
-            : `${RIDE_TYPE_LABELS[p.rideType as RideType] ?? p.rideType} · no driver yet — the fare only drops as people join`}
-        </Text>
+      <View style={styles.boxLine}>
+        <DestinationPinIcon size={12} color={colors.text} accent={colors.primary} />
+        <Text style={styles.boxPlace} numberOfLines={1}>{to}</Text>
       </View>
-
-      {p.aboardTripId ? (
-        <Pressable style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]} onPress={() => onOpenRide(p.aboardTripId!)}>
-          <Text style={styles.joinTxt}>Open my ride</Text>
-        </Pressable>
-      ) : p.booked ? (
-        <View style={styles.bookedRow}>
-          <Text style={styles.bookedTxt}>Seat booked — not confirmed until a driver accepts</Text>
-          <Pressable onPress={onLeave} hitSlop={8} accessibilityRole="button">
-            <Text style={styles.cancelTxt}>Cancel seat</Text>
-          </Pressable>
-        </View>
-      ) : p.state === 'full' ? null : (
-        <Pressable
-          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-          onPress={onJoin}
-          disabled={busy}
-          accessibilityRole="button"
-        >
-          {busy ? (
-            <ActivityIndicator color={colors.btnText} />
-          ) : (
-            <Text style={styles.joinTxt}>{p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR {p.farePerSeat}</Text>
-          )}
-        </Pressable>
-      )}
-
-      {onEdit || onRemove ? (
-        <View style={styles.ownerRow}>
-          {onEdit ? (
-            <Pressable onPress={onEdit} hitSlop={8} accessibilityRole="button"><Text style={styles.ownerTxt}>Edit</Text></Pressable>
-          ) : null}
-          {onRemove ? (
-            <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button"><Text style={styles.ownerTxt}>Delete</Text></Pressable>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
+      <Text style={styles.boxFare}>PKR {p.farePerSeat}</Text>
+      <Text style={styles.boxSeats}>{seatsText(p)}</Text>
+      {/* Two rides on one route differ by their time. */}
+      <Text style={styles.boxTime}>{p.departTime ? `${clockLabel(p.departTime)} daily` : 'Leaves now'}</Text>
+    </Pressable>
   );
 }
 
-function Line({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <View style={styles.line}>
-      {icon}
-      <Text style={styles.lineTxt} numberOfLines={2}>{children}</Text>
-    </View>
-  );
+function LiveDot() {
+  const [glow] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    const blink = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 0.15, duration: 700, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    blink.start();
+    return () => blink.stop();
+  }, [glow]);
+  return <Animated.View style={[styles.liveDot, { opacity: glow }]} />;
 }
 
 /** The + of "start a shared ride" — drawn, so every phone's font agrees on it. */
@@ -723,6 +646,21 @@ function RouteFields({
             maxLength={200}
           />
           {to ? <View style={styles.pinned} /> : null}
+          {toText ? (
+            <Pressable
+              onPress={() => {
+                setToText('');
+                onTo(null);
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Clear drop-off"
+            >
+              <View style={{ transform: [{ rotate: '45deg' }] }}>
+                <PlusIcon size={14} color={colors.muted} />
+              </View>
+            </Pressable>
+          ) : null}
         </View>
         <View style={styles.fieldDivider} />
         <View style={styles.fieldRow}>
@@ -789,7 +727,10 @@ function SheetRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-/** Everything a rider agrees to before the seat is theirs. */
+/**
+ * A box, opened: the ride in full, and what this rider can do with it — join,
+ * cancel their seat, open the ride they are on, or (theirs) edit or delete it.
+ */
 function JoinSheet({
   pool: p,
   from,
@@ -797,7 +738,11 @@ function JoinSheet({
   rates,
   busy,
   onClose,
-  onConfirm,
+  onJoin,
+  onLeave,
+  onOpenRide,
+  onEdit,
+  onRemove,
 }: {
   pool: SharedPool | null;
   from: Place | null;
@@ -805,28 +750,38 @@ function JoinSheet({
   rates: { poolLeaveRate: number; poolLeaveArrivedRate: number };
   busy: boolean;
   onClose: () => void;
-  onConfirm: (p: SharedPool) => void;
+  onJoin: (p: SharedPool) => void;
+  onLeave: (p: SharedPool) => void;
+  onOpenRide: (tripId: string) => void;
+  onEdit: (p: SharedPool) => void;
+  onRemove: (p: SharedPool) => void;
 }) {
   if (!p) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
   const later = p.state === 'gathering' && !!p.departTime;
-  // On the route the car collects you at your own stops; a short walk away, at its own.
-  const own = !p.nearby && from && to;
+  const inIt = p.booked || p.aboardTripId !== null;
+  const canJoin = !inIt && p.state !== 'full' && p.seatsLeft > 0;
+  // On the rider's route the car collects them at their own stops; otherwise at its own.
+  const own = canJoin && !p.nearby && from && to;
   const pct = (r: number) => `${Math.round(r * 100)}%`;
+  const rung = Math.min(p.seatsTotal, inIt || p.state === 'full' ? p.riders : p.riders + 1);
   return (
     <Sheet open onClose={onClose}>
-      <Text style={styles.sheetTitle}>{p.state === 'gathering' ? 'Book your seat' : 'Join this car'}</Text>
-      <Text style={styles.sheetName} numberOfLines={2}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
-      <SheetRow label="YOUR PICKUP">
-        {own ? `${from.address} — the car collects you here` : `${p.pickup.address}${p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} walk from you` : ''}`}
+      <Text style={styles.sheetTitle} numberOfLines={2}>{p.label ?? `To ${areaLabel(p.dropoff.address)}`}</Text>
+      <Text style={styles.sheetName}>{statusOf(p).label}</Text>
+      <CarSeats taken={p.state === 'full' ? p.seatsTotal : p.riders} total={p.seatsTotal} driver={!!p.driver} />
+      <SheetRow label="PICKUP">
+        {own ? `${from.address} — the car collects you here` : `${p.pickup.address}${p.pickupDistanceM !== null ? ` — ${distance(p.pickupDistanceM)} from you` : ''}`}
       </SheetRow>
-      <SheetRow label="YOUR DROP-OFF">
+      <SheetRow label="DROP-OFF">
         {own ? to.address : `${p.dropoff.address}${p.dropoffDistanceM !== null ? ` — ${distance(p.dropoffDistanceM)} from yours` : ''}`}
       </SheetRow>
-      <SheetRow label="WHEN">{departLine(p)}</SheetRow>
-      <SheetRow label="YOUR FARE">
-        PKR {p.farePerSeat} now, cash to the driver — your own route at the car’s size. It goes down as people join
-        (PKR {p.fareLadder[2]} with 3 in the car), and never above PKR {p.soloFare}, riding alone.
+      <SheetRow label="FARE">
+        PKR {p.farePerSeat} {inIt ? 'for your seat so far' : p.state === 'full' ? 'a seat in this car' : 'a seat if you join now'}, cash
+        to the driver. It goes down as people join, and is never above PKR {p.soloFare}, riding alone.
       </SheetRow>
+      <FareLadder ladder={p.fareLadder} at={rung} />
+      <SheetRow label="SEATS">{p.state === 'full' ? 'Full — an empty car opens here in 2 minutes' : seatsText(p)}</SheetRow>
+      <SheetRow label="WHEN">{departLine(p)}</SheetRow>
       <SheetRow label="DRIVER">
         {p.driver
           ? `${p.driver.name} · ${p.driver.vehicle}${p.driver.plate ? ` · ${p.driver.plate}` : ''}${p.needsDriverApproval ? ' — they have to agree to take you' : ''}`
@@ -834,27 +789,57 @@ function JoinSheet({
             ? 'Not yet. Drivers are asked 10 minutes before the car leaves. Your ride is not confirmed until one accepts — we will notify you.'
             : 'Not yet. Drivers nearby are asked as soon as you join. Your ride is not confirmed until one accepts.'}
       </SheetRow>
-      <SheetRow label="LEAVING">
-        Free until a driver accepts. After that, {pct(rates.poolLeaveRate)} of your fare —{' '}
-        {pct(rates.poolLeaveArrivedRate)} once the driver is at the pickup. If someone else leaves and your share goes
-        up, you are told — and can leave free until a driver accepts.
-      </SheetRow>
-      <Pressable
-        style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
-        onPress={() => onConfirm(p)}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.btnText} />
-        ) : (
-          <Text style={styles.joinTxt}>
-            {later ? 'Book my seat' : `${p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR ${p.farePerSeat}`}
-          </Text>
-        )}
-      </Pressable>
+      {canJoin ? (
+        <SheetRow label="LEAVING">
+          Free until a driver accepts. After that, {pct(rates.poolLeaveRate)} of your fare —{' '}
+          {pct(rates.poolLeaveArrivedRate)} once the driver is at the pickup. If someone else leaves and your share goes
+          up, you are told — and can leave free until a driver accepts.
+        </SheetRow>
+      ) : null}
+
+      {p.aboardTripId ? (
+        <Pressable
+          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => onOpenRide(p.aboardTripId!)}
+          accessibilityRole="button"
+        >
+          <Text style={styles.joinTxt}>Open my ride</Text>
+        </Pressable>
+      ) : p.booked ? (
+        <View style={styles.bookedRow}>
+          <Text style={styles.bookedTxt}>Seat booked — not confirmed until a driver accepts</Text>
+          <Pressable onPress={() => onLeave(p)} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.cancelTxt}>Cancel seat</Text>
+          </Pressable>
+        </View>
+      ) : canJoin ? (
+        <Pressable
+          style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => onJoin(p)}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          {busy ? (
+            <ActivityIndicator color={colors.btnText} />
+          ) : (
+            <Text style={styles.joinTxt}>
+              {later ? 'Book my seat' : `${p.needsDriverApproval ? 'Ask the driver' : 'Join'} · PKR ${p.farePerSeat}`}
+            </Text>
+          )}
+        </Pressable>
+      ) : null}
+      {p.mine ? (
+        <View style={styles.ownerRow}>
+          <Pressable onPress={() => onEdit(p)} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.ownerTxt}>Edit</Text>
+          </Pressable>
+          <Pressable onPress={() => onRemove(p)} hitSlop={8} accessibilityRole="button">
+            <Text style={styles.ownerTxt}>Delete</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <Pressable onPress={onClose} hitSlop={8} style={{ alignSelf: 'center' }}>
-        <Text style={styles.cancelTxt}>Not now</Text>
+        <Text style={styles.cancelTxt}>Close</Text>
       </Pressable>
     </Sheet>
   );
@@ -1134,18 +1119,22 @@ const styles = themed(() => StyleSheet.create({
   empty: { gap: 4 },
   emptyBtn: { flexDirection: 'row', gap: 8 },
 
-  poolCard: {
-    borderRadius: 20, padding: 16, gap: 8,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassLimeBorder,
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+  box: {
+    width: '48.5%', borderRadius: 16, padding: 10, gap: 4,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  poolHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  poolTitle: { flex: 1, fontSize: 15.5, fontWeight: '900', color: colors.text },
-  chip: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
-  chipWait: { backgroundColor: 'rgba(251,191,36,0.18)' },
-  chipGo: { backgroundColor: colors.primary },
-  chipFull: { backgroundColor: colors.border },
-  chipTxt: { fontSize: 11.5, fontWeight: '900', color: colors.text },
-  chipTxtGo: { color: '#0b1a00' },
+  boxYours: { borderColor: colors.primary },
+  /** The owner's green light, top right. */
+  liveDot: {
+    position: 'absolute', top: 9, right: 9, zIndex: 1, width: 11, height: 11, borderRadius: 6,
+    backgroundColor: '#22c55e', borderWidth: 2, borderColor: 'rgba(34,197,94,0.35)',
+  },
+  boxLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  boxPlace: { flex: 1, fontSize: 12.5, fontWeight: '800', color: colors.text },
+  boxFare: { fontSize: 17, fontWeight: '900', color: colors.primary, marginTop: 2 },
+  boxSeats: { fontSize: 12, fontWeight: '800', color: colors.text },
+  boxTime: { fontSize: 11, fontWeight: '700', color: colors.muted },
   fareBig: { fontSize: 30, fontWeight: '900', color: colors.primary, textAlign: 'center', marginTop: 4 },
   fareSub: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center', marginTop: -4 },
   carWrap: { alignItems: 'center', paddingVertical: 2 },
@@ -1161,10 +1150,6 @@ const styles = themed(() => StyleSheet.create({
   rungFareOn: { color: colors.primary },
   rungWho: { fontSize: 10, fontWeight: '700', color: colors.muted, marginTop: 1 },
 
-  lines: { gap: 6, marginTop: 2 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  lineTxt: { flex: 1, fontSize: 13, fontWeight: '800', color: colors.text },
-  lineMuted: { fontSize: 12, fontWeight: '600', color: colors.muted },
   metaTxt: { fontSize: 12.5, fontWeight: '600', color: colors.muted, lineHeight: 18 },
 
   joinBtn: {

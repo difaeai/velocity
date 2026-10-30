@@ -81,7 +81,7 @@ function driverReq<T>(data: T, uid: string): CallableRequest<T> {
 const trip = async (id: string) => (await db().doc(`trips/${id}`).get()).data()!;
 
 async function search(uid: string, from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
-  return (await getSharedPools.run(makeReq({ city: 'islamabad', from, to }, uid))) as { pools: PoolCard[]; nearby: PoolCard[] };
+  return (await getSharedPools.run(makeReq({ city: 'islamabad', from, to }, uid))) as { pools: PoolCard[] };
 }
 
 beforeEach(async () => {

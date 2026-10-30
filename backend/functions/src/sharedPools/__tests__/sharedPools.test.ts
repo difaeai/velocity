@@ -51,7 +51,8 @@ const create = (uid: string, extra: Record<string, unknown> = {}) =>
 const join = (uid: string, poolId: string) =>
   joinSharedPool.run(makeReq({ poolId }, uid)) as Promise<{ status: string; tripId: string | null; perSeatFare: number }>;
 
-const search = async (uid: string, at = NEAR): Promise<PoolCard[]> =>
+type Point = { lat: number; lng: number };
+const search = async (uid: string, at: { from?: Point; to?: Point } = NEAR): Promise<PoolCard[]> =>
   ((await getSharedPools.run(makeReq({ city: 'islamabad', ...at }, uid))) as { pools: PoolCard[] }).pools;
 
 describe('the owner’s fare split', () => {
@@ -184,12 +185,21 @@ describe('a pool with a time holds seats until its car is due', () => {
 });
 
 describe('search and ownership', () => {
-  it('finds a pool only when BOTH ends are within 1 km', async () => {
+  it('lists a car on your route first, then cars from your area, nearest drop-off first', async () => {
     const made = await create('sp-a', { departTime: pktClock(2 * 3600_000) });
-    expect((await search('sp-b')).map((c) => c.id)).toEqual([made.poolId]);
-    // Same pickup, but a drop-off ~3 km past the pool's.
+    expect(await search('sp-b')).toMatchObject([{ id: made.poolId, nearby: false }]);
+    // Same pickup, a drop-off ~3 km past the pool's: still from your area, met at its own ends.
     const farDrop = { from: NEAR.from, to: { lat: 33.7485, lng: 73.0433 } };
-    expect(await search('sp-b', farDrop)).toEqual([]);
+    expect(await search('sp-b', farDrop)).toMatchObject([{ id: made.poolId, nearby: true }]);
+    // A pickup ~5 km away is not your area.
+    expect(await search('sp-b', { from: { lat: 33.64, lng: 73.0479 }, to: NEAR.to })).toEqual([]);
+    // Before a search: every shared ride in the city.
+    expect((await search('sp-b', {})).map((c) => c.id)).toEqual([made.poolId]);
+
+    // Two cars from F-7, neither on a route to (33.76, 73.0433): the one that ends nearer it first.
+    const further = await create('sp-c', { departTime: pktClock(2 * 3600_000), dropoff: { lat: 33.7485, lng: 73.0433, address: 'F-11 north' } });
+    const past = { from: NEAR.from, to: { lat: 33.76, lng: 73.0433 } };
+    expect((await search('sp-b', past)).map((c) => c.id)).toEqual([further.poolId, made.poolId]);
   });
 
   it('only the creator may change it, and removing it only hides it from their own list', async () => {
@@ -201,6 +211,7 @@ describe('search and ownership', () => {
     await editSharedPool.run(makeReq({ poolId: made.poolId, remove: true }, 'sp-a'));
     const mine = (await getSharedPools.run(makeReq({ mine: true }, 'sp-a'))) as { pools: PoolCard[] };
     expect(mine.pools).toEqual([]);
+    expect(await search('sp-a', {})).toEqual([]);
     expect((await search('sp-b')).map((c) => c.id)).toEqual([made.poolId]);
   });
 
