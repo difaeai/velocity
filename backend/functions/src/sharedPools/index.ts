@@ -81,6 +81,11 @@ export const FULL_HOLD_MS = 2 * 60 * 1000;
 export const DISPATCH_LEAD_MS = 10 * 60 * 1000;
 /** A car still without a driver this long after it went out: its riders are told. */
 export const NO_DRIVER_ALERT_MS = 8 * 60 * 1000;
+/**
+ * The owner's start (2026-10-30): a car starts when its driver taps Start — or
+ * by itself this long after it went out, once a driver has it.
+ */
+export const AUTO_START_MS = 10 * 60 * 1000;
 /** "Leaving around 8:00" matches departures this close to it. */
 export const TIME_WINDOW_MS = 60 * 60 * 1000;
 /** A driver is shown shared rides with a pickup this close. */
@@ -191,7 +196,8 @@ export function carOf(trip: FirebaseFirestore.DocumentData | null | undefined, n
     members,
     ended,
     full,
-    joinable: !full && (gathering || WITH_DRIVER.has(status)),
+    // Started: the driver is collecting its riders, and the box is the next car's.
+    joinable: !full && !trip.poolStartedAt && (gathering || WITH_DRIVER.has(status)),
     /** When the last seat went: the newest roster entry. */
     filledAtMs: full ? Math.max(0, ...rosterForTrip(trip).map((r) => timestampMs(r.joinedAt) ?? 0)) : null,
     fare: (trip.fare as number | null) ?? (trip.offeredFare as number),
@@ -329,7 +335,11 @@ export function poolCard(args: {
 /** The people a car would be shared with right now, as gender-gate input. */
 function aboardOf(card: PoolCard, pool: FirebaseFirestore.DocumentData, trip: FirebaseFirestore.DocumentData | null) {
   if (card.state !== 'gathering' && trip) return trip;
-  return { poolRoster: ((pool.bookings as Booking[] | undefined) ?? []).map((b) => ({ uid: b.uid, gender: b.gender })) };
+  // `sharedPoolId` puts the next car under the shared-ride gender rule too.
+  return {
+    sharedPoolId: card.id,
+    poolRoster: ((pool.bookings as Booking[] | undefined) ?? []).map((b) => ({ uid: b.uid, gender: b.gender })),
+  };
 }
 
 /** Whether a pool still counts: open, and booked within the last month. */
@@ -573,6 +583,7 @@ async function startCar(
       tripId: tripRef.id,
       runs: FieldValue.increment(1),
       noDriverCheckAt: Timestamp.fromMillis(Date.now() + NO_DRIVER_ALERT_MS),
+      autoStartAt: Timestamp.fromMillis(Date.now() + AUTO_START_MS),
       lastActiveAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -812,7 +823,7 @@ async function seatOnPool(
     assertOutstandingClear(walletSnap, settings, 'passenger');
     const seat = resolveSeatOccupant(userSnap.get('gender'), null);
     const gate = poolJoinGenderGate(
-      { poolRoster: bookings.map((b) => ({ uid: b.uid, gender: b.gender })) },
+      { sharedPoolId: poolId, poolRoster: bookings.map((b) => ({ uid: b.uid, gender: b.gender })) },
       seat.seatGender,
       userSnap.get('mixedRideOk') === true,
     );
@@ -1331,16 +1342,112 @@ export const offerDriverRoute = onCall(async (req) => {
   return { poolId: ref.id };
 });
 
+// ── Starting a car ───────────────────────────────────────────────────────────
+
 /**
- * The clock: every booking whose car is due goes out, and every car still
- * without a driver NO_DRIVER_ALERT_MS after it went out tells its riders. Also
- * finishes any dispatch a crash left halfway — every booking keeps `dispatchAt`
- * until it is settled.
+ * Start a shared car: its driver is setting off to collect everyone (owner,
+ * 2026-10-30). From here the car takes nobody new — the pool's box is the next
+ * car's, four seats again — and each rider is asked to confirm they are coming;
+ * the driver gets a rider's stops once they do (enRoute getPoolRiders). `by`
+ * is the driver's uid, or null for the clock, which only starts a car a driver
+ * has. True when this call started it.
+ */
+export async function startSharedCar(tripId: string, by: string | null): Promise<boolean> {
+  const tripRef = db.doc(`trips/${tripId}`);
+  const started = await db.runTransaction(async (tx) => {
+    const t = (await tx.get(tripRef)).data();
+    if (!t || typeof t.sharedPoolId !== 'string') throw new HttpsError('not-found', 'This shared ride no longer exists.');
+    if (by !== null && t.driverId !== by) {
+      throw new HttpsError('permission-denied', 'Only the driver of this car can start it.');
+    }
+    const poolRef = db.doc(`sharedPools/${t.sharedPoolId}`);
+    const pool = await tx.get(poolRef);
+    if (t.poolStartedAt) return null;
+    if (!WITH_DRIVER.has(t.status as string)) {
+      if (by === null) return null;
+      throw new HttpsError('failed-precondition', 'This ride cannot be started now.');
+    }
+    const members = (t.poolMembers as string[] | undefined) ?? [t.passengerId as string];
+    tx.update(tripRef, {
+      poolStartedAt: FieldValue.serverTimestamp(),
+      poolConfirm: Object.fromEntries(members.map((m) => [m, 'pending'])),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Only this car's clock: the pool may already be gathering the next one.
+    if (pool.get('tripId') === tripId) tx.update(poolRef, { autoStartAt: FieldValue.delete() });
+    return { members, driver: (t.driverInfo as { displayName?: string } | undefined)?.displayName ?? 'Your driver' };
+  });
+  if (!started) return false;
+  await sendToUsers(
+    started.members,
+    'Your shared ride is starting',
+    `${started.driver} is collecting everyone now. Confirm you are coming — or cancel.`,
+    { tripId },
+  ).catch((e) => logger.warn('sharedPools: start push failed', { tripId, err: String(e) }));
+  return true;
+}
+
+/** The driver taps Start: they are setting off to collect their riders. */
+export const startSharedRide = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = z.object({ tripId: docId }).safeParse(req.data);
+  if (!parsed.success) invalid('Choose a ride.');
+  await startSharedCar(parsed.data.tripId, ctx.uid);
+  return { ok: true };
+});
+
+/** A rider answers the start prompt: yes, I am coming. Cancel goes through leaveSharedRide. */
+export const confirmSharedSeat = onCall(async (req) => {
+  const ctx = requireAuth(req);
+  const parsed = z.object({ tripId: docId }).safeParse(req.data);
+  if (!parsed.success) invalid('Choose a ride.');
+  const tripRef = db.doc(`trips/${parsed.data.tripId}`);
+  await db.runTransaction(async (tx) => {
+    const t = (await tx.get(tripRef)).data();
+    if (!t?.poolStartedAt || !((t.poolMembers as string[] | undefined) ?? []).includes(ctx.uid)) {
+      throw new HttpsError('failed-precondition', 'There is nothing to confirm on this ride.');
+    }
+    tx.update(tripRef, { [`poolConfirm.${ctx.uid}`]: 'confirmed', updatedAt: FieldValue.serverTimestamp() });
+  });
+  return { ok: true };
+});
+
+/**
+ * The clock's half of the start: every car past `autoStartAt` that a driver has
+ * accepted starts now. One still without a driver keeps its clock, so it starts
+ * on the first tick after somebody accepts it.
+ */
+export async function autoStartDue(now: FirebaseFirestore.Timestamp): Promise<void> {
+  const due = await db.collection('sharedPools').where('autoStartAt', '<=', now).limit(50).get();
+  for (const doc of due.docs) {
+    try {
+      const tripId = doc.get('tripId') as string | null;
+      const status = tripId ? ((await db.doc(`trips/${tripId}`).get()).get('status') as string | undefined) : undefined;
+      if (status === 'requested') continue;
+      if (tripId && status && WITH_DRIVER.has(status) && (await startSharedCar(tripId, null))) continue;
+      // Started already, gone, or on the road: this clock is done.
+      await db.runTransaction(async (tx) => {
+        const p = await tx.get(doc.ref);
+        if (p.get('tripId') === tripId) tx.update(doc.ref, { autoStartAt: FieldValue.delete() });
+      });
+    } catch (e) {
+      logger.warn('sharedPools: auto-start failed', { poolId: doc.id, err: String(e) });
+    }
+  }
+}
+
+/**
+ * The clock: every booking whose car is due goes out, every car still without
+ * a driver NO_DRIVER_ALERT_MS after it went out tells its riders, and every car
+ * a driver has starts AUTO_START_MS after it went out. Also finishes any
+ * dispatch a crash left halfway — every booking keeps `dispatchAt` until it is
+ * settled.
  */
 export const dispatchSharedPools = onSchedule(
   { schedule: 'every 2 minutes', timeZone: 'Asia/Karachi', region: SCHEDULE_REGION },
   async () => {
     const now = Timestamp.now();
+    await autoStartDue(now);
     const [due, waiting] = await Promise.all([
       db.collection('sharedPools').where('dispatchAt', '<=', now).limit(50).get(),
       db.collection('sharedPools').where('noDriverCheckAt', '<=', now).limit(50).get(),

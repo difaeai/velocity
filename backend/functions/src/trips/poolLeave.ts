@@ -200,6 +200,8 @@ export async function leaveSharedCar(uid: string, tripId: string): Promise<Leave
       poolDriverGross: price.gross,
       poolSoloFares: solo,
       poolFreeLeave: freeLeaves,
+      // A started car asked them to confirm; Cancel on that prompt lands here.
+      ...(trip.poolConfirm ? { [`poolConfirm.${uid}`]: FieldValue.delete() } : {}),
       ...(genderKey ? { [genderKey]: FieldValue.increment(-1) } : {}),
       // The car is the next rider's now: pushes, chat and the rating go to them.
       ...(isHost && hostEntry

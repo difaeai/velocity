@@ -66,6 +66,7 @@ import { DashCam } from '../../src/ui/DashCam';
 import { drainDashcamQueue, ensureDashcamPermission } from '../../src/lib/dashcam';
 import { DriverPoolManifest } from '../../src/ui/DriverPoolManifest';
 import { SharingRidesFeed } from '../../src/ui/SharingRidesFeed';
+import { SharedRidesStrip } from '../../src/ui/SharedRidesStrip';
 import { distanceMeters, formatDistance } from '../../src/lib/geo';
 import { RIDE_TYPE_LABELS, type Trip, type TripStatus } from '../../src/domain/types';
 import { documentsExpiringSoon } from '../../src/domain/documentExpiry';
@@ -865,6 +866,20 @@ export default function DriverHome() {
                 busy={busy}
                 setBusy={setBusy}
               />
+            ) : activeTrip.sharedPoolId && !activeTrip.poolStartedAt ? (
+              // A shared car starts when its driver sets off to collect everyone
+              // (or by itself, sharedPools AUTO_START_MS); its riders then confirm.
+              <>
+                <PrimaryButton
+                  label="START PICKUPS"
+                  disabled={busy}
+                  onPress={() => run(() => api.startSharedRide({ tripId: activeTrip.id }))}
+                />
+                <Text style={styles.cancelFeeNote}>
+                  Each passenger is asked to confirm, and their stop appears below as they do. If you
+                  have not started, it starts by itself 10 minutes after the car went out.
+                </Text>
+              </>
             ) : awaitingArrival ? (
               // Arrived is shown already; Start waits for the server to agree.
               <PrimaryButton label="START RIDE" loading onPress={() => {}} />
@@ -939,7 +954,10 @@ export default function DriverHome() {
                   0,
                   (activeTrip.maxPoolRiders ?? 4) - (activeTrip.poolMembers?.length ?? 1),
                 )}
-                refreshKey={activeTrip.poolMembers?.length ?? 1}
+                // Re-read as riders join, leave or confirm they are coming.
+                refreshKey={`${activeTrip.poolMembers?.length ?? 1}|${
+                  Object.values(activeTrip.poolConfirm ?? {}).filter((c) => c === 'confirmed').length
+                }`}
                 // At the pickup the start list above already names everyone.
                 requestsOnly={activeTrip.status === 'arrived'}
               />
@@ -1065,6 +1083,9 @@ export default function DriverHome() {
                 {/* Shared-ride pools passengers posted themselves — a separate
                     queue on the server, shown here so no ride lives behind a
                     tab the driver never opens. Renders nothing when quiet. */}
+                {/* Corporate & Students: the shared rides booked near here, with
+                    how many people are going on each. */}
+                {!regularOnly ? <SharedRidesStrip coords={driverCoords} /> : null}
                 {uid ? <SharingRidesFeed uid={uid} coords={driverCoords} /> : null}
                 {poolRides.length > 0 ? <PoolRoutesHeader rides={poolRides} /> : null}
               </>

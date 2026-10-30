@@ -382,6 +382,7 @@ export { getRouteMates, inviteRouteMates, getMyRideInvites, declineRideInvite } 
 export {
   getSharedPools, createSharedPool, joinSharedPool, leaveSharedPool, editSharedPool, dispatchSharedPools,
   getDriverPools, acceptSharedPool, withdrawSharedPool, findPoolsForRoute, offerDriverRoute,
+  startSharedRide, confirmSharedSeat,
 } from './sharedPools';
 // Any rider leaves a shared pool's car — not only its host, and without
 // cancelling everyone else's ride with theirs.

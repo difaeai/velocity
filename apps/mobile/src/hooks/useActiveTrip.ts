@@ -26,6 +26,8 @@ export interface ActiveTrip {
   readonly pool: boolean;
   readonly fare: number | null;
   readonly dropoffAddress: string | null;
+  /** Its driver started a shared car and is waiting on this rider's "I'm coming". */
+  readonly confirmPending: boolean;
 }
 
 /**
@@ -102,6 +104,7 @@ export function useActiveTrip(uid?: string): { active: ActiveTrip | null; loadin
                   (snap.get('offeredFare') as number | undefined) ??
                   null,
                 dropoffAddress: (snap.get('dropoff')?.address as string | undefined) ?? null,
+                confirmPending: snap.get(`poolConfirm.${uid}`) === 'pending',
               }
             : null;
         setState({ uid, tripId, active: live, resolved: true });

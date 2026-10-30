@@ -144,6 +144,8 @@ export default function DailyTravelScreen() {
   const [opened, setOpened] = useState<SharedPool | null>(null);
   const [sheet, setSheet] = useState<{ edit: SharedPool | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Bumped to empty the drop-off and pickup boxes from outside (after a new ride).
+  const [routeKey, setRouteKey] = useState(0);
   const cancellation = useCancellationSettings();
   // Only the newest search may paint: an older answer landing late is a different route.
   const searchSeq = useRef(0);
@@ -225,11 +227,11 @@ export default function DailyTravelScreen() {
           dropoff: form.to,
         });
         setSheet(null);
-        // Its box then shows first, where riders find it: the search on its own route.
+        // Back to every ride in the city, the new one first among the rider's own,
+        // with an empty drop-off box — never the new ride's address left in it.
         setPools(null);
-        setFromEdited(true);
-        setFrom(form.from);
-        setTo(form.to);
+        setTo(null);
+        setRouteKey((k) => k + 1);
         announce(res);
       }
       loadPools();
@@ -331,7 +333,9 @@ export default function DailyTravelScreen() {
           <Pressable style={({ pressed }) => [styles.activeCard, pressed && { opacity: 0.9 }]} onPress={() => openRide(active.id)}>
             <View style={styles.activeDot} />
             <Text style={styles.activeTxt} numberOfLines={1}>
-              {ACTIVE_LABEL[active.status] ?? 'You are on a ride'} — open it
+              {active.confirmPending
+                ? 'Ride starting — confirm your seat'
+                : `${ACTIVE_LABEL[active.status] ?? 'You are on a ride'} — open it`}
             </Text>
             <ArrowIcon size={18} color="#0b1a00" />
           </Pressable>
@@ -353,6 +357,7 @@ export default function DailyTravelScreen() {
 
         {/* 2. Where to, then where from. */}
         <RouteFields
+          key={routeKey}
           cityName={cityName}
           to={to}
           from={from}
@@ -456,8 +461,21 @@ const seatsText = (p: SharedPool) =>
       ? 'No seats available'
       : `${p.seatsLeft} ${p.seatsLeft === 1 ? 'seat' : 'seats'} available`;
 
-/** Someone is in it or its car is out: the owner's blinking green light. */
+/** Someone is in it or its car is out: its car idles. */
 const isActive = (p: SharedPool) => p.state === 'car' || (p.state === 'gathering' && p.riders > 0);
+
+/** Seats to be had: the owner's blinking green light and "Available" (2026-10-30). */
+const isAvailable = (p: SharedPool) => p.state !== 'full' && p.seatsLeft > 0;
+
+/** The box's status, top left: a blinking green light and "Available", or "Full". */
+function StatusTag({ open }: { open: boolean }) {
+  return (
+    <View style={styles.status} pointerEvents="none">
+      {open ? <LiveDot /> : <View style={styles.statusFullDot} />}
+      <Text style={[styles.statusTxt, open ? styles.statusOpen : styles.statusFull]}>{open ? 'Available' : 'Full'}</Text>
+    </View>
+  );
+}
 
 /**
  * The real car on a lime spotlight, its shadow under it. It drives in from the
@@ -558,10 +576,12 @@ function PoolBox({ pool: p, index, onPress }: { pool: SharedPool; index: number;
         onPressIn={() => pressTo(0.95)}
         onPressOut={() => pressTo(1)}
         accessibilityRole="button"
-        accessibilityLabel={`${active ? 'Active. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
+        accessibilityLabel={`${isAvailable(p) ? 'Available. ' : ''}From ${from} to ${to}. PKR ${p.farePerSeat}. ${seatsText(p)}`}
       >
-        {active ? <LiveDot /> : null}
-        <ShowCar width={124} arrive={arrive} idle={active} />
+        <StatusTag open={isAvailable(p)} />
+        <View style={styles.boxCar}>
+          <ShowCar width={124} arrive={arrive} idle={active} />
+        </View>
         <View>
           <View style={styles.boxLine}>
             <PickupDotIcon size={12} color={colors.text} accent={colors.primary} />
@@ -707,7 +727,7 @@ function RouteFields({
             style={styles.fieldInput}
             value={toText}
             onChangeText={(t) => type('to', t)}
-            placeholder="Drop-off — office, university or area"
+            placeholder="Enter your drop-off location"
             placeholderTextColor={colors.muted}
             maxLength={200}
           />
@@ -735,7 +755,7 @@ function RouteFields({
             style={styles.fieldInput}
             value={fromText}
             onChangeText={(t) => type('from', t)}
-            placeholder="Pickup — your current location"
+            placeholder="Enter your pickup location"
             placeholderTextColor={colors.muted}
             maxLength={200}
           />
@@ -848,8 +868,10 @@ function RideDialog({
             { opacity: pop, transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }] },
           ]}
         >
-          {isActive(p) ? <LiveDot /> : null}
-          <ShowCar width={220} arrive={pop} idle={isActive(p)} />
+          <StatusTag open={isAvailable(p)} />
+          <View style={styles.boxCar}>
+            <ShowCar width={220} arrive={pop} idle={isActive(p)} />
+          </View>
 
           <View style={styles.dialogStats}>
             <View style={styles.dialogStat}>
@@ -1028,7 +1050,7 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
             style={styles.sheetInput}
             value={institution}
             onChangeText={setInstitution}
-            placeholder="Bahria University"
+            placeholder="Institution name"
             placeholderTextColor={colors.muted}
             maxLength={40}
           />
@@ -1039,7 +1061,7 @@ function RideBox({ edit, cityName, from: startFrom, to: startTo, busy, onClose, 
             style={styles.sheetInput}
             value={area}
             onChangeText={setArea}
-            placeholder="E-8"
+            placeholder="Location name"
             placeholderTextColor={colors.muted}
             maxLength={18}
           />
@@ -1225,11 +1247,20 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   boxYours: { borderColor: colors.primary },
-  /** The owner's green light, top right: a core that blinks and a ring that ripples out. */
-  live: {
-    position: 'absolute', top: 10, right: 10, zIndex: 2, width: 12, height: 12,
-    alignItems: 'center', justifyContent: 'center',
+  /** The owner's green light: a core that blinks and a ring that ripples out. */
+  live: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' },
+  /** "● Available" / "Full", over the top-left corner of a box or the dialog. */
+  status: {
+    position: 'absolute', top: 8, left: 8, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.5)',
   },
+  statusFullDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
+  statusTxt: { fontSize: 11, fontWeight: '900' },
+  statusOpen: { color: GO },
+  statusFull: { color: colors.danger },
+  /** Room above the car for the status. */
+  boxCar: { paddingTop: 16 },
   liveRing: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: GO },
   liveCore: { width: 10, height: 10, borderRadius: 5, backgroundColor: GO },
   boxLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },

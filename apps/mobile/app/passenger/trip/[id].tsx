@@ -869,6 +869,35 @@ export default function TripScreen() {
           <Badge label={RIDE_TYPE_LABELS[trip.rideType]} />
         </View>
 
+        {/* The driver started the car (sharedPools startSharedCar): are you coming?
+            Confirm hands the driver this rider's stops; Cancel is leaving the car. */}
+        {sharedPoolCar && trip.poolConfirm?.[user?.uid ?? ''] === 'pending' ? (
+          <View style={styles.confirmToast}>
+            <Text style={styles.confirmTitle}>Your shared ride is starting</Text>
+            <Text style={styles.confirmBody}>
+              {trip.driverInfo?.displayName ?? 'Your driver'} is collecting everyone now. Are you coming?
+            </Text>
+            <View style={styles.confirmRow}>
+              <Pressable
+                style={({ pressed }) => [styles.confirmCancel, pressed && { opacity: 0.7 }]}
+                onPress={confirmLeave}
+                disabled={busy || cancelling}
+                accessibilityRole="button"
+              >
+                <Text style={styles.confirmCancelTxt}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.confirmYes, pressed && { opacity: 0.85 }]}
+                onPress={() => void run(() => api.confirmSharedSeat({ tripId: trip.id }))}
+                disabled={busy}
+                accessibilityRole="button"
+              >
+                <Text style={styles.confirmYesTxt}>Confirm</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {/* The first thing a rider needs to know about this ride, said once and
             said plainly. A shared ride looks exactly like a solo one from here
             otherwise — same map, same driver card — and people were getting
@@ -1593,6 +1622,21 @@ const styles = themed(() => StyleSheet.create({
     padding: 14,
     gap: 4,
   },
+  // The start prompt: Confirm in green, Cancel see-through — as on the ride boxes.
+  confirmToast: {
+    borderRadius: 18, padding: 16, gap: 8,
+    backgroundColor: colors.background, borderWidth: 1.5, borderColor: '#22c55e',
+  },
+  confirmTitle: { color: colors.text, fontSize: 16, fontWeight: '900' },
+  confirmBody: { color: colors.muted, fontSize: 13.5, fontWeight: '600', lineHeight: 19 },
+  confirmRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  confirmCancel: {
+    flex: 1, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center',
+  },
+  confirmCancelTxt: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  confirmYes: { flex: 1, height: 48, borderRadius: 14, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' },
+  confirmYesTxt: { color: '#ffffff', fontSize: 15, fontWeight: '900' },
   poolShareHint: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 6 },
   sharedBannerTitle: { color: colors.primary, fontSize: 14, fontWeight: '900' },
   sharedBannerBody: { color: colors.text, fontSize: 12.5, lineHeight: 18 },
