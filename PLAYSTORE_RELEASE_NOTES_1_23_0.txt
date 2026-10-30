@@ -1,0 +1,56 @@
+VELOCITY RIDES 1.23.0  ·  Android versionCode = next EAS number  ·  iOS build = next EAS number
+=================================================================
+(Build numbers are EAS's remote auto-increment; the build list is the truth.)
+
+WHY 1.23.0. iOS 1.22.0 (build 24) is READY_FOR_SALE, read from the App Store
+Connect API on 31 Oct before choosing — an approved version string closes its
+train (ITMS-90186), so nothing more can go up as 1.22.0.
+
+WHAT IT CARRIES. Ride sharing, rebuilt end to end (PRs #140-#151, everything
+merged after the 1.22.0 build from 0e5d642).
+
+VERSION STATE — check the stores, not this file.
+  iOS      Live: 1.22.0 build 24. This release needs a NEW 1.23.0 version
+           record with the What's New below and the new build attached.
+  Android  Play's state cannot be read from this machine (no Play API key).
+           The new AAB supersedes vc50; roll it into EVERY track holding an
+           older bundle.
+
+AFTER THE ROLLOUT: publish admin → App version INCLUDING the build number,
+or the in-app update prompt tells nobody. iOS only once Apple has RELEASED it.
+
+
+PLAY CONSOLE "WHAT'S NEW" (copy the block below, max 500 chars)
+---------------------------------------------------------------
+Ride sharing, rebuilt for daily travel.
+
+• Tap + to share a ride: place, drop-off, pickup, start time and fare
+• Rides show as small boxes with the car, seats and fare; green means seats are free
+• Search your drop-off: rides on your route first, then the nearest
+• All shows every ride in your city
+• Women ride with women, men with men
+• Join a few rides; confirm the one that starts and the rest are let go
+• Drivers: tap Start and get pickups nearest first, with each fare
+
+
+APP STORE "WHAT'S NEW" (set on a NEW 1.23.0 version record)
+-----------------------------------------------------------
+RIDE SHARING, REBUILT
+
+Tap + to share your daily ride: the place name, your drop-off and pickup, the
+start time and the fare. Every ride shows as a small box with the car, the
+seats left and the fare, and a green light while seats are free.
+
+Search where you are going: rides on your route come first, then the ones
+ending nearest to you. Tap All to see every ride in your city. Each box shows
+whether women or men are riding, because a shared car is always one gender.
+
+Join more than one ride to be sure of a seat. When a driver starts one,
+confirm it in one tap and your other seats are let go. Leave any ride from its
+own box.
+
+DRIVERS
+
+See the shared rides near you and how many people are going. Tap Start when
+you set off: riders confirm, and your list shows pickups and drop-offs nearest
+first, with each rider's fare.
