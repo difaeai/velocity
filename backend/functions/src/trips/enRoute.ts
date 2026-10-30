@@ -1476,10 +1476,11 @@ export const getPoolRiders = onCall(async (req) => {
   // The order the car collects and drops everyone — shortest path from where
   // the driver is, each rider in before they are out (trips/poolPricing).
   // Riders already out are done; once a shared car has started, the driver
-  // gets a rider's stops when they confirm (or once they are aboard).
+  // gets a rider's stops when they confirm (or once they are aboard). One the
+  // driver let in after Start was never asked — joining was their yes.
   const located = riders.filter(
     (r) => !r.droppedAt
-      && (!confirm || confirm[r.uid] === 'confirmed' || !!r.boardedAt)
+      && (!confirm || confirm[r.uid] !== 'pending' || !!r.boardedAt)
       && typeof r.pickup?.lat === 'number' && typeof r.pickup?.lng === 'number'
       && typeof r.dropoff?.lat === 'number' && typeof r.dropoff?.lng === 'number',
   ) as (RiderRow & { pickup: LatLng; dropoff: LatLng })[];

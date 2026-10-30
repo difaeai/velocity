@@ -47,14 +47,14 @@ import { resolveSeatOccupant } from '../lib/seatGender';
 import { computeGenderAccess } from '../lib/genderAccess';
 import { queryNearbyDriverDocs } from '../lib/nearbyDrivers';
 import { MAX_POOL_RIDERS, poolPerSeatFare } from '../domain/fares';
-import type { DriverPublicInfo } from '../domain/types';
+import type { DriverPublicInfo, TripStatus } from '../domain/types';
 import { assertOutstandingClear, getCancellationSettings, type CancellationSettings } from '../domain/cancellation';
 import { assertCommissionClear, getCommissionSettings } from '../domain/commission';
 import { pktDayKey } from '../domain/dailyTarget';
 import { assertVehicleConfirmed } from '../domain/vehicleCheck';
 import { assertFaceCheckedIn } from '../domain/faceCheckIn';
 import { sharedRideFare } from '../fare/sharedRideFare';
-import { assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
+import { ACTIVE_STATUSES, assertRiderCanBook, broadcastTripToNearbyDrivers, haversineKm, lockInBid } from '../trips';
 import { generateShareCode, writeTripDocuments } from '../trips/poolTripFactory';
 import { joinPoolTripAsRider, POOL_JOIN_WINDOW_MS } from '../trips/poolShare';
 import { firstNameOf, hostRosterEntry, rosterForTrip } from '../trips/poolRoster';
@@ -589,6 +589,23 @@ async function releaseBooking(poolRef: FirebaseFirestore.DocumentReference, uid:
   });
 }
 
+/**
+ * Several shared rides at once (owner, 2026-10-30): a rider already in another
+ * shared car that has not set off — no driver yet, or started and still waiting
+ * on their "I'm coming" — is `waiting`, and a seat they take here is a backup:
+ * booked, not taken. Confirming that car gives it back (confirmSharedSeat); if
+ * that car falls through, the next dispatch seats them here. `riding` is any
+ * other live ride, which a seat here would only fail on.
+ */
+async function riderIsIn(uid: string, exceptTripId: string | null): Promise<'free' | 'waiting' | 'riding'> {
+  const tripId = (await db.doc(`users/${uid}`).get()).get('activeTripId') as string | undefined;
+  if (!tripId || tripId === exceptTripId) return 'free';
+  const t = (await db.doc(`trips/${tripId}`).get()).data();
+  if (!t || !ACTIVE_STATUSES.has(t.status as TripStatus)) return 'free';
+  const confirmed = (t.poolConfirm as Record<string, string> | undefined)?.[uid] === 'confirmed';
+  return typeof t.sharedPoolId === 'string' && t.status !== 'in_progress' && !confirmed ? 'waiting' : 'riding';
+}
+
 /** The booking was already settled by another dispatch (the cron and a join racing) — not a failure. */
 class SeatGone extends Error {}
 
@@ -721,6 +738,8 @@ export interface DispatchOutcome {
   /** Waiting on a driver's (or the host's) yes — see joinPoolTripAsRider. */
   asked: string[];
   dropped: { uid: string; reason: string }[];
+  /** Still waiting in another car: their booking stays as a backup (riderIsIn). */
+  waiting: string[];
   /** The car went straight to a driver who had accepted it ahead of time. */
   driverAssigned: boolean;
 }
@@ -737,19 +756,24 @@ export interface DispatchOutcome {
  */
 export async function dispatchPool(poolId: string, quiet?: string): Promise<DispatchOutcome> {
   const poolRef = db.doc(`sharedPools/${poolId}`);
-  const out: DispatchOutcome = { tripId: null, seated: [], asked: [], dropped: [], driverAssigned: false };
+  const out: DispatchOutcome = { tripId: null, seated: [], asked: [], dropped: [], waiting: [], driverAssigned: false };
   const settings = await getCancellationSettings();
   let created: string | null = null;
 
   for (let i = 0; i <= MAX_POOL_RIDERS; i += 1) {
     const snap = await poolRef.get();
-    const next = ((snap.get('bookings') as Booking[] | undefined) ?? [])[0];
+    const next = ((snap.get('bookings') as Booking[] | undefined) ?? []).find((b) => !out.waiting.includes(b.uid));
     if (!next) break;
     const tripId = snap.get('tripId') as string | null;
     const tripSnap = tripId ? await db.doc(`trips/${tripId}`).get() : null;
     const car = carOf(tripSnap?.data(), Date.now());
+    const aboard = !!car && car.members.includes(next.uid);
+    if (!aboard && (await riderIsIn(next.uid, tripId)) === 'waiting') {
+      out.waiting.push(next.uid);
+      continue;
+    }
     try {
-      if (tripSnap && car && !car.ended && (car.joinable || car.members.includes(next.uid))) {
+      if (tripSnap && car && !car.ended && (car.joinable || aboard)) {
         const res = await joinPoolTripAsRider(next.uid, tripSnap.ref, 'self', bookingStops(next, snap.data()!));
         (res.pending ? out.asked : out.seated).push(next.uid);
         out.tripId = tripSnap.id;
@@ -840,7 +864,14 @@ async function alertDriversOfDemand(poolRef: FirebaseFirestore.DocumentReference
 
 export type SeatResult =
   | { status: 'seated' | 'asked'; tripId: string; perSeatFare: number }
-  | { status: 'booked'; tripId: null; perSeatFare: number; departsAtMs: number | null };
+  | {
+    status: 'booked';
+    tripId: null;
+    perSeatFare: number;
+    departsAtMs: number | null;
+    /** Held while the rider waits in another car (riderIsIn) — not a seat yet. */
+    backup?: boolean;
+  };
 
 /**
  * Take a seat on a pool: in its car when one is out and has room, else a
@@ -869,12 +900,14 @@ async function seatOnPool(
   const rideType = snap.get('rideType') as string;
   const ownStops: RiderStops = { ...own, soloFare: (await sharedRideFare(rideType, own.pickup, own.dropoff)).fare };
 
-  // A car already out with room: take a seat in it like any shared ride.
+  // A car already out with room: take a seat in it like any shared ride —
+  // unless the rider is waiting in another car, when it is a backup booking.
   const tripId = snap.get('tripId') as string | null;
   if (tripId) {
     const tripRef = db.doc(`trips/${tripId}`);
     const car = carOf((await tripRef.get()).data(), Date.now());
-    if (car && !car.ended && (car.joinable || car.members.includes(uid))) {
+    const aboard = !!car && car.members.includes(uid);
+    if (car && !car.ended && (aboard || (car.joinable && (await riderIsIn(uid, tripId)) !== 'waiting'))) {
       const res = await joinPoolTripAsRider(uid, tripRef, 'self', ownStops);
       await poolRef.update({ lastActiveAt: FieldValue.serverTimestamp() });
       return { status: res.pending ? 'asked' : 'seated', tripId, perSeatFare: res.perSeatFare };
@@ -959,10 +992,12 @@ async function seatOnPool(
 
   if (booked.demand) await alertDriversOfDemand(poolRef).catch((err) => logger.warn('sharedPools: demand alert failed', { poolId, err: String(err) }));
 
+  let backup = false;
   if (booked.count >= MAX_POOL_RIDERS || booked.dueMs <= Date.now()) {
     const sent = await dispatchPool(poolId, uid);
     const dropped = sent.dropped.find((d) => d.uid === uid);
     if (dropped) throw new HttpsError('failed-precondition', dropped.reason);
+    backup = sent.waiting.includes(uid);
     if (sent.tripId && (sent.seated.includes(uid) || sent.asked.includes(uid))) {
       const trip = (await db.doc(`trips/${sent.tripId}`).get()).data() ?? {};
       const fares = trip.poolFares as Record<string, number> | undefined;
@@ -978,6 +1013,7 @@ async function seatOnPool(
     tripId: null,
     perSeatFare: booked.quote,
     departsAtMs: booked.departTime ? booked.dueMs + DISPATCH_LEAD_MS : null,
+    ...(backup ? { backup: true } : {}),
   };
 }
 
@@ -1510,18 +1546,18 @@ export const confirmSharedSeat = onCall(async (req) => {
   const parsed = z.object({ tripId: docId }).safeParse(req.data);
   if (!parsed.success) invalid('Choose a ride.');
   const tripRef = db.doc(`trips/${parsed.data.tripId}`);
-  const poolId = await db.runTransaction(async (tx) => {
+  await db.runTransaction(async (tx) => {
     const t = (await tx.get(tripRef)).data();
     if (!t?.poolStartedAt || !((t.poolMembers as string[] | undefined) ?? []).includes(ctx.uid)) {
       throw new HttpsError('failed-precondition', 'There is nothing to confirm on this ride.');
     }
     tx.update(tripRef, { [`poolConfirm.${ctx.uid}`]: 'confirmed', updatedAt: FieldValue.serverTimestamp() });
-    return t.sharedPoolId as string;
   });
+  // Every booking, this pool's next car included: a seat held anywhere was a backup for this one.
   const held = await db.collection('sharedPools').where('bookingUids', 'array-contains', ctx.uid).get();
   let released = 0;
   for (const d of held.docs) {
-    if (d.id !== poolId && (await giveBackSeat(d.ref, ctx.uid).catch(() => false))) released++;
+    if (await giveBackSeat(d.ref, ctx.uid).catch(() => false)) released++;
   }
   return { ok: true, released };
 });
@@ -1563,6 +1599,7 @@ export const dispatchSharedPools = onSchedule(
     const now = Timestamp.now();
     await autoStartDue(now);
     const [due, waiting] = await Promise.all([
+      // shortcut: a pool holding only backup seats stays due every tick and takes one of the 50; page past them if 50 ever wait at once.
       db.collection('sharedPools').where('dispatchAt', '<=', now).limit(50).get(),
       db.collection('sharedPools').where('noDriverCheckAt', '<=', now).limit(50).get(),
     ]);
